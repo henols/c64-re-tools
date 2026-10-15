@@ -7,7 +7,7 @@ description: Use this skill to read, write, correct and review the durable knowl
 
 ## Purpose
 
-Read, write, correct and review the durable understanding of a C64 project. The knowledge is in `.c64-re-tools/knowledge.db` in the project directory. Git can version that file.
+Read, write, correct and review the durable understanding of a C64 project. The knowledge is in `.c64-re-tools/knowledge.db` in the project folder. Git can version that file.
 
 This skill is the only write path for conclusions of the user and the LLM. It does not run an emulator or an analyzer.
 
@@ -21,8 +21,6 @@ One of these:
 - a request to see the history or a revision.
 
 ## Tools / execution path
-
-Run the script in the project directory. The project directory is the directory that the harness started in.
 
 ```
 node <skill>/scripts/knowledge.ts <command> [arguments] [options]
@@ -41,7 +39,7 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 | Remove a symbol | `remove-symbol '$2100'` |
 | Classify memory | `classify '$3000' '$303f' sprite` |
 | Classify a table of records | `classify '$3000' '$303b' bytes --element 6` |
-| Many writes as one revision | `apply batch.json`, or `apply -` with the JSON on standard input |
+| Many writes as one revision | `apply -` with the JSON on standard input, or `apply <file>` |
 | Make memory unknown, and keep the analyzers out of it | `unclassify '$3000' '$303f'` |
 | Set or remove a comment | `comment '$2100' line Reads joystick 2.` / `uncomment '$2100' line` |
 | Add or remove a reference | `reference '$2000' '$2100' call` / `unreference ...` |
@@ -73,6 +71,13 @@ Region types:
 
 `--element` gives the bytes of one element of a table. The length of the region must be a multiple of it. The result shows `element` and `count`.
 
+### Project folder
+
+- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
+- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
+
 ## Workflow
 
 Read:
@@ -89,7 +94,7 @@ Write:
 
 Each write is one revision. A classification inside a region splits that region, so regions never overlap.
 
-For more than a few writes, put them in one JSON file and use `apply`. The file is a list of writes. Each write has `op` and the arguments of the command with the same name, for example:
+For more than a few writes, use `apply -` and give the writes on standard input as one JSON list. Each write has `op` and the arguments of the command with the same name, for example:
 
 ```json
 [

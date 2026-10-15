@@ -26,6 +26,14 @@ This skill does not do the specialist work itself.
 
 This skill uses the other skills. It does not use the host runtime or the emulator directly.
 
+### Project folder
+
+One repository can hold several programs, with one project folder for each program. A project folder holds `.c64-re-tools/`. Work on one project at a time:
+
+- From the root of the repository, give `--project <folder>` to each skill script, and `project` to each emulator tool with a path.
+- Write all files in the project folder. Do not write files at the root of the repository.
+- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+
 ## Workflow
 
 Select the path for the scope:

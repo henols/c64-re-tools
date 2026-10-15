@@ -23,7 +23,7 @@ const USAGE = `disk.ts <action> <image> [name] [--out <file>]
   read <image> <name> --out <file>  write the bytes of one file into the project
   crt <file.crt> --out <dir>        write each CHIP packet of a cartridge as a PRG
 
-<image> is a .d64, .d71, .d81 or .g64 file, relative to the project directory.
+<image> is a .d64, .d71, .d81 or .g64 file, relative to the project folder.
 directory and read also take a .t64 tape file, and directory a .crt cartridge
 file; the script reads those itself. A CRT can have hardware type 0 (normal
 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) or 32 (EasyFlash).
@@ -49,7 +49,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     try {
       outPath = resolveProjectPath(values.out);
     } catch {
-      throw new UsageError(`--out must be a path relative to the project directory that stays inside it, not ${values.out}`);
+      throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
     }
   }
 

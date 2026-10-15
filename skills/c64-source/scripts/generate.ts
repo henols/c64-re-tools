@@ -33,7 +33,7 @@ import { entriesInData, entryOutsideImage, instructionText, layout, literalOpera
 const USAGE = `generate.ts <image> --out <dir> [options]
 
   <image>            an image.json of the c64-unpacker skill, or a PRG, relative to
-                     the project directory
+                     the project folder
   --out <dir>        the directory for the source files, relative to the project
   --entry <address>  an entry point for Ghidra, for example '$080d' (repeatable)
   --coverage <file>  a coverage map of 64 KiB from c64_memmap (repeatable): code
@@ -332,7 +332,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   try {
     resolveProjectPath(values.out);
   } catch {
-    throw new UsageError(`--out must be a path relative to the project directory that stays inside it, not ${values.out}`);
+    throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
   }
   const entries = (values.entry ?? []).map((value) => {
     try {

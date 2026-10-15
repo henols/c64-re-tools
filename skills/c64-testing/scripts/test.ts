@@ -12,7 +12,7 @@ import { readScenario, runScenario, ScenarioError, type ScenarioResult } from ".
 
 const USAGE = `test.ts <scenario.json> [--out <dir>]
 
-<scenario.json> is a scenario file relative to the project directory. See
+<scenario.json> is a scenario file relative to the project folder. See
 references/scenario-format.md. With --out, a FAIL writes both screens, the
 difference image and memory.json with each differing byte into <dir>. The
 result is one JSON object.`;
@@ -27,7 +27,7 @@ async function run(argv: string[]): Promise<ScenarioResult> {
     try {
       resolveProjectPath(values.out);
     } catch {
-      throw new UsageError(`--out must be a path relative to the project directory that stays inside it, not ${values.out}`);
+      throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
     }
   }
   try {

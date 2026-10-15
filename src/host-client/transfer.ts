@@ -51,10 +51,10 @@ export function readProjectFile(path: string, options: { root?: string } = {}): 
     real = resolveProjectFile(path, root);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new WireFailure("not-found", `There is no file at ${path} in the project directory.`);
+      throw new WireFailure("not-found", `There is no file at ${path} in the project folder.`);
     }
     if (error instanceof TypeError) {
-      throw new WireFailure("invalid-input", `${path}: give a path relative to the project directory that stays inside it.`);
+      throw new WireFailure("invalid-input", `${path}: give a path relative to the project folder that stays inside it.`);
     }
     throw error;
   }
@@ -73,7 +73,7 @@ export function readProjectFile(path: string, options: { root?: string } = {}): 
  */
 export function writeProjectFile(path: string, bytes: Uint8Array, options: { root?: string; what?: string } = {}): void {
   const root = options.root ?? currentProject();
-  const refuse = () => new WireFailure("invalid-input", `${options.what ?? path}: give a path relative to the project directory that stays inside it, not ${path}.`);
+  const refuse = () => new WireFailure("invalid-input", `${options.what ?? path}: give a path relative to the project folder that stays inside it, not ${path}.`);
   let file: string;
   try {
     file = resolveProjectPath(path, root);
@@ -96,7 +96,7 @@ export function writeProjectFile(path: string, bytes: Uint8Array, options: { roo
 const SKIPPED_DIRECTORIES = new Set([".git", ".hg", ".svn", ".c64-re-tools"]);
 
 /**
- * Reads a project directory as a source tree for staging: ordinary
+ * Reads a project folder as a source tree for staging: ordinary
  * files with relative POSIX paths. A symbolic link is followed only when its
  * target stays inside the source root; otherwise the tree is refused.
  */
@@ -106,8 +106,8 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
   try {
     sourceRoot = resolveProjectFile(path, projectRootPath);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new WireFailure("not-found", `There is no directory ${path} in the project directory.`);
-    if (error instanceof TypeError) throw new WireFailure("invalid-input", `${path}: give a directory relative to the project directory that stays inside it.`);
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new WireFailure("not-found", `There is no directory ${path} in the project folder.`);
+    if (error instanceof TypeError) throw new WireFailure("invalid-input", `${path}: give a directory relative to the project folder that stays inside it.`);
     throw error;
   }
   if (!statSync(sourceRoot).isDirectory()) throw new WireFailure("invalid-input", `${path} is not a directory.`);

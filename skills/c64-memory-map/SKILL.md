@@ -38,6 +38,13 @@ Write an address or a value as `$` and hex digits, as a decimal number, or as `%
 
 The script prints one JSON object.
 
+### Project folder
+
+- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
+- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
+
 ## Workflow
 
 1. Run `at` for the addresses in the code or the question.

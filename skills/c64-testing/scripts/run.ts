@@ -19,7 +19,7 @@ import { loadSymbols } from "./scenario.ts";
 
 const USAGE = `run.ts <run.json> --out <dir>
 
-<run.json> is a run file relative to the project directory: where to start,
+<run.json> is a run file relative to the project folder: where to start,
 optional symbols, and the steps. See references/scenario-format.md, section
 Runs. The files that the steps write, and results.json, go into <dir>. The
 result is one JSON object.`;
@@ -179,7 +179,7 @@ await runScript(
     try {
       resolveProjectPath(values.out);
     } catch {
-      throw new UsageError(`--out must be a path relative to the project directory that stays inside it, not ${values.out}`);
+      throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
     }
     const { output, failed } = await runFile(positionals[0]!, values.out);
     if (failed) process.exitCode = 1;

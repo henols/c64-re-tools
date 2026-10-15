@@ -1,5 +1,6 @@
 // The c64-knowledge script: reads and writes .c64-re-tools/knowledge.db in the
-// project directory (the working directory) and prints one compact JSON result.
+// project folder (--project, or the one found from the working directory) and
+// prints one compact JSON result.
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";

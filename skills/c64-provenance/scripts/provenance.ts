@@ -40,7 +40,7 @@ the result lists at most --max-listed of each list (default 50) and its count.
 
 A release is a PRG, placed at its load address, or an image.json of the
 c64-unpacker skill, compared inside its segments. Paths are relative to the
-project directory. The result is one JSON object.`;
+project folder. The result is one JSON object.`;
 
 function address(text: string, option: string): number {
   try {

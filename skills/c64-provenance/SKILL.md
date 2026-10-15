@@ -13,7 +13,7 @@ This skill does not change project knowledge.
 
 ## Inputs
 
-- Two or more releases, relative to the project directory. A release is a PRG file or an `image.json` from c64-unpacker capture. Extract releases from disk images with the c64-disk skill. Unpack packed releases with the c64-unpacker skill first.
+- Two or more releases, relative to the project folder. A release is a PRG file or an `image.json` from c64-unpacker capture. Extract releases from disk images with the c64-disk skill. Unpack packed releases with the c64-unpacker skill first.
 - Optional: an address range to compare.
 - Optional: a shift for a release that loads at a different address.
 - Optional: a number of frames to run each release, and a steps file.
@@ -43,6 +43,13 @@ The script puts each PRG at its load address. An image has bytes only in its seg
 With `--shift`, the addresses of `segments`, `common` and `differences` are the release addresses plus the `shift` of the release. The `start` and `end` of `runtime` are the addresses in the release itself, without the shift.
 
 With `--run`, a PRG starts with autostart and RUN. An image starts from its bytes: the script writes the segments and the entry state from `entry_state.json` into the emulator, and starts at the entry. Watchpoints on each difference stop the run at its first access.
+
+### Project folder
+
+- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
+- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Workflow
 
@@ -99,7 +106,7 @@ The exit status is 0 for a result. The exit status is 1 for an error. The exit s
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own emulator script.
 - `moreDifferences: true`: the script shows only the first differences. Use `--from` and `--to` to see the others.
 - `not-found`: the project has no file at that path.
-- `invalid-input`: a file, an address or a shift is wrong. A path that goes out of the project directory is also wrong, also through a link. Read the message.
+- `invalid-input`: a file, an address or a shift is wrong. A path that goes out of the project folder is also wrong, also through a link. Read the message.
 
 ## Handoffs
 

@@ -23,7 +23,7 @@ export interface Image {
   statePath?: string;
 }
 
-/** Reads an image.json or a PRG, relative to the project directory. */
+/** Reads an image.json or a PRG, relative to the project folder. */
 export function readImage(path: string): Image {
   const { bytes } = readProjectFile(path);
   if (!path.endsWith(".json")) {

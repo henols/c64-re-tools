@@ -23,7 +23,7 @@ A scenario is one JSON object in a project file.
 
 `original` and `rebuild` each have:
 
-- `program`: a PRG file, relative to the project directory.
+- `program`: a PRG file, relative to the project folder.
 - `symbols`: where the names come from:
   - `knowledge`: the project knowledge.
   - A JSON file: the output of the c64-assembler skill, or an object of names and `$` addresses.

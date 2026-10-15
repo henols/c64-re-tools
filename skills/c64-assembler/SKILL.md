@@ -13,9 +13,9 @@ This skill does not run the program and does not change project knowledge.
 
 ## Inputs
 
-- The source root: the project directory that holds all source files of the program.
+- The source root: the folder in the project that holds all source files of the program.
 - The entry source: the main file, relative to the source root.
-- The output path: where to write the PRG, relative to the project directory.
+- The output path: where to write the PRG, relative to the project folder.
 - Optional include directories, symbol definitions and a start address.
 
 ## Tools / execution path
@@ -36,6 +36,13 @@ node <skill>/scripts/assemble.ts --source-root src --entry main.a --out build/ga
 The script copies the full source root. Put all files that the program includes under it. Version control directories stay out.
 
 The script prints one JSON object. The target CPU is the 6510 and the output is always a C64 PRG.
+
+### Project folder
+
+- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
+- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Workflow
 

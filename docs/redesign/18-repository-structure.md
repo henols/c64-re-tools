@@ -132,7 +132,7 @@ projectRoot = process.cwd()
 
 It owns:
 
-- the harness working directory as project root;
+- the project lookup (17 §2) and `--project`;
 - resolving project-relative paths;
 - refusing absolute paths/project escape;
 - safe file/tree checks before staging.

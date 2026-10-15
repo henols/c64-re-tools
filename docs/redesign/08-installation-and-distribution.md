@@ -81,7 +81,7 @@ The preferred end-user entry point should be a single convenience command, conce
 npx -y @henols/c64-re-tools@latest install
 ```
 
-run in the project. Nothing is linked or installed globally.
+run once at the root of the repository (D70 in docs/plan.md). Each project folder below the root uses that install: one repository can hold several projects (17 §2). Nothing is linked or installed globally.
 
 The installer delegates to the packaging/runtime mechanisms; it is not a new package manager.
 
@@ -127,7 +127,7 @@ Skills should not copy this infrastructure.
 
 Nothing is built (D17 in docs/plan.md): an installed skill holds its TypeScript scripts, a copy of the src/ modules they reach and a package.json that maps the "#src/*" subpath import to that copy. Node runs the files by type stripping. This avoids depending on harness-specific Node module resolution while preserving one maintained source implementation.
 
-In particular, released skill scripts must not locate MCP internals through filesystem ladders or sibling-package path probing. The harness working directory is the project root; project-relative path validation, knowledge access and the Host Runtime client come from maintained shared source and are bundled/packaged deterministically. See [17 — Project root and local state](17-project-root-and-local-state.md).
+In particular, released skill scripts must not locate MCP internals through filesystem ladders or sibling-package path probing. The project is found from the working directory or named with `--project` (17 §2); the project lookup, project-relative path validation, knowledge access and the Host Runtime client come from maintained shared source and are bundled/packaged deterministically. See [17 — Project root and local state](17-project-root-and-local-state.md).
 
 There are no separate internal runtime/knowledge/MCP npm packages in v1. The one published c64-re-tools package exposes the CLI, MCP and Host Runtime executables; skill scripts carry the maintained source they need. See [18 — Repository structure](18-repository-structure.md).
 

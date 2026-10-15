@@ -13,10 +13,10 @@ This skill does not change the disk image and does not change project knowledge.
 
 ## Inputs
 
-- The disk image: a `.d64`, `.d71`, `.d81` or `.g64` file, relative to the project directory.
+- The disk image: a `.d64`, `.d71`, `.d81` or `.g64` file, relative to the project folder.
 - For one file: the file name as the directory shows it.
-- To extract a file: the output path, relative to the project directory.
-- A T64 tape file or a CRT cartridge file, relative to the project directory.
+- To extract a file: the output path, relative to the project folder.
+- A T64 tape file or a CRT cartridge file, relative to the project folder.
 
 ## Tools / execution path
 
@@ -41,6 +41,13 @@ node <skill>/scripts/disk.ts <action> <image> [name] [--out <file>]
 The script prints one JSON object.
 
 File names show the characters that the C64 shows in a directory list. A byte that has no character shows as `{$xx}`, for example `{$c1}`. Write the name in the same form. The letter case of a name is not important. Put the name in single quotes in a shell, for example `'GAME {$c1}'`.
+
+### Project folder
+
+- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
+- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Workflow
 

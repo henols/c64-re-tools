@@ -6,29 +6,20 @@ Define the simplest possible project model and exactly what c64-re-tools may per
 
 ## 2. Project root
 
-The project root is the working directory from which the agent harness is launched.
+The project is a folder that holds `.c64-re-tools/` (D67 in docs/plan.md). One repository can hold several projects, one folder for each program, and the agent can start at its root.
 
-That is the entire rule.
+A skill script finds its project like git finds `.git`:
 
-Conceptually:
+1. `--project <folder>` names it: a folder, relative to the working directory or absolute. It is used as given, without `.c64-re-tools/` too (the first write makes it). A missing folder, a file, the home folder and a folder inside another project are refused.
+2. Otherwise the project is the nearest folder at or above the working directory that holds `.c64-re-tools/`. The walk stops below the home folder, so a `~/.c64-re-tools` is no project.
+3. Otherwise, when folders below the working directory (three levels deep, without dot folders and `node_modules`) hold `.c64-re-tools/`, the script refuses and lists them. No write lands outside a project.
+4. Otherwise the working directory is the project, as for a single program. The home folder is never a project.
 
-~~~text
-projectRoot = harness working directory
-~~~
+The MCP server uses the same rules for each tool call with a path, from the folder where the harness started it. The tool's `project` parameter takes the place of `--project` (D68, 15 §1).
 
-There is no project-root discovery algorithm.
+The lookup is lazy: a script that reads no project file and no knowledge never refuses.
 
-Do not:
-
-- walk upward for .git;
-- walk upward for .c64-re-tools;
-- inspect package.json;
-- infer a project from the skill/MCP installation path;
-- read harness-specific workspace variables;
-- use C64RE_PROJECT_ROOT or another override;
-- guess a parent directory.
-
-If the user wants to work on another project, launch the harness from that project's directory.
+There is no `project.json`, no workspace file and no environment variable. The folder is the mark.
 
 ## 3. Project initialization
 
@@ -42,7 +33,7 @@ When c64-re-tools first needs persistent project knowledge, it creates:
     └── knowledge.db
 ~~~
 
-The directory is not used to discover the project. It is simply toolkit-owned storage under the already-known project root.
+The directory marks the project (§2) and holds toolkit-owned storage.
 
 Read-only knowledge access may treat a missing knowledge.db as an empty knowledge store without creating the file.
 
@@ -50,7 +41,7 @@ The first durable semantic write or analyzer import creates .c64-re-tools/ and k
 
 ## 4. Project-relative paths
 
-All project file paths are interpreted relative to the harness working directory.
+All project file paths of the skill scripts and the MCP tools are relative to the project folder (D68), not to the working directory.
 
 Examples:
 
@@ -66,20 +57,21 @@ A project-relative path:
 - must not escape the project with parent traversal;
 - must not escape through a symlink when its bytes/tree are staged for host execution.
 
-The LLM normally sees these project-relative paths.
+The LLM normally sees these project-relative paths. A shell redirect is relative to the shell's working directory; the skill texts say so.
 
 ## 5. Persistent project layout
 
-The only authoritative toolkit-owned project state in v1 is:
+The committed toolkit-owned project state is:
 
 ~~~text
 .c64-re-tools/knowledge.db
 ~~~
 
-Do not create a general project-local runtime/cache tree such as:
+Beside it, `.c64-re-tools/local/` holds what the agent saves for itself: script results, batches and step files (D70). It has a `.gitignore` with `*`, so git ignores it in a workspace and in a single project alike. The scripts and the MCP server make it when they resolve a project that has `.c64-re-tools/`, and the first knowledge write makes it with the database.
+
+Do not create other runtime/cache trees in the project, such as:
 
 ~~~text
-.c64-re-tools/local/
 cache/
 runs/
 snapshots/
@@ -137,12 +129,12 @@ Persisted scenario definitions are ordinary developer-authored project files at 
 
 The shared deterministic runtime provides:
 
-- the harness working directory as project root;
+- the project lookup of §2 and `--project`;
 - project-relative path validation;
 - knowledge access;
 - Host Runtime client/staging helpers.
 
-There is no root resolver beyond reading the harness working directory.
+The lookup of §2 is the only root resolver.
 
 Released skill scripts should still use bundled/shared runtime code rather than locating MCP internals through filesystem ladders.
 
@@ -166,13 +158,13 @@ Skills do not implement independent SQLite behavior.
 Relevant project/path failures are simple:
 
 ~~~text
+the working directory is in no project and has projects below it (they are listed)
+--project or project names no folder, the home folder, or a folder inside another project
 project-relative path escapes the project
 knowledge database is invalid
 knowledge database requires an unsupported migration
 ~~~
 
-There is no "could not determine project root" error because the harness working directory already is the project root.
-
 ## 11. Operational invariant
 
-> Launch the harness from the C64 project directory. That directory is the project root, and c64-re-tools stores durable knowledge in its .c64-re-tools/knowledge.db.
+> A project is a folder with .c64-re-tools/. Start the harness in it, or above several of them and name one with --project (scripts) or project (MCP tools). c64-re-tools stores durable knowledge in its .c64-re-tools/knowledge.db and scratch in its .c64-re-tools/local/.

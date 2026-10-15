@@ -11,7 +11,7 @@ import { runScript, UsageError } from "#src/script.ts";
 
 const USAGE = `basic.ts <program>
 
-<program> is a PRG file relative to the project directory. The result is one
+<program> is a PRG file relative to the project folder. The result is one
 JSON object. Addresses are $ and four hex digits.`;
 
 async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }> {

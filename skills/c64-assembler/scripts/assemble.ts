@@ -16,7 +16,7 @@ import { compareBuild } from "./compare.ts";
 
 const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [options]
 
-  --source-root <dir>      project directory to assemble from; all of it is sent
+  --source-root <dir>      folder in the project to assemble from; all of it is sent
   --entry <file>           the main source file, relative to the source root
   --out <file.prg>         where to write the program, relative to the project
   --include <dir>          include directory relative to the source root (repeatable)
@@ -61,7 +61,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   try {
     outPath = resolveProjectPath(out);
   } catch {
-    throw new UsageError(`--out must be a path relative to the project directory that stays inside it, not ${out}`);
+    throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${out}`);
   }
   const defines = Object.fromEntries((values.define ?? []).map(parseDefine));
   let setPc: number | undefined;

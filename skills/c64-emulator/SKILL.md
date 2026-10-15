@@ -52,6 +52,10 @@ For a large result, give `out` with a path in the project. `c64_memory_read`, `c
 
 `c64_memmap` keeps RAM, ROM and I/O apart. Use action `summary` to see which code ran. Use action `read` with `out` to keep a coverage run as a file, for example `coverage/attract.bin`. Clear the map before each run that you want to keep apart.
 
+### Project folder
+
+Paths (`path`, `file` and `out`) are relative to the project folder. A project folder holds `.c64-re-tools/`. The tools use the nearest project folder at or above the folder where the agent started. If that folder is not in a project and has projects below it, a tool with a path refuses and lists them. Then give `project` with the project folder, for example `"project": "game"`. Give the same folder as the `--project` of the skill scripts. A tool without a path does not need `project`.
+
 ## Workflow
 
 1. Read the project knowledge for the addresses in the question. Use the c64-knowledge skill.

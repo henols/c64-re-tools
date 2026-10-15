@@ -13,8 +13,8 @@ This skill does not change the knowledge.
 
 ## Inputs
 
-- The image: an `image.json` from c64-unpacker capture, or a PRG. The path is relative to the project directory.
-- The output directory for the source files, relative to the project directory.
+- The image: an `image.json` from c64-unpacker capture, or a PRG. The path is relative to the project folder.
+- The output directory for the source files, relative to the project folder.
 - Optional entry points for Ghidra.
 - For the loader: the `entry_state.json` next to `image.json`.
 
@@ -35,6 +35,13 @@ node <skill>/scripts/generate.ts unpacked/image.json --out src --loader
 | `--coverage coverage/attract.bin` | A coverage file of 64 KiB from `c64_memmap` with `out`. Use it again for more runs. Code that no run executed gets the line `; not executed` with its range. `notExecuted` lists it. |
 | `--space drive8` | Generate the source of drive code or a cartridge bank from the knowledge of that space. `--coverage` and `--loader` are only for `c64`, and platform names are only for `c64`. |
 | `--loader` | Also write `loader.asm` and `loader.prg`. This needs `image.json` with an entry, and `entry_state.json`. |
+
+### Project folder
+
+- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
+- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Workflow
 

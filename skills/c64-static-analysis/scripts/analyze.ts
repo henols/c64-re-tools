@@ -31,7 +31,7 @@ import { findPointers, type PointerCandidate } from "./pointers.ts";
 
 const USAGE = `analyze.ts <image> [options]
 
-  <image>                 a PRG file, relative to the project directory
+  <image>                 a PRG file, relative to the project folder
   --analyzer <name>       dxa (fast first pass) or ghidra (deeper, the default)
   --flat64k               the image is 64 KiB of memory from $0000, not a PRG
   --entry <address>       an entry point, for example '$080d' (repeatable)
@@ -161,7 +161,7 @@ async function run(argv: string[]): Promise<unknown> {
     try {
       listingPath = resolveProjectPath(values.listing);
     } catch {
-      throw new UsageError(`--listing must be a path relative to the project directory that stays inside it, not ${values.listing}`);
+      throw new UsageError(`--listing must be a path relative to the project folder that stays inside it, not ${values.listing}`);
     }
   }
 

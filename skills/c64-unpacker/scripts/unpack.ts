@@ -636,7 +636,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     try {
       resolveProjectPath(values.out);
     } catch {
-      throw new UsageError(`--out must be a path relative to the project directory that stays inside it, not ${values.out}`);
+      throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
     }
     const minBlock = values["min-block"] === undefined ? 64 : Number(values["min-block"]);
     if (!Number.isInteger(minBlock) || minBlock < 1 || minBlock > 0x10000) throw new UsageError("--min-block must be from 1 to 65536");
@@ -655,7 +655,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   try {
     resolveProjectPath(values.out);
   } catch {
-    throw new UsageError(`--out must be a path relative to the project directory that stays inside it, not ${values.out}`);
+    throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
   }
   const timeoutFrames = values["timeout-frames"] === undefined ? 3000 : Number(values["timeout-frames"]);
   if (!Number.isInteger(timeoutFrames) || timeoutFrames < 1 || timeoutFrames > 30_000) throw new UsageError("--timeout-frames must be from 1 to 30000");

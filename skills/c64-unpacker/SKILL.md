@@ -13,7 +13,7 @@ This skill does not change project knowledge.
 
 ## Inputs
 
-- The program: a PRG file, relative to the project directory.
+- The program: a PRG file, relative to the project folder.
 - For a capture: the address where the unpacked program starts, and the directory for the result.
 
 ## Tools / execution path
@@ -22,8 +22,8 @@ This skill does not change project knowledge.
 node <skill>/scripts/unpack.ts inspect original/game.prg
 node <skill>/scripts/unpack.ts trace original/game.prg
 node <skill>/scripts/unpack.ts capture original/game.prg --until '$c000' --out unpacked
-node <skill>/scripts/unpack.ts stages original/game.prg --steps input.json
-node <skill>/scripts/unpack.ts loads original/game.d64 --steps parts.json --out parts --drive
+node <skill>/scripts/unpack.ts stages original/game.prg --steps .c64-re-tools/local/input.json
+node <skill>/scripts/unpack.ts loads original/game.d64 --steps .c64-re-tools/local/parts.json --out parts --drive
 ```
 
 `inspect` examines the file locally. `trace` and `capture` start their own emulator through the host runtime and start the program. `trace` runs the program and finds the memory that the program wrote and then executed. `capture` stops the program when the CPU gets to the `--until` address. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). In `stages` and `capture`, a `frames` step and a `runUntil` step with only `at` count as run time. `stages` refuses a `runUntil` step with `raster` or `memory`.
@@ -31,7 +31,7 @@ node <skill>/scripts/unpack.ts loads original/game.d64 --steps parts.json --out 
 | Option | Meaning |
 |---|---|
 | `--until '$c000'` | The address where the unpacked program starts. The capture stops there after the steps. To capture a later arrival at the address, add a `runUntil` step to an address after the first arrival. |
-| `--out unpacked/game.prg` | Where to write the result, relative to the project directory. |
+| `--out unpacked/game.prg` | Where to write the result, relative to the project folder. |
 | `--range '$c000' '$cfff'` | Write this range as a PRG. Without it, the script writes all 64 KiB of RAM as a flat file. |
 | `--timeout-frames 3000` | How many frames the program can run before the capture stops (default 3000). |
 | `--frames 3000` | `trace` only: how many frames the program runs (default 3000). |
@@ -50,6 +50,13 @@ A steps file has the steps `write`, `registers`, `joystick`, `type`, `frames` an
 ```
 
 A `type` step puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard hardware does not see them. A step cannot press one specific key of the keyboard matrix. A wait for any key that reads all keyboard columns can end without a key.
+
+### Project folder
+
+- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
+- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Workflow
 

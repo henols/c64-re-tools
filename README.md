@@ -37,6 +37,8 @@ npx -y @henols/c64-re-tools@latest install --target claude
 claude
 ```
 
+Several programs in one repository: install once at the root, give each program its own folder, and start the agent at the root. A folder with `.c64-re-tools/` is a project; the agent names one with `--project <folder>`.
+
 `npx -y @henols/c64-re-tools@latest status` shows what works.
 
 Until 2.0.0 is released, `@latest` is the old 1.1.0. Use the prerelease instead. For the prerelease, a dev container and debugging, see [docs/debug-install.md](docs/debug-install.md).
@@ -76,7 +78,7 @@ and settings stay unchanged.
 
 1. Install for your harness: `--target claude`, `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor` or `windsurf`. Without `--target`, `install` installs for all of them.
 2. Start the Host Runtime and leave it running.
-3. Start the harness in the project, for example `claude` or `codex`, or open the project in Cursor or Windsurf. The harness starts the MCP server and finds the skills by itself.
+3. Start the harness in the project (or at the root of a repository with several projects), for example `claude` or `codex`, or open the project in Cursor or Windsurf. The harness starts the MCP server and finds the skills by itself.
 4. Ask for the result you want, in plain words. The agent picks the skills and the `c64_*` tools.
 
 Examples:

@@ -11,7 +11,7 @@ Find the static structure of a C64 program. Record the structure in the project 
 
 ## Inputs
 
-- The program: a PRG file, relative to the project directory. Or 64 KiB of memory from `$0000`, for example a memory dump.
+- The program: a PRG file, relative to the project folder. Or 64 KiB of memory from `$0000`, for example a memory dump.
 - Entry points: addresses where code starts, for example the SYS address from the c64-basic skill. Routine symbols in the knowledge are entry points too. Ghidra needs at least one. DXA finds the SYS of a BASIC start by itself.
 - Optional: routines to decompile (Ghidra), or a file for the listing (DXA).
 
@@ -52,6 +52,13 @@ More seeds come from evidence:
 - With `--coverage`, each executed instruction that starts a flow is an entry point. A flow starts after a gap, or after RTS, RTI, JMP or BRK. Then the analyzers find code that only a vector, an RTS table or an interrupt reaches.
 
 The analyzers take at most 1024 entry points. Knowledge routines and `--entry` come first, then code regions and tables, then coverage. `coverageSeeds` gives how many entry points the coverage gave and how many the analysis used.
+
+### Project folder
+
+- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
+- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Workflow
 

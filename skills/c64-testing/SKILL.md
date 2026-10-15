@@ -50,12 +50,19 @@ The run file gives where to start (a program, or a snapshot file), the steps, an
 
 See [references/scenario-format.md](references/scenario-format.md), section Runs. The script prints one JSON object. The exit status is 0 when all steps ran, 1 when a step did not reach its target, and 2 for a bad call. A long run can need more time than one shell call. Then run it in the background.
 
+### Project folder
+
+- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
+- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
+
 ## Workflow
 
 1. Write the scenario file. Start the steps with a frame count, for example `{ "frames": 150 }`. Each side starts at the reset vector, and the C64 needs these frames to start.
 2. Use symbol names, for example `player_x`, not fixed addresses. Each side finds the name in its own symbols. Use a `$` address only when both programs use the same address.
 3. Make each checkpoint a condition, for example `runUntil` at a routine. Do not wait for a time.
-4. Save the c64-assembler output of the rebuild to the symbol file: `assemble.ts ... > build/game.json`.
+4. Save the c64-assembler output of the rebuild to the symbol file, for example `build/game.json` in the project folder. From the folder above the project, write `assemble.ts --project <folder> ... > <folder>/build/game.json`.
 5. Run the test script.
 6. Read the result:
    - `PASS`: all observations are equal, or the differences are in the allowed tolerance.
