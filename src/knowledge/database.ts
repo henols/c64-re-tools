@@ -16,7 +16,8 @@ export const TEXT_DIRECTORY = "knowledge";
 /** The index file in .c64-re-tools/local/. */
 export const INDEX_FILE = "knowledge.db";
 /** Git keeps the lines of both sides when two computers changed the same knowledge file. */
-export const GIT_ATTRIBUTES = "# The knowledge of c64-re-tools: git keeps the lines of both sides of a merge.\n*.jsonl merge=union\n";
+// eol=lf: with core.autocrlf (the Windows default) git would check the files out with CRLF, so two computers would hold other bytes.
+export const GIT_ATTRIBUTES = "# The knowledge of c64-re-tools: git keeps the lines of both sides of a merge, with LF line ends on every system.\n*.jsonl merge=union text eol=lf\n.gitattributes text eol=lf\n";
 
 export const KNOWLEDGE_ERROR_CODES = [
   "invalid-input",

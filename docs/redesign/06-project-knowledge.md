@@ -30,7 +30,7 @@ The only authoritative persistent toolkit-owned project state is the knowledge t
 
 ```text
 .c64-re-tools/knowledge/
-├── .gitattributes        *.jsonl merge=union
+├── .gitattributes        *.jsonl merge=union text eol=lf
 ├── revisions.jsonl
 └── <table>.jsonl         symbols, regions, comments, references, suppressions, modules, operands
 ```

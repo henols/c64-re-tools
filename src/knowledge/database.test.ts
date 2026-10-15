@@ -46,7 +46,7 @@ test("a write creates the knowledge text with its .gitattributes, and the index 
   assert.equal(textPath(root), join(root, ".c64-re-tools", "knowledge"));
   assert.equal(indexPath(root), join(root, ".c64-re-tools", "local", "knowledge.db"));
   assert.deepEqual(readdirSync(join(root, ".c64-re-tools")).sort(), ["knowledge", "local"]);
-  assert.match(readFileSync(join(textPath(root), ".gitattributes"), "utf8"), /^\*\.jsonl merge=union$/m);
+  assert.match(readFileSync(join(textPath(root), ".gitattributes"), "utf8"), /^\*\.jsonl merge=union text eol=lf$/m);
   assert.deepEqual(readdirSync(join(root, ".c64-re-tools", "local")).sort(), [".gitignore", "knowledge.db"]);
 });
 
