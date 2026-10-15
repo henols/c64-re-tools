@@ -1,14 +1,21 @@
 // The project (D67): the nearest folder at or above the working directory that
 // holds .c64-re-tools/, below the home folder, the way git finds .git. A skill
 // script names it with --project <folder> and an MCP tool with `project`. Every
-// project path is relative to that folder (D68).
+// project path is relative to that folder (D68). .c64-re-tools/local/ holds what
+// the agent saves for itself and ignores itself in git (D70).
 
-import { readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /** The folder that marks a project and holds its knowledge. */
 export const PROJECT_DIRECTORY = ".c64-re-tools";
+
+/** The folder for machine-local scratch: saved results, batches and step files (D70). */
+export const LOCAL_DIRECTORY = "local";
+
+/** The .gitignore of LOCAL_DIRECTORY: git ignores everything in it, the .gitignore too. */
+const LOCAL_GITIGNORE = "# Machine-local scratch of c64-re-tools (saved results, batches, step files). Never committed.\n*\n";
 
 /** How deep a working directory without a project is searched for projects below it. */
 const SEARCH_DEPTH = 3;
@@ -124,9 +131,29 @@ export function namedProject(folder: string, cwd: string = process.cwd()): strin
   return path;
 }
 
+/**
+ * Makes .c64-re-tools/local/ with its .gitignore when the project has
+ * .c64-re-tools/ and local/ has no .gitignore yet (D70). A folder that is not
+ * yet a project gets nothing. A failure (for example a read-only project) is
+ * left to the write into local/ that needs the folder.
+ */
+export function ensureLocal(root: string): void {
+  const local = join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY);
+  const gitignore = join(local, ".gitignore");
+  if (existsSync(gitignore) || !isProject(root)) return;
+  try {
+    mkdirSync(local, { recursive: true });
+    writeFileSync(gitignore, LOCAL_GITIGNORE, { flag: "wx" });
+  } catch {
+    // Another process made it, or the project is read-only.
+  }
+}
+
 /** The project of an MCP call or another caller without process state: `folder` when given, else the D67 lookup from `cwd`. */
 export function resolveProject(folder: string | undefined, cwd: string = process.cwd(), options: ProjectRemedy = {}): string {
-  return folder === undefined ? findProject(cwd, options) : namedProject(folder, cwd);
+  const root = folder === undefined ? findProject(cwd, options) : namedProject(folder, cwd);
+  ensureLocal(root);
+  return root;
 }
 
 /** Sets the project of this process from --project. Throws ProjectError for a folder that the rules refuse. */
@@ -136,7 +163,9 @@ export function useProject(folder: string): void {
 
 /** The project folder of this process: the --project choice, else the D67 lookup from the working directory. */
 export function projectRoot(): string {
-  return chosen ?? findProject();
+  const root = chosen ?? findProject();
+  ensureLocal(root);
+  return root;
 }
 
 export function resolveProjectPath(path: string, root = projectRoot()): string {

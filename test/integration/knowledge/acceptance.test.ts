@@ -29,7 +29,7 @@ test("from a clean project: a read, the first write, several changes, the curren
   assert.deepEqual(readdirSync(root), ["game.prg"], "a read creates nothing");
 
   knowledge("rename", "$2100", "FUN_2100", "--kind", "routine", "--reason", "entry found by tracing");
-  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")), ["knowledge.db"], "the first write creates the database");
+  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")).sort(), ["knowledge.db", "local"], "the first write creates the database");
 
   knowledge("classify", "$2000", "$2fff", "code", "--expect-revision", "1");
   knowledge("classify", "$2800", "$283f", "sprite", "--reason", "drawn as the player sprite");
@@ -68,6 +68,6 @@ test("from a clean project: a read, the first write, several changes, the curren
   assert.equal(((knowledge("revision", "4") as { added: unknown[] }).added).length, 1);
 
   // Still one self-contained file, ready for version control.
-  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")), ["knowledge.db"]);
+  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")).sort(), ["knowledge.db", "local"]);
   assert.equal(existsSync(join(root, ".c64-re-tools", "knowledge.db-journal")), false);
 });

@@ -43,7 +43,7 @@ test("a write creates .c64-re-tools/knowledge.db with the current schema", () =>
   assert.equal((db.prepare("SELECT value FROM meta WHERE key = 'current_revision'").get() as { value: string }).value, "0");
   db.close();
   assert.equal(knowledgePath(root), join(root, ".c64-re-tools", "knowledge.db"));
-  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")), ["knowledge.db"]);
+  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")).sort(), ["knowledge.db", "local"]);
   const again = openForRead(root);
   assert.ok(again !== undefined);
   assert.equal(schemaVersion(again), SCHEMA_VERSION);
@@ -65,7 +65,7 @@ test("a committed transaction leaves one self-contained file and a failed one le
   assert.equal((db.prepare("SELECT count(*) AS n FROM revisions").get() as { n: number }).n, 1);
   db.close();
   // Rollback journal, not WAL: no side files after the writes.
-  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")), ["knowledge.db"]);
+  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")).sort(), ["knowledge.db", "local"]);
 });
 
 test("the schema enforces the current-row rules", () => {

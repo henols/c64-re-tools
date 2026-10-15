@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -108,5 +108,22 @@ test("a named project must be a folder, not the home folder and not inside anoth
     assert.throws(() => namedProject("file", workspace), refusal("invalid-input", /is not a folder/));
     assert.throws(() => namedProject(home, workspace), refusal("invalid-input", /home folder/));
     assert.throws(() => namedProject(join("game", "src"), workspace), refusal("invalid-input", /inside the project game\. Give that project folder/));
+  });
+});
+
+test("a project gets .c64-re-tools/local/ with a .gitignore that ignores everything; a plain folder gets nothing (D70)", () => {
+  withHome((home) => {
+    const game = join(home, "game");
+    mkdirSync(join(game, ".c64-re-tools"), { recursive: true });
+    assert.equal(resolveProject(undefined, join(game)), game);
+    assert.match(readFileSync(join(game, ".c64-re-tools", "local", ".gitignore"), "utf8"), /^\*$/m);
+    writeFileSync(join(game, ".c64-re-tools", "local", ".gitignore"), "kept\n");
+    resolveProject("game", home);
+    assert.equal(readFileSync(join(game, ".c64-re-tools", "local", ".gitignore"), "utf8"), "kept\n", "an existing .gitignore stays");
+
+    const plain = join(home, "plain");
+    mkdirSync(plain);
+    resolveProject(undefined, plain);
+    assert.equal(existsSync(join(plain, ".c64-re-tools")), false);
   });
 });

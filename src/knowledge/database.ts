@@ -4,7 +4,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 
-import { projectRoot } from "../project.ts";
+import { ensureLocal, projectRoot } from "../project.ts";
 import { checkVersion, ensureSchema, schemaVersion } from "./schema.ts";
 
 export const KNOWLEDGE_DIRECTORY = ".c64-re-tools";
@@ -83,6 +83,7 @@ export function openForRead(root: string = projectRoot()): DatabaseSync | undefi
  */
 export function openForWrite(root: string = projectRoot()): DatabaseSync {
   mkdirSync(join(root, KNOWLEDGE_DIRECTORY), { recursive: true });
+  ensureLocal(root);
   const db = open(knowledgePath(root), false);
   try {
     ensureSchema(db);
