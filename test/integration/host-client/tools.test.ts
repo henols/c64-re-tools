@@ -77,6 +77,21 @@ test("a client that disconnects aborts its tool request", async () => {
   await aborted;
 });
 
+test("a host that stops during a tool request is machine-unavailable", async () => {
+  let started!: () => void;
+  const running = new Promise<void>((resolve) => (started = resolve));
+  const env = await host(async (_op, _params, _attachments, signal) => {
+    started();
+    await new Promise((resolve) => signal.addEventListener("abort", resolve));
+    throw new WireFailure("operation-failed", "aborted");
+  });
+  const server = servers[servers.length - 1]!;
+  const request = decodeBasic({ program: "media/loader.prg" }, { env });
+  await running;
+  await server.close();
+  await assert.rejects(request, failsWith("machine-unavailable"));
+});
+
 test("a disk request sends the image with its type and gets a read file back as data", async () => {
   const seen: unknown[] = [];
   const env = await host(async (op, params, attachments) => {

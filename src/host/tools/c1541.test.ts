@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { ProcessSupervisor } from "../../native/processes.ts";
 import { Workspace } from "../../native/staging.ts";
 import { WireFailure } from "../../protocol/messages.ts";
-import { C1541Session, fileData, parseBam, parseChain, parseDirectory, parseFreeBlocks, parseInfo, READS_PER_CALL } from "./c1541.ts";
+import { C1541Session, fileData, parseBam, parseChain, parseDirectory, parseFreeBlocks, parseInfo, READS_PER_CALL, unreferencedSectors } from "./c1541.ts";
 
 const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
 
@@ -56,6 +56,18 @@ test("the BAM grid gives used and free sectors per track and must cover every tr
   assert.throws(() => parseBam(grid, 35), failsWith("operation-failed"));
 });
 
+test("unreferenced sectors are the used sectors that no chain holds, in track and sector order", () => {
+  const tracks = [
+    { track: 1, usedSectors: [3] },
+    { track: 2, usedSectors: [0, 1, 19] },
+  ];
+  assert.deepEqual(unreferencedSectors(tracks, [{ track: 2, sector: 0 }, { track: 2, sector: 19 }, { track: 9, sector: 9 }]), [
+    { track: 1, sector: 3 },
+    { track: 2, sector: 1 },
+  ]);
+  assert.deepEqual(unreferencedSectors(tracks, [{ track: 1, sector: 3 }, { track: 2, sector: 0 }, { track: 2, sector: 1 }, { track: 2, sector: 19 }]), []);
+});
+
 function block(fill: (bytes: Buffer) => void): Buffer {
   const bytes = Buffer.alloc(256);
   fill(bytes);
@@ -85,12 +97,19 @@ test("the directory comes from the raw header and directory blocks, with exact n
     bytes[64 + 2] = 0x41;
     bytes.fill(0xa0, 64 + 5, 64 + 21);
     bytes.write("LOG", 64 + 5, "latin1");
+    // A closed REL with its side sector at track 19 sector 10.
+    bytes[96 + 2] = 0x84;
+    bytes.fill(0xa0, 96 + 5, 96 + 21);
+    bytes.write("DATA", 96 + 5, "latin1");
+    bytes[96 + 3] = 19;
+    bytes[96 + 0x15] = 19;
+    bytes[96 + 0x16] = 10;
   });
   const parsed = parseDirectory([header, directory], layout);
   assert.equal(parsed.diskName, "MY DISK");
   assert.equal(parsed.diskId, "AB");
   assert.equal(parsed.dosType, "2A");
-  assert.equal(parsed.entries.length, 2);
+  assert.equal(parsed.entries.length, 3);
   assert.deepEqual(
     { ...parsed.entries[0]!, nameBytes: [...parsed.entries[0]!.nameBytes] },
     { name: "GAME{$c1}", nameBytes: [0x47, 0x41, 0x4d, 0x45, 0xc1], type: "prg", blocks: 24, closed: true, locked: false, startTrack: 17, startSector: 0 },
@@ -98,6 +117,8 @@ test("the directory comes from the raw header and directory blocks, with exact n
   assert.equal(parsed.entries[1]!.type, "seq");
   assert.equal(parsed.entries[1]!.closed, false);
   assert.equal(parsed.entries[1]!.locked, true);
+  assert.equal(parsed.entries[1]!.sideStart, undefined);
+  assert.deepEqual(parsed.entries[2]!.sideStart, { track: 19, sector: 10 }, "a REL file names its side sectors");
 });
 
 test("file data is 254 bytes per block and the last block up to its end index", () => {

@@ -22,12 +22,17 @@ function padded(name: string): Buffer {
 
 /**
  * Returns a D64 with the given PRG files (load address included in `bytes`),
- * stored from track 17 downwards and listed in one directory sector.
+ * stored from track 17 downwards and listed in one directory sector. The BAM
+ * also marks the `hidden` sectors as used, though no file holds them.
  */
-export function buildD64(files: Array<{ name: string; bytes: Uint8Array }>, label = "FIXTURE"): Buffer {
+export function buildD64(files: Array<{ name: string; bytes: Uint8Array }>, label = "FIXTURE", hidden: Array<{ track: number; sector: number }> = []): Buffer {
   if (files.length > 8) throw new Error("one directory sector holds 8 files");
   const image = Buffer.alloc(D64_SIZE);
   const used = new Map<number, Set<number>>([[18, new Set([0, 1])]]);
+  for (const { track, sector } of hidden) {
+    if (!used.has(track)) used.set(track, new Set());
+    used.get(track)!.add(sector);
+  }
   const directory = offsetOf(18, 1);
   let track = 17;
   let sector = 0;

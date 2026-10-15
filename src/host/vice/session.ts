@@ -1087,10 +1087,12 @@ export class ViceSession implements ViceSessionHandle {
     if (baseline === undefined) throw new WireFailure("not-found", `There is no baseline named ${params.baseline}.`);
     const current = await this.#observe(() => this.#machine.captureFrame(this.#videoStandard));
     const difference = compareFrames(baseline.frame, current.frame, params.mask);
-    const mismatchRatio = difference.comparedPixels === 0 ? 0 : difference.mismatchingPixels / difference.comparedPixels;
+    if (difference.comparedPixels === 0) throw new WireFailure("invalid-input", "The mask covers the whole screen: nothing to compare.");
+    const mismatchRatio = difference.mismatchingPixels / difference.comparedPixels;
     const result: ScreenComparison = {
       match: mismatchRatio <= params.maxMismatchRatio,
       mismatchingPixels: difference.mismatchingPixels,
+      comparedPixels: difference.comparedPixels,
       mismatchRatio,
     };
     if (difference.bounds !== undefined) result.bounds = difference.bounds;

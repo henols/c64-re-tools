@@ -45,6 +45,13 @@ function d64(): Buffer {
 }
 const image = d64();
 
+/** The byte offset of a block in a D64. */
+function offset(track: number, sector: number): number {
+  let at = 0;
+  for (let t = 1; t < track; t++) at += (t <= 17 ? 21 : t <= 24 ? 19 : t <= 30 ? 18 : 17) * 256;
+  return at + sector * 256;
+}
+
 function run(params: C1541Params, bytes = image): Promise<{ result: C1541Result; attachments?: Buffer[] }> {
   return inspect(params, bytes, { supervisor, signal: new AbortController().signal });
 }
@@ -86,6 +93,41 @@ test("the BAM marks the directory track and the file blocks as used", { skip }, 
   assert.deepEqual(result.tracks[17]!.usedSectors.slice(0, 2), [0, 1], "track 18 holds the BAM and the directory");
   const used = result.tracks.reduce((sum, track) => sum + track.usedSectors.length, 0);
   assert.equal(used, 2 + 1 + 12);
+  assert.deepEqual(result.unreferenced, [], "the header, the directory and the files hold every used sector");
+});
+
+test("bam names the used sectors that no file holds", { skip }, async () => {
+  const chain = await run({ action: "chain", imageType: "d64", name: "LOG" });
+  assert.ok(chain.result.action === "chain" && chain.result.found);
+  // Unlink the last block of LOG from its chain: the BAM still marks it as used.
+  const cut = Buffer.from(image);
+  const sectors = chain.result.sectors;
+  const before = sectors.at(-2)!;
+  const at = offset(before.track, before.sector);
+  cut[at] = 0;
+  cut[at + 1] = 255;
+  const { result } = await run({ action: "bam", imageType: "d64" }, cut);
+  assert.ok(result.action === "bam");
+  assert.deepEqual(result.unreferenced, [sectors.at(-1)]);
+});
+
+test("bam keeps the format's own BAM blocks and a REL file's side sectors out of unreferenced", { skip }, async () => {
+  writeFileSync(join(scratch, "y.prg"), loader);
+  make("-format", "two sides,71", "d71", "two.d71", "-write", "y.prg", "y");
+  const d71 = await run({ action: "bam", imageType: "d71" }, readFileSync(join(scratch, "two.d71")));
+  assert.ok(d71.result.action === "bam");
+  assert.equal(d71.result.tracks[52]!.usedSectors.length, 19, "track 53 holds the BAM of side 2");
+  assert.deepEqual(d71.result.unreferenced, []);
+  make("-format", "big disk,81", "d81", "bam.d81", "-write", "y.prg", "y");
+  const d81 = await run({ action: "bam", imageType: "d81" }, readFileSync(join(scratch, "bam.d81")));
+  assert.ok(d81.result.action === "bam");
+  assert.deepEqual(d81.result.tracks[39]!.usedSectors, [0, 1, 2, 3], "the header, two BAM blocks and the directory");
+  assert.deepEqual(d81.result.unreferenced, []);
+  writeFileSync(join(scratch, "records.bin"), Buffer.alloc(2000, 0x41));
+  make("-format", "rel disk,re", "d64", "rel.d64", "-write", "records.bin", "records,l,20");
+  const rel = await run({ action: "bam", imageType: "d64" }, readFileSync(join(scratch, "rel.d64")));
+  assert.ok(rel.result.action === "bam");
+  assert.deepEqual(rel.result.unreferenced, []);
 });
 
 test("a 1581 image works with its own header layout", { skip }, async () => {
@@ -106,11 +148,6 @@ test("a sector chain that loops and a file that is no disk image are media error
   const chain = await run({ action: "chain", imageType: "d64", name: "LOG" });
   assert.ok(chain.result.action === "chain" && chain.result.found);
   // Point the last block of LOG back to its first block.
-  const offset = (track: number, sector: number) => {
-    let at = 0;
-    for (let t = 1; t < track; t++) at += (t <= 17 ? 21 : t <= 24 ? 19 : t <= 30 ? 18 : 17) * 256;
-    return at + sector * 256;
-  };
   const last = chain.result.sectors.at(-1)!;
   const first = chain.result.sectors[0]!;
   looped[offset(last.track, last.sector)] = first.track;

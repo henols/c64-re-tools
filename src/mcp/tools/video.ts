@@ -133,6 +133,7 @@ export const c64Screen = defineTool({
     "With out, capture writes the PNG to that project file, and compare writes its difference image there. The result then has no image. " +
     "With baseline, the session also keeps that frame under the name. " +
     "Action compare compares the current frame with a baseline, pixel by pixel. mask lists rectangles to ignore. " +
+    "A mask that covers the whole frame is invalid input. comparedPixels is the number of pixels outside the mask. " +
     "match is true when the part of compared pixels that differ is at most maxMismatchRatio (default 0). bounds holds every different pixel. " +
     "With includeDiff, compare also returns an image with the different pixels in magenta. " +
     "Action list gives the baseline names. Action discard removes a baseline. Baselines stay until the session ends. " +
@@ -154,6 +155,7 @@ export const c64Screen = defineTool({
     baseline: z.string().optional(),
     match: z.boolean().optional(),
     mismatchingPixels: z.number().int().min(0).optional(),
+    comparedPixels: z.number().int().min(1).optional(),
     mismatchRatio: z.number().min(0).max(1).optional(),
     bounds: Rectangle.optional(),
     baselines: z.array(z.string()).optional(),

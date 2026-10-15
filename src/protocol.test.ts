@@ -157,6 +157,10 @@ test("operation results are validated on the client", () => {
   assert.throws(() => validateViceResult("registersGet", { ...registers, a: 256 }), ProtocolError);
   assert.deepEqual(validateViceResult("memoryRead", { address: 1, data: "a900" }), { address: 1, data: "a900" });
   assert.throws(() => validateViceResult("memoryRead", { address: 1, data: "A9" }), ProtocolError);
+  const compared = { match: false, mismatchingPixels: 3, comparedPixels: 100, mismatchRatio: 0.03 };
+  assert.deepEqual(validateViceResult("screenCompare", compared), compared);
+  assert.throws(() => validateViceResult("screenCompare", { ...compared, comparedPixels: 0 }), ProtocolError, "a comparison compares at least one pixel");
+  assert.throws(() => validateViceResult("screenCompare", { ...compared, comparedPixels: 2 }), ProtocolError, "more mismatches than compared pixels");
   assert.throws(() => validateViceResult("memoryRead", { address: 1, data: "a9f" }), ProtocolError);
   // A point carries its condition; a reset that stops gives its pc.
   const point = { id: 1, address: 0x2100, space: "c64", enabled: true, condition: { kind: "register", register: "a", operator: "eq", value: 66 } };
@@ -387,6 +391,9 @@ test("c1541.inspect parameters and results are validated", () => {
   const entry = { action: "entry", found: true, entry: { name: "A", type: "prg", blocks: 1, closed: true, locked: false, startTrack: 17, startSector: 0 } };
   assert.deepEqual(validateToolResult("c1541.inspect", entry, []), entry);
   assert.deepEqual(validateToolResult("c1541.inspect", { action: "chain", found: true, sectors: [{ track: 17, sector: 0 }] }, []).action, "chain");
+  const bam = { action: "bam", tracks: [{ track: 1, freeSectors: [1], usedSectors: [0] }], unreferenced: [{ track: 1, sector: 0 }] };
+  assert.deepEqual(validateToolResult("c1541.inspect", bam, []), bam);
+  assert.throws(() => validateToolResult("c1541.inspect", { action: "bam", tracks: bam.tracks }, []), ProtocolError, "unreferenced is necessary");
 });
 
 test("c1541.inspect and petcat.decode refuse an empty attachment in the same words", () => {

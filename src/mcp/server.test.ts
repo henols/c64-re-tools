@@ -249,7 +249,7 @@ class FakeSession implements ViceSessionApi {
   compares: unknown[] = [];
   async screenCompare(params: ViceOperations["screenCompare"]["params"]) {
     this.compares.push(params);
-    const result = { match: false, mismatchingPixels: 42, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 } };
+    const result = { match: false, mismatchingPixels: 42, comparedPixels: 103168, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 } };
     return params.includeDiff ? { ...result, diffPng: Buffer.from("diff").toString("base64") } : result;
   }
   async screenBaselines() {
@@ -796,7 +796,7 @@ test("c64_screen baselines: capture, compare with a diff image, list and discard
   assert.deepEqual(captured.structuredContent, { width: 384, height: 272, baseline: "title-original" });
   assert.deepEqual((await call(client, "c64_screen", { action: "list" })).structuredContent, { baselines: ["title-original"] });
   const compared = await call(client, "c64_screen", { action: "compare", baseline: "title-original", includeDiff: true, mask: [{ x: 250, y: 20, width: 80, height: 16 }] });
-  assert.deepEqual(compared.structuredContent, { match: false, mismatchingPixels: 42, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 } });
+  assert.deepEqual(compared.structuredContent, { match: false, mismatchingPixels: 42, comparedPixels: 103168, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 } });
   assert.deepEqual(compared.content[1], { type: "image", data: Buffer.from("diff").toString("base64"), mimeType: "image/png" });
   assert.deepEqual(session.compares[0], { baseline: "title-original", maxMismatchRatio: 0, mask: [{ x: 250, y: 20, width: 80, height: 16 }], includeDiff: true });
   const plain = await call(client, "c64_screen", { action: "compare", baseline: "title-original" });

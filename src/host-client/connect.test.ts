@@ -74,7 +74,7 @@ test("a host error during the handshake is passed through unchanged", async () =
   });
 });
 
-test("a host that is not running is machine-unavailable for a VICE session and names the remedy", async () => {
+test("a host that is not running is machine-unavailable for every role and names the remedy", async () => {
   await assert.rejects(HostConnection.open({ role: "vice-session", env: await closedPort() }), (error: unknown) => {
     assert.ok(failsWith("machine-unavailable")(error));
     assert.match((error as Error).message, /npx -y --package=@henols\/c64-re-tools@(latest|next) c64-re-tools-host/);
@@ -84,7 +84,7 @@ test("a host that is not running is machine-unavailable for a VICE session and n
   });
   await assert.rejects(
     HostConnection.open({ role: "tool", env: await closedPort() }),
-    (error: unknown) => failsWith("operation-failed")(error) && (error as Error).message.endsWith(STOP_AND_ASK),
+    (error: unknown) => failsWith("machine-unavailable")(error) && (error as Error).message.endsWith(STOP_AND_ASK),
   );
 });
 
@@ -187,11 +187,12 @@ test("a stop signal ends a handshake that waits for the host at once and closes 
   stop.abort();
   await assert.rejects(opening, (error: unknown) => failsWith("machine-unavailable")(error) && /stopped before the host runtime was ready/.test((error as Error).message));
   await hostSocketClosed;
-  await assert.rejects(HostConnection.open({ role: "tool", env, signal: stop.signal }), failsWith("operation-failed"));
+  await assert.rejects(HostConnection.open({ role: "tool", env, signal: stop.signal }), failsWith("machine-unavailable"));
 });
 
 test("a host that hangs up fails the handshake without hanging", async () => {
   await assert.rejects(HostConnection.open({ role: "vice-session", env: await fakeHost("hangup") }), failsWith("machine-unavailable"));
+  await assert.rejects(HostConnection.open({ role: "tool", env: await fakeHost("hangup") }), failsWith("machine-unavailable"));
 });
 
 test("a host that stays silent fails the handshake when the ready time ends, and not before", async (t) => {

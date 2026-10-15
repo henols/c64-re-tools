@@ -16,7 +16,8 @@ import { ContainerError, parseCrt, parseT64, tapeFile } from "./containers.ts";
 const USAGE = `disk.ts <action> <image> [name] [--out <file>]
 
   directory <image>                 disk name, id, free blocks and the files
-  bam <image>                       free and used sectors of each track
+  bam <image>                       free and used sectors of each track, and the
+                                    used sectors that no file holds
   entry <image> <name>              the directory entry of one file
   chain <image> <name>              the track and sector of each block of one file
   read <image> <name> --out <file>  write the bytes of one file into the project

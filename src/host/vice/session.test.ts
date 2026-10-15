@@ -27,7 +27,8 @@ async function startSession(options: SessionOptions = {}) {
   return { fake, session, process };
 }
 
-const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
+const failsWith = (code: string, message?: RegExp) => (error: unknown) =>
+  error instanceof WireFailure && error.code === code && (message === undefined || message.test(error.message));
 
 async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -983,7 +984,7 @@ test("screen baselines: capture under a name, compare with mask and ratio, list,
   assert.deepEqual(await session.handle("screenBaselines", {}), { baselines: ["title"] });
 
   const same = await session.handle("screenCompare", { baseline: "title", maxMismatchRatio: 0, mask: [], includeDiff: false });
-  assert.deepEqual(same, { match: true, mismatchingPixels: 0, mismatchRatio: 0 });
+  assert.deepEqual(same, { match: true, mismatchingPixels: 0, comparedPixels: 384 * 272, mismatchRatio: 0 });
 
   // A new border colour changes every border pixel: 384x272 minus the 320x200 window.
   fake.ram[0xd020] = 5;
@@ -995,9 +996,24 @@ test("screen baselines: capture under a name, compare with mask and ratio, list,
   assert.ok(changed.diffPng !== undefined && readPng(Buffer.from(changed.diffPng, "base64")).width === 384);
   const tolerated = await session.handle("screenCompare", { baseline: "title", maxMismatchRatio: 0.5, mask: [], includeDiff: false });
   assert.equal(tolerated.match, true, "the border is under half the frame");
-  // Masking the whole frame leaves nothing to compare.
-  const masked = await session.handle("screenCompare", { baseline: "title", maxMismatchRatio: 0, mask: [{ x: 0, y: 0, width: 384, height: 272 }], includeDiff: false });
-  assert.deepEqual(masked, { match: true, mismatchingPixels: 0, mismatchRatio: 0 });
+  // A mask over the border leaves the 320x200 window, which is the same.
+  const window = await session.handle("screenCompare", {
+    baseline: "title",
+    maxMismatchRatio: 0,
+    mask: [
+      { x: 0, y: 0, width: 384, height: 36 },
+      { x: 0, y: 236, width: 384, height: 36 },
+      { x: 0, y: 36, width: 32, height: 200 },
+      { x: 352, y: 36, width: 32, height: 200 },
+    ],
+    includeDiff: false,
+  });
+  assert.deepEqual(window, { match: true, mismatchingPixels: 0, comparedPixels: 320 * 200, mismatchRatio: 0 });
+  // Masking the whole frame leaves nothing to compare: that is no match, it is invalid input.
+  await assert.rejects(
+    session.handle("screenCompare", { baseline: "title", maxMismatchRatio: 0, mask: [{ x: 0, y: 0, width: 384, height: 272 }], includeDiff: false }),
+    failsWith("invalid-input", /mask covers the whole screen/),
+  );
 
   assert.deepEqual(await session.handle("screenDiscard", { baseline: "title" }), { discarded: true });
   await assert.rejects(session.handle("screenDiscard", { baseline: "title" }), failsWith("not-found"));

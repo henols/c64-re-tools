@@ -91,7 +91,7 @@ The exit status is 0 for a result. The exit status is 1 for an error. The exit s
 - Do not call a byte original only because one release has it. A majority of releases is also not proof.
 - `common` is empty: the releases do not cover the same addresses. Use `--shift`, or compare a range that all releases cover.
 - `run.releases` shows `started: false`: a PRG without a BASIC start, or an image without `entry_state.json`. The reason tells which. The other releases still give evidence.
-- `installation-incomplete`, or a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own emulator script.
+- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own emulator script.
 - `moreDifferences: true`: the script shows only the first differences. Use `--from` and `--to` to see the others.
 - `not-found`: the project has no file at that path.
 - `invalid-input`: a file, an address or a shift is wrong. A path that goes out of the project directory is also wrong, also through a link. Read the message.

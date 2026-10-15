@@ -29,7 +29,7 @@ node <skill>/scripts/disk.ts <action> <image> [name] [--out <file>]
 | Need | Command |
 |---|---|
 | The disk name, the free blocks and the files | `directory original/game.d64` |
-| The free and used sectors of each track | `bam original/game.d64` |
+| The free and used sectors of each track, and the used sectors that no file uses | `bam original/game.d64` |
 | The type, size and first block of one file | `entry original/game.d64 GAME` |
 | The track and sector of each block of one file | `chain original/game.d64 GAME` |
 | Extract one file | `read original/game.d64 GAME --out extracted/game.prg` |
@@ -47,7 +47,7 @@ File names show the characters that the C64 shows in a directory list. A byte th
 1. Run `directory`. Find the file in `entries`. Each entry has a `name`, a `type`, a size in `blocks` and the `closed` and `locked` flags.
 2. Run `read` with an output path to extract the file. A PRG file keeps its 2-byte load address at the start.
 3. Run `entry` or `chain` only when the disk structure is important, for example for a loader that reads sectors directly.
-4. Run `bam` only to find used sectors that no file uses.
+4. Run `bam` only to find used sectors that no file uses. `unreferenced` lists them. The list does not include the header, the directory and the BAM blocks. These sectors can hold data that a loader reads directly.
 
 ## Knowledge
 
@@ -79,7 +79,7 @@ The exit status is 0 for a result with the file. The exit status is 1 for `found
 
 - `found: false`: the image has no file with that name. This is a normal result. Read the directory again and compare the names.
 - `media-error`: the image has a defect or is not a disk image. The message tells the problem, for example a sector chain that loops. Tell the user. Do not change the image.
-- `installation-incomplete`, or a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
+- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 - `invalid-input`: an argument or a path is wrong. Read the message and correct the call.
 
 A file that is not `closed` was not written fully. Its data can be incomplete.

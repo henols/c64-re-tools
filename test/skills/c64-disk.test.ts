@@ -27,7 +27,7 @@ try {
 const script = resolve(import.meta.dirname, "../../skills/c64-disk/scripts/disk.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-disk-"));
 mkdirSync(join(project, "original"));
-writeFileSync(join(project, "original", "game.d64"), buildD64([{ name: "LOOP", bytes: borderLoopPrg }], "GAME DISK"));
+writeFileSync(join(project, "original", "game.d64"), buildD64([{ name: "LOOP", bytes: borderLoopPrg }], "GAME DISK", [{ track: 20, sector: 5 }, { track: 1, sector: 0 }]));
 let server: HostServer | undefined;
 after(async () => {
   await server?.close();
@@ -83,6 +83,18 @@ test("entry and chain give the file's blocks", { skip }, async () => {
   assert.deepEqual(entry.json, { found: true, entry: { name: "LOOP", type: "prg", blocks: 1, closed: true, locked: false, startTrack: 17, startSector: 0 } });
   const chain = await disk("chain", "original/game.d64", "LOOP");
   assert.deepEqual(chain.json, { found: true, sectors: [{ track: 17, sector: 0 }] });
+});
+
+test("bam gives each track and the used sectors that no file holds", { skip }, async () => {
+  const { status, json } = await disk("bam", "original/game.d64");
+  assert.equal(status, 0, JSON.stringify(json));
+  const tracks = json.tracks as Array<{ track: number; usedSectors: number[] }>;
+  assert.equal(tracks.length, 35);
+  assert.deepEqual(tracks[16]!.usedSectors, [0], "the file LOOP");
+  assert.deepEqual(json.unreferenced, [
+    { track: 1, sector: 0 },
+    { track: 20, sector: 5 },
+  ]);
 });
 
 test("bad calls are refused before anything is sent", { skip }, async () => {

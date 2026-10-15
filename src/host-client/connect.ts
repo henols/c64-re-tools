@@ -4,7 +4,7 @@ import { connect as connectTcp, type Socket } from "node:net";
 
 import { encodeFrame, MessageReader } from "../protocol/framing.ts";
 import { elapsedMs, trace } from "../trace.ts";
-import { DEFAULT_HOST_PORT, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseHostMessage, ProtocolError, WireFailure, withStopAndAsk, type ErrorCode, type Hello, type HostMessage, type Ping, type Request, type Role, type VideoStandard } from "../protocol/messages.ts";
+import { DEFAULT_HOST_PORT, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseHostMessage, ProtocolError, WireFailure, withStopAndAsk, type Hello, type HostMessage, type Ping, type Request, type Role, type VideoStandard } from "../protocol/messages.ts";
 import { PACKAGE } from "../package.ts";
 
 export interface Endpoint {
@@ -37,19 +37,19 @@ export function hostEndpoints(env: NodeJS.ProcessEnv = process.env): Endpoint[] 
   return ["127.0.0.1", "host.docker.internal", "host.containers.internal"].map((host) => ({ host, port: DEFAULT_HOST_PORT }));
 }
 
-function unreachable(role: Role): WireFailure {
-  const code: ErrorCode = role === "vice-session" ? "machine-unavailable" : "operation-failed";
+/** A host that does not run or cannot be reached is machine-unavailable for every role (D37). */
+function unreachable(): WireFailure {
   return new WireFailure(
-    code,
+    "machine-unavailable",
     withStopAndAsk(
       `The c64-re-tools host runtime is not running or cannot be reached. Start it on the host (npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host) and try again.`,
     ),
   );
 }
 
-function stopped(role: Role): WireFailure {
+function stopped(): WireFailure {
   return new WireFailure(
-    role === "vice-session" ? "machine-unavailable" : "operation-failed",
+    "machine-unavailable",
     "The connection to the c64-re-tools host runtime stopped before the host runtime was ready.",
   );
 }
@@ -146,9 +146,9 @@ export class HostConnection {
     }
     if (signal?.aborted) {
       socket?.destroy();
-      throw stopped(options.role);
+      throw stopped();
     }
-    if (socket === undefined) throw unreachable(options.role);
+    if (socket === undefined) throw unreachable();
 
     const connection = new HostConnection(socket);
     const hello: Hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: options.role };
@@ -172,7 +172,7 @@ export class HostConnection {
     signal?.removeEventListener("abort", stop);
     if (signal?.aborted) {
       await connection.close();
-      throw stopped(options.role);
+      throw stopped();
     }
 
     if (!(answer instanceof Error) && answer.type === "ready") {
@@ -190,7 +190,7 @@ export class HostConnection {
         );
       }
       throw new WireFailure(
-        options.role === "vice-session" ? "machine-unavailable" : "operation-failed",
+        "machine-unavailable",
         "The c64-re-tools host runtime did not finish the handshake. Check that it is running and try again.",
       );
     }

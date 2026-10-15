@@ -37,11 +37,23 @@ const LAYOUTS: Record<string, Layout> = {
   "1581": { header: { track: 40, sector: 0 }, name: 0x04, id: 0x16, dos: 0x19 },
 };
 
+/** Used sectors of the format outside the header and directory chain: the 1571 BAM track 53, the two 1581 BAM blocks. */
+const RESERVED: Record<string, DiskSector[]> = {
+  "1541": [],
+  "1571": Array.from({ length: 19 }, (_, sector) => ({ track: 53, sector })),
+  "1581": [
+    { track: 40, sector: 1 },
+    { track: 40, sector: 2 },
+  ],
+};
+
 export interface DiskEntry extends DiskFile {
   /** The name's PETSCII bytes, up to the first shifted space ($a0). */
   nameBytes: Uint8Array;
   startTrack: number;
   startSector: number;
+  /** REL only: the first side sector. */
+  sideStart?: DiskSector;
 }
 
 const damaged = (message: string) => new WireFailure("media-error", `The disk image is damaged: ${message}`);
@@ -115,7 +127,7 @@ export function parseDirectory(blocks: Buffer[], layout: Layout): { diskName: st
       // Type 0 is an empty or scratched slot; the DOS lists no file there.
       if (typeByte === 0) continue;
       const nameBytes = nameField(block, offset + 5, 16);
-      entries.push({
+      const entry: DiskEntry = {
         name: petsciiNameToText(nameBytes),
         nameBytes,
         type: fileType(typeByte),
@@ -124,7 +136,10 @@ export function parseDirectory(blocks: Buffer[], layout: Layout): { diskName: st
         locked: (typeByte & 0x40) !== 0,
         startTrack: block.readUInt8(offset + 3),
         startSector: block.readUInt8(offset + 4),
-      });
+      };
+      const side = { track: block.readUInt8(offset + 0x15), sector: block.readUInt8(offset + 0x16) };
+      if (entry.type === "rel" && side.track !== 0) entry.sideStart = side;
+      entries.push(entry);
     }
   }
   return {
@@ -149,6 +164,13 @@ export function fileData(blocks: Buffer[], chain: DiskSector[]): Buffer {
     }
   });
   return Buffer.concat(parts);
+}
+
+/** The used sectors of the BAM that are not in `referenced`, in track and sector order. */
+export function unreferencedSectors(tracks: ReadonlyArray<{ track: number; usedSectors: number[] }>, referenced: Iterable<DiskSector>): DiskSector[] {
+  const known = new Set<string>();
+  for (const at of referenced) known.add(`${at.track}/${at.sector}`);
+  return tracks.flatMap(({ track, usedSectors }) => usedSectors.filter((sector) => !known.has(`${track}/${sector}`)).map((sector) => ({ track, sector })));
 }
 
 const toFile = (entry: DiskEntry): DiskFile => ({ name: entry.name, type: entry.type, blocks: entry.blocks, closed: entry.closed, locked: entry.locked });
@@ -226,11 +248,18 @@ export async function inspect(params: C1541Params, image: Buffer, context: ToolC
     const layout = LAYOUTS[info.format];
     if (layout === undefined) throw new WireFailure("media-error", `The disk image has the drive format ${info.format}; only 1541, 1571 and 1581 disks are supported.`);
 
-    if (params.action === "bam") {
-      return { result: { action: "bam", tracks: parseBam(await c1541.run(["-bam"]), info.tracks) } };
-    }
     const headerChain = await c1541.chain(layout.header);
     const directory = parseDirectory(await c1541.blocks(headerChain), layout);
+    if (params.action === "bam") {
+      const tracks = parseBam(await c1541.run(["-bam"]), info.tracks);
+      // Every sector that the header, the directory or a file holds; a file without blocks has no chain.
+      const referenced = [...headerChain, ...(RESERVED[info.format] ?? [])];
+      for (const entry of directory.entries) {
+        if (entry.startTrack !== 0) referenced.push(...(await c1541.chain({ track: entry.startTrack, sector: entry.startSector })));
+        if (entry.sideStart !== undefined) referenced.push(...(await c1541.chain(entry.sideStart)));
+      }
+      return { result: { action: "bam", tracks, unreferenced: unreferencedSectors(tracks, referenced) } };
+    }
     if (params.action === "directory") {
       const { diskName, diskId, dosType, entries } = directory;
       return { result: { action: "directory", diskName, diskId, dosType, freeBlocks: parseFreeBlocks(overview), entries: entries.map(toFile) } };

@@ -109,7 +109,7 @@ The exit status is 0 when the source is identical and the emulator check of the 
 - `invalid-input` that names a symbol or a module: change that symbol or module in the knowledge.
 - `loader.verified: false` with a `reason`: the script did not make the loader. The script still writes and checks the source. When no copy order or no free pages exist, or the loader needs too many copies, the reason gives the ranges. Capture the image again with fewer segments, or write the loader by hand.
 - `loader.verified: false` with `differences`: the loader ran, and `differences` gives the bytes and registers that are not equal.
-- `installation-incomplete`, or a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disassembler or emulator script.
+- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disassembler or emulator script.
 
 ## Handoffs
 

@@ -74,7 +74,7 @@ test("only differences outside the explicit tolerance count", () => {
   const observation = (x: number, a: number, screen?: { match: boolean }) => ({
     memory: [{ label: "player_x", address: 0xc100, bytes: [x], tolerance: 1, excluded: [] }],
     registers: { a },
-    ...(screen === undefined ? {} : { screen: { ...screen, mismatchingPixels: screen.match ? 0 : 12, mismatchRatio: screen.match ? 0 : 0.001 } }),
+    ...(screen === undefined ? {} : { screen: { ...screen, mismatchingPixels: screen.match ? 0 : 12, comparedPixels: 12000, mismatchRatio: screen.match ? 0 : 0.001 } }),
   });
   assert.deepEqual(compare(new Map([["moved", observation(100, 1)]]), new Map([["moved", observation(101, 1, { match: true })]])), []);
   const differences = compare(new Map([["moved", observation(100, 1)]]), new Map([["moved", observation(102, 2, { match: false })]]));
@@ -186,7 +186,7 @@ test("each side starts from a hard reset, each checkpoint has its own baseline, 
     },
     screenCompare: async (params: { baseline: string }) => {
       assert.ok(baselines.has(params.baseline), `no baseline ${params.baseline}`);
-      return { match: true, mismatchingPixels: 0, mismatchRatio: 0 };
+      return { match: true, mismatchingPixels: 0, comparedPixels: 104448, mismatchRatio: 0 };
     },
     screenDiscard: async (name: string) => (baselines.delete(name), {}),
   };

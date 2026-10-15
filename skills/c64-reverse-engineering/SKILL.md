@@ -133,7 +133,7 @@ A clear answer for the scope, with the durable conclusions in the project knowle
 
 ## Failure and conflicts
 
-- A skill reports `installation-incomplete`, or a message that the host runtime does not run: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
+- A skill reports `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 - If the evidence does not support a conclusion, keep the unknown and get more evidence. Do not make up a meaning.
 - Before you replace current knowledge from the user or the LLM, read its history and the evidence for it.
 - A conflict from the static analysis: find the correct answer at run time with the c64-emulator skill.

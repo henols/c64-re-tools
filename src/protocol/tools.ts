@@ -41,7 +41,8 @@ export interface DiskSector {
 
 export type C1541Result =
   | { action: "directory"; diskName: string; diskId: string; dosType: string; freeBlocks: number; entries: DiskFile[] }
-  | { action: "bam"; tracks: Array<{ track: number; freeSectors: number[]; usedSectors: number[] }> }
+  /** unreferenced: the used sectors that no file, the header, the directory or the BAM holds. */
+  | { action: "bam"; tracks: Array<{ track: number; freeSectors: number[]; usedSectors: number[] }>; unreferenced: DiskSector[] }
   | { action: "entry"; found: false }
   | { action: "entry"; found: true; entry: DiskFile & { startTrack: number; startSector: number } }
   | { action: "chain"; found: false }
@@ -214,7 +215,9 @@ function isC1541Result(value: Fields, attachments: readonly Uint8Array[]): boole
     case "bam":
       return (
         Array.isArray(value.tracks) &&
-        value.tracks.every((track) => isObject(track) && isInteger(track.track, 1, 255) && isSectorList(track.freeSectors) && isSectorList(track.usedSectors))
+        value.tracks.every((track) => isObject(track) && isInteger(track.track, 1, 255) && isSectorList(track.freeSectors) && isSectorList(track.usedSectors)) &&
+        Array.isArray(value.unreferenced) &&
+        value.unreferenced.every(isTrackSector)
       );
     case "entry":
       return (

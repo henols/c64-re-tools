@@ -127,7 +127,7 @@ The exit status is 0 for a result. The exit status is 1 for `traced: false`, for
 - Do not name a packer from weak evidence. The script never names one.
 - Some programs unpack in more than one stage. Run `stages` to find each stage. Capture at the entry of the last stage. Make sure that it is the application and not a second unpacker.
 - `not-found` or `invalid-input`: a path or an argument is wrong. Read the message.
-- `installation-incomplete`, or a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
+- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 
 ## Handoffs
 

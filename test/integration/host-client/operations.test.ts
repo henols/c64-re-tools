@@ -93,7 +93,7 @@ const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Pro
   screenCompare: {
     call: (c) => c.screenCompare({ baseline: "title", maxMismatchRatio: 0, mask: [{ x: 1, y: 2, width: 3, height: 4 }], includeDiff: true }),
     params: { baseline: "title", maxMismatchRatio: 0, mask: [{ x: 1, y: 2, width: 3, height: 4 }], includeDiff: true },
-    result: { match: false, mismatchingPixels: 42, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 }, diffPng: PNG },
+    result: { match: false, mismatchingPixels: 42, comparedPixels: 104436, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 }, diffPng: PNG },
   },
   screenBaselines: { call: (c) => c.screenBaselines(), params: {}, result: { baselines: ["title"] } },
   screenDiscard: { call: (c) => c.screenDiscard("title"), params: { baseline: "title" }, result: { discarded: true } },

@@ -283,7 +283,7 @@ export function resolve(location: Location, symbols: Map<string, number>, side: 
 interface Observation {
   memory: Array<{ label: string; address: number; bytes: number[]; tolerance: number; excluded: Array<{ offset: number; at: Location; reason: string }> }>;
   registers: Partial<Record<ObservedRegister, unknown>>;
-  screen?: { match: boolean; mismatchingPixels: number; mismatchRatio: number; bounds?: unknown };
+  screen?: { match: boolean; mismatchingPixels: number; comparedPixels: number; mismatchRatio: number; bounds?: unknown };
   vicii?: unknown;
   sprites?: unknown;
   /** PNG images for the files of a FAIL (D46): the side's screen, and on the rebuild the difference image. */
@@ -371,7 +371,7 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
           if (files) observation.png = shot.png;
         } else {
           const compared = await client.screenCompare({ baseline, maxMismatchRatio: step.screen.maxMismatchRatio ?? 0, mask: step.screen.mask ?? [], includeDiff: files });
-          observation.screen = { match: compared.match, mismatchingPixels: compared.mismatchingPixels, mismatchRatio: compared.mismatchRatio, ...(compared.bounds === undefined ? {} : { bounds: compared.bounds }) };
+          observation.screen = { match: compared.match, mismatchingPixels: compared.mismatchingPixels, comparedPixels: compared.comparedPixels, mismatchRatio: compared.mismatchRatio, ...(compared.bounds === undefined ? {} : { bounds: compared.bounds }) };
           if (files) {
             observation.png = (await client.screenCapture()).png;
             if (compared.diffPng !== undefined) observation.diffPng = compared.diffPng;

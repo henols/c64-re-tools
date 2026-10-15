@@ -259,6 +259,8 @@ export interface Rectangle {
 export interface ScreenComparison {
   match: boolean;
   mismatchingPixels: number;
+  /** Pixels compared: the frame minus the masked ones; always at least 1. */
+  comparedPixels: number;
   mismatchRatio: number;
   /** Absent when no pixel differs. */
   bounds?: Rectangle;
@@ -1087,6 +1089,8 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       const ok =
         typeof value.match === "boolean" &&
         isInteger(value.mismatchingPixels, 0, 1 << 20) &&
+        isInteger(value.comparedPixels, 1, 1 << 20) &&
+        (value.mismatchingPixels as number) <= (value.comparedPixels as number) &&
         typeof value.mismatchRatio === "number" &&
         value.mismatchRatio >= 0 &&
         value.mismatchRatio <= 1 &&

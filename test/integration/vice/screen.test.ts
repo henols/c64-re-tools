@@ -67,7 +67,7 @@ test("a baseline matches the same screen and finds a border change", { skip: liv
   const baseline = readPng(Buffer.from((await session.handle("screenCapture", { baseline: "ready" })).png, "base64"));
   await session.handle("execution", { action: "advance-frames", count: 1, space: "c64" });
   const same = await session.handle("screenCompare", { baseline: "ready", maxMismatchRatio: 0, mask: [{ x: 32, y: 36, width: 320, height: 200 }], includeDiff: false });
-  assert.deepEqual(same, { match: true, mismatchingPixels: 0, mismatchRatio: 0 }, "the border alone is stable (the cursor blinks inside)");
+  assert.deepEqual(same, { match: true, mismatchingPixels: 0, comparedPixels: 384 * 272 - 320 * 200, mismatchRatio: 0 }, "the border alone is stable (the cursor blinks inside)");
 
   await session.handle("memoryWrite", { address: 0xd020, data: "02", space: "c64", view: "cpu" });
   await session.handle("execution", { action: "advance-frames", count: 2, space: "c64" });
