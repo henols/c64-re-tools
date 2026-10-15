@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
-import { compareReleases, shiftSuggestion, suggestShift } from "../../skills/c64-provenance/scripts/compare.ts";
+import { compareReleases, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/compare.ts";
 import { separate } from "../../skills/c64-provenance/scripts/separate.ts";
 import { seededBytes } from "../kit.ts";
 
@@ -44,7 +44,21 @@ test("differences show the bytes of each release and which releases agree", () =
 });
 
 test("a release at another address gets a suggested shift", () => {
-  assert.deepEqual(suggestShift(at("release", 0x0801, base), at("moved", 0x0901, base)), { shift: -256, matches: 2041 });
+  assert.deepEqual(suggestShifts(at("release", 0x0801, base), at("moved", 0x0901, base)), [{ shift: -256, matches: 2041 }]);
+});
+
+test("data that stayed and code that moved both get a shift, and the present alignment is marked current (b2/04)", () => {
+  const data = seededBytes(0x1234, 256);
+  const code = seededBytes(0x6510, 2048);
+  const prg = (bytes: Uint8Array[]) => Buffer.concat([Buffer.from([0x00, 0x20]), ...bytes]);
+  writeFileSync(join(project, "stay.prg"), prg([data, code]));
+  writeFileSync(join(project, "grow.prg"), prg([data, new Uint8Array(256), code]));
+  const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "stay.prg", "grow.prg"], { cwd: project, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const result = JSON.parse(run.stdout) as { identicalShare: number; suggestedShifts: Array<{ release: number; shift: number; current?: true }> };
+  assert.ok(result.identicalShare < 0.5);
+  assert.deepEqual(result.suggestedShifts.map((item) => [item.release, item.shift, item.current ?? false]), [[2, -256, false], [2, 0, true]]);
 });
 
 test("a shift that moves a segment out of $0000-$ffff is not suggested: the opposite shift of release 1 is, or the reason (F-25)", () => {
@@ -192,6 +206,7 @@ test("the separate command reads an image with its stages and writes all ranges 
   assert.equal(result.outside.generated.count, 3);
   assert.deepEqual(result.outside.generated.listed, [{ start: "$c000", end: "$c000" }], "--max-listed caps the outside lists too (F-28)");
   assert.deepEqual(result.outside.read, { count: 0, listed: [] });
+  assert.deepEqual(result.codeRegions, { total: 0, unreachable: { count: 0, listed: [] } }, "unreachable is a list like the others (b2/08)");
   const written = JSON.parse(readFileSync(join(project, "one", "separate.json"), "utf8")) as { ranges: unknown[]; outside: { generated: unknown[] } };
   assert.equal(written.ranges.length, 2);
   assert.equal(written.outside.generated.length, 3);

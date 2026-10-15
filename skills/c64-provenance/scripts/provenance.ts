@@ -18,7 +18,7 @@ import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
 import { listReferences, listRegions } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES } from "#src/knowledge/schema.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { compareReleases, shiftSuggestion, suggestShift, type Range, type Release } from "./compare.ts";
+import { compareReleases, shiftSuggestion, suggestShifts, type Range, type Release } from "./compare.ts";
 import { watchRelease, type ImageState, type Start } from "./runtime.ts";
 import { separate } from "./separate.ts";
 
@@ -204,12 +204,17 @@ async function run(argv: string[]): Promise<unknown> {
   const compared = comparison.identicalBytes + comparison.differingBytes;
   const identicalShare = compared === 0 ? 0 : comparison.identicalBytes / compared;
   // A poor match at the load addresses can mean that the releases are placed differently.
+  // Each release gets its best shifts: data that stayed can outvote code that moved, so one is not enough (b2/04).
+  const applied = loaded.map((item) => item.shift);
   const suggestions =
     identicalShare < 0.5
-      ? releases.slice(1).flatMap((release, index) => {
-          const best = suggestShift(releases[0]!, release);
-          return best === undefined || best.shift === 0 ? [] : [shiftSuggestion(releases, loaded.map((item) => item.shift), index + 1, best)];
-        })
+      ? releases.slice(1).flatMap((release, index) =>
+          suggestShifts(releases[0]!, release).map((found) => {
+            const suggestion = shiftSuggestion(releases, applied, index + 1, found);
+            // The shift that the run already has: its votes tell how good the present alignment is.
+            return "shift" in suggestion && suggestion.shift === applied[suggestion.release - 1] ? { ...suggestion, current: true } : suggestion;
+          }),
+        )
       : [];
   const suggested = suggestions.filter((suggestion) => "shift" in suggestion);
   const notSuggested = suggestions.filter((suggestion) => "reason" in suggestion);
@@ -316,9 +321,10 @@ function separateCommand(path: string, coveragePaths: string[], out: string | un
         }),
     ...(coverage === undefined ? {} : { bytesByAccess: Object.fromEntries((["executed", "read", "written", "read-written", "untouched"] as const).map((access) => [access, bytes((range) => range.access === access)])) }),
     ranges: listed(ranges),
+    // total counts every code region; unreachable is a list like the others (b2/08).
     codeRegions: {
-      count: codeRegions.length,
-      ...(loaded.entry === undefined ? {} : { unreachable: codeRegions.filter((region) => region.reachable === false) }),
+      total: codeRegions.length,
+      ...(loaded.entry === undefined ? {} : { unreachable: listed(codeRegions.filter((region) => region.reachable === false)) }),
     },
     ...(coverage === undefined ? {} : { outside: { read: listed(outside.read), executed: listed(outside.executed), generated: listed(outside.generated) } }),
     ...(out === undefined ? {} : { out }),

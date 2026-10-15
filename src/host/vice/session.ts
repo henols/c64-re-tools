@@ -381,12 +381,21 @@ export class ViceSession implements ViceSessionHandle {
           this.#cartridge = false;
           this.#replaceStaged("cartridge", undefined);
         }
+        // Port 1 shares the keyboard lines: a held direction types keys into the RUN that the autostart types (R3-05).
+        const centred: Array<1 | 2> = [];
+        for (const [port, joystick] of this.#joysticks) {
+          if (joystick.direction === "center" && !joystick.fire) continue;
+          const centre: JoystickState = { port, direction: "center", fire: false };
+          await this.#observe(() => this.#machine.setJoystick(centre));
+          this.#joysticks.set(port, centre);
+          centred.push(port);
+        }
         await this.#runningCommand(() => this.#machine.autostart(file, index, run));
         if (type === "crt") this.#cartridge = true;
         this.#replaceStaged(stagedKind(type), file);
         // A reset sets the CPU clock back, so the stopwatch starts again.
         this.#timingStart = 0n;
-        return { state: "running", ...(type === "tap" && this.#inputFlaw !== undefined ? { emulatorFlaw: this.#inputFlaw } : {}) };
+        return { state: "running", ...(type === "tap" && this.#inputFlaw !== undefined ? { emulatorFlaw: this.#inputFlaw } : {}), ...(centred.length === 0 ? {} : { joysticksCentred: centred }) };
       }
       case "diskAttach": {
         const { type } = params as ViceOperations["diskAttach"]["params"];

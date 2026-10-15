@@ -163,13 +163,18 @@ const MIN_BASIC_LOAD = 0x0400;
  * zero, the "marker" is the first machine code after the BASIC text (SYS
  * lines that jump right behind themselves). The stored links are not read:
  * BASIC relinks a loaded program, and a crack can store odd links to hide
- * lines from LIST. A load address below $0400 is a memory dump (F-12).
+ * lines from LIST. A load address below $0400 is a memory dump (F-12), and so
+ * is a file whose bytes run past $ffff: a 64 KiB dump from $0000 always does
+ * (b2/01, R3-02).
  */
 export function parseTokenized(program: Uint8Array): TokenizedProgram {
   if (program.length < 4) return { reason: "The file is too short for a BASIC program." };
   const loadAddress = program[0]! | (program[1]! << 8);
   if (loadAddress < MIN_BASIC_LOAD) {
     return { reason: `The load address ${formatC64Address(loadAddress)} is below $0400, in the zero page, the stack or the system pages. The file is a memory dump or machine code, not a BASIC program.` };
+  }
+  if (loadAddress + program.length - 2 > 0x10000) {
+    return { reason: `The file holds ${program.length - 2} bytes from ${formatC64Address(loadAddress)}, which runs past $ffff. The file is a memory dump, not a BASIC program.` };
   }
   const lines: TokenizedLine[] = [];
   let at = 2;

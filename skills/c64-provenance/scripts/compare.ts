@@ -93,11 +93,15 @@ function addressesOf(release: Release): number[] {
   return release.segments.flatMap((segment) => Array.from({ length: segment.end - segment.start + 1 }, (_, offset) => segment.start + offset));
 }
 
+/** Most shifts that suggestShifts gives: data that did not move can outvote code that did (b2/04). */
+export const MAX_SUGGESTED_SHIFTS = 3;
+
 /**
- * The shift that puts `other` over `base` best: the most common address
- * difference between equal 8-byte sequences. Undefined when nothing matches.
+ * The shifts that put `other` over `base` best: the most common address
+ * differences between equal 8-byte sequences, most votes first. A shift with
+ * less than a tenth of the best one's votes is chance. Empty when nothing matches.
  */
-export function suggestShift(base: Release, other: Release): { shift: number; matches: number } | undefined {
+export function suggestShifts(base: Release, other: Release): Array<{ shift: number; matches: number }> {
   const WINDOW = 8;
   const key = (release: Release, addresses: number[], at: number) =>
     String.fromCharCode(...addresses.slice(at, at + WINDOW).map((address) => release.byteAt(address)));
@@ -117,9 +121,8 @@ export function suggestShift(base: Release, other: Release): { shift: number; ma
       votes.set(shift, (votes.get(shift) ?? 0) + 1);
     }
   }
-  let best: { shift: number; matches: number } | undefined;
-  for (const [shift, matches] of votes) if (best === undefined || matches > best.matches) best = { shift, matches };
-  return best;
+  const ranked = [...votes].map(([shift, matches]) => ({ shift, matches })).sort((a, b) => b.matches - a.matches || Math.abs(a.shift) - Math.abs(b.shift));
+  return ranked.filter((found) => found.matches * 10 >= ranked[0]!.matches).slice(0, MAX_SUGGESTED_SHIFTS);
 }
 
 export type ShiftSuggestion = { release: number; shift: number; matchingSequences: number } | { release: number; matchingSequences: number; reason: string };

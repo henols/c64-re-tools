@@ -54,7 +54,7 @@ The exit status is 0 for a listing. The exit status is 1 for `decoded: false` an
 
 ## Failure and conflicts
 
-- `decoded: false`: the file is not a BASIC program. This is a normal result. Usually the file is machine code. Give it to the c64-static-analysis skill.
+- `decoded: false`: the file is not a BASIC program. This is a normal result. Usually the file is machine code. Give it to the c64-static-analysis skill. A memory dump also gives `decoded: false`: its first two bytes are not a load address, and its bytes go past `$ffff`.
 - An empty `handoffs` list: the BASIC does not start machine code with SYS or USR. Do not make up a handoff. Look for a POKE into a vector or a LOAD of another file in the listing.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 - `not-found` or `invalid-input`: the path or an argument is wrong. Read the message and correct the call.

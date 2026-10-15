@@ -346,8 +346,11 @@ function applyOperation(args: string[], context: WriteContext, space: string): W
   const operations = parsed.map((item, index) => batchOperation(item, `write ${index + 1}`, space));
   return (db) => {
     const applied = applyBatch(db, context, operations);
-    // replaced: writes that replaced a row of another origin, as previous does for one write.
-    return { revision: applied.revision, writes: applied.steps.length, replaced: applied.steps.filter((step) => step.previous !== undefined).length };
+    // replaced: each write that replaced a row of another origin, with that row as previous gives it for one write (b2/07).
+    const replaced = applied.steps.flatMap((step, index) =>
+      step.previous === undefined ? [] : [{ write: index + 1, op: operations[index]!.op, previous: Array.isArray(step.previous) ? step.previous.map(region) : symbol(step.previous) }],
+    );
+    return { revision: applied.revision, writes: applied.steps.length, replaced };
   };
 }
 

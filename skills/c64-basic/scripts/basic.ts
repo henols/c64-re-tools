@@ -22,7 +22,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   const result = await decodeBasic({ program });
   if (!result.decoded) return { output: { decoded: false, reason: result.reason }, failed: true };
   const size = statSync(resolveProjectPath(program)).size - 2;
-  const end = Math.min(0xffff, result.loadAddress + size - 1);
+  const end = result.loadAddress + size - 1;
   return {
     output: {
       decoded: true,

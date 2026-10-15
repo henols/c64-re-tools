@@ -158,6 +158,8 @@ test("each step is checked before the scenario runs", () => {
     observeMemorySize: { observe: "x", memory: [{ at: "$0400", size: 0 }] },
     observeTolerance: { observe: "x", memory: [{ at: "$0400", tolerance: -1 }] },
     observeMask: { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 0, height: 8 }] } },
+    observeFullMask: { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 384, height: 272 }] } },
+    observeHalvesMask: { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 384, height: 136 }, { x: 0, y: 136, width: 400, height: 200 }] } },
     observeRatio: { observe: "x", screen: { maxMismatchRatio: 2 } },
     observeSprite: { observe: "x", sprites: [8] },
     observeVicii: { observe: "x", vicii: "yes" },
@@ -166,6 +168,10 @@ test("each step is checked before the scenario runs", () => {
     assert.throws(() => readScenario(scenarioFile(`${name}.json`, { ...valid, steps: [step, observe] })), ScenarioError, name);
   }
   assert.throws(() => readScenario(scenarioFile("standard.json", { ...valid, videoStandard: "secam" })), ScenarioError);
+  // The NTSC frame is 247 lines high: a mask of 384x247 covers it, and on PAL it leaves 25 lines (b2/03).
+  const ntscMask = { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 384, height: 247 }] } };
+  assert.throws(() => readScenario(scenarioFile("ntsc-mask.json", { ...valid, videoStandard: "ntsc", steps: [ntscMask] })), /covers the whole screen/);
+  assert.doesNotThrow(() => readScenario(scenarioFile("pal-mask.json", { ...valid, steps: [ntscMask] })));
 });
 
 test("each side starts from a hard reset, each checkpoint has its own baseline, and the raster line is not compared", async () => {

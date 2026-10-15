@@ -566,6 +566,17 @@ test("joystick states set active-low lines on the right port and are held", asyn
   await session.close();
 });
 
+test("an autostart centres the held joysticks first and names them (R3-05)", async () => {
+  const { fake, session } = await startSession();
+  const prg = Buffer.from([0x01, 0x08, 0x60]);
+  assert.deepEqual(await session.handle("autostart", { type: "prg", index: 0, run: true }, [prg]), { state: "running" }, "nothing held, nothing named");
+  await session.handle("joystick", { port: 1, direction: "right", fire: false });
+  await session.handle("joystick", { port: 2, direction: "center", fire: true });
+  assert.deepEqual(await session.handle("autostart", { type: "prg", index: 0, run: true }, [prg]), { state: "running", joysticksCentred: [1, 2] });
+  assert.deepEqual(fake.joyport, [0x1f, 0x1f]);
+  await session.close();
+});
+
 test("keyboard and joystick results name the known VICE flaws of the session, and only then (D56)", async () => {
   const { session } = await startSession({ flaws: ["Bits 5-7 read low.", "Another flaw."] });
   assert.deepEqual(await session.handle("joystick", { port: 2, direction: "center", fire: true }), { port: 2, direction: "center", fire: true, emulatorFlaw: "Bits 5-7 read low. Another flaw." });

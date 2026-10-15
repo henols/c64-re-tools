@@ -296,7 +296,7 @@ test("with real Ghidra and ACME, an image whose entry is in no segment gives the
     }),
   );
   const generate = (...args: string[]) =>
-    spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "unpacked/image.json", "--out", "src", "--entry", "$1000", ...args], {
+    spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "unpacked/image.json", "--out", "src", ...(args.includes("--no-seed") ? [] : ["--entry", "$1000"]), ...args.filter((arg) => arg !== "--no-seed")], {
       cwd: project,
       env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
       encoding: "utf8",
@@ -313,6 +313,13 @@ test("with real Ghidra and ACME, an image whose entry is in no segment gives the
   const source = generate();
   assert.equal(source.status, 1, source.stdout + source.stderr);
   assert.match((JSON.parse(source.stdout) as { entryOutside: { reason: string } }).entryOutside.reason, reason);
+  // With no --entry and no knowledge, the image has no seed for Ghidra: still entryOutside, not a usage error (R3-01).
+  const unseeded = generate("--no-seed", "--loader");
+  assert.equal(unseeded.status, 1, unseeded.stdout + unseeded.stderr);
+  const data = JSON.parse(unseeded.stdout) as { instructions: number; entryOutside: { reason: string }; loader: { verified: boolean } };
+  assert.equal(data.instructions, 0);
+  assert.match(data.entryOutside.reason, reason);
+  assert.equal(data.loader.verified, false);
 });
 
 test("with coverage, each run of instructions that no run executed is marked and listed (D49)", () => {

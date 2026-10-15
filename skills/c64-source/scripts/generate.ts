@@ -130,6 +130,8 @@ async function decode(image: Image, knowledge: ReturnType<typeof readKnowledge>,
   }
   const entryPoints = [...seeds].filter(inImage).sort((a, b) => a - b);
   if (entryPoints.length === 0) {
+    // An entry in no segment is a capture fault: the image is data only, and the result says entryOutside (R3-01).
+    if (image.entry !== undefined && !inImage(image.entry)) return new Map();
     throw new UsageError("Ghidra needs an entry point: give --entry, or record a routine or a code region in knowledge with the c64-knowledge skill");
   }
   const dataRanges = knowledge.regions

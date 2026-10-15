@@ -4,6 +4,7 @@
 import { crc32, deflateSync } from "node:zlib";
 
 import type { VideoStandard } from "../../protocol/messages.ts";
+import { FRAME_SIZE } from "../../protocol/vice.ts";
 
 export interface IndexedFrame {
   width: number;
@@ -44,8 +45,8 @@ export function decodeDisplay(body: Buffer): RawDisplay {
  * offsets: PAL 384×272, NTSC 384×247.
  */
 const VISIBLE: Record<VideoStandard, { dx: number; dy: number; width: number; height: number }> = {
-  pal: { dx: -32, dy: -36, width: 384, height: 272 },
-  ntsc: { dx: -32, dy: -23, width: 384, height: 247 },
+  pal: { dx: -32, dy: -36, ...FRAME_SIZE.pal },
+  ntsc: { dx: -32, dy: -23, ...FRAME_SIZE.ntsc },
 };
 
 /** Crops the visible bordered frame out of VICE's full raster buffer. */

@@ -4,7 +4,7 @@
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
-import { MAX_BASELINES, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
+import { MAX_BASELINES, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
 import { ACTION_STEP_KEYS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
@@ -129,7 +129,7 @@ export function readScenario(path: string): Scenario {
     const allowed = [...(STEP_KEYS[kind] ?? [kind]), ...(kind === "observe" ? [] : ["side"])];
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
     if (step.side !== undefined && !(SIDES as unknown[]).includes(step.side)) fail(`${at}: side must be original or rebuild`);
-    checkStep(kind, step, at, fail);
+    checkStep(kind, step, at, fail, scenario.videoStandard ?? "pal");
     if (kind === "observe") {
       if (labels.has(step.observe as string)) fail(`${at} needs a new checkpoint name`);
       labels.add(step.observe as string);
@@ -142,7 +142,7 @@ export function readScenario(path: string): Scenario {
 }
 
 /** Checks the value of one step against its kind. */
-function checkStep(kind: string, step: Record<string, unknown>, at: string, fail: (message: string) => never): void {
+function checkStep(kind: string, step: Record<string, unknown>, at: string, fail: (message: string) => never, videoStandard: "pal" | "ntsc"): void {
   switch (kind) {
     case "reset":
       if (step.reset !== "hard" && step.reset !== "soft") fail(`${at}: reset must be hard or soft`);
@@ -165,11 +165,11 @@ function checkStep(kind: string, step: Record<string, unknown>, at: string, fail
     case "runUntil":
       return checkActionStep(kind, step, at, fail);
     default:
-      checkObserve(step, at, fail);
+      checkObserve(step, at, fail, videoStandard);
   }
 }
 
-function checkObserve(step: Record<string, unknown>, at: string, fail: (message: string) => never): void {
+function checkObserve(step: Record<string, unknown>, at: string, fail: (message: string) => never, videoStandard: "pal" | "ntsc"): void {
   if (typeof step.observe !== "string" || step.observe === "") fail(`${at} needs a new checkpoint name`);
   if (step.memory !== undefined) {
     if (!Array.isArray(step.memory) || step.memory.length === 0) fail(`${at}: memory must be a list of names, $ addresses or objects with at`);
@@ -216,6 +216,8 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
           isInteger(rectangle.height, 1, 4096);
         if (!ok) fail(`${at}: a screen.mask rectangle needs whole numbers x and y from 0, and width and height from 1`);
       }
+      // The emulator refuses such a compare too, but only after the original side ran (b2/03).
+      if (maskCoversFrame(screen.mask as Array<{ x: number; y: number; width: number; height: number }>, videoStandard)) fail(`${at}: screen.mask covers the whole screen, so nothing is compared`);
     }
   }
   if (step.vicii !== undefined && typeof step.vicii !== "boolean") fail(`${at}: vicii must be true or false`);

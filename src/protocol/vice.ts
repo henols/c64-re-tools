@@ -256,6 +256,24 @@ export interface Rectangle {
   height: number;
 }
 
+/** The visible frame with normal borders that a screen capture holds, in pixels. */
+export const FRAME_SIZE: Record<VideoStandard, { width: number; height: number }> = {
+  pal: { width: 384, height: 272 },
+  ntsc: { width: 384, height: 247 },
+};
+
+/** True when the mask rectangles leave no pixel of the frame to compare. */
+export function maskCoversFrame(mask: readonly Rectangle[], standard: VideoStandard): boolean {
+  const { width, height } = FRAME_SIZE[standard];
+  const masked = new Uint8Array(width * height);
+  for (const rectangle of mask) {
+    for (let y = rectangle.y; y < Math.min(height, rectangle.y + rectangle.height); y++) {
+      if (rectangle.x < width) masked.fill(1, y * width + rectangle.x, y * width + Math.min(width, rectangle.x + rectangle.width));
+    }
+  }
+  return !masked.includes(0);
+}
+
 export interface ScreenComparison {
   match: boolean;
   mismatchingPixels: number;
@@ -421,8 +439,11 @@ export interface ViceOperations {
   /** Attachment: the PRG bytes, load address first. */
   programLoad: { params: { address?: number }; result: { state: RunState; loadAddress: number; size: number } };
   /** Attachment: the program or image bytes; `type` is the file's extension. `index` is VICE's file number: 0 loads "*", 1 is the first directory entry. */
-  /** `emulatorFlaw`: for a tape image, a known flaw of the host's VICE version that a tape load meets (D56). */
-  autostart: { params: { type: string; index: number; run: boolean }; result: { state: RunState; emulatorFlaw?: string } };
+  /**
+   * `emulatorFlaw`: for a tape image, a known flaw of the host's VICE version that a tape load meets (D56).
+   * `joysticksCentred`: the control ports that held a direction or fire and were centred first (R3-05).
+   */
+  autostart: { params: { type: string; index: number; run: boolean }; result: { state: RunState; emulatorFlaw?: string; joysticksCentred?: Array<1 | 2> } };
   /** Attachment: the disk image bytes; `type` is the file's extension. */
   diskAttach: { params: { type: string }; result: { attached: boolean } };
   /** pc is the reset vector when run is false: the CPU stops there. */
@@ -1059,6 +1080,9 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       if (!isOneOf(RUN_STATES, value.state)) throw new ProtocolError(`${op} result is malformed`);
       if (op === "reset" && value.pc !== undefined && !isInteger(value.pc, 0, 0xffff)) throw new ProtocolError("reset result is malformed");
       if (op === "autostart" && !(value.emulatorFlaw === undefined || typeof value.emulatorFlaw === "string")) throw new ProtocolError("autostart result is malformed");
+      if (op === "autostart" && !(value.joysticksCentred === undefined || (Array.isArray(value.joysticksCentred) && value.joysticksCentred.every((port) => port === 1 || port === 2)))) {
+        throw new ProtocolError("autostart result is malformed");
+      }
       break;
     }
     case "programLoad": {

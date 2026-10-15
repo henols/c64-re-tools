@@ -155,9 +155,13 @@ test("apply writes a batch from a file or standard input as one revision (D42)",
       { op: "classify", start: "$3000", end: "$303b", type: "bytes", element: 6 },
     ]),
   );
-  assert.deepEqual(knowledge(root, "apply", "batch.json", "--reason", "first names", "--evidence", "note:seen in the attract mode").json, { revision: 1, writes: 2, replaced: 0 });
+  assert.deepEqual(knowledge(root, "apply", "batch.json", "--reason", "first names", "--evidence", "note:seen in the attract mode").json, { revision: 1, writes: 2, replaced: [] });
   const piped = spawnSync(process.execPath, [...process.execArgv, script, "apply", "-"], { cwd: root, encoding: "utf8", input: JSON.stringify([{ op: "comment", address: "$2100", placement: "line", text: "Reads joystick 2." }]) });
-  assert.deepEqual(JSON.parse(piped.stdout), { revision: 2, writes: 1, replaced: 0 });
+  assert.deepEqual(JSON.parse(piped.stdout), { revision: 2, writes: 1, replaced: [] });
+  // A batch lists each row of another origin that it replaced, as previous does for one write (b2/07).
+  knowledge(root, "rename", "$2200", "l2200", "--origin", "user");
+  writeFileSync(join(root, "over.json"), JSON.stringify([{ op: "comment", address: "$2200", placement: "line", text: "x" }, { op: "rename", address: "$2200", name: "draw_cave" }]));
+  assert.deepEqual(knowledge(root, "apply", "over.json").json.replaced, [{ write: 2, op: "rename", previous: { address: "$2200", name: "l2200", kind: "label", origin: "user", revision: 3 } }]);
   assert.deepEqual((knowledge(root, "regions").json.regions as unknown[])[0], { start: "$3000", end: "$303b", type: "bytes", element: 6, count: 10, origin: "llm", revision: 1 });
   const refused = knowledge(root, "apply", "batch.json", "--expect-revision", "1");
   assert.equal((refused.json.error as { code: string }).code, "stale-revision");

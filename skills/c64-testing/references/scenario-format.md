@@ -73,7 +73,7 @@ An `observe` step has a checkpoint name. A scenario can have each name only one 
 | `vicii` | The VIC-II state: mode, screen address, scroll and colors. |
 | `sprites` | A list of sprite numbers from 0 to 7. The script compares their position, color and flags. |
 
-A `tolerance` is the largest permitted difference for each byte. A `mask` has at most 64 rectangles. A scenario can observe the screen at most at 64 checkpoints.
+A `tolerance` is the largest permitted difference for each byte. A `mask` has at most 64 rectangles. A `mask` must not cover all of the screen: PAL is 384×272 pixels and NTSC is 384×247 pixels. A scenario can observe the screen at most at 64 checkpoints.
 
 `exclude` is a list of bytes in the observed range that the comparison does not include. Each has `at` and a `reason`, for example `{ "at": "$d01e", "reason": "latched sprite collision, not writable" }`. The result lists each excluded byte with its reason.
 
