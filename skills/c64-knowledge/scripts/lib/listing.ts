@@ -1,12 +1,9 @@
 // One listing of the image with its knowledge (D78): the lines of a range as
 // ACME text with names, operand expressions and comments, the access class of
-// the bytes from coverage files, and the references in and out. A hex dump of
-// a range with the names in it, and the routine graph as Mermaid. Nothing here
+// the bytes from coverage files, and the references in and out. Nothing here
 // reads files: knowledge.ts gives the lookups.
 
 import { COVERAGE } from "#src/c64.ts";
-import { mermaidGraph, routineEdges, routineHeads, type GraphReference } from "#src/knowledge/graph.ts";
-import type { SymbolKind } from "#src/knowledge/schema.ts";
 import { MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
@@ -162,57 +159,4 @@ export function listingText(lines: readonly ListingLine[]): string {
     out.push(`${head} ${body.padEnd(44)}${notes.length === 0 ? "" : ` ; ${notes.join(" | ")}`}`.trimEnd());
   }
   return `${out.join("\n")}\n`;
-}
-
-export interface DumpLine {
-  address: number;
-  hex: string;
-  /** The names of addresses on this line. */
-  names?: Array<{ address: number; name: string }>;
-}
-
-/** The bytes of start..end, 16 to a line from a multiple of 16, with the names on each line. */
-export function dump(source: Pick<ListingSource, "byteAt" | "nameOf">, start: number, end: number): DumpLine[] {
-  const lines: DumpLine[] = [];
-  for (let base = start & 0xfff0; base <= end; base += 16) {
-    const cells: string[] = [];
-    const names: Array<{ address: number; name: string }> = [];
-    for (let address = base; address < base + 16; address++) {
-      const byte = address >= start && address <= end ? source.byteAt(address) : undefined;
-      cells.push(byte === undefined ? ".." : byte.toString(16).padStart(2, "0"));
-      const name = byte === undefined ? undefined : source.nameOf(address);
-      if (name !== undefined) names.push({ address, name });
-    }
-    if (cells.every((cell) => cell === "..")) continue;
-    lines.push({ address: base, hex: cells.join(" "), ...(names.length === 0 ? {} : { names }) });
-  }
-  return lines;
-}
-
-/**
- * The routine graph of the knowledge as Mermaid (D78), drawn with the graph of
- * c64-docs (src/knowledge/graph.ts): without a root every edge, else the
- * routines that edges reach from the root in at most `depth` steps.
- */
-export function graph(
-  symbols: ReadonlyArray<{ address: number; name: string; kind: SymbolKind }>,
-  references: readonly GraphReference[],
-  boundaries: readonly number[],
-  root?: number,
-  depth = Number.POSITIVE_INFINITY,
-): { mermaid: string; nodes: number; edges: number } {
-  const heads = routineHeads(symbols, references, (address) => `l_${address.toString(16).padStart(4, "0")}`);
-  let edges = routineEdges(heads, boundaries, references);
-  const own = new Set<number>();
-  if (root !== undefined) {
-    const kept = new Set([root]);
-    for (let level = 0, frontier = [root]; level < depth && frontier.length > 0; level++) {
-      frontier = [...new Set(edges.filter((edge) => frontier.includes(edge.from) && !kept.has(edge.to)).map((edge) => edge.to))];
-      for (const node of frontier) kept.add(node);
-    }
-    edges = edges.filter((edge) => kept.has(edge.from) && kept.has(edge.to));
-    own.add(root);
-  }
-  const nodes = new Set([...own, ...edges.flatMap((edge) => [edge.from, edge.to])]);
-  return { mermaid: `${mermaidGraph(heads, edges, own)}\n`, nodes: nodes.size, edges: edges.length };
 }

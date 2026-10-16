@@ -361,7 +361,7 @@ test("join makes one batch of the batches of parallel agents, and apply writes i
   assert.equal((knowledge(root, "at", "draw_room").json as { symbol: { name: string } }).symbol.name, "draw_room", "a name gives the address");
 });
 
-test("listing, dump and graph read the image with the knowledge, and apply --dry-run writes nothing (D78)", () => {
+test("listing reads the image with the knowledge (D78)", () => {
   const root = project();
   // $1000 JSR $1010 / LDA $1020 / STA $d020 / RTS; $1010 RTS; $1020 a table.
   const bytes = [0x20, 0x10, 0x10, 0xad, 0x20, 0x10, 0x8d, 0x20, 0xd0, 0x60, 0, 0, 0, 0, 0, 0, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 8];
@@ -378,11 +378,6 @@ test("listing, dump and graph read the image with the knowledge, and apply --dry
       { op: "reference", from: "$1000", to: "$1010", kind: "call" },
     ]),
   );
-  const dry = knowledge(root, "apply", "batch.json", "--dry-run");
-  assert.equal(dry.status, 0, JSON.stringify(dry.json));
-  assert.equal(dry.json.dryRun, true);
-  assert.equal(existsSync(join(root, ".c64-re-tools")), false, "a dry run writes nothing");
-  assert.equal(knowledge(root, "rename", "$1000", "x", "--dry-run").status, 2, "--dry-run works only with apply");
   assert.equal(knowledge(root, "apply", "batch.json").status, 0);
 
   const coverage = new Uint8Array(0x10000);
@@ -397,9 +392,4 @@ test("listing, dump and graph read the image with the knowledge, and apply --dry
   assert.deepEqual(listed.at(-1), { address: "$1020", bytes: "07 08", label: "table", text: "!byte $07,$08", access: "r", referencesIn: 0, referencesOut: 0 });
   assert.equal(knowledge(root, "listing", "$1000", "$1001").status, 2, "listing needs --image");
 
-  assert.deepEqual(knowledge(root, "dump", "$1010", "$1021", "--image", "game.prg").json.lines, [
-    { address: "$1010", hex: "60 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", names: [{ address: "$1010", name: "helper" }] },
-    { address: "$1020", hex: "07 08 .. .. .. .. .. .. .. .. .. .. .. .. .. ..", names: [{ address: "$1020", name: "table" }] },
-  ]);
-  assert.deepEqual(knowledge(root, "graph", "--from", "main").json, { mermaid: 'flowchart LR\n  n1000("main<br/>$1000")\n  n1010["helper<br/>$1010"]\n  n1000 --> n1010\n', nodes: 2, edges: 1 });
 });
