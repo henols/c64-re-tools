@@ -1,5 +1,5 @@
-// The image that a skill script works on: an image.json of the c64-unpacker
-// skill (a 64 KiB memory and its segments) or a PRG, read from the project.
+// An image.json of the c64-unpacker skill (a 64 KiB memory and its segments)
+// or a PRG, read from the project to put it into the knowledge (D83).
 
 import { posix } from "node:path";
 
@@ -12,12 +12,9 @@ export class ImageError extends Error {
 }
 
 export interface Image {
-  path: string;
   segments: Array<{ start: number; end: number }>;
   /** The byte at an address inside a segment. */
   byteAt: (address: number) => number;
-  /** The bytes that Ghidra analyzes, and how. */
-  analyzed: { bytes: Buffer; kind: "prg" | "flat64k" };
   entry?: number;
   /** entry_state.json next to image.json. */
   statePath?: string;
@@ -35,7 +32,7 @@ export function readImage(path: string): Image {
     } catch (error) {
       throw new ImageError(`${path}: ${(error as Error).message}`);
     }
-    return { path, segments: [{ start: range.start, end: range.end }], byteAt: (address) => range.body[address - range.start]!, analyzed: { bytes, kind: "prg" } };
+    return { segments: [{ start: range.start, end: range.end }], byteAt: (address) => range.body[address - range.start]! };
   }
   const fail = (what: string): never => {
     throw new ImageError(`${path} is not an image.json of the c64-unpacker skill: ${what}`);
@@ -59,7 +56,7 @@ export function readImage(path: string): Image {
   const directory = posix.dirname(path);
   const memory = readProjectFile(posix.join(directory, manifest.image as string)).bytes;
   if (memory.length !== 0x10000) fail(`its image has ${memory.length} bytes, not 65536`);
-  const image: Image = { path, segments, byteAt: (at) => memory[at]!, analyzed: { bytes: memory, kind: "flat64k" }, statePath: posix.join(directory, "entry_state.json") };
+  const image: Image = { segments, byteAt: (at) => memory[at]!, statePath: posix.join(directory, "entry_state.json") };
   if (manifest.entry !== undefined) image.entry = address(manifest.entry, "entry");
   if (Array.isArray(manifest.stages)) image.stages = manifest.stages as Array<Record<string, unknown>>;
   return image;

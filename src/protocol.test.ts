@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { encodeFrame, MAX_ATTACHMENT_BYTES, MAX_FRAME_BYTES, MessageReader } from "./protocol/framing.ts";
 import { checkHello, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseClientMessage, parseHostMessage, ProtocolError, shownMessage, STOP_AND_ASK, WireFailure, withStopAndAsk } from "./protocol/messages.ts";
-import { isRelativePath, validateSourceTree, validateToolParams, validateToolResult } from "./protocol/tools.ts";
+import { isRelativePath, validateToolParams, validateToolResult } from "./protocol/tools.ts";
 import { attachmentCount, MAX_MASK_RECTANGLES, validateViceParams, validateViceResult } from "./protocol/vice.ts";
 import { FrameDecoder } from "./protocol/framing.testkit.ts";
 
@@ -363,14 +363,9 @@ test("observe needs at least one observation and bounds its memory", () => {
   assert.deepEqual(validateViceParams("observe", { timing: true, cia: "both" }), { timing: true, cia: "both" });
 });
 
-test("relative paths and source trees are validated", () => {
+test("relative paths are validated", () => {
   for (const good of ["main.a", "lib/consts.a", "a b/c.d"]) assert.ok(isRelativePath(good), good);
   for (const bad of ["", "/etc/passwd", "../x", "a/../b", "./a", "a//b", "a/", "a\\b", "a/./b", ".."]) assert.ok(!isRelativePath(bad), bad);
-  const files = [{ path: "main.a", size: 2 }, { path: "lib/x.a", size: 0 }];
-  assert.deepEqual(validateSourceTree(files, [Buffer.from("ab"), Buffer.alloc(0)]), files);
-  assert.throws(() => validateSourceTree(files, [Buffer.from("ab")]), /attachment/);
-  assert.throws(() => validateSourceTree([{ path: "main.a", size: 3 }], [Buffer.from("ab")]), /size/);
-  assert.throws(() => validateSourceTree([...files, files[0]], [Buffer.from("ab"), Buffer.alloc(0), Buffer.from("ab")]), /twice/);
 });
 
 test("c1541.inspect parameters and results are validated", () => {

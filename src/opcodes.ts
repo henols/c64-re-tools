@@ -56,10 +56,6 @@ export function takesAddress(mode: Mode): boolean {
   return mode !== "imp" && mode !== "imm";
 }
 
-export function isZeroPageMode(mode: Mode): boolean {
-  return mode === "zp" || mode === "zpx" || mode === "zpy" || mode === "izx" || mode === "izy";
-}
-
 /** How an instruction uses the address of its operand, in the order a summary lists them. */
 export const USE_KINDS = ["read", "written", "modified", "called", "jumped to", "jumped through", "branched to", "pointer", "address", "table", "macro argument"] as const;
 export type UseKind = (typeof USE_KINDS)[number];

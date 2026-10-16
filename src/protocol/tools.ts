@@ -109,20 +109,6 @@ export function isRelativePath(value: unknown): value is string {
   return typeof value === "string" && value.length <= 1024 && RELATIVE_PATH.test(value) && !value.includes("//") && !value.endsWith("/");
 }
 
-/** Validates a transferred source tree against its attachments. Throws WireFailure(invalid-input). */
-export function validateSourceTree(value: unknown, attachments: readonly Uint8Array[]): SourceTree {
-  if (!Array.isArray(value) || value.length > MAX_TREE_FILES) invalid(`files must list at most ${MAX_TREE_FILES} files`);
-  if (value.length !== attachments.length) invalid("each listed file needs exactly one attachment");
-  const seen = new Set<string>();
-  return value.map((entry, index) => {
-    if (!isObject(entry) || !isRelativePath(entry.path)) invalid("each file needs a relative path inside the source root");
-    if (seen.has(entry.path)) invalid(`the file ${entry.path} is listed twice`);
-    seen.add(entry.path);
-    if (entry.size !== attachments[index]!.length) invalid(`the size of ${entry.path} does not match its bytes`);
-    return { path: entry.path, size: entry.size as number };
-  });
-}
-
 /** Refuses anything but exactly one attachment with at least one byte, named by what it must hold. */
 function oneFile(attachments: readonly Uint8Array[], what: string): void {
   if (attachments.length !== 1 || attachments[0]!.length === 0) invalid(`${what} must be the one attachment, and it must not be empty`);

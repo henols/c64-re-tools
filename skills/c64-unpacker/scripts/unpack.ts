@@ -104,7 +104,6 @@ async function runSteps(client: ViceSessionClient, steps: ActionStep[]): Promise
 async function trace(program: string, options: { frames: number; entry?: number; steps: ActionStep[] }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const { bytes } = readProjectFile(program);
   if (bytes.length < 3) throw new UsageError("the file is too short for a PRG");
-  const load = bytes[0]! | (bytes[1]! << 8);
   if (options.entry === undefined && basicStart(bytes) === undefined) throw new UsageError(NO_BASIC);
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {

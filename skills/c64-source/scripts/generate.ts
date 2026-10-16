@@ -8,10 +8,10 @@
 // passes, 1 when one fails, 2 for a bad call.
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { join, posix } from "node:path";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 
-import { COVERAGE, coverageSeedKinds, formatC64Address, parseC64Address, prgRange, textToPetscii } from "#src/c64.ts";
+import { COVERAGE, coverageSeedKinds, formatC64Address, parseC64Address, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile } from "#src/host-client/transfer.ts";
