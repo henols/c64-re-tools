@@ -291,9 +291,18 @@ export function layout(input: SourceInput): Layout {
     kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
     uses.set(constant, kinds);
   };
+  /** The start of the named data region that holds an address without a name of its own: the operand is written name+offset (M23.6). */
+  const tableStart = (address: number) => {
+    if (symbols.has(address)) return undefined;
+    const region = input.regions.find((row) => address > row.start && address <= row.end && !CODE_TYPES.includes(row.type) && row.type !== "dual-use");
+    return region !== undefined && symbols.has(region.start) ? region.start : undefined;
+  };
   const use = (address: number, kind: UseKind) => {
-    if (inImage(address)) wanted.add(address);
-    else if (symbols.has(address) || platform.has(address)) count(address, kind);
+    if (inImage(address)) {
+      const table = tableStart(address);
+      wanted.add(table ?? address);
+      if (table !== undefined) insideEntry.set(address, table);
+    } else if (symbols.has(address) || platform.has(address)) count(address, kind);
     else {
       const entry = input.platform?.find((row) => address > row.address && address <= row.end && !inImage(row.address) && (symbols.has(row.address) || platform.has(row.address)));
       if (entry === undefined) return;
@@ -447,7 +456,8 @@ export function layout(input: SourceInput): Layout {
     blocks.set(patch.start, { start: patch.start, end: patch.end, switch: patch.switch, code: patch.code, ...(patch.comment === undefined ? {} : { comment: patch.comment }), inner });
   }
   // The high byte of a vector is NMINV+1. A zero-page entry keeps zero-page instructions: its constant has two digits.
-  for (const [address, start] of insideEntry) names.set(address, `${names.get(start)!}+${address - start}`);
+  // An address inside a table keeps its own label when the source needs one there anyway, for example as a reference target.
+  for (const [address, start] of insideEntry) if (!wanted.has(address)) names.set(address, `${names.get(start)!}+${address - start}`);
   /** An expression with the names of this source: a name with an offset in brackets, so an operator after it keeps its meaning. */
   const sourceText = (text: string) => replaceIdentifiers(text, (name) => {
     const label = names.get(byName.get(name)!)!;

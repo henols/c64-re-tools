@@ -66,6 +66,7 @@ node <skill>/scripts/generate.ts unpacked/image.json --out src --loader
 - Data regions become data by their type: `!byte`, `!word`, `!pet`, `!scr`, `!fill`, tables of labels, and sprite bytes in binary.
 - `lda+2 $0012` is an absolute operand below $0100. `+1` is a zero-page operand with a label.
 - `sta NMINV+1` is an address inside a platform entry of more than one byte, for example the high byte of a vector.
+- `lda room_colours+5` is an address inside a data region whose start has a name. The address has no name of its own.
 - `name = * + 1` is a label inside an instruction, for example for code that changes its own operand.
 - `lda #<irq_handler` and `lda bar_colours-1,x` are operand expressions of the knowledge. The script writes each name of an expression with the name of its address in the source. An operand expression in a non-immediate mode that starts with a bracket gets `0+` before it, because ACME reads `(...)` as indirect.
 - `; = <irq_handler` at the end of an instruction with a number: the source cannot use this operand expression. `operandsAsNumbers` gives the reason.
@@ -131,7 +132,7 @@ One JSON object:
 - `operandsAsNumbers`: the operand expressions that the source has as a number with a side comment, each with its `address`, `expression` and `reason`. An expression becomes a number when no instruction with an operand value is at the address, or when a name has no address. An expression that ACME refuses or does not assemble to the image also becomes a number. Then the script assembles the source again, at most six times.
 - `unusedModules`: modules in the knowledge whose start is in no segment of the image. Often this tells that the image does not hold code that the knowledge describes.
 - `entryOutside`: the entry of `image.json` is in no segment of the image, with a `reason`. The image does not hold the program.
-- `notExecuted`: with `--coverage`, the count of instructions that no run executed, the count of their ranges, and the first ranges. `all` names the file `not_executed.json` in `--out`. It has all of the ranges. Put all of these ranges in the report.
+- `notExecuted`: with `--coverage`, the count of instructions that no run executed, the count of their ranges, and the first ranges. `all` names the file `not_executed.json` in `--out`. It has all of the ranges. Each range has its source `file` and the `routine` before it. `files` counts the ranges in each file. Put all of these ranges in the report.
 - `macroUses`: the count of macro uses that the source has.
 - `macrosAsInstructions`: the macro uses that the source has as instructions, each with its `start`, `end`, `macro` and `reason`.
 - `patchesNotWritten`: the patches that the source does not have, each with its range, `switch` and `reason`.

@@ -416,9 +416,12 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
   assert.equal(covered.status, 0, covered.stdout);
   const notExecuted = (JSON.parse(covered.stdout) as { notExecuted: { ranges: number; all: string } }).notExecuted;
   assert.equal(notExecuted.all, "src/not_executed.json");
-  const all = JSON.parse(readFileSync(join(project, "src", "not_executed.json"), "utf8")) as { ranges: Array<{ start: string; end: string }> };
+  const all = JSON.parse(readFileSync(join(project, "src", "not_executed.json"), "utf8")) as { files: Record<string, number>; ranges: Array<{ start: string; end: string; file?: string; routine?: string }> };
   assert.equal(all.ranges.length, notExecuted.ranges);
   assert.equal(all.ranges[0]!.start, "$1005");
+  // Each range names its file and the routine before it, so a report can group them (M23.6).
+  assert.deepEqual([all.ranges[0]!.file, all.ranges[0]!.routine], ["segment_1000.asm", "start"]);
+  assert.deepEqual(all.files, { "segment_1000.asm": all.ranges.length });
   const marks = readFileSync(join(project, "src", "segment_1000.asm"), "utf8").match(/^; not executed .*$/gm);
   assert.deepEqual(marks, all.ranges.map((range) => `; not executed ${range.start}-${range.end}`));
 
@@ -873,4 +876,21 @@ test("with real Ghidra and ACME, a macro use that ACME refuses or assembles to o
   assert.equal(json.macrosAsInstructions.listed[0]!.reason, "ACME assembles it to 2 bytes, and the range has 6.");
   assert.match(json.macrosAsInstructions.listed[1]!.reason, /^ACME refuses the macro broken: Value not defined \(no_such_name\)/);
   assert.match(readFileSync(join(project, "src", "segment_1000.asm"), "utf8"), /^start\n {8}\+inc16 ptr\n {8}inc \$fd\n/m);
+});
+
+test("an operand inside a named table without its own name is the table's name plus the offset (M23.6)", () => {
+  // $1000 LDA $1015 / LDA $1018 / RTS; $1010-$101f a table named room_colours; $1018 is a reference target and keeps its label.
+  const bytes = [0xad, 0x15, 0x10, 0xad, 0x18, 0x10, 0x60, ...Array.from({ length: 9 }, () => 0), ...Array.from({ length: 16 }, (_, index) => index)];
+  const instructions = new Map([[0x1000, 3], [0x1003, 3], [0x1006, 1]]);
+  const laid = layout(
+    input(bytes, 0x1000, {
+      instructions,
+      symbols: [{ address: 0x1010, name: "room_colours" }],
+      regions: [{ start: 0x1010, end: 0x101f, type: "bytes" }],
+      referenceTargets: [0x1018],
+    }),
+  );
+  const text = textOf(render(laid, new Set(), []), "segment_1000.asm");
+  assert.match(text, / {8}lda room_colours\+5\n {8}lda l_1018\n/);
+  assert.doesNotMatch(text, /l_1015/);
 });

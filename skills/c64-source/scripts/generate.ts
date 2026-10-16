@@ -634,7 +634,16 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   const showRange = (range: Range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
   if (rendered.notExecuted !== undefined) {
-    const all = { image: image.path, revision: knowledge.revision, instructions: rendered.notExecuted.instructions, ranges: rendered.notExecuted.ranges.map(showRange) };
+    // Each range with the file of the source that holds it and the routine before it, as a report groups them (M23.6).
+    const routines = knowledge.symbols.filter((symbol) => symbol.kind === "routine").sort((a, b) => a.address - b.address);
+    const placed = rendered.notExecuted.ranges.map((range) => {
+      const file = laid.pieces.find((piece) => range.start >= piece.start && range.start <= piece.end)?.file;
+      const routine = routines.filter((symbol) => symbol.address <= range.start).at(-1)?.name;
+      return { ...showRange(range), ...(file === undefined ? {} : { file }), ...(routine === undefined ? {} : { routine }) };
+    });
+    const files: Record<string, number> = {};
+    for (const range of placed) if (range.file !== undefined) files[range.file] = (files[range.file] ?? 0) + 1;
+    const all = { image: image.path, revision: knowledge.revision, instructions: rendered.notExecuted.instructions, files, ranges: placed };
     writeProjectFile(`${values.out}/${NOT_EXECUTED_FILE}`, Buffer.from(`${JSON.stringify(all, null, 2)}\n`, "utf8"), { what: "--out" });
   }
 
