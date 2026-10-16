@@ -15,6 +15,10 @@ on:
         required: false
         default: ""
 
+# The c64_window tests open real VICE windows; CI has a display for them.
+env:
+  C64RT_LIVE_WINDOW: "1"
+
 # A newer push makes an older live run of the same branch pointless.
 concurrency:
   group: live-${{ github.ref }}-${{ github.event_name }}

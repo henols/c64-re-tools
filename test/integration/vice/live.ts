@@ -1,5 +1,7 @@
 // Live VICE tests are opt-in: set C64RT_LIVE_VICE to the absolute path of x64sc.
-// Without it every live test is reported as skipped, never as passed.
+// Without it every live test is reported as skipped, never as passed. Every
+// live VICE is headless, except in the c64_window tests: they open real
+// windows, so they also need C64RT_LIVE_WINDOW=1.
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
@@ -10,6 +12,10 @@ export const LIVE_VICE = process.env.C64RT_LIVE_VICE;
 
 export const liveSkip: string | false =
   LIVE_VICE === undefined || LIVE_VICE === "" ? "live VICE: set C64RT_LIVE_VICE=/absolute/path/to/x64sc to run" : false;
+
+/** For tests that open a VICE window on the desktop: they also need C64RT_LIVE_WINDOW=1. */
+export const liveWindowSkip: string | false =
+  liveSkip !== false ? liveSkip : process.env.C64RT_LIVE_WINDOW === "1" ? false : "live VICE window: set C64RT_LIVE_WINDOW=1 to open VICE windows on the desktop";
 
 const root = resolve(import.meta.dirname, "../../..");
 

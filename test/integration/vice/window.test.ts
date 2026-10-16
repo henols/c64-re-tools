@@ -1,6 +1,7 @@
 // Real-VICE checks: a session starts headless, and c64_window moves the
 // machine into a VICE with a window and back. Each test has its own session.
-// The window tests open real VICE windows on the host's desktop.
+// The window tests open real VICE windows on the host's desktop, so they
+// also need C64RT_LIVE_WINDOW=1.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -12,7 +13,7 @@ import { WireFailure } from "../../../src/protocol/messages.ts";
 import { type ViceOperation, type ViceOperations } from "../../../src/protocol/vice.ts";
 import { buildD64 } from "../../fixtures/d64.ts";
 import { borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { liveEnv, liveLog, liveWindowSkip } from "./live.ts";
 
 const NOT_CARRIED = ["cpu history", "memory map", "profile", "keyboard input not yet typed"];
 
@@ -134,7 +135,7 @@ async function startProgram(live: Live): Promise<void> {
 const failsWith = (code: string, message?: RegExp) => (error: unknown) =>
   error instanceof WireFailure && error.code === code && (message === undefined || message.test(error.message));
 
-test("a session starts headless; open and close move RAM, registers, the screen and the stopwatch exactly", { skip: liveSkip, timeout: 240_000 }, async () => {
+test("a session starts headless; open and close move RAM, registers, the screen and the stopwatch exactly", { skip: liveWindowSkip, timeout: 240_000 }, async () => {
   await withSession(async (live) => {
     assert.deepEqual(live.supervisor.running(), ["headless"]);
     assert.ok(live.supervisor.started[0]!.argv.includes("-sounddev"), "a headless VICE plays no sound");
@@ -175,7 +176,7 @@ test("a session starts headless; open and close move RAM, registers, the screen 
   });
 });
 
-test("a running machine runs on after each move, with warp and the joystick kept", { skip: liveSkip, timeout: 240_000 }, async () => {
+test("a running machine runs on after each move, with warp and the joystick kept", { skip: liveWindowSkip, timeout: 240_000 }, async () => {
   await withSession(async (live) => {
     await waitForScreen(live, /READY\./);
     await live.call("warp", { enabled: true });
@@ -201,7 +202,7 @@ test("a running machine runs on after each move, with warp and the joystick kept
   });
 });
 
-test("breakpoints, watchpoints and their conditions act in each VICE, with the same ids", { skip: liveSkip, timeout: 240_000 }, async () => {
+test("breakpoints, watchpoints and their conditions act in each VICE, with the same ids", { skip: liveWindowSkip, timeout: 240_000 }, async () => {
   await withSession(async (live) => {
     await waitForScreen(live, /READY\./);
     await startProgram(live);
@@ -244,7 +245,7 @@ test("breakpoints, watchpoints and their conditions act in each VICE, with the s
   });
 });
 
-test("the disk in drive 8 and what is written to it move into the window and back", { skip: liveSkip, timeout: 420_000 }, async () => {
+test("the disk in drive 8 and what is written to it move into the window and back", { skip: liveWindowSkip, timeout: 420_000 }, async () => {
   await withSession(async (live) => {
     await waitForScreen(live, /READY\./);
     await live.call("warp", { enabled: true });
@@ -275,7 +276,7 @@ test("the disk in drive 8 and what is written to it move into the window and bac
   });
 });
 
-test("the window VICE ends by itself: the session goes back headless from the open state, once with a notice", { skip: liveSkip, timeout: 240_000 }, async () => {
+test("the window VICE ends by itself: the session goes back headless from the open state, once with a notice", { skip: liveWindowSkip, timeout: 240_000 }, async () => {
   await withSession(async (live) => {
     await waitForScreen(live, /READY\./);
     await live.call("execution", { action: "pause", space: "c64" });
@@ -315,7 +316,7 @@ test("the window VICE ends by itself: the session goes back headless from the op
   });
 });
 
-test("a request for the mode the session is in starts no VICE and changes nothing", { skip: liveSkip, timeout: 120_000 }, async () => {
+test("a request for the mode the session is in starts no VICE and changes nothing", { skip: liveWindowSkip, timeout: 120_000 }, async () => {
   await withSession(async (live) => {
     await waitForScreen(live, /READY\./);
     assert.deepEqual(await live.call("window", { action: "close" }), { window: false, state: "running", notCarried: [] });

@@ -50,6 +50,8 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
 
 - `node --test` exits 0 for a missing or typo'd file; `ls` it first.
 - Don't pipe `pnpm test` into `tail`/`head`: that reports the pipe's exit code.
+- Live suites: `C64RT_LIVE_VICE=/usr/bin/x64sc`; every VICE runs headless. The
+  c64_window tests open real windows and also need `C64RT_LIVE_WINDOW=1`.
 - Real VICE is `/usr/bin/x64sc`, by absolute path. `-default` must precede
   `-binarymonitor`, and autostart needs `-autostartprgmode 1`.
 - `/tmp` is a RAM tmpfs here; tests that leak scratch dirs fill it.
