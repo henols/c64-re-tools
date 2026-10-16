@@ -188,6 +188,15 @@ test("evidence names a project file with its SHA-256, and --origin filters the r
   const evidence = ((knowledge(root, "revision", String(written.revision)).json.revision as { evidence: unknown[] }).evidence);
   assert.deepEqual(evidence, [{ kind: "coverage", ref: "coverage/attract.bin", sha256: createHash("sha256").update(Buffer.from([4, 0, 4])).digest("hex") }]);
   assert.equal((knowledge(root, "rename", "$2200", "x", "--evidence", "coverage:coverage/missing.bin").json.error as { code: string }).code, "not-found");
+  // Scratch in local/ is no evidence (D82), also through a path that only resolves into it.
+  mkdirSync(join(root, ".c64-re-tools", "local", "runs", "rooms"), { recursive: true });
+  writeFileSync(join(root, ".c64-re-tools", "local", "runs", "rooms", "results.json"), "{}");
+  for (const ref of [".c64-re-tools/local/runs/rooms/results.json", "coverage/../.c64-re-tools/local/runs/rooms/results.json"]) {
+    const refused = knowledge(root, "rename", "$2200", "x", "--evidence", `test:${ref}`);
+    assert.equal(refused.status, 2);
+    assert.match((refused.json.error as { message: string }).message, /runs\/<name>\//);
+  }
+  assert.deepEqual((knowledge(root, "symbols").json.symbols as Array<{ name: string }>).filter((row) => row.name === "x"), []);
   knowledge(root, "rename", "$2300", "helper");
   assert.deepEqual((knowledge(root, "symbols", "--origin", "user").json.symbols as Array<{ name: string }>).map((row) => row.name), ["update_player"]);
   assert.deepEqual((knowledge(root, "symbols", "--origin", "semantic").json.symbols as unknown[]).length, 2);

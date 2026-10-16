@@ -29,8 +29,9 @@ The script prints one JSON object. Addresses are `$` and four hex digits.
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
-- Keep the results, batches and step files that you use only one time in `.c64-re-tools/local/` of the project. Git ignores that folder.
-- Put a run file whose results are the evidence for a finding in `runs/`, with its results. Then git keeps the run file and the results, and another person can do the run again.
+- Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Workflow

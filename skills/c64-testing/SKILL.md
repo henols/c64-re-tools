@@ -22,7 +22,7 @@ A PASS proves only the behavior that the scenario does and observes. It does not
 The script starts one emulator through the host runtime. It runs the scenario on the original and then on the rebuild. Before each side, it does a hard reset of the emulator. The CPU then stops at the reset vector.
 
 ```
-node <skill>/scripts/test.ts tests/moves-left.json --out results/moves-left
+node <skill>/scripts/test.ts tests/moves-left.json --out .c64-re-tools/local/results/moves-left
 node <skill>/scripts/checklist.ts tests/moves-left.json --item 'FIRE starts the game.'
 ```
 
@@ -35,14 +35,14 @@ The checklist script prints a Markdown checklist for a human tester.
 A run does steps on one program, with no comparison, and keeps the results as files. Use it for many steps. One run replaces many emulator calls, for example a visit to each room of a game.
 
 ```
-node <skill>/scripts/run.ts runs/rooms.json --out runs/rooms
+node <skill>/scripts/run.ts .c64-re-tools/local/runs/rooms/run.json --out .c64-re-tools/local/runs/rooms
 ```
 
 The run file gives where to start (a program, or a snapshot file), the steps, and optional symbols. To go on from the live emulator, save its state with `c64_snapshot` action `save` and `out`, and start the run from that file. Besides the steps of a scenario, a run has these steps:
 
 | Step | Effect |
 |---|---|
-| `{ "snapshot": "snapshots/room0.vsf" }` | Restore a snapshot file. |
+| `{ "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" }` | Restore a snapshot file. |
 | `{ "save": "room3" }` | Write the state now to `room3.vsf` in the output directory. |
 | `{ "screen": "room3" }` | Write the screen to `room3.png`. |
 | `{ "coverage": "room3" }` | Write the coverage map since the start or the last coverage step to `room3.bin`, then clear the map. |
@@ -57,8 +57,8 @@ See [references/scenario-format.md](references/scenario-format.md), section Runs
 ### Differences
 
 ```
-node <skill>/scripts/diff.ts runs/rooms/before.vsf runs/rooms/after.vsf
-node <skill>/scripts/diff.ts runs/rooms/results.json:room0 runs/rooms/results.json:room3
+node <skill>/scripts/diff.ts .c64-re-tools/local/runs/rooms/before.vsf .c64-re-tools/local/runs/rooms/after.vsf
+node <skill>/scripts/diff.ts .c64-re-tools/local/runs/rooms/results.json:room0 .c64-re-tools/local/runs/rooms/results.json:room3
 ```
 
 `diff.ts` tells what changed between two states of one kind. Use it in place of your own compare script.
@@ -73,8 +73,9 @@ node <skill>/scripts/diff.ts runs/rooms/results.json:room0 runs/rooms/results.js
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
-- Keep the results, batches and step files that you use only one time in `.c64-re-tools/local/` of the project. Git ignores that folder.
-- Put a run file whose results are the evidence for a finding in `runs/`, with its results. Then git keeps the run file and the results, and another person can do the run again.
+- Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Workflow

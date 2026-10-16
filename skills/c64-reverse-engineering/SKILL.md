@@ -32,8 +32,9 @@ One repository can hold several programs, with one project folder for each progr
 
 - From the root of the repository, give `--project <folder>` to each skill script, and `project` to each emulator tool with a path.
 - Write all files in the project folder. Do not write files at the root of the repository.
-- Keep the results, batches and step files that you use only one time in `.c64-re-tools/local/` of the project. Git ignores that folder.
-- Put a run file whose results are the evidence for a finding in `runs/`, with its results. Then git keeps the run file and the results, and another person can do the run again.
+- Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A subagent can have no emulator tools. Give it its experiments as run files of the c64-testing skill. Each run starts its own emulator, so many runs can go at the same time. The emulator of the emulator tools is one machine, for the main session.
 - To name a large program with more agents at the same time, give each agent one range of addresses. Each agent writes a batch with its owner range. Then join the batches with `join` of the c64-knowledge skill, and apply the result one time.
 - Do not write a build script or a merge script. c64-source writes and assembles the loader with `--loader`, and `join` of c64-knowledge joins the batches.
@@ -72,11 +73,11 @@ Select the path for the scope:
 
 ### The stages of a full rebuild
 
-Do the stages in this sequence. Go to the next stage only when its exit check is true, or when the user accepts an exception. Write each exception in the report.
+Do the stages in this sequence. Go to the next stage only when its exit check is true, or when the user accepts an exception. Remember each exception for the answer of stage 11.
 
 | Stage | Work | Exit check |
 |---|---|---|
-| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these: identical source, a verified loader, passed c64-testing scenarios, and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. Write the criteria in `report.md`. | The user gave the criteria. |
+| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these: identical source, a verified loader, passed c64-testing scenarios, and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. | The user gave the criteria. |
 | 2. Get | c64-disk: list the disk. Extract the start file into `original/`. | The start file is in the project. |
 | 3. Start | c64-basic: find the SYS address of the BASIC start. | You have the entry address. |
 | 4. Unpack | c64-unpacker: examine the program. Capture a packed program into `unpacked/`. | `image.json` and `entry_state.json` exist, or the evidence shows no packer. |
@@ -86,7 +87,7 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 8. Generate | c64-source with `--coverage` into `src/`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
 | 9. Build and test | c64-assembler with `--compare` into `build/`. c64-testing scenarios in `tests/`. | The criteria of stage 1 are true. |
 | 10. Document | When the criteria ask for documentation: c64-docs into `docs/`. | `link.ts --check` of c64-docs gives no problem. |
-| 11. Report | Write `report.md`. Link to `docs/` when it exists. | The report has all its sections. |
+| 11. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
 
 In stage 5, if you cannot get to a part of the program, ask the user how to get to it. Do stages 7 and 8 again until the source is clear. Each run of c64-source writes the source again.
 
@@ -99,19 +100,19 @@ After stage 7, save each routine that other programs can have to the library wit
 - the coverage files
 - the generated source
 - the built program and the loader
-- the c64-testing scenarios and their results
+- the c64-testing scenarios
 - the documentation in `docs/`, when the criteria ask for it
-- `report.md`.
+- the runs in `runs/` that the knowledge gives as evidence.
 
-### The report
+All other files that you made are not deliverables. Keep them in `.c64-re-tools/local/`. Do not delete a file that the user made.
 
-`report.md` is short. It has these sections:
+### The answer
 
-1. Acceptance: each criterion of stage 1 and its result, and each exception that the user accepted.
-2. The program: what the program does, in a few sentences.
-3. Modules: the file, the address range and the title of each module.
-4. Untested code: all ranges in the `not_executed.json` file of c64-source. Tell why no run executed them, if you know.
-5. Open questions: what the evidence does not explain.
+Give the user a short answer at the end. Do not write a report file. Write a report file only when the user asks for it. The knowledge, `docs/` and the scenarios keep the durable results. The answer has:
+
+1. Each criterion of stage 1 and its result, and each exception that the user accepted.
+2. The count of the code ranges that no run executed. The ranges are in the `not_executed.json` file of c64-source.
+3. Open questions: what the evidence does not explain.
 
 Keep observed facts apart from your conclusions.
 
@@ -125,9 +126,9 @@ unpacked/      image.json, image.bin and entry_state.json from c64-unpacker
 coverage/      coverage files from c64_memmap
 src/           the generated source from c64-source
 build/         programs from c64-assembler
-tests/         c64-testing scenarios and their results
+tests/         c64-testing scenarios
+runs/          the runs that the knowledge gives as evidence
 docs/          the documentation from c64-docs, with the reference in docs/reference/
-report.md      the report
 ```
 
 If the project has a layout, use that layout.
@@ -150,12 +151,12 @@ Record durable conclusions with the c64-knowledge skill. Do not store:
 
 ## Result
 
-A clear answer for the scope, with the durable conclusions in the project knowledge. For a full rebuild, the deliverables and the report, with the criteria of the user met or each exception in the report.
+A clear answer for the scope, with the durable conclusions in the project knowledge. For a full rebuild, the deliverables and the answer of stage 11, with the criteria of the user met or each exception in the answer.
 
 ## Failure and conflicts
 
 - A skill reports `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
-- A tool gives a wrong result, and the exit check of a stage cannot be true. Tell the user the defect and the evidence, and wait for the user. Do not make a workaround, for example a change to a generated file. When the user accepts an exception, write the defect and the exception in the report.
+- A tool gives a wrong result, and the exit check of a stage cannot be true. Tell the user the defect and the evidence, and wait for the user. Do not make a workaround, for example a change to a generated file. When the user accepts an exception, give the defect and the exception in the answer of stage 11.
 - If the evidence does not support a conclusion, keep the unknown and get more evidence. Do not make up a meaning.
 - Before you replace current knowledge from the user or the LLM, read its history and the evidence for it.
 - A conflict from the static analysis: find the correct answer at run time with the c64-emulator skill.

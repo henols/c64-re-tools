@@ -4,6 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
@@ -98,6 +99,7 @@ import {
   type WriteContext,
 } from "#src/knowledge/write.ts";
 import { platformNames } from "#src/platform.ts";
+import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
 import { runScript, UsageError } from "#src/script.ts";
 
@@ -622,14 +624,22 @@ function originFilter(value: string): Origin[] {
   return [...origins];
 }
 
-/** --evidence kind:ref. A file kind names a project file and keeps its SHA-256, so a later change of the file shows. */
+/**
+ * --evidence kind:ref. A file kind names a project file and keeps its SHA-256, so a later change of the file shows.
+ * A file in .c64-re-tools/local/ is refused (D82): git ignores it, and the move that keeps it changes the path.
+ */
 function evidenceOf(value: string): Evidence {
   const colon = value.indexOf(":");
   const kind = oneOf(EVIDENCE_KINDS, colon < 0 ? value : value.slice(0, colon), "--evidence kind");
   const ref = colon < 0 ? "" : value.slice(colon + 1);
   if (ref === "") throw new UsageError(`--evidence needs ${kind}:<${kind === "note" ? "text" : "file"}>`);
   if (kind === "note") return { kind, ref };
-  return { kind, ref, sha256: createHash("sha256").update(readProjectFile(ref).bytes).digest("hex") };
+  const bytes = readProjectFile(ref).bytes;
+  const root = projectRoot();
+  if (isInside(join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY), resolveProjectPath(ref, root))) {
+    throw new UsageError(`--evidence ${kind}:${ref} is in ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/, which git ignores: move it to a folder that git keeps (a run folder to runs/<name>/) and give the new path`);
+  }
+  return { kind, ref, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 /**
