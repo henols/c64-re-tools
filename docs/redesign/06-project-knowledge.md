@@ -546,7 +546,7 @@ revision   INTEGER NOT NULL      the revision of the change
 kind       TEXT NOT NULL         coverage | test | file | note
 ref        TEXT NOT NULL         a project path, the path of an imported coverage map, or the text of a note
 sha256     TEXT                  the SHA-256 of the file when the change was written
-space      TEXT                  the space that a coverage map was imported into (D86)
+space      TEXT                  the space that a coverage map was imported into (D86); none is c64
 ```
 
 A path is kept in one spelling: relative to the project folder, with `/`, so `./runs/a.bin` and `runs/a.bin` are one file. `--evidence coverage:<map>` cites the latest import of the map into the space of the write.

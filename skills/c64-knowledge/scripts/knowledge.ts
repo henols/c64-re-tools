@@ -671,7 +671,7 @@ function evidenceOf(value: string, space: string): Evidence {
       const run = coverageRuns(db).filter((item) => item.name === ref && item.space === space).at(-1);
       const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
       if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${where}: import the map with coverage${space === DEFAULT_SPACE ? "" : ` --space ${space}`} first`);
-      return { kind, ref, sha256: run.sha256, space: run.space! };
+      return { kind, ref, sha256: run.sha256, ...(run.space === DEFAULT_SPACE ? {} : { space: run.space }) };
     } finally {
       db?.close();
     }

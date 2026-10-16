@@ -278,7 +278,7 @@ test("coverage imports a map into each space, by one spelling of its path, and -
     assert.equal(cited.status, 0, JSON.stringify(cited.json));
     return (knowledge(root, "revision", String(cited.json.revision)).json.revision as { evidence: Array<{ ref: string; sha256: string; space: string }> }).evidence;
   };
-  assert.deepEqual(evidenceOf("--evidence", "coverage:./runs/m.bin"), [{ kind: "coverage", ref: "runs/m.bin", sha256: sha(), space: "c64" }]);
+  assert.deepEqual(evidenceOf("--evidence", "coverage:./runs/m.bin"), [{ kind: "coverage", ref: "runs/m.bin", sha256: sha() }]);
   assert.deepEqual(evidenceOf("--evidence", "coverage:runs/m.bin", "--space", "drive8"), [{ kind: "coverage", ref: "runs/m.bin", sha256: first, space: "drive8" }]);
   const missing = knowledge(root, "rename", "$0400", "x", "--evidence", "coverage:runs/m.bin", "--space", "bank1");
   assert.equal(missing.status, 2);

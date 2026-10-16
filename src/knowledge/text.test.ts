@@ -161,11 +161,12 @@ test("a row must be added in the revision of its id, and its revisions must be i
   assert.throws(() => load(symbolLine("main", null).replace("/1", "/0")), /is not a row id/);
 });
 
-test("the evidence of a coverage map keeps its space in the text, and a space that is not known is refused (D86)", () => {
+test("the evidence of a coverage map keeps a space other than the C64 in the text, and a space that is not known is refused (D86)", () => {
   const { db } = fullProject();
   const log = revisionsText(db);
   db.close();
-  assert.match(log, /"evidence":\[\{"kind":"coverage","ref":"local\/run\.bin","sha256":"[0-9a-f]{64}","space":"c64"\}\]/);
+  // The C64 is the space of evidence without one, as of a row.
+  assert.match(log, /"evidence":\[\{"kind":"coverage","ref":"local\/run\.bin","sha256":"[0-9a-f]{64}"\}\]/);
   const line = (space: string) => `{"id":"${revision}","time":"2026-10-15T21:45:01.123+01:00","origin":"llm","operation":"coverage","evidence":[{"kind":"coverage","ref":"a.bin","sha256":"${"b".repeat(64)}","space":"${space}"}]}\n`;
   const loaded = emptyIndex();
   loadText(loaded, new Map([[REVISIONS_FILE, { text: line("drive8") }]]));

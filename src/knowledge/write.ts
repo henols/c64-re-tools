@@ -92,7 +92,7 @@ export interface Evidence {
   kind: EvidenceKind;
   ref: string;
   sha256?: string;
-  /** The space that a coverage map was imported into (D86). */
+  /** The space that a coverage map was imported into (D86); none is the C64, as for a row. */
   space?: Space;
 }
 

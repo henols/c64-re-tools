@@ -146,11 +146,11 @@ function currentCoverage(db: DatabaseSync, space: Space): Map<CoverageKind, Uint
   return maps;
 }
 
-/** One import of a coverage map: its project path, its SHA-256, the space it went into (D86; null for an import before D86) and the revision. */
+/** One import of a coverage map: its project path, its SHA-256, the space it went into (D86) and the revision. */
 export interface CoverageRun {
   name: string;
   sha256: string;
-  space: Space | null;
+  space: Space;
   revision: string;
 }
 
@@ -158,7 +158,7 @@ export interface CoverageRun {
 export function coverageRuns(db: DatabaseSync | undefined): CoverageRun[] {
   if (db === undefined) return [];
   return db
-    .prepare("SELECT DISTINCT e.ref AS name, e.sha256 AS sha256, e.space AS space, e.revision AS revision FROM evidence e JOIN revisions r ON r.id = e.revision WHERE r.operation = 'coverage' AND e.kind = 'coverage' ORDER BY e.ref, e.revision")
+    .prepare(`SELECT DISTINCT e.ref AS name, e.sha256 AS sha256, coalesce(e.space, '${DEFAULT_SPACE}') AS space, e.revision AS revision FROM evidence e JOIN revisions r ON r.id = e.revision WHERE r.operation = 'coverage' AND e.kind = 'coverage' ORDER BY e.ref, e.revision`)
     .all() as unknown as CoverageRun[];
 }
 
@@ -182,7 +182,7 @@ export function addCoverage(
   const hashed = request.maps.map((map) => ({ ...map, sha256: createHash("sha256").update(map.bytes).digest("hex") }));
   const known = new Set(coverageRuns(db).filter((run) => run.space === space).map((run) => `${run.name}\n${run.sha256}`));
   const fresh = hashed.filter((map) => !known.has(`${map.name}\n${map.sha256}`));
-  const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256, space }))];
+  const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256, ...(space === DEFAULT_SPACE ? {} : { space }) }))];
   return write(db, { ...context, evidence }, "coverage", (change) => {
     const result = { space, imported: fresh.map((map) => map.name), known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name), ranges: 0 };
     if (fresh.length === 0) return result;
