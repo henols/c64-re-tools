@@ -240,6 +240,18 @@ test("image puts a capture into the knowledge, and coverage joins maps that are 
   });
   writeFileSync(join(capture, "short.prg"), Buffer.from([0x00, 0x04]));
   assert.equal(knowledge(root, "image", ".c64-re-tools/local/capture/short.prg").status, 2);
+  // A JSON value that is no object, as the file or as a segment or a stage, is no image.json.
+  for (const [content, what] of [
+    ["null", /it is not a JSON object/],
+    ["[]", /it is not a JSON object/],
+    [JSON.stringify({ image: "image.bin", segments: [null] }), /segment 1 is not an object/],
+    [JSON.stringify({ image: "image.bin", segments: [{ start: "$0400", end: "$04ff" }], stages: [7] }), /stage 1 is not an object/],
+  ] as const) {
+    writeFileSync(join(capture, "bad.json"), content);
+    const bad = knowledge(root, "image", ".c64-re-tools/local/capture/bad.json");
+    assert.equal(bad.status, 2, content);
+    assert.match((bad.json.error as { message: string }).message, what);
+  }
 });
 
 test("export writes all current knowledge to a project file and answers with counts", () => {

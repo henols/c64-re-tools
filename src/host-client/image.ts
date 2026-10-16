@@ -37,16 +37,19 @@ export function readImage(path: string): Image {
   const fail = (what: string): never => {
     throw new ImageError(`${path} is not an image.json of the c64-unpacker skill: ${what}`);
   };
-  let manifest: Record<string, unknown>;
+  const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+  let parsed: unknown;
   try {
-    manifest = JSON.parse(bytes.toString("utf8")) as Record<string, unknown>;
+    parsed = JSON.parse(bytes.toString("utf8"));
   } catch (error) {
     return fail((error as Error).message);
   }
+  const manifest = isObject(parsed) ? parsed : fail("it is not a JSON object");
   const address = (value: unknown, what: string) => (typeof value === "string" && /^\$[0-9a-f]{4}$/i.test(value) ? Number.parseInt(value.slice(1), 16) : fail(`${what} is not a $ address`));
   if (typeof manifest.image !== "string") fail("it has no image");
   if (!Array.isArray(manifest.segments) || manifest.segments.length === 0) fail("it has no segments");
-  const segments = (manifest.segments as Array<Record<string, unknown>>)
+  const segments = (manifest.segments as unknown[])
+    .map((segment, index) => (isObject(segment) ? segment : fail(`segment ${index + 1} is not an object`)))
     .map((segment, index) => ({ start: address(segment.start, `segment ${index + 1} start`), end: address(segment.end, `segment ${index + 1} end`) }))
     .sort((a, b) => a.start - b.start);
   segments.forEach((segment, index) => {
@@ -58,6 +61,6 @@ export function readImage(path: string): Image {
   if (memory.length !== 0x10000) fail(`its image has ${memory.length} bytes, not 65536`);
   const image: Image = { segments, byteAt: (at) => memory[at]!, statePath: posix.join(directory, "entry_state.json") };
   if (manifest.entry !== undefined) image.entry = address(manifest.entry, "entry");
-  if (Array.isArray(manifest.stages)) image.stages = manifest.stages as Array<Record<string, unknown>>;
+  if (Array.isArray(manifest.stages)) image.stages = manifest.stages.map((stage, index) => (isObject(stage) ? stage : fail(`stage ${index + 1} is not an object`)));
   return image;
 }
