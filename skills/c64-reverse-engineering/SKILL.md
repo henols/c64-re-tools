@@ -38,6 +38,7 @@ One repository can hold several programs, with one project folder for each progr
 - A subagent can have no emulator tools. Give it its experiments as run files of the c64-testing skill. Each run starts its own emulator, so many runs can go at the same time. The emulator of the emulator tools is one machine, for the main session.
 - To name a large program with more agents at the same time, give each agent one range of addresses. Each agent writes a batch with its owner range. Then join the batches with `join` of the c64-knowledge skill, and apply the result one time.
 - Do not write a build script or a merge script. c64-source writes and assembles the loader with `--loader`, and `join` of c64-knowledge joins the batches.
+- Do not write a script that makes a deliverable again, for example a capture, copy or replay script. Commit the deliverable.
 - Write the knowledge only with the c64-knowledge script. Do not write or edit the files in `.c64-re-tools/knowledge/` yourself.
 
 ## Workflow
@@ -102,7 +103,8 @@ After stage 7, save each routine that other programs can have to the library wit
 - the built program and the loader
 - the c64-testing scenarios
 - the documentation in `docs/`, when the criteria ask for it
-- the runs in `runs/` that the knowledge gives as evidence.
+- the runs in `runs/` that the knowledge gives as evidence
+- the scripts in `tools/` for the formats of this program, when you wrote them.
 
 All other files that you made are not deliverables. Keep them in `.c64-re-tools/local/`. Do not delete a file that the user made.
 
@@ -118,18 +120,21 @@ Keep observed facts apart from your conclusions.
 
 ### Project layout
 
-If the project has no layout, use this one. It is a proposal. No script checks it. Each script takes the paths that you give.
+If the project has no layout, use this one. No script checks it. Each script takes the paths that you give.
 
 ```
 original/      the disk image or the program as you got it
 unpacked/      image.json, image.bin and entry_state.json from c64-unpacker
-coverage/      coverage files from c64_memmap
+coverage/      the coverage files that the knowledge gives as evidence
 src/           the generated source from c64-source
 build/         programs from c64-assembler
 tests/         c64-testing scenarios
 runs/          the runs that the knowledge gives as evidence
 docs/          the documentation from c64-docs, with the reference in docs/reference/
+tools/         scripts for the formats of this program only
 ```
+
+Commit each folder of the layout and `.c64-re-tools/knowledge/`. Put all other files that you make in `.c64-re-tools/local/`. Do not let git ignore a folder of the layout. Do not change the `.gitignore` files of the project.
 
 If the project has a layout, use that layout.
 
