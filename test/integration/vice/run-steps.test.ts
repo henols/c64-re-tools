@@ -84,3 +84,42 @@ test("a runUntil that does not reach its target ends the run with the reason", {
   assert.match(json.reason as string, /Step 2 did not reach its target in 20 frames/);
   assert.deepEqual(json.files, ["results.json"], "the steps after it did not run");
 });
+
+test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff finds the change between two snapshots (M23.9)", { skip: liveSkip, timeout: 300_000 }, async () => {
+  writeFileSync(join(project, "counter.prg"), joystickCounterPrg);
+  writeFileSync(
+    join(project, "under.json"),
+    JSON.stringify({
+      name: "under the KERNAL",
+      start: { program: "counter.prg", load: true },
+      steps: [
+        { registers: { pc: "$c000" } },
+        { frames: 5 },
+        { save: "a" },
+        { write: { at: "$e000", bytes: [1, 2, 3, 4] } },
+        { save: "b" },
+        { observe: "under", memory: [{ at: "$e000", size: 4, view: "ram" }] },
+        { observe: "rom", memory: [{ at: "$e000", size: 4 }] },
+        { observe: "everything", memory: "all" },
+      ],
+    }),
+  );
+  const run = await runSteps("under.json", "--out", "runs/under");
+  assert.equal(run.status, 0, JSON.stringify(run.json));
+  const results = JSON.parse(readFileSync(join(project, "runs", "under", "results.json"), "utf8")) as { observations: Record<string, { memory: Record<string, unknown> }> };
+  assert.deepEqual(results.observations.under!.memory, { $e000: "01020304" }, "the ram view reads the RAM under the KERNAL");
+  assert.notEqual((results.observations.rom!.memory as Record<string, string>).$e000, "01020304", "the CPU view reads the KERNAL ROM");
+  assert.deepEqual(results.observations.everything!.memory, { file: "everything.bin" });
+  const all = readFileSync(join(project, "runs", "under", "everything.bin"));
+  assert.equal(all.length, 0x10000);
+  assert.deepEqual([...all.subarray(0xe000, 0xe004)], [1, 2, 3, 4]);
+
+  const differ = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/diff.ts");
+  const child = spawn(process.execPath, [...process.execArgv, differ, "runs/under/a.vsf", "runs/under/b.vsf"], { cwd: project, env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` }, stdio: ["ignore", "pipe", "inherit"] });
+  let stdout = "";
+  child.stdout.on("data", (chunk) => (stdout += chunk));
+  const [status] = (await once(child, "exit")) as [number | null];
+  assert.equal(status, 0, stdout);
+  const diff = JSON.parse(stdout) as { memory: { listed: Array<{ start: string; end: string; a?: string; b?: string }> } };
+  assert.ok(diff.memory.listed.some((range) => range.start === "$e000" && range.end === "$e003" && range.b === "01020304"), stdout);
+});

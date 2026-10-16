@@ -2,7 +2,7 @@
 // one VICE. Exposes C64-domain operations only.
 
 import { ProtocolError, WireFailure, type VideoStandard } from "../protocol/messages.ts";
-import { validateViceResult, type Breakpoint, type BreakpointParams, type PointRemoved, type Watchpoint, type WatchpointParams, type ExecutionParams, type ExecutionResult, type JoystickState, type MachineStatus, type MemmapRange, type MemoryWriteParams, type ProfileEntry, type RegisterValues, type ResetMode, type RunState, type RunTarget, type RunUntilResult, type MemoryReadParams, type MemoryReadResult, type Registers, type Space, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
+import { MAX_MEMORY_READ, validateViceResult, type Breakpoint, type BreakpointParams, type PointRemoved, type Watchpoint, type WatchpointParams, type ExecutionParams, type ExecutionResult, type JoystickState, type MachineStatus, type MemmapRange, type MemoryWriteParams, type ProfileEntry, type RegisterValues, type ResetMode, type RunState, type RunTarget, type RunUntilResult, type MemoryReadParams, type MemoryReadResult, type Registers, type Space, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
 import { HostConnection } from "./connect.ts";
 import { readProjectFile } from "./transfer.ts";
 
@@ -315,4 +315,14 @@ export class ViceSessionClient {
   #fail(): void {
     void this.#connection.close();
   }
+}
+
+
+/** Reads `size` bytes from `address` of the C64 in reads of at most 4 KiB, in one view: up to all 64 KiB (M23.9). */
+export async function readMemoryInParts(client: Pick<ViceSessionClient, "memoryRead">, address: number, size: number, view: "cpu" | "ram"): Promise<Buffer> {
+  const parts: Buffer[] = [];
+  for (let at = address; at < address + size; at += MAX_MEMORY_READ) {
+    parts.push(Buffer.from((await client.memoryRead({ address: at, size: Math.min(MAX_MEMORY_READ, address + size - at), space: "c64", view })).data, "hex"));
+  }
+  return Buffer.concat(parts);
 }

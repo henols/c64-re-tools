@@ -12,7 +12,7 @@ import { readCoverage } from "#src/host-client/coverage.ts";
 import { ACTION_STEP_KEYS, ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
-import { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { loadSymbols } from "./lib/scenario.ts";
@@ -30,7 +30,7 @@ type RunStep =
   | { save: string }
   | { screen: string }
   | { coverage: string }
-  | { observe: string; memory?: Array<string | { at: string; size?: number }>; registers?: boolean; vicii?: boolean; sprites?: number[] };
+  | { observe: string; memory?: "all" | Array<string | { at: string; size?: number; view?: "cpu" | "ram" }>; registers?: boolean; vicii?: boolean; sprites?: number[] };
 
 interface Run {
   name: string;
@@ -83,8 +83,15 @@ function readRun(path: string): Run {
     if (kind !== "observe") return;
     if (labels.has(name as string)) fail(`${at} needs a new observation name`);
     labels.add(name as string);
-    if (step.memory !== undefined && (!Array.isArray(step.memory) || step.memory.some((item) => typeof item !== "string" && !(isObject(item) && typeof item.at === "string" && (item.size === undefined || isInteger(item.size, 1, MAX_MEMORY_READ)))))) {
-      fail(`${at}: memory is a list of names, $ addresses, or objects with at and size`);
+    const memoryItem = (item: unknown) =>
+      typeof item === "string" ||
+      (isObject(item) &&
+        typeof item.at === "string" &&
+        Object.keys(item).every((key) => ["at", "size", "view"].includes(key)) &&
+        (item.size === undefined || isInteger(item.size, 1, 0x10000)) &&
+        (item.view === undefined || item.view === "cpu" || item.view === "ram"));
+    if (step.memory !== undefined && step.memory !== "all" && (!Array.isArray(step.memory) || !step.memory.every(memoryItem))) {
+      fail(`${at}: memory is "all", or a list of names, $ addresses, or objects with at, size (1 to 65536) and view (cpu or ram)`);
     }
     if (step.registers !== undefined && typeof step.registers !== "boolean") fail(`${at}: registers must be true or false`);
     if (step.vicii !== undefined && typeof step.vicii !== "boolean") fail(`${at}: vicii must be true or false`);
@@ -137,11 +144,23 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
         await client.memmap({ action: "clear" });
       } else if ("observe" in step) {
         const seen: Record<string, unknown> = {};
-        if (step.memory !== undefined) {
-          const memory: Record<string, string> = {};
+        if (step.memory === "all") {
+          // All 64 KiB of RAM, also under the ROMs and the I/O area, as one file (M23.9).
+          write(`${step.observe}.bin`, await readMemoryInParts(client, 0x0000, 0x10000, "ram"));
+          seen.memory = { file: `${step.observe}.bin` };
+        } else if (step.memory !== undefined) {
+          const memory: Record<string, string | { file: string }> = {};
           for (const item of step.memory) {
             const spec = typeof item === "string" ? { at: item } : item;
-            memory[spec.at] = (await client.memoryRead({ address: at(spec.at), size: spec.size ?? 1, space: "c64", view: "cpu" })).data;
+            const size = spec.size ?? 1;
+            const bytes = await readMemoryInParts(client, at(spec.at), size, spec.view ?? "cpu");
+            // More than one read gives goes to a file: results.json stays small.
+            if (size <= MAX_MEMORY_READ) memory[spec.at] = bytes.toString("hex");
+            else {
+              const file = `${step.observe}-${spec.at.replace(/^\$/, "")}.bin`;
+              write(file, bytes);
+              memory[spec.at] = { file };
+            }
           }
           seen.memory = memory;
         }

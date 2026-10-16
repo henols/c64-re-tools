@@ -11,6 +11,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
 import type { ViceSessionClient } from "../../src/host-client/vice-session.ts";
+import { changedRanges, diffStates } from "../../skills/c64-testing/scripts/lib/diff.ts";
 import { compare, loadSymbols, readScenario, resolve, runScenario, ScenarioError } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-testing-"));
@@ -234,4 +235,29 @@ test("a run refuses a bad call before it opens an emulator (D45)", () => {
     const run = call(...args);
     assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
   }
+});
+
+test("diff gives the changed ranges of two memory files and the changed items of two observations of one run (D77)", () => {
+  // The Bruce Lee run: the agent wrote the same diff script about six times.
+  const ranges = changedRanges(Uint8Array.from([1, 2, 3, 4, 5, 6]), Uint8Array.from([1, 9, 3, 4, 8, 8]), 0xc000);
+  assert.deepEqual(ranges, { changedBytes: 3, ranges: [{ start: 0xc001, end: 0xc001, a: "02", b: "09" }, { start: 0xc004, end: 0xc005, a: "0506", b: "0808" }] });
+  assert.deepEqual(changedRanges(Uint8Array.from([1, 2, 3, 4]), Uint8Array.from([0, 2, 3, 0]), 0, 2).ranges.map((range) => [range.start, range.end]), [[0, 3]], "--gap joins ranges across equal bytes");
+  assert.deepEqual(diffStates({ values: { "cpu.a": 1, "vic.$d011": 0x1b } }, { values: { "cpu.a": 1, "vic.$d011": 0x9b } }).values, [{ name: "vic.$d011", a: 0x1b, b: 0x9b }]);
+
+  const before = new Uint8Array(0x10000);
+  const after = Uint8Array.from(before);
+  after.set([7, 7], 0x2fa1);
+  writeFileSync(join(project, "before.bin"), before);
+  writeFileSync(join(project, "after.bin"), after);
+  writeFileSync(join(project, "results.json"), JSON.stringify({ observations: { start: { memory: { room: "00", $0400: "2020" }, registers: { a: 1, pc: "$0400" } }, later: { memory: { room: "05", $0400: "2020" }, registers: { a: 1, pc: "$0410" } } } }));
+  const script = resolvePath(import.meta.dirname, "../../skills/c64-testing/scripts/diff.ts");
+  const differ = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8" });
+  const memory = differ("before.bin", "after.bin");
+  assert.equal(memory.status, 0, memory.stdout + memory.stderr);
+  assert.deepEqual(JSON.parse(memory.stdout).memory, { changedBytes: 2, ranges: 1, listed: [{ start: "$2fa1", end: "$2fa2", a: "0000", b: "0707" }] });
+  const observed = differ("results.json:start", "results.json:later");
+  assert.equal(observed.status, 0, observed.stdout + observed.stderr);
+  assert.deepEqual(JSON.parse(observed.stdout), { a: "results.json:start", b: "results.json:later", registers: [{ name: "cpu.pc", a: 0x0400, b: 0x0410 }], observed: [{ at: "room", a: "00", b: "05" }] });
+  assert.equal(differ("before.bin", "results.json:later").status, 2, "two states of one kind");
+  assert.equal(differ("results.json:start", "results.json:nothing").status, 2);
 });

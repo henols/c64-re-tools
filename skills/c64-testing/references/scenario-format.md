@@ -67,7 +67,7 @@ An `observe` step has a checkpoint name. A scenario can have each name only one 
 
 | Key | What the script compares |
 |---|---|
-| `memory` | A list of names, `$` addresses, or objects with `at`, `size` (1 to 4096, default 1), `tolerance` (0 to 255, default 0) and `exclude`. |
+| `memory` | A list of names, `$` addresses, or objects. An object has `at`, `size` (1 to 65536, default 1), `view` (`cpu` or `ram`, default `cpu`), `tolerance` (0 to 255, default 0) and `exclude`. The view `ram` reads the RAM under the ROMs and the I/O area. |
 | `registers` | A list of register names: `pc`, `a`, `x`, `y`, `sp`, `flags`. |
 | `screen` | The screen of the rebuild against the screen of the original. `maxMismatchRatio` (default 0) is the largest permitted part of different pixels. `mask` is a list of rectangles (`x`, `y`, `width`, `height`) that the comparison does not include. |
 | `vicii` | The VIC-II state: mode, screen address, scroll and colors. |
@@ -88,6 +88,8 @@ A run file (for `run.ts`) has:
 - `symbols`: optional, `knowledge`, `none` (default), or a JSON file as for a subject.
 - `videoStandard`: optional, `pal` (default) or `ntsc`.
 - `steps`: the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage` and `observe`.
+
+In a run, a memory item has `at`, `size` (1 to 65536) and `view`. An item larger than 4096 bytes goes into the file `<observe>-<at>.bin`. `"memory": "all"` writes all 64 KiB of RAM to `<observe>.bin`.
 
 A name in `save`, `screen`, `coverage` and `observe` has 1 to 64 letters, digits, dots, underscores or hyphens. The files go into the `--out` directory, with `results.json`. It has the observations, the files and the steps done. If a `runUntil` step did not reach its target, it also tells why the run stopped.
 

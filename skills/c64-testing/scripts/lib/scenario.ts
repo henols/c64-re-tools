@@ -4,11 +4,11 @@
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
 import { formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
-import { MAX_BASELINES, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
+import { MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
 import { ACTION_STEP_KEYS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
-import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { listAnalyzerNames, listSymbols } from "#src/knowledge/read.ts";
 
@@ -22,8 +22,10 @@ export type { Location };
 
 export interface MemoryObservation {
   at: Location;
-  /** Bytes from `at`; 1 when not given. */
+  /** Bytes from `at`; 1 when not given, at most 64 KiB. */
   size?: number;
+  /** cpu (the default) reads as the CPU sees memory; ram reads the RAM under the ROMs and the I/O area (M23.9). */
+  view?: "cpu" | "ram";
   /** The largest allowed difference per byte; 0 when not given. */
   tolerance?: number;
   /** Bytes in the range that the comparison leaves out, each with the reason (D46). */
@@ -178,7 +180,8 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
         checkLocation(item, `${at}: memory`, fail);
         continue;
       }
-      if (!isObject(item) || Object.keys(item).some((key) => !["at", "size", "tolerance", "exclude"].includes(key))) return fail(`${at}: a memory object has at, size, tolerance and exclude, and nothing else`);
+      if (!isObject(item) || Object.keys(item).some((key) => !["at", "size", "view", "tolerance", "exclude"].includes(key))) return fail(`${at}: a memory object has at, size, view, tolerance and exclude, and nothing else`);
+      if (item.view !== undefined && item.view !== "cpu" && item.view !== "ram") fail(`${at}: memory.view must be cpu or ram`);
       if (item.exclude !== undefined) {
         if (!Array.isArray(item.exclude) || item.exclude.length === 0) fail(`${at}: memory.exclude must be a list of objects with at and reason`);
         for (const excluded of item.exclude as unknown[]) {
@@ -188,7 +191,7 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
         }
       }
       checkLocation(item.at, `${at}: memory.at`, fail);
-      if (item.size !== undefined && !isInteger(item.size, 1, MAX_MEMORY_READ)) fail(`${at}: memory.size must be a number from 1 to ${MAX_MEMORY_READ}`);
+      if (item.size !== undefined && !isInteger(item.size, 1, 0x10000)) fail(`${at}: memory.size must be a number from 1 to 65536`);
       if (item.tolerance !== undefined && !isInteger(item.tolerance, 0, 0xff)) fail(`${at}: memory.tolerance must be a number from 0 to 255`);
     }
   }
@@ -353,7 +356,7 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
         const spec: MemoryObservation = typeof item === "string" ? { at: item } : item;
         const address = at(spec.at);
         const size = spec.size ?? 1;
-        const read = await client.memoryRead({ address, size, space: "c64", view: "cpu" });
+        const read = { data: (await readMemoryInParts(client, address, size, spec.view ?? "cpu")).toString("hex") };
         const excluded = (spec.exclude ?? []).map((exclude) => {
           const offset = at(exclude.at) - address;
           if (offset < 0 || offset >= size) throw new ScenarioError(`the exclude ${exclude.at} lies outside the observed ${spec.at} (${size} bytes)`);

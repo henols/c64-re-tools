@@ -47,8 +47,26 @@ The run file gives where to start (a program, or a snapshot file), the steps, an
 | `{ "screen": "room3" }` | Write the screen to `room3.png`. |
 | `{ "coverage": "room3" }` | Write the coverage map since the start or the last coverage step to `room3.bin`, then clear the map. |
 | `{ "observe": "room3", "memory": ["$c100"], "registers": true }` | Record memory, registers, `vicii` or `sprites` in `results.json`. |
+| `{ "observe": "all3", "memory": "all" }` | Write all 64 KiB of RAM to `all3.bin`, also the RAM under the ROMs and the I/O area. |
+
+A memory item can have `"view": "ram"`. Then it reads the RAM under the ROMs and the I/O area, for example code at `$e000` under the KERNAL. The default view `cpu` reads as the CPU sees memory. An item larger than 4096 bytes goes into its own `.bin` file, and `results.json` gives the file name.
 
 See [references/scenario-format.md](references/scenario-format.md), section Runs. The script prints one JSON object. The exit status is 0 when all steps ran, 1 when a step did not reach its target, and 2 for a bad call. A long run can need more time than one shell call. Then run it in the background.
+
+### Differences
+
+```
+node <skill>/scripts/diff.ts runs/rooms/before.vsf runs/rooms/after.vsf
+node <skill>/scripts/diff.ts runs/rooms/results.json:room0 runs/rooms/results.json:room3
+```
+
+`diff.ts` tells what changed between two states of one kind. Use it in place of your own compare script.
+
+- Two snapshot files: the script restores each one in its own emulator. It gives the changed ranges of the RAM and of the colour RAM, and the changed VIC-II, CIA, SID and CPU registers.
+- Two memory files of a run: the changed ranges. For a file of less than 64 KiB, `--at` gives the address of its first byte.
+- Two observations of runs, also of one run: the changed memory items and registers.
+
+`--gap N` joins ranges across N equal bytes. `--out` writes all ranges to a project file.
 
 ### Project folder
 
