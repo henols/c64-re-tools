@@ -45,7 +45,21 @@ test("the script writes the program into the project and reports symbols", { ski
   assert.equal(program.readUInt16LE(0), 0x0801);
   const symbols = json.symbols as Array<Record<string, unknown>>;
   assert.deepEqual(symbols.find((symbol) => symbol.name === "start"), { name: "start", kind: "address", address: "$080d", used: false });
-  assert.deepEqual(symbols.find((symbol) => symbol.name === "MAX"), { name: "MAX", kind: "constant", value: 10, used: true });
+  assert.deepEqual(symbols.find((symbol) => symbol.name === "MAX"), { name: "MAX", kind: "constant", value: "$000a", used: true });
+  assert.equal(symbols.find((symbol) => symbol.name === "UNUSED_CONSTANT"), undefined, "an unused constant is left out");
+  assert.equal(json.unusedConstants, 1);
+});
+
+test("--all-symbols lists the unused constants, and --plain writes the bytes without the load address", { skip: acmeSkip }, async () => {
+  const { status, json } = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/counter.bin", "--plain", "--all-symbols");
+  assert.equal(status, 0, JSON.stringify(json));
+  assert.equal(json.plain, true);
+  assert.equal(json.unusedConstants, undefined);
+  const symbols = json.symbols as Array<Record<string, unknown>>;
+  assert.deepEqual(symbols.find((symbol) => symbol.name === "UNUSED_CONSTANT"), { name: "UNUSED_CONSTANT", kind: "constant", value: "$0063", used: false });
+  const plain = readFileSync(join(project, "build", "counter.bin"));
+  assert.deepEqual(plain, readFileSync(join(project, "build", "counter.prg")).subarray(2));
+  assert.equal(plain.length, (json.loadRange as { bytes: number }).bytes);
 });
 
 test("source errors print diagnostics, exit 1 and write no program", { skip: acmeSkip }, async () => {

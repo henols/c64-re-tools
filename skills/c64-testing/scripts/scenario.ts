@@ -248,11 +248,12 @@ export function loadSymbols(subject: Subject): Map<string, number> {
   // c64-assembler output, or a plain name → "$xxxx" map. A constant in the
   // assembler output counts too: RAM variables such as "counter = $c100" lie
   // outside the program, so the assembler reports them as constants.
-  const assembled = (value as { symbols?: Array<{ name: string; address?: string; value?: number }> }).symbols;
+  const assembled = (value as { symbols?: Array<{ name: string; address?: string; value?: string }> }).symbols;
   const entries: Array<[string, unknown]> = Array.isArray(assembled)
     ? assembled.flatMap((symbol): Array<[string, unknown]> => {
         if (symbol.address !== undefined) return [[symbol.name, symbol.address]];
-        if (Number.isInteger(symbol.value) && symbol.value! >= 0 && symbol.value! <= 0xffff) return [[symbol.name, formatC64Address(symbol.value!)]];
+        // A constant above $ffff has more digits and is no address.
+        if (typeof symbol.value === "string" && /^\$[0-9a-f]{4}$/.test(symbol.value)) return [[symbol.name, symbol.value]];
         return [];
       })
     : Object.entries(value as Record<string, unknown>);

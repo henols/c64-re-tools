@@ -62,7 +62,7 @@ See [references/scenario-format.md](references/scenario-format.md), section Runs
 1. Write the scenario file. Start the steps with a frame count, for example `{ "frames": 150 }`. Each side starts at the reset vector, and the C64 needs these frames to start.
 2. Use symbol names, for example `player_x`, not fixed addresses. Each side finds the name in its own symbols. Use a `$` address only when both programs use the same address.
 3. Make each checkpoint a condition, for example `runUntil` at a routine. Do not wait for a time.
-4. Save the c64-assembler output of the rebuild to the symbol file, for example `build/game.json` in the project folder. From the folder above the project, write `assemble.ts --project <folder> ... > <folder>/build/game.json`.
+4. Save the c64-assembler output of the rebuild to the symbol file, for example `build/game.json` in the project folder. Give `--all-symbols`, so that the file also has the constants that the source does not use. From the folder above the project, write `assemble.ts --project <folder> ... > <folder>/build/game.json`.
 5. Run the test script.
 6. Read the result:
    - `PASS`: all observations are equal, or the differences are in the allowed tolerance.

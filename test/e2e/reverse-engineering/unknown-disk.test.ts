@@ -98,7 +98,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
 
   // 7. Source reconstruction and the ACME build.
   cpSync(resolve(root, "test/fixtures/asm/reconstructed"), join(project, "rebuild"), { recursive: true });
-  const built = await run("c64-assembler", "assemble.ts", "--source-root", "rebuild", "--entry", "game.a", "--out", "build/game.prg");
+  const built = await run("c64-assembler", "assemble.ts", "--source-root", "rebuild", "--entry", "game.a", "--out", "build/game.prg", "--all-symbols");
   assert.equal(built.status, 0, built.stdout);
   writeFileSync(join(project, "build", "game.json"), built.stdout);
 

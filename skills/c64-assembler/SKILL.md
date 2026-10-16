@@ -32,10 +32,12 @@ node <skill>/scripts/assemble.ts --source-root src --entry main.a --out build/ga
 | `--define DEBUG=1` | An assembler symbol: an integer, also as `$` hex, or `true` or `false`. Use it again for more symbols. |
 | `--set-pc '$0801'` | The start address when the source does not set one. |
 | `--compare unpacked/image.json` | Check the program byte by byte against a reference. The reference is the `image.json` of the c64-unpacker skill, a PRG, or 64 KiB of memory. |
+| `--plain` | Write only the bytes of the program, without the 2-byte load address of a PRG. `loadRange` still tells where the bytes go. |
+| `--all-symbols` | List all symbols. Without it, the list does not include the constants that the source does not use. `unusedConstants` gives their count. |
 
 The script copies the full source root. Put all files that the program includes under it. Version control directories stay out.
 
-The script prints one JSON object. The target CPU is the 6510 and the output is always a C64 PRG.
+The script prints one JSON object. The target CPU is the 6510. The output is a C64 PRG, or the bytes only with `--plain`.
 
 ### Project folder
 
@@ -48,7 +50,10 @@ The script prints one JSON object. The target CPU is the 6510 and the output is 
 
 1. Find the source root and the entry source. The entry source sets its own start address with `* = $0801` or similar.
 2. Run the script.
-3. If `assembled` is `true`, the PRG is at `output`. `loadRange` tells where it loads. `symbols` gives each symbol as an `address` or a `value`.
+3. If `assembled` is `true`, the PRG is at `output`. `loadRange` tells where it loads. `symbols` gives each symbol:
+   - Kind `address` has a value in `loadRange`. It gives the `address`.
+   - Kind `constant` has a value outside `loadRange`. It gives the `value` as `$` and four or more hex digits. A label in a `!pseudopc` block can be a constant, because its value is the run address, not the load address.
+   - `used` is `false` when the source does not use the symbol.
 4. If `assembled` is `false`, read `diagnostics`. Each one has a severity, a file, a line and a message. Correct the source and run the script again.
 5. To run the program, give the PRG path to the c64-emulator skill.
 

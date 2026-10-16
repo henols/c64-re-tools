@@ -24,8 +24,10 @@ const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [
   --set-pc <address>       start address when the source sets none, for example '$0801'
   --compare <file>         check the program byte by byte against an image.json of the
                            c64-unpacker skill (each segment), a PRG, or 64 KiB of memory
+  --plain                  write the bytes only, without the 2-byte load address of a PRG
+  --all-symbols            list also the constants that the source does not use
 
-The result is one JSON object. Addresses are $ and four hex digits.`;
+The result is one JSON object. Addresses and symbol values are $ and at least four hex digits.`;
 
 function parseDefine(text: string): [string, number | boolean] {
   const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.+)$/.exec(text);
@@ -49,6 +51,8 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
       define: { type: "string", multiple: true },
       "set-pc": { type: "string" },
       compare: { type: "string" },
+      plain: { type: "boolean" },
+      "all-symbols": { type: "boolean" },
       help: { type: "boolean" },
     },
   });
@@ -79,19 +83,23 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   const { result, attachments } = await assemble(params, tree.contents, localToolContext());
   if (!result.assembled) return { output: { assembled: false, diagnostics: result.diagnostics }, failed: true };
   mkdirSync(dirname(outPath), { recursive: true });
-  writeFileSync(outPath, attachments![0]!);
+  writeFileSync(outPath, values.plain ? attachments![0]!.subarray(2) : attachments![0]!);
   const range = result.loadRange!;
   const compared = values.compare === undefined ? undefined : compareBuild(attachments![0]!, values.compare);
+  // An include file of platform names gives many constants that the program does not use.
+  const listed = result.symbols!.filter((symbol) => values["all-symbols"] || symbol.kind === "address" || symbol.used);
   return {
     output: {
       assembled: true,
       output: out,
+      ...(values.plain ? { plain: true } : {}),
       loadRange: { start: formatC64Address(range.start), end: formatC64Address(range.end), bytes: range.bytes },
-      symbols: result.symbols!.map((symbol) =>
+      symbols: listed.map((symbol) =>
         symbol.kind === "address"
           ? { name: symbol.name, kind: "address", address: formatC64Address(symbol.address), used: symbol.used }
-          : { name: symbol.name, kind: "constant", value: symbol.value, used: symbol.used },
+          : { name: symbol.name, kind: "constant", value: `$${symbol.value.toString(16).padStart(4, "0")}`, used: symbol.used },
       ),
+      ...(values["all-symbols"] ? {} : { unusedConstants: result.symbols!.length - listed.length }),
       diagnostics: result.diagnostics,
       ...(compared === undefined ? {} : { compare: compared }),
     },

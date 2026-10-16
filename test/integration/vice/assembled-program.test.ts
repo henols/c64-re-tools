@@ -53,7 +53,8 @@ test("assembled source loads into VICE and reaches its known end state", { skip,
     { cwd: project, env: { ...process.env, C64RT_HOST: hostAddress }, encoding: "utf8" },
   );
   assert.equal(assembled.status, 0, assembled.stdout + assembled.stderr);
-  const build = JSON.parse(assembled.stdout) as { symbols: Array<{ name: string; address?: string; value?: number }> };
+  const build = JSON.parse(assembled.stdout) as { symbols: Array<{ name: string; address?: string; value?: string }> };
+  const valueOf = (name: string) => Number.parseInt(symbol(name).value!.slice(1), 16);
   const symbol = (name: string) => build.symbols.find((entry) => entry.name === name)!;
 
   // 2. The MCP loads it from the same project and runs it to the known state.
@@ -64,10 +65,10 @@ test("assembled source loads into VICE and reaches its known end state", { skip,
     await tool(client, "c64_registers", { action: "set", values: { pc: symbol("start").address } });
     const reached = await tool(client, "c64_run_until", { target: { kind: "address", address: symbol("done").address }, timeoutFrames: 50 });
     assert.equal(reached.stopReason, "target");
-    const result = await tool(client, "c64_memory_read", { address: `$${symbol("RESULT").value!.toString(16).padStart(4, "0")}`, size: 1 });
-    assert.equal(Number.parseInt(result.data as string, 16), symbol("MAX").value, "the counter reached MAX");
+    const result = await tool(client, "c64_memory_read", { address: symbol("RESULT").value!, size: 1 });
+    assert.equal(Number.parseInt(result.data as string, 16), valueOf("MAX"), "the counter reached MAX");
     const border = await tool(client, "c64_memory_read", { address: "$d020", size: 1 });
-    assert.equal(Number.parseInt(border.data as string, 16) & 0x0f, symbol("DONE_COLOR").value);
+    assert.equal(Number.parseInt(border.data as string, 16) & 0x0f, valueOf("DONE_COLOR"));
   } finally {
     await client.close();
     await host.stop();

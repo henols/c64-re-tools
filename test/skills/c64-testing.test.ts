@@ -54,7 +54,7 @@ test("each side resolves names from its own symbols", () => {
   db.close();
   writeFileSync(
     join(project, "assembled.json"),
-    JSON.stringify({ assembled: true, symbols: [{ name: "draw", kind: "address", address: "$0900" }, { name: "player_x", kind: "constant", value: 0xc200 }, { name: "BIG", kind: "constant", value: 70000 }] }),
+    JSON.stringify({ assembled: true, symbols: [{ name: "draw", kind: "address", address: "$0900" }, { name: "player_x", kind: "constant", value: "$c200" }, { name: "BIG", kind: "constant", value: "$11170" }] }),
   );
   writeFileSync(join(project, "map.json"), JSON.stringify({ player_x: "$c300" }));
   const original = loadSymbols({ program: "x", symbols: "knowledge" });
