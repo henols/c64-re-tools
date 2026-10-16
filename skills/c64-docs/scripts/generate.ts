@@ -11,7 +11,7 @@ import { writeProjectFile } from "#src/host-client/transfer.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
 import { currentRevision, listComments, listModules, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { resolveProjectPath } from "#src/project.ts";
+import { resolveProjectFile, resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { buildReference, GENERATED_MARK } from "./lib/reference.ts";
 import { readSourceMap } from "./lib/source-map.ts";
@@ -28,9 +28,8 @@ When the knowledge has the program of the source (knowledge.ts image of the
 c64-knowledge skill, D83), the reference decodes the tables and shows the
 graphics. The result is one JSON object.`;
 
-/** The files of an earlier run, or a refusal that names a file of a person. */
-function oldFiles(out: string): string[] {
-  const directory = resolveProjectPath(out);
+/** The files of an earlier run in `directory`, the real folder of --out, or a refusal that names a file of a person. */
+function oldFiles(out: string, directory: string): string[] {
   if (!existsSync(directory)) return [];
   const found: string[] = [];
   const walk = (relative: string) => {
@@ -62,6 +61,15 @@ function run(argv: string[]): Record<string, unknown> {
       throw new UsageError(`${option} must be a path relative to the project folder that stays inside it, not ${path}`);
     }
   }
+  // The files of an earlier run are deleted: only in a folder that is inside the project, also after its symbolic links.
+  let directory = resolveProjectPath(values.out);
+  if (existsSync(directory)) {
+    try {
+      directory = resolveProjectFile(values.out);
+    } catch {
+      throw new UsageError(`--out must be a path relative to the project folder that stays inside it, also through symbolic links, not ${values.out}`);
+    }
+  }
   const map = readSourceMap(values.source);
   const db = openForRead();
   let knowledge;
@@ -86,14 +94,13 @@ function run(argv: string[]): Record<string, unknown> {
   } finally {
     db?.close();
   }
-  const old = oldFiles(values.out);
+  const old = oldFiles(values.out, directory);
   const built = buildReference({
     out: posix.normalize(values.out),
     map,
     ...knowledge,
     ...(image === undefined ? {} : { image: { byteAt: image.byteAt, inImage: (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end) } }),
   });
-  const directory = resolveProjectPath(values.out);
   for (const path of old) rmSync(join(directory, path), { force: true });
   for (const file of built.files) writeProjectFile(file.path, file.bytes, { what: "--out" });
   return { out: values.out, revision: knowledge.revision, index: posix.join(posix.normalize(values.out), "index.md"), ...built.counts, program: image === undefined ? "none: put the program into the knowledge with knowledge.ts image to decode the tables and show the graphics" : "the knowledge" };

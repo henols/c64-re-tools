@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
-import { readProjectFile, readProjectTree } from "./transfer.ts";
+import { readProjectFile, readProjectTree, writeProjectFile } from "./transfer.ts";
 
 const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-transfer-"));
 const project = join(sandbox, "project");
@@ -104,4 +104,13 @@ test("a directory link to a sibling directory in the source root is followed", (
     { path: "alias/macros.a", size: 6 },
     { path: "common/macros.a", size: 6 },
   ]);
+});
+
+test("a write through a folder link out of the project is refused before a folder is made", () => {
+  mkdirSync(join(sandbox, "elsewhere"));
+  symlinkSync(join(sandbox, "elsewhere"), join(project, "linked"));
+  assert.throws(() => writeProjectFile("linked/new/page.md", Buffer.from("x"), { root: project }), failsWith("invalid-input"));
+  assert.equal(existsSync(join(sandbox, "elsewhere", "new")), false);
+  writeProjectFile("made/deep/page.md", Buffer.from("x"), { root: project });
+  assert.equal(existsSync(join(project, "made", "deep", "page.md")), true);
 });

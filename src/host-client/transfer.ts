@@ -1,7 +1,7 @@
 // Reads project files on the client side for transfer to the Host Runtime.
 // The host never sees a client path: only bytes and the file's type.
 
-import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, relative, sep } from "node:path";
 
 import { isInside, ProjectError, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "../project.ts";
@@ -80,6 +80,10 @@ export function writeProjectFile(path: string, bytes: Uint8Array, options: { roo
   } catch {
     throw refuse();
   }
+  // The nearest folder that exists must be inside the project before a folder is made below it.
+  let existing = dirname(file);
+  while (!existsSync(existing)) existing = dirname(existing);
+  if (!isInside(realpathSync(root), realpathSync(existing))) throw refuse();
   mkdirSync(dirname(file), { recursive: true });
   if (!isInside(realpathSync(root), realpathSync(dirname(file)))) throw refuse();
   let link = false;
