@@ -21,6 +21,8 @@ export interface Image {
   entry?: number;
   /** entry_state.json next to image.json. */
   statePath?: string;
+  /** The stages of the capture in image.json, as the unpacker wrote them. */
+  stages?: Array<Record<string, unknown>>;
 }
 
 /** Reads an image.json or a PRG, relative to the project folder. */
@@ -59,5 +61,6 @@ export function readImage(path: string): Image {
   if (memory.length !== 0x10000) fail(`its image has ${memory.length} bytes, not 65536`);
   const image: Image = { path, segments, byteAt: (at) => memory[at]!, analyzed: { bytes: memory, kind: "flat64k" }, statePath: posix.join(directory, "entry_state.json") };
   if (manifest.entry !== undefined) image.entry = address(manifest.entry, "entry");
+  if (Array.isArray(manifest.stages)) image.stages = manifest.stages as Array<Record<string, unknown>>;
   return image;
 }

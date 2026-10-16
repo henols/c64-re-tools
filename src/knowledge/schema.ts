@@ -57,6 +57,16 @@ export const SWITCH_NAME = /^[A-Z][A-Z0-9_]{1,31}$/;
 export const MACRO_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
 export const MACRO_PARAM = /^[a-z_][a-z0-9_]{0,31}$/;
 
+/**
+ * The kinds of a coverage range (D83), one for each flag of a coverage map
+ * (COVERAGE in c64.ts), and wx: written and executed in the same run, so
+ * self-modified code still shows after the runs are joined.
+ */
+export const COVERAGE_KINDS = ["r", "w", "x", "rom-r", "rom-x", "io-r", "io-w", "io-x", "wx"] as const;
+export type CoverageKind = (typeof COVERAGE_KINDS)[number];
+/** The most bytes of one memory row: a changed byte changes one short line of memory.jsonl. */
+export const MEMORY_ROW = 64;
+
 /** Files that c64-source writes itself: no module can have these names. */
 export const GENERATED_FILES = ["main.asm", "loader.asm", "constants.asm", "macros.asm"] as const;
 
@@ -249,6 +259,41 @@ function createSchema(db: DatabaseSync): void {
         valid_to_revision   TEXT REFERENCES revisions (id)
       );
       CREATE INDEX macro_uses_start ON macro_uses (space, start_address);
+      CREATE TABLE memory (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
+        bytes               TEXT NOT NULL CHECK (length(bytes) BETWEEN 2 AND ${MEMORY_ROW * 2} AND length(bytes) % 2 = 0 AND address + length(bytes) / 2 <= 65536),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
+      CREATE INDEX memory_current ON memory (space, address) WHERE valid_to_revision IS NULL;
+      CREATE TABLE entries (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
+        state               TEXT,
+        stages              TEXT,
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
+      CREATE INDEX entries_current ON entries (space) WHERE valid_to_revision IS NULL;
+      CREATE TABLE coverage (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        kind                TEXT NOT NULL CHECK (kind IN (${list(COVERAGE_KINDS)})),
+        start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
+        end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
+      CREATE INDEX coverage_current ON coverage (space, kind) WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_memory AS SELECT * FROM memory WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_entries AS SELECT * FROM entries WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_coverage AS SELECT * FROM coverage WHERE valid_to_revision IS NULL;
       CREATE VIEW current_symbols AS SELECT * FROM symbols WHERE valid_to_revision IS NULL;
       CREATE VIEW current_analyzer_names AS SELECT * FROM analyzer_names WHERE valid_to_revision IS NULL;
       CREATE VIEW current_regions AS SELECT * FROM regions WHERE valid_to_revision IS NULL;
@@ -264,7 +309,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 4;
+export const INDEX_VERSION = 5;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

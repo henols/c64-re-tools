@@ -184,10 +184,10 @@ test("evidence names a project file with its SHA-256, and --origin filters the r
   const root = project();
   mkdirSync(join(root, "coverage"));
   writeFileSync(join(root, "coverage", "attract.bin"), Buffer.from([4, 0, 4]));
-  const written = knowledge(root, "rename", "$2100", "update_player", "--evidence", "coverage:coverage/attract.bin", "--origin", "user").json;
+  const written = knowledge(root, "rename", "$2100", "update_player", "--evidence", "file:coverage/attract.bin", "--origin", "user").json;
   const evidence = ((knowledge(root, "revision", String(written.revision)).json.revision as { evidence: unknown[] }).evidence);
-  assert.deepEqual(evidence, [{ kind: "coverage", ref: "coverage/attract.bin", sha256: createHash("sha256").update(Buffer.from([4, 0, 4])).digest("hex") }]);
-  assert.equal((knowledge(root, "rename", "$2200", "x", "--evidence", "coverage:coverage/missing.bin").json.error as { code: string }).code, "not-found");
+  assert.deepEqual(evidence, [{ kind: "file", ref: "coverage/attract.bin", sha256: createHash("sha256").update(Buffer.from([4, 0, 4])).digest("hex") }]);
+  assert.equal((knowledge(root, "rename", "$2200", "x", "--evidence", "file:coverage/missing.bin").json.error as { code: string }).code, "not-found");
   // Scratch in local/ is no evidence (D82), also through a path that only resolves into it.
   mkdirSync(join(root, ".c64-re-tools", "local", "runs", "rooms"), { recursive: true });
   writeFileSync(join(root, ".c64-re-tools", "local", "runs", "rooms", "results.json"), "{}");
@@ -202,6 +202,44 @@ test("evidence names a project file with its SHA-256, and --origin filters the r
   assert.deepEqual((knowledge(root, "symbols", "--origin", "semantic").json.symbols as unknown[]).length, 2);
   assert.deepEqual(knowledge(root, "symbols", "--origin", "analyzer").json, { symbols: [] });
   assert.equal(knowledge(root, "symbols", "--origin", "robot").status, 2);
+});
+
+test("image puts a capture into the knowledge, and coverage joins maps that are evidence by their path (D83)", () => {
+  const root = project();
+  const capture = join(root, ".c64-re-tools", "local", "capture");
+  mkdirSync(capture, { recursive: true });
+  const memory = Buffer.alloc(0x10000);
+  memory.fill(0xea, 0x0400, 0x04ff);
+  writeFileSync(join(capture, "image.bin"), memory);
+  writeFileSync(join(capture, "image.json"), JSON.stringify({ entry: "$0400", segments: [{ start: "$0400", end: "$04ff" }], stages: [{ stage: 0, entry: "$0871" }], image: "image.bin" }));
+  writeFileSync(join(capture, "entry_state.json"), JSON.stringify({ registers: { pc: "$0400" }, differsFromReset: [] }));
+  const imported = knowledge(root, "image", ".c64-re-tools/local/capture/image.json", "--reason", "the capture");
+  assert.equal(imported.status, 0);
+  assert.deepEqual({ ...imported.json, revision: undefined }, { revision: undefined, bytes: 256, rowsAdded: 4, rowsClosed: 0, entryChanged: true });
+  const entry = readFileSync(join(root, ".c64-re-tools", "knowledge", "entry.jsonl"), "utf8");
+  assert.match(entry, /"state":\{"registers":\{"pc":"\$0400"\}\}/);
+  assert.equal(knowledge(root, "image", ".c64-re-tools/local/capture/image.json").json.revision, null);
+
+  const run = new Uint8Array(0x10000);
+  run[0x0400] = COVERAGE.ramExecute;
+  writeFileSync(join(capture, "attract.bin"), run);
+  const joined = knowledge(root, "coverage", ".c64-re-tools/local/capture/attract.bin");
+  assert.deepEqual(joined.json.imported, [".c64-re-tools/local/capture/attract.bin"]);
+  assert.equal(joined.json.ranges, 1);
+  const cited = knowledge(root, "rename", "$0400", "start", "--evidence", "coverage:.c64-re-tools/local/capture/attract.bin");
+  assert.equal(cited.status, 0);
+  const evidence = (knowledge(root, "revision", String(cited.json.revision)).json.revision as { evidence: Array<{ kind: string; ref: string }> }).evidence;
+  assert.deepEqual(evidence.map((item) => [item.kind, item.ref]), [["coverage", ".c64-re-tools/local/capture/attract.bin"]]);
+  const unknown = knowledge(root, "rename", "$0401", "x", "--evidence", "coverage:other.bin");
+  assert.equal(unknown.status, 2);
+  assert.match((unknown.json.error as { message: string }).message, /import the map with coverage first/);
+  assert.equal(knowledge(root, "coverage").status, 2);
+  assert.deepEqual(knowledge(root, "program").json, {
+    image: { segments: [{ start: "$0400", end: "$04ff" }], bytes: 256, entry: "$0400", state: true, stages: 1 },
+    coverage: { maps: [".c64-re-tools/local/capture/attract.bin"], ranges: { x: 1 } },
+  });
+  writeFileSync(join(capture, "short.prg"), Buffer.from([0x00, 0x04]));
+  assert.equal(knowledge(root, "image", ".c64-re-tools/local/capture/short.prg").status, 2);
 });
 
 test("export writes all current knowledge to a project file and answers with counts", () => {

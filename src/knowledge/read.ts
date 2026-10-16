@@ -544,7 +544,7 @@ export function listSpaces(db: DatabaseSync | undefined): Space[] {
   if (db === undefined) return [];
   const rows = db
     .prepare(
-      `SELECT space FROM current_symbols UNION SELECT space FROM current_analyzer_names UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands UNION SELECT space FROM current_patches UNION SELECT space FROM current_macros UNION SELECT space FROM current_macro_uses`,
+      `SELECT space FROM current_symbols UNION SELECT space FROM current_analyzer_names UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands UNION SELECT space FROM current_patches UNION SELECT space FROM current_macros UNION SELECT space FROM current_macro_uses UNION SELECT space FROM current_memory UNION SELECT space FROM current_entries UNION SELECT space FROM current_coverage`,
     )
     .all() as Array<{ space: Space }>;
   const order = (space: Space) => (space === "c64" ? -2 : space === "drive8" ? -1 : Number(space.slice(4)));

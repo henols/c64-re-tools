@@ -10,6 +10,8 @@ import { ensureSchema } from "./schema.ts";
 import { loadText, newRevisionId, REVISION_ID, REVISIONS_FILE, revisionsText, TABLES, tableText } from "./text.ts";
 import { importFindings } from "./import.ts";
 import { applyBatch, renameSymbol, unclassifyRegion } from "./write.ts";
+import { addCoverage, setImage } from "./program.ts";
+import { COVERAGE } from "../c64.ts";
 
 const roots: string[] = [];
 after(() => {
@@ -60,6 +62,10 @@ function fullProject(): { folder: string; db: DatabaseSync } {
   ]);
   unclassifyRegion(db, { origin: "user" }, { start: 0x9000, end: 0x900f });
   renameSymbol(db, { origin: "user" }, { address: 0x80c0, name: "raster_irq" });
+  setImage(db, { origin: "user" }, { segments: [{ start: 0x8000, end: 0x8105 }], byteAt: (address) => address & 0xff, entry: 0x8000, state: { registers: { pc: "$8000" } }, stages: [{ stage: 0 }] });
+  const run = new Uint8Array(0x10000);
+  run[0x8000] = COVERAGE.ramExecute | COVERAGE.ramWrite;
+  addCoverage(db, { origin: "user" }, { maps: [{ name: "local/run.bin", bytes: run }] });
   importFindings(db, { analyzer: "ghidra", coverage: [{ start: 0xa000, end: 0xa0ff }], authoritative: { symbols: true, regions: true, references: true }, symbols: [{ address: 0xa000, name: "FUN_a000", kind: "routine" }], regions: [], references: [] });
   return { folder, db };
 }

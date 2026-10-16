@@ -54,8 +54,12 @@ export function rowId(revision: string, order: number): string {
   return `${revision}/${order}`;
 }
 
-/** How a value of a column is written: an address as "$c000", a whole number, or text. */
-type Format = "address" | "integer" | "text";
+/**
+ * How a value of a column is written: an address as "$c000", a whole number,
+ * text, bytes as lowercase hex digits, or a JSON value that the index keeps as
+ * JSON text.
+ */
+type Format = "address" | "integer" | "text" | "hex" | "json";
 
 interface Field {
   key: string;
@@ -159,6 +163,17 @@ export const TABLES: readonly TableSpec[] = [
     sort: "start_address",
     fields: [space, field("start", "start_address", "address"), field("end", "end_address", "address"), field("macro", "macro", "text"), field("args", "args", "text"), origin],
   },
+  // The program itself (D83): its bytes, at most 64 to a row, so a changed byte changes one line.
+  { table: "memory", file: "memory.jsonl", sort: "address", fields: [space, field("at", "address", "address"), field("bytes", "bytes", "hex"), origin] },
+  // Where the program starts, the machine state there, and the stages of its unpacker (D83).
+  {
+    table: "entries",
+    file: "entry.jsonl",
+    sort: "address",
+    fields: [space, field("entry", "address", "address"), field("state", "state", "json", true), field("stages", "stages", "json", true), origin],
+  },
+  // What the runs did: the union of the coverage maps as ranges of one kind each (D83).
+  { table: "coverage", file: "coverage.jsonl", sort: "start_address", fields: [space, field("kind", "kind", "text"), field("start", "start_address", "address"), field("end", "end_address", "address"), origin] },
 ];
 
 export const REVISIONS_FILE = "revisions.jsonl";
@@ -180,7 +195,8 @@ export const sqlName = (table: string) => (table === "references" ? '"references
 type Raw = Record<string, unknown>;
 
 function formatted(value: unknown, format: Format): unknown {
-  return format === "address" ? `$${(value as number).toString(16).padStart(4, "0")}` : value;
+  if (format === "address") return `$${(value as number).toString(16).padStart(4, "0")}`;
+  return format === "json" ? JSON.parse(value as string) : value;
 }
 
 function lineOf(raw: Raw, fields: readonly Field[], extra: Raw): string {
@@ -288,6 +304,12 @@ function columnsOf(file: string, line: number, value: Raw, fields: readonly Fiel
     } else if (format === "integer") {
       if (!Number.isInteger(item)) bad(file, line, `${key} must be a whole number.`);
       columns[column] = item;
+    } else if (format === "hex") {
+      if (typeof item !== "string" || !/^(?:[0-9a-f]{2})+$/.test(item)) bad(file, line, `${key} must be bytes as lowercase hex digits.`);
+      columns[column] = item;
+    } else if (format === "json") {
+      if (typeof item !== "object") bad(file, line, `${key} must be a JSON object or list.`);
+      columns[column] = JSON.stringify(item);
     } else {
       if (typeof item !== "string") bad(file, line, `${key} must be text.`);
       columns[column] = item;

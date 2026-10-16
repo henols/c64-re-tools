@@ -1,0 +1,249 @@
+// The program in the knowledge (D83): its bytes, its entry with the machine
+// state and the stages of its unpacker, and the coverage of the runs. A
+// capture and the coverage maps are imported one time; every later step reads
+// them here, so a project needs no image or coverage files to be made again.
+
+import { createHash } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
+
+import { COVERAGE } from "../c64.ts";
+import { KnowledgeError } from "./database.ts";
+import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
+import { checkSpace, hex, write, type AddressRange, type Evidence, type WriteContext } from "./write.ts";
+
+/** The 64 KiB of one space: offset n is address n. */
+const SIZE = 0x10000;
+
+/** The coverage map flag of each kind; wx has its own map (D83). */
+const KIND_BITS: Record<Exclude<CoverageKind, "wx">, number> = {
+  r: COVERAGE.ramRead,
+  w: COVERAGE.ramWrite,
+  x: COVERAGE.ramExecute,
+  "rom-r": COVERAGE.romRead,
+  "rom-x": COVERAGE.romExecute,
+  "io-r": COVERAGE.ioRead,
+  "io-w": COVERAGE.ioWrite,
+  "io-x": COVERAGE.ioExecute,
+};
+
+/** The program of one space as the knowledge holds it. */
+export interface ProgramImage {
+  space: Space;
+  /** The address ranges that hold bytes, in address order, without overlap. */
+  segments: AddressRange[];
+  /** 64 KiB; an address outside the segments holds 0. */
+  memory: Uint8Array;
+  /** The byte at an address inside a segment. */
+  byteAt: (address: number) => number;
+  entry?: number;
+  /** The machine state at the entry: the content of the entry_state.json of the c64-unpacker skill. */
+  state?: Record<string, unknown>;
+  /** The stages of the unpacker capture, in order: the last one is the program. */
+  stages?: Array<Record<string, unknown>>;
+}
+
+/** What `setImage` writes: the bytes of the segments, and the entry when the program has one. */
+export interface ImageRequest {
+  space?: Space;
+  segments: AddressRange[];
+  byteAt: (address: number) => number;
+  entry?: number;
+  state?: Record<string, unknown>;
+  stages?: Array<Record<string, unknown>>;
+}
+
+/** One coverage map to import, with the project path that names it as evidence. */
+export interface CoverageMap {
+  name: string;
+  bytes: Uint8Array;
+}
+
+/** The address ranges where `has` is true, in address order. */
+function rangesWhere(has: (address: number) => boolean): AddressRange[] {
+  const ranges: AddressRange[] = [];
+  for (let address = 0; address < SIZE; address++) {
+    if (!has(address)) continue;
+    const start = address;
+    while (address + 1 < SIZE && has(address + 1)) address++;
+    ranges.push({ start, end: address });
+  }
+  return ranges;
+}
+
+/** The memory rows of the segments: at most MEMORY_ROW bytes, never across a multiple of MEMORY_ROW. */
+function memoryRows(segments: readonly AddressRange[], byteAt: (address: number) => number): Map<number, string> {
+  const rows = new Map<number, string>();
+  for (const segment of segments) {
+    for (let at = segment.start; at <= segment.end; ) {
+      const end = Math.min(segment.end, (at | (MEMORY_ROW - 1)));
+      rows.set(at, Buffer.from(Array.from({ length: end - at + 1 }, (_, index) => byteAt(at + index))).toString("hex"));
+      at = end + 1;
+    }
+  }
+  return rows;
+}
+
+function checkSegments(segments: readonly AddressRange[]): void {
+  if (segments.length === 0) throw new KnowledgeError("invalid-input", "An image has at least one segment.");
+  const sorted = [...segments].sort((a, b) => a.start - b.start);
+  sorted.forEach((segment, index) => {
+    if (!Number.isInteger(segment.start) || !Number.isInteger(segment.end) || segment.start < 0 || segment.end > 0xffff || segment.end < segment.start) {
+      throw new KnowledgeError("invalid-input", `The segment ${hex(segment.start)}-${hex(segment.end)} is not a range from $0000 to $ffff.`);
+    }
+    if (index > 0 && segment.start <= sorted[index - 1]!.end) throw new KnowledgeError("invalid-input", `The segments at ${hex(sorted[index - 1]!.start)} and ${hex(segment.start)} overlap.`);
+  });
+}
+
+/**
+ * Makes the program of a space equal to the image: closes the memory rows
+ * that changed or are gone, adds the new ones, and replaces the entry when it
+ * changed. An image that is already in the knowledge writes nothing.
+ */
+export function setImage(db: DatabaseSync, context: WriteContext, request: ImageRequest): { revision: string | null; current: { space: Space; bytes: number; rowsAdded: number; rowsClosed: number; entry: boolean } } {
+  checkSpace(request);
+  checkSegments(request.segments);
+  if (request.entry !== undefined && (!Number.isInteger(request.entry) || request.entry < 0 || request.entry > 0xffff)) throw new KnowledgeError("invalid-input", "The entry must be from $0000 to $ffff.");
+  if (request.entry === undefined && (request.state !== undefined || request.stages !== undefined)) throw new KnowledgeError("invalid-input", "A machine state or stages need an entry.");
+  const space = request.space ?? DEFAULT_SPACE;
+  const wanted = memoryRows(request.segments, request.byteAt);
+  return write(db, context, "image", (change) => {
+    const current = db.prepare("SELECT id, address, bytes FROM current_memory WHERE space = ?").all(space) as Array<{ id: string; address: number; bytes: string }>;
+    const kept = new Set<number>();
+    let rowsClosed = 0;
+    for (const row of current) {
+      if (wanted.get(row.address) === row.bytes) kept.add(row.address);
+      else {
+        change.close("memory", "id = ?", row.id);
+        rowsClosed++;
+      }
+    }
+    let rowsAdded = 0;
+    for (const [address, bytes] of [...wanted].sort(([a], [b]) => a - b)) {
+      if (kept.has(address)) continue;
+      change.insertMemory({ space, address, bytes, origin: context.origin });
+      rowsAdded++;
+    }
+    const entryRow = db.prepare("SELECT id, address, state, stages FROM current_entries WHERE space = ?").get(space) as { id: string; address: number; state: string | null; stages: string | null } | undefined;
+    const state = request.state === undefined ? null : JSON.stringify(request.state);
+    const stages = request.stages === undefined ? null : JSON.stringify(request.stages);
+    const same = entryRow !== undefined && entryRow.address === request.entry && entryRow.state === state && entryRow.stages === stages;
+    const entryChanged = !same && (entryRow !== undefined || request.entry !== undefined);
+    if (entryChanged) {
+      if (entryRow !== undefined) change.close("entries", "id = ?", entryRow.id);
+      if (request.entry !== undefined) change.insertEntry({ space, address: request.entry, state, stages, origin: context.origin });
+    }
+    const bytes = request.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
+    return { space, bytes, rowsAdded, rowsClosed, entry: entryChanged };
+  });
+}
+
+/** The coverage of one space as ranges of each kind. */
+function currentCoverage(db: DatabaseSync, space: Space): Map<CoverageKind, Uint8Array> {
+  const maps = new Map<CoverageKind, Uint8Array>(COVERAGE_KINDS.map((kind) => [kind, new Uint8Array(SIZE)]));
+  for (const row of db.prepare("SELECT kind, start_address, end_address FROM current_coverage WHERE space = ?").all(space) as Array<{ kind: CoverageKind; start_address: number; end_address: number }>) {
+    maps.get(row.kind)!.fill(1, row.start_address, row.end_address + 1);
+  }
+  return maps;
+}
+
+/** The project paths of the coverage maps that the knowledge imported, with their SHA-256. */
+export function coverageRuns(db: DatabaseSync | undefined): Array<{ name: string; sha256: string }> {
+  if (db === undefined) return [];
+  return db.prepare("SELECT DISTINCT e.ref AS name, e.sha256 AS sha256 FROM evidence e JOIN revisions r ON r.id = e.revision WHERE r.operation = 'coverage' AND e.kind = 'coverage' ORDER BY e.ref").all() as Array<{
+    name: string;
+    sha256: string;
+  }>;
+}
+
+/**
+ * Joins coverage maps into the coverage of a space (D83): adds the ranges of
+ * the flags that no imported run set before, and as wx the addresses that one
+ * run both wrote and executed. Each new map is evidence of the revision. A map
+ * that the knowledge has with the same name and bytes is not imported again.
+ */
+export function addCoverage(
+  db: DatabaseSync,
+  context: WriteContext,
+  request: { space?: Space; maps: CoverageMap[] },
+): { revision: string | null; current: { space: Space; imported: string[]; known: string[]; ranges: number } } {
+  checkSpace(request);
+  const space = request.space ?? DEFAULT_SPACE;
+  for (const map of request.maps) {
+    if (map.bytes.length !== SIZE) throw new KnowledgeError("invalid-input", `${map.name} has ${map.bytes.length} bytes; a coverage map has 65536, one for each address.`);
+  }
+  const hashed = request.maps.map((map) => ({ ...map, sha256: createHash("sha256").update(map.bytes).digest("hex") }));
+  const known = new Set(coverageRuns(db).map((run) => `${run.name}\n${run.sha256}`));
+  const fresh = hashed.filter((map) => !known.has(`${map.name}\n${map.sha256}`));
+  const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256 }))];
+  return write(db, { ...context, evidence }, "coverage", (change) => {
+    const result = { space, imported: fresh.map((map) => map.name), known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name), ranges: 0 };
+    if (fresh.length === 0) return result;
+    // A revision for each import, also when no flag is new: the maps are its evidence.
+    change.id();
+    const union = currentCoverage(db, space);
+    for (const map of fresh) {
+      for (const kind of COVERAGE_KINDS) {
+        const has = kind === "wx" ? (address: number) => (map.bytes[address]! & (COVERAGE.ramWrite | COVERAGE.ramExecute)) === (COVERAGE.ramWrite | COVERAGE.ramExecute) : (address: number) => (map.bytes[address]! & KIND_BITS[kind]) !== 0;
+        const known = union.get(kind)!;
+        for (const range of rangesWhere((address) => known[address] === 0 && has(address))) {
+          change.insertCoverage({ space, kind, start: range.start, end: range.end, origin: context.origin });
+          known.fill(1, range.start, range.end + 1);
+          result.ranges++;
+        }
+      }
+    }
+    return result;
+  });
+}
+
+/** The program of a space, or undefined when the knowledge has no bytes for it. */
+export function programImage(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage | undefined {
+  if (db === undefined) return undefined;
+  const rows = db.prepare("SELECT address, bytes FROM current_memory WHERE space = ? ORDER BY address").all(space) as Array<{ address: number; bytes: string }>;
+  if (rows.length === 0) return undefined;
+  const memory = new Uint8Array(SIZE);
+  const segments: AddressRange[] = [];
+  for (const row of rows) {
+    const bytes = Buffer.from(row.bytes, "hex");
+    memory.set(bytes, row.address);
+    const end = row.address + bytes.length - 1;
+    const last = segments.at(-1);
+    if (last !== undefined && last.end + 1 === row.address) last.end = end;
+    else segments.push({ start: row.address, end });
+  }
+  const image: ProgramImage = { space, segments, memory, byteAt: (address) => memory[address]! };
+  const entry = db.prepare("SELECT address, state, stages FROM current_entries WHERE space = ?").get(space) as { address: number; state: string | null; stages: string | null } | undefined;
+  if (entry !== undefined) {
+    image.entry = entry.address;
+    if (entry.state !== null) image.state = JSON.parse(entry.state) as Record<string, unknown>;
+    if (entry.stages !== null) image.stages = JSON.parse(entry.stages) as Array<Record<string, unknown>>;
+  }
+  return image;
+}
+
+/** The bytes for an analyzer: a PRG for one segment without an entry state, else the 64 KiB. */
+export function analyzedBytes(image: ProgramImage): { bytes: Buffer; kind: "prg" | "flat64k" } {
+  if (image.segments.length === 1 && image.state === undefined) {
+    const [segment] = image.segments;
+    return { bytes: Buffer.concat([Buffer.from([segment!.start & 0xff, segment!.start >> 8]), Buffer.from(image.memory.subarray(segment!.start, segment!.end + 1))]), kind: "prg" };
+  }
+  return { bytes: Buffer.from(image.memory), kind: "flat64k" };
+}
+
+/**
+ * The coverage of a space as a joined coverage map (the bits of COVERAGE in
+ * c64.ts), and the addresses that one run both wrote and executed; undefined
+ * when the knowledge has no coverage for the space.
+ */
+export function programCoverage(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): { map: Uint8Array; selfModified: Uint8Array } | undefined {
+  if (db === undefined) return undefined;
+  const rows = db.prepare("SELECT kind, start_address, end_address FROM current_coverage WHERE space = ?").all(space) as Array<{ kind: CoverageKind; start_address: number; end_address: number }>;
+  if (rows.length === 0) return undefined;
+  const map = new Uint8Array(SIZE);
+  const selfModified = new Uint8Array(SIZE);
+  for (const row of rows) {
+    if (row.kind === "wx") selfModified.fill(1, row.start_address, row.end_address + 1);
+    else for (let address = row.start_address; address <= row.end_address; address++) map[address]! |= KIND_BITS[row.kind];
+  }
+  return { map, selfModified };
+}

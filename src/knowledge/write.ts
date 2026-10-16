@@ -299,6 +299,25 @@ export class Change {
       .prepare("INSERT INTO suppressions (id, space, entity, start_address, end_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .run(this.#rowId(), row.space, row.entity, row.start, row.end, row.to ?? null, row.kind ?? null, row.origin, this.id());
   }
+
+  /** Bytes of the program (D83), as hex digits. */
+  insertMemory(row: { space: Space; address: number; bytes: string; origin: Origin }): void {
+    this.#db.prepare("INSERT INTO memory (id, space, address, bytes, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?)").run(this.#rowId(), row.space, row.address, row.bytes, row.origin, this.id());
+  }
+
+  /** The entry of the program, with the machine state and the unpacker stages as JSON text when it has them (D83). */
+  insertEntry(row: { space: Space; address: number; state: string | null; stages: string | null; origin: Origin }): void {
+    this.#db
+      .prepare("INSERT INTO entries (id, space, address, state, stages, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.address, row.state, row.stages, row.origin, this.id());
+  }
+
+  /** One coverage range of one kind (D83). */
+  insertCoverage(row: { space: Space; kind: string; start: number; end: number; origin: Origin }): void {
+    this.#db
+      .prepare("INSERT INTO coverage (id, space, kind, start_address, end_address, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.kind, row.start, row.end, row.origin, this.id());
+  }
 }
 
 /** A conflict in words: its rule, its space and the addresses of its rows. */
@@ -333,7 +352,7 @@ function checkEvidence(evidence: Evidence[] | undefined): void {
 }
 
 /** Runs semantic writes in one transaction, as one revision. */
-function write<T>(db: DatabaseSync, context: WriteContext, operation: string, work: (change: Change) => T): { revision: string | null; current: T } {
+export function write<T>(db: DatabaseSync, context: WriteContext, operation: string, work: (change: Change) => T): { revision: string | null; current: T } {
   if (context.origin !== "user" && context.origin !== "llm") {
     throw new KnowledgeError("invalid-input", "A semantic write comes from the user or the LLM.");
   }
@@ -1155,6 +1174,13 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
 }
 
 /** Row content without its revision, as a comparable key. */
+/** The tables of the program (D83) and the columns that make a row. */
+const PROGRAM_TABLES = [
+  ["memory", "space, address, bytes, origin"],
+  ["entries", "space, address, state, stages, origin"],
+  ["coverage", "space, kind, start_address, end_address, origin"],
+] as const;
+
 const KEYS = {
   symbols: { columns: SYMBOL_COLUMNS, map: toSymbol, key: (row: SymbolRow) => `${row.space}|${row.address}|${row.name}|${row.kind}|${row.origin}` },
   analyzer_names: { columns: SYMBOL_COLUMNS, map: toSymbol, key: (row: SymbolRow) => `${row.space}|${row.address}|${row.name}|${row.kind}|${row.origin}` },
@@ -1230,6 +1256,22 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         else if (table === "regions") change.insertRegion(mapped);
         else if (table === "comments") change.insertComment(mapped);
         else change.insertReference(mapped);
+      }
+    }
+    // The program (D83): a row is the same when all its values are the same.
+    for (const [table, columns] of PROGRAM_TABLES) {
+      const then = db.prepare(`SELECT ${columns}, id FROM ${table} WHERE ${at}`).all(restored, restored) as Array<Record<string, unknown>>;
+      const now = db.prepare(`SELECT ${columns}, id FROM ${table} WHERE valid_to_revision IS NULL`).all() as Array<Record<string, unknown>>;
+      const key = (row: Record<string, unknown>) => JSON.stringify(columns.split(", ").map((column) => row[column]));
+      const thenKeys = new Set(then.map(key));
+      const nowKeys = new Set(now.map(key));
+      for (const row of now) if (!thenKeys.has(key(row))) change.close(table, "id = ?", row.id as string);
+      for (const row of then) {
+        if (nowKeys.has(key(row))) continue;
+        const values = row as never;
+        if (table === "memory") change.insertMemory(values);
+        else if (table === "entries") change.insertEntry(values);
+        else change.insertCoverage({ ...(values as { space: Space; kind: string; origin: Origin }), start: row.start_address as number, end: row.end_address as number });
       }
     }
     return { restoredRevision: restored };

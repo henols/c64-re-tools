@@ -99,6 +99,8 @@ import {
   type WriteContext,
 } from "#src/knowledge/write.ts";
 import { platformNames } from "#src/platform.ts";
+import { addCoverage, coverageRuns, programImage, setImage, type ImageRequest } from "#src/knowledge/program.ts";
+import { WireFailure } from "#src/host-client/tools.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
 import { runScript, UsageError } from "#src/script.ts";
@@ -122,6 +124,9 @@ Read (no database needed):
   macros [--origin O]                 the macros of the generated source
   uses [--start A --end A --macro M --origin O]   instructions written as a macro
   spaces                              the address spaces that hold knowledge
+  program                             the program in the knowledge (D83): its
+                                      segments and entry, and the coverage maps
+                                      that coverage imported, with the ranges
   history <address> | history --name <name> | history --macro <name>
   revisions [--limit N --before R]
   revision <revision>
@@ -170,6 +175,13 @@ Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
                            write the instructions <start>-<end> as one use of
                            the macro, with one expression for each param
   unuse <start>
+  image <image.json|prg>   put the program into the knowledge (D83): its bytes, and
+                           for an image.json of c64-unpacker capture also the
+                           entry, the entry state and the stages; with --space for
+                           drive code or a cartridge bank. Only changed bytes write
+  coverage <map.bin>...    join coverage maps of c64_memmap or a run into the
+                           coverage of the knowledge (D83); each map is evidence
+                           of the revision, named by its path
   revert <revision>
   merge                    decide the conflicts that a git merge of two
                            computers' work left: of the rows of one conflict,
@@ -186,8 +198,9 @@ Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
 
 Write options:
   --reason <text>          why, kept with the revision
-  --evidence <kind:ref>    what the change rests on: coverage:<file>, test:<file>,
-                           file:<file> or note:<text> (repeatable)
+  --evidence <kind:ref>    what the change rests on: coverage:<map> (a map that
+                           coverage imported), test:<file>, file:<file> or
+                           note:<text> (repeatable)
   --expect-revision <R>    refuse the write if knowledge changed after revision R
   --origin user|llm        who decided (default llm)
 
@@ -389,8 +402,8 @@ function run(argv: string[]): unknown {
   nameSpace = space;
   const range = { start: values.start === undefined ? 0x0000 : address(values.start, "--start"), end: values.end === undefined ? 0xffff : address(values.end, "--end") };
 
-  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "operands", "patches", "switches", "macros", "uses", "spaces", "history", "revisions", "revision", "export", "listing"]);
-  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "operand", "unoperand", "patch", "unpatch", "macro", "unmacro", "use", "unuse", "revert", "apply", "merge"]);
+  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "operands", "patches", "switches", "macros", "uses", "spaces", "program", "history", "revisions", "revision", "export", "listing"]);
+  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "operand", "unoperand", "patch", "unpatch", "macro", "unmacro", "use", "unuse", "revert", "apply", "merge", "image", "coverage"]);
   // join reads batch files and writes one: no knowledge opens (D79).
   if (command === "join") return joinCommand(args, values.out, space);
   // Refuse a mistyped command before anything opens, so no database appears by accident.
@@ -433,7 +446,9 @@ function run(argv: string[]): unknown {
     if (values[option] !== undefined && !commands.includes(command)) throw new UsageError(`--${option} works only with ${commands.join(", ")}`);
   }
   const operation =
-    command === "apply"
+    command === "image" || command === "coverage"
+      ? programOperation(command, args, context, space)
+      : command === "apply"
       ? applyOperation(args, context, space, values.image)
       : command === "operand"
         ? operandOperation(args, values, context, space)
@@ -545,6 +560,24 @@ function readAnswer(db: DatabaseSync | undefined, command: string, args: string[
       return { comments: listComments(db, range, origins, space).map(comment) };
     case "references":
       return { references: listReferences(db, range, values.kind === undefined ? undefined : oneOf(REFERENCE_KINDS, values.kind, "--kind"), origins, space).map(reference) };
+    case "program": {
+      const image = programImage(db, space);
+      const ranges = db === undefined ? [] : (db.prepare("SELECT kind, count(*) AS count FROM current_coverage WHERE space = ? GROUP BY kind ORDER BY kind").all(space) as Array<{ kind: string; count: number }>);
+      return {
+        ...(space === DEFAULT_SPACE ? {} : { space }),
+        image:
+          image === undefined
+            ? null
+            : {
+                segments: image.segments.map((segment) => ({ start: formatC64Address(segment.start), end: formatC64Address(segment.end) })),
+                bytes: image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0),
+                ...(image.entry === undefined ? {} : { entry: formatC64Address(image.entry) }),
+                state: image.state !== undefined,
+                stages: image.stages?.length ?? 0,
+              },
+        coverage: { maps: coverageRuns(db).map((run) => run.name), ranges: Object.fromEntries(ranges.map((row) => [row.kind, row.count])) },
+      };
+    }
     case "export": {
       const exported = {
         revision: currentRevision(db),
@@ -634,12 +667,76 @@ function evidenceOf(value: string): Evidence {
   const ref = colon < 0 ? "" : value.slice(colon + 1);
   if (ref === "") throw new UsageError(`--evidence needs ${kind}:<${kind === "note" ? "text" : "file"}>`);
   if (kind === "note") return { kind, ref };
+  // A coverage map is evidence by the name that coverage imported it with (D83).
+  if (kind === "coverage") {
+    const db = openForRead();
+    try {
+      const run = coverageRuns(db).find((item) => item.name === ref);
+      if (run === undefined) throw new UsageError(`--evidence coverage:${ref} names no coverage map of the knowledge: import the map with coverage first`);
+      return { kind, ref, sha256: run.sha256 };
+    } finally {
+      db?.close();
+    }
+  }
   const bytes = readProjectFile(ref).bytes;
   const root = projectRoot();
   if (isInside(join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY), resolveProjectPath(ref, root))) {
     throw new UsageError(`--evidence ${kind}:${ref} is in ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/, which git ignores: move it to a folder that git keeps (a run folder to runs/<name>/) and give the new path`);
   }
   return { kind, ref, sha256: createHash("sha256").update(bytes).digest("hex") };
+}
+
+/** An image.json of c64-unpacker capture or a PRG as a write of the program (D83). */
+function imageRequest(path: string, space: string): ImageRequest {
+  let image: ReturnType<typeof readImage>;
+  try {
+    image = readImage(path);
+  } catch (error) {
+    if (error instanceof ImageError) throw new UsageError(error.message);
+    throw error;
+  }
+  const request: ImageRequest = { space, segments: image.segments, byteAt: image.byteAt };
+  if (image.entry !== undefined) request.entry = image.entry;
+  if (image.stages !== undefined) request.stages = image.stages;
+  if (image.statePath !== undefined) {
+    let bytes: Buffer | undefined;
+    try {
+      bytes = readProjectFile(image.statePath).bytes;
+    } catch (error) {
+      if (!(error instanceof WireFailure && error.code === "not-found")) throw error;
+    }
+    if (bytes !== undefined) {
+      let state: unknown;
+      try {
+        state = JSON.parse(bytes.toString("utf8"));
+      } catch (error) {
+        throw new UsageError(`${image.statePath} is not JSON: ${(error as Error).message}`);
+      }
+      if (typeof state !== "object" || state === null || Array.isArray(state)) throw new UsageError(`${image.statePath} is not an entry state of c64-unpacker capture`);
+      // The comparison with a clean reset only tells the capture what it found.
+      const { differsFromReset: _differs, ...kept } = state as Record<string, unknown>;
+      request.state = kept;
+    }
+  }
+  return request;
+}
+
+/** image and coverage (D83): the program and what the runs did go into the knowledge, so no project file is made again. */
+function programOperation(command: "image" | "coverage", args: string[], context: WriteContext, space: string): WriteOperation {
+  if (command === "image") {
+    if (args.length !== 1) throw new UsageError("image needs one image.json or PRG");
+    const request = imageRequest(args[0]!, space);
+    return (db) => {
+      const { revision, current } = setImage(db, context, request);
+      return { revision, ...spaceOf(current), bytes: current.bytes, rowsAdded: current.rowsAdded, rowsClosed: current.rowsClosed, entryChanged: current.entry };
+    };
+  }
+  if (args.length === 0) throw new UsageError("coverage needs one or more coverage maps");
+  const maps = args.map((path) => ({ name: path, bytes: readProjectFile(path).bytes }));
+  return (db) => {
+    const { revision, current } = addCoverage(db, context, { space, maps });
+    return { revision, ...spaceOf(current), imported: current.imported, known: current.known, ranges: current.ranges };
+  };
 }
 
 /**
