@@ -128,3 +128,15 @@ export function captureSegments(stages: ReadonlyArray<{ entry: number; wrote: re
   }
   return segments;
 }
+
+/** The segments without the bytes of `holes`: a segment that a hole cuts gives its parts, each with the fields of the segment. */
+export function withoutRanges<T extends Range>(segments: readonly T[], holes: readonly Range[]): T[] {
+  let pieces = [...segments];
+  for (const hole of holes) {
+    pieces = pieces.flatMap((piece) => {
+      if (hole.end < piece.start || hole.start > piece.end) return [piece];
+      return [...(hole.start > piece.start ? [{ ...piece, end: hole.start - 1 }] : []), ...(hole.end < piece.end ? [{ ...piece, start: hole.end + 1 }] : [])];
+    });
+  }
+  return pieces;
+}

@@ -19,12 +19,12 @@ import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { basicStart, inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
-import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, type Range } from "./lib/stages.ts";
+import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges, type Range } from "./lib/stages.ts";
 import { entryState, IO_AREAS, json, machineState, readRam, READY_FRAMES, vectorsOf } from "./lib/machine.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
 unpack.ts trace <program.prg> [--frames <n>] [--entry <address>] [--steps <file>]
-unpack.ts capture <program.prg> --until <address> --out <dir> [--range <start> <end>] [--timeout-frames <n>] [--entry <address>] [--steps <file>] [--min-stage <bytes>]
+unpack.ts capture <program.prg> --until <address> --out <dir> [--range <start> <end>] [--exclude <start>-<end>]... [--timeout-frames <n>] [--entry <address>] [--steps <file>] [--min-stage <bytes>]
 unpack.ts stages <program.prg> [--frames <n>] [--entry <address>] [--steps <file>] [--min-stage <bytes>]
 unpack.ts loads <program> --steps <file> --out <dir> [--drive] [--min-block <bytes>]
 
@@ -37,6 +37,8 @@ capture   run the program until the CPU gets to <address> after the steps, and w
           for each segment, and entry_state.json (registers, $00/$01, pages
           0-3, VIC, SID and CIA registers, vectors, and what differs from a
           clean reset). --range gives one segment in place of the found ones.
+          --exclude (more than once) leaves a range out of the segments, for
+          example bytes that a crack left and the program never reads.
           --entry starts it there instead of RUN.
 
 stages    run the program for <n> frames (default 3000) and report each stage:
@@ -496,7 +498,7 @@ async function stages(program: string, options: { frames: number; entry?: number
 
 async function capture(
   program: string,
-  options: { until: number; out: string; range?: [number, number]; timeoutFrames: number; entry?: number; steps: ActionStep[]; minStage: number },
+  options: { until: number; out: string; range?: [number, number]; exclude: Array<{ start: number; end: number }>; timeoutFrames: number; entry?: number; steps: ActionStep[]; minStage: number },
 ): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
@@ -513,7 +515,12 @@ async function capture(
     const memory = await readRam(client, 0x0000, 0x10000);
     const state = await machineState(client);
     // The segments: what the stages wrote, without loader leftovers, with no overlap.
-    const segments = options.range !== undefined ? [{ start: options.range[0], end: options.range[1] }] : captureSegments(followed.stages, registers.pc);
+    const found = options.range !== undefined ? [{ start: options.range[0], end: options.range[1] }] : captureSegments(followed.stages, registers.pc);
+    const inside = options.exclude.find((range) => registers.pc >= range.start && registers.pc <= range.end);
+    if (inside !== undefined) {
+      return { output: { captured: false, reason: `The entry ${formatC64Address(registers.pc)} is in --exclude ${formatC64Address(inside.start)}-${formatC64Address(inside.end)}. A segment must hold the entry.` }, failed: true };
+    }
+    const segments = withoutRanges(found, options.exclude);
     const file = (path: string) => `${options.out}/${path}`;
     const write = (path: string, bytes: Uint8Array) => writeProjectFile(file(path), bytes, { what: "--out" });
     write("image.bin", memory);
@@ -530,6 +537,7 @@ async function capture(
           {
             entry: formatC64Address(registers.pc),
             segments: segments.map((segment, index) => ({ ...showRange(segment), ...("writtenBy" in segment ? { writtenBy: segment.writtenBy } : {}), file: files[index] })),
+            ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
             vectors,
             stages: showStages(followed.stages),
             image: "image.bin",
@@ -556,6 +564,7 @@ async function capture(
         out: options.out,
         files: ["image.json", "image.bin", "entry_state.json", ...files],
         segments: segments.map(showRange),
+        ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
         stages: followed.stages.length,
         differsFromReset: differs.length,
       },
@@ -571,7 +580,7 @@ const OPTIONS_OF: Record<string, string[]> = {
   inspect: [],
   trace: ["frames", "entry", "steps"],
   stages: ["frames", "entry", "steps", "min-stage"],
-  capture: ["until", "out", "range", "timeout-frames", "entry", "steps", "min-stage"],
+  capture: ["until", "out", "range", "exclude", "timeout-frames", "entry", "steps", "min-stage"],
   loads: ["steps", "out", "drive", "min-block"],
 };
 
@@ -584,6 +593,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
       until: { type: "string" },
       out: { type: "string" },
       range: { type: "string" },
+      exclude: { type: "string", multiple: true },
       "timeout-frames": { type: "string" },
       frames: { type: "string" },
       entry: { type: "string" },
@@ -652,6 +662,13 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   } else if (rest.length > 0) {
     throw new UsageError("too many arguments");
   }
+  const exclude = (values.exclude ?? []).map((value) => {
+    const parts = value.split("-");
+    if (parts.length !== 2) throw new UsageError(`--exclude takes <start>-<end>, not ${value}`);
+    const range = { start: address(parts[0]!, "--exclude"), end: address(parts[1]!, "--exclude") };
+    if (range.end < range.start) throw new UsageError(`the --exclude end must not be before its start: ${value}`);
+    return range;
+  });
   try {
     resolveProjectPath(values.out);
   } catch {
@@ -666,6 +683,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     until: address(values.until, "--until"),
     out: values.out,
     ...(range === undefined ? {} : { range }),
+    exclude,
     timeoutFrames,
     steps,
     minStage,

@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { inspect, readMemoryMap, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
-import { callReturn, captureSegments, executedIn, stageCandidates, stagePoints } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
+import { callReturn, captureSegments, executedIn, stageCandidates, stagePoints, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
 import { seededBytes } from "../kit.ts";
@@ -60,7 +60,7 @@ test("a short program is unclear, and the script reports it", () => {
   const result = JSON.parse(run.stdout) as Record<string, unknown>;
   assert.equal(result.packing, "unclear");
   assert.deepEqual(result.basicStart, { line: 10, sys: "$080d" });
-  for (const args of [["inspect"], ["capture", "packed.prg"], ["capture", "packed.prg", "--until", "49152", "--out", "x.prg"], ["unpack", "packed.prg"], ["trace", "packed.prg", "--until", "$1000"], ["inspect", "packed.prg", "--entry", "$1000"]]) {
+  for (const args of [["inspect"], ["capture", "packed.prg"], ["capture", "packed.prg", "--until", "49152", "--out", "x.prg"], ["unpack", "packed.prg"], ["trace", "packed.prg", "--until", "$1000"], ["inspect", "packed.prg", "--entry", "$1000"], ["capture", "packed.prg", "--until", "$1000", "--out", "x", "--exclude", "$a000"], ["capture", "packed.prg", "--until", "$1000", "--out", "x", "--exclude", "$a9ff-$a000"], ["stages", "packed.prg", "--exclude", "$a000-$a9ff"]]) {
     const bad = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8" });
     assert.equal(bad.status, 2, args.join(" "));
   }
@@ -215,6 +215,24 @@ test("capture segments do not overlap, and a block that later stages wrote over 
     { start: 0x0000, end: 0xd0ff, writtenBy: 3 },
     { start: 0xe000, end: 0xffff, writtenBy: 2 },
   ]);
+});
+
+test("--exclude leaves ranges out of the capture segments, and a segment that a range cuts gives its parts", () => {
+  // The Bruce Lee field run: the crack's mover left $a000-$a9ff, and $fe00-$fff9 is not the game's.
+  const found = [
+    { start: 0x033c, end: 0xa9ff, writtenBy: 2 },
+    { start: 0xcf00, end: 0xcfff, writtenBy: 2 },
+    { start: 0xe000, end: 0xf5ff, writtenBy: 2 },
+    { start: 0xfe00, end: 0xffff, writtenBy: 1 },
+  ];
+  assert.deepEqual(withoutRanges(found, [range(0xa000, 0xa9ff), range(0xfe00, 0xfff9)]), [
+    { start: 0x033c, end: 0x9fff, writtenBy: 2 },
+    { start: 0xcf00, end: 0xcfff, writtenBy: 2 },
+    { start: 0xe000, end: 0xf5ff, writtenBy: 2 },
+    { start: 0xfffa, end: 0xffff, writtenBy: 1 },
+  ]);
+  assert.deepEqual(withoutRanges([range(0x1000, 0x1fff)], [range(0x1400, 0x14ff)]), [range(0x1000, 0x13ff), range(0x1500, 0x1fff)]);
+  assert.deepEqual(withoutRanges([range(0x1000, 0x1fff)], [range(0x0800, 0x2fff)]), []);
 });
 
 test("a block with the code of a later intermediate stage is a leftover; the block with the capture entry never is (R2-01)", () => {

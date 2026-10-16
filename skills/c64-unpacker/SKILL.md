@@ -33,6 +33,7 @@ node <skill>/scripts/unpack.ts loads original/game.d64 --steps .c64-re-tools/loc
 | `--until '$c000'` | The address where the unpacked program starts. The capture stops there after the steps. To capture a later arrival at the address, add a `runUntil` step to an address after the first arrival. |
 | `--out unpacked/game.prg` | Where to write the result, relative to the project folder. |
 | `--range '$c000' '$cfff'` | Write this range as a PRG. Without it, the script writes all 64 KiB of RAM as a flat file. |
+| `--exclude '$a000-$a9ff'` | `capture` only: remove this range from the segments. You can give it more than once. `image.json` lists the ranges in `excluded`. The entry must not be in the range. |
 | `--timeout-frames 3000` | How many frames the program can run before the capture stops (default 3000). |
 | `--frames 3000` | `trace` only: how many frames the program runs (default 3000). |
 | `--entry '$c000'` | `trace`, `stages` and `capture`: start the program at this address. Without it, the script types RUN. A file that is not a BASIC program at `$0801` needs it. |
@@ -87,7 +88,7 @@ A `type` step puts keys in the keyboard queue of the KERNAL. A program that read
    - `image.json`: the entry, the segments, the vectors and the stages. A segment is a block that a stage wrote. A block is not a segment when it holds the entry of a later stage before the program, and no stage wrote over that entry. The block with the capture entry is always a segment. Segments do not overlap. `writtenBy` tells the last stage that wrote into the segment.
    - One PRG for each segment.
    - `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, and the vectors. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
-5. Make sure that the result is the application: the code at the entry must not be the unpacker again. A segment can be data that a loader left, for example intro graphics. Keep it until other evidence shows that the program does not use it.
+5. Make sure that the result is the application: the code at the entry must not be the unpacker again. A segment can be data that a loader left, for example intro graphics. Keep it until other evidence shows that the program does not use it. Then capture again with `--exclude` for that range. Thus the source and the loader do not include the range.
 6. Give `image.bin` to the c64-static-analysis skill with its `--flat64k` option, or give it the segment PRGs.
 7. Use `--range` only when you know the area of the program. Then the capture writes that one segment.
 
