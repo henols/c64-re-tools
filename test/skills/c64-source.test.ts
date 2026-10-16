@@ -19,7 +19,7 @@ import { localToolContext } from "../../src/native/local.ts";
 import { ciaSection, copyOrder, loaderLimits, planLoader, readEntryState, simulate, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { MODE_LENGTH, OPCODES } from "../../skills/c64-source/scripts/lib/opcodes.ts";
 import { entriesInData, entryOutsideImage, layout, render, type SourceInput } from "../../skills/c64-source/scripts/lib/source.ts";
-import { describeAddress, platformNames } from "../../src/platform.ts";
+import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 
 let acmeSkip: string | false = false;
 try {
@@ -893,4 +893,15 @@ test("an operand inside a named table without its own name is the table's name p
   const text = textOf(render(laid, new Set(), []), "segment_1000.asm");
   assert.match(text, / {8}lda room_colours\+5\n {8}lda l_1018\n/);
   assert.doesNotMatch(text, /l_1015/);
+});
+
+test("an immediate stored to a register with a decoder gets the decoded value as a side comment; a knowledge side comment wins (M23.7)", () => {
+  // $1000 LDA #$1b / STA $d011 / LDX #$15 / STX $d018 / LDA #$00 / STA $d020 (no decoder)
+  const bytes = [0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0xa2, 0x15, 0x8e, 0x18, 0xd0, 0xa9, 0x00, 0x8d, 0x20, 0xd0];
+  const instructions = new Map([[0x1000, 2], [0x1002, 3], [0x1005, 2], [0x1007, 3], [0x100a, 2], [0x100c, 3]]);
+  const laid = layout(input(bytes, 0x1000, { instructions, decode, comments: [{ address: 0x1007, placement: "side", text: "Charset at $1000." }] }));
+  const text = textOf(render(laid, new Set(), []), "segment_1000.asm");
+  assert.match(text, /sta \$d011 +; \$d011: yScroll 3, rows 25, displayEnabled, rasterBit8 0\n/);
+  assert.match(text, /stx \$d018 +; Charset at \$1000\.\n/);
+  assert.match(text, /sta \$d020\n/);
 });

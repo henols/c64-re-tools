@@ -15,6 +15,7 @@ import { DXA, findTool } from "../../src/native/discover.ts";
 import { imageReader } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { findIdioms } from "../../skills/c64-static-analysis/scripts/lib/idioms.ts";
 import { findPointers } from "../../skills/c64-static-analysis/scripts/lib/pointers.ts";
+import { findPitfalls } from "../../skills/c64-static-analysis/scripts/lib/pitfalls.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-idioms-"));
 after(() => rmSync(project, { recursive: true, force: true }));
@@ -142,4 +143,31 @@ test("the CBM80 header of a cartridge bank gives its two start vectors as entry 
   ]);
   const plain = image({ 0x8000: [0x09, 0x80, 0x20, 0x80, 0x41, 0x42, 0x43, 0x44, 0x45] });
   assert.equal(findIdioms(plain.byteAt, bank).counts.cartridgeHeaders, 0, "no header without CBM80");
+});
+
+test("a $D011 value written back with raster bit 8 is a pitfall; AND #$7F, a new load or a branch between is not (M23.7)", () => {
+  const image = new Uint8Array(0x10000);
+  // The Bruce Lee freeze: $09bc LDA $d011 / AND #$ef / STA $d011.
+  image.set([0xad, 0x11, 0xd0, 0x29, 0xef, 0x8d, 0x11, 0xd0], 0x09bc);
+  // Safe: LDA $d011 / AND #$7f / STA $d011.
+  image.set([0xad, 0x11, 0xd0, 0x29, 0x7f, 0x8d, 0x11, 0xd0], 0x0a00);
+  // Safe: LDA $d011 / LDA #$1b / STA $d011.
+  image.set([0xad, 0x11, 0xd0, 0xa9, 0x1b, 0x8d, 0x11, 0xd0], 0x0b00);
+  // Pitfall: INC $d011.
+  image.set([0xee, 0x11, 0xd0], 0x0c00);
+  // Pitfall with X: LDX $d011 / STX $d011.
+  image.set([0xae, 0x11, 0xd0, 0x8e, 0x11, 0xd0], 0x0d00);
+  const byteAt = (address: number) => image[address];
+  const regions = [
+    { start: 0x09bc, end: 0x09c3 },
+    { start: 0x0a00, end: 0x0a07 },
+    { start: 0x0b00, end: 0x0b07 },
+    { start: 0x0c00, end: 0x0c02 },
+    { start: 0x0d00, end: 0x0d05 },
+  ];
+  assert.deepEqual(findPitfalls(byteAt, regions), [
+    { kind: "raster-bit-8", at: 0x09bc, store: 0x09c1 },
+    { kind: "raster-bit-8", at: 0x0c00, store: 0x0c00 },
+    { kind: "raster-bit-8", at: 0x0d00, store: 0x0d03 },
+  ]);
 });

@@ -64,7 +64,7 @@ export interface MacroCandidate {
 }
 
 /** One instruction: its opcode, its length and its operand value. */
-interface Instruction {
+export interface Instruction {
   opcode: number;
   length: number;
   value: number;
@@ -187,7 +187,7 @@ function wide([carry, loadLow, low, storeLow, loadHigh, high, storeHigh]: Instru
 }
 
 /** The instruction at `at`, or undefined when a byte of it is outside the range or the image. */
-function instructionAt(byteAt: ImageByte, at: number, end: number): Instruction | undefined {
+export function instructionAt(byteAt: ImageByte, at: number, end: number): Instruction | undefined {
   const opcode = byteAt(at);
   if (opcode === undefined) return undefined;
   const length = instructionLength(opcode);

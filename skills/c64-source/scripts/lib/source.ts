@@ -42,6 +42,8 @@ export interface SourceInput {
   platform?: ReadonlyArray<{ address: number; end: number; name: string; meaning?: string }>;
   /** The platform area of an address, and the register that an I/O mirror repeats: constants.asm groups and describes its names with them. */
   describe?: (address: number) => { area: Area; mirrorOf?: number };
+  /** What a value in a platform register means (c64-memory-map): an immediate stored to such a register gets it as a side comment. Throws for a register without a decoder. */
+  decode?: (register: number, value: number) => Record<string, unknown>;
   /** Operand expressions of the knowledge (D65), by instruction address. */
   operands?: ReadonlyArray<OperandExpression & { address: number }>;
   /** Patches of the knowledge (D72): code that replaces a range when the build defines the switch. */
@@ -103,6 +105,53 @@ const SIDE_COLUMN = 40;
 const INDENT = "        ";
 
 type Region = SourceInput["regions"][number];
+
+/** LDA/LDX/LDY immediate, and the stores of the same register: absolute and zero page. */
+const LOADS: Record<number, "a" | "x" | "y"> = { 0xa9: "a", 0xa2: "x", 0xa0: "y" };
+const STORES: Record<number, "a" | "x" | "y"> = { 0x8d: "a", 0x85: "a", 0x8e: "x", 0x86: "x", 0x8c: "y", 0x84: "y" };
+
+/** A decoded register value in a few words: the true flags, the numbers and the texts, without the note. */
+function decodedText(decoded: Record<string, unknown>): string {
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(decoded)) {
+    if (key === "note" || value === false || value === undefined) continue;
+    if (value === true) parts.push(key);
+    else if (Array.isArray(value)) parts.push(`${key} ${value.join(",")}`);
+    else if (typeof value === "object" && value !== null) continue;
+    else parts.push(`${key} ${String(value)}`);
+  }
+  return parts.join(", ");
+}
+
+/**
+ * Side comments for an immediate that the next instruction stores to a platform
+ * register with a decoder, for example "$d011: yScroll 3, rows 25". A knowledge
+ * side comment at the store wins (M23.7).
+ */
+function decodedStores(pieces: readonly Piece[], input: SourceInput): Array<{ address: number; placement: CommentPlacement; text: string }> {
+  if (input.decode === undefined) return [];
+  const own = new Set(input.comments.filter((comment) => comment.placement === "side").map((comment) => comment.address));
+  const found: Array<{ address: number; placement: CommentPlacement; text: string }> = [];
+  for (const piece of pieces) {
+    const items = piece.items.filter((item): item is InstructionItem => item.kind === "instruction");
+    for (let index = 1; index < items.length; index++) {
+      const load = items[index - 1]!;
+      const store = items[index]!;
+      const register = STORES[store.opcode];
+      if (register === undefined || LOADS[load.opcode] !== register || load.address + load.length !== store.address || own.has(store.address)) continue;
+      const target = store.length === 3 ? input.byteAt(store.address + 1) | (input.byteAt(store.address + 2) << 8) : input.byteAt(store.address + 1);
+      // A register inside the image is RAM of the program, not the register.
+      if (input.segments.some((segment) => target >= segment.start && target <= segment.end)) continue;
+      try {
+        const text = decodedText(input.decode(target, input.byteAt(load.address + 1)));
+        if (text !== "") found.push({ address: store.address, placement: "side", text: `${hex4(target)}: ${text}` });
+      } catch {
+        // No decoder for this register.
+      }
+    }
+  }
+  return found;
+}
 
 interface InstructionItem {
   kind: "instruction";
@@ -485,7 +534,7 @@ export function layout(input: SourceInput): Layout {
     ...(input.describe === undefined ? {} : { describe: input.describe }),
     inImage,
     byteAt: input.byteAt,
-    comments: input.comments,
+    comments: [...input.comments, ...decodedStores(pieces, input)],
     ...(input.coverage === undefined ? {} : { coverage: input.coverage }),
     generatedLabels,
     namedLabels,

@@ -380,6 +380,41 @@ export function platformNames(): Array<{ address: number; end: number; name: str
     .filter((entry) => !seen.has(entry.name) && seen.add(entry.name) !== undefined);
 }
 
+/** Which ROMs a program uses (D75): a ROM it does not use gives no names, and without both the system area gives none. */
+export interface RomUse {
+  basic: boolean;
+  kernal: boolean;
+}
+
+/**
+ * The platform names of a program that uses only some ROMs (D75): the BASIC
+ * ROM entries need the BASIC ROM, the KERNAL ROM entries the KERNAL, and the
+ * system variables of $0002-$03FF (the workspace of both) one of them. The
+ * processor port and the I/O registers always stay.
+ */
+export function platformNamesFor(use: RomUse): ReturnType<typeof platformNames> {
+  return platformNames().filter((entry) => {
+    if (entry.address >= 0xa000 && entry.address <= 0xbfff) return use.basic;
+    if (entry.address >= 0xe000) return use.kernal;
+    if (entry.address >= 0x0002 && entry.address <= 0x03ff) return use.basic || use.kernal;
+    return true;
+  });
+}
+
+/** The ROMs that a coverage map shows in use: a ROM read or execute in the bank. */
+export function romUseOf(coverage: Uint8Array, romAccess: number): RomUse {
+  const used = (start: number, end: number) => {
+    for (let address = start; address <= end; address++) if ((coverage[address]! & romAccess) !== 0) return true;
+    return false;
+  };
+  return { basic: used(0xa000, 0xbfff), kernal: used(0xe000, 0xffff) };
+}
+
+/** The ROMs that a value of $01 switches in: HIRAM for the KERNAL, LORAM and HIRAM for BASIC. */
+export function romUseOfPort(port: number): RomUse {
+  return { basic: (port & 0x03) === 0x03, kernal: (port & 0x02) !== 0 };
+}
+
 export type Decoded = Record<string, unknown>;
 
 const bits = (value: number) => [0, 1, 2, 3, 4, 5, 6, 7].filter((bit) => (value & (1 << bit)) !== 0);

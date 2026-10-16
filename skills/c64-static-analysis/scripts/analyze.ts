@@ -28,6 +28,7 @@ import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList } from "./lib/instructions.ts";
 import { CATALOGUE, findMacroUses, type MacroCandidate } from "./lib/macros.ts";
+import { findPitfalls, type Pitfall } from "./lib/pitfalls.ts";
 import { findPointers, type PointerCandidate } from "./lib/pointers.ts";
 
 const USAGE = `analyze.ts <image> [options]
@@ -59,6 +60,16 @@ const DEFAULT_MAX_LISTED = 50;
 /** The first `max` items, the count, and where to read the rest when the list is cut. */
 function listed<T, U>(items: T[], max: number, show: (item: T) => U, all: string) {
   return { count: items.length, listed: items.slice(0, max).map(show), ...(items.length > max ? { rest: all } : {}) };
+}
+
+/** A pitfall with $ addresses and what goes wrong (M23.7). */
+function showPitfall(pitfall: Pitfall) {
+  return {
+    kind: pitfall.kind,
+    at: formatC64Address(pitfall.at),
+    store: formatC64Address(pitfall.store),
+    problem: "A read of $D011 gives raster bit 8 in bit 7; the write sets bit 8 of the raster compare. Clear bit 7 (AND #$7F) unless the code wants a compare at line 256 or later.",
+  };
 }
 
 /** A pointer candidate with $ addresses, and the operand writes that would name it (D65). */
@@ -296,6 +307,10 @@ async function run(argv: string[]): Promise<unknown> {
     const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: `Idioms in ${image}` }));
     // The macro candidates read the code regions after both imports (D73).
     const macros = macroCandidates(space, image, byteAt, values["macro-batch"]);
+    // Platform pitfalls are C64 facts: drive code and banks get none (M23.7).
+    const pitfallDb = openForRead();
+    const pitfalls = space === DEFAULT_SPACE ? findPitfalls(byteAt, listRegions(pitfallDb, undefined, "code", undefined, space)) : [];
+    pitfallDb?.close();
     return {
       idioms: {
         ...idioms.counts,
@@ -307,6 +322,7 @@ async function run(argv: string[]): Promise<unknown> {
           dop: listed(idioms.candidates.dop, max, formatC64Address, "a larger --max-listed"),
           selfModified: listed(idioms.candidates.selfModified, max, formatC64Address, "a larger --max-listed"),
           pointers: listed(pointers, max, showPointer, "a larger --max-listed"),
+          pitfalls: listed(pitfalls, max, showPitfall, "a larger --max-listed"),
           macros: {
             ...listed(macros.candidates, max, showMacro, "a larger --max-listed, or --macro-batch <file>"),
             ...(macros.known === 0 ? {} : { known: macros.known }),
