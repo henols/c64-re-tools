@@ -60,7 +60,14 @@ const relative = (page: string, target: string) => {
 /** The project path of a link target, without its fragment; undefined for a link out of the project (a URL, or a page anchor only). */
 export function targetPath(page: string, target: string): string | undefined {
   if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith("#")) return undefined;
-  return posix.normalize(posix.join(posix.dirname(page), decodeURIComponent(target.split("#")[0]!)));
+  const raw = target.split("#")[0]!;
+  let path = raw;
+  try {
+    path = decodeURIComponent(raw);
+  } catch {
+    // A % that starts no escape ("100%.md") is part of the name.
+  }
+  return posix.normalize(posix.join(posix.dirname(page), path));
 }
 
 /** Writes the links of the name mentions of a page; returns the new text, the number of links changed and the problems. */

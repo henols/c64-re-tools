@@ -407,6 +407,16 @@ Henrik moved the Bruce Lee entry page from `docs/README.md` to `bruce_lee/README
 
 - [x] M29.1 **Entry page and workspace index** — c64-docs: the entry page is `<project>/README.md`, with a last part "The release and the rebuild" in place of the report of D82; the other pages and the reference stay in `docs/`. A workspace has a `README.md` at its root with one row for each program. `link.ts` takes `.md` files and directories (`link.ts README.md docs --source src`), and the default reference is the `reference/` folder of the first directory that has one. c64-reverse-engineering names `README.md` in its layout. Checked read-only on `c64_games/bruce_lee`: `link.ts README.md docs --check` reads 87 pages with 0 problems and 0 links to write.
 
+## M30 — Code-review findings
+
+A code review of the whole project found ten faults: two crashes of `link.ts` on pages of a person, three faults in which coverage map is evidence, a delete outside the project through a symbolic link, a crash on a bad `image.json`, and three places where `link.ts` does the same work again. Decision D86.
+
+- [x] M30.1 **link.ts crashes** — a `.md` entry that is a symbolic link to no file or out of the project is a `missing-file` problem; a directory of pages that leads out of the project is refused; a `%` that starts no escape is part of the file name.
+- [ ] M30.2 **Coverage evidence** — the evidence of a coverage map records its space (D86); a map in one space is imported into another; `--evidence coverage:<map>` cites the latest import of the map in the space of the write; a map and a file of evidence are named by their normalized project path.
+- [ ] M30.3 **generate.ts deletes only inside the project** — `--out` that leads out of the project through a symbolic link is refused before a file is deleted; `writeProjectFile` makes no directory outside the project.
+- [ ] M30.4 **image.json that is no object** — `null`, a segment or a stage that is no object is refused as no image.json.
+- [ ] M30.5 **link.ts reads each file once** — the text of each file, the line count of each target, the body end of each name and the project root are kept for the run.
+
 ## Decisions
 
 Points the design leaves open, decided for M1. Revisit a row before changing the behavior it describes.

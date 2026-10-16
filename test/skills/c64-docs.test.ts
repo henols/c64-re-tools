@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -278,4 +278,35 @@ test("link.ts reports a source and a reference that are older than the knowledge
   assert.deepEqual((stale.json.problems as { byKind: Record<string, number> }).byKind, { "stale-reference": 1 });
   assert.equal(link(root, "missing", "--source", "src").status, 1);
   assert.equal(link(root, "docs").status, 2);
+});
+
+test("link.ts reports a page that is a symbolic link to no file or out of the project, and a link with a bare %", { skip: process.platform === "win32" && "symbolic links need rights on Windows" }, () => {
+  const { root } = project();
+  const outside = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-outside-"));
+  projects.push(outside);
+  writeFileSync(join(outside, "secret.md"), "`main` `$1000`\n");
+  mkdirSync(join(root, "docs"), { recursive: true });
+  writeFileSync(join(root, "docs/notes.md"), "[load](100%.md) and [bad](a%zz.md).\n");
+  symlinkSync(join(root, "docs/gone.md"), join(root, "docs/dangling.md"));
+  symlinkSync(join(outside, "secret.md"), join(root, "docs/outside.md"));
+  const result = link(root, "docs", "--source", "src");
+  assert.equal(result.status, 1);
+  const problems = (result.json.problems as { listed: Array<{ at: string; kind: string; message: string }> }).listed;
+  assert.deepEqual(
+    problems.map((problem) => [problem.at, problem.kind]),
+    [
+      ["docs/dangling.md:1", "missing-file"],
+      ["docs/notes.md:1", "missing-file"],
+      ["docs/notes.md:1", "missing-file"],
+      ["docs/outside.md:1", "missing-file"],
+    ],
+  );
+  assert.match(problems[1]!.message, /there is no docs\/100%\.md/);
+  assert.equal(readFileSync(join(outside, "secret.md"), "utf8"), "`main` `$1000`\n", "a file outside the project is not linked");
+
+  // A directory of pages that leads out of the project is refused.
+  symlinkSync(outside, join(root, "elsewhere"));
+  const refused = link(root, "elsewhere", "--source", "src");
+  assert.equal(refused.status, 1);
+  assert.match(String((refused.json.error as { message: string }).message), /elsewhere leads out of the project folder/);
 });
