@@ -325,3 +325,36 @@ test("patch, macro and use write the source knowledge, and patches, switches, ma
   assert.equal(applied.writes, 4);
   assert.deepEqual((knowledge(root, "export", "--out", "k.json").json as { counts: Record<string, number> }).counts, { symbols: 1, analyzerNames: 0, regions: 0, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0, patches: 1, macros: 1, macroUses: 1 });
 });
+
+test("join makes one batch of the batches of parallel agents, and apply writes it as one revision (D79)", () => {
+  const root = project();
+  // The Bruce Lee run: each agent named its own range; batch b owns $1000-$1fff.
+  writeFileSync(join(root, "a.json"), JSON.stringify({ owner: "$0200-$0fff", ops: [{ op: "rename", address: "$0400", name: "cold_start", kind: "routine" }, { op: "rename", address: "$1000", name: "draw_room_a" }, { op: "operand", address: "$0400", select: "lo", symbol: "draw_room_a" }] }));
+  writeFileSync(join(root, "b.json"), JSON.stringify({ owner: "$1000-$1fff", ops: [{ op: "rename", address: "$1000", name: "draw_room", kind: "routine" }, { op: "comment", address: "$1000", placement: "line", text: "Draws the room." }] }));
+  writeFileSync(join(root, "c.json"), JSON.stringify([{ op: "rename", address: "$2000", name: "cold_start" }]));
+  const joined = knowledge(root, "join", "a.json", "b.json", "--out", "joined.json");
+  assert.equal(joined.status, 0, JSON.stringify(joined.json));
+  assert.deepEqual(joined.json, {
+    joined: true,
+    out: "joined.json",
+    writes: 4,
+    repeated: 0,
+    choices: [{ what: "name", at: "$1000", kept: { file: "b.json", value: "draw_room (routine)" }, left: [{ file: "a.json", value: "draw_room_a" }] }],
+    apply: "knowledge.ts apply joined.json",
+  });
+  const batch = JSON.parse(readFileSync(join(root, "joined.json"), "utf8")) as Array<Record<string, unknown>>;
+  assert.deepEqual(batch.find((write) => write.op === "operand"), { op: "operand", address: "$0400", select: "lo", symbol: "draw_room" }, "the operand follows the owner's name");
+  assert.equal(existsSync(join(root, ".c64-re-tools")), false, "join writes no knowledge");
+
+  const clash = knowledge(root, "join", "a.json", "c.json", "--out", "clash.json");
+  assert.equal(clash.status, 1);
+  assert.deepEqual((clash.json as { clashes: unknown }).clashes, [{ what: "name", value: "cold_start", places: [{ address: "$0400", file: "a.json" }, { address: "$2000", file: "c.json" }] }]);
+  assert.equal(existsSync(join(root, "clash.json")), false);
+  writeFileSync(join(root, "overlap.json"), JSON.stringify({ owner: "$0f00-$10ff", ops: [] }));
+  assert.equal(knowledge(root, "join", "a.json", "overlap.json", "--out", "x.json").status, 2, "owner ranges must not overlap");
+
+  // $0400 LDA #$00: the low byte of draw_room ($1000).
+  writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x04, 0xa9, 0x00]));
+  assert.equal(knowledge(root, "apply", "joined.json", "--image", "game.prg").status, 0);
+  assert.equal((knowledge(root, "at", "draw_room").json as { symbol: { name: string } }).symbol.name, "draw_room", "a name gives the address");
+});

@@ -11,6 +11,7 @@ import { formatC64Address, parseC64Address, SYMBOL_NAME } from "#src/c64.ts";
 import { ImageError, readImage } from "#src/host-client/image.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
+import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
 import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
@@ -158,6 +159,12 @@ Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
   merge                    decide the conflicts that a git merge of two
                            computers' work left: of the rows of one conflict,
                            the newest stays; one revision for all
+  join <batch>... --out <file>
+                           join the batches of agents that worked in parallel into
+                           one batch for apply; writes no knowledge. A batch is a
+                           list of writes, or {"owner": "$1000-$1fff", "ops": [...]}:
+                           at an address in its owner range its name, comment,
+                           operand and module win, and its regions come last
   apply <file>             many writes from a JSON file ('-' reads standard input),
                            all as one revision, or none when one is refused;
                            operand, patch and use writes need --image <file>
@@ -368,6 +375,8 @@ function run(argv: string[]): unknown {
 
   const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "operands", "patches", "switches", "macros", "uses", "spaces", "history", "revisions", "revision", "export"]);
   const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "operand", "unoperand", "patch", "unpatch", "macro", "unmacro", "use", "unuse", "revert", "apply", "merge"]);
+  // join reads batch files and writes one: no knowledge opens (D79).
+  if (command === "join") return joinCommand(args, values.out, space);
   // Refuse a mistyped command before anything opens, so no database appears by accident.
   if (!read.has(command) && !write.has(command)) throw new UsageError(`unknown command: ${command}`);
   if (read.has(command)) {
@@ -710,6 +719,57 @@ const BATCH_FIELDS: Record<BatchOperation["op"], string[]> = {
   use: ["start", "end", "macro", "args"],
   unuse: ["start"],
 };
+
+/** A write of a batch as JSON again: addresses as $ and four hex digits, the C64 space left out. */
+function batchJson(write: BatchOperation): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(write)) {
+    if (key === "space" && value === DEFAULT_SPACE) continue;
+    out[key] = ["address", "start", "end", "from", "to"].includes(key) && typeof value === "number" ? formatC64Address(value) : value;
+  }
+  return out;
+}
+
+/** Reads the batches, joins them, and writes the joined batch to --out (D79). One name or one module file at two addresses writes nothing. */
+function joinCommand(files: string[], out: string | undefined, space: string): Record<string, unknown> {
+  if (files.length < 2) throw new UsageError("join needs two or more batch files");
+  if (out === undefined) throw new UsageError("join needs --out <file>");
+  const batches: Batch[] = files.map((file) => {
+    let value: unknown;
+    try {
+      value = JSON.parse(readProjectFile(file).bytes.toString("utf8"));
+    } catch (error) {
+      throw new UsageError(`${file}: ${(error as Error).message}`);
+    }
+    const shaped = Array.isArray(value) ? { ops: value } : (value as { owner?: unknown; ops?: unknown });
+    if (typeof shaped !== "object" || shaped === null || !Array.isArray(shaped.ops)) throw new UsageError(`${file}: a batch is a list of writes, or {"owner": "$1000-$1fff", "ops": [...]}`);
+    let owner: Batch["owner"];
+    if (shaped.owner !== undefined) {
+      const parts = typeof shaped.owner === "string" ? shaped.owner.split("-") : [];
+      if (parts.length !== 2) throw new UsageError(`${file}: owner must be "<start>-<end>", for example "$1000-$1fff"`);
+      owner = { start: address(parts[0], `${file}: owner`), end: address(parts[1], `${file}: owner`) };
+      if (owner.end < owner.start) throw new UsageError(`${file}: the owner range ends before it starts`);
+    }
+    const ops = (shaped.ops as unknown[]).map((item, index) => batchOperation(item, `${file}: write ${index + 1}`, space));
+    return { file, ...(owner === undefined ? {} : { owner }), ops };
+  });
+  const owned = batches.filter((batch) => batch.owner !== undefined);
+  for (const [index, batch] of owned.entries()) {
+    const other = owned.slice(index + 1).find((next) => next.owner!.start <= batch.owner!.end && batch.owner!.start <= next.owner!.end);
+    if (other !== undefined) throw new UsageError(`the owner ranges of ${batch.file} and ${other.file} overlap; give each address one owner`);
+  }
+  const joined = joinBatches(batches);
+  const choice = (item: JoinChoice) => ({ ...item, at: typeof item.at === "number" ? formatC64Address(item.at) : item.at, ...(item.space === DEFAULT_SPACE ? { space: undefined } : {}) });
+  const clash = (item: JoinClash) => ({ ...item, ...(item.space === DEFAULT_SPACE ? { space: undefined } : {}), places: item.places.map((place) => ({ address: formatC64Address(place.address), file: place.file })) });
+  const choices = joined.choices.map(choice);
+  if (joined.clashes.length > 0) {
+    process.exitCode = 1;
+    return { joined: false, clashes: joined.clashes.map(clash), choices, remedy: "Give each name and each module file one address in the batches, then join again." };
+  }
+  const bytes = Buffer.from(`${JSON.stringify(joined.ops.map(batchJson), null, 1)}\n`, "utf8");
+  writeProjectFile(out, bytes, { what: "--out" });
+  return { joined: true, out, writes: joined.ops.length, repeated: joined.repeated, choices, apply: `knowledge.ts apply ${out}` };
+}
 
 /** One write of a batch. A write names its own space, or takes the one of --space. */
 function batchOperation(item: unknown, at: string, space: string): BatchOperation {

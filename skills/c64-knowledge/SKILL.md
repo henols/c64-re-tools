@@ -43,6 +43,7 @@ A symbol is the name of an address from the user or the LLM. An analyzer name is
 | Classify memory | `classify '$3000' '$303f' sprite` |
 | Classify a table of records | `classify '$3000' '$303b' bytes --element 6` |
 | Many writes as one revision | `apply -` with the JSON on standard input, or `apply <file>` |
+| One batch from the batches of parallel agents | `join a.json b.json --out .c64-re-tools/local/joined.json` |
 | Make memory unknown, and keep the analyzers out of it | `unclassify '$3000' '$303f'` |
 | Set or remove a comment | `comment '$2100' line Reads joystick 2.` / `uncomment '$2100' line` |
 | Add or remove a reference | `reference '$2000' '$2100' call` / `unreference ...` |
@@ -139,6 +140,21 @@ The ops and their fields:
 A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. `apply` with an `operand`, `patch` or `use` write needs `--image`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
 
 The c64-provenance skill writes a batch with `match --out`. The batch holds the names of library routines at their addresses in this program. Read the `batch.leftOut` of its result first. Then apply the batch with the command in its `apply`.
+
+## Batches of parallel agents
+
+When more agents name the program at the same time, give each agent one range of addresses. Each agent writes one batch file and does not apply it. A batch of an agent has the form `{"owner": "$1000-$1fff", "ops": [...]}`. `ops` holds the writes, as for `apply`. The owner ranges must not overlap.
+
+`join` makes one batch from the batch files. It writes no knowledge.
+
+- At an address in the owner range of a batch, the name, the comment, the operand and the module of that batch stay. At an address that no batch owns, the first batch in the command stays.
+- A batch can give an address a name that `join` replaces. Then `join` also replaces that name in the operand expressions and macro args of that batch.
+- The regions of the owner come after the regions of the other batches. Thus the regions of the owner stay where they overlap.
+- A name from a batch stays when another batch removes the symbol at that address.
+- `choices` lists each place where the batches gave different values, with the value that stays.
+- When one name or one module file is at two addresses, `join` writes nothing. `clashes` lists the addresses and the batches. Correct the batches, then do `join` again.
+
+Then apply the joined batch with the command in `apply`. Add `--image` when the batch has an `operand`, `patch` or `use` write.
 
 ## Modules
 
