@@ -11,6 +11,7 @@ import { after, test } from "node:test";
 
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { STOP_AND_ASK } from "../../src/protocol/messages.ts";
+import { importPrg } from "../fixtures/program.ts";
 
 let acmeSkip: string | false = false;
 try {
@@ -95,16 +96,20 @@ test("a missing ACME is refused with the stop instruction (D37)", async () => {
   assert.ok(error.message.endsWith(STOP_AND_ASK), error.message);
 });
 
-test("--compare checks the build against a reference and fails on a difference (D47)", { skip: acmeSkip }, async () => {
+test("--compare checks the build against the program in the knowledge and fails on a difference (D47, D83)", { skip: acmeSkip }, async () => {
   const first = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/reference.prg");
   assert.equal(first.status, 0, JSON.stringify(first.json));
-  const same = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare", "build/reference.prg");
+  const refused = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare");
+  assert.equal(refused.status, 1, "no program in the knowledge yet");
+  assert.match((refused.json.error as { message: string }).message, /knowledge\.ts image/);
+  importPrg(project, readFileSync(join(project, "build", "reference.prg")));
+  const same = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare");
   assert.equal(same.status, 0, JSON.stringify(same.json));
   assert.equal((same.json.compare as { identical: boolean }).identical, true);
   const changed = readFileSync(join(project, "build", "reference.prg"));
   changed[10] = changed[10]! ^ 0xff;
-  writeFileSync(join(project, "build", "changed.prg"), changed);
-  const different = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare", "build/changed.prg");
+  importPrg(project, changed);
+  const different = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare");
   assert.equal(different.status, 1, "a build that differs is a failed check");
   const [segment] = (different.json.compare as { segments: Array<{ result: string; firstDifference: { address: string } }> }).segments;
   assert.equal(segment!.result, "different");

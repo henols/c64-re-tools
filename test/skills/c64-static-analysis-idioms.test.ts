@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -16,6 +16,7 @@ import { imageReader } from "../../skills/c64-static-analysis/scripts/lib/covera
 import { findIdioms } from "../../skills/c64-static-analysis/scripts/lib/idioms.ts";
 import { findPointers } from "../../skills/c64-static-analysis/scripts/lib/pointers.ts";
 import { findPitfalls } from "../../skills/c64-static-analysis/scripts/lib/pitfalls.ts";
+import { importPrg } from "../fixtures/program.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-idioms-"));
 after(() => rmSync(project, { recursive: true, force: true }));
@@ -64,12 +65,26 @@ test("three JMP abs in a row are a JMP table; a BIT skip is dual-use bytes with 
   assert.deepEqual(skip.findings.references, [{ from: 0x1810, to: 0x1801, kind: "jump" }]);
 });
 
+/** The coverage of the knowledge from runs (D83): the joined map, and wx where one run wrote and executed. */
+function covered(...runs: Uint8Array[]): { map: Uint8Array; selfModified: Uint8Array } {
+  const both = COVERAGE.ramWrite | COVERAGE.ramExecute;
+  const map = new Uint8Array(0x10000);
+  const selfModified = new Uint8Array(0x10000);
+  for (const run of runs) {
+    for (let address = 0; address < 0x10000; address++) {
+      map[address]! |= run[address]!;
+      if ((run[address]! & both) === both) selfModified[address] = 1;
+    }
+  }
+  return { map, selfModified };
+}
+
 test("DOP padding and self-modified opcodes are candidates from the coverage only", () => {
   const { byteAt } = image({ 0x1a00: [0x80, 0x00, 0xa9, 0x01, 0xa9, 0x02] });
   const run = new Uint8Array(0x10000);
   run[0x1a00] = COVERAGE.ramExecute;
   run[0x1a02] = COVERAGE.ramExecute | COVERAGE.ramWrite;
-  const found = findIdioms(byteAt, RANGE, [run]);
+  const found = findIdioms(byteAt, RANGE, covered(run));
   assert.deepEqual(found.candidates, { dop: [0x1a00], selfModified: [0x1a02] });
   assert.deepEqual(findIdioms(byteAt, RANGE).candidates, { dop: [], selfModified: [] });
 });
@@ -81,10 +96,10 @@ test("a self-modified opcode is written and executed in one run: a copier's writ
   const game = new Uint8Array(0x10000);
   game[0x1a00] = COVERAGE.ramExecute;
   game[0x1a02] = COVERAGE.ramExecute | COVERAGE.ramWrite;
-  assert.deepEqual(findIdioms(byteAt, RANGE, [copier, game]).candidates.selfModified, [0x1a02]);
+  assert.deepEqual(findIdioms(byteAt, RANGE, covered(copier, game)).candidates.selfModified, [0x1a02]);
   // More than 64 are all given: the result lists them with their count.
   const many = new Uint8Array(0x10000).fill(COVERAGE.ramExecute | COVERAGE.ramWrite, 0x1000, 0x1100);
-  assert.equal(findIdioms(byteAt, RANGE, [many]).candidates.selfModified.length, 0x100);
+  assert.equal(findIdioms(byteAt, RANGE, covered(many)).candidates.selfModified.length, 0x100);
 });
 
 test("an analysis writes the idioms as heuristic knowledge and DXA finds the code behind an RTS table", { skip: (() => { try { findTool(DXA); return false; } catch { return "dxa is not installed"; } })(), timeout: 120_000 }, () => {
@@ -96,9 +111,9 @@ test("an analysis writes the idioms as heuristic knowledge and DXA finds the cod
   at(0x0820, [0xee, 0x20, 0xd0, 0x4c, 0x20, 0x08]);
   at(0x0828, [0x1f]);
   at(0x0830, [0x08]);
-  writeFileSync(join(project, "dispatch.prg"), prg);
+  importPrg(project, prg);
   const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "dispatch.prg", "--analyzer", "dxa"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "--analyzer", "dxa"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   const json = JSON.parse(run.stdout) as { idioms: { rtsTables: number; revision: number | null } };
   assert.equal(json.idioms.rtsTables, 1, run.stdout);
   const db = openForRead(project);

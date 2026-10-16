@@ -410,6 +410,7 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
   const code = [0xa2, 0x00, 0xad, 0x12, 0x00, 0xeb, 0x01, 0x1a, 0x0b, 0x0f, 0x2b, 0x0f, 0x8d, 0x10, 0x10, 0xa9, 0x00, 0x2c, 0xa9, 0x01, 0x60];
   writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, ...code]));
   const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "image", "test.prg"], { cwd: project }).status, 0);
   assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "rename", "$1000", "start", "--kind", "routine"], { cwd: project }).status, 0);
   // Files of an earlier run go, files of a person stay (F-25).
   mkdirSync(join(project, "src"));
@@ -417,7 +418,7 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
   writeFileSync(join(project, "src", "loader.prg"), Uint8Array.from([0x01, 0x08]));
   writeFileSync(join(project, "src", "notes.asm"), "; my notes\n");
   writeFileSync(join(project, "src", "not_executed.json"), "{}\n");
-  const child = spawn(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg", "--out", "src"], {
+  const child = spawn(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "--out", "src"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
     stdio: ["ignore", "pipe", "inherit"],
@@ -451,7 +452,8 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
   const coverage = new Uint8Array(0x10000);
   for (const address of [0x1000, 0x1002]) coverage[address] = COVERAGE.ramExecute;
   writeFileSync(join(project, "run.bin"), coverage);
-  const covered = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg", "--out", "src", "--coverage", "run.bin"], {
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "coverage", "run.bin"], { cwd: project }).status, 0);
+  const covered = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "--out", "src"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
     encoding: "utf8",
@@ -468,8 +470,10 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
   const marks = readFileSync(join(project, "src", "segment_1000.asm"), "utf8").match(/^; not executed .*$/gm);
   assert.deepEqual(marks, all.ranges.map((range) => `; not executed ${range.start}-${range.end}`));
 
-  const refused = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg"], { cwd: project, encoding: "utf8" });
+  const refused = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts")], { cwd: project, encoding: "utf8" });
   assert.equal(refused.status, 2, "--out is necessary");
+  const named = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg", "--out", "src"], { cwd: project, encoding: "utf8" });
+  assert.equal(named.status, 2, "the program comes from the knowledge, not from a path");
 });
 
 test("with real Ghidra and ACME, an operand expression that ACME assembles to other bytes is written as its number (D65)", { skip: ghidraSkip, timeout: 600_000 }, async () => {
@@ -478,16 +482,19 @@ test("with real Ghidra and ACME, an operand expression that ACME assembles to ot
   // $1000 LDA #$0b / STA $0314 / LDA #$10 / STA $0315 / RTS, then the handler at $100b: RTS.
   const code = [0xa9, 0x0b, 0x8d, 0x14, 0x03, 0xa9, 0x10, 0x8d, 0x15, 0x03, 0x60, 0x60];
   writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, ...code]));
-  // An older image with $11 at $1006: an expression that fits it does not fit test.prg.
+  // An older program with $11 at $1006: an expression that fits it does not fit test.prg.
   writeFileSync(join(project, "old.prg"), Uint8Array.from([0x00, 0x10, ...code.map((byte, index) => (index === 6 ? 0x11 : byte))]));
   const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
   const write = (...args: string[]) => assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, ...args], { cwd: project, encoding: "utf8" }).status, 0, args.join(" "));
+  write("image", "test.prg");
   write("rename", "$1000", "start", "--kind", "routine");
   write("rename", "$100b", "handler", "--kind", "routine");
-  write("operand", "$1000", "--lo", "handler", "--image", "test.prg");
-  write("operand", "$1002", "--value", "CINV", "--image", "test.prg");
-  write("operand", "$1005", "--expr", ">handler+$100", "--image", "old.prg");
-  const generated = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg", "--out", "src"], {
+  write("operand", "$1000", "--lo", "handler");
+  write("operand", "$1002", "--value", "CINV");
+  write("image", "old.prg");
+  write("operand", "$1005", "--expr", ">handler+$100");
+  write("image", "test.prg");
+  const generated = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "--out", "src"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
     encoding: "utf8",
@@ -522,7 +529,9 @@ test("with real Ghidra and ACME, a loader that cannot be planned still gives the
       pages: Object.fromEntries([0, 1, 2, 3].map((page) => [hex(page << 8), "00".repeat(256)])),
     }),
   );
-  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "unpacked/image.json", "--out", "src", "--loader"], {
+  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "image", "unpacked/image.json"], { cwd: project }).status, 0);
+  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "--out", "src", "--loader"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
     encoding: "utf8",
@@ -552,8 +561,10 @@ test("with real Ghidra and ACME, an image whose entry is in no segment gives the
       pages: Object.fromEntries([0, 1, 2, 3].map((page) => [`$${(page << 8).toString(16).padStart(4, "0")}`, "00".repeat(256)])),
     }),
   );
+  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "image", "unpacked/image.json"], { cwd: project }).status, 0);
   const generate = (...args: string[]) =>
-    spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "unpacked/image.json", "--out", "src", ...(args.includes("--no-seed") ? [] : ["--entry", "$1000"]), ...args.filter((arg) => arg !== "--no-seed")], {
+    spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "--out", "src", ...(args.includes("--no-seed") ? [] : ["--entry", "$1000"]), ...args.filter((arg) => arg !== "--no-seed")], {
       cwd: project,
       env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
       encoding: "utf8",
@@ -814,10 +825,11 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
   // $1000 LDA #$00; STA $d020; JMP $1000.
   writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, 0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x4c, 0x00, 0x10]));
   const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
+  assert.equal(knowledge("image", "test.prg").status, 0);
   assert.equal(knowledge("rename", "$1000", "start", "--kind", "routine").status, 0);
-  assert.equal(knowledge("patch", "$1000", "$1004", "CRACK", "--code", "        lda #1\n        sta $d021", "--image", "test.prg").status, 0);
-  assert.equal(knowledge("patch", "$1005", "$1007", "BIG", "--code", "        nop\n        nop\n        nop\n        nop", "--image", "test.prg").status, 0);
-  const generate = () => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg", "--out", "src"], { cwd: project, encoding: "utf8" });
+  assert.equal(knowledge("patch", "$1000", "$1004", "CRACK", "--code", "        lda #1\n        sta $d021").status, 0);
+  assert.equal(knowledge("patch", "$1005", "$1007", "BIG", "--code", "        nop\n        nop\n        nop\n        nop").status, 0);
+  const generate = () => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "--out", "src"], { cwd: project, encoding: "utf8" });
   type Result = { check: { identical: boolean }; switches: Array<{ name: string; result: string; changedBytes?: number; overflow?: Array<{ start: string; message: string }> }> };
   const first = generate();
   assert.equal(first.status, 1, first.stdout);
@@ -908,8 +920,9 @@ test("with real Ghidra and ACME, a macro use that ACME refuses or assembles to o
     { op: "use", start: "$1006", end: "$100b", macro: "short", args: ["$fd"] },
     { op: "use", start: "$100c", end: "$1011", macro: "broken", args: ["$02"] },
   ]));
-  assert.equal(knowledge("apply", "batch.json", "--image", "test.prg").status, 0);
-  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg", "--out", "src"], { cwd: project, encoding: "utf8" });
+  assert.equal(knowledge("image", "test.prg").status, 0);
+  assert.equal(knowledge("apply", "batch.json").status, 0);
+  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "--out", "src"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout);
   const json = JSON.parse(run.stdout) as { check: { identical: boolean }; files: string[]; macroUses: number; macrosAsInstructions: { listed: Array<{ start: string; macro: string; reason: string }> } };
   assert.equal(json.check.identical, true);

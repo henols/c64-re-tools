@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -15,6 +15,7 @@ import { openForRead } from "../../src/knowledge/database.ts";
 import { analyzerNamesAt, listReferences, regionsOverlapping, symbolAt } from "../../src/knowledge/read.ts";
 import { analysisSubjectPrg, MAIN, ROUTINE, TABLE_START } from "../fixtures/prg/analysis-subject.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
+import { importPrg } from "../fixtures/program.ts";
 
 let skip: string | false = false;
 try {
@@ -32,7 +33,8 @@ try {
 
 const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-"));
-writeFileSync(join(project, "game.prg"), analysisSubjectPrg);
+// The program is the first revision of the knowledge (D83).
+importPrg(project, analysisSubjectPrg);
 after(() => rmSync(project, { recursive: true, force: true }));
 
 async function analyze(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
@@ -47,10 +49,10 @@ async function analyze(...args: string[]): Promise<{ status: number | null; json
 }
 
 test("an analysis imports Ghidra's structure into knowledge and reports it", { skip, timeout: 600_000 }, async () => {
-  const { status, json } = await analyze("game.prg", "--entry", "$080d", "--decompile", "$0818");
+  const { status, json } = await analyze("--entry", "$080d", "--decompile", "$0818");
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.coverage, [{ start: "$0801", end: "$0827" }]);
-  assert.equal(json.revision, nthIn(project, 1));
+  assert.equal(json.revision, nthIn(project, 2));
   assert.deepEqual((json.changes as { names: unknown }).names, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
   assert.deepEqual(json.conflicts, []);
   assert.deepEqual(json.functions, {
@@ -76,7 +78,7 @@ test("an analysis imports Ghidra's structure into knowledge and reports it", { s
 });
 
 test("a DXA pass imports its regions and labels and writes the listing", { skip: dxaSkip, timeout: 120_000 }, async () => {
-  const { status, json } = await analyze("game.prg", "--analyzer", "dxa", "--listing", "analysis/game.lst");
+  const { status, json } = await analyze("--analyzer", "dxa", "--listing", "analysis/game.lst");
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.analyzer, "dxa");
   assert.equal(json.listing, "analysis/game.lst");
@@ -92,7 +94,7 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
   assert.equal(labels.listed.length, labels.count, "a short list is not cut");
   assert.equal(labels.rest, undefined);
 
-  const cut = (await analyze("game.prg", "--analyzer", "dxa", "--max-listed", "1")).json.labels as { count: number; listed: unknown[]; rest?: string };
+  const cut = (await analyze("--analyzer", "dxa", "--max-listed", "1")).json.labels as { count: number; listed: unknown[]; rest?: string };
   assert.equal(cut.count, labels.count);
   assert.equal(cut.listed.length, 1);
   assert.equal(cut.rest, "c64-knowledge: knowledge.ts symbols");
@@ -104,14 +106,14 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
 
 test("bad calls are refused before anything is sent", { skip }, async () => {
   for (const args of [
-    [],
-    ["game.prg", "--entry", "2061"],
-    ["game.prg", "--processor", "6502"],
-    ["game.prg", "--analyzer", "ida"],
-    ["game.prg", "--analyzer", "dxa", "--decompile", "$0818"],
-    ["game.prg", "--listing", "x.lst"],
-    ["game.prg", "--max-listed", "-1"],
-    ["game.prg", "--max-listed", "many"],
+    ["game.prg"],
+    ["--entry", "2061"],
+    ["--processor", "6502"],
+    ["--analyzer", "ida"],
+    ["--analyzer", "dxa", "--decompile", "$0818"],
+    ["--listing", "x.lst"],
+    ["--max-listed", "-1"],
+    ["--max-listed", "many"],
   ]) {
     const { status, json } = await analyze(...args);
     assert.equal(status, 2, args.join(" "));

@@ -3,22 +3,23 @@
 // release is a PRG or an unpacker image.json (D50). With --run, each release
 // runs in its own emulator, and each listed difference gets its first access
 // and whether the run changed it. The separate command gives evidence from
-// one release (D51). The routine and match commands keep routines that several
-// programs share in a library folder and find them in a program (D71).
+// the program in the knowledge (D51, D83). The routine and match commands keep
+// routines that several programs share in a library folder and find them in the
+// program (D71).
 
 import { basename, posix, relative } from "node:path";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
-import { readCoverageFiles } from "#src/host-client/coverage.ts";
-import { ImageError, readImage, type Image } from "#src/host-client/image.ts";
 import { checkActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT, WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
+import { programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import {
   commentsAt,
+  currentRevision,
   listComments,
   listModules,
   listOperands,
@@ -44,10 +45,10 @@ import { watchRelease, type ImageState, type Start } from "./lib/runtime.ts";
 import { separate } from "./lib/separate.ts";
 
 const USAGE = `provenance.ts <release> <release> [<release> ...] [options]
-provenance.ts separate <release> [--coverage <file> ...] [--out <file>] [--max-listed <n>]
-provenance.ts routine <image> --library <folder> (--module <address> | --start <address> --end <address>)
+provenance.ts separate [--out <file>] [--max-listed <n>]
+provenance.ts routine --library <folder> (--module <address> | --start <address> --end <address>)
                       [--name <name>] [--title <text>] [--replace]
-provenance.ts match <image> --library <folder> [--out <file>] [--max-listed <n>]
+provenance.ts match --library <folder> [--out <file>] [--max-listed <n>]
 
   --shift <n>:<bytes>   move release n (1 = the first) by a number of bytes, for example 2:-256
   --from <address>      compare from this address
@@ -56,27 +57,27 @@ provenance.ts match <image> --library <folder> [--out <file>] [--max-listed <n>]
                         give each listed difference its first access and whether it changed
   --steps <file>        with --run: action steps (JSON) to run before the frames
 
-separate gives evidence from one release: the unpack stage that wrote each range,
-its access in the --coverage files (64 KiB each, repeatable), whether call and
-jump references in knowledge reach each code region from the entry, and what the
-program reads or executes outside the image. --out writes all ranges to a file;
+separate gives evidence from the program in the knowledge (D83): the unpack stage
+that wrote each range, its access in the coverage of the knowledge, whether call
+and jump references in knowledge reach each code region from the entry, and what
+the program reads or executes outside its segments. --out writes all ranges to a file;
 the result lists at most --max-listed of each list (default 50) and its count.
 
-routine saves a routine of the project to a library: a plain folder of routine
+routine saves a routine of the program in the knowledge to a library: a plain folder of routine
 files, beside the projects (--library, relative to the working directory, as
 --project). It takes a module (D48) of the knowledge, or --start and --end. Its
 code regions give the instructions; the user and LLM names, regions, comments,
 references and operand expressions go into the file at offsets. --name defaults
 to the user or LLM name at the start, --title to the module title.
 
-match finds each routine of the library in an image: the opcodes and other
+match finds each routine of the library in the program of the knowledge: the opcodes and other
 fixed bytes equal, and the addresses into the routine moved by one shift.
 Operands that address something outside the routine may differ; the result
 lists them. --out writes the names of the routines at the found addresses as a
 batch for knowledge.ts apply, and the result lists what it left out.
 
-A release is a PRG, placed at its load address, or an image.json of the
-c64-unpacker skill, compared inside its segments. Paths are relative to the
+A release to compare is a PRG, placed at its load address, or an image.json of
+the c64-unpacker skill, compared inside its segments. Paths are relative to the
 project folder. The result is one JSON object.`;
 
 function address(text: string, option: string): number {
@@ -192,7 +193,6 @@ async function run(argv: string[]): Promise<unknown> {
       to: { type: "string" },
       run: { type: "string" },
       steps: { type: "string" },
-      coverage: { type: "string", multiple: true },
       out: { type: "string" },
       "max-listed": { type: "string" },
       library: { type: "string" },
@@ -212,19 +212,19 @@ async function run(argv: string[]): Promise<unknown> {
     if (used.length > 0) throw new UsageError(`${command} does not take --${used.join(", --")}`);
   };
   if (positionals[0] === "separate") {
-    only("separate", ["coverage", "out", "max-listed"]);
-    if (positionals.length !== 2) throw new UsageError("separate needs one release");
-    return separateCommand(positionals[1]!, values.coverage ?? [], values.out, values["max-listed"]);
+    only("separate", ["out", "max-listed"]);
+    if (positionals.length !== 1) throw new UsageError("separate takes no release: it reads the program from the knowledge");
+    return separateCommand(values.out, values["max-listed"]);
   }
   if (positionals[0] === "routine") {
     only("routine", ["library", "module", "start", "end", "name", "title", "replace"]);
-    if (positionals.length !== 2) throw new UsageError("routine needs one image");
-    return routineCommand(positionals[1]!, values);
+    if (positionals.length !== 1) throw new UsageError("routine takes no image: it reads the program from the knowledge");
+    return routineCommand(values);
   }
   if (positionals[0] === "match") {
     only("match", ["library", "out", "max-listed"]);
-    if (positionals.length !== 2) throw new UsageError("match needs one image");
-    return matchCommand(positionals[1]!, values.library, values.out, values["max-listed"]);
+    if (positionals.length !== 1) throw new UsageError("match takes no image: it reads the program from the knowledge");
+    return matchCommand(values.library, values.out, values["max-listed"]);
   }
   only("a comparison", ["shift", "from", "to", "run", "steps"]);
   if (positionals.length < 2) throw new UsageError("give two or more releases");
@@ -334,28 +334,43 @@ async function run(argv: string[]): Promise<unknown> {
   };
 }
 
-/** separate: evidence from one release (D51), with all ranges in --out and the first ones in the result. */
-function separateCommand(path: string, coveragePaths: string[], out: string | undefined, maxListed: string | undefined): unknown {
+/** The stages of the capture in the knowledge as ranges; a stage that is not a capture stage is refused. */
+function stagesOf(stages: Array<Record<string, unknown>> | undefined): Array<{ entry: number; wrote: Range[] }> | undefined {
+  if (stages === undefined) return undefined;
+  const parse = (value: unknown) => {
+    if (typeof value === "string" && /^\$[0-9a-f]{4}$/i.test(value)) return Number.parseInt(value.slice(1), 16);
+    throw new UsageError("the stages of the program in the knowledge are not the stages of a c64-unpacker capture; put the capture in again with knowledge.ts image");
+  };
+  return stages.map((stage) => ({
+    entry: parse(stage.entry),
+    wrote: (Array.isArray(stage.wrote) ? (stage.wrote as Array<Record<string, unknown>>) : []).map((range) => ({ start: parse(range.start), end: parse(range.end) })),
+  }));
+}
+
+/** separate: evidence from the program in the knowledge (D51, D83), with all ranges in --out and the first ones in the result. */
+function separateCommand(out: string | undefined, maxListed: string | undefined): unknown {
   const max = maxListed ?? "50";
   if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
-  const loaded = readRelease(path, 0);
-  const coverage = readCoverageFiles(coveragePaths, (message) => {
-    throw new UsageError(message);
-  });
   const db = openForRead();
+  let program: ReturnType<typeof requireProgram>;
+  let coverage: Uint8Array | undefined;
   let regions: ReturnType<typeof listRegions>;
   let references: ReturnType<typeof listReferences>;
   try {
+    program = requireProgram(db);
+    coverage = programCoverage(db)?.map;
     regions = listRegions(db).filter((region) => CODE_REGION_TYPES.includes(region.type));
     references = listReferences(db);
   } finally {
     db?.close();
   }
+  const stages = stagesOf(program.stages);
+  const loaded = { entry: program.entry, stages };
   const found = separate({
-    segments: loaded.release.segments,
-    memory: loaded.memory,
-    ...(loaded.entry === undefined ? {} : { entry: loaded.entry }),
-    ...(loaded.stages === undefined ? {} : { stages: loaded.stages }),
+    segments: program.segments,
+    memory: program.memory,
+    ...(program.entry === undefined ? {} : { entry: program.entry }),
+    ...(stages === undefined ? {} : { stages }),
     ...(coverage === undefined ? {} : { coverage }),
     codeRegions: regions,
     references,
@@ -365,14 +380,13 @@ function separateCommand(path: string, coveragePaths: string[], out: string | un
   const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }) }));
   const outside = { read: found.outside.read.map(show), executed: found.outside.executed.map(show), generated: found.outside.generated.map(show) };
   const listed = <T>(items: T[]) => ({ count: items.length, listed: items.slice(0, Number(max)) });
-  if (out !== undefined) writeProjectFile(out, Buffer.from(`${JSON.stringify({ release: path, ranges, codeRegions, outside }, null, 1)}\n`), { what: "--out" });
+  if (out !== undefined) writeProjectFile(out, Buffer.from(`${JSON.stringify({ ranges, codeRegions, outside }, null, 1)}\n`), { what: "--out" });
   const bytes = (filter: (range: (typeof found.ranges)[number]) => boolean) => found.ranges.filter(filter).reduce((sum, range) => sum + range.end - range.start + 1, 0);
   const lastStage = loaded.stages === undefined ? undefined : loaded.stages.length - 1;
   return {
-    release: path,
     ...(loaded.entry === undefined ? {} : { entry: formatC64Address(loaded.entry) }),
     ...(lastStage === undefined
-      ? { noStages: "image.json has no stage log. Only a capture of c64-unpacker writes one. A capture of loads holds one part of a program and has none." }
+      ? { noStages: "The program in the knowledge has no stage log. Only a capture of c64-unpacker gives one. A capture of loads holds one part of a program and has none." }
       : {
           stages: lastStage + 1,
           bytesByStage: Object.fromEntries([...[...Array(lastStage + 1).keys()].map((stage): [string, number] => [String(stage), bytes((range) => range.stage === stage)]), ["none", bytes((range) => range.stage === undefined)]]),
@@ -391,27 +405,18 @@ function separateCommand(path: string, coveragePaths: string[], out: string | un
 
 const SEMANTIC: readonly Origin[] = ["user", "llm"];
 
-function imageOf(path: string): Image {
-  try {
-    return readImage(path);
-  } catch (error) {
-    if (error instanceof ImageError) throw new UsageError(error.message);
-    throw error;
-  }
-}
-
 const platform = () => new Map(platformNames().map((entry) => [entry.name, entry.address]));
 
-/** routine: saves a module or a range of the project, with its knowledge, as a routine of the library (D71). */
-function routineCommand(path: string, values: { library?: string; module?: string; start?: string; end?: string; name?: string; title?: string; replace?: boolean }): unknown {
+/** routine: saves a module or a range of the program in the knowledge, with its knowledge, as a routine of the library (D71). */
+function routineCommand(values: { library?: string; module?: string; start?: string; end?: string; name?: string; title?: string; replace?: boolean }): unknown {
   if (values.library === undefined) throw new UsageError("routine needs --library <folder>");
   if (values.module !== undefined && (values.start !== undefined || values.end !== undefined)) throw new UsageError("routine takes --module, or --start and --end, not both");
   if (values.module === undefined && values.start === undefined && values.end === undefined) throw new UsageError("routine needs --module <address>, or --start and --end");
   if (values.module === undefined && (values.start === undefined || values.end === undefined)) throw new UsageError("routine needs both --start and --end");
-  const image = imageOf(path);
-  const segmentOf = (at: number) => image.segments.find((segment) => at >= segment.start && at <= segment.end);
   const db = openForRead();
   try {
+    const image = requireProgram(db);
+    const segmentOf = (at: number) => image.segments.find((segment) => at >= segment.start && at <= segment.end);
     let start: number;
     let end: number;
     let title = values.title;
@@ -421,14 +426,14 @@ function routineCommand(path: string, values: { library?: string; module?: strin
       const module = modules.find((item) => item.start === start);
       if (module === undefined) throw new LibraryError("not-found", `No module starts at ${formatC64Address(start)}. List the modules with knowledge.ts modules, or give --start and --end.`);
       const segment = segmentOf(start);
-      if (segment === undefined) throw new UsageError(`The module at ${formatC64Address(start)} is outside the segments of ${path}.`);
+      if (segment === undefined) throw new UsageError(`The module at ${formatC64Address(start)} is outside the segments of the program.`);
       end = (modules.find((item) => item.start > start && item.start <= segment.end)?.start ?? segment.end + 1) - 1;
       title ??= module.title;
     } else {
       start = address(values.start!, "--start");
       end = address(values.end!, "--end");
       if (end < start) throw new UsageError("--end is before --start");
-      if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Address(start)}-${formatC64Address(end)} is not inside one segment of ${path}.`);
+      if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Address(start)}-${formatC64Address(end)} is not inside one segment of the program.`);
     }
     const range = { start, end };
     const name = values.name ?? listSymbols(db, { start, end: start }, undefined, SEMANTIC)[0]?.name;
@@ -437,7 +442,7 @@ function routineCommand(path: string, values: { library?: string; module?: strin
       name,
       ...(title === undefined ? {} : { title }),
       program: basename(projectRoot()),
-      image: path,
+      image: `knowledge revision ${currentRevision(db)}`,
       start,
       end,
       byteAt: image.byteAt,
@@ -467,15 +472,21 @@ function routineCommand(path: string, values: { library?: string; module?: strin
   }
 }
 
-/** match: finds the routines of the library in an image, and with --out writes their names there as an apply batch (D71). */
-function matchCommand(path: string, library: string | undefined, out: string | undefined, maxListed: string | undefined): unknown {
+/** match: finds the routines of the library in the program of the knowledge, and with --out writes their names there as an apply batch (D71). */
+function matchCommand(library: string | undefined, out: string | undefined, maxListed: string | undefined): unknown {
   if (library === undefined) throw new UsageError("match needs --library <folder>");
   const max = maxListed ?? "50";
   if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
   const listed = <T>(items: T[]) => ({ count: items.length, listed: items.slice(0, Number(max)) });
   const routines = readLibrary(libraryFolder(library, { create: false }));
   if (routines.length === 0) throw new LibraryError("not-found", `The library ${library} has no routine files. Save a routine with routine first.`);
-  const image = imageOf(path);
+  const programDb = openForRead();
+  let image: ReturnType<typeof requireProgram>;
+  try {
+    image = requireProgram(programDb);
+  } finally {
+    programDb?.close();
+  }
   const found = routines.map((routine) => ({ routine, matches: findRoutine(routine, image) }));
   const show = (value: number, size: 1 | 2) => `$${value.toString(16).padStart(2 * size, "0")}`;
   const matches = found
@@ -515,11 +526,10 @@ function matchCommand(path: string, library: string | undefined, out: string | u
   }
   const { batch, known, leftOut } = suggestions;
   writeProjectFile(out, Buffer.from(batch.length === 0 ? "[]\n" : `[\n${batch.map((write) => ` ${JSON.stringify(write)}`).join(",\n")}\n]\n`), { what: "--out" });
-  const operands = batch.some((write) => write.op === "operand");
   return {
     ...result,
     batch: { out, writes: batch.length, known, leftOut: listed(leftOut) },
-    ...(batch.length === 0 ? {} : { apply: `knowledge.ts apply ${out}${operands ? ` --image ${path}` : ""} --reason "names of library routines"` }),
+    ...(batch.length === 0 ? {} : { apply: `knowledge.ts apply ${out} --reason "names of library routines"` }),
   };
 }
 

@@ -1,4 +1,4 @@
-// Runtime evidence for static analysis (D44): coverage files as entry points,
+// Runtime evidence for static analysis (D44): the coverage as entry points,
 // user/LLM code regions and JMP tables as entry points, and the check that
 // shows analyzer data over executed code.
 
@@ -7,20 +7,12 @@ import type { DatabaseSync } from "node:sqlite";
 import { COVERAGE, coverageEntries, coverageSeedKinds, executedStarts } from "#src/c64.ts";
 
 export { coverageEntries, coverageSeedKinds, executedStarts };
-import { FULL_COVERAGE, readCoverageMaps as readMaps } from "#src/host-client/coverage.ts";
+import { FULL_COVERAGE } from "#src/host-client/coverage.ts";
 import { listRegions, type RegionRow } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, type Space } from "#src/knowledge/schema.ts";
-import { UsageError } from "#src/script.ts";
 
 const FULL_MAP = FULL_COVERAGE;
 const ANALYZER_ORIGINS = new Set(["dxa", "ghidra", "heuristic"]);
-
-/** Reads coverage files, one map per file (a run). */
-export function readCoverageMaps(paths: string[]): Uint8Array[] {
-  return readMaps(paths, (message) => {
-    throw new UsageError(message);
-  });
-}
 
 /** The byte at an address of the analyzed image, or undefined outside it. */
 export type ImageByte = (address: number) => number | undefined;

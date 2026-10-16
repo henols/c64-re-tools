@@ -81,11 +81,11 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these: identical source, a verified loader, passed c64-testing scenarios, and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. | The user gave the criteria. |
 | 2. Get | c64-disk: list the disk. Extract the start file into `original/`. | The start file is in the project. |
 | 3. Start | c64-basic: find the SYS address of the BASIC start. | You have the entry address. |
-| 4. Unpack | c64-unpacker: examine the program. Capture a packed program into `unpacked/`. | `image.json` and `entry_state.json` exist, or the evidence shows no packer. |
-| 5. Run | c64-emulator and the run of c64-testing: run each part that the scope names. Write a coverage file for each part into `coverage/`. | Each part that the scope names has a coverage file. |
-| 6. Analyze | c64-static-analysis with `--coverage` for each coverage file. | No coverage conflict is open. |
+| 4. Unpack | c64-unpacker: examine the program. Capture a packed program into `.c64-re-tools/local/`. Then c64-knowledge: put the capture, or the PRG of a program without a packer, into the knowledge with `image`. | `program` of c64-knowledge shows the segments and the entry. |
+| 5. Run | c64-emulator and the run of c64-testing: run each part that the scope names. Write a coverage map for each part into `.c64-re-tools/local/`. Then c64-knowledge: add the maps with `coverage`. | `program` of c64-knowledge lists a coverage map for each part that the scope names. |
+| 6. Analyze | c64-static-analysis. It reads the program and the coverage from the knowledge. | No coverage conflict is open. |
 | 7. Name | c64-provenance: if the workspace has a library, find its routines with `match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
-| 8. Generate | c64-source with `--coverage` into `src/`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
+| 8. Generate | c64-source into `src/`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
 | 9. Build and test | c64-assembler with `--compare` into `build/`. c64-testing scenarios in `tests/`. | The criteria of stage 1 are true. |
 | 10. Document | When the criteria ask for documentation: c64-docs into `docs/`. | `link.ts --check` of c64-docs gives no problem. |
 | 11. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
@@ -96,9 +96,7 @@ After stage 7, save each routine that other programs can have to the library wit
 
 ### Deliverables of a full rebuild
 
-- `.c64-re-tools/knowledge/` with the names, regions, comments and modules
-- the image and the entry state
-- the coverage files
+- `.c64-re-tools/knowledge/` with the program, its entry state, the coverage, the names, the regions, the comments and the modules
 - the generated source
 - the built program and the loader
 - the c64-testing scenarios
@@ -124,8 +122,6 @@ If the project has no layout, use this one. No script checks it. Each script tak
 
 ```
 original/      the disk image or the program as you got it
-unpacked/      image.json, image.bin and entry_state.json from c64-unpacker
-coverage/      the coverage files that the knowledge gives as evidence
 src/           the generated source from c64-source
 build/         programs from c64-assembler
 tests/         c64-testing scenarios
@@ -134,7 +130,7 @@ docs/          the documentation from c64-docs, with the reference in docs/refer
 tools/         scripts for the formats of this program only
 ```
 
-Commit each folder of the layout and `.c64-re-tools/knowledge/`. Put all other files that you make in `.c64-re-tools/local/`. Do not let git ignore a folder of the layout. Do not change the `.gitignore` files of the project.
+Commit each folder of the layout and `.c64-re-tools/knowledge/`. The knowledge holds the program, the entry state and the coverage, so the project needs no other folder for them. Put all other files that you make in `.c64-re-tools/local/`, also the captures and the coverage maps after you put them into the knowledge. Do not let git ignore a folder of the layout. Do not change the `.gitignore` files of the project.
 
 If the project has a layout, use that layout.
 

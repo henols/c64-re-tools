@@ -67,7 +67,8 @@ c64-re-tools/
 │   │   ├── read.ts
 │   │   ├── write.ts
 │   │   ├── history.ts
-│   │   └── import.ts
+│   │   ├── import.ts
+│   │   └── program.ts
 │   │
 │   └── cli/
 │       ├── main.ts
@@ -521,6 +522,19 @@ Owns deterministic analyzer reconciliation:
 - one revision/transaction per accepted analyzer import.
 
 DXA/Ghidra-specific parsers do not live here. They belong to their Host Runtime adapters/static-analysis skill adapter.
+
+### program.ts
+
+Owns the program and the coverage in the knowledge (D83):
+
+~~~text
+setImage(image)          the bytes, the entry, the entry state and the stages of a space
+addCoverage(maps)        the union of coverage maps as ranges, with wx for each map
+programImage(space)      the program as the tools read it
+programCoverage(space)   the joined map and the self-modified addresses
+~~~
+
+The skill scripts read the program and the coverage only through it.
 
 ## 10. CLI and distribution
 

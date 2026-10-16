@@ -50,10 +50,11 @@ const regions = () => {
 test("DXA findings reconcile through the importer, protect semantic knowledge and never import half a result", { skip, timeout: 300_000 }, async () => {
   const env = process.env;
 
-  // 1. First DXA pass: its regions and labels become DXA knowledge.
-  const first = await skill(env, "c64-static-analysis", "analyze.ts", "game.prg", "--analyzer", "dxa");
+  // 1. The program goes into the knowledge (D83); the first DXA pass makes its regions and labels DXA knowledge.
+  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "image", "game.prg")).json.revision, nthIn(project, 1));
+  const first = await skill(env, "c64-static-analysis", "analyze.ts", "--analyzer", "dxa");
   assert.equal(first.status, 0, JSON.stringify(first.json));
-  assert.equal(first.json.revision, nthIn(project, 1));
+  assert.equal(first.json.revision, nthIn(project, 2));
   assert.deepEqual(regions(), [
     [0x0801, 0x080c, "bytes", "dxa"],
     [0x080d, 0x0815, "code", "dxa"],
@@ -63,17 +64,18 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   ]);
 
   // 2. Semantic work: the LLM names the routine, the user says what the table is.
-  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "rename", "$0818", "init_result", "--kind", "routine", "--expect-revision", nthIn(project, 1))).json.revision, nthIn(project, 2));
-  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "classify", "$0824", "$0827", "sprite", "--origin", "user", "--expect-revision", nthIn(project, 2))).json.revision, nthIn(project, 3));
+  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "rename", "$0818", "init_result", "--kind", "routine", "--expect-revision", nthIn(project, 2))).json.revision, nthIn(project, 3));
+  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "classify", "$0824", "$0827", "sprite", "--origin", "user", "--expect-revision", nthIn(project, 3))).json.revision, nthIn(project, 4));
 
   // 3. A changed program: NOPs instead of the JMP let the code run on into the routine, so the two
   //    unused bytes become reachable code. (A JMP to them is not enough: DXA keeps them as data.)
   const changed = Buffer.from(analysisSubjectPrg);
   changed.set([0xea, 0xea, 0xea, 0xea, 0xea], 0x0813 - 0x0801 + 2);
   writeFileSync(join(project, "game-v2.prg"), changed);
-  const second = await skill(env, "c64-static-analysis", "analyze.ts", "game-v2.prg", "--analyzer", "dxa");
+  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "image", "game-v2.prg")).json.revision, nthIn(project, 5));
+  const second = await skill(env, "c64-static-analysis", "analyze.ts", "--analyzer", "dxa");
   assert.equal(second.status, 0, JSON.stringify(second.json));
-  assert.equal(second.json.revision, nthIn(project, 4));
+  assert.equal(second.json.revision, nthIn(project, 6));
   assert.deepEqual(second.json.conflicts, [], "a finer data type from the user is no conflict");
   assert.deepEqual((second.json.changes as { regions: unknown }).regions, { added: 1, changed: 0, retired: 3, unchanged: 1, suppressed: 0 });
   assert.deepEqual(regions(), [
@@ -82,10 +84,10 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
     [0x0824, 0x0827, "sprite", "user"],
   ]);
   const db = openForRead(project);
-  assert.deepEqual(symbolAt(db, 0x0818), { space: "c64", address: 0x0818, name: "init_result", kind: "routine", origin: "llm", revision: nthIn(project, 2) }, "the echoed seed stays semantic");
+  assert.deepEqual(symbolAt(db, 0x0818), { space: "c64", address: 0x0818, name: "init_result", kind: "routine", origin: "llm", revision: nthIn(project, 3) }, "the echoed seed stays semantic");
   const regionHistory = historyAt(db, 0x0816).flatMap((entry) => (entry.entity === "region" ? [[entry.row.type, entry.row.origin, entry.to ?? null]] : []));
   assert.deepEqual(regionHistory, [
-    ["bytes", "dxa", nthIn(project, 4)],
+    ["bytes", "dxa", nthIn(project, 6)],
     ["code", "dxa", null],
   ], "the retired DXA data region stays in the history");
   const nameHistory = historyAt(db, 0x0818).flatMap((entry) => (entry.entity === "symbol" || entry.entity === "analyzer-name" ? [[entry.entity, entry.row.name, entry.row.origin, entry.to ?? null]] : []));
@@ -103,7 +105,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   // Windows starts no script by its shebang: a .cmd file runs it through Node (the supervisor starts .cmd through cmd.exe).
   const program = process.platform === "win32" ? join(project, "fake-dxa.cmd") : fake;
   if (program !== fake) writeFileSync(program, `@"${process.execPath}" "${fake}" %*\r\n`);
-  const broken = await skill({ ...process.env, C64RT_DXA: program }, "c64-static-analysis", "analyze.ts", "game.prg", "--analyzer", "dxa");
+  const broken = await skill({ ...process.env, C64RT_DXA: program }, "c64-static-analysis", "analyze.ts", "--analyzer", "dxa");
   assert.equal(broken.status, 1);
   assert.match((broken.json.error as { message: string }).message, /incomplete or inconsistent listing\. Nothing was imported/);
   const after = openForRead(project);

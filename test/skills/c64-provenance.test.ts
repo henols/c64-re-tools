@@ -11,9 +11,21 @@ import { COVERAGE } from "../../src/c64.ts";
 import { compareReleases, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
 import { separate } from "../../skills/c64-provenance/scripts/lib/separate.ts";
 import { seededBytes } from "../kit.ts";
+import { importCoverage, importImage } from "../fixtures/program.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-"));
-after(() => rmSync(project, { recursive: true, force: true }));
+const programs: string[] = [];
+after(() => {
+  rmSync(project, { recursive: true, force: true });
+  for (const root of programs) rmSync(root, { recursive: true, force: true });
+});
+
+/** A project of its own for one program in the knowledge (D83). */
+function fresh(): string {
+  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-program-"));
+  programs.push(root);
+  return root;
+}
 
 const base = seededBytes(0x6510, 2048);
 const crackA = Buffer.from(base);
@@ -182,21 +194,18 @@ test("generated code outside the image joins over gaps of up to two operand byte
   ]);
 });
 
-test("the separate command reads an image with its stages and writes all ranges to --out", () => {
+test("the separate command reads the program with its stages and the coverage from the knowledge and writes all ranges to --out (D83)", () => {
   const memory = new Uint8Array(0x10000);
   memory.fill(0xea, 0x2000, 0x20ff);
-  mkdirSync(join(project, "one"), { recursive: true });
-  writeFileSync(join(project, "one", "image.bin"), memory);
-  writeFileSync(
-    join(project, "one", "image.json"),
-    JSON.stringify({ entry: "$2000", image: "image.bin", segments: [{ start: "$2000", end: "$20ff" }], stages: [{ stage: 0, entry: "$0810", wrote: [{ start: "$2000", end: "$207f" }] }, { stage: 1, entry: "$2000", wrote: [{ start: "$2080", end: "$20ff" }] }] }),
-  );
+  const root = fresh();
+  const stages = [{ stage: 0, entry: "$0810", wrote: [{ start: "$2000", end: "$207f" }] }, { stage: 1, entry: "$2000", wrote: [{ start: "$2080", end: "$20ff" }] }];
+  importImage(root, memory, { segments: [{ start: 0x2000, end: 0x20ff }], entry: 0x2000, stages });
   // Code that the program wrote and ran outside the image: three pieces.
   const coverage = new Uint8Array(0x10000);
   for (const address of [0xc000, 0xc010, 0xc020]) coverage[address] = COVERAGE.ramWrite | COVERAGE.ramExecute;
-  writeFileSync(join(project, "one", "cov.bin"), coverage);
+  importCoverage(root, { "cov.bin": coverage });
   const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "separate", "one/image.json", "--coverage", "one/cov.bin", "--out", "one/separate.json", "--max-listed", "1"], { cwd: project, encoding: "utf8" });
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "separate", "--out", "separate.json", "--max-listed", "1"], { cwd: root, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const result = JSON.parse(run.stdout) as Record<string, any>;
   assert.deepEqual(result.bytesByStage, { 0: 128, 1: 128, none: 0 });
@@ -207,20 +216,23 @@ test("the separate command reads an image with its stages and writes all ranges 
   assert.deepEqual(result.outside.generated.listed, [{ start: "$c000", end: "$c000" }], "--max-listed caps the outside lists too (F-28)");
   assert.deepEqual(result.outside.read, { count: 0, listed: [] });
   assert.deepEqual(result.codeRegions, { total: 0, unreachable: { count: 0, listed: [] } }, "unreachable is a list like the others (b2/08)");
-  const written = JSON.parse(readFileSync(join(project, "one", "separate.json"), "utf8")) as { ranges: unknown[]; outside: { generated: unknown[] } };
+  const written = JSON.parse(readFileSync(join(root, "separate.json"), "utf8")) as { ranges: unknown[]; outside: { generated: unknown[] } };
   assert.equal(written.ranges.length, 2);
   assert.equal(written.outside.generated.length, 3);
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "one/image.json", "--run", "5"], { cwd: project, encoding: "utf8" }).status, 2);
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "--run", "5"], { cwd: root, encoding: "utf8" }).status, 2);
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "image.json"], { cwd: root, encoding: "utf8" }).status, 2, "separate takes no release");
+  const empty = spawnSync(process.execPath, [...process.execArgv, script, "separate"], { cwd: fresh(), encoding: "utf8" });
+  assert.equal(empty.status, 1, "no program in the knowledge");
+  assert.match(empty.stdout, /knowledge\.ts image/);
 });
 
-test("separate says when an image has no stage log, and a run of releases without differences says why nothing ran (F-28)", () => {
+test("separate says when the program has no stage log, and a run of releases without differences says why nothing ran (F-28)", () => {
   const memory = new Uint8Array(0x10000);
   memory.fill(0xea, 0x3000, 0x30ff);
-  mkdirSync(join(project, "part"), { recursive: true });
-  writeFileSync(join(project, "part", "image.bin"), memory);
-  writeFileSync(join(project, "part", "image.json"), JSON.stringify({ entry: "$3000", image: "image.bin", segments: [{ start: "$3000", end: "$30ff" }] }));
+  const root = fresh();
+  importImage(root, memory, { segments: [{ start: 0x3000, end: 0x30ff }], entry: 0x3000 });
   const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
-  const separated = spawnSync(process.execPath, [...process.execArgv, script, "separate", "part/image.json"], { cwd: project, encoding: "utf8" });
+  const separated = spawnSync(process.execPath, [...process.execArgv, script, "separate"], { cwd: root, encoding: "utf8" });
   assert.equal(separated.status, 0, separated.stdout + separated.stderr);
   const result = JSON.parse(separated.stdout) as Record<string, unknown>;
   assert.match(String(result.noStages), /no stage log/);

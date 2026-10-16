@@ -77,11 +77,12 @@ test("switches and macros: the source stays identical, each switch fits, and CRA
       { op: "patch", start: "$102a", end: "$102c", switch: "CRACK", code: "        rts" },
     ]),
   );
-  ok("c64-knowledge", "knowledge.ts", ["apply", "knowledge.json", "--image", "game.prg", "--reason", "the crack and the counters"]);
-  ok("c64-knowledge", "knowledge.ts", ["patch", "$100b", "$100d", "TRAINER", "--nop", "--comment", "Lives stay.", "--image", "game.prg"]);
+  ok("c64-knowledge", "knowledge.ts", ["image", "game.prg"]);
+  ok("c64-knowledge", "knowledge.ts", ["apply", "knowledge.json", "--reason", "the crack and the counters"]);
+  ok("c64-knowledge", "knowledge.ts", ["patch", "$100b", "$100d", "TRAINER", "--nop", "--comment", "Lives stay."]);
   assert.deepEqual(ok("c64-knowledge", "knowledge.ts", ["switches"]).switches.map((item: { name: string; patches: unknown[] }) => [item.name, item.patches.length]), [["CRACK", 3], ["TRAINER", 1]]);
 
-  const generated = ok("c64-source", "generate.ts", ["game.prg", "--out", "src"]);
+  const generated = ok("c64-source", "generate.ts", ["--out", "src"]);
   assert.equal(generated.check.identical, true);
   assert.deepEqual(generated.files, ["segment_1000.asm", "constants.asm", "macros.asm", "main.asm"]);
   assert.deepEqual(generated.switches.map((item: { name: string; result: string; changedBytes: number }) => [item.name, item.result, item.changedBytes]), [["CRACK", "fits", 8], ["TRAINER", "fits", 3]]);
@@ -93,23 +94,23 @@ test("switches and macros: the source stays identical, each switch fits, and CRA
   assert.match(readFileSync(join(project, "src", "constants.asm"), "utf8"), /^!ifndef CRACK \{ CRACK = 0 \} {3}; 3 patches: \$100e-\$1010, \$1027-\$1028, \$102a-\$102c$/m);
 
   // The agent builds the cracked program with c64-assembler: only the bytes of the CRACK ranges differ.
-  const cracked = script("c64-assembler", "assemble.ts", ["--source-root", "src", "--entry", "main.asm", "--out", "build/cracked.prg", "--define", "CRACK=1", "--compare", "game.prg"]);
+  const cracked = script("c64-assembler", "assemble.ts", ["--source-root", "src", "--entry", "main.asm", "--out", "build/cracked.prg", "--define", "CRACK=1", "--compare"]);
   assert.equal(cracked.status, 1, JSON.stringify(cracked.json));
   const [segment] = cracked.json.compare.segments as Array<{ differences: number; firstDifference: { address: string } }>;
   assert.deepEqual([segment!.differences, segment!.firstDifference.address], [8, "$100e"]);
   const built = readFileSync(join(project, "build", "cracked.prg"));
   assert.deepEqual([...built.subarray(2 + 0x0e, 2 + 0x11)], [0xea, 0xea, 0xea], "no JSR check");
   assert.deepEqual([...built.subarray(2 + 0x2a, 2 + 0x2d)], [0x60, 0xea, 0xea], "fail returns");
-  const off = script("c64-assembler", "assemble.ts", ["--source-root", "src", "--entry", "main.asm", "--out", "build/game.prg", "--compare", "game.prg"]);
+  const off = script("c64-assembler", "assemble.ts", ["--source-root", "src", "--entry", "main.asm", "--out", "build/game.prg", "--compare"]);
   assert.equal(off.json.compare.identical, true, "without a define, every switch is off");
 
   // The analyzer finds the set16 at $1017 and knows the two uses of inc16 in the knowledge.
-  const analyzed = ok("c64-static-analysis", "analyze.ts", ["game.prg", "--entry", "$1000", "--macro-batch", ".c64-re-tools/local/macros.json"]);
+  const analyzed = ok("c64-static-analysis", "analyze.ts", ["--entry", "$1000", "--macro-batch", ".c64-re-tools/local/macros.json"]);
   const macros = analyzed.idioms.candidates.macros;
   assert.deepEqual(macros.listed, [{ macro: "set16", start: "$1017", end: "$101e", args: ["ptr", "start"], text: "+set16 ptr, start" }]);
   assert.deepEqual([macros.known, macros.leftOut, macros.batch.writes], [2, undefined, 2], "the set16 macro and its use");
-  ok("c64-knowledge", "knowledge.ts", ["apply", ".c64-re-tools/local/macros.json", "--image", "game.prg"]);
-  const again = ok("c64-source", "generate.ts", ["game.prg", "--out", "src"]);
+  ok("c64-knowledge", "knowledge.ts", ["apply", ".c64-re-tools/local/macros.json"]);
+  const again = ok("c64-source", "generate.ts", ["--out", "src"]);
   assert.equal(again.check.identical, true);
   assert.equal(again.macroUses, 2);
   assert.match(readFileSync(join(project, "src", "segment_1000.asm"), "utf8"), /^ {8}\+set16 ptr, start$/m);

@@ -50,7 +50,7 @@ Before the first step of each side, the script does a hard reset. The CPU stops 
 | `{ "runUntil": { "raster": 250 }, "timeoutFrames": 5 }` | Run until the raster beam gets to a line (0 to 311 for PAL, 0 to 262 for NTSC). |
 | `{ "runUntil": { "at": "irq_tick", "raster": 250 }, "timeoutFrames": 600 }` | Run until the CPU gets to an address while the beam is on that line. |
 | `{ "snapshot": "snapshots/start.vsf" }` | Restore a snapshot file. Usually with `side`: the snapshot of one program is not a state of the other. |
-| `{ "normalize": "unpacked/entry_state.json" }` | Write pages 0 to 3 and `$00`/`$01` from an entry state file of the c64-unpacker skill. Then both sides have the same zero page, stack and KERNAL work area. |
+| `{ "normalize": true }` | Write pages 0 to 3 and `$00`/`$01` from the entry state in the knowledge. The entry state comes from a capture of the c64-unpacker skill, which `image` of the c64-knowledge skill put in. Then both sides have the same zero page, stack and KERNAL work area. |
 | `{ "observe": "moved", ... }` | Record a checkpoint. |
 
 The `port` of a joystick is 1 or 2. The `direction` is `center`, `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left` or `down-right`.

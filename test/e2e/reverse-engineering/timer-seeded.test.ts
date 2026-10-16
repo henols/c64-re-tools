@@ -67,14 +67,16 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
   const state = JSON.parse(readFileSync(join(project, "unpacked", "entry_state.json"), "utf8")) as Record<string, any>;
   assert.equal(state.cia.cia1.latchA, 0x4025, "the KERNAL's latch of CIA 1 timer A");
 
-  const generated = await run("c64-source", "generate.ts", "unpacked/image.json", "--out", "src", "--loader");
+  assert.equal((await run("c64-knowledge", "knowledge.ts", "image", "unpacked/image.json")).status, 0);
+  const generated = await run("c64-source", "generate.ts", "--out", "src", "--loader");
   assert.equal(generated.status, 0, generated.stdout);
   assert.equal(generated.json.loader.verified, true, generated.stdout);
 
   // The control: the same entry state without the CIA part gives a loader that leaves the timers as the KERNAL ran them.
   delete state.cia;
   writeFileSync(join(project, "unpacked", "entry_state.json"), JSON.stringify(state));
-  const old = await run("c64-source", "generate.ts", "unpacked/image.json", "--out", "src-old", "--loader");
+  assert.equal((await run("c64-knowledge", "knowledge.ts", "image", "unpacked/image.json")).json.entryChanged, true);
+  const old = await run("c64-source", "generate.ts", "--out", "src-old", "--loader");
   assert.equal(old.json.loader.verified, true, old.stdout);
 
   const scenario = (name: string, loader: string) => {

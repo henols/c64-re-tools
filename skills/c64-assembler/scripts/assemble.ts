@@ -13,6 +13,9 @@ import type { AcmeParams } from "#src/native/types.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { compareBuild } from "./lib/compare.ts";
+import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
+import { requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
+import { DEFAULT_SPACE, SPACE } from "#src/knowledge/schema.ts";
 
 const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [options]
 
@@ -22,8 +25,11 @@ const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [
   --include <dir>          include directory relative to the source root (repeatable)
   --define NAME=VALUE      assembler symbol: an integer ($hex allowed) or true/false (repeatable)
   --set-pc <address>       start address when the source sets none, for example '$0801'
-  --compare <file>         check the program byte by byte against an image.json of the
-                           c64-unpacker skill (each segment), a PRG, or 64 KiB of memory
+  --compare                check the program byte by byte against the program in the
+                           knowledge (D83), each segment; put it in with knowledge.ts
+                           image of the c64-knowledge skill
+  --space <space>          with --compare: the knowledge space of the program, c64 (the
+                           default), drive8, or bank0 to bank255
   --plain                  write the bytes only, without the 2-byte load address of a PRG
   --all-symbols            list also the constants that the source does not use
 
@@ -50,7 +56,8 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
       include: { type: "string", multiple: true },
       define: { type: "string", multiple: true },
       "set-pc": { type: "string" },
-      compare: { type: "string" },
+      compare: { type: "boolean" },
+      space: { type: "string" },
       plain: { type: "boolean" },
       "all-symbols": { type: "boolean" },
       help: { type: "boolean" },
@@ -66,6 +73,19 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     outPath = resolveProjectPath(out);
   } catch {
     throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${out}`);
+  }
+  if (values.space !== undefined && !values.compare) throw new UsageError("--space works only with --compare");
+  const space = values.space ?? DEFAULT_SPACE;
+  if (!SPACE.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
+  // Read the program before ACME runs, so a project without it stops at once.
+  let program: ProgramImage | undefined;
+  if (values.compare) {
+    const db = openForRead();
+    try {
+      program = requireProgram(db, space);
+    } finally {
+      db?.close();
+    }
   }
   const defines = Object.fromEntries((values.define ?? []).map(parseDefine));
   let setPc: number | undefined;
@@ -85,7 +105,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, values.plain ? attachments![0]!.subarray(2) : attachments![0]!);
   const range = result.loadRange!;
-  const compared = values.compare === undefined ? undefined : compareBuild(attachments![0]!, values.compare);
+  const compared = program === undefined ? undefined : compareBuild(attachments![0]!, program);
   // An include file of platform names gives many constants that the program does not use.
   const listed = result.symbols!.filter((symbol) => values["all-symbols"] || symbol.kind === "address" || symbol.used);
   return {
@@ -114,5 +134,5 @@ await runScript(
     if (failed) process.exitCode = 1;
     return output;
   },
-  { usage: USAGE },
+  { usage: USAGE, refusals: [KnowledgeError] },
 );

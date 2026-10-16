@@ -19,7 +19,7 @@ This skill does not change the knowledge.
 ## Inputs
 
 - The source directory of c64-source, with its `source-map.json`, for example `src`. The source must be from the current knowledge revision.
-- The image of the source, for example `unpacked/image.json`. It decodes the tables and shows the graphics.
+- The program in the knowledge. Put it in with `image` of the c64-knowledge skill. The reference decodes the tables and shows the graphics from it.
 - The directory of the documentation, for example `docs`. The reference goes into a directory of its own, for example `docs/reference`.
 
 ## Tools / execution path
@@ -27,7 +27,7 @@ This skill does not change the knowledge.
 The scripts run on this machine. They do not use the emulator or the host runtime.
 
 ```
-node <skill>/scripts/generate.ts --source src --out docs/reference --image unpacked/image.json
+node <skill>/scripts/generate.ts --source src --out docs/reference
 node <skill>/scripts/link.ts docs --source src
 node <skill>/scripts/link.ts docs --source src --check
 ```
@@ -36,7 +36,6 @@ node <skill>/scripts/link.ts docs --source src --check
 |---|---|
 | `--source src` | The source directory of c64-source. Both scripts read `src/source-map.json`. |
 | `--out docs/reference` | The directory of the reference. `generate.ts` writes only there. It refuses to start when the directory holds a page that it did not write. |
-| `--image unpacked/image.json` | The image. Without it, the tables are not decoded and the graphics page has no images. |
 | `docs` | The directory of the documentation. `link.ts` reads every `.md` file below it. It changes only the pages that you wrote. It checks the pages of the reference. |
 | `--reference <dir>` | The directory of the reference for `link.ts`. The default is `docs/reference` when it exists. |
 | `--check` | `link.ts` writes nothing. It fails when a link is not up to date or a page has a problem. |
@@ -109,7 +108,7 @@ Do not store:
 
 - `out`, `index` and `revision`.
 - `pages`, `entries`, `tables`, `images` and `edges`: the counts of the reference.
-- `image`: the image, or a note when `--image` is not given.
+- `program`: `the knowledge`, or a note when the knowledge has no program. Without the program, the tables are not decoded and the graphics page has no images.
 
 `link.ts` gives one JSON object:
 

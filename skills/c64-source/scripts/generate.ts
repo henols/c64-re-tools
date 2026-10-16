@@ -1,6 +1,6 @@
-// The c64-source script (D48): generates ACME source from an image, current
-// knowledge and Ghidra's instructions, which it runs itself, and checks with
-// ACME that the source assembles to the image byte by byte. With --loader it
+// The c64-source script (D48): generates ACME source from the program and the
+// knowledge (D83) and Ghidra's instructions, which it runs itself, and checks
+// with ACME that the source assembles to the program byte by byte. With --loader it
 // also writes a loader that recreates the entry state, simulates it, and
 // checks it in the emulator. Each switch of the patches (D72) is built on
 // alone and checked. A macro use (D73) that does not give the bytes of the
@@ -13,14 +13,13 @@ import { parseArgs } from "node:util";
 
 import { COVERAGE, coverageSeedKinds, formatC64Address, parseC64Address, prgRange, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
-import { readCoverageFiles } from "#src/host-client/coverage.ts";
-import { ImageError, readImage as readSharedImage, type Image } from "#src/host-client/image.ts";
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
-import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
+import { writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
+import { analyzedBytes, programCoverage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
 import { ANALYZER_NAME_ORDER, currentRevision, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listSymbols, type SymbolRow } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, SPACE, type Space } from "#src/knowledge/schema.ts";
 import { assemble } from "#src/native/acme.ts";
@@ -34,21 +33,20 @@ import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, readE
 import { OPCODES } from "#src/opcodes.ts";
 import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Range, type Rendered } from "./lib/source.ts";
 
-const USAGE = `generate.ts <image> --out <dir> [options]
+const USAGE = `generate.ts --out <dir> [options]
 
-  <image>            an image.json of the c64-unpacker skill, or a PRG, relative to
-                     the project folder
+The program, its entry state and the coverage come from the knowledge (D83):
+put them in with knowledge.ts image and coverage of the c64-knowledge skill.
+Code that no imported run executed is marked and listed; <dir>/not_executed.json
+has all of its ranges.
+
   --out <dir>        the directory for the source files, relative to the project
   --entry <address>  an entry point for Ghidra, for example '$080d' (repeatable)
-  --coverage <file>  a coverage map of 64 KiB from c64_memmap (repeatable): code
-                     that no run executed is marked and listed; <dir>/not_executed.json
-                     has all of its ranges
-  --space <space>    the knowledge space of the image: c64 (the default), drive8, or
-                     bank0 to bank255; --coverage and --loader are for c64 only
+  --space <space>    the knowledge space of the program: c64 (the default), drive8,
+                     or bank0 to bank255; the coverage and --loader are for c64 only
   --loader           also write loader.asm and loader.prg: the loader copies the
-                     segments into place, sets the entry state from entry_state.json
-                     next to image.json, and jumps to the entry; it is checked in
-                     the emulator
+                     segments into place, sets the entry state of the knowledge,
+                     and jumps to the entry; it is checked in the emulator
   --analyzer-names   name an address that has no name of the user or the LLM, and
                      no platform name, with its analyzer name (D74)
 
@@ -62,15 +60,6 @@ const PROBE_SLOT = 4;
 /** The copies of a full 64 KiB take about 140 frames. */
 const LOADER_FRAMES = 1500;
 
-function readImage(path: string): Image {
-  try {
-    return readSharedImage(path);
-  } catch (error) {
-    if (error instanceof ImageError) throw new UsageError(error.message);
-    throw error;
-  }
-}
-
 /** The knowledge of one space that the source uses, read once. With `analyzerNames`, an address without a name takes its first analyzer name (D74). */
 function readKnowledge(space: Space, analyzerNames = false) {
   const db = openForRead();
@@ -82,6 +71,9 @@ function readKnowledge(space: Space, analyzerNames = false) {
     const second = listAnalyzerNames(db, undefined, undefined, undefined, space);
     return {
       revision: currentRevision(db),
+      program: requireProgram(db, space),
+      // The coverage is of the C64: drive code and banks have none (D40).
+      coverage: space === DEFAULT_SPACE ? programCoverage(db)?.map : undefined,
       symbols: analyzerNames ? withAnalyzerNames(symbols, second) : symbols,
       // Analyzer routines are entry points for the decode, also without --analyzer-names.
       routines: [...symbols, ...second].filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address),
@@ -126,7 +118,7 @@ function withAnalyzerNames(symbols: SymbolRow[], second: SymbolRow[]): SymbolRow
  * starts, also after a JSR, so code that an analyzer does not reach by itself
  * is in the source (D74).
  */
-async function decode(image: Image, knowledge: ReturnType<typeof readKnowledge>, entries: number[], coverage: Uint8Array | undefined): Promise<Map<number, number>> {
+async function decode(image: ProgramImage, knowledge: ReturnType<typeof readKnowledge>, entries: number[], coverage: Uint8Array | undefined): Promise<Map<number, number>> {
   const inImage = (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end);
   const seeds = new Set<number>([...(image.entry === undefined ? [] : [image.entry]), ...entries]);
   for (const address of knowledge.routines) seeds.add(address);
@@ -147,14 +139,14 @@ async function decode(image: Image, knowledge: ReturnType<typeof readKnowledge>,
     .flatMap((region) => image.segments.filter((segment) => region.start <= segment.end && segment.start <= region.end).map((segment) => ({ start: Math.max(region.start, segment.start), end: Math.min(region.end, segment.end) })));
   const { result } = await analyze(
     {
-      imageKind: image.analyzed.kind,
+      imageKind: analyzedBytes(image).kind,
       entryPoints: entryPoints.slice(0, GHIDRA_LIMITS.entryPoints),
       codeStarts: flows.codeStarts.filter((address) => !seeds.has(address)).slice(0, GHIDRA_LIMITS.codeStarts),
       dataRanges: dataRanges.slice(0, GHIDRA_LIMITS.dataRanges),
       labels: [],
       decompile: [],
     },
-    image.analyzed.bytes,
+    analyzedBytes(image).bytes,
     localToolContext(),
   );
   const instructions = new Map<number, number>();
@@ -254,7 +246,7 @@ function firstDifference(start: number, built: (address: number) => number, orig
  * than the image, with the reason (D73). A use of another length moves no
  * other use, so each one is checked on its own, as the opcode probe does.
  */
-async function probeUses(laid: Layout, rendered: Rendered, image: Image): Promise<Map<number, string>> {
+async function probeUses(laid: Layout, rendered: Rendered, image: ProgramImage): Promise<Map<number, string>> {
   const blamed = new Map<number, string>();
   const support = rendered.files.filter((file) => file.name === "constants.asm" || file.name === "macros.asm");
   for (let round = 0; round < 3; round++) {
@@ -305,7 +297,7 @@ async function probeUses(laid: Layout, rendered: Rendered, image: Image): Promis
  * each file. A use of another length moves every byte after it: then only the
  * first use that differs is blamed, and no operand.
  */
-function blame(rendered: Rendered, built: Awaited<ReturnType<typeof assembleFiles>>, image: Image, markLines: number): { numbers: Map<number, string>; uses: Map<number, string> } {
+function blame(rendered: Rendered, built: Awaited<ReturnType<typeof assembleFiles>>, image: ProgramImage, markLines: number): { numbers: Map<number, string>; uses: Map<number, string> } {
   const blamed = new Map<number, string>();
   if (built.program === undefined) {
     const lines = new Map(rendered.expressions.map((item) => [`${item.file}:${item.line + markLines}`, item.address]));
@@ -348,7 +340,7 @@ interface SegmentCheck {
 }
 
 /** Compares the assembled program with the image, segment by segment. */
-function check(program: Buffer, start: number, image: Image): { identical: boolean; segments: SegmentCheck[] } {
+function check(program: Buffer, start: number, image: ProgramImage): { identical: boolean; segments: SegmentCheck[] } {
   const end = start + program.length - 3;
   const segments = image.segments.map((segment): SegmentCheck => {
     const shown = { start: formatC64Address(segment.start), end: formatC64Address(segment.end) };
@@ -443,7 +435,7 @@ interface LoaderRun {
 /** The history entries that a stop of the loader gives, so the agent sees the last instructions. */
 const STOP_HISTORY = 16;
 
-async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image: Image, state: EntryState, jump: number, copierSource: number, expected: (address: number) => number): Promise<LoaderRun> {
+async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image: ProgramImage, state: EntryState, jump: number, copierSource: number, expected: (address: number) => number): Promise<LoaderRun> {
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     await client.reset({ mode: "hard", run: false });
@@ -514,19 +506,13 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
 }
 
 /**
- * The ROMs the program uses (D75): from the coverage when it is given, else
- * from $01 of the entry state next to image.json, else both.
+ * The ROMs the program uses (D75): from the coverage when the knowledge has
+ * it, else from $01 of the entry state, else both.
  */
-function romsInUse(image: Image, coverage: Uint8Array | undefined): RomUse & { from: "coverage" | "entry state" | "none" } {
+function romsInUse(image: ProgramImage, coverage: Uint8Array | undefined): RomUse & { from: "coverage" | "entry state" | "none" } {
   if (coverage !== undefined) return { ...romUseOf(coverage, COVERAGE.romExecute), from: "coverage" };
-  if (image.statePath !== undefined && existsSync(resolveProjectPath(image.statePath))) {
-    try {
-      const port = (JSON.parse(readProjectFile(image.statePath).bytes.toString("utf8")) as { cpuPort?: Record<string, unknown> }).cpuPort?.$01;
-      if (typeof port === "number") return { ...romUseOfPort(port), from: "entry state" };
-    } catch {
-      // A broken entry state is refused where the loader reads it; the names stay.
-    }
-  }
+  const port = (image.state?.cpuPort as Record<string, unknown> | undefined)?.$01;
+  if (typeof port === "number") return { ...romUseOfPort(port), from: "entry state" };
   return { basic: true, kernal: true, from: "none" };
 }
 
@@ -543,10 +529,10 @@ const SOURCE_MAP_FILE = "source-map.json";
  * files write, after the mark line. One entry per line of the file, so a diff
  * of two maps stays short.
  */
-function sourceMapText(rendered: Rendered, image: string, space: string, revision: string | null, files: ReadonlyArray<{ name: string }>): string {
+function sourceMapText(rendered: Rendered, space: string, revision: string | null, files: ReadonlyArray<{ name: string }>): string {
   const labels = rendered.labels.map((label) => JSON.stringify({ address: formatC64Address(label.address), name: label.name, file: label.file, line: label.line + 1 }));
   const items = rendered.items.map((item) => JSON.stringify({ start: formatC64Address(item.start), end: formatC64Address(item.end), file: item.file, line: item.line + 1 }));
-  const head = JSON.stringify({ image, space, revision, files: files.map((file) => file.name) }).slice(0, -1);
+  const head = JSON.stringify({ space, revision, files: files.map((file) => file.name) }).slice(0, -1);
   return `${head},\n"labels": [\n${labels.join(",\n")}\n],\n"items": [\n${items.join(",\n")}\n]}\n`;
 }
 
@@ -570,7 +556,6 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     options: {
       out: { type: "string" },
       entry: { type: "string", multiple: true },
-      coverage: { type: "string", multiple: true },
       space: { type: "string" },
       loader: { type: "boolean" },
       "analyzer-names": { type: "boolean" },
@@ -578,7 +563,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     },
   });
   if (values.help) throw new UsageError("");
-  if (positionals.length !== 1) throw new UsageError("give one image");
+  if (positionals.length !== 0) throw new UsageError("generate takes no image: it reads the program from the knowledge (knowledge.ts image of the c64-knowledge skill puts it in)");
   if (values.out === undefined) throw new UsageError("generate needs --out <dir>");
   try {
     resolveProjectPath(values.out);
@@ -594,16 +579,16 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   });
   const space = values.space ?? DEFAULT_SPACE;
   if (!SPACE.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
-  if (space !== DEFAULT_SPACE && (values.coverage !== undefined || values.loader)) throw new UsageError("--coverage and --loader work only in space c64");
-  const image = readImage(positionals[0]!);
-  const coverage = readCoverageFiles(values.coverage ?? [], (message) => {
-    throw new UsageError(message);
-  });
-  if (values.loader && (image.statePath === undefined || image.entry === undefined)) throw new UsageError("--loader needs an image.json with an entry and an entry_state.json next to it, from c64-unpacker capture");
-  // Read the entry state before the long steps, so a missing file stops the run at once.
-  const state = values.loader ? readEntryState(readProjectFile(image.statePath!).bytes.toString("utf8"), image.statePath!) : undefined;
-  const romUse = romsInUse(image, coverage);
+  if (space !== DEFAULT_SPACE && values.loader) throw new UsageError("--loader works only in space c64");
   const knowledge = readKnowledge(space, values["analyzer-names"] === true);
+  const image = knowledge.program;
+  const coverage = knowledge.coverage;
+  if (values.loader && (image.state === undefined || image.entry === undefined)) {
+    throw new UsageError("--loader needs the entry and the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json>");
+  }
+  // Read the entry state before the long steps, so a bad state stops the run at once.
+  const state = values.loader ? readEntryState(JSON.stringify(image.state), "the entry state of the knowledge") : undefined;
+  const romUse = romsInUse(image, coverage);
   const instructions = await decode(image, knowledge, entries, coverage);
   const laid = layout({
     segments: image.segments,
@@ -624,7 +609,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     ...(space === DEFAULT_SPACE ? { platform: platformNamesFor(romUse), describe: describeAddress, decode: decodeRegister } : {}),
   });
   const asBytes = await probe(laid);
-  const header = [`Generated by c64-source from ${image.path}${space === DEFAULT_SPACE ? "" : ` in space ${space}`} and knowledge revision ${knowledge.revision}.`, "Change names, comments, regions and modules in knowledge, then generate again."];
+  const header = [`Generated by c64-source from knowledge revision ${knowledge.revision}${space === DEFAULT_SPACE ? "" : ` in space ${space}`}.`, "Change names, comments, regions and modules in knowledge, then generate again."];
   let loader: LoaderPlan | undefined;
   // An image without its entry has no program: the source is still written and checked, but the run fails (R2-02).
   const missingEntry = entryOutsideImage(image.entry, image.segments);
@@ -634,7 +619,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     const segments = image.segments.map((segment) => ({ ...segment, files: laid.pieces.filter((piece) => piece.start >= segment.start && piece.start <= segment.end).map((piece) => piece.file) }));
     try {
       const entryName = laid.names.get(image.entry!);
-      loader = planLoader({ segments, byteAt: image.byteAt, state, entry: image.entry!, ...(entryName === undefined ? {} : { entryName }), macros: laid.macros.length > 0, header: [`Loader generated by c64-source from ${image.path}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] });
+      loader = planLoader({ segments, byteAt: image.byteAt, state, entry: image.entry!, ...(entryName === undefined ? {} : { entryName }), macros: laid.macros.length > 0, header: [`Loader generated by c64-source from knowledge revision ${knowledge.revision}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] });
     } catch (error) {
       if (!(error instanceof WireFailure)) throw error;
       loaderRefused = error.message;
@@ -663,7 +648,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   }
   removeOldFiles(values.out, new Set(files.map((file) => file.name)));
   for (const file of files) writeProjectFile(`${values.out}/${file.name}`, Buffer.from(file.text, "utf8"), { what: "--out" });
-  writeProjectFile(`${values.out}/${SOURCE_MAP_FILE}`, Buffer.from(sourceMapText(rendered, image.path, space, knowledge.revision, files), "utf8"), { what: "--out" });
+  writeProjectFile(`${values.out}/${SOURCE_MAP_FILE}`, Buffer.from(sourceMapText(rendered, space, knowledge.revision, files), "utf8"), { what: "--out" });
   const showRange = (range: Range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
   if (rendered.notExecuted !== undefined) {
@@ -676,7 +661,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     });
     const files: Record<string, number> = {};
     for (const range of placed) if (range.file !== undefined) files[range.file] = (files[range.file] ?? 0) + 1;
-    const all = { image: image.path, revision: knowledge.revision, instructions: rendered.notExecuted.instructions, files, ranges: placed };
+    const all = { revision: knowledge.revision, instructions: rendered.notExecuted.instructions, files, ranges: placed };
     writeProjectFile(`${values.out}/${NOT_EXECUTED_FILE}`, Buffer.from(`${JSON.stringify(all, null, 2)}\n`, "utf8"), { what: "--out" });
   }
 

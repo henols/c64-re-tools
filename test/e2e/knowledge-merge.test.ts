@@ -72,10 +72,12 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
   mkdirSync(join(seed, "game"));
   // $1000: LDX #0 / LDA $1010,X / STA $0400,X / INX / BNE $1002 / RTS, then 16 bytes of data.
   writeFileSync(join(seed, "game", "game.prg"), Uint8Array.from([0x00, 0x10, 0xa2, 0x00, 0xbd, 0x10, 0x10, 0x9d, 0x00, 0x04, 0xe8, 0xd0, 0xf7, 0x60, 0xea, 0xea, ...Array.from({ length: 16 }, (_, index) => index)]));
+  write(seed, "image", "game.prg", "--reason", "the program");
   write(seed, "rename", "$1000", "start", "--kind", "routine", "--reason", "the entry");
   gitOk(seed, "add", "-A");
   assert.deepEqual(gitOk(seed, "status", "--porcelain").trim().split("\n").sort(), [
     "A  game/.c64-re-tools/knowledge/.gitattributes",
+    "A  game/.c64-re-tools/knowledge/memory.jsonl",
     "A  game/.c64-re-tools/knowledge/revisions.jsonl",
     "A  game/.c64-re-tools/knowledge/symbols.jsonl",
     "A  game/game.prg",
@@ -150,7 +152,7 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
 
   if (generateSkip === false) {
     for (const clone of [first, second]) {
-      const generated = script(clone, "c64-source", "generate.ts", "game.prg", "--out", ".c64-re-tools/local/src");
+      const generated = script(clone, "c64-source", "generate.ts", "--out", ".c64-re-tools/local/src");
       assert.equal(generated.status, 0, JSON.stringify(generated.json));
     }
     const source = (clone: string) => files(join(clone, "game", ".c64-re-tools", "local", "src"));

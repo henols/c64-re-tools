@@ -1,6 +1,6 @@
 ---
 name: c64-provenance
-description: Use this skill to compare two or more releases of a C64 program, for example cracked versions from different groups. It finds the bytes where the releases differ and shows which releases agree there. It can run each release and tell how the program uses each difference. With one release, it gives evidence for each range: the unpack stage, the access, and the code that the entry does not reach. Use the result to separate the content of the application from changes that a release added. It also keeps a library of routines that several programs share. It finds them in a program and writes their names as a batch for c64-knowledge. Do not use it to analyze the code.
+description: Use this skill to compare two or more releases of a C64 program, for example cracked versions from different groups. It finds the bytes where the releases differ and shows which releases agree there. It can run each release and tell how the program uses each difference. It also gives evidence for each range of the program in the knowledge. The evidence is the unpack stage, the access, and the code that the entry does not reach. Use the result to separate the content of the application from changes that a release added. It also keeps a library of routines that several programs share. It finds them in the program of the knowledge and writes their names as a batch for c64-knowledge. Do not use it to analyze the code.
 ---
 
 # c64-provenance
@@ -19,8 +19,8 @@ This skill does not change project knowledge.
 - Optional: an address range to compare.
 - Optional: a shift for a release that loads at a different address.
 - Optional: a number of frames to run each release, and a steps file.
-- For one release: the release, coverage files, and the knowledge of the project.
-- For the library: the image of a program, the knowledge of its project, and the library folder.
+- For one release: the program, the coverage and the other knowledge of the project. Put the program and the coverage in with `image` and `coverage` of the c64-knowledge skill.
+- For the library: the program and the other knowledge of its project, and the library folder.
 
 ## Tools / execution path
 
@@ -29,8 +29,8 @@ The script compares the files locally. Only `--run` uses the host runtime: each 
 ```
 node <skill>/scripts/provenance.ts releases/a.prg releases/b.prg releases/c.prg
 node <skill>/scripts/provenance.ts releases/a.prg releases/b.prg --shift 2:-256 --from '$0900' --to '$09ff'
-node <skill>/scripts/provenance.ts releases/a.prg unpacked/b/image.json --run 600 --steps steps/start-game.json
-node <skill>/scripts/provenance.ts separate unpacked/image.json --coverage coverage/attract.bin --coverage coverage/level1.bin --out .c64-re-tools/local/separate.json
+node <skill>/scripts/provenance.ts releases/a.prg .c64-re-tools/local/b/image.json --run 600 --steps .c64-re-tools/local/start-game.json
+node <skill>/scripts/provenance.ts separate --out .c64-re-tools/local/separate.json
 ```
 
 | Option | Meaning |
@@ -77,15 +77,15 @@ With `--run`, a PRG starts with autostart and RUN. An image starts from its byte
 
 ## One release
 
-Use `separate` when you have only one release. It gives evidence, not a decision:
+Use `separate` when you have only one release. It reads the program, its stages and the coverage from the knowledge. It gives evidence, not a decision:
 
-- `ranges`: the image in ranges with the same stage and access. `stage` is the last unpack stage that wrote the range. In `image.json`, the last stage is the program. An earlier stage is a depacker, an intro or a loader. Only an image from c64-unpacker `capture` has stages. For an image from `loads`, `noStages` tells this.
-- `access`: from the joined `--coverage` files: `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs. A `read` byte right after executed code, or at a return address, can be a dummy read of the 6502 that the program does not use.
+- `ranges`: the program in ranges with the same stage and access. `stage` is the last unpack stage that wrote the range. The last stage is the program. An earlier stage is a depacker, an intro or a loader. Only a capture of c64-unpacker `capture` has stages. For a program from `loads` or a PRG, `noStages` tells this.
+- `access`: from the coverage of the knowledge: `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs. A `read` byte right after executed code, or at a return address, can be a dummy read of the 6502 that the program does not use.
 - `codeRegions.total`: the number of code regions in the knowledge.
 - `codeRegions.unreachable`: code regions of the knowledge that no chain of call and jump references reaches from the entry. Run c64-static-analysis first, so that the knowledge has the code regions and the references.
-- `outside`: RAM outside the image that the program `read` or `executed` but did not write, and code it `generated`. A loader or an earlier stage put the bytes that the program did not write. A `generated` range can have gaps of two bytes or less: these are operand bytes.
+- `outside`: RAM outside the program that the program `read` or `executed` but did not write, and code it `generated`. A loader or an earlier stage put the bytes that the program did not write. A `generated` range can have gaps of two bytes or less: these are operand bytes.
 
-Each list has `count` and `listed`. `listed` has the first ranges, at most `--max-listed`. `--out` writes all of them. Run more coverage runs for parts that are `untouched` before you decide.
+Each list has `count` and `listed`. `listed` has the first ranges, at most `--max-listed`. `--out` writes all of them. Run more coverage runs for parts that are `untouched`, and add them with `coverage` of the c64-knowledge skill, before you decide.
 
 ## Library of routines
 
@@ -94,14 +94,14 @@ A library is a folder of routine files. Each file holds one routine: its bytes a
 `--library` is relative to the working directory, as `--project`. All other paths are relative to the project folder.
 
 ```
-node <skill>/scripts/provenance.ts routine unpacked/image.json --module '$1000' --library library --project game-a
-node <skill>/scripts/provenance.ts routine game.prg --start '$1000' --end '$1026' --name play --library library --project game-a
-node <skill>/scripts/provenance.ts match unpacked/image.json --library library --out .c64-re-tools/local/match.json --project game-b
+node <skill>/scripts/provenance.ts routine --module '$1000' --library library --project game-a
+node <skill>/scripts/provenance.ts routine --start '$1000' --end '$1026' --name play --library library --project game-a
+node <skill>/scripts/provenance.ts match --library library --out .c64-re-tools/local/match.json --project game-b
 ```
 
 To save a routine:
 
-1. Name the routine in the knowledge of its program first. The file keeps the user and LLM names, comments, regions, references and operand expressions in the range. It also keeps the code regions of each origin.
+1. Put the program into the knowledge, and name the routine there first. The file keeps the user and LLM names, comments, regions, references and operand expressions in the range. It also keeps the code regions of each origin.
 2. Run `routine` with the start of a module (`--module`), or with `--start` and `--end`. A module ends at the next module or at the end of its segment.
    - `--name` is the name of the routine and of its file. When you do not give it, the script uses the user or LLM name at the start.
    - `--title` is the title of the routine. When you do not give it, the script uses the module title.
@@ -110,7 +110,7 @@ To save a routine:
 
 To find the routines in a program:
 
-1. Run `match` on the image of the program. The script examines each routine of the library at each address of the image.
+1. Put the program into the knowledge. Then run `match`. The script examines each routine of the library at each address of the program.
    - The opcodes and the other bytes must be equal.
    - An address into the routine must point into the routine at its new address. `shift` is the address in the program minus the address in the library.
    - An operand that addresses something outside the routine can be different. `differing` lists each one with its value in the library and in the program. Examine them. For example, the program can use other variables or another SID voice.
@@ -120,7 +120,7 @@ To find the routines in a program:
    - The program uses the name at another address.
    - A removal holds at that place.
    - The routine occurs two times. Only the first copy gets the names.
-   - The script leaves out the name that an operand expression uses, or the expression does not give the operand in the image.
+   - The script leaves out the name that an operand expression uses, or the expression does not give the operand in the program.
 4. Apply the batch with the command in `apply`. Add `--project` when you are not in the project folder. The batch is one revision of the LLM. `batch.known` counts the writes that the program has already.
 
 ## Knowledge
@@ -152,7 +152,7 @@ The exit status is 0 for a result. The exit status is 1 for an error. The exit s
 - `not-found` from `match`: the library folder does not exist, or it has no routine files. Save a routine with `routine` first.
 - `conflict` from `routine`: the library has a routine with that name. Give another `--name`, or give `--replace` to save over it.
 - `invalid-input` with "is a project folder": the library folder is a project. Give a folder beside the projects.
-- `match` gives `count: 0`: the routine is not in the image. A packed program can hold the routine in a packed form. Unpack the program with c64-unpacker first.
+- `match` gives `count: 0`: the routine is not in the program. A packed program can hold the routine in a packed form. Unpack the program with c64-unpacker first.
 - `invalid-input`: a file, an address or a shift is wrong. A path that goes out of the project folder is also wrong, also through a link. Read the message.
 
 ## Handoffs

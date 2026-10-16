@@ -47,7 +47,7 @@ function writeSource(root: string, revision: string, files: Record<string, Array
     }
     writeFileSync(join(root, "src", file), `${text.join("\n")}\n`);
   }
-  writeFileSync(join(root, "src", "source-map.json"), JSON.stringify({ image: "game.prg", space: "c64", revision, files: Object.keys(files), labels, items }));
+  writeFileSync(join(root, "src", "source-map.json"), JSON.stringify({ space: "c64", revision, files: Object.keys(files), labels, items }));
 }
 
 /**
@@ -88,6 +88,8 @@ function project(): { root: string; revision: string } {
       { op: "reference", from: "$1015", to: "$0002", kind: "write" },
     ]),
   );
+  // The program goes into the knowledge first (D83): the reference decodes its tables and draws its graphics.
+  assert.equal(knowledge(root, "image", "game.prg").status, 0);
   assert.equal(knowledge(root, "apply", "batch.json").status, 0);
   const revision = revisionOf(root);
   writeSource(root, revision, {
@@ -131,7 +133,7 @@ function project(): { root: string; revision: string } {
 
 test("generate.ts writes the reference: module pages with anchors and links to the lines, tables, variables and graphics", () => {
   const { root, revision } = project();
-  const result = generate(root, "--source", "src", "--out", "docs/reference", "--image", "game.prg");
+  const result = generate(root, "--source", "src", "--out", "docs/reference");
   assert.equal(result.status, 0, JSON.stringify(result.json));
   assert.equal(result.json.revision, revision);
   const read = (page: string) => readFileSync(join(root, "docs/reference", page), "utf8");
@@ -205,7 +207,7 @@ const PAGE = [
 
 test("link.ts links each name to its line and its address to its entry or its place, and reports what is wrong", () => {
   const { root } = project();
-  assert.equal(generate(root, "--source", "src", "--out", "docs/reference", "--image", "game.prg").status, 0);
+  assert.equal(generate(root, "--source", "src", "--out", "docs/reference").status, 0);
   writeFileSync(join(root, "docs/notes.md"), PAGE);
   const first = link(root, "docs", "--source", "src");
   assert.equal(first.status, 1, "the page has problems");

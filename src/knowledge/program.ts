@@ -221,6 +221,15 @@ export function programImage(db: DatabaseSync | undefined, space: Space = DEFAUL
   return image;
 }
 
+/** The program of a space for a tool; refused with the way to put it in when the knowledge has none. */
+export function requireProgram(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage {
+  const image = programImage(db, space);
+  if (image !== undefined) return image;
+  const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
+  const option = space === DEFAULT_SPACE ? "" : ` --space ${space}`;
+  throw new KnowledgeError("not-found", `The knowledge has no program${where}. Put it in with knowledge.ts image <image.json|prg>${option} of the c64-knowledge skill.`);
+}
+
 /** The bytes for an analyzer: a PRG for one segment without an entry state, else the 64 KiB. */
 export function analyzedBytes(image: ProgramImage): { bytes: Buffer; kind: "prg" | "flat64k" } {
   if (image.segments.length === 1 && image.state === undefined) {

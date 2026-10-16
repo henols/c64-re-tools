@@ -1,29 +1,28 @@
-// The c64-static-analysis script: analyzes a project program with DXA (fast
-// first pass) or Ghidra (deeper), which it runs itself, seeded from
-// current knowledge, and imports the structural findings into
-// .c64-re-tools/knowledge/.
+// The c64-static-analysis script: analyzes the program in the knowledge (D83)
+// with DXA (fast first pass) or Ghidra (deeper), which it runs itself, seeded
+// from current knowledge and the coverage of the knowledge, and imports the
+// structural findings into .c64-re-tools/knowledge/.
 
-import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 import { COVERAGE, formatC64Address, parseC64Address, prgRange } from "#src/c64.ts";
-import { joinCoverage } from "#src/host-client/coverage.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
-import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
+import { writeProjectFile } from "#src/host-client/transfer.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS } from "#src/native/types.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
+import { analyzedBytes, programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import { importFindings, runProvenance, type Analyzer, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, SPACE } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, readCoverageMaps, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList } from "./lib/instructions.ts";
@@ -31,22 +30,22 @@ import { CATALOGUE, findMacroUses, type MacroCandidate } from "./lib/macros.ts";
 import { findPitfalls, type Pitfall } from "./lib/pitfalls.ts";
 import { findPointers, type PointerCandidate } from "./lib/pointers.ts";
 
-const USAGE = `analyze.ts <image> [options]
+const USAGE = `analyze.ts [options]
 
-  <image>                 a PRG file, relative to the project folder
+The program and the coverage come from the knowledge (D83): put them in with
+knowledge.ts image and coverage of the c64-knowledge skill. The executed code of
+the coverage is seeded, and analyzer data over it is reported.
+
   --analyzer <name>       dxa (fast first pass) or ghidra (deeper, the default)
-  --flat64k               the image is 64 KiB of memory from $0000, not a PRG
   --entry <address>       an entry point, for example '$080d' (repeatable)
   --decompile <address>   ghidra: a routine to decompile, at most 32 (repeatable)
   --listing <file>        dxa: write the disassembly listing to this project file
   --instructions <file>   ghidra: write every instruction (address, bytes, mnemonic,
                           mode, operand, target, executed) to this project file as JSON
-  --coverage <file>       a coverage map of 64 KiB from c64_memmap (repeatable): its
-                          executed code is seeded, and analyzer data over it is reported
   --max-listed <n>        list at most n labels, functions or candidates (default 50,
                           0 for none); the counts are always given, and knowledge has
                           all labels and functions
-  --space <space>         the knowledge space of the image: c64 (the default), drive8
+  --space <space>         the knowledge space of the program: c64 (the default), drive8
                           for 1541 drive code, or bank0 to bank255 for a cartridge bank
   --macro-batch <file>    write the macro candidates as an apply batch of c64-knowledge
                           (the macros and their uses) to this project file
@@ -95,7 +94,7 @@ function showMacro(candidate: MacroCandidate) {
  * macros they need; a macro of the catalogue that the knowledge has with
  * another body leaves its candidates out of the batch.
  */
-function macroCandidates(space: string, image: string, byteAt: ImageByte, batchPath: string | undefined) {
+function macroCandidates(space: string, byteAt: ImageByte, batchPath: string | undefined) {
   const db = openForRead();
   try {
     const platform = space === DEFAULT_SPACE ? new Map(platformNames().map((entry) => [entry.address, entry.name])) : new Map<number, string>();
@@ -140,7 +139,7 @@ function macroCandidates(space: string, image: string, byteAt: ImageByte, batchP
         out: batchPath,
         writes: batch.length,
         ...(other.size === 0 ? {} : { otherMacros: [...other].map((name) => `The knowledge has another macro ${name}: its candidates are not in the batch.`) }),
-        ...(batch.length === 0 ? {} : { apply: `knowledge.ts apply ${batchPath} --image ${image} --reason "macro uses of 6502 idioms"` }),
+        ...(batch.length === 0 ? {} : { apply: `knowledge.ts apply ${batchPath} --reason "macro uses of 6502 idioms"` }),
       },
     };
   } finally {
@@ -212,12 +211,10 @@ async function run(argv: string[]): Promise<unknown> {
     allowPositionals: true,
     options: {
       analyzer: { type: "string" },
-      flat64k: { type: "boolean" },
       entry: { type: "string", multiple: true },
       decompile: { type: "string", multiple: true },
       listing: { type: "string" },
       "max-listed": { type: "string" },
-      coverage: { type: "string", multiple: true },
       instructions: { type: "string" },
       space: { type: "string" },
       "macro-batch": { type: "string" },
@@ -225,8 +222,7 @@ async function run(argv: string[]): Promise<unknown> {
     },
   });
   if (values.help) throw new UsageError("");
-  if (positionals.length !== 1) throw new UsageError("give one image");
-  const image = positionals[0]!;
+  if (positionals.length !== 0) throw new UsageError("analyze takes no image: it reads the program from the knowledge (knowledge.ts image of the c64-knowledge skill puts it in)");
   const entries = addresses(values.entry, "--entry");
   const decompile = addresses(values.decompile, "--decompile");
   if (decompile.length > 32) throw new UsageError("--decompile takes at most 32 routines");
@@ -257,33 +253,27 @@ async function run(argv: string[]): Promise<unknown> {
 
   const space = values.space ?? DEFAULT_SPACE;
   if (!SPACE.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
-  // A coverage map is of the C64 CPU: VICE keeps none for the drive (D53).
-  if (space !== DEFAULT_SPACE && values.coverage !== undefined) throw new UsageError("--coverage works only in space c64");
-  const imageKind = values.flat64k ? "flat64k" : "prg";
-  const bytes = readProjectFile(image).bytes;
-  const runs = readCoverageMaps(values.coverage ?? []);
-  const coverage = runs.length === 0 ? undefined : joinCoverage(runs);
-  const byteAt = imageReader(bytes, imageKind);
-  // With coverage, a code finding over an executed instruction start replaces the data of the other analyzer (D58), and the files are the evidence.
-  const executed = coverage === undefined ? {} : { executed: (address: number) => (coverage[address]! & COVERAGE.ramExecute) !== 0 };
-  const coverageEvidence = coverage === undefined ? {} : { evidence: (values.coverage ?? []).map((path) => ({ kind: "coverage" as const, ref: path, sha256: createHash("sha256").update(readProjectFile(path).bytes).digest("hex") })) };
-
-  let loaded: { start: number; end: number };
-  try {
-    loaded = imageKind === "flat64k" ? { start: 0x0000, end: bytes.length - 1 } : prgRange(bytes);
-  } catch (error) {
-    throw new UsageError(`${image}: ${(error as Error).message}`);
-  }
-  const idioms = findIdioms(byteAt, { start: loaded.start, end: loaded.end }, runs);
-
   const reader = openForRead();
+  const program = requireProgram(reader, space);
+  // A coverage map is of the C64 CPU: VICE keeps none for the drive (D53).
+  const covered = space === DEFAULT_SPACE ? programCoverage(reader) : undefined;
+  const coverage = covered?.map;
+  const { bytes, kind: imageKind } = analyzedBytes(program);
+  // The analyzer sees all bytes it gets; the coverage seeds only the program, as c64-source does.
+  const byteAt = imageReader(bytes, imageKind);
+  const inProgram: ImageByte = (address) => (program.segments.some((segment) => address >= segment.start && address <= segment.end) ? program.byteAt(address) : undefined);
+  // With coverage, a code finding over an executed instruction start replaces the data of the other analyzer (D58).
+  const executed = coverage === undefined ? {} : { executed: (address: number) => (coverage[address]! & COVERAGE.ramExecute) !== 0 };
+  const loaded = imageKind === "flat64k" ? { start: 0x0000, end: 0xffff } : prgRange(bytes);
+  const idioms = findIdioms(byteAt, { start: loaded.start, end: loaded.end }, covered);
+
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries, space);
   // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound (D44).
-  const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, byteAt);
+  const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, inProgram);
   const known = [...seeds.entryPoints, ...codeEntries(reader, byteAt, space)];
   // Ghidra takes the coverage as code starts without a function (D74); DXA has one list.
-  const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, byteAt);
+  const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, inProgram);
   const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines])];
   seeds.entryPoints = ordered.slice(0, GHIDRA_LIMITS.entryPoints).sort((a, b) => a - b);
   const codeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry)).slice(0, GHIDRA_LIMITS.codeStarts);
@@ -304,9 +294,9 @@ async function run(argv: string[]): Promise<unknown> {
   reader?.close();
   /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
   const idiomsResult = () => {
-    const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: `Idioms in ${image}` }));
+    const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: "Idioms in the program" }));
     // The macro candidates read the code regions after both imports (D73).
-    const macros = macroCandidates(space, image, byteAt, values["macro-batch"]);
+    const macros = macroCandidates(space, byteAt, values["macro-batch"]);
     // Platform pitfalls are C64 facts: drive code and banks get none (M23.7).
     const pitfallDb = openForRead();
     const pitfalls = space === DEFAULT_SPACE ? findPitfalls(byteAt, listRegions(pitfallDb, undefined, "code", undefined, space)) : [];
@@ -353,7 +343,7 @@ async function run(argv: string[]): Promise<unknown> {
     const { result, attachments } = await analyzeWithDxa({ imageKind, ...seeds }, bytes, localToolContext());
     const listing = attachments[0]!.toString("utf8");
     // The listing is written only after the import: a refused import leaves no new file.
-    const imported = record({ ...dxaFindings(result), space, ...executed }, revision, `DXA analysis of ${image}`, { ...runProvenance(bytes, result.toolVersion), ...coverageEvidence });
+    const imported = record({ ...dxaFindings(result), space, ...executed }, revision, "DXA analysis of the program", runProvenance(bytes, result.toolVersion));
     if (listingPath !== undefined) {
       try {
         mkdirSync(dirname(listingPath), { recursive: true });
@@ -380,14 +370,14 @@ async function run(argv: string[]): Promise<unknown> {
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
   // Executed instruction starts that Ghidra did not decode: the instruction list and the source miss them.
   const decoded = new Set(result.instructions.map((instruction) => instruction.address));
-  const imported = record({ ...ghidraFindings(result), space, ...executed }, revision, `Ghidra analysis of ${image}`, { ...runProvenance(bytes, result.toolVersion), ...coverageEvidence });
+  const imported = record({ ...ghidraFindings(result), space, ...executed }, revision, "Ghidra analysis of the program", runProvenance(bytes, result.toolVersion));
   const found = idiomsResult();
   // A start inside a dual-use region is a known overlap, for example the second instruction of a BIT skip: one list cannot hold both.
   // Read after the idioms, which write those regions.
   const overlapDb = coverage === undefined ? undefined : openForRead();
   const overlaps = listRegions(overlapDb, undefined, "dual-use", undefined, space);
   overlapDb?.close();
-  const gaps = coverage === undefined ? [] : executedStarts(coverage, byteAt).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address) && !overlaps.some((region) => address >= region.start && address <= region.end));
+  const gaps = coverage === undefined ? [] : executedStarts(coverage, inProgram).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address) && !overlaps.some((region) => address >= region.start && address <= region.end));
   let instructions: { out: string; count: number } | undefined;
   if (values.instructions !== undefined) {
     const list = instructionList(result.instructions, coverage);

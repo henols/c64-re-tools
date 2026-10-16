@@ -17,6 +17,7 @@ import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
 import { gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { importImage } from "../../fixtures/program.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/test.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-d46-"));
@@ -47,7 +48,7 @@ const steps = [
   { registers: { pc: "$c000" }, side: "rebuild" },
   { runUntil: { at: "$c014" }, timeoutFrames: 600 },
   { runUntil: { raster: 100 }, timeoutFrames: 5 },
-  { normalize: "entry_state.json" },
+  { normalize: true },
 ];
 const memory = [{ at: "$c100" }, { at: "$0002", size: 4, exclude: [{ at: "$0002", reason: "the test writes it after normalize on one side" }] }];
 
@@ -55,7 +56,8 @@ test("one-side steps, a raster sync, normalize and an exclude make two different
   writeFileSync(join(project, "gated.prg"), gatedPackedPrg);
   writeFileSync(join(project, "counter.prg"), ORIGINAL.prg);
   const page = (fill: number) => Buffer.alloc(256, fill).toString("hex");
-  writeFileSync(join(project, "entry_state.json"), JSON.stringify({ cpuPort: { $00: 0x2f, $01: 0x37 }, pages: { $0000: page(0x11), $0100: page(0x22), $0200: page(0x33), $0300: page(0x44) } }));
+  // The entry state that normalize writes is in the knowledge, with its program (D83).
+  importImage(project, new Uint8Array(0x10000), { segments: [{ start: 0xc000, end: 0xc000 }], entry: 0xc000, state: { cpuPort: { $00: 0x2f, $01: 0x37 }, pages: { $0000: page(0x11), $0100: page(0x22), $0200: page(0x33), $0300: page(0x44) } } });
   const subjects = { original: { program: "gated.prg", symbols: "none" }, rebuild: { program: "counter.prg", symbols: "none" } };
   // The exclude: after normalize the rebuild writes $0002 again, so only that byte differs.
   const diverge = { write: { at: "$0002", bytes: [0x99] }, side: "rebuild" };

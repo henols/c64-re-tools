@@ -1,13 +1,13 @@
 ---
 name: c64-knowledge
-description: Use this skill to read, write, correct and review the durable knowledge of a C64 project in .c64-re-tools/knowledge/. It gives the knowledge at an address, and it names symbols, classifies memory regions, sets comments and records references. It records patches and macros for the generated source. It also shows the history of each change, and it can revert to an earlier revision. Do not use it for live emulator state or for static analysis.
+description: Use this skill to read, write, correct and review the durable knowledge of a C64 project in .c64-re-tools/knowledge/. The knowledge holds the program, its entry state and the coverage of the runs. It gives the knowledge at an address, and it names symbols, classifies memory regions, sets comments and records references. It records patches and macros for the generated source. It also shows the history of each change, and it can revert to an earlier revision. Do not use it for live emulator state or for static analysis.
 ---
 
 # c64-knowledge
 
 ## Purpose
 
-Read, write, correct and review the durable understanding of a C64 project. The knowledge is text in `.c64-re-tools/knowledge/` in the project folder: one JSON line for each row. Commit that folder with git. The script keeps an index of the text in `.c64-re-tools/local/knowledge.db` and makes the index again when the text changes. Do not commit the index.
+Read, write, correct and review the durable understanding of a C64 project. The knowledge also holds the program: its bytes, its entry state and the stages of its unpacker. It holds the coverage of the runs too. The other skills read the program and the coverage from the knowledge. The knowledge is text in `.c64-re-tools/knowledge/` in the project folder: one JSON line for each row. Commit that folder with git. The script keeps an index of the text in `.c64-re-tools/local/knowledge.db` and makes the index again when the text changes. Do not commit the index.
 
 This skill is the only write path for conclusions of the user and the LLM. It does not run an emulator or an analyzer. Write the knowledge only with the script. The script checks each write. Do not write or edit the files in `.c64-re-tools/knowledge/` or the index yourself.
 
@@ -18,6 +18,7 @@ One of these:
 - an address, a range or a symbol name to look up
 - text to search for
 - a change to a symbol, a region, a comment or a reference, with a short reason
+- a capture of the c64-unpacker skill, a PRG, or coverage maps to put into the knowledge
 - a request to see the history or a revision.
 
 ## Tools / execution path
@@ -38,7 +39,10 @@ A symbol is the name of an address from the user or the LLM. An analyzer name is
 | The names that DXA, Ghidra and the idioms gave | `symbols --analyzer` |
 | Only some origins | add `--origin semantic`, `--origin analyzer` (dxa, ghidra and heuristic), or `--origin user,llm` |
 | All knowledge in one file | `export --out .c64-re-tools/local/knowledge.json` |
-| The code of a range with names, comments, access and references | `listing '$0400' '$04ff' --image unpacked/image.json --coverage coverage/game.bin` |
+| Put the program into the knowledge | `image .c64-re-tools/local/capture/image.json` or `image original/game.prg` |
+| Add the coverage of runs | `coverage .c64-re-tools/local/runs/rooms/room0.bin ...` |
+| What the knowledge holds of the program | `program` |
+| The code of a range with names, comments, access and references | `listing '$0400' '$04ff'` |
 | Name the symbol at an address | `rename '$2100' update_player --kind routine` |
 | Remove a symbol | `remove-symbol '$2100'` |
 | Classify memory | `classify '$3000' '$303f' sprite` |
@@ -50,12 +54,12 @@ A symbol is the name of an address from the user or the LLM. An analyzer name is
 | Add or remove a reference | `reference '$2000' '$2100' call` / `unreference ...` |
 | Places that a removal blocks | `suppressions` with `--start` and `--end` |
 | Start a file of generated source | `module '$2000' player.asm --title 'Player movement'` / `unmodule '$2000'` |
-| Write the operand of an instruction as an expression | `operand '$8079' --lo irq_handler --image unpacked/image.json` / `unoperand '$8079'` |
+| Write the operand of an instruction as an expression | `operand '$8079' --lo irq_handler` / `unoperand '$8079'` |
 | Operand expressions | `operands` with `--start` and `--end` |
-| Replace a range with code when a switch is on | `patch '$100e' '$1010' CRACK --code-file crack.asm --image unpacked/image.json` / `unpatch '$100e'` |
+| Replace a range with code when a switch is on | `patch '$100e' '$1010' CRACK --code-file crack.asm` / `unpatch '$100e'` |
 | Patches and switches | `patches` with `--switch`, and `switches` |
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` / `unmacro inc16` |
-| Write instructions as one use of a macro | `use '$1005' '$100a' inc16 --args ptr --image unpacked/image.json` / `unuse '$1005'` |
+| Write instructions as one use of a macro | `use '$1005' '$100a' inc16 --args ptr` / `unuse '$1005'` |
 | Macros and their uses | `macros`, and `uses` with `--start`, `--end` and `--macro` |
 | Files of generated source | `modules` |
 | The address spaces that hold knowledge | `spaces` |
@@ -105,10 +109,23 @@ Write:
 
 1. Read the current value with `at`. Note the `revision` in the result.
 2. Decide the change. Keep observed facts apart from your conclusions.
-3. Write it with `--reason` and `--expect-revision` set to the revision you read. Add `--evidence` for each thing that the change rests on: `coverage:<file>`, `test:<file>`, `file:<file>` or `note:<text>`. The script keeps the SHA-256 of each file.
+3. Write it with `--reason` and `--expect-revision` set to the revision you read. Add `--evidence` for each thing that the change rests on: `coverage:<map>`, `test:<file>`, `file:<file>` or `note:<text>`. `<map>` is a coverage map that `coverage` put into the knowledge, by its path at that time. The script keeps the SHA-256 of each file and map.
 4. Read the result. A `revision` of `null` means that nothing changed.
 
 Each write is one revision. A classification inside a region splits that region, so regions never overlap.
+
+## The program and the coverage
+
+The knowledge holds the program, so a project needs no image or coverage files. The other skills read them from the knowledge and take no path to them.
+
+1. Capture a packed program with the c64-unpacker skill into `.c64-re-tools/local/`. Then put it in with `image .c64-re-tools/local/capture/image.json`. The script reads `image.bin`, `entry_state.json` and the stages next to it.
+2. For a program without a packer, drive code or a cartridge bank, put the PRG in with `image <file.prg>`. Give `--space drive8` or `--space bank0` for drive code or a bank.
+3. Write each coverage map of a run into `.c64-re-tools/local/`. Then add it with `coverage <map.bin> ...`.
+4. Read what the knowledge holds with `program`: the segments, the entry, and the coverage maps that it has.
+
+- `image` writes only the bytes that changed. The same image again writes nothing. A new image replaces the program of the space. The history keeps the old bytes.
+- `coverage` joins the maps. It keeps each address that a run executed, read or wrote. It also keeps each address that one run wrote and executed: self-modified code. A map that the knowledge has is not added again.
+- The capture and the maps are not necessary after the import. Keep them in `.c64-re-tools/local/`.
 
 For more than a few writes, use `apply -` and give the writes on standard input as one JSON list. Each write has `op` and the arguments of the command with the same name, for example:
 
@@ -141,15 +158,15 @@ The ops and their fields:
 | `unmacro` | `name` |
 | `use` | `start`, `end`, `macro`, `args` (a list or a comma list) |
 
-A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. `apply` with an `operand`, `patch` or `use` write needs `--image`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
+A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. The script checks an `operand`, `patch` or `use` write against the program of the knowledge in the space of `--space`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
 
 The c64-provenance skill writes a batch with `match --out`. The batch holds the names of library routines at their addresses in this program. Read the `batch.leftOut` of its result first. Then apply the batch with the command in its `apply`.
 
 ## Listing
 
-`listing` reads the image and the knowledge, and writes no knowledge. Use it in place of your own disassembler.
+`listing` reads the program and the other knowledge, and writes no knowledge. Use it in place of your own disassembler.
 
-- `listing` gives one line for each instruction of a code region, and one `!byte` line for other bytes. A line has the name of the address, the instruction with the names of its target, and the comments. An operand expression of the knowledge replaces the operand. `analyzerNames` gives the second names. `referencesIn` and `referencesOut` count the references. With `--coverage`, `access` tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line, or `-` for none. `--out` writes the listing as text to a project file.
+- `listing` gives one line for each instruction of a code region, and one `!byte` line for other bytes. A line has the name of the address, the instruction with the names of its target, and the comments. An operand expression of the knowledge replaces the operand. `analyzerNames` gives the second names. `referencesIn` and `referencesOut` count the references. When the knowledge has coverage, `access` tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line, or `-` for none. `--out` writes the listing as text to a project file.
 
 ## Batches of parallel agents
 
@@ -164,7 +181,7 @@ When more agents name the program at the same time, give each agent one range of
 - `choices` lists each place where the batches gave different values, with the value that stays.
 - When one name or one module file is at two addresses, `join` writes nothing. `clashes` lists the addresses and the batches. Correct the batches, then do `join` again.
 
-Then apply the joined batch with the command in `apply`. Add `--image` when the batch has an `operand`, `patch` or `use` write.
+Then apply the joined batch with the command in `apply`.
 
 ## Modules
 
@@ -186,7 +203,7 @@ Give one selector:
 - `--offset` adds a whole number to the symbol. Write a negative offset as `--offset=-1`.
 - A name is a symbol of the knowledge or a platform name of the c64-memory-map skill.
 - `--expr` takes `$`, `%` and decimal numbers, names, brackets, the operators `+ - * / % << >> >>> & | XOR`, and `<`, `>`, `-` and `!` before an operand.
-- The script compares the value of the expression with the operand in the image. If they are not equal, the script refuses the write. Give the image with `--image`: an `image.json` of the c64-unpacker skill or a PRG. `apply` with an `operand` write also needs `--image`.
+- The script compares the value of the expression with the operand in the program of the knowledge. If they are not equal, the script refuses the write.
 - Each name in the expression gets a `pointer` reference from the instruction. Thus `at` on the named address shows the code that uses the address.
 - A `rename` of a symbol changes the name in each expression. The knowledge refuses `remove-symbol` while an expression uses the symbol. Use `unoperand` first.
 
@@ -194,7 +211,7 @@ Write an operand expression for each immediate that is a byte of an address. Als
 
 ## Code switches
 
-A patch is ACME code that replaces a range of the image when the build defines its switch as 1. Use patches to change the program, for example for a crack, a trainer or a debug hook. The default build does not define the switch. Thus the c64-source skill still makes a source that is identical to the image.
+A patch is ACME code that replaces a range of the program when the build defines its switch as 1. Use patches to change the program, for example for a crack, a trainer or a debug hook. The default build does not define the switch. Thus the c64-source skill still makes a source that is identical to the program.
 
 - A switch name is upper case, for example `CRACK` or `TRAINER`. It cannot be the name of a symbol or a platform name.
 - Many patches can have the same switch. The c64-source skill builds each switch on its own. It does not build two switches together.
@@ -202,7 +219,7 @@ A patch is ACME code that replaces a range of the image when the build defines i
 - `--code` gives the code as text. `--code-file` reads the code from a project file. The code can use the labels and the macros of the source, and local labels with a dot, for example `.skip`.
 - The braces in the code must be pairs, because the source puts the code inside `{ }`.
 - A patch cannot overlap another patch or a macro use.
-- Give the image with `--image`. Each byte of the range must be in the image.
+- Each byte of the range must be in the program of the knowledge.
 - A `patch` write without `--comment` keeps the comment that the patch has.
 
 Build the program with a switch on with the c64-assembler skill: `--define CRACK=1`.
@@ -213,12 +230,12 @@ A macro writes a run of instructions as one line of the source, for example `+in
 
 - `macro` writes the ACME macro: its name, its params and its body. `--params` gives the params as a comma list, without a dot. The body uses each param with a dot, for example `.dst`.
 - `use` writes the instructions from the start to the end as one use of a macro. `--args` gives one expression for each param, as a comma list. Each name in an arg is a symbol of the knowledge or a platform name.
-- The range of a use is complete instructions. Give the image with `--image`.
+- The range of a use is complete instructions of the program of the knowledge.
 - A `rename` of a symbol changes the name in each arg. The knowledge refuses `remove-symbol` while an arg uses the symbol.
 - The knowledge refuses `unmacro` while the macro has uses. It also refuses a change of the number of params while the macro has uses.
 - A use cannot overlap a patch or another use.
 
-The c64-source skill writes a use only when the use gives the bytes of the image. If not, it writes the instructions and gives the reason. The c64-static-analysis skill finds uses of known 6502 idioms and writes them to a batch with `--macro-batch`.
+The c64-source skill writes a use only when the use gives the bytes of the program. If not, it writes the instructions and gives the reason. The c64-static-analysis skill finds uses of known 6502 idioms and writes them to a batch with `--macro-batch`.
 
 ## Removals
 

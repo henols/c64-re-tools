@@ -31,7 +31,7 @@ node <skill>/scripts/assemble.ts --source-root src --entry main.a --out build/ga
 | `--include lib` | An include directory, relative to the source root. Use it again for more directories. |
 | `--define DEBUG=1` | An assembler symbol: an integer, also as `$` hex, or `true` or `false`. Use it again for more symbols. |
 | `--set-pc '$0801'` | The start address when the source does not set one. |
-| `--compare unpacked/image.json` | Check the program byte by byte against a reference. The reference is the `image.json` of the c64-unpacker skill, a PRG, or 64 KiB of memory. |
+| `--compare` | Check the program byte by byte against the program in the knowledge, each segment. Put it in with `image` of the c64-knowledge skill. `--space drive8` or `--space bank0` compares with the program of that space. |
 | `--plain` | Write only the bytes of the program, without the 2-byte load address of a PRG. `loadRange` still tells where the bytes go. |
 | `--all-symbols` | List all symbols. Without it, the list does not include the constants that the source does not use. `unusedConstants` gives their count. |
 
@@ -76,7 +76,7 @@ A symbol from the rebuilt source can give the address of a routine in the rebuil
 
 The PRG in the project at the output path, with its load range and symbols. Or the source diagnostics when the assembly failed.
 
-With `--compare`, `compare` gives `identical` and one check for each segment of the reference. A check is `identical`, `different` with the first different address, or `not covered` when the program does not hold the segment.
+With `--compare`, `compare` gives `identical` and one check for each segment of the program in the knowledge. A check is `identical`, `different` with the first different address, or `not covered` when the program does not hold the segment.
 
 The exit status is 0 for a PRG. The exit status is 1 for `assembled: false`, for a `--compare` that is not identical, and for an error. The exit status is 2 for a wrong argument.
 

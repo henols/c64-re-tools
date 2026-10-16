@@ -8,7 +8,6 @@
 // count while each target is a plausible instruction in the program.
 
 import { COVERAGE } from "#src/c64.ts";
-import { joinCoverage } from "#src/host-client/coverage.ts";
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
 import type { ImageByte } from "./coverage.ts";
 
@@ -44,9 +43,9 @@ const word = (byteAt: ImageByte, address: number) => {
   return low === undefined || high === undefined ? undefined : low | (high << 8);
 };
 
-/** `runs` are the coverage maps, one for each file. */
-export function findIdioms(byteAt: ImageByte, range: { start: number; end: number }, runs: readonly Uint8Array[] = []): Idioms {
-  const coverage = runs.length === 0 ? undefined : joinCoverage(runs);
+/** `covered` is the coverage of the knowledge (D83): the joined map, and the addresses that one run wrote and executed. */
+export function findIdioms(byteAt: ImageByte, range: { start: number; end: number }, covered?: { map: Uint8Array; selfModified: Uint8Array }): Idioms {
+  const coverage = covered?.map;
   const regions: NormalizedFindings["regions"] = [];
   const references: NormalizedFindings["references"] = [];
   const entryPoints = new Set<number>();
@@ -132,11 +131,10 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
   // Candidates from the coverage: DOP padding that ran, and opcodes that one run wrote and executed.
   const candidates = { dop: [] as number[], selfModified: [] as number[] };
   if (coverage !== undefined) {
-    const both = COVERAGE.ramWrite | COVERAGE.ramExecute;
     for (let address = range.start; address <= range.end; address++) {
       if ((coverage[address]! & COVERAGE.ramExecute) === 0) continue;
       if (DOPS.has(byteAt(address)!)) candidates.dop.push(address);
-      if (runs.some((run) => (run[address]! & both) === both)) candidates.selfModified.push(address);
+      if (covered!.selfModified[address] === 1) candidates.selfModified.push(address);
     }
   }
 

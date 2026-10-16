@@ -11,30 +11,29 @@ Find the static structure of a C64 program. Record the structure in the project 
 
 ## Inputs
 
-- The program: a PRG file, relative to the project folder. Or 64 KiB of memory from `$0000`, for example a memory dump.
+- The program in the knowledge. Put it in with `image` of the c64-knowledge skill: a PRG, or a capture of the c64-unpacker skill.
+- Optional: the coverage in the knowledge. Add it with `coverage` of the c64-knowledge skill.
 - Entry points: addresses where code starts, for example the SYS address from the c64-basic skill. Routine symbols in the knowledge are entry points too. Ghidra needs at least one. DXA finds the SYS of a BASIC start by itself.
 - Optional: routines to decompile (Ghidra), or a file for the listing (DXA).
 
 ## Tools / execution path
 
-The script reads the current knowledge and runs DXA or Ghidra on this machine. The host runtime is not necessary. The script records the result in the project knowledge, `.c64-re-tools/knowledge/`.
+The script reads the program, the coverage and the current knowledge, and runs DXA or Ghidra on this machine. The host runtime is not necessary. The script records the result in the project knowledge, `.c64-re-tools/knowledge/`.
 
 ```
-node <skill>/scripts/analyze.ts extracted/game.prg --analyzer dxa --listing analysis/game.lst
-node <skill>/scripts/analyze.ts extracted/game.prg --entry '$080d' --decompile '$080d'
+node <skill>/scripts/analyze.ts --analyzer dxa --listing .c64-re-tools/local/game.lst
+node <skill>/scripts/analyze.ts --entry '$080d' --decompile '$080d'
 ```
 
 | Option | Meaning |
 |---|---|
 | `--analyzer dxa` | Use DXA: a fast first pass. Without this option, the script uses Ghidra. |
 | `--entry '$080d'` | An address where code starts. Use it again for more addresses. |
-| `--listing analysis/game.lst` | DXA only: write the disassembly listing to this project file. |
+| `--listing .c64-re-tools/local/game.lst` | DXA only: write the disassembly listing to this project file. |
 | `--decompile '$0818'` | Ghidra only: decompile the routine at this address. Use it again for more routines, at most 32. |
-| `--flat64k` | The file is 64 KiB of memory from `$0000`, not a PRG. |
 | `--max-listed 20` | List at most this number of labels, functions or candidates. The default is 50. Use 0 to list none. |
-| `--instructions analysis/instructions.json` | Ghidra only: write every instruction to this project file as JSON. Each has `address`, `bytes`, `mnemonic`, `mode` and `operand` in 6502 syntax. A branch, jump or call also has its `target`. With `--coverage`, `executed` tells if it ran. |
-| `--space drive8` | The knowledge space of the image: `drive8` for code from the 1541 drive, or `bank0` to `bank255` for a cartridge bank. The default is `c64`. The seeds come from that space, and the findings go into it. |
-| `--coverage coverage/attract.bin` | A coverage file of 64 KiB from `c64_memmap` (action `read` with `out`). Use it again for more runs. The executed code becomes entry points. |
+| `--instructions .c64-re-tools/local/instructions.json` | Ghidra only: write every instruction to this project file as JSON. Each has `address`, `bytes`, `mnemonic`, `mode` and `operand` in 6502 syntax. A branch, jump or call also has its `target`. When the knowledge has coverage, `executed` tells if it ran. |
+| `--space drive8` | The knowledge space of the program: `drive8` for code from the 1541 drive, or `bank0` to `bank255` for a cartridge bank. The default is `c64`. The seeds come from that space, and the findings go into it. |
 | `--macro-batch .c64-re-tools/local/macros.json` | Write the macro candidates to this project file as a batch for `apply` of the c64-knowledge skill. |
 
 The script prints one JSON object. Addresses are `$` and four hex digits.
@@ -50,10 +49,10 @@ Facts that an analyzer found are not seeds. A new analysis can then correct or r
 More seeds come from evidence:
 
 - The start of each `code` region and each entry of a `jumps` table from the user or the LLM is an entry point.
-- With `--coverage`, each executed instruction that starts a flow is an entry point. A flow starts after a gap, or after RTS, RTI, JMP, BRK or JSR. Then the analyzers find code that only a vector, an RTS table or an interrupt reaches. They also find the code after a JSR to a routine that an analyzer thinks does not return.
+- When the knowledge has coverage, each executed instruction of the program that starts a flow is an entry point. A flow starts after a gap, or after RTS, RTI, JMP, BRK or JSR. Then the analyzers find code that only a vector, an RTS table or an interrupt reaches. They also find the code after a JSR to a routine that an analyzer thinks does not return.
 - For Ghidra, a flow start is a routine only when no executed branch or JMP from another flow gets to it. Also, no JSR can be immediately before it. Another flow start is code in a routine, and Ghidra does not make a function of it.
-- With `--coverage`, Ghidra gives `coverageGaps`: the executed instruction starts that are not in its instructions. Normally the count is 0. Each start in the list is missing from `--instructions` and from the source of c64-source. Examine the code at the start. Overlapped instructions and self-modified code can cause a gap. A start in a `dual-use` region is a known overlap, for example a BIT skip, and is not in the list.
-- With `--coverage`, some RAM under a ROM is data for the analysis. At these addresses, the runs used the ROM and did not read or execute the RAM. Then a call into the KERNAL does not decode the RAM bytes under it as code. A knowledge routine or an `--entry` in such a range keeps its code. Ghidra does not follow BRK, because the vector at `$fffe` is in ROM unless the program removes the KERNAL.
+- When the knowledge has coverage, Ghidra gives `coverageGaps`: the executed instruction starts in the program that are not in its instructions. Normally the count is 0. Each start in the list is missing from `--instructions` and from the source of c64-source. Examine the code at the start. Overlapped instructions and self-modified code can cause a gap. A start in a `dual-use` region is a known overlap, for example a BIT skip, and is not in the list.
+- When the knowledge has coverage, some RAM under a ROM is data for the analysis. At these addresses, the runs used the ROM and did not read or execute the RAM. Then a call into the KERNAL does not decode the RAM bytes under it as code. A knowledge routine or an `--entry` in such a range keeps its code. Ghidra does not follow BRK, because the vector at `$fffe` is in ROM unless the program removes the KERNAL.
 
 The analyzers take at most 1024 entry points. Knowledge routines and `--entry` come first, then code regions and tables, then coverage. Ghidra also takes at most 8192 flow starts that are code in a routine. `coverageSeeds` gives how many entry points the coverage gave and how many the analysis used. `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
 
@@ -79,10 +78,10 @@ The analyzers take at most 1024 entry points. Knowledge routines and `--entry` c
    - If a list is not complete, `rest` gives the c64-knowledge command that lists all of them. For `candidates`, `rest` tells you to give a larger `--max-listed`.
    - `conflicts` lists the places where the analyzer and the current knowledge disagree.
    - `idioms` tells what the script found by pattern: RTS dispatch tables (`rtsTables`), JMP tables (`jumpTables`) and BIT skips (`bitSkips`). It also finds the `CBM80` header of a cartridge bank at `$8000` (`cartridgeHeaders`). The two start vectors of the header become entry points. The script writes them as knowledge with the origin `heuristic`, and seeds their targets into the same analysis. `candidates` gives DOP padding (`dop`) and opcodes that the program wrote and executed (`selfModified`). For `selfModified`, the write and the execution must be in one coverage file. A coverage file does not record the order. Thus a candidate can also be code that ran first, and that the program then wrote over. To prevent this, save one coverage file for each part of the program, for example the intro and the game. A loader that copies relocated code is also such a part. Clear the memory map between the parts. Each list has a `count`. The script does not write the candidates. Look at them and decide.
-   - `candidates.pointers` gives code that makes an address from immediates. A `vector` or a `zero-page pointer` candidate stores a low byte (`low`) and a high byte (`high`) to a vector or to a zero-page pair that `(zp),y` uses. Its `target` is in the image or has a platform name. A `sprite pointer` candidate stores an immediate (`at`) to a sprite pointer of the screen at $0400 in VIC bank 0. Its `target` (the value × 64) is in a `sprite` region. For each candidate that you confirm, write operand expressions with `operand` of the c64-knowledge skill, for example `operand '<low>' --lo <target name>` and `operand '<high>' --hi <target name>`. Then a rebuild can move the target.
+   - `candidates.pointers` gives code that makes an address from immediates. A `vector` or a `zero-page pointer` candidate stores a low byte (`low`) and a high byte (`high`) to a vector or to a zero-page pair that `(zp),y` uses. Its `target` is in the program or has a platform name. A `sprite pointer` candidate stores an immediate (`at`) to a sprite pointer of the screen at $0400 in VIC bank 0. Its `target` (the value × 64) is in a `sprite` region. For each candidate that you confirm, write operand expressions with `operand` of the c64-knowledge skill, for example `operand '<low>' --lo <target name>` and `operand '<high>' --hi <target name>`. Then a rebuild can move the target.
    - `candidates.pitfalls` gives code that a C64 runs in a different way than it reads. `raster-bit-8`: the instruction at `at` reads $D011, and the instruction at `store` writes the value back. A read of $D011 gives bit 8 of the raster line in bit 7. Thus the write can move the raster interrupt to line 256 or later, and on PAL past line 311 the interrupt never comes. Examine each candidate. Where the code must not keep bit 7, add a comment and test the program.
    - `candidates.macros` gives runs of instructions that a macro writes as one line, for example `+inc16 ptr`. The script knows these 6502 idioms: `inc16`, `dec16`, `add16_8`, `add16`, `sub16`, `set16`, `mov16` and `wait_line`. It reads the code regions after the analysis. An arg has the name of a `user` or `llm` symbol or a platform name. Each candidate has `macro`, `start`, `end`, `args` and `text`. `known` counts the uses that the knowledge has. `leftOut` counts the candidates with a label inside, or with a patch or a use over them. The c64-source skill writes such a candidate as instructions. With `--macro-batch`, `batch` gives the file, the count of writes and the `apply` command. The batch holds the macros that the knowledge does not have, and the uses. When the knowledge has a macro with the same name and another body, `otherMacros` tells that the batch does not have its uses. The script does not write the candidates. Apply the batch, then generate the source again.
-   - With `--coverage`, a code finding replaces the DXA or Ghidra data where a run executed an instruction start. `coverageConflicts` lists the analyzer data regions where the coverage still shows executed code. Classify them as code with the c64-knowledge skill, or as `dual-use` when the bytes are also data. For many conflicts, write all classifications in one `apply` batch of the c64-knowledge skill.
+   - When the knowledge has coverage, a code finding replaces the DXA or Ghidra data where a run executed an instruction start. `coverageConflicts` lists the analyzer data regions where the coverage still shows executed code. Classify them as code with the c64-knowledge skill, or as `dual-use` when the bytes are also data. For many conflicts, write all classifications in one `apply` batch of the c64-knowledge skill.
 6. Give each important routine a name with the c64-knowledge skill. Then run the analysis again. The analyzers use the new names.
 
 The script records only structure: generated names, code and data regions, and references from Ghidra. The listing and the decompiled code are only for the current task. The script does not record them in the knowledge.
@@ -96,7 +95,7 @@ Automatic write:
 
 An analyzer name is a second name of the address. It is not a symbol. Each analyzer keeps its own name at an address. The generated source does not use an analyzer name, unless you give `--analyzer-names` to the c64-source skill. To use a name in the source, give it to the address with `rename` of the c64-knowledge skill. A Ghidra function that only branches and jumps get to is a `label`, not a `routine`.
 
-The script never replaces a name or a region from the user or the LLM. DXA and Ghidra do not replace the facts of each other, with one exception. With `--coverage`, a code finding replaces a DXA or Ghidra data region where a run executed an instruction start. The revision keeps the coverage files as evidence. Thus run DXA first, then Ghidra with all coverage files.
+The script never replaces a name or a region from the user or the LLM. DXA and Ghidra do not replace the facts of each other, with one exception. When the knowledge has coverage, a code finding replaces a DXA or Ghidra data region where a run executed an instruction start. Thus add all coverage maps to the knowledge first. Then run DXA, then Ghidra.
 
 A `heuristic` region replaces the part of a DXA or Ghidra region where it lies, because an idiom is specific evidence about those bytes. DXA and Ghidra never replace a `heuristic` region. If they find code there, the result shows a conflict. A heuristic table can be too long or too short, because the script cannot know its length. Correct it with the c64-knowledge skill. Your region replaces it, and a removal holds.
 
@@ -118,7 +117,7 @@ The exit status is 0 for a result, also with conflicts. The exit status is 1 for
 
 - A conflict: the analyzer finds code where the knowledge has data, or data where the knowledge has code. The knowledge stays unchanged. Find the correct answer with the c64-emulator skill, then correct the knowledge with the c64-knowledge skill.
 - A conflict with the problem "another address has this name": the knowledge has the generated name at a different address. The knowledge stays unchanged.
-- A false reference through a vector: the code jumps through a vector, for example `JMP ($0408)`, and the program writes the vector at run time. The analyzer follows the bytes that the image has there. Do these steps:
+- A false reference through a vector: the code jumps through a vector, for example `JMP ($0408)`, and the program writes the vector at run time. The analyzer follows the bytes that the program has there. Do these steps:
   1. Find the real targets with the c64-emulator skill, or in a coverage file.
   2. If the vector bytes are also code at another time, classify them as `dual-use`.
   3. Remove the false reference with `unreference`. It does not come back.

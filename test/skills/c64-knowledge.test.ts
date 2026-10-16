@@ -281,30 +281,32 @@ test("--space keeps drive code and cartridge banks apart from the C64 (D53)", ()
   assert.equal(knowledge(root, "symbols", "--space", "drive9").status, 2);
 });
 
-test("operand writes an expression after a check against the image, and at and operands show it (D65)", () => {
+test("operand writes an expression after a check against the program in the knowledge, and at and operands show it (D65, D83)", () => {
   const root = project();
   // $8079 LDA #$c0 / STA $0314 / LDA #$80
   writeFileSync(join(root, "game.prg"), Buffer.from([0x79, 0x80, 0xa9, 0xc0, 0x8d, 0x14, 0x03, 0xa9, 0x80]));
   knowledge(root, "rename", "$80c0", "irq_handler");
-  assert.equal(knowledge(root, "operand", "$8079", "--lo", "irq_handler").status, 2, "operand needs --image");
-  assert.equal(knowledge(root, "operand", "$8079", "--lo", "irq_handler", "--hi", "irq_handler", "--image", "game.prg").status, 2, "one selector only");
-  assert.deepEqual(knowledge(root, "operand", "$8079", "--lo", "irq_handler", "--image", "game.prg").json, {
-    revision: rev(root, 2),
-    operand: { address: "$8079", select: "lo", symbol: "irq_handler", text: "<irq_handler", origin: "llm", revision: rev(root, 2) },
+  const without = knowledge(root, "operand", "$8079", "--lo", "irq_handler");
+  assert.equal(without.status, 1, "operand needs the program in the knowledge");
+  assert.match((without.json.error as { message: string }).message, /knowledge\.ts image/);
+  assert.equal(knowledge(root, "image", "game.prg").json.revision, rev(root, 2));
+  assert.equal(knowledge(root, "operand", "$8079", "--lo", "irq_handler", "--hi", "irq_handler").status, 2, "one selector only");
+  assert.deepEqual(knowledge(root, "operand", "$8079", "--lo", "irq_handler").json, {
+    revision: rev(root, 3),
+    operand: { address: "$8079", select: "lo", symbol: "irq_handler", text: "<irq_handler", origin: "llm", revision: rev(root, 3) },
   });
-  const refused = knowledge(root, "operand", "$807e", "--lo", "irq_handler", "--image", "game.prg");
+  const refused = knowledge(root, "operand", "$807e", "--lo", "irq_handler");
   assert.equal(refused.status, 1);
   assert.match((refused.json.error as { message: string }).message, /<irq_handler gives \$c0, but the operand in the image is \$80/);
-  assert.equal(knowledge(root, "operand", "$807b", "--value", "CINV", "--offset=0", "--image", "game.prg").json.revision, rev(root, 3), "a platform name");
+  assert.equal(knowledge(root, "operand", "$807b", "--value", "CINV", "--offset=0").json.revision, rev(root, 4), "a platform name");
   writeFileSync(join(root, "batch.json"), JSON.stringify([{ op: "operand", address: "$807e", select: "expr", expression: ">irq_handler" }]));
-  assert.equal(knowledge(root, "apply", "batch.json").status, 2, "apply with operand writes needs --image");
-  assert.equal(knowledge(root, "apply", "batch.json", "--image", "game.prg").json.revision, rev(root, 4));
+  assert.equal(knowledge(root, "apply", "batch.json").json.revision, rev(root, 5));
   const known = knowledge(root, "at", "$807e").json as { operand: { text: string }; referencesFrom: Array<{ to: string; kind: string }> };
   assert.equal(known.operand.text, ">irq_handler");
   assert.deepEqual(known.referencesFrom.map((row) => [row.to, row.kind]), [["$80c0", "pointer"]]);
   assert.deepEqual((knowledge(root, "operands").json.operands as Array<{ address: string }>).map((row) => row.address), ["$8079", "$807b", "$807e"]);
   assert.equal(knowledge(root, "remove-symbol", "$80c0").status, 1, "the operands use it");
-  assert.equal(knowledge(root, "unoperand", "$807e").json.revision, rev(root, 5));
+  assert.equal(knowledge(root, "unoperand", "$807e").json.revision, rev(root, 6));
 });
 
 test("a command takes a start of a revision id that only one revision has, and 0 for the knowledge before every revision", () => {
@@ -328,18 +330,19 @@ test("patch, macro and use write the source knowledge, and patches, switches, ma
   const root = project();
   // $8100 INC $fb / BNE +2 / INC $fc / LDA #$00 / STA $d020
   writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x81, 0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xa9, 0x00, 0x8d, 0x20, 0xd0]));
-  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--nop").status, 2, "patch needs --image");
-  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--image", "game.prg").status, 2, "patch needs --code, --code-file or --nop");
-  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--nop", "--code", "nop", "--image", "game.prg").status, 2, "only one of them");
+  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--nop").status, 1, "patch needs the program in the knowledge");
+  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK").status, 2, "patch needs --code, --code-file or --nop");
+  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--nop", "--code", "nop").status, 2, "only one of them");
   assert.equal(knowledge(root, "rename", "$8106", "x", "--code", "nop").status, 2, "--code works only with patch");
   assert.equal(existsSync(join(root, ".c64-re-tools")), false, "a refused write creates no knowledge");
 
+  assert.equal(knowledge(root, "image", "game.prg").json.revision, rev(root, 1));
   writeFileSync(join(root, "crack.asm"), "  lda #1\n  sta $d020\n");
-  assert.deepEqual(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--code-file", "crack.asm", "--comment", "A white border.", "--image", "game.prg").json, {
-    revision: rev(root, 1),
-    patch: { start: "$8106", end: "$810a", bytes: 5, switch: "CRACK", code: "  lda #1\n  sta $d020", comment: "A white border.", origin: "llm", revision: rev(root, 1) },
+  assert.deepEqual(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--code-file", "crack.asm", "--comment", "A white border.").json, {
+    revision: rev(root, 2),
+    patch: { start: "$8106", end: "$810a", bytes: 5, switch: "CRACK", code: "  lda #1\n  sta $d020", comment: "A white border.", origin: "llm", revision: rev(root, 2) },
   });
-  assert.equal(knowledge(root, "patch", "$8100", "$8101", "DEBUG", "--nop", "--image", "game.prg").status, 0);
+  assert.equal(knowledge(root, "patch", "$8100", "$8101", "DEBUG", "--nop").status, 0);
   assert.deepEqual(knowledge(root, "switches").json, {
     switches: [
       { name: "CRACK", define: "--define CRACK=1", patches: [{ start: "$8106", end: "$810a" }] },
@@ -347,13 +350,13 @@ test("patch, macro and use write the source knowledge, and patches, switches, ma
     ],
   });
   assert.deepEqual((knowledge(root, "patches", "--switch", "DEBUG").json.patches as Array<{ code: string }>).map((row) => row.code), [""]);
-  assert.equal(knowledge(root, "unpatch", "$8100").json.revision, rev(root, 3));
+  assert.equal(knowledge(root, "unpatch", "$8100").json.revision, rev(root, 4));
 
   knowledge(root, "rename", "$00fb", "ptr");
-  assert.equal(knowledge(root, "macro", "inc16", "--params", "dst", "--body", "inc .dst\nbne +\ninc .dst+1\n+", "--comment", "Adds 1.").json.revision, rev(root, 5));
-  assert.deepEqual(knowledge(root, "use", "$8100", "$8105", "inc16", "--args", "ptr", "--image", "game.prg").json, {
-    revision: rev(root, 6),
-    use: { start: "$8100", end: "$8105", macro: "inc16", args: ["ptr"], text: "+inc16 ptr", origin: "llm", revision: rev(root, 6) },
+  assert.equal(knowledge(root, "macro", "inc16", "--params", "dst", "--body", "inc .dst\nbne +\ninc .dst+1\n+", "--comment", "Adds 1.").json.revision, rev(root, 6));
+  assert.deepEqual(knowledge(root, "use", "$8100", "$8105", "inc16", "--args", "ptr").json, {
+    revision: rev(root, 7),
+    use: { start: "$8100", end: "$8105", macro: "inc16", args: ["ptr"], text: "+inc16 ptr", origin: "llm", revision: rev(root, 7) },
   });
   const known = knowledge(root, "at", "$8103").json as { macroUse: { text: string }; patch?: unknown };
   assert.equal(known.macroUse.text, "+inc16 ptr");
@@ -369,8 +372,7 @@ test("patch, macro and use write the source knowledge, and patches, switches, ma
     { op: "use", start: "$8100", end: "$8105", macro: "inc16", args: ["$fb"] },
     { op: "patch", start: "$8106", end: "$810a", switch: "CRACK", code: "  lda #2\n  sta $d020" },
   ]));
-  assert.equal(knowledge(root, "apply", "batch.json").status, 2, "apply with use or patch writes needs --image");
-  const applied = knowledge(root, "apply", "batch.json", "--image", "game.prg").json as { writes: number; replaced: unknown[] };
+  const applied = knowledge(root, "apply", "batch.json").json as { writes: number; replaced: unknown[] };
   assert.equal(applied.writes, 4);
   assert.deepEqual((knowledge(root, "export", "--out", "k.json").json as { counts: Record<string, number> }).counts, { symbols: 1, analyzerNames: 0, regions: 0, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0, patches: 1, macros: 1, macroUses: 1 });
 });
@@ -404,15 +406,17 @@ test("join makes one batch of the batches of parallel agents, and apply writes i
 
   // $0400 LDA #$00: the low byte of draw_room ($1000).
   writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x04, 0xa9, 0x00]));
-  assert.equal(knowledge(root, "apply", "joined.json", "--image", "game.prg").status, 0);
+  assert.equal(knowledge(root, "image", "game.prg").status, 0);
+  assert.equal(knowledge(root, "apply", "joined.json").status, 0);
   assert.equal((knowledge(root, "at", "draw_room").json as { symbol: { name: string } }).symbol.name, "draw_room", "a name gives the address");
 });
 
-test("listing reads the image with the knowledge (D78)", () => {
+test("listing reads the program and the coverage in the knowledge (D78, D83)", () => {
   const root = project();
   // $1000 JSR $1010 / LDA $1020 / STA $d020 / RTS; $1010 RTS; $1020 a table.
   const bytes = [0x20, 0x10, 0x10, 0xad, 0x20, 0x10, 0x8d, 0x20, 0xd0, 0x60, 0, 0, 0, 0, 0, 0, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 8];
   writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x10, ...bytes]));
+  assert.equal(knowledge(root, "image", "game.prg").status, 0);
   writeFileSync(
     join(root, "batch.json"),
     JSON.stringify([
@@ -432,11 +436,12 @@ test("listing reads the image with the knowledge (D78)", () => {
   coverage[0x1003] = COVERAGE.ramExecute;
   coverage[0x1020] = COVERAGE.ramRead;
   writeFileSync(join(root, "run.bin"), coverage);
-  const listed = knowledge(root, "listing", "$1000", "$1021", "--image", "game.prg", "--coverage", "run.bin").json.lines as Array<Record<string, unknown>>;
+  assert.equal(knowledge(root, "coverage", "run.bin").status, 0);
+  const listed = knowledge(root, "listing", "$1000", "$1021").json.lines as Array<Record<string, unknown>>;
   assert.deepEqual(listed[0], { address: "$1000", bytes: "20 10 10", label: "main", text: "jsr helper", access: "x", referencesIn: 0, referencesOut: 1 });
   assert.deepEqual(listed[1], { address: "$1003", bytes: "ad 20 10", text: "lda table", access: "x", referencesIn: 0, referencesOut: 0, comment: "First entry." });
   assert.equal(listed[2]!.text, "sta EXTCOL", "a platform name");
   assert.deepEqual(listed.at(-1), { address: "$1020", bytes: "07 08", label: "table", text: "!byte $07,$08", access: "r", referencesIn: 0, referencesOut: 0 });
-  assert.equal(knowledge(root, "listing", "$1000", "$1001").status, 2, "listing needs --image");
+  assert.equal(knowledge(project(), "listing", "$1000", "$1001").status, 1, "listing needs the program in the knowledge");
 
 });

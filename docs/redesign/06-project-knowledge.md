@@ -33,8 +33,10 @@ The only authoritative persistent toolkit-owned project state is the knowledge t
 ├── .gitattributes        *.jsonl merge=union text eol=lf
 ├── revisions.jsonl
 └── <table>.jsonl         symbols, analyzer_names, regions, comments, references, suppressions, modules,
-                          operands, patches, macros, macro_uses
+                          operands, patches, macros, macro_uses, memory, entry, coverage
 ```
+
+The knowledge also holds the program that it describes (D83): its bytes, its entry with the entry state and the unpacker stages, and the coverage of the runs. The tools read them there and take no image or coverage path, so a project can be made again from the knowledge alone.
 
 `.c64-re-tools/local/knowledge.db` is an index of that text. It is never committed and is made again whenever a knowledge file has another SHA-256 than the index holds.
 
@@ -389,7 +391,36 @@ args                  TEXT NOT NULL      a comma list of expressions, one for ea
 origin                TEXT NOT NULL      user | llm
 ```
 
-Both have `valid_from_revision` and `valid_to_revision`. A use write is checked against the image: the instructions from the start end at the end. Its args name knowledge symbols or platform names. A rename follows into the args, the removal of a symbol that an arg uses is refused, and a macro with uses can neither be removed nor change its number of params. c64-source writes a use only when it assembles to the bytes of the image and has no label inside it; otherwise it writes the instructions with the reason.
+Both have `valid_from_revision` and `valid_to_revision`. A use write is checked against the program in the knowledge: the instructions from the start end at the end. Its args name knowledge symbols or platform names. A rename follows into the args, the removal of a symbol that an arg uses is refused, and a macro with uses can neither be removed nor change its number of params. c64-source writes a use only when it assembles to the bytes of the image and has no label inside it; otherwise it writes the instructions with the reason.
+
+### `memory`, `entries` and `coverage` (D83)
+
+The program and what the runs did. Only the user or the LLM writes them, through `knowledge.ts image` and `coverage`.
+
+```text
+memory (memory.jsonl):
+address               INTEGER NOT NULL   the first byte of the row
+bytes                 TEXT NOT NULL      at most 64 bytes as lowercase hex, never across a multiple of 64
+origin                TEXT NOT NULL      user | llm
+
+entries (entry.jsonl):
+address               INTEGER NOT NULL   the entry of the program; one current row per space
+state                 TEXT               the entry state of a c64-unpacker capture, as JSON
+stages                TEXT               the stages of the capture, as JSON
+origin                TEXT NOT NULL      user | llm
+
+coverage (coverage.jsonl):
+kind                  TEXT NOT NULL      r w x rom-r rom-x io-r io-w io-x, or wx
+start_address         INTEGER NOT NULL
+end_address           INTEGER NOT NULL
+origin                TEXT NOT NULL      user | llm
+```
+
+A segment of the program is a run of memory rows without a gap. `image` closes the rows whose bytes changed and adds the new ones, and replaces the entry when it changed; the same image again writes nothing. A PRG has no entry row.
+
+The coverage is the union of the imported maps as exact ranges: a range of a kind holds the addresses where some run had that flag. `wx` holds the addresses that one run both wrote and executed, so self-modified code still shows after the join. An import adds only the flags that no earlier map set, and its maps are the evidence of the revision, by path and SHA-256. Ranges for each run apart would be about 25 times as many lines in Bruce Lee.
+
+The history of a revision lists no memory or coverage rows: the revision's operation and evidence say what it imported. Revert takes the program and the coverage back too.
 
 ## 5. Automatic DXA/Ghidra import
 
@@ -513,7 +544,7 @@ A revision can name what it rests on (D42): a coverage run, a test, another proj
 ```text
 revision   INTEGER NOT NULL      the revision of the change
 kind       TEXT NOT NULL         coverage | test | file | note
-ref        TEXT NOT NULL         a project path, or the text of a note
+ref        TEXT NOT NULL         a project path, the path of an imported coverage map, or the text of a note
 sha256     TEXT                  the SHA-256 of the file when the change was written
 ```
 
@@ -608,7 +639,7 @@ The index uses SQLite rollback-journal semantics, and SQLite owns locking: one w
 
 ## 11. What is not stored in v1
 
-Do not create tables merely because data can be observed. The initial schema does not require separate tables for:
+Do not create tables merely because data can be observed. The program and the joined coverage are stored because every later step is made from them (D83). The initial schema does not require separate tables for:
 
 - variants/releases;
 - artifacts;

@@ -11,6 +11,7 @@ import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts"
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { listAnalyzerNames, listSymbols } from "#src/knowledge/read.ts";
+import { programImage } from "#src/knowledge/program.ts";
 
 export class ScenarioError extends Error {}
 
@@ -44,7 +45,7 @@ type StepBody =
   | { load: true }
   | { autostart: true }
   | { snapshot: string }
-  | { normalize: string }
+  | { normalize: true }
   | ActionStep
   | { observe: string; memory?: Array<Location | MemoryObservation>; registers?: ObservedRegister[]; screen?: ScreenPolicy; vicii?: boolean; sprites?: number[] };
 
@@ -157,7 +158,7 @@ function checkStep(kind: string, step: Record<string, unknown>, at: string, fail
       if (typeof step.snapshot !== "string" || step.snapshot === "") fail(`${at}: snapshot needs a .vsf file in the project`);
       return;
     case "normalize":
-      if (typeof step.normalize !== "string" || step.normalize === "") fail(`${at}: normalize needs an entry state file in the project`);
+      if (step.normalize !== true) fail(`${at}: normalize is true: it writes the entry state of the knowledge`);
       return;
     case "write":
     case "registers":
@@ -301,19 +302,20 @@ interface Observation {
   diffPng?: string;
 }
 
-/** Writes pages 0-3 and $00/$01 from an entry state file (D43, D46): both sides then start from the same RAM. */
-async function normalize(client: ViceSessionClient, path: string): Promise<void> {
-  let state: { pages?: Record<string, string>; cpuPort?: Record<string, number> };
+/** Writes pages 0-3 and $00/$01 from the entry state of the knowledge (D43, D46, D83): both sides then start from the same RAM. */
+async function normalize(client: ViceSessionClient): Promise<void> {
+  const db = openForRead();
+  let state: { pages?: Record<string, string>; cpuPort?: Record<string, number> } | undefined;
   try {
-    state = JSON.parse(readProjectFile(path).bytes.toString("utf8")) as typeof state;
-  } catch (error) {
-    if (error instanceof WireFailure) throw error;
-    throw new ScenarioError(`${path} is not an entry state file: ${(error as Error).message}`);
+    state = programImage(db)?.state as typeof state;
+  } finally {
+    db?.close();
   }
+  if (state === undefined) throw new ScenarioError("normalize needs the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json> of the c64-knowledge skill");
   const pages = ["$0000", "$0100", "$0200", "$0300"].map((page) => state.pages?.[page]);
   const port = [state.cpuPort?.$00, state.cpuPort?.$01];
   if (pages.some((page) => typeof page !== "string" || !/^[0-9a-f]{512}$/.test(page)) || port.some((value) => !isInteger(value, 0, 0xff))) {
-    throw new ScenarioError(`${path} is not an entry state file: it needs pages $0000 to $0300 and cpuPort $00 and $01`);
+    throw new ScenarioError("the entry state of the knowledge is not the entry state of a c64-unpacker capture: it needs pages $0000 to $0300 and cpuPort $00 and $01");
   }
   if ((await client.status()).state === "running") await client.execution({ action: "pause", space: "c64" });
   // Pages 0 to 3 in RAM from $0002, then the CPU port: the port bits switch what the CPU sees.
@@ -400,7 +402,7 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
     } else if ("snapshot" in step) {
       await client.snapshotRestore(readProjectFile(step.snapshot).bytes);
     } else if ("normalize" in step) {
-      await normalize(client, step.normalize);
+      await normalize(client);
     } else {
       const { side: _side, ...action } = step;
       const notReached = await runActionStep(client, action as ActionStep, at);

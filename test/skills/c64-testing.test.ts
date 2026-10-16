@@ -91,13 +91,14 @@ test("an excluded byte does not count, and steps for one side and the new step k
   assert.equal(compare(new Map([["c", observation([1, 5])]]), new Map([["c", observation([1, 6])]])).length, 1, "the second byte still counts");
   const scenario = (steps: unknown[]) => scenarioFile("d46.json", { ...valid, steps: [...steps, { observe: "x", memory: ["$c000"] }] });
   assert.equal(
-    readScenario(scenario([{ type: " ", side: "original" }, { snapshot: "s.vsf", side: "rebuild" }, { normalize: "entry_state.json" }, { runUntil: { raster: 250 }, timeoutFrames: 2 }, { runUntil: { at: "$c000", raster: 100 }, timeoutFrames: 2 }])).steps.length,
+    readScenario(scenario([{ type: " ", side: "original" }, { snapshot: "s.vsf", side: "rebuild" }, { normalize: true }, { runUntil: { raster: 250 }, timeoutFrames: 2 }, { runUntil: { at: "$c000", raster: 100 }, timeoutFrames: 2 }])).steps.length,
     6,
   );
   for (const bad of [
     [{ type: " ", side: "both" }],
     [{ observe: "y", memory: ["$c000"], side: "original" }],
     [{ runUntil: { raster: 400 }, timeoutFrames: 2 }],
+    [{ normalize: "entry_state.json" }],
     [{ observe: "y", memory: [{ at: "$d01e", exclude: [{ at: "$d01e" }] }] }],
   ]) {
     assert.throws(() => readScenario(scenario(bad)), ScenarioError, JSON.stringify(bad));

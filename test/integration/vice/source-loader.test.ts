@@ -1,12 +1,13 @@
-// The loader of c64-source (D48): generated from an image.json and an
-// entry_state.json, simulated, then run in the emulator to the entry, where
-// memory, $00/$01, the registers, the VIC-II display registers, the VIC bank
-// and the raster line (D60) must equal the entry state. The segments
+// The loader of c64-source (D48): generated from the program in the knowledge
+// (D83), put in from an image.json and an entry_state.json, simulated, then
+// run in the emulator to the entry, where memory, $00/$01, the registers,
+// the VIC-II display registers, the VIC bank and the raster line (D60) must
+// equal the entry state. The segments
 // lie under the loader, at $c000 and under the I/O area. Opt-in with
 // C64RT_LIVE_VICE; Ghidra and ACME are necessary too.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -81,7 +82,11 @@ test("the loader puts every segment and pages 0-3 in place and gets to the entry
     }),
   );
 
-  const child = spawn(process.execPath, [...process.execArgv, script, "unpacked/image.json", "--out", "src", "--loader"], {
+  // The capture goes into the knowledge (D83), and the loader is generated from there.
+  const knowledgeScript = resolve(import.meta.dirname, "../../../skills/c64-knowledge/scripts/knowledge.ts");
+  const imported = spawnSync(process.execPath, [...process.execArgv, knowledgeScript, "image", "unpacked/image.json"], { cwd: project, encoding: "utf8" });
+  assert.equal(imported.status, 0, imported.stdout + imported.stderr);
+  const child = spawn(process.execPath, [...process.execArgv, script, "--out", "src", "--loader"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
     stdio: ["ignore", "pipe", "inherit"],

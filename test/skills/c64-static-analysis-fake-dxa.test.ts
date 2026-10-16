@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,6 +13,7 @@ import { after, test } from "node:test";
 
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { classifyRegion } from "../../src/knowledge/write.ts";
+import { setImage } from "../../src/knowledge/program.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
@@ -35,15 +36,18 @@ function fakeDxa(name: string, lines: string[]): string {
   return program;
 }
 
-function project(name: string): string {
+/** A project with the PRG as its program in the knowledge (D83): the image is revision 1. */
+function project(name: string, space = "c64"): string {
   const root = join(scratch, name);
   mkdirSync(root);
-  writeFileSync(join(root, "game.prg"), prg);
+  const db = openForWrite(root);
+  setImage(db, { origin: "user" }, { space, segments: [{ start: 0x1000, end: 0x1004 }], byteAt: (address) => prg[address - 0x1000 + 2]! });
+  db.close();
   return root;
 }
 
 async function analyze(root: string, dxa: string, ...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [...process.execArgv, script, "game.prg", "--analyzer", "dxa", ...args], {
+  const child = spawn(process.execPath, [...process.execArgv, script, "--analyzer", "dxa", ...args], {
     cwd: root,
     env: { ...process.env, C64RT_DXA: dxa, C64RT_HOST: "127.0.0.1:1" },
     stdio: ["ignore", "pipe", "pipe"],
@@ -69,13 +73,13 @@ test("a DXA conflict names what DXA found under the key dxa", { timeout: 60_000 
   ]);
 });
 
-test("a refused DXA import in a new project creates no knowledge and writes no listing", { timeout: 60_000 }, async () => {
+test("a refused DXA import writes no revision and no listing", { timeout: 60_000 }, async () => {
   const root = project("refused");
   const twoNames = ["1000 start:", "1000 a9 00 \tlda #$00", "1002 start:", "1002 60 \trts", "1003 01 02 \t.byt $01,$02", ""];
   const { status, json } = await analyze(root, fakeDxa("dxa-two-names", twoNames), "--listing", "analysis/game.lst");
   assert.equal(status, 1, JSON.stringify(json));
   assert.equal((json.error as { code: string }).code, "invalid-input");
-  assert.equal(existsSync(join(root, ".c64-re-tools")), false);
+  assert.equal(readFileSync(join(root, ".c64-re-tools", "knowledge", "revisions.jsonl"), "utf8").trim().split("\n").length, 1, "only the image");
   assert.equal(existsSync(join(root, "analysis")), false);
 });
 
@@ -83,7 +87,7 @@ test("an accepted DXA import records the findings and writes the listing", { tim
   const root = project("accepted");
   const { status, json } = await analyze(root, fakeDxa("dxa-accepted", LISTING), "--listing", "analysis/game.lst");
   assert.equal(status, 0, JSON.stringify(json));
-  assert.equal(json.revision, nthIn(root, 1));
+  assert.equal(json.revision, nthIn(root, 2));
   assert.equal(json.listing, "analysis/game.lst");
   assert.equal(existsSync(join(root, "analysis", "game.lst")), true);
 });
@@ -120,7 +124,7 @@ test("an import refused because knowledge changed during the analysis tells to r
 });
 
 test("--space imports the findings into that space and leaves the C64 alone (D53)", { timeout: 60_000 }, async () => {
-  const root = project("space");
+  const root = project("space", "drive8");
   const dxa = fakeDxa("dxa-space", LISTING);
   const run = await analyze(root, dxa, "--space", "drive8");
   assert.equal(run.status, 0, JSON.stringify(run.json));
@@ -132,6 +136,5 @@ test("--space imports the findings into that space and leaves the C64 alone (D53
   } finally {
     db.close();
   }
-  assert.equal((await analyze(root, dxa, "--space", "drive8", "--coverage", "x.bin")).status, 2, "coverage is of the C64 CPU");
   assert.equal((await analyze(root, dxa, "--space", "drive9")).status, 2);
 });

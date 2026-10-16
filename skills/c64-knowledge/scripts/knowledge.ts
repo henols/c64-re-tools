@@ -14,7 +14,6 @@ import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts"
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
-import { readCoverageFiles } from "#src/host-client/coverage.ts";
 import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import {
@@ -99,7 +98,7 @@ import {
   type WriteContext,
 } from "#src/knowledge/write.ts";
 import { platformNames } from "#src/platform.ts";
-import { addCoverage, coverageRuns, programImage, setImage, type ImageRequest } from "#src/knowledge/program.ts";
+import { addCoverage, coverageRuns, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
@@ -131,11 +130,12 @@ Read (no database needed):
   revisions [--limit N --before R]
   revision <revision>
   export --out <file> [--start A --end A --origin O]   all current knowledge to a project file
-  listing <start> <end> --image <file> [--coverage <file>]... [--out <file>]
-                                      the image as ACME lines with names, operand
+  listing <start> <end> [--out <file>]
+                                      the program as ACME lines with names, operand
                                       expressions, comments, the access of each line
-                                      (x executed, r read, w written) and the
-                                      references in and out; --out writes it as text
+                                      in the coverage (x executed, r read, w written)
+                                      and the references in and out; --out writes it
+                                      as text
 
 Every command takes --space S: c64 (the default), drive8 for code in the 1541
 drive, or bank0 to bank255 for cartridge banks. A write in a batch can name its
@@ -155,15 +155,15 @@ Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
   unreference <from> <to> <kind>
   module <start> <file.asm> [--title T]   a file of generated source starts here
   unmodule <start>
-  operand <address> --lo|--hi|--value <symbol> [--offset N] --image <file>
-  operand <address> --expr <text> --image <file>
+  operand <address> --lo|--hi|--value <symbol> [--offset N]
+  operand <address> --expr <text>
                            write the operand of the instruction at <address> as
                            an expression: the low or high byte of symbol + N, the
                            value symbol + N, or ACME expression text; refused when
-                           it does not give the operand in the image (image.json
-                           or PRG); give a negative offset as --offset=-1
+                           it does not give the operand in the program of the
+                           knowledge; give a negative offset as --offset=-1
   unoperand <address>
-  patch <start> <end> <SWITCH> --code <text>|--code-file <file>|--nop [--comment T] --image <file>
+  patch <start> <end> <SWITCH> --code <text>|--code-file <file>|--nop [--comment T]
                            ACME code that replaces <start>-<end> when the build
                            defines SWITCH as 1 (c64-assembler --define SWITCH=1);
                            NOP fills the rest of the range; --nop puts only NOP
@@ -171,7 +171,7 @@ Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
   macro <name> [--params a,b] --body <text>|--body-file <file> [--comment T]
                            an ACME macro; the body names a param with a dot: .a
   unmacro <name>
-  use <start> <end> <macro> [--args "x, y"] --image <file>
+  use <start> <end> <macro> [--args "x, y"]
                            write the instructions <start>-<end> as one use of
                            the macro, with one expression for each param
   unuse <start>
@@ -194,7 +194,8 @@ Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
                            operand and module win, and its regions come last
   apply <file>             many writes from a JSON file ('-' reads standard input),
                            all as one revision, or none when one is refused;
-                           operand, patch and use writes need --image <file>
+                           operand, patch and use writes are checked against the
+                           program of --space in the knowledge
 
 Write options:
   --reason <text>          why, kept with the revision
@@ -379,7 +380,6 @@ function run(argv: string[]): unknown {
       value: { type: "string" },
       expr: { type: "string" },
       offset: { type: "string" },
-      image: { type: "string" },
       code: { type: "string" },
       "code-file": { type: "string" },
       nop: { type: "boolean" },
@@ -391,7 +391,6 @@ function run(argv: string[]): unknown {
       switch: { type: "string" },
       macro: { type: "string" },
       analyzer: { type: "boolean" },
-      coverage: { type: "string", multiple: true },
       help: { type: "boolean" },
     },
   });
@@ -432,7 +431,6 @@ function run(argv: string[]): unknown {
     if (values[option] !== undefined && command !== "operand") throw new UsageError(`--${option} works only with operand`);
   }
   const only: Array<[keyof typeof values, readonly string[]]> = [
-    ["image", ["operand", "patch", "use", "apply"]],
     ["code", ["patch"]],
     ["code-file", ["patch"]],
     ["nop", ["patch"]],
@@ -449,7 +447,7 @@ function run(argv: string[]): unknown {
     command === "image" || command === "coverage"
       ? programOperation(command, args, context, space)
       : command === "apply"
-      ? applyOperation(args, context, space, values.image)
+      ? applyOperation(args, context, space)
       : command === "operand"
         ? operandOperation(args, values, context, space)
         : command === "patch" || command === "macro" || command === "use"
@@ -460,8 +458,6 @@ function run(argv: string[]): unknown {
 
 type ReadValues = {
   analyzer?: boolean | undefined;
-  image?: string | undefined;
-  coverage?: string[] | undefined;
   kind?: string | undefined;
   type?: string | undefined;
   name?: string | undefined;
@@ -472,19 +468,10 @@ type ReadValues = {
   macro?: string | undefined;
 };
 
-/** The lookups of a listing (D78): the image, the knowledge of the space and the platform names of the C64. */
-function listingSource(db: DatabaseSync | undefined, imagePath: string | undefined, coveragePaths: string[], space: string): ListingSource {
-  if (imagePath === undefined) throw new UsageError("listing reads the bytes from the image: give --image <image.json|prg>");
-  let image: ReturnType<typeof readImage>;
-  try {
-    image = readImage(imagePath);
-  } catch (error) {
-    if (error instanceof ImageError) throw new UsageError(error.message);
-    throw error;
-  }
-  const coverage = readCoverageFiles(coveragePaths, (message) => {
-    throw new UsageError(message);
-  });
+/** The lookups of a listing (D78): the program and the coverage in the knowledge (D83), the knowledge of the space and the platform names of the C64. */
+function listingSource(db: DatabaseSync | undefined, space: string): ListingSource {
+  const image = requireProgram(db, space);
+  const coverage = programCoverage(db, space)?.map;
   const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
   const platform = new Map(space === DEFAULT_SPACE ? platformNames().map((entry) => [entry.address, entry.name]) : []);
   return {
@@ -518,7 +505,7 @@ function readAnswer(db: DatabaseSync | undefined, command: string, args: string[
       const start = address(args[0], "start");
       const end = address(args[1], "end");
       if (end < start) throw new UsageError("the end must not be before the start");
-      const source = listingSource(db, values.image, values.coverage ?? [], space);
+      const source = listingSource(db, space);
       const lines = listing(source, start, end);
       if (values.out !== undefined) {
         writeProjectFile(values.out, Buffer.from(listingText(lines), "utf8"), { what: "--out" });
@@ -740,19 +727,12 @@ function programOperation(command: "image" | "coverage", args: string[], context
 }
 
 /**
- * The image that operand, patch and macro use writes are checked against (D65,
- * D72, D73), with the platform names. A byte outside the segments of the image
- * is not in the image.
+ * The program in the knowledge (D83) that operand, patch and macro use writes
+ * are checked against (D65, D72, D73), with the platform names. A byte outside
+ * the segments of the program is not in it.
  */
-function operandImage(path: string | undefined, what: string): OperandImage {
-  if (path === undefined) throw new UsageError(`${what} checks the write against the image: give --image <image.json|prg>`);
-  let image: ReturnType<typeof readImage>;
-  try {
-    image = readImage(path);
-  } catch (error) {
-    if (error instanceof ImageError) throw new UsageError(error.message);
-    throw error;
-  }
+function operandImage(db: DatabaseSync, space: string): OperandImage {
+  const image = requireProgram(db, space);
   const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
   return { byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined), platform: new Map(platformNames().map((entry) => [entry.name, entry.address])) };
 }
@@ -779,9 +759,8 @@ function operandOperation(args: string[], values: Record<string, unknown>, conte
     request.symbol = values[select] as string;
     if (values.offset !== undefined) request.offset = offsetOf(values.offset, "--offset");
   }
-  const image = operandImage(values.image as string | undefined, "operand");
   return (db) => {
-    const result = setOperand(db, { ...context, image }, request);
+    const result = setOperand(db, { ...context, image: operandImage(db, space) }, request);
     return { revision: result.revision, operand: operand(result.current), ...(result.previous === undefined ? {} : { previous: operand(result.previous) }) };
   };
 }
@@ -809,9 +788,8 @@ function sourceOperation(command: "patch" | "macro" | "use", args: string[], val
       const code = textOrFile(values, "code", "--code");
       if ((code === undefined) === (values.nop !== true)) throw new UsageError("patch needs exactly one of --code, --code-file or --nop");
       const request = { space, start: address(args[0], "start"), end: address(args[1], "end"), switch: args[2], code: code ?? "", ...(comment === undefined ? {} : { comment }) };
-      const image = operandImage(values.image as string | undefined, "patch");
       return (db) => {
-        const result = setPatch(db, { ...context, image }, request);
+        const result = setPatch(db, { ...context, image: operandImage(db, space) }, request);
         return { revision: result.revision, patch: patch(result.current), ...(result.previous === undefined ? {} : { previous: patch(result.previous) }) };
       };
     }
@@ -828,9 +806,8 @@ function sourceOperation(command: "patch" | "macro" | "use", args: string[], val
     case "use": {
       if (args[2] === undefined) throw new UsageError("the macro name is missing");
       const request = { space, start: address(args[0], "start"), end: address(args[1], "end"), macro: args[2], args: commaList((values.args as string | undefined) ?? "") };
-      const image = operandImage(values.image as string | undefined, "use");
       return (db) => {
-        const result = setMacroUse(db, { ...context, image }, request);
+        const result = setMacroUse(db, { ...context, image: operandImage(db, space) }, request);
         return { revision: result.revision, use: macroUse(result.current), ...(result.previous === undefined ? {} : { previous: macroUse(result.previous) }) };
       };
     }
@@ -838,7 +815,7 @@ function sourceOperation(command: "patch" | "macro" | "use", args: string[], val
 }
 
 /** apply <file>: the batch as BatchOperation values, checked before the database opens. */
-function applyOperation(args: string[], context: WriteContext, space: string, imagePath: string | undefined): WriteOperation {
+function applyOperation(args: string[], context: WriteContext, space: string): WriteOperation {
   if (args.length !== 1) throw new UsageError("apply needs one file, or - for standard input");
   const text = args[0] === "-" ? readFileSync(0, "utf8") : readProjectFile(args[0]!).bytes.toString("utf8");
   let parsed: unknown;
@@ -850,9 +827,8 @@ function applyOperation(args: string[], context: WriteContext, space: string, im
   if (!Array.isArray(parsed)) throw new UsageError("the batch is a JSON list of writes, for example [{\"op\": \"rename\", \"address\": \"$2100\", \"name\": \"update_player\"}]");
   const operations = parsed.map((item, index) => batchOperation(item, `write ${index + 1}`, space));
   const checked = operations.some((operation) => operation.op === "operand" || operation.op === "patch" || operation.op === "use");
-  const withImage = checked ? { ...context, image: operandImage(imagePath, "apply with operand, patch or use writes") } : context;
   return (db) => {
-    const applied = applyBatch(db, withImage, operations);
+    const applied = applyBatch(db, checked ? { ...context, image: operandImage(db, space) } : context, operations);
     // replaced: each write that replaced a row of another origin, with that row as previous gives it for one write (b2/07).
     const replaced = applied.steps.flatMap((step, index) =>
       step.previous === undefined

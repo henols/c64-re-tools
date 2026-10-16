@@ -45,7 +45,7 @@ The run file gives where to start (a program, or a snapshot file), the steps, an
 | `{ "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" }` | Restore a snapshot file. |
 | `{ "save": "room3" }` | Write the state now to `room3.vsf` in the output directory. |
 | `{ "screen": "room3" }` | Write the screen to `room3.png`. |
-| `{ "coverage": "room3" }` | Write the coverage map since the start or the last coverage step to `room3.bin`, then clear the map. |
+| `{ "coverage": "room3" }` | Write the coverage map since the start or the last coverage step to `room3.bin`, then clear the map. Add the map to the knowledge with `coverage` of the c64-knowledge skill. |
 | `{ "observe": "room3", "memory": ["$c100"], "registers": true }` | Record memory, registers, `vicii` or `sprites` in `results.json`. |
 | `{ "trace": "d011", "points": [{ "kind": "write", "at": "$d011" }], "frames": 100 }` | Record each hit of the points for 100 frames in `d011.json`: the instruction, its registers and the raster line and cycle. A point is `exec`, `read` or `write`, at an address or a name, with an optional `end`. `maxHits` limits the hits. |
 | `{ "observe": "all3", "memory": "all" }` | Write all 64 KiB of RAM to `all3.bin`, also the RAM under the ROMs and the I/O area. |
@@ -118,7 +118,7 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 - A FAIL with only a `screen` difference: add `vicii` or `sprites` to the observation to find which chip state is different.
 - A program that uses random numbers: set the random seed with a `write` step on both sides. If that is not possible, observe only values that do not depend on the random numbers.
-- The two sides start differently, for example the original after a cracked intro. Give the steps that only one side needs a `side`. Then make the memory the same with a `normalize` step from the entry state of the c64-unpacker skill.
+- The two sides start differently, for example the original after a cracked intro. Give the steps that only one side needs a `side`. Then make the memory the same with a `normalize` step. It writes the entry state of the capture in the knowledge.
 - Frame counts drift by one frame between the sides: the sides got to the same address at different raster positions. Do not sync on an IRQ handler. Sync on a value that the IRQ changes, with `runUntil` `memory`, or on an address and a raster line together.
 - A byte that cannot be the same on both sides, for example a read-only collision register: use `exclude` with the reason. Do not use `exclude` to hide a real difference.
 

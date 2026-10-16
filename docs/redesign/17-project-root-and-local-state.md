@@ -72,6 +72,8 @@ The committed toolkit-owned project state is:
 
 Beside it, `.c64-re-tools/local/` holds the index `knowledge.db` and what the agent saves for itself: script results, batches and step files (D70). It has a `.gitignore` with `*`, so git ignores it in a workspace and in a single project alike. The scripts and the MCP server make it when they resolve a project that has `.c64-re-tools/`, and the first knowledge write makes it with the index.
 
+The program and the coverage are knowledge (D83): a capture and the coverage maps go to `local/`, and `knowledge.ts image` and `coverage` put them into the knowledge. No `unpacked/` or `coverage/` folder is kept.
+
 Each file that the agent makes goes to `local/` first (D82). A file leaves `local/` only when the knowledge cites it as evidence: a run goes to `runs/<name>/` with its run file, results and snapshots. `--evidence` refuses a file in `local/`, so the move comes before the citation.
 
 Do not create other runtime/cache trees in the project, such as:

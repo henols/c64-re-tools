@@ -18,7 +18,6 @@ export interface SourceLine {
 export interface SourceMap {
   /** The source directory, relative to the project folder. */
   directory: string;
-  image: string;
   space: Space;
   revision: string;
   files: string[];
@@ -60,7 +59,6 @@ export function readSourceMap(directory: string): SourceMap {
   const byName = new Map(labels.map((label) => [label.name, label]));
   return {
     directory,
-    image: String(raw.image),
     space: String(raw.space ?? "c64") as Space,
     revision: String(raw.revision),
     files: (raw.files as unknown[]).map(String),
