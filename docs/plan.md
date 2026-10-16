@@ -415,7 +415,7 @@ A code review of the whole project found ten faults: two crashes of `link.ts` on
 - [ ] M30.2 **Coverage evidence** — the evidence of a coverage map records its space (D86); a map in one space is imported into another; `--evidence coverage:<map>` cites the latest import of the map in the space of the write; a map and a file of evidence are named by their normalized project path.
 - [x] M30.3 **generate.ts deletes only inside the project** — `--out` that leads out of the project through a symbolic link is refused before a file is deleted; `writeProjectFile` makes no directory outside the project.
 - [x] M30.4 **image.json that is no object** — `null`, a segment or a stage that is no object is refused as no image.json.
-- [ ] M30.5 **link.ts reads each file once** — the text of each file, the line count of each target, the body end of each name and the project root are kept for the run.
+- [x] M30.5 **link.ts reads each file once** — the text of each file, the line count of each target, the body end of each name and the project root are kept for the run.
 
 ## Decisions
 

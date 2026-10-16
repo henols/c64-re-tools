@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { findProject, namedProject, ProjectError, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
+import { findProject, namedProject, ProjectError, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
 
 const root = process.cwd();
 
@@ -125,5 +125,25 @@ test("a project gets .c64-re-tools/local/ with a .gitignore that ignores everyth
     mkdirSync(plain);
     resolveProject(undefined, plain);
     assert.equal(existsSync(join(plain, ".c64-re-tools")), false);
+  });
+});
+
+test("projectRoot keeps the lookup for a working directory and looks again after a change of directory", () => {
+  withHome((home) => {
+    const first = join(home, "first");
+    const second = join(home, "second");
+    for (const folder of [first, second]) mkdirSync(join(folder, ".c64-re-tools"), { recursive: true });
+    mkdirSync(join(first, "src"));
+    const saved = process.cwd();
+    try {
+      process.chdir(join(first, "src"));
+      assert.equal(projectRoot(), first);
+      assert.equal(projectRoot(), first);
+      process.chdir(second);
+      assert.equal(projectRoot(), second);
+      assert.equal(existsSync(join(second, ".c64-re-tools", "local", ".gitignore")), true);
+    } finally {
+      process.chdir(saved);
+    }
   });
 });

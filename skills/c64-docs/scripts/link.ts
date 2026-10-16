@@ -60,6 +60,9 @@ function markdownFiles(directory: string): string[] {
   return found;
 }
 
+/** The text of each file that the run read: a page, a source file or a reference page is read once. */
+const texts = new Map<string, string | undefined>();
+
 const files: Files = {
   inside: (path) => {
     try {
@@ -78,12 +81,16 @@ const files: Files = {
     }
   },
   text: (path) => {
+    if (texts.has(path)) return texts.get(path);
+    let text: string | undefined;
     try {
       const real = resolveProjectFile(path);
-      return statSync(real).isFile() ? readFileSync(real, "utf8") : undefined;
+      text = statSync(real).isFile() ? readFileSync(real, "utf8") : undefined;
     } catch {
-      return undefined;
+      text = undefined;
     }
+    texts.set(path, text);
+    return text;
   },
 };
 
@@ -126,14 +133,21 @@ function run(argv: string[]): { output: Record<string, unknown>; failed: boolean
   const routines = symbols.filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address).sort((a, b) => a - b);
   const named = [...new Set(symbols.map((symbol) => symbol.address))].sort((a, b) => a - b);
   const kinds = new Map(symbols.map((symbol) => [symbol.name, symbol.kind]));
+  const bodyEnds = new Map<string, number | undefined>();
   const bodyEnd = (name: string) => {
+    if (bodyEnds.has(name)) return bodyEnds.get(name);
     const address = addresses.get(name);
-    if (address === undefined) return undefined;
-    const next = ((kinds.get(name) === "routine" ? routines : named).find((other) => other > address) ?? 0x10000) - 1;
-    const file = map.lineOf(address)?.file;
-    if (file === undefined) return Math.min(next, address + MAX_BODY - 1);
-    let end = address;
-    while (end < next && map.lineOf(end + 1)?.file === file) end++;
+    let end: number | undefined;
+    if (address !== undefined) {
+      const next = ((kinds.get(name) === "routine" ? routines : named).find((other) => other > address) ?? 0x10000) - 1;
+      const file = map.lineOf(address)?.file;
+      if (file === undefined) end = Math.min(next, address + MAX_BODY - 1);
+      else {
+        end = address;
+        while (end < next && map.lineOf(end + 1)?.file === file) end++;
+      }
+    }
+    bodyEnds.set(name, end);
     return end;
   };
   const nameAt = new Map(symbols.map((symbol) => [symbol.address, symbol.name]));
@@ -200,7 +214,9 @@ function run(argv: string[]): { output: Record<string, unknown>; failed: boolean
     if (linked.changed === 0) continue;
     links += linked.changed;
     changedPages.push(page);
-    if (!values.check) writeProjectFile(page, Buffer.from(linked.text, "utf8"));
+    if (values.check) continue;
+    writeProjectFile(page, Buffer.from(linked.text, "utf8"));
+    texts.set(page, linked.text);
   }
   const byKind: Record<string, number> = {};
   for (const problem of problems) byKind[problem.kind] = (byKind[problem.kind] ?? 0) + 1;

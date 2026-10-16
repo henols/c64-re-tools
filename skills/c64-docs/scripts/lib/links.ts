@@ -136,6 +136,11 @@ export function checkLinks(page: string, text: string, files: Files): Problem[] 
     if (!anchors.has(path)) anchors.set(path, anchorsOf(path === page ? text : (files.text(path) ?? "")));
     return anchors.get(path)!;
   };
+  const lineCounts = new Map<string, number>();
+  const lineCount = (path: string) => {
+    if (!lineCounts.has(path)) lineCounts.set(path, (files.text(path) ?? "").split("\n").length);
+    return lineCounts.get(path)!;
+  };
   for (const link of linksOf(text)) {
     const report = (kind: ProblemKind, message: string) => problems.push({ page, line: link.line, kind, message });
     const fragment = link.target.includes("#") ? link.target.slice(link.target.indexOf("#") + 1) : undefined;
@@ -154,7 +159,7 @@ export function checkLinks(page: string, text: string, files: Files): Problem[] 
     if (path.endsWith(".md")) {
       if (!anchorsAt(path).has(fragment)) report("missing-anchor", `${link.target}: ${path} has no anchor ${fragment}.`);
     } else if (line !== null) {
-      const count = (files.text(path) ?? "").split("\n").length;
+      const count = lineCount(path);
       if (Number(line[1]) > count) report("missing-line", `${link.target}: ${path} has ${count} lines.`);
     }
   }

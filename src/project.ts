@@ -44,6 +44,9 @@ const SCRIPT_REMEDY = "Give --project <folder>";
 /** The folder that --project chose for this process, or undefined. */
 let chosen: string | undefined;
 
+/** The project that the D67 lookup found from a working directory, kept for the next call from the same directory. */
+let found: { cwd: string; root: string } | undefined;
+
 function isProject(folder: string): boolean {
   return statSync(join(folder, PROJECT_DIRECTORY), { throwIfNoEntry: false })?.isDirectory() === true;
 }
@@ -163,7 +166,13 @@ export function useProject(folder: string): void {
 
 /** The project folder of this process: the --project choice, else the D67 lookup from the working directory. */
 export function projectRoot(): string {
-  const root = chosen ?? findProject();
+  let root = chosen;
+  if (root === undefined) {
+    const cwd = process.cwd();
+    if (found?.cwd !== cwd) found = { cwd, root: findProject(cwd) };
+    root = found.root;
+  }
+  // Each call: the first write of a process can make .c64-re-tools/ after the lookup.
   ensureLocal(root);
   return root;
 }
