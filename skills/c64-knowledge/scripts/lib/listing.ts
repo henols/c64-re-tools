@@ -1,10 +1,12 @@
 // One listing of the image with its knowledge (D78): the lines of a range as
 // ACME text with names, operand expressions and comments, the access class of
 // the bytes from coverage files, and the references in and out. A hex dump of
-// a range with the names in it, and the call graph as Mermaid. Nothing here
+// a range with the names in it, and the routine graph as Mermaid. Nothing here
 // reads files: knowledge.ts gives the lookups.
 
 import { COVERAGE } from "#src/c64.ts";
+import { mermaidGraph, routineEdges, routineHeads, type GraphReference } from "#src/knowledge/graph.ts";
+import type { SymbolKind } from "#src/knowledge/schema.ts";
 import { MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
@@ -188,39 +190,29 @@ export function dump(source: Pick<ListingSource, "byteAt" | "nameOf">, start: nu
 }
 
 /**
- * The call graph as Mermaid: one node for each routine that a call or jump
- * reference reaches from the root (every routine without a root), and one
- * edge for each reference from inside a routine to another routine.
+ * The routine graph of the knowledge as Mermaid (D78), drawn with the graph of
+ * c64-docs (src/knowledge/graph.ts): without a root every edge, else the
+ * routines that edges reach from the root in at most `depth` steps.
  */
 export function graph(
-  routines: ReadonlyArray<{ address: number; name: string }>,
-  references: ReadonlyArray<{ from: number; to: number; kind: string }>,
+  symbols: ReadonlyArray<{ address: number; name: string; kind: SymbolKind }>,
+  references: readonly GraphReference[],
+  boundaries: readonly number[],
   root?: number,
   depth = Number.POSITIVE_INFINITY,
 ): { mermaid: string; nodes: number; edges: number } {
-  const sorted = [...routines].sort((a, b) => a.address - b.address);
-  const starts = new Set(sorted.map((routine) => routine.address));
-  const owner = (address: number) => sorted.filter((routine) => routine.address <= address).at(-1)?.address;
-  const edges = new Map<string, { from: number; to: number; kind: string }>();
-  for (const reference of references) {
-    if ((reference.kind !== "call" && reference.kind !== "jump") || !starts.has(reference.to)) continue;
-    const from = owner(reference.from);
-    if (from === undefined || from === reference.to) continue;
-    edges.set(`${from}>${reference.to}`, { from, to: reference.to, kind: reference.kind });
-  }
-  let kept = new Set(starts);
+  const heads = routineHeads(symbols, references, (address) => `l_${address.toString(16).padStart(4, "0")}`);
+  let edges = routineEdges(heads, boundaries, references);
+  const own = new Set<number>();
   if (root !== undefined) {
-    kept = new Set([root]);
+    const kept = new Set([root]);
     for (let level = 0, frontier = [root]; level < depth && frontier.length > 0; level++) {
-      frontier = [...edges.values()].filter((edge) => frontier.includes(edge.from) && !kept.has(edge.to)).map((edge) => edge.to);
+      frontier = [...new Set(edges.filter((edge) => frontier.includes(edge.from) && !kept.has(edge.to)).map((edge) => edge.to))];
       for (const node of frontier) kept.add(node);
     }
+    edges = edges.filter((edge) => kept.has(edge.from) && kept.has(edge.to));
+    own.add(root);
   }
-  const nameOf = new Map(sorted.map((routine) => [routine.address, routine.name]));
-  const id = (address: number) => `r${address.toString(16).padStart(4, "0")}`;
-  const lines = ["flowchart TD"];
-  for (const address of [...kept].sort((a, b) => a - b)) lines.push(`  ${id(address)}["${nameOf.get(address) ?? hex4(address)} ${hex4(address)}"]`);
-  const shown = [...edges.values()].filter((edge) => kept.has(edge.from) && kept.has(edge.to));
-  for (const edge of shown) lines.push(`  ${id(edge.from)} ${edge.kind === "call" ? "-->" : "-.->"} ${id(edge.to)}`);
-  return { mermaid: `${lines.join("\n")}\n`, nodes: kept.size, edges: shown.length };
+  const nodes = new Set([...own, ...edges.flatMap((edge) => [edge.from, edge.to])]);
+  return { mermaid: `${mermaidGraph(heads, edges, own)}\n`, nodes: nodes.size, edges: edges.length };
 }

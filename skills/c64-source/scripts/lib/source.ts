@@ -928,7 +928,12 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     if (comment.placement === "line") lineComments.set(comment.address, comment.text.split(/\r?\n/));
     else sideComments.set(comment.address, comment.text.replace(/\s*\r?\n\s*/g, " "));
   }
-  const breaks = new Set<number>([...layout.names.keys(), ...lineComments.keys(), ...sideComments.keys()]);
+  // A name with an offset (table+5, M23.6) names an operand only: it is no label, so no line starts there.
+  const labelAt = (address: number) => {
+    const name = layout.names.get(address);
+    return name === undefined || name.includes("+") ? undefined : name;
+  };
+  const breaks = new Set<number>([...[...layout.names.keys()].filter((address) => labelAt(address) !== undefined), ...lineComments.keys(), ...sideComments.keys()]);
   const result: Rendered = {
     files: [],
     instructions: 0,
@@ -983,7 +988,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     const head = (address: number) => {
       if (patch?.start === address) return;
       for (const text of lineComments.get(address) ?? []) out.push(`; ${text}`.trimEnd());
-      const label = layout.names.get(address);
+      const label = labelAt(address);
       if (label !== undefined && patch === undefined) {
         out.push(label);
         result.labels.push({ address, name: label, file: piece.file, line: out.length });
@@ -1038,7 +1043,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         if (sideComments.has(item.address)) sides.push(sideComments.get(item.address)!);
         for (let offset = 1; offset < item.length; offset++) {
           const inside = item.address + offset;
-          const label = layout.names.get(inside);
+          const label = labelAt(inside);
           if (label !== undefined && patch === undefined) {
             out.push(`${label} = * + ${offset}`);
             result.labels.push({ address: inside, name: label, file: piece.file, line: out.length });

@@ -924,6 +924,9 @@ test("an operand inside a named table without its own name is the table's name p
   const text = textOf(render(laid, new Set(), []), "segment_1000.asm");
   assert.match(text, / {8}lda room_colours\+5\n {8}lda l_1018\n/);
   assert.doesNotMatch(text, /l_1015/);
+  // The table data has no label line at the offset: ACME refuses a label room_colours+5 (found in M24.6 on Bruce Lee).
+  assert.doesNotMatch(text, /^room_colours\+5/m);
+  assert.match(text, /^room_colours\n {8}!byte \$00,\$01,\$02,\$03,\$04,\$05,\$06,\$07\n/m);
 });
 
 test("an immediate stored to a register with a decoder gets the decoded value as a side comment; a knowledge side comment wins (M23.7)", () => {

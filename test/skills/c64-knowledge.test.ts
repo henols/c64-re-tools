@@ -401,5 +401,5 @@ test("listing, dump and graph read the image with the knowledge, and apply --dry
     { address: "$1010", hex: "60 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", names: [{ address: "$1010", name: "helper" }] },
     { address: "$1020", hex: "07 08 .. .. .. .. .. .. .. .. .. .. .. .. .. ..", names: [{ address: "$1020", name: "table" }] },
   ]);
-  assert.deepEqual(knowledge(root, "graph", "--from", "main").json, { mermaid: 'flowchart TD\n  r1000["main $1000"]\n  r1010["helper $1010"]\n  r1000 --> r1010\n', nodes: 2, edges: 1 });
+  assert.deepEqual(knowledge(root, "graph", "--from", "main").json, { mermaid: 'flowchart LR\n  n1000("main<br/>$1000")\n  n1010["helper<br/>$1010"]\n  n1000 --> n1010\n', nodes: 2, edges: 1 });
 });

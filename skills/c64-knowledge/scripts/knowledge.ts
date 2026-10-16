@@ -532,12 +532,14 @@ function readAnswer(db: DatabaseSync | undefined, command: string, args: string[
       return { lines: lines.map((row) => ({ ...row, address: formatC64Address(row.address) })) };
     }
     case "graph": {
-      const named = listSymbols(db, undefined, "routine", undefined, space);
+      // The names of the knowledge, and an analyzer name for a routine without one (D74).
+      const named = listSymbols(db, undefined, undefined, undefined, space);
       const taken = new Set(named.map((row) => row.address));
       const second = listAnalyzerNames(db, undefined, "routine", undefined, space).filter((row) => !taken.has(row.address) && taken.add(row.address) !== undefined);
       const depth = values.depth === undefined ? undefined : integer(values.depth, "--depth");
       const root = values.from === undefined ? undefined : address(values.from, "--from");
-      const drawn = graph([...named, ...second], listReferences(db, undefined, undefined, undefined, space), root, depth);
+      const references = listReferences(db, undefined, undefined, undefined, space).map((row) => ({ from: row.from, to: row.to, kind: row.kind }));
+      const drawn = graph([...named, ...second], references, listModules(db, undefined, undefined, space).map((row) => row.start), root, depth);
       if (values.out !== undefined) {
         writeProjectFile(values.out, Buffer.from(drawn.mermaid, "utf8"), { what: "--out" });
         return { out: values.out, nodes: drawn.nodes, edges: drawn.edges };
