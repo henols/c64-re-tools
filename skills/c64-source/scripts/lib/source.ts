@@ -432,7 +432,8 @@ export function layout(input: SourceInput): Layout {
   }
   for (const candidate of candidates) for (const arg of candidate.use.args) for (const name of identifiers(arg)) use(byName.get(name)!, "macro argument");
   for (const symbol of input.symbols) want(symbol.address);
-  for (const target of input.referenceTargets) want(target);
+  // A reference target inside a named data region without its own name is that region's name plus the offset: it makes no label (D84).
+  for (const target of input.referenceTargets) want(tableStart(target) ?? target);
   if (input.entry !== undefined) want(input.entry);
   // A use with a label inside it is written as its instructions, which then name their targets: that can put a label inside another use.
   const accepted = new Set(candidates);
@@ -505,7 +506,7 @@ export function layout(input: SourceInput): Layout {
     blocks.set(patch.start, { start: patch.start, end: patch.end, switch: patch.switch, code: patch.code, ...(patch.comment === undefined ? {} : { comment: patch.comment }), inner });
   }
   // The high byte of a vector is NMINV+1. A zero-page entry keeps zero-page instructions: its constant has two digits.
-  // An address inside a table keeps its own label when the source needs one there anyway, for example as a reference target.
+  // An address inside a table keeps its own label when the source needs one there anyway, for example as the entry.
   for (const [address, start] of insideEntry) if (!wanted.has(address)) names.set(address, `${names.get(start)!}+${address - start}`);
   /** An expression with the names of this source: a name with an offset in brackets, so an operator after it keeps its meaning. */
   const sourceText = (text: string) => replaceIdentifiers(text, (name) => {

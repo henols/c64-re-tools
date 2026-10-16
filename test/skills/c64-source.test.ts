@@ -934,8 +934,8 @@ test("with real Ghidra and ACME, a macro use that ACME refuses or assembles to o
   assert.match(readFileSync(join(project, "src", "segment_1000.asm"), "utf8"), /^start\n {8}\+inc16 ptr\n {8}inc \$fd\n/m);
 });
 
-test("an operand inside a named table without its own name is the table's name plus the offset (M23.6)", () => {
-  // $1000 LDA $1015 / LDA $1018 / RTS; $1010-$101f a table named room_colours; $1018 is a reference target and keeps its label.
+test("an operand inside a named table without its own name is the table's name plus the offset (M23.6, D84)", () => {
+  // $1000 LDA $1015 / LDA $1018 / RTS; $1010-$101f a table named room_colours; $1018 is a reference target and gets no label of its own; $1003 in code keeps its label.
   const bytes = [0xad, 0x15, 0x10, 0xad, 0x18, 0x10, 0x60, ...Array.from({ length: 9 }, () => 0), ...Array.from({ length: 16 }, (_, index) => index)];
   const instructions = new Map([[0x1000, 3], [0x1003, 3], [0x1006, 1]]);
   const laid = layout(
@@ -943,12 +943,12 @@ test("an operand inside a named table without its own name is the table's name p
       instructions,
       symbols: [{ address: 0x1010, name: "room_colours" }],
       regions: [{ start: 0x1010, end: 0x101f, type: "bytes" }],
-      referenceTargets: [0x1018],
+      referenceTargets: [0x1018, 0x1003],
     }),
   );
   const text = textOf(render(laid, new Set(), []), "segment_1000.asm");
-  assert.match(text, / {8}lda room_colours\+5\n {8}lda l_1018\n/);
-  assert.doesNotMatch(text, /l_1015/);
+  assert.match(text, / {8}lda room_colours\+5\nl_1003\n {8}lda room_colours\+8\n/);
+  assert.doesNotMatch(text, /l_1015|l_1018/);
   // The table data has no label line at the offset: ACME refuses a label room_colours+5 (found in M24.6 on Bruce Lee).
   assert.doesNotMatch(text, /^room_colours\+5/m);
   assert.match(text, /^room_colours\n {8}!byte \$00,\$01,\$02,\$03,\$04,\$05,\$06,\$07\n/m);
