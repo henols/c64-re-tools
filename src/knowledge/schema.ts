@@ -151,7 +151,8 @@ function createSchema(db: DatabaseSync): void {
         revision TEXT NOT NULL REFERENCES revisions (id),
         kind     TEXT NOT NULL CHECK (kind IN (${list(EVIDENCE_KINDS)})),
         ref      TEXT NOT NULL CHECK (length(ref) > 0),
-        sha256   TEXT CHECK (sha256 IS NULL OR length(sha256) = 64)
+        sha256   TEXT CHECK (sha256 IS NULL OR length(sha256) = 64),
+        space    TEXT CHECK (space IS NULL OR ${SPACE_CHECK})
       );
       CREATE INDEX evidence_revision ON evidence (revision);
       CREATE TABLE comments (
@@ -309,7 +310,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 5;
+export const INDEX_VERSION = 6;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

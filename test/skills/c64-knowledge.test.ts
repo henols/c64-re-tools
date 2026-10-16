@@ -254,6 +254,38 @@ test("image puts a capture into the knowledge, and coverage joins maps that are 
   }
 });
 
+test("coverage imports a map into each space, by one spelling of its path, and --evidence cites the latest import in the space of the write (D86)", () => {
+  const root = project();
+  const runs = join(root, "runs");
+  mkdirSync(runs);
+  const run = new Uint8Array(0x10000);
+  run[0x0400] = COVERAGE.ramExecute;
+  writeFileSync(join(runs, "m.bin"), run);
+  const sha = () => createHash("sha256").update(readFileSync(join(runs, "m.bin"))).digest("hex");
+  const first = sha();
+  assert.deepEqual(knowledge(root, "coverage", "runs/m.bin").json.imported, ["runs/m.bin"]);
+  assert.deepEqual(knowledge(root, "coverage", "./runs/m.bin").json.known, ["runs/m.bin"], "./runs/m.bin is the same map");
+  const drive = knowledge(root, "coverage", "runs/m.bin", "--space", "drive8");
+  assert.deepEqual(drive.json.imported, ["runs/m.bin"], "the map is not yet in drive8");
+  assert.equal(drive.json.ranges, 1);
+
+  // The map changes and is imported again: the evidence is the new import.
+  run[0x0500] = COVERAGE.ramRead;
+  writeFileSync(join(runs, "m.bin"), run);
+  assert.deepEqual(knowledge(root, "coverage", "runs/m.bin").json.imported, ["runs/m.bin"]);
+  const evidenceOf = (...args: string[]) => {
+    const cited = knowledge(root, "rename", "$0400", "start", ...args);
+    assert.equal(cited.status, 0, JSON.stringify(cited.json));
+    return (knowledge(root, "revision", String(cited.json.revision)).json.revision as { evidence: Array<{ ref: string; sha256: string; space: string }> }).evidence;
+  };
+  assert.deepEqual(evidenceOf("--evidence", "coverage:./runs/m.bin"), [{ kind: "coverage", ref: "runs/m.bin", sha256: sha(), space: "c64" }]);
+  assert.deepEqual(evidenceOf("--evidence", "coverage:runs/m.bin", "--space", "drive8"), [{ kind: "coverage", ref: "runs/m.bin", sha256: first, space: "drive8" }]);
+  const missing = knowledge(root, "rename", "$0400", "x", "--evidence", "coverage:runs/m.bin", "--space", "bank1");
+  assert.equal(missing.status, 2);
+  assert.match((missing.json.error as { message: string }).message, /no coverage map of the knowledge in bank1: import the map with coverage --space bank1 first/);
+  assert.deepEqual((knowledge(root, "program").json.coverage as { maps: string[] }).maps, ["runs/m.bin"]);
+});
+
 test("export writes all current knowledge to a project file and answers with counts", () => {
   const root = project();
   knowledge(root, "rename", "$2100", "update_player");

@@ -418,7 +418,7 @@ origin                TEXT NOT NULL      user | llm
 
 A segment of the program is a run of memory rows without a gap. `image` closes the rows whose bytes changed and adds the new ones, and replaces the entry when it changed; the same image again writes nothing. A PRG has no entry row.
 
-The coverage is the union of the imported maps as exact ranges: a range of a kind holds the addresses where some run had that flag. `wx` holds the addresses that one run both wrote and executed, so self-modified code still shows after the join. An import adds only the flags that no earlier map set, and its maps are the evidence of the revision, by path and SHA-256. Ranges for each run apart would be about 25 times as many lines in Bruce Lee.
+The coverage is the union of the imported maps as exact ranges: a range of a kind holds the addresses where some run had that flag. `wx` holds the addresses that one run both wrote and executed, so self-modified code still shows after the join. An import adds only the flags that no earlier map of the space set, and its maps are the evidence of the revision, by path, SHA-256 and space (D86). The same map can go into each space; a map that the space has is not imported again. Ranges for each run apart would be about 25 times as many lines in Bruce Lee.
 
 The history of a revision lists no memory or coverage rows: the revision's operation and evidence say what it imported. Revert takes the program and the coverage back too.
 
@@ -546,7 +546,10 @@ revision   INTEGER NOT NULL      the revision of the change
 kind       TEXT NOT NULL         coverage | test | file | note
 ref        TEXT NOT NULL         a project path, the path of an imported coverage map, or the text of a note
 sha256     TEXT                  the SHA-256 of the file when the change was written
+space      TEXT                  the space that a coverage map was imported into (D86)
 ```
+
+A path is kept in one spelling: relative to the project folder, with `/`, so `./runs/a.bin` and `runs/a.bin` are one file. `--evidence coverage:<map>` cites the latest import of the map into the space of the write.
 
 A write that changes nothing makes no revision and keeps no evidence.
 

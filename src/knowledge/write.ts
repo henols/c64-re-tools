@@ -92,6 +92,8 @@ export interface Evidence {
   kind: EvidenceKind;
   ref: string;
   sha256?: string;
+  /** The space that a coverage map was imported into (D86). */
+  space?: Space;
 }
 
 /** Who writes and why. Semantic writes come from the user or the LLM, never as an analyzer. */
@@ -212,8 +214,8 @@ export class Change {
       .prepare("INSERT INTO revisions (id, created_at, origin, operation, input_hash, tool_version, description) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(id, isoCet(now), this.#context.origin, this.#operation, this.#context.inputHash ?? null, this.#context.toolVersion ?? null, this.#context.description ?? null);
     this.revision = id;
-    const evidence = this.#db.prepare("INSERT INTO evidence (revision, kind, ref, sha256) VALUES (?, ?, ?, ?)");
-    for (const item of this.#context.evidence ?? []) evidence.run(id, item.kind, item.ref, item.sha256 ?? null);
+    const evidence = this.#db.prepare("INSERT INTO evidence (revision, kind, ref, sha256, space) VALUES (?, ?, ?, ?, ?)");
+    for (const item of this.#context.evidence ?? []) evidence.run(id, item.kind, item.ref, item.sha256 ?? null, item.space ?? null);
     return id;
   }
 
@@ -348,6 +350,7 @@ function checkEvidence(evidence: Evidence[] | undefined): void {
     checkOneOf(EVIDENCE_KINDS, item.kind, "evidence kind");
     if (item.ref.trim().length === 0 || item.ref.length > MAX_EVIDENCE_REF) throw new KnowledgeError("invalid-input", `evidence has 1 to ${MAX_EVIDENCE_REF} characters after its kind.`);
     if (item.sha256 !== undefined && !/^[0-9a-f]{64}$/.test(item.sha256)) throw new KnowledgeError("invalid-input", "evidence sha256 must be 64 lowercase hex digits.");
+    checkSpace(item);
   }
 }
 

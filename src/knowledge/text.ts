@@ -231,10 +231,10 @@ export function tableText(db: DatabaseSync, spec: TableSpec): string {
 
 /** The text of the revision log: every revision with its evidence, oldest first. */
 export function revisionsText(db: DatabaseSync): string {
-  const evidence = db.prepare("SELECT kind, ref, sha256 FROM evidence WHERE revision = ? ORDER BY id");
+  const evidence = db.prepare("SELECT kind, ref, sha256, space FROM evidence WHERE revision = ? ORDER BY id");
   return (db.prepare("SELECT * FROM revisions ORDER BY id").all() as Raw[])
     .map((raw) => {
-      const items = (evidence.all(raw.id as string) as Raw[]).map((item) => ({ kind: item.kind, ref: item.ref, ...(item.sha256 === null ? {} : { sha256: item.sha256 }) }));
+      const items = (evidence.all(raw.id as string) as Raw[]).map((item) => ({ kind: item.kind, ref: item.ref, ...(item.sha256 === null ? {} : { sha256: item.sha256 }), ...(item.space === null ? {} : { space: item.space }) }));
       return `${lineOf(raw, REVISION_FIELDS, items.length === 0 ? {} : { evidence: items })}\n`;
     })
     .join("");
@@ -337,7 +337,7 @@ function joinById<T extends { id: string }>(file: string, entries: Array<{ line:
 interface RevisionLine {
   id: string;
   columns: Raw;
-  evidence: Array<{ kind: unknown; ref: unknown; sha256: unknown }>;
+  evidence: Array<{ kind: unknown; ref: unknown; sha256: unknown; space: unknown }>;
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -349,8 +349,8 @@ function parseRevisions(text: string): RevisionLine[] {
     const evidence = value.evidence ?? [];
     if (!Array.isArray(evidence) || evidence.some((item) => typeof item !== "object" || item === null)) bad(REVISIONS_FILE, line, "evidence must be a list of objects.");
     const items = (evidence as Raw[]).map((item) => {
-      for (const key of Object.keys(item)) if (!["kind", "ref", "sha256"].includes(key)) bad(REVISIONS_FILE, line, `the evidence key ${JSON.stringify(key)} is not known.`);
-      return { kind: item.kind, ref: item.ref, sha256: item.sha256 ?? null };
+      for (const key of Object.keys(item)) if (!["kind", "ref", "sha256", "space"].includes(key)) bad(REVISIONS_FILE, line, `the evidence key ${JSON.stringify(key)} is not known.`);
+      return { kind: item.kind, ref: item.ref, sha256: item.sha256 ?? null, space: item.space ?? null };
     });
     return { line, row: { id: columns.id as string, columns, evidence: items } };
   });
@@ -389,12 +389,12 @@ function parseRows(spec: TableSpec, text: string): RowLine[] {
  */
 export function loadText(db: DatabaseSync, files: ReadonlyMap<string, { text: string }>): void {
   const insertRevision = db.prepare(`INSERT INTO revisions (${REVISION_FIELDS.map((item) => item.column).join(", ")}) VALUES (${REVISION_FIELDS.map(() => "?").join(", ")})`);
-  const insertEvidence = db.prepare("INSERT INTO evidence (revision, kind, ref, sha256) VALUES (?, ?, ?, ?)");
+  const insertEvidence = db.prepare("INSERT INTO evidence (revision, kind, ref, sha256, space) VALUES (?, ?, ?, ?, ?)");
   const revisions = parseRevisions(files.get(REVISIONS_FILE)?.text ?? "").sort((a, b) => compareText(a.id, b.id));
   for (const revision of revisions) {
     try {
       insertRevision.run(...(REVISION_FIELDS.map((item) => revision.columns[item.column]) as Array<string | null>));
-      for (const item of revision.evidence) insertEvidence.run(revision.id, item.kind as string, item.ref as string, item.sha256 as string | null);
+      for (const item of revision.evidence) insertEvidence.run(revision.id, item.kind as string, item.ref as string, item.sha256 as string | null, item.space as string | null);
     } catch (error) {
       throw new KnowledgeError("invalid-database", `.c64-re-tools/knowledge/${REVISIONS_FILE}: the revision ${revision.id} is not valid: ${(error as Error).message}`);
     }

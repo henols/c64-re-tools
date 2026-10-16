@@ -109,7 +109,7 @@ Write:
 
 1. Read the current value with `at`. Note the `revision` in the result.
 2. Decide the change. Keep observed facts apart from your conclusions.
-3. Write it with `--reason` and `--expect-revision` set to the revision you read. Add `--evidence` for each thing that the change rests on: `coverage:<map>`, `test:<file>`, `file:<file>` or `note:<text>`. `<map>` is a coverage map that `coverage` put into the knowledge, by its path at that time. The script keeps the SHA-256 of each file and map.
+3. Write it with `--reason` and `--expect-revision` set to the revision you read. Add `--evidence` for each thing that the change rests on: `coverage:<map>`, `test:<file>`, `file:<file>` or `note:<text>`. `<map>` is a coverage map that `coverage` put into the knowledge, by its path at that time. The script uses the last import of the map into the space of the write. The script keeps the SHA-256 of each file and map.
 4. Read the result. A `revision` of `null` means that nothing changed.
 
 Each write is one revision. A classification inside a region splits that region, so regions never overlap.
@@ -124,7 +124,7 @@ The knowledge holds the program, so a project needs no image or coverage files. 
 4. Read what the knowledge holds with `program`: the segments, the entry, and the coverage maps that it has.
 
 - `image` writes only the bytes that changed. The same image again writes nothing. A new image replaces the program of the space. The history keeps the old bytes.
-- `coverage` joins the maps. It keeps each address that a run executed, read or wrote. It also keeps each address that one run wrote and executed: self-modified code. A map that the knowledge has is not added again.
+- `coverage` joins the maps. It keeps each address that a run executed, read or wrote. It also keeps each address that one run wrote and executed: self-modified code. `coverage` puts each map into the space of `--space`. You can add the same map to each space. A map that the space has is not added again.
 - The capture and the maps are not necessary after the import. Keep them in `.c64-re-tools/local/`.
 
 For more than a few writes, use `apply -` and give the writes on standard input as one JSON list. Each write has `op` and the arguments of the command with the same name, for example:

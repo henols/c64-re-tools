@@ -150,7 +150,7 @@ test("a coverage map that the knowledge has is not imported again; one that adds
   assert.equal(subset.current.ranges, 0);
   const db = openForRead(root)!;
   try {
-    assert.deepEqual(coverageRuns(db).map((run) => run.name), ["a.bin", "b.bin"]);
+    assert.deepEqual(coverageRuns(db).map((run) => [run.name, run.space]), [["a.bin", "c64"], ["b.bin", "c64"]]);
   } finally {
     db.close();
   }
@@ -168,4 +168,24 @@ test("revert takes the image and the coverage back too", () => {
   assert.equal(read.image!.byteAt(0x1000), 0x00);
   assert.equal(read.image!.entry, undefined);
   assert.equal(read.coverage, undefined);
+});
+
+test("a coverage map is known only in the space that it went into, and the runs of a name are oldest first (D86)", () => {
+  const root = project();
+  const first = map([0x1000, 0x1002, COVERAGE.ramExecute]);
+  const second = map([0x2000, 0x2002, COVERAGE.ramExecute]);
+  withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes: first }] }), root);
+  const drive = withWrite((db) => addCoverage(db, llm, { space: "drive8", maps: [{ name: "a.bin", bytes: first }] }), root);
+  assert.deepEqual(drive.current.imported, ["a.bin"]);
+  assert.equal(drive.current.ranges, 1);
+  withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes: second }] }), root);
+  const db = openForRead(root)!;
+  try {
+    const runs = coverageRuns(db);
+    assert.deepEqual(runs.map((run) => run.space), ["c64", "drive8", "c64"]);
+    assert.deepEqual([...runs].sort((a, b) => a.revision.localeCompare(b.revision)), runs);
+    assert.equal(runs.filter((run) => run.space === "c64").at(-1)!.sha256, runs[2]!.sha256);
+  } finally {
+    db.close();
+  }
 });

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { findProject, namedProject, ProjectError, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
+import { findProject, namedProject, ProjectError, projectRelative, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
 
 const root = process.cwd();
 
@@ -146,4 +146,11 @@ test("projectRoot keeps the lookup for a working directory and looks again after
       process.chdir(saved);
     }
   });
+});
+
+test("projectRelative gives one spelling of a project path", () => {
+  assert.equal(projectRelative("./runs/a.bin", root), "runs/a.bin");
+  assert.equal(projectRelative("runs//x/../a.bin", root), "runs/a.bin");
+  assert.equal(projectRelative(join("runs", "a.bin"), root), "runs/a.bin");
+  assert.throws(() => projectRelative("../a.bin", root), /escapes/);
 });

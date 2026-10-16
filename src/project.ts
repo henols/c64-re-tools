@@ -190,6 +190,11 @@ export function resolveProjectPath(path: string, root = projectRoot()): string {
   throw new TypeError("Project path escapes the project root");
 }
 
+/** A project path in one spelling: relative to the project folder, with / and without ./, .. or a double /. Throws TypeError as resolveProjectPath does. */
+export function projectRelative(path: string, root = projectRoot()): string {
+  return relative(root, resolveProjectPath(path, root)).split(sep).join("/");
+}
+
 /** True when `candidate` is `root` or below it. Both are absolute paths. */
 export function isInside(root: string, candidate: string): boolean {
   const fromRoot = relative(root, candidate);

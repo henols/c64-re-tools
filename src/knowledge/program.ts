@@ -146,20 +146,28 @@ function currentCoverage(db: DatabaseSync, space: Space): Map<CoverageKind, Uint
   return maps;
 }
 
-/** The project paths of the coverage maps that the knowledge imported, with their SHA-256. */
-export function coverageRuns(db: DatabaseSync | undefined): Array<{ name: string; sha256: string }> {
+/** One import of a coverage map: its project path, its SHA-256, the space it went into (D86; null for an import before D86) and the revision. */
+export interface CoverageRun {
+  name: string;
+  sha256: string;
+  space: Space | null;
+  revision: string;
+}
+
+/** The imports of coverage maps, by name and then oldest first: the last import of a name is the latest. */
+export function coverageRuns(db: DatabaseSync | undefined): CoverageRun[] {
   if (db === undefined) return [];
-  return db.prepare("SELECT DISTINCT e.ref AS name, e.sha256 AS sha256 FROM evidence e JOIN revisions r ON r.id = e.revision WHERE r.operation = 'coverage' AND e.kind = 'coverage' ORDER BY e.ref").all() as Array<{
-    name: string;
-    sha256: string;
-  }>;
+  return db
+    .prepare("SELECT DISTINCT e.ref AS name, e.sha256 AS sha256, e.space AS space, e.revision AS revision FROM evidence e JOIN revisions r ON r.id = e.revision WHERE r.operation = 'coverage' AND e.kind = 'coverage' ORDER BY e.ref, e.revision")
+    .all() as unknown as CoverageRun[];
 }
 
 /**
  * Joins coverage maps into the coverage of a space (D83): adds the ranges of
  * the flags that no imported run set before, and as wx the addresses that one
- * run both wrote and executed. Each new map is evidence of the revision. A map
- * that the knowledge has with the same name and bytes is not imported again.
+ * run both wrote and executed. Each new map is evidence of the revision, with
+ * its space. A map that the space has with the same name and bytes is not
+ * imported again.
  */
 export function addCoverage(
   db: DatabaseSync,
@@ -172,9 +180,9 @@ export function addCoverage(
     if (map.bytes.length !== SIZE) throw new KnowledgeError("invalid-input", `${map.name} has ${map.bytes.length} bytes; a coverage map has 65536, one for each address.`);
   }
   const hashed = request.maps.map((map) => ({ ...map, sha256: createHash("sha256").update(map.bytes).digest("hex") }));
-  const known = new Set(coverageRuns(db).map((run) => `${run.name}\n${run.sha256}`));
+  const known = new Set(coverageRuns(db).filter((run) => run.space === space).map((run) => `${run.name}\n${run.sha256}`));
   const fresh = hashed.filter((map) => !known.has(`${map.name}\n${map.sha256}`));
-  const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256 }))];
+  const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256, space }))];
   return write(db, { ...context, evidence }, "coverage", (change) => {
     const result = { space, imported: fresh.map((map) => map.name), known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name), ranges: 0 };
     if (fresh.length === 0) return result;

@@ -149,9 +149,14 @@ export function revisionNote(db: DatabaseSync | undefined, id: string): { reason
 
 /** The revision with its evidence, when it has any. */
 function withEvidence(db: DatabaseSync, revision: Revision): Revision {
-  const rows = db.prepare("SELECT kind, ref, sha256 FROM evidence WHERE revision = ? ORDER BY id").all(revision.id) as Raw[];
+  const rows = db.prepare("SELECT kind, ref, sha256, space FROM evidence WHERE revision = ? ORDER BY id").all(revision.id) as Raw[];
   if (rows.length === 0) return revision;
-  const evidence = rows.map((row): Evidence => ({ kind: row.kind as EvidenceKind, ref: row.ref as string, ...(row.sha256 === null ? {} : { sha256: row.sha256 as string }) }));
+  const evidence = rows.map((row): Evidence => ({
+    kind: row.kind as EvidenceKind,
+    ref: row.ref as string,
+    ...(row.sha256 === null ? {} : { sha256: row.sha256 as string }),
+    ...(row.space === null ? {} : { space: row.space as Space }),
+  }));
   return { ...revision, evidence };
 }
 

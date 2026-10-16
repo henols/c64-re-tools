@@ -100,7 +100,7 @@ import {
 import { platformNames } from "#src/platform.ts";
 import { addCoverage, coverageRuns, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
-import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRoot, resolveProjectPath } from "#src/project.ts";
+import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
 import { runScript, UsageError } from "#src/script.ts";
 
@@ -424,7 +424,7 @@ function run(argv: string[]): unknown {
   const context: WriteContext = { origin: values.origin === undefined ? "llm" : oneOf(["user", "llm"] as const, values.origin, "--origin") };
   if (values.reason !== undefined) context.description = values.reason;
   if (values["expect-revision"] !== undefined) context.expectedRevision = values["expect-revision"];
-  if (values.evidence !== undefined) context.evidence = values.evidence.map(evidenceOf);
+  if (values.evidence !== undefined) context.evidence = values.evidence.map((value) => evidenceOf(value, space));
   // Every argument is checked before the database opens: a refused write creates no database.
   if (values.title !== undefined && command !== "module") throw new UsageError("--title works only with module");
   for (const option of ["lo", "hi", "value", "expr", "offset"] as const) {
@@ -562,7 +562,7 @@ function readAnswer(db: DatabaseSync | undefined, command: string, args: string[
                 state: image.state !== undefined,
                 stages: image.stages?.length ?? 0,
               },
-        coverage: { maps: coverageRuns(db).map((run) => run.name), ranges: Object.fromEntries(ranges.map((row) => [row.kind, row.count])) },
+        coverage: { maps: [...new Set(coverageRuns(db).filter((run) => run.space === space).map((run) => run.name))], ranges: Object.fromEntries(ranges.map((row) => [row.kind, row.count])) },
       };
     }
     case "export": {
@@ -644,23 +644,34 @@ function originFilter(value: string): Origin[] {
   return [...origins];
 }
 
+/** A project path as the knowledge names it: one spelling for each file, so ./runs/a.bin and runs/a.bin are the same file. */
+function knowledgePath(path: string, what: string): string {
+  try {
+    return projectRelative(path);
+  } catch {
+    throw new UsageError(`${what} must be a path relative to the project folder that stays inside it, not ${path}`);
+  }
+}
+
 /**
  * --evidence kind:ref. A file kind names a project file and keeps its SHA-256, so a later change of the file shows.
  * A file in .c64-re-tools/local/ is refused (D82): git ignores it, and the move that keeps it changes the path.
  */
-function evidenceOf(value: string): Evidence {
+function evidenceOf(value: string, space: string): Evidence {
   const colon = value.indexOf(":");
   const kind = oneOf(EVIDENCE_KINDS, colon < 0 ? value : value.slice(0, colon), "--evidence kind");
-  const ref = colon < 0 ? "" : value.slice(colon + 1);
-  if (ref === "") throw new UsageError(`--evidence needs ${kind}:<${kind === "note" ? "text" : "file"}>`);
-  if (kind === "note") return { kind, ref };
-  // A coverage map is evidence by the name that coverage imported it with (D83).
+  const given = colon < 0 ? "" : value.slice(colon + 1);
+  if (given === "") throw new UsageError(`--evidence needs ${kind}:<${kind === "note" ? "text" : "file"}>`);
+  if (kind === "note") return { kind, ref: given };
+  const ref = knowledgePath(given, `--evidence ${kind}:<file>`);
+  // A coverage map is evidence by the name that coverage imported it with (D83): the latest import into the space of the write (D86).
   if (kind === "coverage") {
     const db = openForRead();
     try {
-      const run = coverageRuns(db).find((item) => item.name === ref);
-      if (run === undefined) throw new UsageError(`--evidence coverage:${ref} names no coverage map of the knowledge: import the map with coverage first`);
-      return { kind, ref, sha256: run.sha256 };
+      const run = coverageRuns(db).filter((item) => item.name === ref && item.space === space).at(-1);
+      const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
+      if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${where}: import the map with coverage${space === DEFAULT_SPACE ? "" : ` --space ${space}`} first`);
+      return { kind, ref, sha256: run.sha256, space: run.space! };
     } finally {
       db?.close();
     }
@@ -719,7 +730,7 @@ function programOperation(command: "image" | "coverage", args: string[], context
     };
   }
   if (args.length === 0) throw new UsageError("coverage needs one or more coverage maps");
-  const maps = args.map((path) => ({ name: path, bytes: readProjectFile(path).bytes }));
+  const maps = args.map((path) => ({ bytes: readProjectFile(path).bytes, name: knowledgePath(path, "coverage <map>") }));
   return (db) => {
     const { revision, current } = addCoverage(db, context, { space, maps });
     return { revision, ...spaceOf(current), imported: current.imported, known: current.known, ranges: current.ranges };
