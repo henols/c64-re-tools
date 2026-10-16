@@ -38,7 +38,7 @@ Before the first step of each side, the script does a hard reset. The CPU stops 
 | Step | Effect |
 |---|---|
 | `{ "reset": "hard" }` | Reset the C64 (`hard` or `soft`). The CPU stops at the reset vector. |
-| `{ "frames": 150 }` | Run for an exact number of frames, from 1 to 10000. Use it after a reset to start the C64. |
+| `{ "frames": 150 }` | Run for an exact number of frames, from 1 to 30000. A breakpoint or a watchpoint stops it before that. Use it after a reset to start the C64. |
 | `{ "load": true }` | Load the program of the side into memory. The CPU stays stopped. |
 | `{ "autostart": true }` | Load the program of the side, type `RUN` and wait until the program runs. The program must have a BASIC start line. The keys of a later `type` step go to the program. |
 | `{ "write": { "at": "seed", "bytes": [1, 2] } }` | Write bytes into memory: 1 to 4096 numbers from 0 to 255. |

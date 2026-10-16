@@ -90,7 +90,7 @@ export function checkActionStep(kind: string, step: Record<string, unknown>, at:
       return;
     }
     case "frames":
-      if (!isInteger(step.frames, 1, MAX_EXECUTION_COUNT)) fail(`${at} needs a frame count from 1 to ${MAX_EXECUTION_COUNT}`);
+      if (!isInteger(step.frames, 1, MAX_TIMEOUT_FRAMES)) fail(`${at} needs a frame count from 1 to ${MAX_TIMEOUT_FRAMES}`);
       return;
     case "runUntil": {
       const target = step.runUntil;
@@ -154,7 +154,12 @@ export async function runActionStep(client: ViceSessionClient, step: ActionStep,
     await client.keyboard(textToPetscii(step.type));
   } else if ("frames" in step) {
     await stop(client);
-    await client.execution({ action: "advance-frames", count: step.frames, space: "c64" });
+    // One advance-frames runs at most MAX_EXECUTION_COUNT frames. Each part ends at the raster position
+    // where it started, so the parts give the same frames as one run; a breakpoint ends them all.
+    for (let left = step.frames; left > 0; left -= MAX_EXECUTION_COUNT) {
+      const part = await client.execution({ action: "advance-frames", count: Math.min(left, MAX_EXECUTION_COUNT), space: "c64" });
+      if (part.stopReason !== "frames") break;
+    }
   } else {
     const until = step.runUntil;
     const target: RunTarget =
