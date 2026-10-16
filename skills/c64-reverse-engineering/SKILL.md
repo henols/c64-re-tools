@@ -32,7 +32,9 @@ One repository can hold several programs, with one project folder for each progr
 
 - From the root of the repository, give `--project <folder>` to each skill script, and `project` to each emulator tool with a path.
 - Write all files in the project folder. Do not write files at the root of the repository.
-- Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- Keep the results, batches and step files that you use only one time in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- Put a run file whose results are the evidence for a finding in `runs/`, with its results. Then git keeps the run file and the results, and another person can do the run again.
+- A subagent can have no emulator tools. Give it its experiments as run files of the c64-testing skill. Each run starts its own emulator, so many runs can go at the same time. The emulator of the emulator tools is one machine, for the main session.
 - To name a large program with more agents at the same time, give each agent one range of addresses. Each agent writes a batch with its owner range. Then join the batches with `join` of the c64-knowledge skill, and apply the result one time.
 - Write the knowledge only with the c64-knowledge script. Do not write or edit the files in `.c64-re-tools/knowledge/` yourself.
 
