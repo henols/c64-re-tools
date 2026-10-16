@@ -87,7 +87,7 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 7. Name | c64-provenance: if the workspace has a library, find its routines with `match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
 | 8. Generate | c64-source into `src/`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
 | 9. Build and test | c64-assembler with `--compare` into `build/`. c64-testing scenarios in `tests/`. | The criteria of stage 1 are true. |
-| 10. Document | When the criteria ask for documentation: c64-docs into `docs/`. | `link.ts --check` of c64-docs gives no problem. |
+| 10. Document | When the criteria ask for documentation: c64-docs into `README.md` and `docs/`. | `link.ts --check` of c64-docs gives no problem. |
 | 11. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
 
 In stage 5, if you cannot get to a part of the program, ask the user how to get to it. Do stages 7 and 8 again until the source is clear. Each run of c64-source writes the source again.
@@ -100,7 +100,7 @@ After stage 7, save each routine that other programs can have to the library wit
 - the generated source
 - the built program and the loader
 - the c64-testing scenarios
-- the documentation in `docs/`, when the criteria ask for it
+- the documentation in `README.md` and `docs/`, when the criteria ask for it
 - the runs in `runs/` that the knowledge gives as evidence
 - the scripts in `tools/` for the formats of this program, when you wrote them.
 
@@ -128,6 +128,7 @@ tests/         c64-testing scenarios
 runs/          the runs that the knowledge gives as evidence
 docs/          the documentation from c64-docs, with the reference in docs/reference/
 tools/         scripts for the formats of this program only
+README.md      the entry page of the documentation from c64-docs
 ```
 
 Commit each folder of the layout and `.c64-re-tools/knowledge/`. The knowledge holds the program, the entry state and the coverage, so the project needs no other folder for them. Put all other files that you make in `.c64-re-tools/local/`, also the captures and the coverage maps after you put them into the knowledge. Do not let git ignore a folder of the layout. Do not change the `.gitignore` files of the project.

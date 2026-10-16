@@ -16,13 +16,14 @@ import { checkLinks, linkPage, type Files, type Problem } from "./lib/links.ts";
 import { GENERATED_MARK } from "./lib/reference.ts";
 import { readSourceMap } from "./lib/source-map.ts";
 
-const USAGE = `link.ts <docs> --source <dir> [--reference <dir>] [--check]
+const USAGE = `link.ts <pages>... --source <dir> [--reference <dir>] [--check]
 
-  <docs>             the documentation directory, relative to the project folder;
-                     link.ts reads every .md file below it
+  <pages>...         .md files and directories of the documentation, relative to
+                     the project folder, for example README.md docs; link.ts reads
+                     each file and every .md file below each directory
   --source <dir>     the source directory of c64-source, with its source-map.json
-  --reference <dir>  the reference pages of generate.ts; the default is
-                     <docs>/reference when it exists
+  --reference <dir>  the reference pages of generate.ts; the default is the
+                     reference/ folder of the first directory that has one
   --check            write nothing; fail when a link is not up to date or a page
                      has a problem
 
@@ -34,9 +35,14 @@ const MAX_LISTED = 50;
 /** A name outside the image covers the addresses up to the next name, at most this many. */
 const MAX_BODY = 256;
 
+const isDirectory = (path: string) => {
+  const real = resolveProjectPath(path);
+  return existsSync(real) && statSync(real).isDirectory();
+};
+
 function markdownFiles(directory: string): string[] {
   const root = resolveProjectPath(directory);
-  if (!existsSync(root) || !statSync(root).isDirectory()) throw new WireFailure("not-found", `There is no directory ${directory} in the project folder.`);
+  if (!isDirectory(directory)) throw new WireFailure("not-found", `There is no directory ${directory} in the project folder.`);
   const found: string[] = [];
   const walk = (relative: string) => {
     for (const entry of readdirSync(join(root, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -79,15 +85,19 @@ const files: Files = {
 function run(argv: string[]): { output: Record<string, unknown>; failed: boolean } {
   const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { source: { type: "string" }, reference: { type: "string" }, check: { type: "boolean" }, help: { type: "boolean" } } });
   if (values.help) throw new UsageError("");
-  if (positionals.length !== 1) throw new UsageError("give one documentation directory");
+  if (positionals.length === 0) throw new UsageError("give the pages: .md files and directories of the documentation, for example README.md docs");
   if (values.source === undefined) throw new UsageError("give --source <dir>: the source directory of c64-source");
-  const docs = posix.normalize(positionals[0]!);
-  for (const [option, path] of [["<docs>", docs], ["--source", values.source], ["--reference", values.reference]] as const) {
+  const given = [...new Set(positionals.map((path) => posix.normalize(path)))];
+  for (const [option, path] of [...given.map((path) => ["<pages>", path] as const), ["--source", values.source], ["--reference", values.reference]] as const) {
     if (path === undefined) continue;
     if (!files.inside(path)) throw new UsageError(`${option} must be a path relative to the project folder that stays inside it, not ${path}`);
   }
+  for (const path of given) {
+    if (!path.endsWith(".md") && files.exists(path) && !isDirectory(path)) throw new UsageError(`<pages> takes .md files and directories, not ${path}`);
+  }
+  const directories = given.filter((path) => !path.endsWith(".md") || isDirectory(path));
   const map = readSourceMap(values.source);
-  const reference = values.reference === undefined ? (existsSync(resolveProjectPath(posix.join(docs, "reference"))) ? posix.join(docs, "reference") : undefined) : posix.normalize(values.reference);
+  const reference = values.reference === undefined ? directories.map((path) => posix.join(path, "reference")).find((path) => isDirectory(path)) : posix.normalize(values.reference);
   const problems: Problem[] = [];
   const db = openForRead();
   let symbols;
@@ -158,7 +168,11 @@ function run(argv: string[]): { output: Record<string, unknown>; failed: boolean
     managed: (path: string) => inside(path, posix.normalize(map.directory)) || inside(path, reference),
   };
 
-  const pages = markdownFiles(docs);
+  const pages = [...new Set(given.flatMap((path) => {
+    if (directories.includes(path)) return markdownFiles(path);
+    if (files.text(path) === undefined) throw new WireFailure("not-found", `There is no file ${path} in the project folder.`);
+    return [path];
+  }))];
   const changedPages: string[] = [];
   let links = 0;
   for (const page of pages) {

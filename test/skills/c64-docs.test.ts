@@ -252,6 +252,22 @@ test("link.ts links each name to its line and its address to its entry or its pl
   assert.equal(readFileSync(join(root, "docs/notes.md"), "utf8"), "[`main`](../src/main_code.asm#L4) [`$1000`](reference/modules/main_code.md#main)\n");
 });
 
+test("link.ts takes the entry page in the project folder beside the docs directory", () => {
+  const { root } = project();
+  assert.equal(generate(root, "--source", "src", "--out", "docs/reference").status, 0);
+  writeFileSync(join(root, "docs/notes.md"), "`main` `$1000`\n");
+  writeFileSync(join(root, "README.md"), "`main` `$1000`, see [notes](docs/notes.md).\n");
+  const linked = link(root, "README.md", "docs", "--source", "src");
+  assert.equal(linked.status, 0);
+  assert.equal(linked.json.reference, "docs/reference", "the reference of the docs directory");
+  assert.deepEqual(linked.json.linked, { links: 2, pages: ["README.md", "docs/notes.md"] });
+  assert.equal(readFileSync(join(root, "README.md"), "utf8"), "[`main`](src/main_code.asm#L5) [`$1000`](docs/reference/modules/main_code.md#main), see [notes](docs/notes.md).\n");
+  assert.equal(link(root, "README.md", "docs", "README.md", "--source", "src", "--check").status, 0);
+  writeFileSync(join(root, "notes.txt"), "text\n");
+  assert.equal(link(root, "notes.txt", "--source", "src").status, 2);
+  assert.equal(link(root, "MISSING.md", "--source", "src").status, 1);
+});
+
 test("link.ts reports a source and a reference that are older than the knowledge", () => {
   const { root } = project();
   assert.equal(generate(root, "--source", "src", "--out", "docs/reference").status, 0);

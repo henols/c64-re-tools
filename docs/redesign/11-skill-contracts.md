@@ -813,11 +813,11 @@ Document a program as a reader needs it: the flows, the state machines, the tabl
 
 - the source directory of c64-source with its `source-map.json`, from the current knowledge revision;
 - the image of the source, for the tables and the graphics;
-- the documentation directory, with the reference in a directory of its own.
+- the entry page `README.md` in the project folder, and the documentation directory with the reference in a directory of its own. In a workspace with several projects, a `README.md` at the root of the workspace lists the programs, with a link to the entry page of each.
 
 ### Tools / execution path
 
-Two local scripts. `generate.ts` writes the reference pages: one page for each module (call graph, data with readers and writers, an entry for each name with its callers and callees), and the pages of the names, the variables outside the image, the tables entry by entry, the memory map and the graphics (sprites, bitmaps and charsets in hires and in multicolour, screens as text). `link.ts` writes the links of the pages that the agent writes, and checks every link and image.
+Two local scripts. `generate.ts` writes the reference pages: one page for each module (call graph, data with readers and writers, an entry for each name with its callers and callees), and the pages of the names, the variables outside the image, the tables entry by entry, the memory map and the graphics (sprites, bitmaps and charsets in hires and in multicolour, screens as text). `link.ts` takes `.md` files and directories, for example `README.md docs`. It writes the links of the pages that the agent writes, and checks every link and image.
 
 ### Workflow
 

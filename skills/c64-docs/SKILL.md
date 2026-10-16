@@ -7,7 +7,7 @@ description: Use this skill to write the documentation of a C64 program. The doc
 
 ## Purpose
 
-Write documentation that tells how a program works, and that points to the code. The documentation is Markdown in the project, for example in `docs/`. It has two parts:
+Write documentation that tells how a program works, and that points to the code. The documentation is Markdown in the project. The entry page is `README.md` in the project folder. The other pages and the reference are in `docs/`. The documentation has two parts:
 
 - **The reference.** `generate.ts` generates it from the knowledge, the source map of c64-source and the image. It has a page for each module. The page gives the routines, their callers and callees, the data and a call graph. It also has pages for the names, the variables, the tables, the memory map and the graphics. Do not edit these pages. The next run writes over them.
 - **The pages that you write.** They tell how the program works. They give the flows, the state machines, the data formats and the task of each part. Use the page types in `references/page-types.md` and the rules in `references/style.md`.
@@ -20,7 +20,7 @@ This skill does not change the knowledge.
 
 - The source directory of c64-source, with its `source-map.json`, for example `src`. The source must be from the current knowledge revision.
 - The program in the knowledge. Put it in with `image` of the c64-knowledge skill. The reference decodes the tables and shows the graphics from it.
-- The directory of the documentation, for example `docs`. The reference goes into a directory of its own, for example `docs/reference`.
+- The entry page `README.md` and the directory of the other pages, for example `docs`. The reference goes into a directory of its own, for example `docs/reference`.
 
 ## Tools / execution path
 
@@ -28,16 +28,16 @@ The scripts run on this machine. They do not use the emulator or the host runtim
 
 ```
 node <skill>/scripts/generate.ts --source src --out docs/reference
-node <skill>/scripts/link.ts docs --source src
-node <skill>/scripts/link.ts docs --source src --check
+node <skill>/scripts/link.ts README.md docs --source src
+node <skill>/scripts/link.ts README.md docs --source src --check
 ```
 
 | Option | Meaning |
 |---|---|
 | `--source src` | The source directory of c64-source. Both scripts read `src/source-map.json`. |
 | `--out docs/reference` | The directory of the reference. `generate.ts` writes only there. It refuses to start when the directory holds a page that it did not write. |
-| `docs` | The directory of the documentation. `link.ts` reads every `.md` file below it. It changes only the pages that you wrote. It checks the pages of the reference. |
-| `--reference <dir>` | The directory of the reference for `link.ts`. The default is `docs/reference` when it exists. |
+| `README.md docs` | The pages of the documentation: `.md` files and directories. `link.ts` reads each file and every `.md` file below each directory. It changes only the pages that you wrote. It checks the pages of the reference. |
+| `--reference <dir>` | The directory of the reference for `link.ts`. The default is the `reference` directory of the first directory that has one, for example `docs/reference`. |
 | `--check` | `link.ts` writes nothing. It fails when a link is not up to date or a page has a problem. |
 
 ### Project folder
@@ -50,15 +50,16 @@ node <skill>/scripts/link.ts docs --source src --check
 1. Read the knowledge with the c64-knowledge skill. The documentation can only be as good as the knowledge. Each routine needs a name and a comment. Each table needs a region and a name. Each file of the source needs a module with a title. Record what is missing with c64-knowledge.
 2. Generate the source with c64-source. Make sure that `check.identical` is `true`. The script also writes `source-map.json`.
 3. Run `generate.ts`. Read `index.md` of the reference. A module with no routines, or a routine with no comment, shows what the knowledge does not have yet.
-4. Make the plan of the pages. Start from the modules and the call graphs. Find the main loop, the interrupt chain, the dispatch tables, the state machines and the data formats. Each subsystem gets one page. The entry page lists the pages. Use the page types in `references/page-types.md`.
+4. Make the plan of the pages. Start from the modules and the call graphs. Find the main loop, the interrupt chain, the dispatch tables, the state machines and the data formats. Each subsystem gets one page in `docs/`. The entry page `README.md` in the project folder lists the pages. Use the page types in `references/page-types.md`.
 5. Write each page. Read the code and the knowledge for each fact. Run the program with c64-testing or c64-emulator when a fact needs a run. Write each name with its address, for example `` `draw_room` `$09BC` ``. Mark each fact with its evidence. Several subagents can write the pages at the same time, one page each. Give each subagent `references/page-types.md` and `references/style.md`.
 6. Record each new fact in the knowledge first: a name, a comment, a region or a module. Then the source and the reference show it too. A fact only in a page is lost at the next change of the knowledge.
 7. Run `link.ts`. Read `problems` and correct each one. Then run `link.ts --check`. Make sure that `problems.count` is 0 and that `notUpToDate.links` is 0.
-8. After each change to the knowledge, do steps 2, 3 and 7 again. The links then go to the new lines.
+8. When the project folder is in a workspace with other projects, find `README.md` at the root of the workspace. This page lists each program of the workspace. Add one row for the program, with a link to `<project>/README.md` and one sentence. If the page does not exist, make it. Use the workspace index in `references/page-types.md`. `link.ts` does not read this page, because the page is not in the project folder.
+9. After each change to the knowledge, do steps 2, 3 and 7 again. The links then go to the new lines.
 
 ## The links
 
-`link.ts` changes these forms in the pages that you write. It does not change a code block, a mermaid diagram or an HTML comment.
+`link.ts` changes these forms in the pages that you write. It does not change a code block, a mermaid diagram or an HTML comment. The examples are for a page in `docs/`. In `README.md`, the links start with `src/` and `docs/reference/`.
 
 | You write | `link.ts` writes |
 |---|---|

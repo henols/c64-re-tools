@@ -4,15 +4,16 @@ Each page that you write is one of these types. The types come from the document
 
 ## 1. The entry page
 
-One entry page for the program, for example `docs/README.md` or `docs/rooms.md` for one large subsystem. It has these parts, in this order:
+One entry page for the program: `README.md` in the project folder. A large subsystem can have an entry page of its own in `docs/`, for example `docs/rooms.md`. The entry page of the program has these parts, in this order:
 
 1. **One paragraph.** What the program is, and which release the documentation is for.
 2. **The table of pages.** One row for each page, with the link and one sentence about its content.
 3. **The layers.** A mermaid diagram of the layers of the program. The layers are the data, the code that runs one time, the main loop and the interrupts. Under the diagram, a numbered list tells how the layers work together.
 4. **The flow of a user.** A mermaid diagram of the steps of the player or user from start to end. An example is the order of the levels.
 5. **Findings.** A table of the facts that a reader does not expect, each with its evidence. Put a bug of the original program here.
-6. **The reference.** A link to `reference/index.md`.
+6. **The reference.** A link to `docs/reference/index.md`.
 7. **Still open.** What is not known yet, and which run can find it.
+8. **The release and the rebuild.** What the release holds, for example a crack with a cracktro and a mover. Which part is the clean program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. How the source assembles to the clean program, and which scenarios compare the original with the rebuild.
 
 ```markdown
 # <Program>: <subject>
@@ -21,7 +22,7 @@ One entry page for the program, for example `docs/README.md` or `docs/rooms.md` 
 
 | Page | Content |
 |---|---|
-| [parts/main_loop.md](parts/main_loop.md) | **The main loop.** <one sentence> |
+| [parts/main_loop.md](docs/parts/main_loop.md) | **The main loop.** <one sentence> |
 
 ## 1. The layers
 
@@ -31,23 +32,50 @@ flowchart TB
   ...
 ~~~
 
-## 2. Findings
+## 2. The flow of a player
+
+...
+
+## 3. Findings
 
 | Finding | Evidence |
 |---|---|
 | <fact> | Observed: <what run showed it> |
 
-## 3. Still open
+## 4. The reference
+
+[docs/reference/index.md](docs/reference/index.md)
+
+## 5. Still open
 
 - <question> — <the run that can answer it>
+
+## 6. The release and the rebuild
+
+- **The release.** <the file on the disk, and what the release adds to the program>
+- **The rebuild.** <the source, the loader and the scenarios>
 ```
 
-## 2. The subsystem page
+## 2. The workspace index
+
+A workspace with several projects has one `README.md` at its root. It lists each program of the workspace. It has a title, one sentence and a table with one row for each program. Each row has a link to the entry page of the program and one sentence about the program.
+
+```markdown
+# C64 games
+
+Reverse-engineered C64 games. Each game has its own folder with the original disk, the rebuilt source and the documentation.
+
+| Game | |
+|---|---|
+| [Bruce Lee](bruce_lee/README.md) | Datasoft 1984. How the program works, from the cold start to the last room. |
+```
+
+## 3. The subsystem page
 
 One page for each subsystem, for example the main loop, the interrupt chain, the room generation or the sound player. It has these parts:
 
 1. **The scope.** A list of what the page covers, and the sources (the source files, the assets).
-2. **The conventions.** The terms of the page, for example "a pass is one run of `main_loop` `$1BC2`". Also the evidence labels. Use the conventions block of section 5.
+2. **The conventions.** The terms of the page, for example "a pass is one run of `main_loop` `$1BC2`". Also the evidence labels. Use the conventions block of section 6.
 3. **The overview.** A short text diagram or a mermaid flowchart of the calls, from the entry of the subsystem to its end.
 4. **The catalogue.** A table of the data of the subsystem. Each row has the name, the address, the layout (bytes, entries, the meaning of each byte), the readers and the writers.
 5. **The step-by-step walk.** For each main routine: a numbered list of what it does, in the order of the code. Each step gives the names and addresses. Add pseudo-code when a loop or a condition is not clear from the list.
@@ -71,7 +99,7 @@ stateDiagram-v2
 | Waiting `$00` | `move_timer` = 0 | Moving `$01` | `update_slider` `$3F8C` |
 ```
 
-## 3. The entity sections
+## 4. The entity sections
 
 A program often has many items of one kind: levels, rooms, enemies, tunes. Give each item one section of the same form, in a page for a group of items. Each section has these parts:
 
@@ -83,7 +111,7 @@ A program often has many items of one kind: levels, rooms, enemies, tunes. Give 
 
 End the group page with a table of the dependencies between the items.
 
-## 4. The data-format page
+## 5. The data-format page
 
 One page for each format of data, for example a packed map, a music stream or a sprite format. It has these parts:
 
@@ -101,7 +129,7 @@ One page for each format of data, for example a packed map, a music stream or a 
 | `$01-$7F` | The next byte, `b` times. |
 ```
 
-## 5. The conventions block
+## 6. The conventions block
 
 Put this block near the top of each subsystem page. Change the terms for the program.
 
