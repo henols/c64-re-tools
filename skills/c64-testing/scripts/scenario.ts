@@ -3,7 +3,7 @@
 // Observations name semantic symbols that resolve per side, comparisons are
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
-import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { MAX_BASELINES, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
 import { ACTION_STEP_KEYS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type Location } from "#src/host-client/steps.ts";
@@ -358,14 +358,14 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
       }
       if (step.registers !== undefined) {
         const registers = await client.registersGet("c64");
-        for (const name of step.registers) observation.registers[name] = registers[name];
+        for (const name of step.registers) observation.registers[name] = name === "pc" ? formatC64Address(registers.pc) : registers[name];
       }
       if (step.vicii) {
         // The raster line changes from one moment to the next; the comparison leaves it out.
         const { rasterLine: _rasterLine, ...state } = await client.vicii();
-        observation.vicii = state;
+        observation.vicii = formatVicii(state);
       }
-      if (step.sprites !== undefined) observation.sprites = (await client.sprites(step.sprites)).sprites;
+      if (step.sprites !== undefined) observation.sprites = (await client.sprites(step.sprites)).sprites.map(formatSprite);
       if (step.screen !== undefined) {
         const baseline = baselineName(checkpoint, step.observe);
         if (side === "original") {
@@ -413,7 +413,7 @@ export function compare(original: Map<string, Observation>, rebuild: Map<string,
       const other = right.memory[index]!;
       const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
       if (item.bytes.some((byte, at) => !skipped.has(at) && Math.abs(byte - other.bytes[at]!) > item.tolerance)) {
-        const show = (bytes: number[]) => (bytes.length === 1 ? bytes[0] : Buffer.from(bytes).toString("hex"));
+        const show = (bytes: number[]) => Buffer.from(bytes).toString("hex");
         differences.push({ checkpoint, what: `memory ${item.label}`, original: show(item.bytes), rebuild: show(other.bytes) });
       }
     });
@@ -439,7 +439,8 @@ function writeFailFiles(out: string, original: Map<string, Observation>, rebuild
     writeProjectFile(`${out}/${name}`, bytes, { what: "--out" });
     files.push(name);
   };
-  const memory: Array<{ checkpoint: string; what: string; bytes: Array<{ address: string; original: number; rebuild: number }> }> = [];
+  const memory: Array<{ checkpoint: string; what: string; bytes: Array<{ address: string; original: string; rebuild: string }> }> = [];
+  const hex = (byte: number) => byte.toString(16).padStart(2, "0");
   for (const difference of differences) {
     const left = original.get(difference.checkpoint)!;
     const right = rebuild.get(difference.checkpoint)!;
@@ -454,7 +455,7 @@ function writeFailFiles(out: string, original: Map<string, Observation>, rebuild
       const item = left.memory[index]!;
       const other = right.memory[index]!;
       const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
-      const bytes = item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs(byte - other.bytes[offset]!) > item.tolerance ? [{ address: formatC64Address(item.address + offset), original: byte, rebuild: other.bytes[offset]! }] : []));
+      const bytes = item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs(byte - other.bytes[offset]!) > item.tolerance ? [{ address: formatC64Address(item.address + offset), original: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
       memory.push({ checkpoint: difference.checkpoint, what: difference.what, bytes });
     }
   }

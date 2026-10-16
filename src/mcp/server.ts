@@ -300,6 +300,7 @@ const INSTRUCTIONS =
   "These tools control one live Commodore 64 emulator that belongs to this session. " +
   "Addresses are four hex digits after a dollar sign, for example $c000. " +
   "Memory data is lowercase hex without separators. " +
+  "Other register values and chip values are decimal numbers. " +
   "A read does not change the run state of the machine.";
 
 export function createMcpServer(options: { tools: readonly ToolDefinition[]; session: SessionSource; log?: (line: string) => void }): Server {

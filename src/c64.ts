@@ -20,6 +20,16 @@ export function formatC64Address(value: number): string {
   return `$${checkAddress(value).toString(16).padStart(4, "0")}`;
 }
 
+/** VIC-II state with its addresses as $xxxx; the other values stay numbers. */
+export function formatVicii<T extends { screenAddress: number; graphicsAddress: number }>(state: T): Omit<T, "screenAddress" | "graphicsAddress"> & { screenAddress: string; graphicsAddress: string } {
+  return { ...state, screenAddress: formatC64Address(state.screenAddress), graphicsAddress: formatC64Address(state.graphicsAddress) };
+}
+
+/** A sprite with its data address as $xxxx; the other values stay numbers. */
+export function formatSprite<T extends { dataAddress: number }>(sprite: T): Omit<T, "dataAddress"> & { dataAddress: string } {
+  return { ...sprite, dataAddress: formatC64Address(sprite.dataAddress) };
+}
+
 /** A byte as $xx. Throws RangeError outside 0-255. */
 export function formatC64Byte(value: number): string {
   if (!Number.isInteger(value) || value < 0 || value > 0xff) throw new RangeError(`C64 byte out of range: ${value}`);

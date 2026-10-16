@@ -67,6 +67,7 @@ See [references/scenario-format.md](references/scenario-format.md), section Runs
 6. Read the result:
    - `PASS`: all observations are equal, or the differences are in the allowed tolerance.
    - `FAIL`: `differences` lists each difference with the checkpoint, the item, the original value and the rebuild value.
+   - Each value has one form. The pc and each address are `$xxxx`. Memory is lowercase hex. Other register values and chip values are decimal numbers.
    - `INCONCLUSIVE`: `reason` tells why the script could not compare. This is not a failure of the program.
 7. For a FAIL, examine the first difference with the c64-emulator skill.
 

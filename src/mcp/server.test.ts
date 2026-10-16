@@ -737,7 +737,7 @@ test("memory compare and disassemble shape their results", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
   const compared = await call(client, "c64_memory_compare", { left: { address: "$2000" }, right: { address: "$3000", view: "ram" }, size: 256 });
-  assert.deepEqual(compared.structuredContent, { equal: false, differentBytes: 3, firstDifferences: [{ offset: 12, left: 4, right: 5 }] });
+  assert.deepEqual(compared.structuredContent, { equal: false, differentBytes: 3, firstDifferences: [{ offset: 12, left: "04", right: "05" }] });
   assert.deepEqual(session.searches[0], {
     left: { address: 0x2000, space: "c64", view: "cpu" },
     right: { address: 0x3000, space: "c64", view: "ram" },

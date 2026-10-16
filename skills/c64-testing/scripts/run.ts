@@ -6,7 +6,7 @@
 
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { ACTION_STEP_KEYS, ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
@@ -149,8 +149,8 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
           const registers = await client.registersGet("c64");
           seen.registers = { ...registers, pc: formatC64Address(registers.pc) };
         }
-        if (step.vicii === true) seen.vicii = await client.vicii();
-        if (step.sprites !== undefined) seen.sprites = (await client.sprites(step.sprites)).sprites;
+        if (step.vicii === true) seen.vicii = formatVicii(await client.vicii());
+        if (step.sprites !== undefined) seen.sprites = (await client.sprites(step.sprites)).sprites.map(formatSprite);
         observations[step.observe] = seen;
       } else {
         const notReached = await runActionStep(client, step, at);

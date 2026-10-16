@@ -12,6 +12,8 @@ import { AddressInput, AddressOutput, Byte, defineTool, HexData, HexDataInput, M
 /** With out, a read or a disassembly can be larger than one answer of the session: it is read in parts (D39). */
 const MAX_MEMORY_READ_OUT = 0x10000;
 const MAX_DISASSEMBLE_OUT = 32768;
+/** A memory byte in a result: two lowercase hex digits, as memory data is. */
+const HexByte = z.string().regex(/^[0-9a-f]{2}$/);
 
 export const c64MemoryRead = defineTool({
   name: "c64_memory_read",
@@ -182,6 +184,7 @@ export const c64MemoryCompare = defineTool({
   description:
     `Compare two memory ranges of size bytes (1 to ${MAX_COMPARE_SIZE}). Each range has its own address, space and view. ` +
     `The result tells if they are equal, how many bytes differ, and the first ${MAX_COMPARE_DIFFERENCES} differences with their offset. ` +
+    "The bytes of a difference are lowercase hex. " +
     "This does not change the run state of the machine.",
   inputSchema: z
     .object({ left: Location, right: Location, size: z.number().int().min(1).max(MAX_COMPARE_SIZE) })
@@ -189,11 +192,13 @@ export const c64MemoryCompare = defineTool({
   outputSchema: z.object({
     equal: z.boolean(),
     differentBytes: z.number().int().min(0),
-    firstDifferences: z.array(z.object({ offset: z.number().int().min(0), left: Byte, right: Byte })),
+    firstDifferences: z.array(z.object({ offset: z.number().int().min(0), left: HexByte, right: HexByte })),
   }),
   readOnly: true,
   async run(input, session) {
-    return session.memoryCompare(input);
+    const result = await session.memoryCompare(input);
+    const hex = (byte: number) => byte.toString(16).padStart(2, "0");
+    return { ...result, firstDifferences: result.firstDifferences.map((difference) => ({ ...difference, left: hex(difference.left), right: hex(difference.right) })) };
   },
 });
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { basicLineText, constantExpression, COVERAGE, executedRamCode, findHandoffs, formatC64Address, instructionLength, parseC64Address, parseTokenized, petsciiNameToText, textToPetscii, textToPetsciiName, type TokenizedLine, vicBankBase } from "./c64.ts";
+import { basicLineText, constantExpression, COVERAGE, executedRamCode, findHandoffs, formatC64Address, formatSprite, formatVicii, instructionLength, parseC64Address, parseTokenized, petsciiNameToText, textToPetscii, textToPetsciiName, type TokenizedLine, vicBankBase } from "./c64.ts";
 
 test("C64 address primitives use canonical four-digit hexadecimal", () => {
   assert.equal(parseC64Address("$d020"), 0xd020);
@@ -230,4 +230,14 @@ test("a BASIC line reads as text: keywords for tokens, quotes and REM as they ar
   assert.equal(line([0x99, 0x22, 0x47, 0x4f, 0x54, 0x4f, 0x22]), '10 PRINT"GOTO"');
   assert.equal(line([0x8f, 0x20, 0x89, 0x41]), "10 REM {$89}A", "after REM a token byte is no keyword");
   assert.equal(line([0x97, 0x35, 0x33, 0x32, 0x38, 0x30, 0x2c, 0x30]), "10 POKE53280,0");
+});
+
+test("VIC-II and sprite state give addresses as $xxxx and keep the chip values as numbers", () => {
+  assert.deepEqual(formatVicii({ rasterLine: 100, screenAddress: 0x0400, graphicsAddress: 0x1000, borderColor: 14 }), {
+    rasterLine: 100,
+    screenAddress: "$0400",
+    graphicsAddress: "$1000",
+    borderColor: 14,
+  });
+  assert.deepEqual(formatSprite({ index: 2, x: 24, dataAddress: 0x2000 }), { index: 2, x: 24, dataAddress: "$2000" });
 });

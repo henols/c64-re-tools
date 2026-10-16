@@ -818,14 +818,14 @@ Output:
   "firstDifferences": [
     {
       "offset": 12,
-      "left": 4,
-      "right": 5
+      "left": "04",
+      "right": "05"
     }
   ]
 }
 ~~~
 
-firstDifferences is capped at 32 entries.
+firstDifferences is capped at 32 entries. left and right are memory bytes, so they are lowercase hex like all memory data.
 
 ## 18. c64_registers
 

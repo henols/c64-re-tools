@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 
-import { formatC64Address } from "../../c64.ts";
+import { formatC64Address, formatSprite, formatVicii } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, type ObserveParams } from "../../protocol/vice.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
@@ -31,8 +31,7 @@ export const c64Vicii = defineTool({
   }),
   readOnly: true,
   async run(_input, session) {
-    const state = await session.vicii();
-    return { ...state, screenAddress: formatC64Address(state.screenAddress), graphicsAddress: formatC64Address(state.graphicsAddress) };
+    return formatVicii(await session.vicii());
   },
 });
 
@@ -62,7 +61,7 @@ export const c64Sprite = defineTool({
   readOnly: true,
   async run(input, session) {
     const result = await session.sprites(input.sprites ?? []);
-    return { sprites: result.sprites.map((sprite) => ({ ...sprite, dataAddress: formatC64Address(sprite.dataAddress) })) };
+    return { sprites: result.sprites.map(formatSprite) };
   },
 });
 
