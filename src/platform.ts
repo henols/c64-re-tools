@@ -401,10 +401,15 @@ export function platformNamesFor(use: RomUse): ReturnType<typeof platformNames> 
   });
 }
 
-/** The ROMs that a coverage map shows in use: a ROM read or execute in the bank. */
-export function romUseOf(coverage: Uint8Array, romAccess: number): RomUse {
+/**
+ * The ROMs that a coverage map shows in use: code of the ROM executed. A read
+ * of ROM bytes is data, for example a table or random numbers, and does not use
+ * the routines of the ROM or their workspace (Bruce Lee reads 1,571 bytes of the
+ * BASIC ROM and executes none).
+ */
+export function romUseOf(coverage: Uint8Array, romExecute: number): RomUse {
   const used = (start: number, end: number) => {
-    for (let address = start; address <= end; address++) if ((coverage[address]! & romAccess) !== 0) return true;
+    for (let address = start; address <= end; address++) if ((coverage[address]! & romExecute) !== 0) return true;
     return false;
   };
   return { basic: used(0xa000, 0xbfff), kernal: used(0xe000, 0xffff) };

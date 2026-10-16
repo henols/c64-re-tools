@@ -518,7 +518,7 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
  * from $01 of the entry state next to image.json, else both.
  */
 function romsInUse(image: Image, coverage: Uint8Array | undefined): RomUse & { from: "coverage" | "entry state" | "none" } {
-  if (coverage !== undefined) return { ...romUseOf(coverage, COVERAGE.romRead | COVERAGE.romExecute), from: "coverage" };
+  if (coverage !== undefined) return { ...romUseOf(coverage, COVERAGE.romExecute), from: "coverage" };
   if (image.statePath !== undefined && existsSync(resolveProjectPath(image.statePath))) {
     try {
       const port = (JSON.parse(readProjectFile(image.statePath).bytes.toString("utf8")) as { cpuPort?: Record<string, unknown> }).cpuPort?.$01;

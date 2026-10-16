@@ -19,11 +19,11 @@ test("a program without the KERNAL and BASIC gets no system or ROM names, only t
 
 test("the ROMs in use come from ROM accesses in the coverage, or from $01", () => {
   const coverage = new Uint8Array(0x10000);
-  assert.deepEqual(romUseOf(coverage, COVERAGE.romRead | COVERAGE.romExecute), { basic: false, kernal: false });
+  assert.deepEqual(romUseOf(coverage, COVERAGE.romExecute), { basic: false, kernal: false });
   coverage[0xffd2] = COVERAGE.romExecute;
-  assert.deepEqual(romUseOf(coverage, COVERAGE.romRead | COVERAGE.romExecute), { basic: false, kernal: true });
-  coverage[0xa000] = COVERAGE.ramRead;
-  assert.deepEqual(romUseOf(coverage, COVERAGE.romRead | COVERAGE.romExecute).basic, false, "RAM under the ROM is no ROM use");
+  assert.deepEqual(romUseOf(coverage, COVERAGE.romExecute), { basic: false, kernal: true });
+  coverage[0xa000] = COVERAGE.ramRead | COVERAGE.romRead;
+  assert.deepEqual(romUseOf(coverage, COVERAGE.romExecute).basic, false, "bytes of the BASIC ROM read as data are no use of BASIC");
   assert.deepEqual(romUseOfPort(0x37), { basic: true, kernal: true });
   assert.deepEqual(romUseOfPort(0x36), { basic: false, kernal: true });
   assert.deepEqual(romUseOfPort(0x35), { basic: false, kernal: false });

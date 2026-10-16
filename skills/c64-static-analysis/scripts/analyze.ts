@@ -380,9 +380,14 @@ async function run(argv: string[]): Promise<unknown> {
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
   // Executed instruction starts that Ghidra did not decode: the instruction list and the source miss them.
   const decoded = new Set(result.instructions.map((instruction) => instruction.address));
-  const gaps = coverage === undefined ? [] : executedStarts(coverage, byteAt).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address));
   const imported = record({ ...ghidraFindings(result), space, ...executed }, revision, `Ghidra analysis of ${image}`, { ...runProvenance(bytes, result.toolVersion), ...coverageEvidence });
   const found = idiomsResult();
+  // A start inside a dual-use region is a known overlap, for example the second instruction of a BIT skip: one list cannot hold both.
+  // Read after the idioms, which write those regions.
+  const overlapDb = coverage === undefined ? undefined : openForRead();
+  const overlaps = listRegions(overlapDb, undefined, "dual-use", undefined, space);
+  overlapDb?.close();
+  const gaps = coverage === undefined ? [] : executedStarts(coverage, byteAt).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address) && !overlaps.some((region) => address >= region.start && address <= region.end));
   let instructions: { out: string; count: number } | undefined;
   if (values.instructions !== undefined) {
     const list = instructionList(result.instructions, coverage);
