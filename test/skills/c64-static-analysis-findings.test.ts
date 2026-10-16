@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
-import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "../../skills/c64-static-analysis/scripts/findings.ts";
+import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "../../skills/c64-static-analysis/scripts/lib/findings.ts";
 
 const root = mkdtempSync(join(tmpdir(), "c64-re-tools-findings-"));
 const db = openForWrite(root);

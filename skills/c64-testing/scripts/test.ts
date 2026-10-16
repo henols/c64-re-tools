@@ -8,7 +8,7 @@ import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { readScenario, runScenario, ScenarioError, type ScenarioResult } from "./scenario.ts";
+import { readScenario, runScenario, ScenarioError, type ScenarioResult } from "./lib/scenario.ts";
 
 const USAGE = `test.ts <scenario.json> [--out <dir>]
 

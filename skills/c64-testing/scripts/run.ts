@@ -15,7 +15,7 @@ import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts"
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { loadSymbols } from "./scenario.ts";
+import { loadSymbols } from "./lib/scenario.ts";
 
 const USAGE = `run.ts <run.json> --out <dir>
 

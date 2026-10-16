@@ -16,9 +16,9 @@ import { assemble } from "../../src/native/acme.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ciaSection, copyOrder, planLoader, readEntryState, simulate, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/loader.ts";
-import { MODE_LENGTH, OPCODES } from "../../skills/c64-source/scripts/opcodes.ts";
-import { entriesInData, entryOutsideImage, layout, render, type SourceInput } from "../../skills/c64-source/scripts/source.ts";
+import { ciaSection, copyOrder, planLoader, readEntryState, simulate, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { MODE_LENGTH, OPCODES } from "../../skills/c64-source/scripts/lib/opcodes.ts";
+import { entriesInData, entryOutsideImage, layout, render, type SourceInput } from "../../skills/c64-source/scripts/lib/source.ts";
 import { describeAddress, platformNames } from "../../src/platform.ts";
 
 let acmeSkip: string | false = false;

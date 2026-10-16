@@ -7,8 +7,8 @@ import { test } from "node:test";
 import { assemble } from "../../src/native/acme.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { imageReader } from "../../skills/c64-static-analysis/scripts/coverage.ts";
-import { CATALOGUE, findMacroUses } from "../../skills/c64-static-analysis/scripts/macros.ts";
+import { imageReader } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
+import { CATALOGUE, findMacroUses } from "../../skills/c64-static-analysis/scripts/lib/macros.ts";
 
 let acmeSkip: string | false = false;
 try {

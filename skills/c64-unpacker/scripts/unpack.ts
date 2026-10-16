@@ -17,10 +17,10 @@ import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts"
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { basicStart, inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./evidence.ts";
-import { loads, readLoadSteps } from "./loads.ts";
-import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, type Range } from "./stages.ts";
-import { entryState, IO_AREAS, json, machineState, readRam, READY_FRAMES, vectorsOf } from "./machine.ts";
+import { basicStart, inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
+import { loads, readLoadSteps } from "./lib/loads.ts";
+import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, type Range } from "./lib/stages.ts";
+import { entryState, IO_AREAS, json, machineState, readRam, READY_FRAMES, vectorsOf } from "./lib/machine.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
 unpack.ts trace <program.prg> [--frames <n>] [--entry <address>] [--steps <file>]

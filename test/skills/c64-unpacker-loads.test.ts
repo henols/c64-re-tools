@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
-import { changedBlocks, readLoadSteps } from "../../skills/c64-unpacker/scripts/loads.ts";
+import { changedBlocks, readLoadSteps } from "../../skills/c64-unpacker/scripts/lib/loads.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-loads-"));
 const home = process.cwd();

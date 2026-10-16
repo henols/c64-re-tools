@@ -38,10 +38,10 @@ import { CODE_REGION_TYPES, type Origin } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { compareReleases, shiftSuggestion, suggestShifts, type Range, type Release } from "./compare.ts";
-import { findRoutine, libraryFolder, LibraryError, readLibrary, routineFrom, saveRoutine, suggest } from "./library.ts";
-import { watchRelease, type ImageState, type Start } from "./runtime.ts";
-import { separate } from "./separate.ts";
+import { compareReleases, shiftSuggestion, suggestShifts, type Range, type Release } from "./lib/compare.ts";
+import { findRoutine, libraryFolder, LibraryError, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
+import { watchRelease, type ImageState, type Start } from "./lib/runtime.ts";
+import { separate } from "./lib/separate.ts";
 
 const USAGE = `provenance.ts <release> <release> [<release> ...] [options]
 provenance.ts separate <release> [--coverage <file> ...] [--out <file>] [--max-listed <n>]

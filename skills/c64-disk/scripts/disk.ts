@@ -11,7 +11,7 @@ import { inspectDisk } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { ContainerError, parseCrt, parseT64, tapeFile } from "./containers.ts";
+import { ContainerError, parseCrt, parseT64, tapeFile } from "./lib/containers.ts";
 
 const USAGE = `disk.ts <action> <image> [name] [--out <file>]
 

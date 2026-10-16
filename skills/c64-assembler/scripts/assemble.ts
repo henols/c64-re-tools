@@ -12,7 +12,7 @@ import { localToolContext } from "#src/native/local.ts";
 import type { AcmeParams } from "#src/native/types.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { compareBuild } from "./compare.ts";
+import { compareBuild } from "./lib/compare.ts";
 
 const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [options]
 

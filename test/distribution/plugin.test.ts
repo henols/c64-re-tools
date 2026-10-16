@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -23,6 +23,15 @@ test("the scripts of a skill come from its SKILL.md", () => {
   assert.deepEqual(scriptsOf("no scripts here"), []);
 });
 
+test("every script at the top of a skill's scripts folder is named in its SKILL.md; helper modules are in scripts/lib", () => {
+  for (const skill of readdirSync(resolve(root, "skills"))) {
+    const folder = resolve(root, "skills", skill, "scripts");
+    const named = scriptsOf(readFileSync(resolve(root, "skills", skill, "SKILL.md"), "utf8"));
+    const top = existsSync(folder) ? readdirSync(folder).filter((file) => file.endsWith(".ts")).map((file) => file.slice(0, -3)).sort() : [];
+    assert.deepEqual(top, named, `${skill}: move a helper module to scripts/lib, or name the script in SKILL.md`);
+  }
+});
+
 test("the plugin holds every skill with its scripts, their src/ modules, references and package.json", () => {
   assert.equal(plugin.id, "c64-re-tools");
   const names = plugin.skills!.map((skill) => skill.name);
@@ -33,7 +42,7 @@ test("the plugin holds every skill with its scripts, their src/ modules, referen
     testing.resources!.filter((resource) => resource.executable === true).map((resource) => resource.path),
     ["scripts/checklist.ts", "scripts/run.ts", "scripts/test.ts"],
   );
-  for (const path of ["scripts/scenario.ts", "src/host-client/tools.ts", "src/host-client/steps.ts", "src/host-client/coverage.ts", "src/c64.ts", "references/scenario-format.md", "package.json"]) assert.ok(paths.includes(path), path);
+  for (const path of ["scripts/lib/scenario.ts", "src/host-client/tools.ts", "src/host-client/steps.ts", "src/host-client/coverage.ts", "src/c64.ts", "references/scenario-format.md", "package.json"]) assert.ok(paths.includes(path), path);
   assert.ok(!paths.some((path) => path.endsWith(".js") || path.endsWith(".test.ts")), "TypeScript only, no tests");
   assert.ok(!paths.some((path) => path.startsWith("src/mcp/") || path.startsWith("src/host/")), "only what the scripts reach");
   assert.equal(testing.resources!.find((resource) => resource.path === "package.json")!.content, SKILL_PACKAGE);

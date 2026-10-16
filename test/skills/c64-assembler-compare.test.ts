@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { compareBuild } from "../../skills/c64-assembler/scripts/compare.ts";
+import { compareBuild } from "../../skills/c64-assembler/scripts/lib/compare.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-compare-"));
 const home = process.cwd();

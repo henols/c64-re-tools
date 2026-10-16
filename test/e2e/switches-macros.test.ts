@@ -14,7 +14,7 @@ import { after, test } from "node:test";
 
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
-import { CATALOGUE } from "../../skills/c64-static-analysis/scripts/macros.ts";
+import { CATALOGUE } from "../../skills/c64-static-analysis/scripts/lib/macros.ts";
 
 let skip: string | false = false;
 try {

@@ -8,8 +8,8 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
-import { compareReleases, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/compare.ts";
-import { separate } from "../../skills/c64-provenance/scripts/separate.ts";
+import { compareReleases, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
+import { separate } from "../../skills/c64-provenance/scripts/lib/separate.ts";
 import { seededBytes } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-"));

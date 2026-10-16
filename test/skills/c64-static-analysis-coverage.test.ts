@@ -15,7 +15,7 @@ import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
 import { classifyRegion } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps, romOnlyRanges } from "../../skills/c64-static-analysis/scripts/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps, romOnlyRanges } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-coverage-"));

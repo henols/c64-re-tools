@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "../../src/knowledge/read.ts";
-import { findRoutine, libraryFolder, LibraryError, parseRoutine, readLibrary, routineFrom, routineText, saveRoutine, suggest, type ProgramKnowledge, type RoutineSource } from "../../skills/c64-provenance/scripts/library.ts";
+import { findRoutine, libraryFolder, LibraryError, parseRoutine, readLibrary, routineFrom, routineText, saveRoutine, suggest, type ProgramKnowledge, type RoutineSource } from "../../skills/c64-provenance/scripts/lib/library.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-library-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));

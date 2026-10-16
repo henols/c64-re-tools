@@ -11,7 +11,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
 import type { ViceSessionClient } from "../../src/host-client/vice-session.ts";
-import { compare, loadSymbols, readScenario, resolve, runScenario, ScenarioError } from "../../skills/c64-testing/scripts/scenario.ts";
+import { compare, loadSymbols, readScenario, resolve, runScenario, ScenarioError } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-testing-"));
 const home = process.cwd();

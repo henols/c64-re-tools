@@ -23,12 +23,12 @@ import { DEFAULT_SPACE, SPACE } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps, romOnlyRanges, type ImageByte } from "./coverage.ts";
-import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
-import { findIdioms } from "./idioms.ts";
-import { instructionList } from "./instructions.ts";
-import { CATALOGUE, findMacroUses, type MacroCandidate } from "./macros.ts";
-import { findPointers, type PointerCandidate } from "./pointers.ts";
+import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
+import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.ts";
+import { findIdioms } from "./lib/idioms.ts";
+import { instructionList } from "./lib/instructions.ts";
+import { CATALOGUE, findMacroUses, type MacroCandidate } from "./lib/macros.ts";
+import { findPointers, type PointerCandidate } from "./lib/pointers.ts";
 
 const USAGE = `analyze.ts <image> [options]
 

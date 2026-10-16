@@ -12,9 +12,9 @@ import { COVERAGE } from "../../src/c64.ts";
 import { openForRead } from "../../src/knowledge/database.ts";
 import { listReferences, listRegions } from "../../src/knowledge/read.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { imageReader } from "../../skills/c64-static-analysis/scripts/coverage.ts";
-import { findIdioms } from "../../skills/c64-static-analysis/scripts/idioms.ts";
-import { findPointers } from "../../skills/c64-static-analysis/scripts/pointers.ts";
+import { imageReader } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
+import { findIdioms } from "../../skills/c64-static-analysis/scripts/lib/idioms.ts";
+import { findPointers } from "../../skills/c64-static-analysis/scripts/lib/pointers.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-idioms-"));
 after(() => rmSync(project, { recursive: true, force: true }));

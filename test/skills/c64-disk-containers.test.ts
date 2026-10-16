@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { parseCrt, parseT64 } from "../../skills/c64-disk/scripts/containers.ts";
+import { parseCrt, parseT64 } from "../../skills/c64-disk/scripts/lib/containers.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/c64-disk/scripts/disk.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-containers-"));
