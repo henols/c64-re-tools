@@ -68,7 +68,7 @@ A `type` step puts keys in the keyboard queue of the KERNAL. A program that read
    - `unclear`: the file is short, or the blocks do not give clear evidence. Or the code at the SYS address decodes or moves bytes outside the program.
 
    Also read the evidence that the script finds in the file. The script never names a packer from it:
-   - `basicText`: the BASIC lines as text. A packer or a crack often puts its name there.
+   - `basicText`: raw evidence from the BASIC lines, not a listing. A byte that is not a printable character shows as `{$xx}`. A packer or a crack often puts its name there. For a listing, use the c64-basic skill.
    - `strings`: readable text near the start of the code.
    - `start`: the code at the SYS address. `jumpsOutside` and `writesOutside` give an address outside the loaded program, where the code jumps or writes.
    - `decodeLoops`: EOR instructions in loops that store with an index. This is usually decryption or decoding.
@@ -81,6 +81,7 @@ A `type` step puts keys in the keyboard queue of the KERNAL. A program that read
    - Or use `runningRange.start` from `trace`, or `suggestedUntil`. The CPU gets to `suggestedUntil` after the unpacking.
    - Or use the c64-emulator skill: set a breakpoint after the unpack loop, or look at the last JMP of the unpacker.
    - Disassemble the code at the address with the c64-emulator skill. Make sure that it is the start of the program. The start of a program often sets the stack pointer, the interrupts and the vectors.
+   - A program can be relocated and not packed. Then a short copier moves the code and jumps to it. The moved code is the last stage. Make sure that the `entry` of the last stage is not code that the program writes later. An example is a routine that the program makes at run time. Disassemble the entry to make sure.
 4. Run `capture` with that address and a directory in `--out`. Give the same `--steps` as before. The directory gets:
    - `image.bin`: all 64 KiB of RAM at the entry.
    - `image.json`: the entry, the segments, the vectors and the stages. A segment is a block that a stage wrote. A block is not a segment when it holds the entry of a later stage before the program, and no stage wrote over that entry. The block with the capture entry is always a segment. Segments do not overlap. `writtenBy` tells the last stage that wrote into the segment.

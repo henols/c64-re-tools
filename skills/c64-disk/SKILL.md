@@ -40,7 +40,7 @@ node <skill>/scripts/disk.ts <action> <image> [name] [--out <file>]
 
 The script prints one JSON object.
 
-File names show the characters that the C64 shows in a directory list. A byte that has no character shows as `{$xx}`, for example `{$c1}`. Write the name in the same form. The letter case of a name is not important. Put the name in single quotes in a shell, for example `'GAME {$c1}'`.
+File names show the characters that the C64 shows in a directory list. A byte that has no character shows as `{$xx}`, for example `{$c1}`. Write the name in the same form. The letter case of a name is not important. Put the name in single quotes in a shell, for example `'GAME {$c1}'`. A name that starts with `-` needs `--` before it, after all options, for example `read d.d64 --out x.prg -- '-----'`.
 
 ### Project folder
 

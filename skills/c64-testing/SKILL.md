@@ -26,7 +26,7 @@ node <skill>/scripts/test.ts tests/moves-left.json --out results/moves-left
 node <skill>/scripts/checklist.ts tests/moves-left.json --item 'FIRE starts the game.'
 ```
 
-The test script prints one JSON object. The exit status is 0 for PASS, 1 for FAIL, 3 for INCONCLUSIVE and 2 for a bad call. With `--out`, a FAIL writes files into that directory: both screens and the difference image for each screen difference, and `memory.json` with each byte that differs. `files` in the result names them.
+The test script prints one JSON object. The exit status is 0 for PASS, 1 for FAIL, 3 for INCONCLUSIVE and 2 for a bad call. With `--out`, a FAIL writes files into that directory: both screens and the difference image for each screen difference, and `memory.json` with each byte that differs. `files` in the result names them. A PASS writes no files. To keep the screens of a PASS, use a run (below).
 
 The checklist script prints a Markdown checklist for a human tester.
 

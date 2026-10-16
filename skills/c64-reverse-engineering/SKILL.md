@@ -78,7 +78,7 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 4. Unpack | c64-unpacker: examine the program. Capture a packed program into `unpacked/`. | `image.json` and `entry_state.json` exist, or the evidence shows no packer. |
 | 5. Run | c64-emulator and the run of c64-testing: run each part that the scope names. Write a coverage file for each part into `coverage/`. | Each part that the scope names has a coverage file. |
 | 6. Analyze | c64-static-analysis with `--coverage` for each coverage file. | No coverage conflict is open. |
-| 7. Name | c64-provenance: if the workspace has a library, find its routines with `match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. | Each routine in the scope has a name and a comment. |
+| 7. Name | c64-provenance: if the workspace has a library, find its routines with `match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
 | 8. Generate | c64-source with `--coverage` into `src/`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
 | 9. Build and test | c64-assembler with `--compare` into `build/`. c64-testing scenarios in `tests/`. | The criteria of stage 1 are true. |
 | 10. Report | Write `report.md`. | The report has all its sections. |
@@ -148,6 +148,7 @@ A clear answer for the scope, with the durable conclusions in the project knowle
 ## Failure and conflicts
 
 - A skill reports `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
+- A tool gives a wrong result, and the exit check of a stage cannot be true. Tell the user the defect and the evidence, and wait for the user. Do not make a workaround, for example a change to a generated file. When the user accepts an exception, write the defect and the exception in the report.
 - If the evidence does not support a conclusion, keep the unknown and get more evidence. Do not make up a meaning.
 - Before you replace current knowledge from the user or the LLM, read its history and the evidence for it.
 - A conflict from the static analysis: find the correct answer at run time with the c64-emulator skill.

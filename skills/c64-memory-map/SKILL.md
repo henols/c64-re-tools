@@ -30,9 +30,9 @@ node <skill>/scripts/memmap.ts export --out src/hw.asm
 | Command | Result |
 |---|---|
 | `at <address> ...` | For each address: `kind` (`platform` or `application`), the area, the name and the meaning. |
-| `decode <register> <value>` | The meaning of the value. Use `--bank` with the value of `$DD00` to get the addresses for `$D018`. |
+| `decode <register> <value>` | The meaning of the value. Use `--bank` with the value of `$DD00` to get the addresses for `$D018`. The decoders are for `$01`, `$D010`, `$D011`, `$D015` to `$D01F`, `$D016`, `$D018`, `$DC0D`, `$DD00` and `$DD0D`. |
 | `list <vic\|sid\|cia1\|cia2\|kernal\|system>` | All entries of that group. |
-| `export --out <file>` | Writes all platform names to a project file as an ACME include: one `NAME = $xxxx` line for each name, with its meaning as a comment. |
+| `export --out <file>` | Writes all platform names to a project file as an ACME include: one line for each name, with its meaning as a comment. A zero-page name is `NAME = $xx`. Other names are `NAME = $xxxx`. |
 
 Write an address or a value as `$` and hex digits, as a decimal number, or as `%` and binary digits. Put a `$` value in single quotes in a shell.
 

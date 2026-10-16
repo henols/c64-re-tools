@@ -48,9 +48,14 @@ Use only the MCP tools. Each MCP session has its own C64. Nothing else can chang
 
 Each memory and register tool has a `space`. Use `c64` for the computer. Use `drive8` for the CPU of the 1541 disk drive. The memory `view` is `cpu` or `ram`. With `cpu`, you see what the CPU sees now, with ROM and I/O where the memory configuration puts them. With `ram`, you see the RAM under them.
 
-For a large result, give `out` with a path in the project. `c64_memory_read`, `c64_disassemble`, `c64_cpu_history` and `c64_screen` then write the result to that file. The answer gives only the file, the number of bytes and a SHA-256. Use it for a memory dump of more than a few hundred bytes, a long listing, or a screen that the user wants to keep.
+For a large result, give `out` with a path in the project. `c64_memory_read`, `c64_disassemble`, `c64_cpu_history` and `c64_screen` then write the result to that file. The answer gives only the file, the number of bytes and a SHA-256. Use it for a memory dump of more than a few hundred bytes, a long listing, or a screen that the user wants to keep. `c64_memmap` action `read` and `c64_snapshot` action `save` also take `out`.
 
 `c64_memmap` keeps RAM, ROM and I/O apart. Use action `summary` to see which code ran. Use action `read` with `out` to keep a coverage run as a file, for example `coverage/attract.bin`. Clear the map before each run that you want to keep apart.
+
+- Only the first byte of an instruction gets execute. Thus `read` without `out` gives a new range at each instruction of code. For code, use `summary`, or `read` with `out`.
+- A read on a byte right after executed code, or at a return address, can be a dummy read of the 6502. The CPU reads such a byte but does not use it.
+
+`c64_profile` gives the routines that used the most cycles since the session started, the last `clear` or the last `c64_window`. Use action `clear` before the part of the program that you want to measure. The profiler gives the cycles to the routine that a JSR called last. Code that the CPU enters with JMP or a branch counts for that routine. After `c64_window` or a snapshot restore, the profiler of VICE keeps the routines that ran before the restore. Then `c64_profile` can give the cycles of the program to such a routine, for example `$fd50`. Do not trust the routine addresses of `c64_profile` after a restore.
 
 ### Project folder
 
@@ -62,7 +67,7 @@ Paths (`path`, `file` and `out`) are relative to the project folder. A project f
 2. Get the machine state with `c64_status`.
 3. Load the subject if it is not loaded. Use `c64_autostart` to start it as a user does. Use `c64_program_load` to put a PRG in memory with no start.
 4. Set the stop condition. Use a breakpoint, a watchpoint or a `c64_run_until` target. Add a typed condition when the stop must occur only in one state. The `list` result shows the condition of each breakpoint and each watchpoint.
-5. Run, step or give input. Prefer `c64_run_until` and `advance-frames` to waits. They stop at the same emulated time on every run.
+5. Run, step or give input. Prefer `c64_run_until` and `advance-frames` to waits. They stop at the same emulated time on every run. To wait for a breakpoint or a watchpoint, use `advance-frames` with a large count. `stopReason` and `pointId` in the result tell what stopped the CPU. `c64_status` also gives them.
 6. Read only the state that answers the question. To read several things from one moment, use `c64_observe`.
 7. Interpret the evidence. Keep the observed facts apart from your conclusions.
 
@@ -76,7 +81,6 @@ Step, next and until-return work only in space `c64`. The emulator cannot stop t
 
 `c64_keyboard` puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard hardware directly does not see them. Many games do this. The emulator has no command that presses one key of the keyboard matrix. For such a program:
 
-- After `c64_window` or a snapshot restore, the profiler of VICE keeps the routines that ran before the restore. Then `c64_profile` can give the cycles of the program to such a routine, for example `$fd50`. Do not trust the routine addresses of `c64_profile` after a restore.
 - VICE 3.10 and older have a known flaw: bits 5-7 of `$DC00` and `$DC01` are always 0. Then `emulatorFlaw` in the result of `c64_keyboard` and `c64_joystick` gives the flaw. With this flaw, a wait for any key that reads all keyboard columns at one time ends without a key. A wait for one specific key, or a compare of the full byte of a joystick port, never ends. Tell the user about the flaw. The next VICE release and the VICE nightly builds do not have it. Joystick port 1 uses the same lines as the keyboard.
 - For one specific key, for example F1 or RUN/STOP, open the window and ask the user to press the key.
 - Do not change the program to make it accept a key.

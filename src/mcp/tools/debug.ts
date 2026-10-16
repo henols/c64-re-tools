@@ -265,7 +265,8 @@ export const c64Memmap = defineTool({
     "If more ranges follow, the result also gives truncated: true and next. Read again with start set to next. " +
     "With out, read writes a coverage map to that project file, one byte for each address from start to end. " +
     "Bits 0 to 2 are RAM read, write and execute. Bits 3 and 4 are ROM read and execute. Bits 5 to 7 are I/O read, write and execute. " +
-    "Execute is set only on the first byte of each executed instruction. " +
+    "Execute is set only on the first byte of each executed instruction. Thus read gives a new range at each instruction of code. For code, use summary or read with out. " +
+    "A read on a byte right after executed code, or at a return address, can be a dummy read that the CPU does not use. " +
     "Action summary gives the counts for RAM, ROM and I/O. It also gives the executed code in RAM with its operand bytes, and the RAM that was written and executed. " +
     `Each list has at most ${MAX_SUMMARY_RANGES} ranges. ` +
     "Action clear sets all access records to zero.",

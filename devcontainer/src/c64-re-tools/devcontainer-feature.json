@@ -16,7 +16,7 @@
       "type": "string",
       "default": "latest",
       "enum": ["latest", "next"],
-      "description": "The npm channel of the toolkit: latest for the release, next for the prerelease."
+      "description": "The npm channel of the toolkit: latest for the release, next for the prerelease. The container gets the newest version of the channel, not the version of this Feature."
     }
   },
   "dependsOn": {
