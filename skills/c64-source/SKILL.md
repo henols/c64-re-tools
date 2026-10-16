@@ -32,7 +32,8 @@ node <skill>/scripts/generate.ts unpacked/image.json --out src --loader
 |---|---|
 | `--out src` | The directory for the source files. The script writes over the files that it generated before. |
 | `--entry '$080d'` | An entry point for Ghidra. Use it again for more entry points. The entry of `image.json`, the routines and the code regions in the knowledge are entry points too. |
-| `--coverage coverage/attract.bin` | A coverage file of 64 KiB from `c64_memmap` with `out`. Use it again for more runs. Code that no run executed gets the line `; not executed` with its range. `notExecuted` lists it. |
+| `--coverage coverage/attract.bin` | A coverage file of 64 KiB from `c64_memmap` with `out`. Use it again for more runs. Code that no run executed gets the line `; not executed` with its range. `notExecuted` lists it. The executed code is also a seed for Ghidra. Thus the source has the code after a JSR to a routine that Ghidra thinks does not return. |
+| `--analyzer-names` | Name an address that has no symbol and no platform name with its analyzer name, for example `FUN_17e2`. The order is heuristic, Ghidra, then DXA. Without it, the source makes its own names, for example `l17e2`. |
 | `--space drive8` | Generate the source of drive code or a cartridge bank from the knowledge of that space. `--coverage` and `--loader` are only for `c64`, and platform names are only for `c64`. |
 | `--loader` | Also write `loader.asm` and `loader.prg`. This needs `image.json` with an entry, and `entry_state.json`. |
 

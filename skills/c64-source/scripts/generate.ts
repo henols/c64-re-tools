@@ -11,7 +11,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address, prgRange, textToPetscii } from "#src/c64.ts";
+import { coverageSeedKinds, formatC64Address, parseC64Address, prgRange, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { readCoverageFiles } from "#src/host-client/coverage.ts";
 import { ImageError, readImage as readSharedImage, type Image } from "#src/host-client/image.ts";
@@ -21,7 +21,7 @@ import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
-import { currentRevision, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
+import { ANALYZER_NAME_ORDER, currentRevision, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listSymbols, type SymbolRow } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, SPACE, type Space } from "#src/knowledge/schema.ts";
 import { assemble } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
@@ -49,6 +49,8 @@ const USAGE = `generate.ts <image> --out <dir> [options]
                      segments into place, sets the entry state from entry_state.json
                      next to image.json, and jumps to the entry; it is checked in
                      the emulator
+  --analyzer-names   name an address that has no name of the user or the LLM, and
+                     no platform name, with its analyzer name (D74)
 
 The result is one JSON object. Addresses are $ and four hex digits.`;
 
@@ -69,16 +71,20 @@ function readImage(path: string): Image {
   }
 }
 
-/** The knowledge of one space that the source uses, read once. */
-function readKnowledge(space: Space) {
+/** The knowledge of one space that the source uses, read once. With `analyzerNames`, an address without a name takes its first analyzer name (D74). */
+function readKnowledge(space: Space, analyzerNames = false) {
   const db = openForRead();
   try {
     // With conflicts from a git merge, the source would depend on which of two rows comes first (D69).
     const found = conflicts(db).length;
     if (found > 0) throw new KnowledgeError("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was generated. Run c64-knowledge's knowledge.ts merge, then generate again.`);
+    const symbols = listSymbols(db, undefined, undefined, undefined, space);
+    const second = listAnalyzerNames(db, undefined, undefined, undefined, space);
     return {
       revision: currentRevision(db),
-      symbols: listSymbols(db, undefined, undefined, undefined, space),
+      symbols: analyzerNames ? withAnalyzerNames(symbols, second) : symbols,
+      // Analyzer routines are entry points for the decode, also without --analyzer-names.
+      routines: [...symbols, ...second].filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address),
       regions: listRegions(db, undefined, undefined, undefined, space),
       comments: listComments(db, undefined, undefined, space),
       modules: listModules(db, undefined, undefined, space),
@@ -93,11 +99,39 @@ function readKnowledge(space: Space) {
   }
 }
 
-/** Ghidra's instruction starts and lengths inside the image, seeded from the entry and from knowledge of any origin. */
-async function decode(image: Image, knowledge: ReturnType<typeof readKnowledge>, entries: number[]): Promise<Map<number, number>> {
+/**
+ * The names of the user and the LLM, and for each address without one the
+ * first analyzer name in the order heuristic, Ghidra, DXA (D74). An analyzer
+ * name that another address has already is left out. The analyzer names keep
+ * their origin, so a platform name still wins over them (D61).
+ */
+function withAnalyzerNames(symbols: SymbolRow[], second: SymbolRow[]): SymbolRow[] {
+  const named = new Set(symbols.map((symbol) => symbol.address));
+  const taken = new Set(symbols.map((symbol) => symbol.name));
+  const added: SymbolRow[] = [];
+  for (const origin of ANALYZER_NAME_ORDER) {
+    for (const row of second.filter((candidate) => candidate.origin === origin)) {
+      if (named.has(row.address) || taken.has(row.name)) continue;
+      named.add(row.address);
+      taken.add(row.name);
+      added.push(row);
+    }
+  }
+  return [...symbols, ...added].sort((a, b) => a.address - b.address);
+}
+
+/**
+ * Ghidra's instruction starts and lengths inside the image, seeded from the
+ * entry, from knowledge of any origin, and from the coverage: a run's flow
+ * starts, also after a JSR, so code that an analyzer does not reach by itself
+ * is in the source (D74).
+ */
+async function decode(image: Image, knowledge: ReturnType<typeof readKnowledge>, entries: number[], coverage: Uint8Array | undefined): Promise<Map<number, number>> {
   const inImage = (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end);
   const seeds = new Set<number>([...(image.entry === undefined ? [] : [image.entry]), ...entries]);
-  for (const symbol of knowledge.symbols) if (symbol.kind === "routine") seeds.add(symbol.address);
+  for (const address of knowledge.routines) seeds.add(address);
+  const flows = coverage === undefined ? { routines: [], codeStarts: [] } : coverageSeedKinds(coverage, (address) => (image.segments.some((segment) => address >= segment.start && address <= segment.end) ? image.byteAt(address) : undefined));
+  for (const address of flows.routines) seeds.add(address);
   for (const region of knowledge.regions) {
     if (CODE_REGION_TYPES.includes(region.type)) seeds.add(region.start);
     if (region.type === "jumps") for (let at = region.start; at + 2 <= region.end; at += 3) seeds.add(at);
@@ -112,7 +146,14 @@ async function decode(image: Image, knowledge: ReturnType<typeof readKnowledge>,
     .filter((region) => !CODE_REGION_TYPES.includes(region.type) && region.type !== "dual-use")
     .flatMap((region) => image.segments.filter((segment) => region.start <= segment.end && segment.start <= region.end).map((segment) => ({ start: Math.max(region.start, segment.start), end: Math.min(region.end, segment.end) })));
   const { result } = await analyze(
-    { imageKind: image.analyzed.kind, entryPoints: entryPoints.slice(0, GHIDRA_LIMITS.entryPoints), dataRanges: dataRanges.slice(0, GHIDRA_LIMITS.dataRanges), labels: [], decompile: [] },
+    {
+      imageKind: image.analyzed.kind,
+      entryPoints: entryPoints.slice(0, GHIDRA_LIMITS.entryPoints),
+      codeStarts: flows.codeStarts.filter((address) => !seeds.has(address)).slice(0, GHIDRA_LIMITS.codeStarts),
+      dataRanges: dataRanges.slice(0, GHIDRA_LIMITS.dataRanges),
+      labels: [],
+      decompile: [],
+    },
     image.analyzed.bytes,
     localToolContext(),
   );
@@ -495,7 +536,15 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     args: argv,
     strict: true,
     allowPositionals: true,
-    options: { out: { type: "string" }, entry: { type: "string", multiple: true }, coverage: { type: "string", multiple: true }, space: { type: "string" }, loader: { type: "boolean" }, help: { type: "boolean" } },
+    options: {
+      out: { type: "string" },
+      entry: { type: "string", multiple: true },
+      coverage: { type: "string", multiple: true },
+      space: { type: "string" },
+      loader: { type: "boolean" },
+      "analyzer-names": { type: "boolean" },
+      help: { type: "boolean" },
+    },
   });
   if (values.help) throw new UsageError("");
   if (positionals.length !== 1) throw new UsageError("give one image");
@@ -522,8 +571,8 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   if (values.loader && (image.statePath === undefined || image.entry === undefined)) throw new UsageError("--loader needs an image.json with an entry and an entry_state.json next to it, from c64-unpacker capture");
   // Read the entry state before the long steps, so a missing file stops the run at once.
   const state = values.loader ? readEntryState(readProjectFile(image.statePath!).bytes.toString("utf8"), image.statePath!) : undefined;
-  const knowledge = readKnowledge(space);
-  const instructions = await decode(image, knowledge, entries);
+  const knowledge = readKnowledge(space, values["analyzer-names"] === true);
+  const instructions = await decode(image, knowledge, entries, coverage);
   const laid = layout({
     segments: image.segments,
     byteAt: image.byteAt,

@@ -71,7 +71,7 @@ The analyzers take at most 1024 entry points. Knowledge routines and `--entry` c
 3. Find the important routines. Give them names with the c64-knowledge skill.
 4. Run a deeper pass with Ghidra. Give the entry points with `--entry`. Ask for decompiled code of the routines that you must understand.
 5. Read the result:
-   - `changes` counts the symbols, regions and references that the analysis `added`, `changed`, `retired` or kept `unchanged`. `suppressed` counts the findings that the analysis did not write, because a removal blocks that place.
+   - `changes` counts the analyzer names (`names`), regions and references that the analysis `added`, `changed`, `retired` or kept `unchanged`. `symbols.retired` counts the old symbols of the analyzer that moved to its analyzer names. `suppressed` counts the findings that the analysis did not write, because a removal blocks that place.
    - DXA: `regions` lists the code and data regions. `labels` gives the number of names that DXA found (`count`) and lists the first names (`listed`).
    - Ghidra: `functions` gives the number of routines that Ghidra found (`count`) and lists the first routines (`listed`). `decompilations` gives C-like code for the requested routines.
    - If a list is not complete, `rest` gives the c64-knowledge command that lists all of them. For `candidates`, `rest` tells you to give a larger `--max-listed`.
@@ -88,14 +88,16 @@ The script records only structure: generated names, code and data regions, and r
 
 Automatic write:
 - code and data regions
-- names that DXA generated (labels) and routine entry points with names that Ghidra generated
+- analyzer names: the labels that DXA generated and the functions that Ghidra found, for example `l17e2` and `FUN_17e2`
 - references from Ghidra: call, jump, read and write.
 
-The script never replaces a name or a region from the user or the LLM. A name that an analyzer only shows back stays with its owner. DXA and Ghidra do not replace the facts of each other, with one exception. With `--coverage`, a code finding replaces a DXA or Ghidra data region or data name where a run executed an instruction start. The revision keeps the coverage files as evidence. Thus run DXA first, then Ghidra with all coverage files.
+An analyzer name is a second name of the address. It is not a symbol. Each analyzer keeps its own name at an address. The generated source does not use an analyzer name, unless you give `--analyzer-names` to the c64-source skill. To use a name in the source, give it to the address with `rename` of the c64-knowledge skill. A Ghidra function that only branches and jumps get to is a `label`, not a `routine`.
+
+The script never replaces a name or a region from the user or the LLM. DXA and Ghidra do not replace the facts of each other, with one exception. With `--coverage`, a code finding replaces a DXA or Ghidra data region where a run executed an instruction start. The revision keeps the coverage files as evidence. Thus run DXA first, then Ghidra with all coverage files.
 
 A `heuristic` region replaces the part of a DXA or Ghidra region where it lies, because an idiom is specific evidence about those bytes. DXA and Ghidra never replace a `heuristic` region. If they find code there, the result shows a conflict. A heuristic table can be too long or too short, because the script cannot know its length. Correct it with the c64-knowledge skill. Your region replaces it, and a removal holds.
 
-A new analysis replaces the earlier facts of the same analyzer in the analyzed range. The history keeps the earlier facts. DXA labels stay until a person or the LLM removes them, because DXA names only the addresses that it sees used.
+A new analysis replaces the earlier facts of the same analyzer in the analyzed range, also its analyzer names. The history keeps the earlier facts. Knowledge from an older version can have analyzer names as symbols. A new analysis moves the names of that analyzer to its analyzer names.
 
 A fact that the user or the LLM removes does not come back. The next analysis does not write a fact at that place, and counts it as `suppressed`. To remove a wrong fact, use the c64-knowledge skill.
 

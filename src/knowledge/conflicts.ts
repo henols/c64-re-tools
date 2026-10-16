@@ -35,6 +35,8 @@ import { compareText, sqlName } from "./text.ts";
 /** The current-row rules, each with what breaks it. */
 export const CONFLICT_RULES = {
   "symbol-address": "two symbols at one address",
+  "analyzer-name-address": "two names of one analyzer at one address",
+  "analyzer-name-name": "one analyzer name at two addresses",
   "symbol-name": "one name at two addresses",
   region: "regions that overlap",
   comment: "two comments at one place",
@@ -78,6 +80,8 @@ interface TableRule {
 const RULES: readonly TableRule[] = [
   { rule: "symbol-address", table: "symbols", entity: "symbol", columns: SYMBOL_COLUMNS, map: toSymbol, key: ["address"] },
   { rule: "symbol-name", table: "symbols", entity: "symbol", columns: SYMBOL_COLUMNS, map: toSymbol, key: ["name"] },
+  { rule: "analyzer-name-address", table: "analyzer_names", entity: "analyzer-name", columns: SYMBOL_COLUMNS, map: toSymbol, key: ["address", "origin"] },
+  { rule: "analyzer-name-name", table: "analyzer_names", entity: "analyzer-name", columns: SYMBOL_COLUMNS, map: toSymbol, key: ["name", "origin"] },
   { rule: "region", table: "regions", entity: "region", columns: REGION_COLUMNS, map: toRegion, key: "overlap" },
   { rule: "comment", table: "comments", entity: "comment", columns: COMMENT_COLUMNS, map: toComment, key: ["address", "placement"] },
   { rule: "reference", table: "references", entity: "reference", columns: REFERENCE_COLUMNS, map: toReference, key: ["from_address", "to_address", "kind"] },

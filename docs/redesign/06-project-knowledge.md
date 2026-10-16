@@ -32,8 +32,8 @@ The only authoritative persistent toolkit-owned project state is the knowledge t
 .c64-re-tools/knowledge/
 ├── .gitattributes        *.jsonl merge=union text eol=lf
 ├── revisions.jsonl
-└── <table>.jsonl         symbols, regions, comments, references, suppressions, modules, operands,
-                          patches, macros, macro_uses
+└── <table>.jsonl         symbols, analyzer_names, regions, comments, references, suppressions, modules,
+                          operands, patches, macros, macro_uses
 ```
 
 `.c64-re-tools/local/knowledge.db` is an index of that text. It is never committed and is made again whenever a knowledge file has another SHA-256 than the index holds.
@@ -147,9 +147,13 @@ so normal queries do not need to repeat the validity predicate.
 
 Every knowledge row also has a `space` (D53): `c64` (the default), `drive8` for code in the 1541 drive, or `bank0` to `bank255` for cartridge banks. Drive code and banks reuse C64 addresses, so every uniqueness rule below holds inside one space, and every query reads one space.
 
+### `analyzer_names` (D74)
+
+The second name of an address: the name that DXA, Ghidra or an idiom gave it, one row for each analyzer at an address, with the fields of `symbols` and an analyzer origin. Only analyzer imports write it; a re-run replaces that analyzer's own names in its coverage, keeps them where the run only gives back a name of `symbols`, and closes that analyzer's rows in `symbols` from before D74. A name of `symbols` and a name of `analyzer_names` can be equal. The generated source uses these names only with `c64-source --analyzer-names`; `at`, `search`, `export` and `symbols --analyzer` show them, and a command that takes an address takes one of them when no symbol has the name.
+
 ### `symbols`
 
-Conceptual fields:
+The names of the user and the LLM (D74). Conceptual fields:
 
 ```text
 address               INTEGER NOT NULL
@@ -412,13 +416,13 @@ Typical DXA import:
 ```text
 code ranges  → regions(type=code, origin=dxa)
 data ranges  → regions(type=bytes or known type, origin=dxa)
-generated labels/routine starts when useful → symbols(origin=dxa)
+generated labels                            → analyzer_names(origin=dxa)
 ```
 
 Typical Ghidra import:
 
 ```text
-function entry/name     → symbols(kind=routine, origin=ghidra)
+function entry/name     → analyzer_names(kind=routine, or label when only jumps reach it, origin=ghidra)
 code/data classification→ regions(origin=ghidra)
 calls/reads/writes/xrefs→ references(origin=ghidra)
 ```

@@ -127,7 +127,7 @@ test("--space imports the findings into that space and leaves the C64 alone (D53
   assert.equal(run.json.space, "drive8");
   const db = openForWrite(root);
   try {
-    const spaces = db.prepare("SELECT DISTINCT space FROM current_symbols").all() as Array<{ space: string }>;
+    const spaces = db.prepare("SELECT DISTINCT space FROM current_analyzer_names").all() as Array<{ space: string }>;
     assert.deepEqual(spaces.map((row) => row.space), ["drive8"]);
   } finally {
     db.close();

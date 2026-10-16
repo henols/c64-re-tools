@@ -12,7 +12,7 @@ import { after, test } from "node:test";
 import { DXA, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { openForRead } from "../../src/knowledge/database.ts";
-import { listReferences, regionsOverlapping, symbolAt } from "../../src/knowledge/read.ts";
+import { analyzerNamesAt, listReferences, regionsOverlapping, symbolAt } from "../../src/knowledge/read.ts";
 import { analysisSubjectPrg, MAIN, ROUTINE, TABLE_START } from "../fixtures/prg/analysis-subject.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 
@@ -51,7 +51,7 @@ test("an analysis imports Ghidra's structure into knowledge and reports it", { s
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.coverage, [{ start: "$0801", end: "$0827" }]);
   assert.equal(json.revision, nthIn(project, 1));
-  assert.deepEqual((json.changes as { symbols: unknown }).symbols, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
+  assert.deepEqual((json.changes as { names: unknown }).names, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
   assert.deepEqual(json.conflicts, []);
   assert.deepEqual(json.functions, {
     count: 2,
@@ -63,7 +63,8 @@ test("an analysis imports Ghidra's structure into knowledge and reports it", { s
   assert.equal((json.decompilations as Array<{ entry: string }>)[0]?.entry, "$0818");
 
   const db = openForRead(project);
-  assert.equal(symbolAt(db, ROUTINE)?.origin, "ghidra");
+  assert.equal(symbolAt(db, ROUTINE), undefined, "an analyzer name is no symbol (D74)");
+  assert.equal(analyzerNamesAt(db, ROUTINE)[0]?.origin, "ghidra");
   assert.deepEqual(regionsOverlapping(db, 0, 0xffff).map((region) => [region.start, region.end, region.type, region.origin]), [
     [MAIN, 0x0815, "code", "ghidra"],
     [ROUTINE, 0x0823, "code", "ghidra"],

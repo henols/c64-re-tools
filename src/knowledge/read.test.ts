@@ -41,7 +41,7 @@ test("at() gives the symbol, containing region, comments and references of an ad
   assert.deepEqual(known.referencesFrom.map((reference) => [reference.to, reference.kind]), [[0xdc00, "read"]]);
   assert.equal(known.revision, nth(db, 8));
   // Inside a region, without a symbol of its own.
-  assert.deepEqual({ ...at(db, 0x2105), region: undefined }, { space: "c64", address: 0x2105, region: undefined, comments: [], referencesFrom: [], referencesTo: [], suppressions: [], revision: nth(db, 8) });
+  assert.deepEqual({ ...at(db, 0x2105), region: undefined }, { space: "c64", address: 0x2105, region: undefined, comments: [], referencesFrom: [], referencesTo: [], analyzerNames: [], suppressions: [], revision: nth(db, 8) });
 });
 
 test("a project without a database reads as empty knowledge", () => {
@@ -49,8 +49,8 @@ test("a project without a database reads as empty knowledge", () => {
   try {
     const none = openForRead(empty);
     assert.equal(none, undefined);
-    assert.deepEqual(at(none, 0x2100), { space: "c64", address: 0x2100, comments: [], referencesFrom: [], referencesTo: [], suppressions: [], revision: "0" });
-    assert.deepEqual(search(none, "x"), { symbols: [], comments: [] });
+    assert.deepEqual(at(none, 0x2100), { space: "c64", address: 0x2100, comments: [], referencesFrom: [], referencesTo: [], analyzerNames: [], suppressions: [], revision: "0" });
+    assert.deepEqual(search(none, "x"), { symbols: [], analyzerNames: [], comments: [] });
     assert.deepEqual(historyAt(none, 0x2100), []);
     assert.deepEqual(revisions(none), []);
   } finally {
@@ -72,7 +72,7 @@ test("search finds symbol names and comment text, case-insensitive, with wildcar
   const found = search(db, "PLAYER");
   assert.deepEqual(found.symbols.map((symbol) => symbol.name), ["update_player", "player_sprite"]);
   assert.equal(found.comments.length, 1);
-  assert.deepEqual(search(db, "%"), { symbols: [], comments: [] });
+  assert.deepEqual(search(db, "%"), { symbols: [], analyzerNames: [], comments: [] });
   assert.deepEqual(search(db, "_").symbols.length, 2, "an underscore matches only underscores");
 });
 

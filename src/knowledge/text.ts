@@ -79,6 +79,8 @@ const origin = field("origin", "origin", "text");
 /** The fact tables. Each line has `id`, these fields, then `added` and `closed` (the revisions; closed is null while the row is current). */
 export const TABLES: readonly TableSpec[] = [
   { table: "symbols", file: "symbols.jsonl", sort: "address", fields: [space, field("address", "address", "address"), field("name", "name", "text"), field("kind", "kind", "text"), origin] },
+  // The names that analyzers give: a second name of an address, for reference (D74).
+  { table: "analyzer_names", file: "analyzer_names.jsonl", sort: "address", fields: [space, field("address", "address", "address"), field("name", "name", "text"), field("kind", "kind", "text"), origin] },
   {
     table: "regions",
     file: "regions.jsonl",

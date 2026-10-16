@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { formatC64Address, parseC64Address, SYMBOL_NAME } from "#src/c64.ts";
 import { ImageError, readImage } from "#src/host-client/image.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
@@ -16,7 +16,9 @@ import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import {
   at,
+  analyzerNamed,
   currentRevision,
+  listAnalyzerNames,
   listComments,
   listMacros,
   listMacroUses,
@@ -29,6 +31,7 @@ import {
   listSuppressions,
   listSymbols,
   search,
+  symbolNamed,
   type CommentRow,
   type MacroRow,
   type MacroUseRow,
@@ -93,8 +96,10 @@ const USAGE = `knowledge.ts <command> [arguments] [options]
 
 Read (no database needed):
   at <address>                        everything known at one address
-  search <text>                       symbol names and comment texts
-  symbols [--start A --end A --kind K --origin O]
+  search <text>                       symbol names, analyzer names and comment texts
+  symbols [--start A --end A --kind K --origin O] [--analyzer]
+                                      --analyzer: the second names that DXA, Ghidra
+                                      and the idioms gave (D74)
   regions [--start A --end A --type T --origin O]
   comments [--start A --end A --origin O]
   references [--start A --end A --kind K --origin O]
@@ -164,16 +169,36 @@ Write options:
   --expect-revision <R>    refuse the write if knowledge changed after revision R
   --origin user|llm        who decided (default llm)
 
-Addresses are $ and four hex digits; quote them in a shell: '$2100'.
+Addresses are $ and four hex digits; quote them in a shell: '$2100'. A name
+also gives an address: a symbol name first, then an analyzer name.
 A revision is its id, for example 20261015T214501.123-k3f9qz, or a start of
 the id that only one revision has; 0 is the knowledge before every revision.`;
 
+/** The space whose names give addresses: the --space of the command. */
+let nameSpace = DEFAULT_SPACE;
+
+/** An address as $ and four hex digits, or the address of a symbol name, else of an analyzer name (D74). */
 function address(value: string | undefined, what = "address"): number {
   if (value === undefined) throw new UsageError(`${what} is missing`);
+  if (SYMBOL_NAME.test(value)) return addressOfName(value, what);
   try {
     return parseC64Address(value);
   } catch {
-    throw new UsageError(`${what} must be $ followed by four hex digits, for example '$2100', not ${value}`);
+    throw new UsageError(`${what} must be $ followed by four hex digits, for example '$2100', or a name, not ${value}`);
+  }
+}
+
+function addressOfName(name: string, what: string): number {
+  const db = openForRead();
+  try {
+    const symbol = symbolNamed(db, name, nameSpace);
+    if (symbol !== undefined) return symbol.address;
+    const second = analyzerNamed(db, name, nameSpace);
+    if (second.length === 1) return second[0]!.address;
+    if (second.length > 1) throw new UsageError(`${what}: the analyzers give ${name} to ${second.map((row) => `${formatC64Address(row.address)} (${row.origin})`).join(" and ")}; give the address`);
+    throw new UsageError(`${what}: no symbol or analyzer name is ${name}`);
+  } finally {
+    db?.close();
   }
 }
 
@@ -248,7 +273,7 @@ function suppression(row: SuppressionRow) {
 
 function historyEntry(entry: HistoryEntry) {
   const shown =
-    entry.entity === "symbol"
+    entry.entity === "symbol" || entry.entity === "analyzer-name"
       ? symbol(entry.row)
       : entry.entity === "region"
         ? region(entry.row)
@@ -330,14 +355,16 @@ function run(argv: string[]): unknown {
       args: { type: "string" },
       switch: { type: "string" },
       macro: { type: "string" },
+      analyzer: { type: "boolean" },
       help: { type: "boolean" },
     },
   });
   const [command, ...args] = positionals;
   if (values.help || command === undefined) throw new UsageError("");
-  const range = { start: values.start === undefined ? 0x0000 : address(values.start, "--start"), end: values.end === undefined ? 0xffff : address(values.end, "--end") };
   if (values.space !== undefined && !SPACE.test(values.space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
   const space = values.space ?? DEFAULT_SPACE;
+  nameSpace = space;
+  const range = { start: values.start === undefined ? 0x0000 : address(values.start, "--start"), end: values.end === undefined ? 0xffff : address(values.end, "--end") };
 
   const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "operands", "patches", "switches", "macros", "uses", "spaces", "history", "revisions", "revision", "export"]);
   const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "operand", "unoperand", "patch", "unpatch", "macro", "unmacro", "use", "unuse", "revert", "apply", "merge"]);
@@ -392,6 +419,7 @@ function run(argv: string[]): unknown {
 }
 
 type ReadValues = {
+  analyzer?: boolean | undefined;
   kind?: string | undefined;
   type?: string | undefined;
   name?: string | undefined;
@@ -411,6 +439,7 @@ function readAnswer(db: DatabaseSync | undefined, command: string, args: string[
         ...(space === DEFAULT_SPACE ? {} : { space }),
         address: formatC64Address(known.address),
         ...(known.symbol === undefined ? {} : { symbol: symbol(known.symbol) }),
+        ...(known.analyzerNames.length === 0 ? {} : { analyzerNames: known.analyzerNames.map(symbol) }),
         ...(known.region === undefined ? {} : { region: region(known.region) }),
         comments: known.comments.map(comment),
         referencesFrom: known.referencesFrom.map(reference),
@@ -425,10 +454,13 @@ function readAnswer(db: DatabaseSync | undefined, command: string, args: string[
     case "search": {
       if (args[0] === undefined || args[0] === "") throw new UsageError("search needs text");
       const found = search(db, args[0], values.limit === undefined ? 50 : integer(values.limit, "--limit"), origins, space);
-      return { symbols: found.symbols.map(symbol), comments: found.comments.map(comment) };
+      return { symbols: found.symbols.map(symbol), analyzerNames: found.analyzerNames.map(symbol), comments: found.comments.map(comment) };
     }
-    case "symbols":
-      return { symbols: listSymbols(db, range, values.kind === undefined ? undefined : oneOf(SYMBOL_KINDS, values.kind, "--kind"), origins, space).map(symbol) };
+    case "symbols": {
+      const kind = values.kind === undefined ? undefined : oneOf(SYMBOL_KINDS, values.kind, "--kind");
+      if (values.analyzer) return { analyzerNames: listAnalyzerNames(db, range, kind, origins, space).map(symbol) };
+      return { symbols: listSymbols(db, range, kind, origins, space).map(symbol) };
+    }
     case "regions":
       return { regions: listRegions(db, range, values.type === undefined ? undefined : oneOf(REGION_TYPES, values.type, "--type"), origins, space).map(region) };
     case "comments":
@@ -440,6 +472,7 @@ function readAnswer(db: DatabaseSync | undefined, command: string, args: string[
         revision: currentRevision(db),
         ...(space === DEFAULT_SPACE ? {} : { space }),
         symbols: listSymbols(db, range, undefined, origins, space).map(symbol),
+        analyzerNames: listAnalyzerNames(db, range, undefined, origins, space).map(symbol),
         regions: listRegions(db, range, undefined, origins, space).map(region),
         comments: listComments(db, range, origins, space).map(comment),
         references: listReferences(db, range, undefined, origins, space).map(reference),
@@ -455,7 +488,7 @@ function readAnswer(db: DatabaseSync | undefined, command: string, args: string[
       return {
         out: values.out,
         bytes: bytes.length,
-        counts: { symbols: exported.symbols.length, regions: exported.regions.length, comments: exported.comments.length, references: exported.references.length, suppressions: exported.suppressions.length, modules: exported.modules.length, operands: exported.operands.length, patches: exported.patches.length, macros: exported.macros.length, macroUses: exported.macroUses.length },
+        counts: { symbols: exported.symbols.length, analyzerNames: exported.analyzerNames.length, regions: exported.regions.length, comments: exported.comments.length, references: exported.references.length, suppressions: exported.suppressions.length, modules: exported.modules.length, operands: exported.operands.length, patches: exported.patches.length, macros: exported.macros.length, macroUses: exported.macroUses.length },
         revision: exported.revision,
       };
     }

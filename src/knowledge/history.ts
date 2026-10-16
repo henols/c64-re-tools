@@ -56,6 +56,7 @@ export interface Revision {
 /** One knowledge row with its validity: from its first revision until the revision that closed it. */
 export type HistoryEntry =
   | { entity: "symbol"; row: SymbolRow; from: string; to?: string }
+  | { entity: "analyzer-name"; row: SymbolRow; from: string; to?: string }
   | { entity: "region"; row: RegionRow; from: string; to?: string }
   | { entity: "comment"; row: CommentRow; from: string; to?: string }
   | { entity: "reference"; row: ReferenceRow; from: string; to?: string }
@@ -98,6 +99,7 @@ export function historyAt(db: DatabaseSync | undefined, address: number, space: 
   const validity = ", valid_to_revision";
   const entries: HistoryEntry[] = [];
   for (const raw of db.prepare(`SELECT ${SYMBOL_COLUMNS}${validity} FROM symbols WHERE space = ? AND address = ?`).all(space, address) as Raw[]) entries.push(entry("symbol", toSymbol(raw), raw));
+  for (const raw of db.prepare(`SELECT ${SYMBOL_COLUMNS}${validity} FROM analyzer_names WHERE space = ? AND address = ?`).all(space, address) as Raw[]) entries.push(entry("analyzer-name", toSymbol(raw), raw));
   for (const raw of db.prepare(`SELECT ${REGION_COLUMNS}${validity} FROM regions WHERE space = ? AND start_address <= ? AND end_address >= ?`).all(space, address, address) as Raw[]) {
     entries.push(entry("region", toRegion(raw), raw));
   }
@@ -178,6 +180,7 @@ export function revision(db: DatabaseSync | undefined, text: string): RevisionCh
   if (db === undefined || raw === undefined) throw new KnowledgeError("not-found", `There is no revision ${id}.`);
   const tables = [
     ["symbol", "symbols", SYMBOL_COLUMNS, toSymbol],
+    ["analyzer-name", "analyzer_names", SYMBOL_COLUMNS, toSymbol],
     ["region", "regions", REGION_COLUMNS, toRegion],
     ["comment", "comments", COMMENT_COLUMNS, toComment],
     ["reference", '"references"', REFERENCE_COLUMNS, toReference],

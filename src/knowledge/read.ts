@@ -271,6 +271,31 @@ export function symbolNamed(db: DatabaseSync | undefined, name: string, space: S
   return row === undefined ? undefined : toSymbol(row);
 }
 
+/** The analyzer names at an address (D74): one for each analyzer, in the order heuristic, Ghidra, DXA. */
+export function analyzerNamesAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): SymbolRow[] {
+  if (db === undefined) return [];
+  return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND address = ?`).all(space, address) as Raw[]).map(toSymbol).sort(byAnalyzer);
+}
+
+/** The analyzer names with this name: more than one when two analyzers gave it to different addresses. */
+export function analyzerNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): SymbolRow[] {
+  if (db === undefined) return [];
+  return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map(toSymbol).sort(byAnalyzer);
+}
+
+/** The analyzers in the order that their names are used when no other name exists (D74). */
+export const ANALYZER_NAME_ORDER: readonly Origin[] = ["heuristic", "ghidra", "dxa"];
+const byAnalyzer = (a: SymbolRow, b: SymbolRow) => a.address - b.address || ANALYZER_NAME_ORDER.indexOf(a.origin) - ANALYZER_NAME_ORDER.indexOf(b.origin);
+
+/** Current analyzer names in a range, in address order and then heuristic, Ghidra, DXA. */
+export function listAnalyzerNames(db: DatabaseSync | undefined, range: Range = ALL, kind?: SymbolKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): SymbolRow[] {
+  if (db === undefined) return [];
+  return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND address BETWEEN ? AND ?`).all(space, range.start, range.end) as Raw[])
+    .map(toSymbol)
+    .filter((row) => (kind === undefined || row.kind === kind) && kept(origins)(row))
+    .sort(byAnalyzer);
+}
+
 /** Current regions that share at least one address with [start, end], in address order. */
 export function regionsOverlapping(db: DatabaseSync | undefined, start: number, end: number, space: Space = DEFAULT_SPACE): RegionRow[] {
   if (db === undefined) return [];
@@ -375,6 +400,8 @@ export interface AddressKnowledge {
   space: Space;
   address: number;
   symbol?: SymbolRow;
+  /** The second names that analyzers gave the address (D74). */
+  analyzerNames: SymbolRow[];
   /** The current region that contains the address. */
   region?: RegionRow;
   comments: CommentRow[];
@@ -398,6 +425,7 @@ export function at(db: DatabaseSync | undefined, address: number, space: Space =
     comments: commentsAt(db, address, space),
     referencesFrom: referencesFrom(db, address, space),
     referencesTo: referencesTo(db, address, space),
+    analyzerNames: analyzerNamesAt(db, address, space),
     suppressions: suppressionsAt(db, address, space),
     revision: currentRevision(db),
   };
@@ -516,7 +544,7 @@ export function listSpaces(db: DatabaseSync | undefined): Space[] {
   if (db === undefined) return [];
   const rows = db
     .prepare(
-      `SELECT space FROM current_symbols UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands UNION SELECT space FROM current_patches UNION SELECT space FROM current_macros UNION SELECT space FROM current_macro_uses`,
+      `SELECT space FROM current_symbols UNION SELECT space FROM current_analyzer_names UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands UNION SELECT space FROM current_patches UNION SELECT space FROM current_macros UNION SELECT space FROM current_macro_uses`,
     )
     .all() as Array<{ space: Space }>;
   const order = (space: Space) => (space === "c64" ? -2 : space === "drive8" ? -1 : Number(space.slice(4)));
@@ -524,8 +552,8 @@ export function listSpaces(db: DatabaseSync | undefined): Space[] {
 }
 
 /** Case-insensitive text search in current symbol names and comment texts of one space. */
-export function search(db: DatabaseSync | undefined, text: string, limit = 50, origins?: OriginFilter, space: Space = DEFAULT_SPACE): { symbols: SymbolRow[]; comments: CommentRow[] } {
-  if (db === undefined || text.length === 0) return { symbols: [], comments: [] };
+export function search(db: DatabaseSync | undefined, text: string, limit = 50, origins?: OriginFilter, space: Space = DEFAULT_SPACE): { symbols: SymbolRow[]; analyzerNames: SymbolRow[]; comments: CommentRow[] } {
+  if (db === undefined || text.length === 0) return { symbols: [], analyzerNames: [], comments: [] };
   const pattern = `%${text.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
   const only = origins === undefined ? "" : ` AND origin IN (${origins.map(() => "?").join(", ")})`;
   const values = origins ?? [];
@@ -533,9 +561,13 @@ export function search(db: DatabaseSync | undefined, text: string, limit = 50, o
     .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE space = ? AND name LIKE ? ESCAPE '\\'${only} ORDER BY address LIMIT ?`)
     .all(space, pattern, ...values, limit)
     .map((row) => toSymbol(row as Raw));
+  const analyzerNames = db
+    .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND name LIKE ? ESCAPE '\\'${only} ORDER BY address LIMIT ?`)
+    .all(space, pattern, ...values, limit)
+    .map((row) => toSymbol(row as Raw));
   const comments = db
     .prepare(`SELECT ${COMMENT_COLUMNS} FROM current_comments WHERE space = ? AND text LIKE ? ESCAPE '\\'${only} ORDER BY address, placement LIMIT ?`)
     .all(space, pattern, ...values, limit)
     .map((row) => toComment(row as Raw));
-  return { symbols, comments };
+  return { symbols, analyzerNames, comments };
 }

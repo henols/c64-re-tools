@@ -111,6 +111,18 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX symbols_current_address ON symbols (space, address) WHERE valid_to_revision IS NULL;
       CREATE INDEX symbols_current_name ON symbols (space, name) WHERE valid_to_revision IS NULL;
       CREATE INDEX symbols_address ON symbols (space, address);
+      CREATE TABLE analyzer_names (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
+        name                TEXT NOT NULL CHECK (length(name) > 0),
+        kind                TEXT NOT NULL CHECK (kind IN (${list(SYMBOL_KINDS)})),
+        origin              TEXT NOT NULL CHECK (origin IN ('dxa', 'ghidra', 'heuristic')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
+      CREATE INDEX analyzer_names_address ON analyzer_names (space, address);
+      CREATE INDEX analyzer_names_name ON analyzer_names (space, name);
       CREATE TABLE regions (
         id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
@@ -237,6 +249,7 @@ function createSchema(db: DatabaseSync): void {
       );
       CREATE INDEX macro_uses_start ON macro_uses (space, start_address);
       CREATE VIEW current_symbols AS SELECT * FROM symbols WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_analyzer_names AS SELECT * FROM analyzer_names WHERE valid_to_revision IS NULL;
       CREATE VIEW current_regions AS SELECT * FROM regions WHERE valid_to_revision IS NULL;
       CREATE VIEW current_comments AS SELECT * FROM comments WHERE valid_to_revision IS NULL;
       CREATE VIEW current_references AS SELECT * FROM "references" WHERE valid_to_revision IS NULL;
@@ -250,7 +263,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 2;
+export const INDEX_VERSION = 3;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

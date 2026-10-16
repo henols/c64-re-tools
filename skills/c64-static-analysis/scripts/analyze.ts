@@ -189,7 +189,7 @@ function record(findings: NormalizedFindings, revision: string, description: str
   }
   return {
     revision: imported.revision,
-    changes: { symbols: imported.symbols, regions: imported.regions, references: imported.references },
+    changes: { names: imported.names, ...(imported.symbols.retired === 0 ? {} : { symbols: { retired: imported.symbols.retired } }), regions: imported.regions, references: imported.references },
     conflicts: imported.conflicts.map((conflict) => showConflict(conflict, findings.analyzer)),
   };
 }

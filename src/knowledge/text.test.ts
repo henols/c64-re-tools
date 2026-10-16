@@ -8,6 +8,7 @@ import { after, test } from "node:test";
 import { KnowledgeError, openForWrite, textPath } from "./database.ts";
 import { ensureSchema } from "./schema.ts";
 import { loadText, newRevisionId, REVISION_ID, REVISIONS_FILE, revisionsText, TABLES, tableText } from "./text.ts";
+import { importFindings } from "./import.ts";
 import { applyBatch, renameSymbol, unclassifyRegion } from "./write.ts";
 
 const roots: string[] = [];
@@ -59,6 +60,7 @@ function fullProject(): { folder: string; db: DatabaseSync } {
   ]);
   unclassifyRegion(db, { origin: "user" }, { start: 0x9000, end: 0x900f });
   renameSymbol(db, { origin: "user" }, { address: 0x80c0, name: "raster_irq" });
+  importFindings(db, { analyzer: "ghidra", coverage: [{ start: 0xa000, end: 0xa0ff }], authoritative: { symbols: true, regions: true, references: true }, symbols: [{ address: 0xa000, name: "FUN_a000", kind: "routine" }], regions: [], references: [] });
   return { folder, db };
 }
 

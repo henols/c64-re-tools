@@ -15,14 +15,13 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { KnowledgeError, transaction } from "./database.ts";
 import {
+  analyzerNamed,
   REFERENCE_COLUMNS,
   referenceSuppressed,
   regionsOverlapping,
   suppressionsOverlapping,
   SYMBOL_COLUMNS,
   symbolAt,
-  symbolNamed,
-  symbolSuppressed,
   toReference,
   toSymbol,
   type ReferenceRow,
@@ -93,6 +92,9 @@ export interface ImportCounts {
 export interface ImportResult {
   /** The new revision, or null when nothing changed. */
   revision: string | null;
+  /** The analyzer names (D74). */
+  names: ImportCounts;
+  /** The analyzer's own rows from before D74 that the run closed in symbols: only `retired` counts. */
   symbols: ImportCounts;
   regions: ImportCounts;
   references: ImportCounts;
@@ -182,62 +184,67 @@ function ownReferences(db: DatabaseSync, analyzer: Analyzer, range: AddressRange
     .map((row) => toReference(row as Record<string, unknown>));
 }
 
-function importSymbols(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
+function ownNames(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, space: Space): SymbolRow[] {
+  return db
+    .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND origin = ? AND address BETWEEN ? AND ? ORDER BY address`)
+    .all(space, analyzer, range.start, range.end)
+    .map((row) => toSymbol(row as Record<string, unknown>));
+}
+
+/**
+ * The names of an analyzer are second names (D74): they go to analyzer_names,
+ * one for each analyzer at an address, and never to symbols. A run replaces
+ * the analyzer's own names in its coverage, and closes the analyzer's old rows
+ * in symbols there (knowledge from before D74). A name that the user or the LLM
+ * gave the address already is not kept twice. A code or data kind that
+ * disagrees with the name of the address is a conflict.
+ */
+function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
   const space = findings.space ?? DEFAULT_SPACE;
+  for (const range of coverage) {
+    for (const own of ownSymbols(db, analyzer, range, space)) {
+      change.close("symbols", "space = ? AND address = ? AND origin = ?", space, own.address, analyzer);
+      result.symbols.retired++;
+    }
+  }
   const wanted = new Map(findings.symbols.map((symbol) => [symbol.address, symbol]));
   const settled = new Set<number>();
   const replaced = new Set<number>();
-  // Close first, so a name can move between addresses within one import.
   for (const range of coverage) {
-    for (const own of ownSymbols(db, analyzer, range, space)) {
+    for (const own of ownNames(db, analyzer, range, space)) {
       const finding = wanted.get(own.address);
-      if (finding === undefined) {
-        if (!findings.authoritative.symbols) continue;
-        change.close("symbols", "space = ? AND address = ?", space, own.address);
-        result.symbols.retired++;
-      } else if (finding.name === own.name && finding.kind === own.kind) {
+      // A seeded run gives back the name of the user or the LLM: the analyzer's own name there stays.
+      const echo = finding !== undefined && symbolAt(db, own.address, space)?.name === finding.name;
+      if (echo || (finding !== undefined && finding.name === own.name && finding.kind === own.kind)) {
         settled.add(own.address);
-        result.symbols.unchanged++;
-      } else {
-        change.close("symbols", "space = ? AND address = ?", space, own.address);
-        replaced.add(own.address);
+        result.names.unchanged++;
+        continue;
       }
+      change.close("analyzer_names", "space = ? AND address = ? AND origin = ?", space, own.address, analyzer);
+      if (finding === undefined) result.names.retired++;
+      else replaced.add(own.address);
     }
   }
   for (const finding of findings.symbols) {
+    const current = symbolAt(db, finding.address, space);
+    if (current !== undefined && isCode(current.kind) !== isCode(finding.kind)) {
+      result.conflicts.push({ category: "symbol", address: finding.address, reason: "kind", current, finding: { name: finding.name, kind: finding.kind } });
+    }
     if (settled.has(finding.address)) continue;
-    if (symbolSuppressed(db, finding.address, space)) {
-      result.symbols.suppressed++;
+    if (current?.name === finding.name) {
+      // The analyzer only gives back the name of the address.
+      if (replaced.has(finding.address)) result.names.retired++;
       continue;
     }
-    let current = symbolAt(db, finding.address, space);
-    if (current !== undefined && isCode(finding.kind) && !isCode(current.kind) && YIELDS_TO_EXECUTED_CODE.has(current.origin) && findings.executed?.(finding.address) === true) {
-      // A run executed this address: the data symbol of another analyzer gives way (D58).
-      change.close("symbols", "space = ? AND address = ?", space, current.address);
-      result.symbols.retired++;
-      current = undefined;
+    // The analyzer moved its own name from an address outside the coverage.
+    for (const moved of analyzerNamed(db, finding.name, space).filter((row) => row.origin === analyzer)) {
+      change.close("analyzer_names", "space = ? AND address = ? AND origin = ?", space, moved.address, analyzer);
+      result.names.retired++;
     }
-    if (current !== undefined) {
-      // A semantic or other-analyzer row stays; only a code/data disagreement matters.
-      if (isCode(current.kind) !== isCode(finding.kind)) {
-        result.conflicts.push({ category: "symbol", address: finding.address, reason: "kind", current, finding: { name: finding.name, kind: finding.kind } });
-      }
-      continue;
-    }
-    const owner = symbolNamed(db, finding.name, space);
-    if (owner?.origin === analyzer) {
-      // The analyzer moved its own name: its newer finding replaces its own older row.
-      change.close("symbols", "space = ? AND address = ?", space, owner.address);
-      result.symbols.retired++;
-    } else if (owner !== undefined) {
-      result.conflicts.push({ category: "symbol", address: finding.address, reason: "name-taken", current: owner, finding: { name: finding.name, kind: finding.kind } });
-      if (replaced.has(finding.address)) result.symbols.retired++;
-      continue;
-    }
-    change.insertSymbol({ space, address: finding.address, name: finding.name, kind: finding.kind, origin: analyzer });
-    if (replaced.has(finding.address)) result.symbols.changed++;
-    else result.symbols.added++;
+    change.insertAnalyzerName({ space, address: finding.address, name: finding.name, kind: finding.kind, origin: analyzer });
+    if (replaced.has(finding.address)) result.names.changed++;
+    else result.names.added++;
   }
 }
 
@@ -382,8 +389,8 @@ export function importFindings(db: DatabaseSync, findings: NormalizedFindings, c
   const coverage = validateFindings(findings);
   return transaction(db, () => {
     const change = new Change(db, { origin: findings.analyzer, ...context }, `import-${findings.analyzer}`);
-    const result: ImportResult = { revision: null, symbols: counts(), regions: counts(), references: counts(), conflicts: [] };
-    importSymbols(db, change, findings, coverage, result);
+    const result: ImportResult = { revision: null, names: counts(), symbols: counts(), regions: counts(), references: counts(), conflicts: [] };
+    importNames(db, change, findings, coverage, result);
     importRegions(db, change, findings, coverage, result);
     importReferences(db, change, findings, coverage, result);
     change.check();

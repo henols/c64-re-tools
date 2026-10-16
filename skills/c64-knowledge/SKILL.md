@@ -26,13 +26,16 @@ One of these:
 node <skill>/scripts/knowledge.ts <command> [arguments] [options]
 ```
 
-The script prints one JSON object. An error prints `{"error": {"code": ..., "message": ...}}`. Addresses are `$` and four hex digits. Quote them in a shell, for example `'$2100'`.
+The script prints one JSON object. An error prints `{"error": {"code": ..., "message": ...}}`. Addresses are `$` and four hex digits. Quote them in a shell, for example `'$2100'`. A name also gives an address, for example `at update_player`. The script tries the symbols first and then the analyzer names.
+
+A symbol is the name of an address from the user or the LLM. An analyzer name is a second name from DXA, Ghidra or an idiom, for example `FUN_17e2`. Each analyzer keeps its own name at an address. `at`, `search` and `export` show the analyzer names. The generated source uses only the symbols, unless c64-source gets `--analyzer-names`. To use an analyzer name in the source, `rename` the address with it.
 
 | Need | Command |
 |---|---|
 | Everything known at one address | `at '$2100'` |
 | Find names and comment text | `search player` |
 | Lists in a range | `symbols`, `regions`, `comments`, `references` with `--start` and `--end` |
+| The names that DXA, Ghidra and the idioms gave | `symbols --analyzer` |
 | Only some origins | add `--origin semantic`, `--origin analyzer` (dxa, ghidra and heuristic), or `--origin user,llm` |
 | All knowledge in one file | `export --out exports/knowledge.json` |
 | Name the symbol at an address | `rename '$2100' update_player --kind routine` |
@@ -193,7 +196,7 @@ The c64-source skill writes a use only when the use gives the bytes of the image
 
 ## Removals
 
-`remove-symbol`, `unclassify` and `unreference` block the place for DXA and Ghidra. An analysis does not add a symbol at that address, a region in that range or that reference again. This applies to every removed fact, also to a fact from the LLM.
+`unclassify` and `unreference` block the place for DXA and Ghidra. An analysis does not add a region in that range or that reference again. This applies to every removed fact, also to a fact from the LLM. `remove-symbol` does not block the address, because an analyzer name never becomes a symbol.
 
 - `suppressions` lists the blocked places with the reason of each removal. `at` and `history` also show them.
 - A `rename`, `classify` or `reference` at a blocked place ends the block there, because your own fact is at the place then.

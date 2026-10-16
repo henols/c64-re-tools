@@ -369,8 +369,7 @@ test("each space has its own rows and names (D53)", () => {
   removeSymbol(db, llm, { space: "drive8", address: 0x0500 });
   assert.equal(symbolAt(db, 0x0500, "drive8"), undefined);
   assert.equal(symbolAt(db, 0x0500)?.name, "loop", "the C64 row stays");
-  assert.deepEqual(listSuppressions(db, undefined, "drive8").map((row) => [row.space, row.entity, row.start]), [["drive8", "symbol", 0x0500]]);
-  assert.deepEqual(listSuppressions(db), []);
+  assert.deepEqual(listSuppressions(db, undefined, "drive8"), [], "the removal of a name writes no suppression (D74)");
   classifyRegion(db, llm, { space: "bank3", start: 0x8000, end: 0x80ff, type: "bytes" });
   assert.deepEqual(regionsOverlapping(db, 0x8000, 0x8000), []);
   assert.throws(() => renameSymbol(db, llm, { space: "bank256", address: 0x8000, name: "x" }), failsWith("invalid-input"));

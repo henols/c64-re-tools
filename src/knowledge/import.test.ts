@@ -8,7 +8,7 @@ import { after, test } from "node:test";
 import { KnowledgeError, openForWrite } from "./database.ts";
 import { revision as revisionChanges, revisions } from "./history.ts";
 import { importFindings, runProvenance, type Analyzer, type NormalizedFindings } from "./import.ts";
-import { currentRevision, listReferences, listSuppressions, listSymbols, regionsOverlapping, symbolAt } from "./read.ts";
+import { analyzerNamesAt, currentRevision, listAnalyzerNames, listReferences, listSuppressions, listSymbols, regionsOverlapping, symbolAt } from "./read.ts";
 import { addReference, classifyRegion, removeReference, removeSymbol, renameSymbol, revert, unclassifyRegion } from "./write.ts";
 import { nth } from "./revisions.testkit.ts";
 
@@ -44,7 +44,7 @@ function findings(analyzer: Analyzer, start: number, end: number, parts: Partial
 const regionList = (db: DatabaseSync) => regionsOverlapping(db, 0, 0xffff).map((region) => [region.start, region.end, region.type, region.origin]);
 const count = (db: DatabaseSync, sql: string) => (db.prepare(sql).get() as { n: number }).n;
 
-test("a re-analysis closes the analyzer's own symbol that it no longer finds", () => {
+test("a re-analysis closes the analyzer's own name that it no longer finds; analyzer names are second names, not symbols (D74)", () => {
   const db = fresh();
   const first = importFindings(
     db,
@@ -57,16 +57,17 @@ test("a re-analysis closes the analyzer's own symbol that it no longer finds", (
     { toolVersion: "test 1" },
   );
   assert.equal(first.revision, nth(db, 1));
-  assert.equal(first.symbols.added, 2);
+  assert.equal(first.names.added, 2);
+  assert.deepEqual(listSymbols(db), [], "no analyzer name is a symbol");
   const stored = db.prepare(`SELECT origin, operation, tool_version FROM revisions WHERE id = '${nth(db, 1)}'`).get();
   assert.deepEqual({ ...stored }, { origin: "ghidra", operation: "import-ghidra", tool_version: "test 1" });
 
   const second = importFindings(db, findings("ghidra", 0x2000, 0x22ff, { symbols: [{ address: 0x2100, name: "FUN_2100", kind: "routine" }] }));
   assert.equal(second.revision, nth(db, 2));
-  assert.deepEqual(second.symbols, { added: 0, changed: 0, retired: 1, unchanged: 1, suppressed: 0 });
-  assert.equal(symbolAt(db, 0x2200), undefined);
-  assert.equal(symbolAt(db, 0x2100)?.revision, nth(db, 1), "the unchanged symbol keeps its row");
-  assert.equal(count(db, `SELECT count(*) AS n FROM symbols WHERE address = 8704 AND valid_to_revision = '${nth(db, 2)}'`), 1, "the old row stays in history");
+  assert.deepEqual(second.names, { added: 0, changed: 0, retired: 1, unchanged: 1, suppressed: 0 });
+  assert.deepEqual(analyzerNamesAt(db, 0x2200), []);
+  assert.equal(analyzerNamesAt(db, 0x2100)[0]?.revision, nth(db, 1), "the unchanged name keeps its row");
+  assert.equal(count(db, `SELECT count(*) AS n FROM analyzer_names WHERE address = 8704 AND valid_to_revision = '${nth(db, 2)}'`), 1, "the old row stays in history");
 });
 
 test("the same result again changes nothing and makes no revision", () => {
@@ -79,7 +80,7 @@ test("the same result again changes nothing and makes no revision", () => {
   importFindings(db, result);
   const again = importFindings(db, result);
   assert.equal(again.revision, null);
-  assert.deepEqual([again.symbols.unchanged, again.regions.unchanged, again.references.unchanged], [1, 1, 1]);
+  assert.deepEqual([again.names.unchanged, again.regions.unchanged, again.references.unchanged], [1, 1, 1]);
   assert.equal(currentRevision(db), nth(db, 1));
 });
 
@@ -167,10 +168,16 @@ test("an analyzer does not replace another analyzer; a contradiction is a confli
     db,
     findings("ghidra", 0x3000, 0x30ff, { regions: [{ start: 0x3000, end: 0x30ff, type: "bytes" }], symbols: [{ address: 0x3000, name: "FUN_3000", kind: "routine" }] }),
   );
-  assert.equal(result.revision, null);
   assert.deepEqual(result.conflicts, [{ category: "region", start: 0x3000, end: 0x30ff, current: { type: "code", origin: "dxa" }, finding: { type: "bytes" } }]);
   assert.deepEqual(regionList(db), [[0x3000, 0x30ff, "code", "dxa"]]);
-  assert.equal(symbolAt(db, 0x3000)?.name, "l3000", "a different generated name for code is compatible");
+  assert.deepEqual(
+    analyzerNamesAt(db, 0x3000).map((row) => [row.name, row.origin]),
+    [
+      ["FUN_3000", "ghidra"],
+      ["l3000", "dxa"],
+    ],
+    "each analyzer keeps its own name (D74)",
+  );
 });
 
 test("a non-authoritative category adds facts but retires none", () => {
@@ -183,12 +190,13 @@ test("a non-authoritative category adds facts but retires none", () => {
   assert.equal(listReferences(db).length, 2);
 });
 
-test("a name in use elsewhere is a conflict, not an overwrite", () => {
+test("an analyzer name that a symbol has elsewhere is no conflict: it is a second name (D74)", () => {
   const db = fresh();
   renameSymbol(db, { origin: "llm" }, { address: 0x9000, name: "FUN_2100", kind: "routine" });
   const result = importFindings(db, findings("ghidra", 0x2000, 0x21ff, { symbols: [{ address: 0x2100, name: "FUN_2100", kind: "routine" }] }));
-  assert.equal(result.conflicts[0]?.category === "symbol" && result.conflicts[0].reason, "name-taken");
+  assert.deepEqual(result.conflicts, []);
   assert.equal(symbolAt(db, 0x2100), undefined);
+  assert.equal(analyzerNamesAt(db, 0x2100)[0]?.name, "FUN_2100");
   assert.equal(listSymbols(db).length, 1);
 });
 
@@ -251,7 +259,7 @@ test("an analyzer import records the image hash and the analyzer version in its 
   );
 });
 
-test("a non-authoritative symbol import moves the analyzer's own name and keeps its other rows", () => {
+test("a re-run replaces all of the analyzer's own names in its coverage, also when its labels are not complete (D74)", () => {
   const db = fresh();
   const partial = (symbols: NormalizedFindings["symbols"]) => {
     const result = findings("ghidra", 0x2000, 0x2fff, { symbols });
@@ -264,11 +272,8 @@ test("a non-authoritative symbol import moves the analyzer's own name and keeps 
   ]));
   const moved = importFindings(db, partial([{ address: 0x2300, name: "FUN_main", kind: "routine" }]));
   assert.deepEqual(moved.conflicts, []);
-  assert.deepEqual(moved.symbols, { added: 1, changed: 0, retired: 1, unchanged: 0, suppressed: 0 });
-  assert.deepEqual(listSymbols(db).map((symbol) => [symbol.address, symbol.name]), [
-    [0x2200, "FUN_2200"],
-    [0x2300, "FUN_main"],
-  ]);
+  assert.deepEqual(moved.names, { added: 1, changed: 0, retired: 2, unchanged: 0, suppressed: 0 });
+  assert.deepEqual(listAnalyzerNames(db).map((symbol) => [symbol.address, symbol.name]), [[0x2300, "FUN_main"]]);
 });
 
 test("a non-authoritative region import changes the type of the analyzer's own region under a finding", () => {
@@ -300,13 +305,11 @@ const ghidraRun = () =>
 test("removals by the LLM hold: the same analyzer run adds nothing again and counts the suppressed findings", () => {
   const db = fresh();
   importFindings(db, ghidraRun());
-  removeSymbol(db, { origin: "llm", description: "not an entry" }, { address: 0x0408 });
   removeReference(db, { origin: "llm", description: "the vector is written at run time" }, { from: 0x0410, to: 0xef29, kind: "jump" });
   unclassifyRegion(db, { origin: "llm" }, { start: 0x0480, end: 0x04ff });
   const before = currentRevision(db);
 
   const again = importFindings(db, ghidraRun());
-  assert.equal(again.symbols.suppressed, 1);
   assert.equal(again.references.suppressed, 1);
   assert.equal(again.regions.suppressed, 1);
   assert.equal(again.revision, null, "nothing changed");
@@ -316,12 +319,13 @@ test("removals by the LLM hold: the same analyzer run adds nothing again and cou
   assert.deepEqual(regionList(db), [[0x0400, 0x047f, "code", "ghidra"]]);
 });
 
-test("a removal blocks the place for every analyzer, also after the removal of an LLM row", () => {
+test("the removal of a name writes no suppression: an analyzer name there stays a second name (D74)", () => {
   const db = fresh();
   renameSymbol(db, { origin: "llm" }, { address: 0x0415, name: "boot_check" });
   removeSymbol(db, { origin: "llm" }, { address: 0x0415 });
+  assert.deepEqual(listSuppressions(db), []);
   const result = importFindings(db, findings("dxa", 0x0400, 0x04ff, { symbols: [{ address: 0x0415, name: "l0415", kind: "label" }] }));
-  assert.equal(result.symbols.suppressed, 1);
+  assert.equal(result.names.added, 1);
   assert.equal(symbolAt(db, 0x0415), undefined);
 });
 
@@ -343,7 +347,6 @@ test("a non-authoritative region import also leaves a suppressed range free", ()
 test("a later write at the place lifts the suppression there, and only there", () => {
   const db = fresh();
   importFindings(db, ghidraRun());
-  removeSymbol(db, { origin: "llm" }, { address: 0x0408 });
   removeReference(db, { origin: "llm" }, { from: 0x0410, to: 0xef29, kind: "jump" });
   unclassifyRegion(db, { origin: "llm" }, { start: 0x0400, end: 0x04ff });
   renameSymbol(db, { origin: "llm" }, { address: 0x0408, name: "irq_vector" });
@@ -362,24 +365,24 @@ test("a later write at the place lifts the suppression there, and only there", (
 test("a revert to before the removal lifts the suppression and restores the analyzer row", () => {
   const db = fresh();
   const first = importFindings(db, ghidraRun());
-  removeSymbol(db, { origin: "llm" }, { address: 0x0408 });
+  removeReference(db, { origin: "llm" }, { from: 0x0410, to: 0xef29, kind: "jump" });
   assert.equal(listSuppressions(db).length, 1);
   revert(db, { origin: "user" }, { revision: first.revision! });
   assert.deepEqual(listSuppressions(db), []);
-  assert.equal(symbolAt(db, 0x0408)?.name, "FUN_0408");
+  assert.deepEqual(listReferences(db).map((row) => [row.from, row.to, row.origin]), [[0x0410, 0xef29, "ghidra"]]);
   assert.equal(importFindings(db, ghidraRun()).revision, null);
 });
 
 test("a revision shows the suppression it wrote", () => {
   const db = fresh();
   importFindings(db, ghidraRun());
-  const removed = removeSymbol(db, { origin: "llm", description: "not an entry" }, { address: 0x0408 });
+  const removed = removeReference(db, { origin: "llm", description: "not a jump" }, { from: 0x0410, to: 0xef29, kind: "jump" });
   const changes = revisionChanges(db, removed.revision!);
   assert.deepEqual(
     changes.added.map((entry) => entry.entity),
     ["suppression"],
   );
-  assert.deepEqual(changes.closed.map((entry) => entry.entity), ["symbol"]);
+  assert.deepEqual(changes.closed.map((entry) => entry.entity), ["reference"]);
 });
 
 test("a JMP table is code, and dual-use bytes conflict with no finding (D42)", () => {
@@ -430,7 +433,7 @@ test("a code finding over an executed instruction start replaces another analyze
   const without = importFindings(db, ghidra());
   assert.deepEqual(
     without.conflicts.map((conflict) => conflict.category),
-    ["symbol", "region"],
+    ["region"],
   );
   assert.deepEqual(regionList(db), [[0x1000, 0x10ff, "bytes", "dxa"]]);
 
@@ -441,7 +444,7 @@ test("a code finding over an executed instruction start replaces another analyze
     [0x1000, 0x103f, "code", "ghidra"],
     [0x1040, 0x10ff, "bytes", "dxa"],
   ]);
-  assert.equal(symbolAt(db, 0x1010)?.name, "FUN_1010");
+  assert.deepEqual(analyzerNamesAt(db, 0x1010).map((row) => row.name), ["FUN_1010", "d1010"]);
   assert.deepEqual(revisionChanges(db, executed.revision!).revision.evidence, [{ kind: "coverage", ref: "runs/boot.bin", sha256: "0".repeat(64) }]);
 
   // User data stays, also over executed code.

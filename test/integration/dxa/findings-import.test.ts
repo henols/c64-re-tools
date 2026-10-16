@@ -88,11 +88,11 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
     ["bytes", "dxa", nthIn(project, 4)],
     ["code", "dxa", null],
   ], "the retired DXA data region stays in the history");
-  const symbolHistory = historyAt(db, 0x0818).flatMap((entry) => (entry.entity === "symbol" ? [[entry.row.name, entry.row.origin]] : []));
-  assert.deepEqual(symbolHistory, [
-    ["l818", "dxa"],
-    ["init_result", "llm"],
-  ]);
+  const nameHistory = historyAt(db, 0x0818).flatMap((entry) => (entry.entity === "symbol" || entry.entity === "analyzer-name" ? [[entry.entity, entry.row.name, entry.row.origin, entry.to ?? null]] : []));
+  assert.deepEqual(nameHistory, [
+    ["analyzer-name", "l818", "dxa", null],
+    ["symbol", "init_result", "llm", null],
+  ], "the DXA label stays a second name next to the name of the LLM (D74)");
   const before = currentRevision(db);
   db?.close();
 

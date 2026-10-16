@@ -46,11 +46,15 @@ export function ghidraFindings(result: GhidraResult): NormalizedFindings {
   for (const fn of result.functions) uses.set(fn.name, (uses.get(fn.name) ?? 0) + 1);
   const nameOf = (fn: GhidraResult["functions"][number]) =>
     fn.nameSource !== "seed" && uses.get(fn.name)! > 1 ? `${fn.name}_${fn.entry.toString(16).padStart(4, "0")}` : fn.name;
+  // A function that branches and jumps reach, and no call, is a place in a routine: a label (D74).
+  const called = new Set(result.references.filter((reference) => reference.type === "call").map((reference) => reference.to));
+  const jumped = new Set(result.references.filter((reference) => reference.type === "jump").map((reference) => reference.to));
+  const kindOf = (fn: GhidraResult["functions"][number]) => (jumped.has(fn.entry) && !called.has(fn.entry) ? ("label" as const) : ("routine" as const));
   return {
     analyzer: "ghidra",
     coverage: result.coverage,
     authoritative: { symbols: result.completeness.functions, regions: result.completeness.regions, references: result.completeness.references },
-    symbols: result.functions.map((fn) => ({ address: fn.entry, name: nameOf(fn), kind: "routine" as const })),
+    symbols: result.functions.map((fn) => ({ address: fn.entry, name: nameOf(fn), kind: kindOf(fn) })),
     regions: result.regions.map((region) => ({ start: region.start, end: region.end, type: region.classification === "code" ? ("code" as const) : ("bytes" as const) })),
     references: result.references.map((reference) => ({ from: reference.from, to: reference.to, kind: reference.type })),
   };

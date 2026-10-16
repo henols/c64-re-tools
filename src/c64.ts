@@ -419,3 +419,74 @@ export function executedRamCode(map: Uint8Array, base: number, memory: Uint8Arra
   }
   return ranges;
 }
+
+// Coverage flows (D44, D74): the seeds that a coverage map gives a static analysis.
+
+/**
+ * Instructions after which the next instruction starts a flow for the seeds: the
+ * ones that do not fall through, and JSR, because an analyzer that takes the
+ * called routine for one that does not return stops there (the Bruce Lee run).
+ */
+const FLOW_ENDS = new Set([0x00, 0x20, 0x40, 0x4c, 0x60, 0x6c]);
+/**
+ * The executed instruction starts in RAM that begin a flow: the first after
+ * a gap, or the first after an instruction that does not fall through or is a
+ * JSR. The analyzers follow the rest of a flow themselves.
+ */
+export function coverageEntries(map: Uint8Array, image: (address: number) => number | undefined): number[] {
+  const entries: number[] = [];
+  let falls: number | undefined;
+  for (let address = 0; address < 0x10000; address++) {
+    if ((map[address]! & COVERAGE.ramExecute) === 0) continue;
+    const opcode = image(address);
+    if (opcode === undefined) continue;
+    if (falls !== address) entries.push(address);
+    falls = FLOW_ENDS.has(opcode) ? undefined : address + instructionLength(opcode);
+  }
+  return entries;
+}
+
+/** Every executed instruction start in RAM inside the image: VICE marks the opcode byte of an instruction as executed, not its operand. */
+export function executedStarts(map: Uint8Array, image: (address: number) => number | undefined): number[] {
+  const starts: number[] = [];
+  for (let address = 0; address < 0x10000; address++) if ((map[address]! & COVERAGE.ramExecute) !== 0 && image(address) !== undefined) starts.push(address);
+  return starts;
+}
+
+const BRANCHES = new Set([0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xf0]);
+
+/** Instructions that never fall through to the next one. */
+const NO_FALL = new Set([0x00, 0x40, 0x4c, 0x60, 0x6c]);
+
+/**
+ * The coverage flow starts split for Ghidra (D74). A start is a code start, a
+ * place in a routine, when it follows an executed JSR, or when an executed
+ * branch or JMP from outside its own flow reaches it (the loop of a routine
+ * that jumps back to its own start does not count). Any other start, for
+ * example a vector or table target, is a routine entry.
+ */
+export function coverageSeedKinds(map: Uint8Array, image: (address: number) => number | undefined): { routines: number[]; codeStarts: number[] } {
+  const entries = coverageEntries(map, image);
+  const flowOf = new Map<number, number>();
+  for (const entry of entries) {
+    // A flow runs over the executed instructions that fall through, also over a JSR.
+    for (let at = entry; ; ) {
+      const opcode = image(at);
+      if (opcode === undefined || (map[at]! & COVERAGE.ramExecute) === 0 || flowOf.has(at)) break;
+      flowOf.set(at, entry);
+      if (NO_FALL.has(opcode)) break;
+      at += instructionLength(opcode);
+    }
+  }
+  const inside = new Set<number>();
+  for (const address of executedStarts(map, image)) {
+    const opcode = image(address)!;
+    const low = image(address + 1);
+    const high = image(address + 2);
+    const reach = (target: number) => flowOf.get(address) !== target && inside.add(target);
+    if (BRANCHES.has(opcode) && low !== undefined) reach((address + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff);
+    if (opcode === 0x4c && low !== undefined && high !== undefined) reach(low | (high << 8));
+    if (opcode === 0x20) inside.add(address + 3);
+  }
+  return { routines: entries.filter((entry) => !inside.has(entry)), codeStarts: entries.filter((entry) => inside.has(entry)) };
+}

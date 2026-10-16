@@ -10,7 +10,7 @@ import { ACTION_STEP_KEYS, checkActionStep, checkLocation, isInteger, isObject, 
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
-import { listSymbols } from "#src/knowledge/read.ts";
+import { listAnalyzerNames, listSymbols } from "#src/knowledge/read.ts";
 
 export class ScenarioError extends Error {}
 
@@ -236,6 +236,10 @@ export function loadSymbols(subject: Subject): Map<string, number> {
   if (subject.symbols === "knowledge") {
     const db = openForRead();
     for (const symbol of listSymbols(db)) symbols.set(symbol.name, symbol.address);
+    // An analyzer name gives an address too, when no symbol has the name and only one analyzer gives it (D74).
+    const second = new Map<string, number[]>();
+    for (const row of listAnalyzerNames(db)) second.set(row.name, [...(second.get(row.name) ?? []), row.address]);
+    for (const [name, addresses] of second) if (!symbols.has(name) && new Set(addresses).size === 1) symbols.set(name, addresses[0]!);
     db?.close();
     return symbols;
   }

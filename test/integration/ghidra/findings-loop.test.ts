@@ -44,7 +44,7 @@ test("Ghidra findings, a semantic rename and a seeded re-run go through one impo
   // 1. First Ghidra pass: generated names, regions and references become Ghidra knowledge.
   const first = await skill("c64-static-analysis", "analyze.ts", "game.prg", "--entry", "$080d");
   assert.equal(first.revision, nthIn(project, 1), JSON.stringify(first));
-  assert.deepEqual((await skill("c64-knowledge", "knowledge.ts", "at", "$0818")).symbol, { address: "$0818", name: "FUN_0818", kind: "routine", origin: "ghidra", revision: nthIn(project, 1) });
+  assert.deepEqual((await skill("c64-knowledge", "knowledge.ts", "at", "$0818")).analyzerNames, [{ address: "$0818", name: "FUN_0818", kind: "routine", origin: "ghidra", revision: nthIn(project, 1) }]);
 
   // 2. Semantic work: the LLM names the routine; the user marks $080d as data (wrong on purpose).
   const renamed = await skill("c64-knowledge", "knowledge.ts", "rename", "$0818", "init_result", "--kind", "routine", "--reason", "stores the result", "--expect-revision", nthIn(project, 1));
@@ -69,12 +69,13 @@ test("Ghidra findings, a semantic rename and a seeded re-run go through one impo
   // 4. Knowledge after the loop: semantic names stay with their owners, history is complete.
   const at = await skill("c64-knowledge", "knowledge.ts", "at", "$0818");
   assert.deepEqual(at.symbol, { address: "$0818", name: "init_result", kind: "routine", origin: "llm", revision: nthIn(project, 2) });
+  assert.deepEqual((at.analyzerNames as Array<{ name: string }>).map((row) => row.name), ["FUN_0818"], "Ghidra's own name stays a second name (D74)");
   const history = (await skill("c64-knowledge", "knowledge.ts", "history", "$0818")) as { history: Array<{ entity: string; name?: string; origin: string }> };
   assert.deepEqual(
-    history.history.filter((entry) => entry.entity === "symbol").map((entry) => [entry.name, entry.origin]),
+    history.history.filter((entry) => entry.entity === "symbol" || entry.entity === "analyzer-name").map((entry) => [entry.entity, entry.name, entry.origin]),
     [
-      ["FUN_0818", "ghidra"],
-      ["init_result", "llm"],
+      ["analyzer-name", "FUN_0818", "ghidra"],
+      ["symbol", "init_result", "llm"],
     ],
   );
   const revisions = (await skill("c64-knowledge", "knowledge.ts", "revisions")) as { revisions: Array<{ id: string; origin: string }> };

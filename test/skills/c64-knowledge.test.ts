@@ -143,15 +143,16 @@ test("a removal shows as a suppression with its reason, in at and in the history
   knowledge(root, "unreference", "$0410", "$ef29", "jump", "--reason", "the vector is written at run time");
   knowledge(root, "unclassify", "$0480", "$04ff");
   assert.deepEqual(knowledge(root, "suppressions").json, {
+    // A removal of a name writes no suppression (D74).
     suppressions: [
-      { suppresses: "symbol", address: "$0408", origin: "llm", revision: rev(root, 4), reason: "not an entry" },
       { suppresses: "reference", from: "$0410", to: "$ef29", kind: "jump", origin: "llm", revision: rev(root, 5), reason: "the vector is written at run time" },
       { suppresses: "region", start: "$0480", end: "$04ff", origin: "llm", revision: rev(root, 6) },
     ],
   });
-  assert.deepEqual(knowledge(root, "at", "$0408").json.suppressions, [{ suppresses: "symbol", address: "$0408", origin: "llm", revision: rev(root, 4) }]);
-  const history = knowledge(root, "history", "$0408").json.history as Array<Record<string, unknown>>;
-  assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "symbol", address: "$0408", origin: "llm", fromRevision: rev(root, 4), reason: "not an entry" }, "the history gives the reason of the revision (F-26)");
+  assert.equal(knowledge(root, "at", "$0408").json.suppressions, undefined);
+  assert.deepEqual(knowledge(root, "at", "$0480").json.suppressions, [{ suppresses: "region", start: "$0480", end: "$04ff", origin: "llm", revision: rev(root, 6) }]);
+  const history = knowledge(root, "history", "$0410").json.history as Array<Record<string, unknown>>;
+  assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "reference", from: "$0410", to: "$ef29", kind: "jump", origin: "llm", fromRevision: rev(root, 5), reason: "the vector is written at run time" }, "the history gives the reason of the revision (F-26)");
 });
 
 test("apply writes a batch from a file or standard input as one revision (D42)", () => {
@@ -197,7 +198,7 @@ test("export writes all current knowledge to a project file and answers with cou
   knowledge(root, "rename", "$2100", "update_player");
   knowledge(root, "classify", "$3000", "$303f", "sprite");
   const exported = knowledge(root, "export", "--out", "exports/knowledge.json").json;
-  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, regions: 1, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0, patches: 0, macros: 0, macroUses: 0 }, revision: rev(root, 2) });
+  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, analyzerNames: 0, regions: 1, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0, patches: 0, macros: 0, macroUses: 0 }, revision: rev(root, 2) });
   const file = JSON.parse(readFileSync(join(root, "exports", "knowledge.json"), "utf8")) as { symbols: Array<{ name: string }> };
   assert.equal(file.symbols[0]!.name, "update_player");
   assert.equal(knowledge(root, "export").status, 2, "export needs --out");
@@ -322,5 +323,5 @@ test("patch, macro and use write the source knowledge, and patches, switches, ma
   assert.equal(knowledge(root, "apply", "batch.json").status, 2, "apply with use or patch writes needs --image");
   const applied = knowledge(root, "apply", "batch.json", "--image", "game.prg").json as { writes: number; replaced: unknown[] };
   assert.equal(applied.writes, 4);
-  assert.deepEqual((knowledge(root, "export", "--out", "k.json").json as { counts: Record<string, number> }).counts, { symbols: 1, regions: 0, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0, patches: 1, macros: 1, macroUses: 1 });
+  assert.deepEqual((knowledge(root, "export", "--out", "k.json").json as { counts: Record<string, number> }).counts, { symbols: 1, analyzerNames: 0, regions: 0, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0, patches: 1, macros: 1, macroUses: 1 });
 });

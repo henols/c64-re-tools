@@ -241,6 +241,11 @@ export class Change {
     this.#db.prepare("INSERT INTO symbols (id, space, address, name, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)").run(this.#rowId(), row.space, row.address, row.name, row.kind, row.origin, this.id());
   }
 
+  /** A second name of an address from an analyzer (D74). */
+  insertAnalyzerName(row: Omit<SymbolRow, "revision">): void {
+    this.#db.prepare("INSERT INTO analyzer_names (id, space, address, name, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)").run(this.#rowId(), row.space, row.address, row.name, row.kind, row.origin, this.id());
+  }
+
   insertRegion(row: Omit<RegionRow, "revision">): void {
     this.#db
       .prepare("INSERT INTO regions (id, space, start_address, end_address, type, element, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
@@ -415,8 +420,8 @@ function removeSymbolStep(db: DatabaseSync, change: Change, origin: Origin, requ
   if (uses.length > 0) {
     throw new KnowledgeError("conflict", `The macro uses at ${uses.map((row) => hex(row.start)).join(", ")} use ${existing.name}. Change or remove them first (unuse), or rename the symbol.`);
   }
+  // No suppression: an analyzer name is a second name and never comes back as the name (D74).
   change.close("symbols", "space = ? AND address = ?", space, request.address);
-  change.insertSuppression({ space, entity: "symbol", start: request.address, end: request.address, origin: origin as SuppressionRow["origin"] });
   return { current: null };
 }
 
@@ -1152,6 +1157,7 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
 /** Row content without its revision, as a comparable key. */
 const KEYS = {
   symbols: { columns: SYMBOL_COLUMNS, map: toSymbol, key: (row: SymbolRow) => `${row.space}|${row.address}|${row.name}|${row.kind}|${row.origin}` },
+  analyzer_names: { columns: SYMBOL_COLUMNS, map: toSymbol, key: (row: SymbolRow) => `${row.space}|${row.address}|${row.name}|${row.kind}|${row.origin}` },
   regions: { columns: REGION_COLUMNS, map: toRegion, key: (row: RegionRow) => `${row.space}|${row.start}|${row.end}|${row.type}|${row.element ?? ""}|${row.origin}` },
   comments: { columns: COMMENT_COLUMNS, map: toComment, key: (row: CommentRow) => `${row.space}|${row.address}|${row.placement}|${row.text}|${row.origin}` },
   references: { columns: REFERENCE_COLUMNS, map: toReference, key: (row: ReferenceRow) => `${row.space}|${row.from}|${row.to}|${row.kind}|${row.origin}` },
@@ -1220,6 +1226,7 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         }
         const mapped = spec.map(row as never) as SymbolRow & RegionRow & CommentRow & ReferenceRow;
         if (table === "symbols") change.insertSymbol(mapped);
+        else if (table === "analyzer_names") change.insertAnalyzerName(mapped);
         else if (table === "regions") change.insertRegion(mapped);
         else if (table === "comments") change.insertComment(mapped);
         else change.insertReference(mapped);
