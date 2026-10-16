@@ -15,7 +15,7 @@ import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
 import { classifyRegion } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps, romOnlyRanges } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, readCoverageMaps, romOnlyRanges } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-coverage-"));
@@ -44,6 +44,20 @@ test("coverage seeds the first instruction of each flow, not every instruction",
   image[0xc010] = 0xea;
   const entries = coverageEntries(mapWith([0xc000, 0xc002, 0xc005, 0xc006, 0xc010]), imageReader(image, "flat64k"));
   assert.deepEqual(entries, [0xc000, 0xc006, 0xc010]);
+});
+
+test("after an executed JSR the next instruction starts a flow, and a branch target or a return point is a code start, not a routine (D74)", () => {
+  // The Bruce Lee run: Ghidra took a called routine for one that does not return and left the code after the JSR undecoded.
+  const image = new Uint8Array(0x10000);
+  // $c000 JSR $c100 / $c003 BNE $c007 / $c005 LDA #1 / $c007 RTS; $c100 RTS; $c200 is reached only through a vector.
+  image.set([0x20, 0x00, 0xc1, 0xd0, 0x02, 0xa9, 0x01, 0x60], 0xc000);
+  image[0xc100] = 0x60;
+  image[0xc200] = 0x60;
+  const map = mapWith([0xc000, 0xc003, 0xc007, 0xc100, 0xc200]);
+  const byteAt = imageReader(image, "flat64k");
+  assert.deepEqual(coverageEntries(map, byteAt), [0xc000, 0xc003, 0xc007, 0xc100, 0xc200]);
+  assert.deepEqual(coverageSeedKinds(map, byteAt), { routines: [0xc000, 0xc100, 0xc200], codeStarts: [0xc003, 0xc007] });
+  assert.deepEqual(executedStarts(map, byteAt), [0xc000, 0xc003, 0xc007, 0xc100, 0xc200]);
 });
 
 test("a coverage file for analysis covers all 64 KiB", () => {
@@ -106,7 +120,8 @@ test("with coverage, Ghidra does not follow a KERNAL call or the IRQ vector into
   const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "kernal.bin", "--flat64k", "--entry", "$080d", "--coverage", "kernal-run.bin"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   const json = JSON.parse(run.stdout) as { coverageSeeds: unknown };
-  assert.deepEqual(json.coverageSeeds, { entryPoints: 1, used: 1, romOnlyRanges: 2, romOnlyUsed: 2 }, run.stdout);
+  // $080d and the return point after JSR $ffe4.
+  assert.deepEqual(json.coverageSeeds, { entryPoints: 2, used: 2, romOnlyRanges: 2, romOnlyUsed: 2 }, run.stdout);
   const db = openForRead(project);
   const typeAt = (address: number) => regionsOverlapping(db, address, address).find((region) => region.origin === "ghidra")?.type;
   assert.equal(typeAt(0x080d), "code", run.stdout);
@@ -135,6 +150,18 @@ test("with coverage, DXA finds the code that only a vector reaches", { skip: dxa
   assert.deepEqual(seeded.coverageSeeds, { entryPoints: 2, used: 2, romOnlyRanges: 0, romOnlyUsed: 0 }, JSON.stringify(seeded));
   assert.equal(codeAt(VECTORED_ROUTINE), "code");
   assert.deepEqual(seeded.coverageConflicts, []);
+});
+
+test("with coverage, a branch target after an RTS is no Ghidra function, and no executed start is missing (D74, M23.4)", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
+  // $0810 LDA $02 / BEQ $0815 / RTS / $0815 INC $d020 / RTS: before M23.4 the coverage seed at $0815 became FUN_0815.
+  const prg = Buffer.from([0x10, 0x08, 0xa5, 0x02, 0xf0, 0x01, 0x60, 0xee, 0x20, 0xd0, 0x60]);
+  writeFileSync(join(project, "branch.prg"), prg);
+  writeFileSync(join(project, "branch.bin"), mapWith([0x0810, 0x0812, 0x0815, 0x0818]));
+  const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "branch.prg", "--entry", "$0810", "--coverage", "branch.bin"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  const json = JSON.parse(run.stdout) as { functions: { listed: Array<{ entry: string }> }; coverageGaps: { count: number } };
+  assert.deepEqual(json.functions.listed.map((fn) => fn.entry), ["$0810"], run.stdout);
+  assert.equal(json.coverageGaps.count, 0, run.stdout);
 });
 
 test("with coverage, Ghidra makes a function of the code that only a vector reaches", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {

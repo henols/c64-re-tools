@@ -32,6 +32,7 @@ test("the seeds of an analysis are the entry points inside its range and the dat
   );
   assert.deepEqual(seeds, {
     entryPoints: [0x0810],
+    codeStarts: [],
     dataRanges: [
       { start: 0x0801, end: 0x0805 },
       { start: 0x0820, end: 0x0827 },

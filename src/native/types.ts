@@ -39,13 +39,15 @@ export interface AcmeResult {
 export const IMAGE_KINDS = ["prg", "flat64k"] as const;
 export type ImageKind = (typeof IMAGE_KINDS)[number];
 
-export const GHIDRA_LIMITS = { entryPoints: 1024, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
+export const GHIDRA_LIMITS = { entryPoints: 1024, codeStarts: 8192, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
 
 /** The Ghidra analysis. Its image is given next to these fields: a PRG, or 64 KiB from $0000. */
 export interface GhidraParams {
   imageKind: ImageKind;
   /** Seeds from current knowledge. */
   entryPoints: number[];
+  /** Executed instruction starts that Ghidra disassembles without making a function (D74): a branch target is no routine. */
+  codeStarts?: number[];
   dataRanges: Array<{ start: number; end: number }>;
   labels: Array<{ address: number; name: string }>;
   /** Routine entries to decompile for immediate reasoning; the text is never stored. */
@@ -80,9 +82,10 @@ export interface GhidraResult {
 }
 
 /** Refuses a DXA or Ghidra request with more seeds or decompilations than the request bounds allow, by name. */
-export function checkRequestBounds(params: DxaParams & { decompile?: number[] }): void {
+export function checkRequestBounds(params: DxaParams & { decompile?: number[]; codeStarts?: number[] }): void {
   const bounds = [
     ["entry points", params.entryPoints.length, GHIDRA_LIMITS.entryPoints],
+    ["code starts", params.codeStarts?.length ?? 0, GHIDRA_LIMITS.codeStarts],
     ["data ranges", params.dataRanges.length, GHIDRA_LIMITS.dataRanges],
     ["labels", params.labels.length, GHIDRA_LIMITS.labels],
     ["routines to decompile", params.decompile?.length ?? 0, GHIDRA_LIMITS.decompile],
@@ -93,7 +96,7 @@ export function checkRequestBounds(params: DxaParams & { decompile?: number[] })
 }
 
 /** The DXA analysis: the same image and seeds as Ghidra, without decompilation. */
-export type DxaParams = Omit<GhidraParams, "decompile">;
+export type DxaParams = Omit<GhidraParams, "decompile" | "codeStarts">;
 
 export interface DxaResult {
   coverage: Array<{ start: number; end: number }>;
@@ -247,11 +250,14 @@ export function imageRange(kind: ImageKind, image: Uint8Array): { start: number;
  * it, and the data ranges cut to it. A data range that holds an entry point
  * is left out, so that the entry point is disassembled.
  */
-export function seedsInside(params: Pick<DxaParams, "entryPoints" | "dataRanges">, start: number, end: number): Pick<DxaParams, "entryPoints" | "dataRanges"> {
-  const entryPoints = params.entryPoints.filter((address) => address >= start && address <= end);
+export function seedsInside(params: Pick<GhidraParams, "entryPoints" | "dataRanges" | "codeStarts">, start: number, end: number): { entryPoints: number[]; codeStarts: number[]; dataRanges: GhidraParams["dataRanges"] } {
+  const inside = (address: number) => address >= start && address <= end;
+  const entryPoints = params.entryPoints.filter(inside);
+  const codeStarts = (params.codeStarts ?? []).filter(inside);
+  const code = [...entryPoints, ...codeStarts];
   const dataRanges = params.dataRanges
     .filter((range) => range.end >= start && range.start <= end)
     .map((range) => ({ start: Math.max(range.start, start), end: Math.min(range.end, end) }))
-    .filter((range) => !entryPoints.some((entry) => entry >= range.start && entry <= range.end));
-  return { entryPoints, dataRanges };
+    .filter((range) => !code.some((entry) => entry >= range.start && entry <= range.end));
+  return { entryPoints, codeStarts, dataRanges };
 }

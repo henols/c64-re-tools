@@ -23,7 +23,7 @@ import { DEFAULT_SPACE, SPACE } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, readCoverageMaps, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList } from "./lib/instructions.ts";
@@ -271,8 +271,11 @@ async function run(argv: string[]): Promise<unknown> {
   // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound (D44).
   const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, byteAt);
   const known = [...seeds.entryPoints, ...codeEntries(reader, byteAt, space)];
-  const ordered = [...new Set([...known, ...idioms.entryPoints, ...fromCoverage])];
+  // Ghidra takes the coverage as code starts without a function (D74); DXA has one list.
+  const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, byteAt);
+  const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines])];
   seeds.entryPoints = ordered.slice(0, GHIDRA_LIMITS.entryPoints).sort((a, b) => a - b);
+  const codeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry)).slice(0, GHIDRA_LIMITS.codeStarts);
   // Idiom tables and the RAM under ROM that the runs never used are data for this run too; semantic data ranges come first.
   // A range with an entry point of the knowledge or --entry in it is left out: that code stays code.
   const fromRom = coverage === undefined ? [] : romOnlyRanges(coverage, byteAt).filter((range) => !known.some((entry) => entry >= range.start && entry <= range.end));
@@ -280,7 +283,7 @@ async function run(argv: string[]): Promise<unknown> {
   for (const range of [...idioms.dataRanges, ...fromRom]) if (!dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start)) dataRanges.push(range);
   seeds.dataRanges = dataRanges.slice(0, GHIDRA_LIMITS.dataRanges);
   const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
-  const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry)).length;
+  const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry)).length;
   // Platform names are C64 names: drive code and banks get none.
   const platform = space === DEFAULT_SPACE ? platformNames() : [];
   const pointers = findPointers(byteAt, { start: loaded.start, end: loaded.end }, {
@@ -358,7 +361,10 @@ async function run(argv: string[]): Promise<unknown> {
     };
   }
 
-  const { result } = await analyzeWithGhidra({ imageKind, ...seeds, decompile }, bytes, localToolContext());
+  const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
+  // Executed instruction starts that Ghidra did not decode: the instruction list and the source miss them.
+  const decoded = new Set(result.instructions.map((instruction) => instruction.address));
+  const gaps = coverage === undefined ? [] : executedStarts(coverage, byteAt).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address));
   const imported = record({ ...ghidraFindings(result), space, ...executed }, revision, `Ghidra analysis of ${image}`, { ...runProvenance(bytes, result.toolVersion), ...coverageEvidence });
   const found = idiomsResult();
   let instructions: { out: string; count: number } | undefined;
@@ -373,6 +379,7 @@ async function run(argv: string[]): Promise<unknown> {
     ...(instructions === undefined ? {} : { instructions }),
     ...found,
     ...coverageResult(),
+    ...(coverage === undefined ? {} : { coverageGaps: listed(gaps, max, formatC64Address, "a larger --max-listed") }),
     coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     ...imported,
     functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), "c64-knowledge: knowledge.ts symbols --kind routine"),

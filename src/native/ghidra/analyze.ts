@@ -25,7 +25,7 @@ export async function analyze(
   const base = start;
 
   // Ghidra disassembles and defines data only in the loaded bytes; labels may name any address.
-  const { entryPoints, dataRanges } = seedsInside(params, start, end);
+  const { entryPoints, codeStarts, dataRanges } = seedsInside(params, start, end);
   if (entryPoints.length === 0) {
     throw new WireFailure("invalid-input", "Give at least one entry point inside the program, for example the SYS address of its BASIC loader.");
   }
@@ -33,7 +33,7 @@ export async function analyze(
   const workspace = Workspace.create(context.supervisor);
   try {
     workspace.materialize("input", [{ path: "image.bin", size: body.length }], [body]);
-    writeFileSync(workspace.path("seeds.json"), JSON.stringify({ start, end, entryPoints, dataRanges, labels: params.labels }));
+    writeFileSync(workspace.path("seeds.json"), JSON.stringify({ start, end, entryPoints, codeStarts, dataRanges, labels: params.labels }));
     writeFileSync(
       workspace.path("request.json"),
       JSON.stringify({
