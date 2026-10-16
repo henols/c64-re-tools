@@ -128,3 +128,18 @@ test("pointer candidates: immediate pairs stored to a vector or a (zp),y pair, a
     { kind: "sprite pointer", to: 0x07f9, target: 0x3140, at: 0x1050, value: 0xc5 },
   ]);
 });
+
+test("the CBM80 header of a cartridge bank gives its two start vectors as entry points (F-29)", () => {
+  // $8000: cold start $8009, warm start $8020, then "CBM80"; code at both targets.
+  const { byteAt } = image({ 0x8000: [0x09, 0x80, 0x20, 0x80, 0xc3, 0xc2, 0xcd, 0x38, 0x30, 0x78], 0x8020: [0x40] });
+  const bank = { start: 0x8000, end: 0x9fff };
+  const found = findIdioms(byteAt, bank);
+  assert.equal(found.counts.cartridgeHeaders, 1);
+  assert.ok(found.entryPoints.includes(0x8009) && found.entryPoints.includes(0x8020), JSON.stringify(found.entryPoints));
+  assert.deepEqual(found.findings.regions.slice(0, 2), [
+    { start: 0x8000, end: 0x8003, type: "addresses" },
+    { start: 0x8004, end: 0x8008, type: "petscii" },
+  ]);
+  const plain = image({ 0x8000: [0x09, 0x80, 0x20, 0x80, 0x41, 0x42, 0x43, 0x44, 0x45] });
+  assert.equal(findIdioms(plain.byteAt, bank).counts.cartridgeHeaders, 0, "no header without CBM80");
+});

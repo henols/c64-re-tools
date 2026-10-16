@@ -1,7 +1,8 @@
 // 6502 idioms that hide code from a disassembler (D44): RTS dispatch tables,
 // JMP tables and BIT skips are found by their exact instruction patterns and
 // become heuristic findings and entry points; DOP padding and self-modified
-// opcodes are only reported. A self-modified opcode is one that one run wrote
+// opcodes are only reported. The CBM80 header of a cartridge bank at $8000
+// gives its two start vectors as entry points (F-29). A self-modified opcode is one that one run wrote
 // and executed, in either order, since a coverage file holds no order (R3-04):
 // a copier's writes in one run and their execution in another do not count (F-16). A table's length is not known statically: entries
 // count while each target is a plausible instruction in the program.
@@ -17,6 +18,8 @@ const LDA_INDEXED = new Set([0xbd, 0xb9]);
 const JAMS = new Set([0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
 /** Undocumented NOPs with an operand byte (DOP): padding between instructions hides the real ones. */
 const DOPS = new Set([0x04, 0x14, 0x34, 0x44, 0x54, 0x64, 0x74, 0x80, 0x82, 0x89, 0xc2, 0xd4, 0xe2, 0xf4]);
+/** "CBM80" in PETSCII at $8004: the KERNAL then starts the cartridge through the vectors at $8000 (cold) and $8002 (warm). */
+const CBM80 = [0xc3, 0xc2, 0xcd, 0x38, 0x30];
 
 export interface Idioms {
   findings: NormalizedFindings;
@@ -24,7 +27,7 @@ export interface Idioms {
   entryPoints: number[];
   /** Table ranges for the same run: they are data. */
   dataRanges: Array<{ start: number; end: number }>;
-  counts: { rtsTables: number; jumpTables: number; bitSkips: number };
+  counts: { cartridgeHeaders: number; rtsTables: number; jumpTables: number; bitSkips: number };
   /** Seen in the coverage, not written: the LLM decides. All of them: the result lists the first ones. */
   candidates: { dop: number[]; selfModified: number[] };
 }
@@ -47,13 +50,21 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
   const regions: NormalizedFindings["regions"] = [];
   const references: NormalizedFindings["references"] = [];
   const entryPoints = new Set<number>();
-  const counts = { rtsTables: 0, jumpTables: 0, bitSkips: 0 };
+  const counts = { cartridgeHeaders: 0, rtsTables: 0, jumpTables: 0, bitSkips: 0 };
   const taken = (start: number, end: number) => regions.some((region) => start <= region.end && end >= region.start);
   const addRegion = (start: number, end: number, type: NormalizedFindings["regions"][number]["type"]) => {
     if (start < range.start || end > range.end || taken(start, end)) return false;
     regions.push({ start, end, type });
     return true;
   };
+
+  if (range.start <= 0x8000 && range.end >= 0x8008 && CBM80.every((byte, index) => byteAt(0x8004 + index) === byte)) {
+    const vectors = [word(byteAt, 0x8000)!, word(byteAt, 0x8002)!].filter((target) => plausible(byteAt, target, range));
+    if (addRegion(0x8000, 0x8003, "addresses") && addRegion(0x8004, 0x8008, "petscii")) {
+      counts.cartridgeHeaders++;
+      for (const target of vectors) entryPoints.add(target);
+    }
+  }
 
   for (let at = range.start; at + 8 <= range.end; at++) {
     // RTS dispatch: LDA high,X / PHA / LDA low,X / PHA / RTS.
