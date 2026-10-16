@@ -735,7 +735,7 @@ function dataLines(item: DataItem, layout: Layout, breaks: Set<number>): Array<{
   const cells = cellsOf(item, layout, breaks);
   const element = item.region?.element;
   const perLine = (directive: Directive) =>
-    directive === "!word" ? WORDS_PER_LINE : directive === "!pet" || directive === "!scr" ? CHARS_PER_LINE : item.type === "sprite" ? 3 : element !== undefined && element <= 16 ? element : BYTES_PER_LINE;
+    directive === "!word" ? WORDS_PER_LINE : directive === "!pet" || directive === "!scr" ? CHARS_PER_LINE : item.type === "sprite" ? 3 : item.type === "charset" ? 8 : element !== undefined && element <= 16 ? element : BYTES_PER_LINE;
   const lines: Array<{ address: number; text: string }> = [];
   let group: Cell[] = [];
   const flush = () => {

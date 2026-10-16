@@ -93,6 +93,18 @@ test("tables, strings and sprites are written by their region type", () => {
   assert.match(text, /!pet "hi"\n {8}!byte \$00\nl_100b\n {8}rts/);
 });
 
+test("a charset is written one character of 8 bytes to a line, without !fill", () => {
+  const bytes = Array.from({ length: 24 }, (_, index) => (index < 16 ? 0 : index));
+  const regions: SourceInput["regions"] = [{ start: 0x2000, end: 0x2017, type: "charset" }];
+  const text = textOf(render(layout(input(bytes, 0x2000, { regions })), new Set(), []), "segment_2000.asm");
+  const lines = text.split("\n").filter((line) => line.includes("!byte"));
+  assert.deepEqual(
+    lines.map((line) => line.trim()),
+    ["!byte $00,$00,$00,$00,$00,$00,$00,$00", "!byte $00,$00,$00,$00,$00,$00,$00,$00", "!byte $10,$11,$12,$13,$14,$15,$16,$17"],
+  );
+  assert.doesNotMatch(text, /!fill/);
+});
+
 test("the source map gives the line of each name and of each address that the source writes (D80)", () => {
   // $1000: LDA $d020; STA $1007 (into the next instruction); LDA #0; RTS; then a table of two words.
   const bytes = [0xad, 0x20, 0xd0, 0x8d, 0x07, 0x10, 0xa9, 0x00, 0x60, 0x00, 0x10, 0x06, 0x10];

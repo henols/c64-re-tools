@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { bitmapFrame, encodePng, PATTERN_PALETTES, scaleFrame, screenText, SPRITE, spriteSheet } from "./graphics.ts";
+import { bitmapFrame, charsetFrame, encodePng, PATTERN_PALETTES, scaleFrame, screenText, SPRITE, spriteSheet } from "./graphics.ts";
 import { readPng } from "./graphics.testkit.ts";
 
 test("a PNG round-trips size, palette and every pixel", () => {
@@ -44,6 +44,21 @@ test("a bitmap is read as 8x8 cells, 40 to a row", () => {
   assert.equal(frame.pixels[14 * 320], 0);
   const big = scaleFrame({ width: 2, height: 1, pixels: Uint8Array.from([0, 1]) }, 2);
   assert.deepEqual([big.width, big.height, ...big.pixels], [4, 2, 0, 0, 1, 1, 0, 0, 1, 1]);
+});
+
+test("a charset is read as characters of 8x8, 16 to a row", () => {
+  const bytes = new Uint8Array(256 * 8);
+  bytes[17 * 8] = 0x80; // character 17: row 1, column 1, its top left pixel
+  bytes[255 * 8 + 7] = 0b11; // character 255: its bottom right pixel pair
+  const hires = charsetFrame(bytes, "hires");
+  assert.deepEqual([hires.width, hires.height], [128, 128]);
+  assert.equal(hires.pixels[8 * 128 + 8], 1);
+  assert.equal(hires.pixels.reduce((sum, value) => sum + value, 0), 3);
+  const multicolour = charsetFrame(bytes, "multicolour");
+  assert.equal(multicolour.pixels[8 * 128 + 8], 2);
+  assert.equal(multicolour.pixels[127 * 128 + 126], 3);
+  assert.equal(multicolour.pixels[127 * 128 + 127], 3);
+  assert.deepEqual([charsetFrame(new Uint8Array(24), "hires").width, charsetFrame(new Uint8Array(24), "hires").height], [24, 8]);
 });
 
 test("screen codes show as the upper-case set, rows of 40", () => {

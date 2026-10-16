@@ -216,6 +216,7 @@ petscii
 screen
 bitmap
 sprite
+charset
 workspace
 unused
 dual-use
@@ -229,6 +230,7 @@ Meanings:
 - `rts-addresses`, `rts-addresses-split`: the same, with each value the target minus 1 (PHA/PHA/RTS dispatch);
 - `jumps`: a table of `JMP abs` instructions, each 3-byte entry an entry point; it is code;
 - `workspace`: RAM that the program writes at run time; its bytes in the image do not matter;
+- `charset`: characters of a character set, 8 bytes each (D81);
 - `unused`: bytes that nothing executes or reads;
 - `dual-use`: code at one time and data or a vector at another; it is neither code nor data, so no analyzer finding conflicts with it;
 - absence of a current region means unknown/unclassified.

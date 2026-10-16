@@ -6,7 +6,7 @@
 import { posix } from "node:path";
 
 import { formatC64Address, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
-import { bitmapFrame, encodePng, PATTERN_PALETTES, scaleFrame, screenText, spriteSheet, type GraphicsMode } from "#src/graphics.ts";
+import { bitmapFrame, charsetFrame, encodePng, PATTERN_PALETTES, scaleFrame, screenText, spriteSheet, type GraphicsMode } from "#src/graphics.ts";
 import { mermaidGraph, ownerOf, routineEdges, routineHeads, type GraphReference, type RoutineHead } from "#src/knowledge/graph.ts";
 import type { CommentRow, ModuleRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
 import type { RegionType } from "#src/knowledge/schema.ts";
@@ -37,7 +37,7 @@ export interface ReferenceFile {
 /** Files that the source map lists but that hold no code of the program. */
 const NOT_PIECES = new Set(["main.asm", "constants.asm", "macros.asm", "loader.asm"]);
 const TABLE_TYPES: readonly RegionType[] = [...POINTER_TABLE_TYPES, "jumps", "words"];
-const GRAPHICS_TYPES: readonly RegionType[] = ["sprite", "bitmap", "screen"];
+const GRAPHICS_TYPES: readonly RegionType[] = ["sprite", "bitmap", "charset", "screen"];
 /** A list longer than this ends with the number of the rest. */
 const MAX_LISTED = 40;
 /** A call graph with more edges is not readable: then it shows the calls only, and at most this many. */
@@ -327,7 +327,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     const lines = [
       "# Graphics",
       "",
-      `Each sprite, bitmap and screen region of the knowledge. The knowledge gives no display mode and no colours, so a sprite or bitmap shows in hires and in multicolour, in pattern colours: black is pixel value 0, white is 1 in hires; in multicolour light grey is 1, grey is 2 and yellow is 3. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`,
+      `Each sprite, bitmap, charset and screen region of the knowledge. The knowledge gives no display mode and no colours, so a sprite, bitmap or charset shows in hires and in multicolour, in pattern colours: black is pixel value 0, white is 1 in hires; in multicolour light grey is 1, grey is 2 and yellow is 3. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`,
     ];
     if (input.image === undefined && graphics.length > 0) lines.push("", "Generate the reference with --image to show the graphics.");
     for (const region of graphics) {
@@ -343,9 +343,9 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
         continue;
       }
       for (const mode of ["hires", "multicolour"] as GraphicsMode[]) {
-        // A sheet of sprites, or a bitmap of at most 8 rows of cells, is small: each pixel shows as 2 x 2.
-        const raw = region.type === "sprite" ? spriteSheet(bytes, mode, region.element === 63 ? 63 : 64) : bitmapFrame(bytes, mode);
-        const frame = region.type === "sprite" || raw.height <= 64 ? scaleFrame(raw, 2) : raw;
+        // A sheet of sprites, a charset, or a bitmap of at most 8 rows of cells, is small: each pixel shows as 2 x 2.
+        const raw = region.type === "sprite" ? spriteSheet(bytes, mode, region.element === 63 ? 63 : 64) : region.type === "charset" ? charsetFrame(bytes, mode) : bitmapFrame(bytes, mode);
+        const frame = region.type === "sprite" || region.type === "charset" || raw.height <= 64 ? scaleFrame(raw, 2) : raw;
         const image = posix.join(out, "images", `${anchor}-${mode}.png`);
         files.push({ path: image, bytes: encodePng(frame, PATTERN_PALETTES[mode]) });
         lines.push("", `![${anchor} in ${mode}](${rel(page, image)})`);

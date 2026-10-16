@@ -75,6 +75,7 @@ Region types:
 |---|---|
 | `code` | Instructions. |
 | `bytes`, `words`, `petscii`, `screen`, `bitmap`, `sprite` | Data of that form. |
+| `charset` | Characters of a character set, 8 bytes for each character. |
 | `addresses`, `addresses-split` | A table of addresses: one table of 16-bit values, or a low-byte table and then a high-byte table. |
 | `rts-addresses`, `rts-addresses-split` | The same, with each value the target minus 1, for a PHA, PHA, RTS dispatch. |
 | `jumps` | A table of `JMP abs` instructions. Each 3-byte entry is an entry point. It is code. |

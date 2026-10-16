@@ -53,15 +53,17 @@ function writeSource(root: string, revision: string, files: Record<string, Array
 /**
  * A program at $1000: main calls draw, and draw dispatches through an RTS
  * table at $2000 to two handlers; counter at $02 is outside the image; ship is
- * one sprite at $2040.
+ * one sprite at $2040, and font is a charset of two characters at $2080.
  */
 function project(): { root: string; revision: string } {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-"));
   projects.push(root);
-  const body = new Uint8Array(0x2080 - 0x1000);
+  const body = new Uint8Array(0x2090 - 0x1000);
   // The RTS table: handler_a-1 ($101f), handler_b-1 ($1027).
   body.set([0x1f, 0x10, 0x27, 0x10], 0x1000);
   body[0x1040] = 0b1000_0001; // ship: the first row has the first and the eighth pixel
+  body[0x1080] = 0b1000_0000; // font: character 0 has its top left pixel
+  body[0x108f] = 0b0000_0001; // font: character 1 has its bottom right pixel
   writeFileSync(join(root, "game.prg"), Uint8Array.from([0x00, 0x10, ...body]));
   writeFileSync(
     join(root, "batch.json"),
@@ -74,10 +76,12 @@ function project(): { root: string; revision: string } {
       { op: "rename", address: "$1028", name: "handler_b", kind: "label" },
       { op: "rename", address: "$2000", name: "handlers", kind: "data" },
       { op: "rename", address: "$2040", name: "ship", kind: "data" },
+      { op: "rename", address: "$2080", name: "font", kind: "data" },
       { op: "rename", address: "$0002", name: "counter", kind: "variable" },
       { op: "classify", start: "$1000", end: "$102f", type: "code" },
       { op: "classify", start: "$2000", end: "$2003", type: "rts-addresses" },
       { op: "classify", start: "$2040", end: "$207f", type: "sprite", element: 64 },
+      { op: "classify", start: "$2080", end: "$208f", type: "charset" },
       { op: "comment", address: "$1010", placement: "line", text: "Draws the screen." },
       { op: "reference", from: "$1003", to: "$1010", kind: "call" },
       { op: "reference", from: "$1012", to: "$2000", kind: "reference" },
@@ -104,7 +108,18 @@ function project(): { root: string; revision: string } {
       { label: "handler_b", address: 0x1028 },
       { item: "rts", start: 0x1028, end: 0x1028 },
     ],
-    "tables.asm": ["; Tables", "; $2000-$207f", "", { label: "handlers", address: 0x2000 }, { item: "!byte <(handler_a-1),<(handler_b-1)", start: 0x2000, end: 0x2003 }, { label: "ship", address: 0x2040 }, { item: "!byte %10000001,0,0", start: 0x2040, end: 0x2042 }],
+    "tables.asm": [
+      "; Tables",
+      "; $2000-$208f",
+      "",
+      { label: "handlers", address: 0x2000 },
+      { item: "!byte <(handler_a-1),<(handler_b-1)", start: 0x2000, end: 0x2003 },
+      { label: "ship", address: 0x2040 },
+      { item: "!byte %10000001,0,0", start: 0x2040, end: 0x2042 },
+      { label: "font", address: 0x2080 },
+      { item: "!byte $80,$00,$00,$00,$00,$00,$00,$00", start: 0x2080, end: 0x2087 },
+      { item: "!byte $00,$00,$00,$00,$00,$00,$00,$01", start: 0x2088, end: 0x208f },
+    ],
     "constants.asm": [{ label: "counter = $02", address: 0x0002 }],
   });
   // The label of a constant is its line "name = value": the map names it by the name only.
@@ -140,6 +155,12 @@ test("generate.ts writes the reference: module pages with anchors and links to t
   // One sprite, 2x2 per pixel, with the gap of one pixel: (24 + 2) x 2 wide.
   assert.equal(sheet.width, 52);
   assert.deepEqual([sheet.pixels[2 * 52 + 2], sheet.pixels[2 * 52 + 4], sheet.pixels[2 * 52 + 16]], [1, 0, 1]);
+  assert.match(graphics, /\*charset\*/);
+  assert.match(graphics, /!\[font in multicolour\]\(images\/font-multicolour\.png\)/);
+  const font = readPng(readFileSync(join(root, "docs/reference/images/font-hires.png")));
+  // Two characters side by side, 2x2 per pixel and no gap: 2 x 8 x 2 wide, 8 x 2 high.
+  assert.deepEqual([font.width, font.height], [32, 16]);
+  assert.deepEqual([font.pixels[0], font.pixels[33], font.pixels[2], font.pixels[15 * 32 + 31], font.pixels[15 * 32 + 29]], [1, 1, 0, 1, 0]);
   assert.match(read("index.md"), /\| \[main_code\.asm\]\(modules\/main_code\.md\) \| `\$1000-\$1028` \| Main code \| 4 \| 4 \|/);
 });
 

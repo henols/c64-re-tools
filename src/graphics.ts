@@ -1,6 +1,6 @@
 // Indexed images: the PNG encoder of emulator frames, and the C64 graphics
 // in memory as images for the documentation (D80). A region of the knowledge
-// gives no display mode and no colours, so a sprite or a bitmap is read
+// gives no display mode and no colours, so a sprite, a bitmap or a charset is read
 // both in hires and in multicolour, with fixed pattern palettes.
 
 import { crc32, deflateSync } from "node:zlib";
@@ -102,20 +102,30 @@ export function spriteSheet(bytes: Uint8Array, mode: GraphicsMode, stride = 64, 
   return { width, height, pixels };
 }
 
-/** A bitmap of 8x8 cells of 8 bytes, 40 cells to a row, as the VIC reads it. */
-export function bitmapFrame(bytes: Uint8Array, mode: GraphicsMode): IndexedFrame {
+/** Cells of 8 bytes as 8x8 pixels, `perRow` cells to a row, cell 0 at the top left. */
+function cellFrame(bytes: Uint8Array, mode: GraphicsMode, perRow: number): IndexedFrame {
   const cells = Math.ceil(bytes.length / 8);
-  const width = Math.min(cells, 40) * 8;
-  const height = Math.ceil(cells / 40) * 8;
+  const width = Math.min(cells, perRow) * 8;
+  const height = Math.ceil(cells / perRow) * 8;
   const pixels = new Uint8Array(width * height);
   for (let cell = 0; cell < cells; cell++) {
-    const left = (cell % 40) * 8;
-    const top = Math.floor(cell / 40) * 8;
+    const left = (cell % perRow) * 8;
+    const top = Math.floor(cell / perRow) * 8;
     for (let row = 0; row < 8; row++) {
       bytePixels(bytes[cell * 8 + row] ?? 0, mode).forEach((value, x) => (pixels[(top + row) * width + left + x] = value));
     }
   }
   return { width, height, pixels };
+}
+
+/** A bitmap of 8x8 cells of 8 bytes, 40 cells to a row, as the VIC reads it. */
+export function bitmapFrame(bytes: Uint8Array, mode: GraphicsMode): IndexedFrame {
+  return cellFrame(bytes, mode, 40);
+}
+
+/** A character set: characters of 8 bytes, 16 to a row, so character N is in row N / 16 and column N % 16. */
+export function charsetFrame(bytes: Uint8Array, mode: GraphicsMode): IndexedFrame {
+  return cellFrame(bytes, mode, 16);
 }
 
 /** Each pixel as a square of `factor` pixels, so a small image is readable on a page. */

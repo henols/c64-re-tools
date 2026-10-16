@@ -817,7 +817,7 @@ Document a program as a reader needs it: the flows, the state machines, the tabl
 
 ### Tools / execution path
 
-Two local scripts. `generate.ts` writes the reference pages: one page for each module (call graph, data with readers and writers, an entry for each name with its callers and callees), and the pages of the names, the variables outside the image, the tables entry by entry, the memory map and the graphics (sprites and bitmaps in hires and in multicolour, screens as text). `link.ts` writes the links of the pages that the agent writes, and checks every link and image.
+Two local scripts. `generate.ts` writes the reference pages: one page for each module (call graph, data with readers and writers, an entry for each name with its callers and callees), and the pages of the names, the variables outside the image, the tables entry by entry, the memory map and the graphics (sprites, bitmaps and charsets in hires and in multicolour, screens as text). `link.ts` writes the links of the pages that the agent writes, and checks every link and image.
 
 ### Workflow
 

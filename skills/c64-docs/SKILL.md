@@ -82,7 +82,13 @@ node <skill>/scripts/link.ts docs --source src --check
 - `tables.md`: each table of addresses, jumps and words, entry by entry, with its target. An RTS table holds each target minus 1. The table gives the target.
 - `memory-map.md`: each region in address order.
 - `symbols.md`: each name in alphabetical order.
-- `graphics.md`: each `sprite`, `bitmap` and `screen` region. A sprite or a bitmap shows in hires and in multicolour, because the knowledge has no graphics mode. A screen shows as text.
+- `graphics.md`: each `sprite`, `bitmap`, `charset` and `screen` region. A sprite, a bitmap or a charset shows in hires and in multicolour, because the knowledge has no graphics mode. A charset shows 16 characters in each row. A screen shows as text.
+
+### Images and assets
+
+- The reference draws each sprite, bitmap and charset region, and it decodes each table. To get the image of a graphic or the entries of a table, classify its region with c64-knowledge. Do not write a script that draws or decodes them.
+- A script of the project decodes only a format of the program, for example a packed map or a music stream. Put the script in `tools/` of the project. Its output files are the assets, for example in `assets/rooms/`.
+- When the code of the program makes the data, run that code in VICE with a run of c64-testing. Observe the memory, or capture the screen. Do not write a 6502 emulator in the script.
 
 In the call graph, a solid arrow is a call, a thick arrow is a table entry, and a dotted arrow is a jump. A table entry goes from each routine that reads the table to each target in code. A table of data addresses gives no arrow.
 

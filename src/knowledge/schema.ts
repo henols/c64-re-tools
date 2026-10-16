@@ -25,6 +25,7 @@ export const REGION_TYPES = [
   "screen",
   "bitmap",
   "sprite",
+  "charset",
   "workspace",
   "unused",
   "dual-use",
@@ -263,7 +264,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 3;
+export const INDEX_VERSION = 4;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

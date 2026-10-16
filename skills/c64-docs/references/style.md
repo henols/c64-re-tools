@@ -27,7 +27,7 @@ These rules apply to each page that you write. `link.ts` checks the rules that a
 - Use mermaid for the diagrams: `flowchart` for calls and data flow, `stateDiagram-v2` for state machines. Write the name and the address in each node: `"draw_room $09BC"`.
 - A diagram gets no links. Give the links in a table or a list under the diagram.
 - Keep a diagram small: at most about 20 nodes. Make two diagrams before one diagram that a reader cannot read.
-- Embed an image only from the project. It can be an extracted asset (for example `../assets/sprites/bruce.png`), an image of the reference (`reference/images/`), or a PNG that a skill made. `link.ts` checks that each image exists.
+- Embed an image only from the project. It can be an image of the reference (`reference/images/`) or a PNG that a skill made. It can also be an asset that a script of the project made from a format of the program, for example `../assets/rooms/room00.png`. `link.ts` checks that each image exists.
 - Give each image one line of text that tells what it shows.
 
 ## Text
