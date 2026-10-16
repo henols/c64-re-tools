@@ -78,6 +78,9 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  // First, so that every start, also a refused one, tells which runtime runs.
+  log(`${PACKAGE.name} ${PACKAGE.version} (Node.js ${process.version}, ${process.platform} ${process.arch})`);
+
   // Without an emulator the runtime is useless: refuse to start, by name and with the remedy.
   try {
     findVice(process.env);

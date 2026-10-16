@@ -9,6 +9,7 @@ import { after, test } from "node:test";
 
 import { encodeFrame } from "../../src/protocol/framing.ts";
 import { HOST_PROTOCOL_ID } from "../../src/protocol/messages.ts";
+import { PACKAGE } from "../../src/package.ts";
 import { FrameDecoder } from "../../src/protocol/framing.testkit.ts";
 import { liveSkip, startHost, stopHosts } from "../integration/vice/live.ts";
 
@@ -57,6 +58,7 @@ test("c64-re-tools-host refuses a bad --port", async () => {
 test("c64-re-tools-host does not start without VICE and says how to install it", () => {
   const run = spawnSync(process.execPath, [...process.execArgv, "src/host/main.ts", "--port", "0"], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_VICE: join(scratch, "no-such-x64sc") } });
   assert.equal(run.status, 1);
+  assert.ok(run.stderr.startsWith(`c64-re-tools-host: ${PACKAGE.name} ${PACKAGE.version} (Node.js `), "the first line names the version");
   assert.match(run.stderr, /C64RT_VICE.*Install VICE/);
 });
 
