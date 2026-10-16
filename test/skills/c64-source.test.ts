@@ -16,7 +16,7 @@ import { assemble } from "../../src/native/acme.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ciaSection, copyOrder, loaderLimits, planLoader, readEntryState, simulate, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { ciaSection, copyOrder, loaderLimits, planLoader, readEntryState, simulate, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { MODE_LENGTH, OPCODES } from "../../skills/c64-source/scripts/lib/opcodes.ts";
 import { entriesInData, entryOutsideImage, layout, render, type SourceInput } from "../../skills/c64-source/scripts/lib/source.ts";
 import { describeAddress, platformNames } from "../../src/platform.ts";
@@ -141,6 +141,23 @@ test("the loader plan refuses a loader that would load into the I/O area, and pu
   assert.doesNotMatch(plan.text, /macros\.asm/);
   const withMacros = planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x0810, header, macros: true });
   assert.match(withMacros.text, /^!source "constants\.asm"\n!source "macros\.asm"\n/m, "the source of the loader has the macros (D73)");
+});
+
+test("a loader that stops early names the first copier byte that is not the file's byte, and else the first byte that a copy did not write", () => {
+  // Found in a field run on a 46 KB game: the only message was the address where the loader stopped.
+  const plan = { blocks: [], copies: [{ what: "segment $1000-$10ff", target: { start: 0x1000, end: 0x10ff }, source: { start: 0x0900, end: 0x09ff }, backward: false }], copier: 0xc000, stackByte: 0x01f6, end: 0xa0ff, text: "" };
+  const file = (address: number) => (address * 7) & 0xff;
+  const expected = (address: number) => address & 0xff;
+  const ram = new Uint8Array(0x10000);
+  for (let offset = 0; offset <= 0xff; offset++) ram[0xc000 + offset] = file(0xa000 + offset);
+  for (let address = 0x1000; address <= 0x10ff; address++) ram[address] = expected(address);
+  assert.equal(stopCause(ram, plan, 0xa000, file, true, expected), undefined, "all as planned");
+  ram[0xc010] = file(0xa010) ^ 0xff;
+  assert.equal(stopCause(ram, plan, 0xa000, file, false, expected), `The copier at $c010 holds $${(file(0xa010) ^ 0xff).toString(16).padStart(2, "0")}, not $${file(0xa010).toString(16).padStart(2, "0")} from $a010 of the loader file; $a010 is under a ROM, so the move read the ROM.`);
+  ram[0xc010] = file(0xa010);
+  ram[0x1020] = 0x99;
+  assert.equal(stopCause(ram, plan, 0xa000, file, false, expected), undefined, "the copier did not run, so the copies are not checked");
+  assert.equal(stopCause(ram, plan, 0xa000, file, true, expected), "The copy of segment $1000-$10ff wrote $99 at $1020, not $20.");
 });
 
 /** Runs the copy table at the end of an assembled loader on a memory model, as the copier does. */

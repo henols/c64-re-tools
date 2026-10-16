@@ -30,7 +30,7 @@ import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/nativ
 import { describeAddress, platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { LOADER_JUMP, loaderLimits, planLoader, rasterLine, readEntryState, simulate, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
+import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, readEntryState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
 import { OPCODES } from "./lib/opcodes.ts";
 import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Range, type Rendered } from "./lib/source.ts";
 
@@ -392,16 +392,35 @@ async function readRam(client: ViceSessionClient, start: number, size: number): 
  * set and no interrupt has run since the PLP: the 6502 takes one only after
  * the JMP, as the original program can take one right at its entry (F-32).
  */
-async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image: Image, state: EntryState, jump: number): Promise<{ verified: boolean; differences: string[] }> {
+/** What the check of the loader gives. `stop`: why the loader did not get to its copier or its jump. */
+interface LoaderRun {
+  verified: boolean;
+  differences: string[];
+  stop?: { pc: string; port: string; cause?: string; history: string[] };
+}
+
+/** The history entries that a stop of the loader gives, so the agent sees the last instructions. */
+const STOP_HISTORY = 16;
+
+async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image: Image, state: EntryState, jump: number, copierSource: number, expected: (address: number) => number): Promise<LoaderRun> {
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     await client.reset({ mode: "hard", run: false });
     if (!(await autostartLoaded(client, path, program))) return { verified: false, differences: ["The loader was not in memory after autostart."] };
     await client.keyboard(textToPetscii("RUN\n"));
+    // A stop before the copier or the jump gives $01, the last instructions and the first byte that is not as planned.
+    const stopped = async (pc: number, copied: boolean, what: string): Promise<LoaderRun> => {
+      const ram = await readRam(client, 0x0000, 0x10000);
+      const port = Buffer.from((await client.memoryRead({ address: 0x0001, size: 1, space: "c64", view: "cpu" })).data, "hex")[0]!;
+      const history = (await client.cpuHistory({ limit: STOP_HISTORY, space: "c64" })).entries.map((entry) => `${formatC64Address(entry.address)}  ${entry.text}`);
+      const cause = stopCause(ram, plan, copierSource, (address) => program[2 + address - 0x0801]!, copied, expected);
+      const port01 = `$${port.toString(16).padStart(2, "0")}`;
+      return { verified: false, differences: [`The loader did not get to ${what}; it stopped at ${formatC64Address(pc)}.`], stop: { pc: formatC64Address(pc), port: port01, ...(cause === undefined ? {} : { cause }), history } };
+    };
     const copier = await client.runUntil({ target: { kind: "address", address: plan.copier, space: "c64" }, timeoutFrames: RUN_LIMIT_FRAMES });
-    if (!copier.reached) return { verified: false, differences: [`The loader did not get to its copier at ${formatC64Address(plan.copier)}; it stopped at ${formatC64Address(copier.pc)}.`] };
+    if (!copier.reached) return await stopped(copier.pc, false, `its copier at ${formatC64Address(plan.copier)}`);
     const atJump = await client.runUntil({ target: { kind: "address", address: jump, space: "c64" }, timeoutFrames: LOADER_FRAMES });
-    if (!atJump.reached) return { verified: false, differences: [`The loader did not get to its jump to the entry at ${formatC64Address(jump)}; it stopped at ${formatC64Address(atJump.pc)}.`] };
+    if (!atJump.reached) return await stopped(atJump.pc, true, `its jump to the entry at ${formatC64Address(jump)}`);
     const memory = await readRam(client, 0x0000, 0x10000);
     if (memory[jump] !== 0x4c || (memory[jump + 1]! | (memory[jump + 2]! << 8)) !== state.pc) {
       return { verified: false, differences: [`The instruction at ${formatC64Address(jump)} is not JMP ${formatC64Address(state.pc)}.`] };
@@ -664,7 +683,10 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   const loaderPath = `${values.out}/loader.prg`;
   writeProjectFile(loaderPath, program, { what: "--out" });
   (output.files as string[]).push("loader.prg");
-  const ran = await runLoader(loaderPath, program, loader, image, state, jump);
+  const copierSymbol = loaderBuilt.symbols?.find((symbol) => symbol.name === COPIER_SOURCE);
+  if (copierSymbol === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${COPIER_SOURCE} label. This is a defect of the c64-source script.`);
+  const copierSource = copierSymbol.kind === "address" ? copierSymbol.address : copierSymbol.value;
+  const ran = await runLoader(loaderPath, program, loader, image, state, jump, copierSource, expected);
   output.loader = {
     program: loaderPath,
     copies: loader.copies.map((copy) => ({ what: copy.what, to: `${formatC64Address(copy.target.start)}-${formatC64Address(copy.target.end)}` })),

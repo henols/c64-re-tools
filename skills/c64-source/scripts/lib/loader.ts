@@ -204,6 +204,31 @@ export function simulate(memory: Int16Array, copies: Copy[], expected: (address:
   return undefined;
 }
 
+/** True when a read of the address with $01 = $37, as RUN leaves it, gives a ROM byte. */
+const underRom = (address: number) => (address >= 0xa000 && address <= 0xbfff) || address >= 0xe000;
+
+/**
+ * Why a loader stopped before its jump, from the RAM after the stop: the first
+ * byte of the moved copier that is not the byte of the loader file, else, when
+ * the copier ran, the first byte that a copy did not write as planned.
+ */
+export function stopCause(ram: Uint8Array, plan: LoaderPlan, copierSource: number, fileByte: (address: number) => number, copied: boolean, expected: (address: number) => number): string | undefined {
+  for (let offset = 0; offset <= plan.end - copierSource; offset++) {
+    const got = ram[plan.copier + offset]!;
+    const wanted = fileByte(copierSource + offset);
+    if (got === wanted) continue;
+    const rom = underRom(copierSource + offset) ? `; ${hex4(copierSource + offset)} is under a ROM, so the move read the ROM` : "";
+    return `The copier at ${hex4(plan.copier + offset)} holds ${hex2(got)}, not ${hex2(wanted)} from ${hex4(copierSource + offset)} of the loader file${rom}.`;
+  }
+  if (!copied) return undefined;
+  for (const copy of plan.copies) {
+    for (let address = copy.target.start; address <= copy.target.end; address++) {
+      if (ram[address] !== expected(address)) return `The copy of ${copy.what} wrote ${hex2(ram[address]!)} at ${hex4(address)}, not ${hex2(expected(address))}.`;
+    }
+  }
+  return undefined;
+}
+
 /** The VIC-II and its bank from the io part of an entry state, when it has them. */
 function readVic(io: Record<string, any> | undefined, fail: (what: string) => never): { vic: NonNullable<EntryState["vic"]> } | Record<string, never> {
   if (io?.vic === undefined) return {};

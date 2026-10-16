@@ -154,6 +154,7 @@ The exit status is 0 when the source is identical and the emulator check of the 
 - `entriesInData`: an analyzer region of data hides the code at the entry. If the entry is code, record a code region at the entry with the c64-knowledge skill, for example `classify '$0500' '$05ff' code`. A region of the user or the LLM replaces the analyzer region. Then generate again.
 - `loader.verified: false` with a `reason`: the script did not make the loader. The script still writes and checks the source. When no copy order or no free pages exist, or the loader needs too many copies, the reason gives the ranges. Capture the image again with fewer segments, or write the loader by hand.
 - `loader.verified: false` with `differences`: the loader ran, and `differences` gives the bytes and registers that are not equal.
+- `loader.verified: false` with `stop`: the loader did not get to its copier or to its jump. `stop` gives the address where it stopped and `port`, the value of $01. `history` gives the last 16 instructions. `cause` gives the first byte of the copier that is not equal to its byte in the loader file. If the copier ran, `cause` can also give the first byte that a copy did not write correctly.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disassembler or emulator script.
 
 ## Handoffs
