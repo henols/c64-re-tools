@@ -31,12 +31,15 @@ Use only the MCP tools. Each MCP session has its own C64. Nothing else can chang
 | Show the C64 to the user in a window, hide it again | `c64_window` |
 | Stop, start, step, step over, step out, exact frames | `c64_execution` |
 | Run until an address, a memory value or a raster position | `c64_run_until` |
+| Run to a place and read the machine there in one call | `c64_run_until` with `observe` and `history` |
+| Each write, read or routine entry over many frames, with the instruction and the raster line | `c64_trace` |
 | Stop on an instruction address | `c64_breakpoint` |
 | Stop on a memory read or write | `c64_watchpoint` |
 | Memory | `c64_memory_read`, `c64_memory_write`, `c64_memory_search`, `c64_memory_compare` |
 | CPU registers | `c64_registers` |
 | Code as it is in memory now | `c64_disassemble` |
 | Executed instructions, call chain | `c64_cpu_history`, `c64_backtrace` |
+| Which instruction reads or writes an address | `c64_trace` with a `read` or `write` point |
 | Where the CPU spends cycles, which memory it uses | `c64_profile`, `c64_memmap` |
 | Cycle count between two points | `c64_timing` |
 | Video chip, sprites, CIAs, sound chip | `c64_vicii`, `c64_sprite`, `c64_cia`, `c64_sid` |

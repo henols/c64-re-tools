@@ -32,6 +32,7 @@ const PUBLIC_TOOLS = [
   "c64_breakpoint",
   "c64_watchpoint",
   "c64_cpu_history",
+  "c64_trace",
   "c64_backtrace",
   "c64_profile",
   "c64_memmap",
@@ -157,6 +158,9 @@ class FakeSession implements ViceSessionApi {
   }
   async backtrace() {
     return { frames: [{ address: 0x2100, returnAddress: 0x1980 }, { address: 0xfce2 }] };
+  }
+  async trace(params: { points: Array<{ kind: string; start: number; end: number }>; frames: number; maxHits: number }) {
+    return { hits: [{ point: 0, pc: 0x09c1, bytes: "8d11d0", text: "sta $d011", a: 0x8b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 279, rasterCycle: 22, address: 0xd011, value: 0x8b }], frames: params.frames, end: "frames" as const, pc: 0x0440 };
   }
   profiles: unknown[] = [];
   profile(params: { action: "read"; limit: number }): Promise<{ entries: ProfileEntry[] }>;
@@ -1013,4 +1017,37 @@ test("c64_snapshot writes a snapshot file with out and restores one with file (D
     process.chdir(home);
     rmSync(project, { recursive: true, force: true });
   }
+});
+
+test("c64_trace takes points with an optional end and gives the hits with $ addresses (D76)", async () => {
+  const client = await connect(async () => new FakeSession());
+  const traced = (await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011" }], frames: 100 })).structuredContent;
+  assert.deepEqual(traced, {
+    end: "frames",
+    frames: 100,
+    pc: "$0440",
+    count: 1,
+    hits: [{ point: 0, pc: "$09c1", bytes: "8d11d0", text: "sta $d011", a: 0x8b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 279, rasterCycle: 22, address: "$d011", value: 0x8b }],
+  });
+  assert.equal(errorOf(await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011", end: "$d010" }], frames: 1 })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_trace", { points: [], frames: 1 })).code, "invalid-input");
+  await client.close();
+});
+
+test("c64_run_until gives the observation and the history at the stop in one call (M23.10)", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const plain = (await call(client, "c64_run_until", { target: { kind: "address", address: "$c00b" } })).structuredContent as Record<string, unknown>;
+  assert.equal("observed" in plain || "history" in plain, false, "without them the result is as before");
+  const both = (await call(client, "c64_run_until", { target: { kind: "address", address: "$c00b" }, observe: { registers: "c64", memory: [{ address: "$d011", size: 1 }], timing: true }, history: 1 })).structuredContent as {
+    pc: string;
+    observed: { registers: { pc: string }; memory: Array<{ address: string; data: string }>; timing: unknown };
+    history: Array<{ address: string }>;
+  };
+  assert.equal(both.pc, "$c00b");
+  assert.deepEqual(both.observed.memory, [{ address: "$d011", data: "00" }]);
+  assert.deepEqual(both.observed.timing, { rasterLine: 100, rasterCycle: 20 });
+  assert.equal(both.history[0]!.address, "$2100");
+  assert.equal(session.observations.length, 1, "one observation, after the stop");
+  await client.close();
 });

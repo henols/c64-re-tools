@@ -5,14 +5,15 @@
 
 import { isOneOf, WireFailure, type VideoStandard } from "../../protocol/messages.ts";
 import { DISK_IMAGE_TYPES, type DiskFile, type DiskImageType } from "../../protocol/tools.ts";
-import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type PointRemoved, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type PointStopReason, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
+import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type PointRemoved, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type TraceHit, type TraceKind, type TraceResult, type PointStopReason, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { formatC64Address } from "../../c64.ts";
+import { formatC64Address, instructionLength } from "../../c64.ts";
 import { encodePng, type IndexedFrame } from "../../graphics.ts";
+import { instructionText, operandAddress } from "../../opcodes.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
 import { trace } from "../../trace.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
@@ -457,6 +458,8 @@ export class ViceSession implements ViceSessionHandle {
         return this.#snapshotFile(params as ViceOperations["snapshotFile"]["params"], attachments, reply);
       case "cpuHistory":
         return this.#cpuHistory(params as ViceOperations["cpuHistory"]["params"]);
+      case "trace":
+        return this.#trace(params as ViceOperations["trace"]["params"]);
       case "backtrace": {
         const { depth, space } = params as ViceOperations["backtrace"]["params"];
         return this.#observe(async () => {
@@ -675,6 +678,119 @@ export class ViceSession implements ViceSessionHandle {
     } finally {
       await this.#machine.deleteCheckpoint(clock);
     }
+  }
+
+  /**
+   * A trace (D76): runs the machine for up to `frames` frames, counted as
+   * #runFrames counts them, with a stopping checkpoint for each point. At each
+   * hit the session records the instruction, its registers and the raster
+   * position, and runs on. It ends at the frame limit, at `maxHits` hits, or
+   * where a user point or a JAM stops the program. VICE also reports the hits
+   * of a checkpoint that does not stop, but without the PC, the registers or
+   * the raster position, so each point stops.
+   */
+  async #trace(params: ViceOperations["trace"]["params"]): Promise<TraceResult> {
+    await this.#stop();
+    const lines = RASTER[this.#videoStandard].lines;
+    const start = await this.#machine.rasterPosition();
+    const arming = rasterLinesExpression((start.line + Math.floor(lines / 2)) % lines, lines);
+    const ending = rasterWindowExpression(start.line, start.cycle, lines);
+    const operation: Record<TraceKind, number> = { exec: 0x04, read: 0x01, write: 0x02 };
+    const points: number[] = [];
+    const hits: TraceHit[] = [];
+    let frames = 0;
+    const clock = await this.#machine.addCheckpoint({ start: 0x0000, end: 0xffff, operation: 0x04, space: "c64" });
+    try {
+      for (const point of params.points) points.push(await this.#machine.addCheckpoint({ start: point.start, end: point.end, operation: operation[point.kind], space: "c64" }));
+      await this.#machine.setCondition(clock, arming);
+      let armingPhase = true;
+      for (;;) {
+        const next = this.#nextStop(HALF_FRAME_LIMIT_MS);
+        await this.#resume();
+        const stop = await next;
+        if (stop === undefined) {
+          await this.#stop();
+          throw new WireFailure("operation-failed", "The emulator did not reach the next frame in time.");
+        }
+        const traced = points.flatMap((checkpoint, index) => (stop.hits.includes(checkpoint) ? [index] : []));
+        for (const index of traced) {
+          hits.push(await this.#traceHit(index, params.points[index]!.kind, frames));
+          if (hits.length >= params.maxHits) return { hits, frames, end: "hits", pc: stop.pc };
+        }
+        if (stop.hits.includes(clock)) {
+          if (armingPhase) await this.#machine.setCondition(clock, ending);
+          else {
+            frames++;
+            if (frames >= params.frames) return { hits, frames, end: "frames", pc: stop.pc };
+            await this.#machine.setCondition(clock, arming);
+          }
+          armingPhase = !armingPhase;
+          continue;
+        }
+        if (traced.length > 0) continue;
+        const point = this.#userPoint(stop.hits);
+        if (point !== undefined) return { hits, frames, end: point.stopReason, pc: stop.pc };
+        if (await this.#jammedAt(stop.pc)) return { hits, frames, end: "jam", pc: stop.pc };
+        throw new WireFailure("operation-failed", "The emulator stopped the machine for a reason outside this trace.");
+      }
+    } finally {
+      await this.#machine.deleteCheckpoint(clock);
+      for (const checkpoint of points) await this.#machine.deleteCheckpoint(checkpoint);
+    }
+  }
+
+  /**
+   * One hit of a trace point. An exec point stops before its instruction: the
+   * registers and the raster position are the ones of now. A read or write
+   * point stops after the instruction that made the access: the last entry of
+   * the CPU history is that instruction, with its registers and its clock.
+   */
+  async #traceHit(point: number, kind: TraceKind, frame: number): Promise<TraceHit> {
+    const position = await this.#machine.rasterPosition();
+    const byteAt = async (address: number) => Number.parseInt(await this.#machine.readMemory({ address, size: 1, space: "c64", view: "cpu" }), 16);
+    if (kind === "exec") {
+      const registers = await this.#machine.readRegisters("c64");
+      const bytes = [...Buffer.from(await this.#machine.readMemory({ address: registers.pc, size: 3, space: "c64", view: "cpu" }), "hex")];
+      const length = instructionLength(bytes[0]!);
+      return {
+        point,
+        pc: registers.pc,
+        bytes: Buffer.from(bytes.slice(0, length)).toString("hex"),
+        text: instructionText(bytes, registers.pc),
+        a: registers.a,
+        x: registers.x,
+        y: registers.y,
+        sp: registers.sp,
+        frame,
+        rasterLine: position.line,
+        rasterCycle: position.cycle,
+      };
+    }
+    const [entry] = await this.#machine.history(1, "c64");
+    if (entry === undefined) throw new WireFailure("operation-failed", "The emulator gave no CPU history at a trace hit.");
+    const now = await this.#machine.clock();
+    const { lines, cycles } = RASTER[this.#videoStandard];
+    const span = BigInt(lines * cycles);
+    const at = Number((((BigInt(position.line * cycles + position.cycle) - (now - entry.clock)) % span) + span) % span);
+    const bytes = [...Buffer.from(entry.bytes, "hex")];
+    // A zero-page pointer is read now: the instruction did not change it.
+    const pointer = new Map<number, number>();
+    for (const address of [bytes[1] ?? 0, ((bytes[1] ?? 0) + 1) & 0xff, ((bytes[1] ?? 0) + entry.x) & 0xff, ((bytes[1] ?? 0) + entry.x + 1) & 0xff]) pointer.set(address, await byteAt(address));
+    const address = operandAddress(bytes, entry.x, entry.y, (zp) => pointer.get(zp) ?? 0);
+    return {
+      point,
+      pc: entry.address,
+      bytes: entry.bytes,
+      text: instructionText(bytes, entry.address),
+      a: entry.a,
+      x: entry.x,
+      y: entry.y,
+      sp: entry.sp,
+      frame,
+      rasterLine: Math.floor(at / cycles),
+      rasterCycle: at % cycles,
+      ...(address === undefined ? {} : { address, value: await byteAt(address) }),
+    };
   }
 
   /**

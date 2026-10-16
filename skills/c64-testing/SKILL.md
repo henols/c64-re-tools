@@ -47,6 +47,7 @@ The run file gives where to start (a program, or a snapshot file), the steps, an
 | `{ "screen": "room3" }` | Write the screen to `room3.png`. |
 | `{ "coverage": "room3" }` | Write the coverage map since the start or the last coverage step to `room3.bin`, then clear the map. |
 | `{ "observe": "room3", "memory": ["$c100"], "registers": true }` | Record memory, registers, `vicii` or `sprites` in `results.json`. |
+| `{ "trace": "d011", "points": [{ "kind": "write", "at": "$d011" }], "frames": 100 }` | Record each hit of the points for 100 frames in `d011.json`: the instruction, its registers and the raster line and cycle. A point is `exec`, `read` or `write`, at an address or a name, with an optional `end`. `maxHits` limits the hits. |
 | `{ "observe": "all3", "memory": "all" }` | Write all 64 KiB of RAM to `all3.bin`, also the RAM under the ROMs and the I/O area. |
 
 A memory item can have `"view": "ram"`. Then it reads the RAM under the ROMs and the I/O area, for example code at `$e000` under the KERNAL. The default view `cpu` reads as the CPU sees memory. An item larger than 4096 bytes goes into its own `.bin` file, and `results.json` gives the file name.

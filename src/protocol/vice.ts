@@ -217,6 +217,50 @@ export interface HistoryEntry {
   rasterCycle?: number;
 }
 
+// Traces (D76): checkpoints that record each hit and let the program run on.
+
+export const TRACE_KINDS = ["exec", "read", "write"] as const;
+export type TraceKind = (typeof TRACE_KINDS)[number];
+export const MAX_TRACE_POINTS = 8;
+export const MAX_TRACE_FRAMES = 3000;
+export const MAX_TRACE_HITS = 20_000;
+export const TRACE_ENDS = ["frames", "hits", "breakpoint", "watchpoint", "jam"] as const;
+
+export interface TracePoint {
+  kind: TraceKind;
+  start: number;
+  end: number;
+}
+
+/** One hit of a trace: the instruction that executed or made the access, the registers before it, and where the raster was. */
+export interface TraceHit {
+  /** The index of the point in the request. */
+  point: number;
+  /** The address of the instruction. */
+  pc: number;
+  bytes: string;
+  text: string;
+  a: number;
+  x: number;
+  y: number;
+  sp: number;
+  /** The frame of the trace, from 0, and the raster position when the instruction started. */
+  frame: number;
+  rasterLine: number;
+  rasterCycle: number;
+  /** read and write: the address that the instruction used, when its mode tells it, and the byte there after the access. */
+  address?: number;
+  value?: number;
+}
+
+export interface TraceResult {
+  hits: TraceHit[];
+  frames: number;
+  /** frames: the frame limit; hits: the hit limit; breakpoint, watchpoint or jam: the program stopped there. */
+  end: (typeof TRACE_ENDS)[number];
+  pc: number;
+}
+
 export interface BacktraceFrame {
   /** The routine's entry address. */
   address: number;
@@ -480,6 +524,7 @@ export interface ViceOperations {
   breakpoint: { params: BreakpointParams; result: Breakpoint | PointRemoved | { breakpoints: Breakpoint[] } };
   watchpoint: { params: WatchpointParams; result: Watchpoint | PointRemoved | { watchpoints: Watchpoint[] } };
   cpuHistory: { params: { limit: number; space: Space }; result: { entries: HistoryEntry[] } };
+  trace: { params: { points: TracePoint[]; frames: number; maxHits: number }; result: TraceResult };
   backtrace: { params: { depth: number; space: Space }; result: { frames: BacktraceFrame[] } };
   /** `cycles` is a decimal string. */
   timing: { params: { action: (typeof TIMING_ACTIONS)[number] }; result: { started: boolean } | { cycles: string } };
@@ -547,6 +592,7 @@ export const VICE_OPERATIONS = [
   "snapshotFile",
   "ioRead",
   "cpuHistory",
+  "trace",
   "backtrace",
   "timing",
   "profile",
@@ -621,6 +667,20 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       if (!isInteger(params.limit, 1, MAX_HISTORY)) invalid(`limit must be an integer from 1 to ${MAX_HISTORY}`);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       return { limit: params.limit, space: params.space } as ViceOperations[O]["params"];
+    }
+    case "trace": {
+      onlyFields(params, ["points", "frames", "maxHits"]);
+      if (!Array.isArray(params.points) || params.points.length === 0 || params.points.length > MAX_TRACE_POINTS) invalid(`points must be a list of 1 to ${MAX_TRACE_POINTS} points`);
+      const points = (params.points as unknown[]).map((point) => {
+        if (!isObject(point)) return invalid("a point is an object with kind, start and end");
+        onlyFields(point, ["kind", "start", "end"]);
+        if (!isOneOf(TRACE_KINDS, point.kind)) invalid("a point kind must be exec, read or write");
+        if (!isInteger(point.start, 0, 0xffff) || !isInteger(point.end, point.start as number, 0xffff)) invalid("a point needs start and end from $0000 to $ffff, the end not before the start");
+        return { kind: point.kind, start: point.start, end: point.end } as TracePoint;
+      });
+      if (!isInteger(params.frames, 1, MAX_TRACE_FRAMES)) invalid(`frames must be an integer from 1 to ${MAX_TRACE_FRAMES}`);
+      if (!isInteger(params.maxHits, 1, MAX_TRACE_HITS)) invalid(`maxHits must be an integer from 1 to ${MAX_TRACE_HITS}`);
+      return { points, frames: params.frames, maxHits: params.maxHits } as ViceOperations[O]["params"];
     }
     case "backtrace": {
       onlyFields(params, ["depth", "space"]);
@@ -1202,6 +1262,29 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
             (entry.rasterCycle === undefined || isInteger(entry.rasterCycle, 0, 127)),
         );
       if (!ok) throw new ProtocolError("cpuHistory result is malformed");
+      break;
+    }
+    case "trace": {
+      const ok =
+        Array.isArray(value.hits) &&
+        isInteger(value.frames, 0, MAX_TRACE_FRAMES) &&
+        isOneOf(TRACE_ENDS, value.end) &&
+        isInteger(value.pc, 0, 0xffff) &&
+        value.hits.every(
+          (hit) =>
+            isObject(hit) &&
+            isInteger(hit.point, 0, MAX_TRACE_POINTS - 1) &&
+            isInteger(hit.pc, 0, 0xffff) &&
+            isHexData(hit.bytes) &&
+            typeof hit.text === "string" &&
+            (["a", "x", "y", "sp"] as const).every((name) => isInteger(hit[name], 0, 0xff)) &&
+            isInteger(hit.frame, 0, MAX_TRACE_FRAMES) &&
+            isInteger(hit.rasterLine, 0, 511) &&
+            isInteger(hit.rasterCycle, 0, 127) &&
+            (hit.address === undefined || isInteger(hit.address, 0, 0xffff)) &&
+            (hit.value === undefined || isInteger(hit.value, 0, 0xff)),
+        );
+      if (!ok) throw new ProtocolError("trace result is malformed");
       break;
     }
     case "backtrace": {

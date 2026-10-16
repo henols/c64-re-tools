@@ -518,6 +518,8 @@ Output:
 
 space is the CPU that stopped: c64, or drive8 for a stop in the disk drive, for example by a drive8 breakpoint during a c64 run. pc is the address in that space. pointId gives the id of a breakpoint or watchpoint that stopped the run.
 
+Two optional inputs read the machine at the stop in the same call (M23.10): `observe` takes the input of c64_observe and adds its output as `observed`, with the screen image when it asks for the screen; `history` (1 .. 200) adds the last instructions before the stop as c64_cpu_history gives them, in the space that stopped.
+
 stopReason:
 
 ~~~text
@@ -972,6 +974,38 @@ Output:
 ~~~
 
 With `out` (D39), the entries go to that file as text lines, and the output gives `count`, `out`, `bytes` and `sha256` in place of `entries`.
+
+## 20a. c64_trace
+
+D76. The machine runs and each hit of a point is recorded; the program does not stop for the caller. Each point stops VICE for the record and then resumes: VICE reports the hits of a checkpoint that does not stop, but without the PC, the registers or the raster position.
+
+Input:
+
+~~~json
+{
+  "points": [{ "kind": "write", "start": "$d011" }],
+  "frames": 100,
+  "maxHits": 20000
+}
+~~~
+
+points: 1 .. 8, each with kind exec, read or write, start and an optional end (default start). frames: 1 .. 3000, counted as advance-frames counts them. maxHits: 1 .. 20000, default 20000.
+
+Output:
+
+~~~json
+{
+  "end": "frames",
+  "frames": 100,
+  "pc": "$0440",
+  "count": 1,
+  "hits": [
+    { "point": 0, "pc": "$09c1", "bytes": "8d11d0", "text": "sta $d011", "a": 139, "x": 0, "y": 0, "sp": 246, "frame": 0, "rasterLine": 279, "rasterCycle": 22, "address": "$d011", "value": 139 }
+  ]
+}
+~~~
+
+end is frames, hits, breakpoint, watchpoint or jam. An exec hit is the instruction at the stop, with the registers and the raster position of now. A read or write hit is the instruction that made the access, the last entry of the CPU history, with its registers and the raster position from its clock; address is the address that its mode uses, and value the byte there after the access. The output lists the first 200 hits; with out (D39), all hits go to that file as JSON lines.
 
 ## 21. c64_backtrace
 
@@ -1762,6 +1796,7 @@ c64_run_until
 c64_breakpoint
 c64_watchpoint
 c64_cpu_history
+c64_trace
 c64_backtrace
 c64_profile
 c64_memmap

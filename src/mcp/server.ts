@@ -41,6 +41,7 @@ export type ViceSessionApi = Pick<
   | "snapshotExport"
   | "snapshotRestore"
   | "cpuHistory"
+  | "trace"
   | "backtrace"
   | "timing"
   | "profile"

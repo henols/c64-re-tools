@@ -10,7 +10,7 @@ import { formatC64Address, formatSprite, formatVicii, parseC64Address } from "#s
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { ACTION_STEP_KEYS, ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
-import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
+import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, WireFailure, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
@@ -30,6 +30,7 @@ type RunStep =
   | { save: string }
   | { screen: string }
   | { coverage: string }
+  | { trace: string; points: Array<{ kind: TraceKind; at: string; end?: string }>; frames: number; maxHits?: number }
   | { observe: string; memory?: "all" | Array<string | { at: string; size?: number; view?: "cpu" | "ram" }>; registers?: boolean; vicii?: boolean; sprites?: number[] };
 
 interface Run {
@@ -40,7 +41,8 @@ interface Run {
   steps: RunStep[];
 }
 
-const OWN_KINDS = ["snapshot", "save", "screen", "coverage", "observe"] as const;
+const OWN_KINDS = ["snapshot", "save", "screen", "coverage", "observe", "trace"] as const;
+const TRACE_KEYS = ["trace", "points", "frames", "maxHits"];
 const OBSERVE_KEYS = ["observe", "memory", "registers", "vicii", "sprites"];
 /** A name of a file that a step writes: letters, digits, dots, underscores or hyphens. */
 const NAME = /^[A-Za-z0-9._-]{1,64}$/;
@@ -68,10 +70,10 @@ function readRun(path: string): Run {
   (value.steps as unknown[]).forEach((step, index) => {
     const at = `step ${index + 1}`;
     if (!isObject(step)) return fail(`${at} must be an object`);
-    const kinds = "observe" in step ? ["observe"] : Object.keys(step).filter((key) => (ACTION_STEP_KINDS as readonly string[]).includes(key) || (OWN_KINDS as readonly string[]).includes(key));
+    const kinds = "observe" in step ? ["observe"] : "trace" in step ? ["trace"] : Object.keys(step).filter((key) => (ACTION_STEP_KINDS as readonly string[]).includes(key) || (OWN_KINDS as readonly string[]).includes(key));
     if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...ACTION_STEP_KINDS, ...OWN_KINDS].join(", ")}`);
     const kind = kinds[0]!;
-    const allowed = kind === "observe" ? OBSERVE_KEYS : (ACTION_STEP_KEYS[kind] ?? [kind]);
+    const allowed = kind === "observe" ? OBSERVE_KEYS : kind === "trace" ? TRACE_KEYS : (ACTION_STEP_KEYS[kind] ?? [kind]);
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
     if ((ACTION_STEP_KINDS as readonly string[]).includes(kind)) return checkActionStep(kind, step, at, fail);
     const name = step[kind];
@@ -80,6 +82,20 @@ function readRun(path: string): Run {
       return;
     }
     if (typeof name !== "string" || !NAME.test(name)) fail(`${at}: ${kind} needs a name of 1 to 64 letters, digits, dots, underscores or hyphens`);
+    if (kind === "trace") {
+      if (labels.has(name as string)) fail(`${at} needs a new name`);
+      labels.add(name as string);
+      const points = step.points;
+      if (!Array.isArray(points) || points.length === 0 || points.length > MAX_TRACE_POINTS) return fail(`${at}: points is a list of 1 to ${MAX_TRACE_POINTS} objects with kind and at`);
+      for (const point of points as unknown[]) {
+        if (!isObject(point) || Object.keys(point).some((key) => !["kind", "at", "end"].includes(key))) return fail(`${at}: a point has kind, at and end, and nothing else`);
+        if (!(TRACE_KINDS as readonly unknown[]).includes(point.kind)) fail(`${at}: a point kind is exec, read or write`);
+        if (typeof point.at !== "string" || (point.end !== undefined && typeof point.end !== "string")) fail(`${at}: a point needs at, and end when it is a range, as names or $ addresses`);
+      }
+      if (!isInteger(step.frames, 1, MAX_TRACE_FRAMES)) fail(`${at}: frames must be a number from 1 to ${MAX_TRACE_FRAMES}`);
+      if (step.maxHits !== undefined && !isInteger(step.maxHits, 1, MAX_TRACE_HITS)) fail(`${at}: maxHits must be a number from 1 to ${MAX_TRACE_HITS}`);
+      return;
+    }
     if (kind !== "observe") return;
     if (labels.has(name as string)) fail(`${at} needs a new observation name`);
     labels.add(name as string);
@@ -100,6 +116,11 @@ function readRun(path: string): Run {
   return value as unknown as Run;
 }
 
+/** A trace hit with $ addresses, as a person reads it. */
+function showHit(hit: TraceHit) {
+  return { ...hit, pc: formatC64Address(hit.pc), ...(hit.address === undefined ? {} : { address: formatC64Address(hit.address) }) };
+}
+
 async function runFile(path: string, out: string): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const run = readRun(path);
   const symbols = loadSymbols({ program: "", symbols: run.symbols ?? "none" });
@@ -115,6 +136,7 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
     files.push(name);
   };
   const observations: Record<string, unknown> = {};
+  const traces: Record<string, unknown> = {};
   const client = await ViceSessionClient.open({ videoStandard: run.videoStandard ?? "pal" });
   let done = 0;
   let reason: string | undefined;
@@ -142,6 +164,17 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
       } else if ("coverage" in step) {
         write(`${step.coverage}.bin`, await readCoverage(client));
         await client.memmap({ action: "clear" });
+      } else if ("trace" in step) {
+        // A trace (D76): every hit of the points while the program runs on, to <name>.json.
+        const points = step.points.map((point) => ({ kind: point.kind, start: at(point.at), end: at(point.end ?? point.at) }));
+        if (points.some((point) => point.end < point.start)) throw new UsageError(`the trace ${step.trace} has a point whose end is before its start`);
+        const traced = await client.trace({ points, frames: step.frames, maxHits: step.maxHits ?? MAX_TRACE_HITS });
+        write(`${step.trace}.json`, Buffer.from(`${JSON.stringify({ points: step.points, frames: traced.frames, end: traced.end, hits: traced.hits.map(showHit) }, null, 1)}\n`));
+        traces[step.trace] = { file: `${step.trace}.json`, hits: traced.hits.length, frames: traced.frames, end: traced.end };
+        if (traced.end !== "frames" && traced.end !== "hits") {
+          reason = `The trace ${step.trace} ended at a ${traced.end} at ${formatC64Address(traced.pc)}.`;
+          break;
+        }
       } else if ("observe" in step) {
         const seen: Record<string, unknown> = {};
         if (step.memory === "all") {
@@ -181,7 +214,7 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
       done++;
     }
     const pc = (await client.registersGet("c64")).pc;
-    const results = { name: run.name, completed: reason === undefined, steps: run.steps.length, done, ...(reason === undefined ? {} : { reason }), pc: formatC64Address(pc), files: [...files], observations };
+    const results = { name: run.name, completed: reason === undefined, steps: run.steps.length, done, ...(reason === undefined ? {} : { reason }), pc: formatC64Address(pc), files: [...files], observations, ...(Object.keys(traces).length === 0 ? {} : { traces }) };
     write("results.json", Buffer.from(`${JSON.stringify(results, null, 2)}\n`));
     return { output: { ...results, files, observations: Object.keys(observations), out }, failed: reason !== undefined };
   } finally {

@@ -78,3 +78,60 @@ export function useKind(opcode: number): UseKind {
   if (MODIFIES.has(mnemonic)) return "modified";
   return "read";
 }
+
+const hex2 = (value: number) => `$${value.toString(16).padStart(2, "0")}`;
+const hex4 = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
+
+/** The text of the instruction in `bytes` at `pc`, for example "sta $d011" or "bne $c002". */
+export function instructionText(bytes: readonly number[], pc: number): string {
+  const { mnemonic, mode } = OPCODES[bytes[0]!]!;
+  const low = bytes[1] ?? 0;
+  const word = low | ((bytes[2] ?? 0) << 8);
+  const operand: Record<Mode, string> = {
+    imp: "",
+    imm: `#${hex2(low)}`,
+    zp: hex2(low),
+    zpx: `${hex2(low)},x`,
+    zpy: `${hex2(low)},y`,
+    abs: hex4(word),
+    abx: `${hex4(word)},x`,
+    aby: `${hex4(word)},y`,
+    ind: `(${hex4(word)})`,
+    izx: `(${hex2(low)},x)`,
+    izy: `(${hex2(low)}),y`,
+    rel: hex4((pc + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff),
+  };
+  return operand[mode] === "" ? mnemonic : `${mnemonic} ${operand[mode]}`;
+}
+
+/**
+ * The address that a read or write of the instruction in `bytes` uses, with X
+ * and Y as they were before it; `byteAt` reads a zero-page pointer. Undefined
+ * for a mode that uses no memory operand.
+ */
+export function operandAddress(bytes: readonly number[], x: number, y: number, byteAt: (address: number) => number): number | undefined {
+  const { mode } = OPCODES[bytes[0]!]!;
+  const low = bytes[1] ?? 0;
+  const word = low | ((bytes[2] ?? 0) << 8);
+  const pointer = (at: number) => byteAt(at & 0xff) | (byteAt((at + 1) & 0xff) << 8);
+  switch (mode) {
+    case "zp":
+      return low;
+    case "zpx":
+      return (low + x) & 0xff;
+    case "zpy":
+      return (low + y) & 0xff;
+    case "abs":
+      return word;
+    case "abx":
+      return (word + x) & 0xffff;
+    case "aby":
+      return (word + y) & 0xffff;
+    case "izx":
+      return pointer(low + x);
+    case "izy":
+      return (pointer(low) + y) & 0xffff;
+    default:
+      return undefined;
+  }
+}

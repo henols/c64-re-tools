@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { COVERAGE, executedRamCode, EXECUTE, formatC64Address, READ, WRITE, type CodeRange } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
-import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
+import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
 import { readCoverage } from "../../host-client/coverage.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, AddressOutput, Byte, ConditionInput, ConditionOutput, defineTool, HexData, requireFields, showCondition, SpaceInput, toCondition, type ViceSessionApi } from "../server.ts";
@@ -165,6 +165,70 @@ export const c64CpuHistory = defineTool({
       return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${byte(entry.a)} x=${byte(entry.x)} y=${byte(entry.y)} sp=${byte(entry.sp)}${raster}`;
     });
     return { count: entries.length, ...writeOut(out, `${lines.join("\n")}\n`, project) };
+  },
+});
+
+/** The hits that a trace result gives inline; out gives all of them. */
+const TRACE_LISTED = 200;
+
+export const c64Trace = defineTool({
+  name: "c64_trace",
+  title: "Trace accesses and instructions",
+  description:
+    "Run the machine and record each hit of the points. The program does not stop for you. " +
+    "A point is exec (an instruction at an address from start to end), read or write (an access from start to end). " +
+    `Give 1 to ${MAX_TRACE_POINTS} points. ` +
+    "Each hit gives the instruction (pc, bytes, text) and the registers a, x, y and sp before it. " +
+    "It also gives the frame from 0, and the raster line and cycle where the instruction started. " +
+    "A read or write hit also gives the address that the instruction used, and the byte there after the access. " +
+    `The trace ends after frames frames (1 to ${MAX_TRACE_FRAMES}), at maxHits hits (at most ${MAX_TRACE_HITS}), or at a breakpoint, a watchpoint or a JAM. ` +
+    `The result lists the first ${TRACE_LISTED} hits. With out, it writes all hits as JSON lines to that project file. ` +
+    "Each hit stops the machine for a short time. Thus a point with many hits in each frame makes the trace slow. Use a small range and a maxHits. " +
+    "The machine is stopped after the trace.",
+  inputSchema: z
+    .object({
+      points: z.array(z.object({ kind: z.enum(TRACE_KINDS), start: AddressInput, end: AddressInput.optional() }).strict()).min(1).max(MAX_TRACE_POINTS),
+      frames: z.number().int().min(1).max(MAX_TRACE_FRAMES),
+      maxHits: z.number().int().min(1).max(MAX_TRACE_HITS).default(MAX_TRACE_HITS),
+      out: OutInput.optional(),
+      project: ProjectInput.optional(),
+    })
+    .strict(),
+  outputSchema: z.object({
+    end: z.enum(TRACE_ENDS),
+    frames: z.number().int().min(0),
+    pc: AddressOutput,
+    count: z.number().int().min(0),
+    hits: z.array(
+      z.object({
+        point: z.number().int().min(0),
+        pc: AddressOutput,
+        bytes: HexData,
+        text: z.string(),
+        a: Byte,
+        x: Byte,
+        y: Byte,
+        sp: Byte,
+        frame: z.number().int().min(0),
+        rasterLine: z.number().int().min(0),
+        rasterCycle: z.number().int().min(0),
+        address: AddressOutput.optional(),
+        value: Byte.optional(),
+      }),
+    ),
+    ...WrittenOutput,
+  }),
+  readOnly: false,
+  async run(input, session) {
+    const { out, project, points, ...request } = input;
+    if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
+    const ranges = points.map((point) => ({ kind: point.kind, start: point.start, end: point.end ?? point.start }));
+    if (ranges.some((point) => point.end < point.start)) throw new WireFailure("invalid-input", "A point end must not be before its start.");
+    const traced = await session.trace({ points: ranges, ...request });
+    const shown = traced.hits.map(({ address, ...hit }) => ({ ...hit, pc: formatC64Address(hit.pc), ...(address === undefined ? {} : { address: formatC64Address(address) }) }));
+    const summary = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length, hits: shown.slice(0, TRACE_LISTED) };
+    if (out === undefined) return summary;
+    return { ...summary, ...writeOut(out, `${shown.map((hit) => JSON.stringify(hit)).join("\n")}\n`, project) };
   },
 });
 
@@ -341,4 +405,4 @@ export const c64Memmap = defineTool({
   },
 });
 
-export const debugTools = [c64Breakpoint, c64Watchpoint, c64CpuHistory, c64Backtrace, c64Profile, c64Memmap, c64Timing];
+export const debugTools = [c64Breakpoint, c64Watchpoint, c64CpuHistory, c64Trace, c64Backtrace, c64Profile, c64Memmap, c64Timing];

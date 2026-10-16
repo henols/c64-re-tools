@@ -178,6 +178,11 @@ export class ViceSessionClient {
     return this.#request("cpuHistory", params);
   }
 
+  /** Records each hit of the points while the program runs on (D76). */
+  trace(params: ViceOperations["trace"]["params"]): Promise<ViceOperations["trace"]["result"]> {
+    return this.#request("trace", params);
+  }
+
   backtrace(params: ViceOperations["backtrace"]["params"]): Promise<ViceOperations["backtrace"]["result"]> {
     return this.#request("backtrace", params);
   }

@@ -123,3 +123,21 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
   const diff = JSON.parse(stdout) as { memory: { listed: Array<{ start: string; end: string; a?: string; b?: string }> } };
   assert.ok(diff.memory.listed.some((range) => range.start === "$e000" && range.end === "$e003" && range.b === "01020304"), stdout);
 });
+
+test("a trace step writes each write to the counter with the instruction and raster line 128 (D76)", { skip: liveSkip, timeout: 300_000 }, async () => {
+  writeFileSync(join(project, "counter.prg"), joystickCounterPrg);
+  writeFileSync(
+    join(project, "traced.json"),
+    JSON.stringify({ name: "trace", start: { program: "counter.prg", load: true }, steps: [{ registers: { pc: "$c000" } }, { frames: 3 }, { trace: "counter", points: [{ kind: "write", at: "$c100" }], frames: 5 }] }),
+  );
+  const run = await runSteps("traced.json", "--out", "runs/traced");
+  assert.equal(run.status, 0, JSON.stringify(run.json));
+  const results = JSON.parse(readFileSync(join(project, "runs", "traced", "results.json"), "utf8")) as { traces: Record<string, { file: string; hits: number; end: string }> };
+  assert.equal(results.traces.counter!.end, "frames");
+  const traced = JSON.parse(readFileSync(join(project, "runs", "traced", "counter.json"), "utf8")) as { hits: Array<{ pc: string; text: string; rasterLine: number; address: string }> };
+  assert.ok(traced.hits.length >= 4 && traced.hits.length <= 6, `${traced.hits.length} writes in 5 frames`);
+  for (const hit of traced.hits) {
+    assert.deepEqual([hit.pc, hit.text, hit.address], ["$c015", "inc $c100", "$c100"]);
+    assert.equal(hit.rasterLine, 128, "the loop waits for line 128");
+  }
+});

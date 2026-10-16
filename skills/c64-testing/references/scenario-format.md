@@ -87,7 +87,9 @@ A run file (for `run.ts`) has:
 - `start`: `{ "program": "game.prg" }` to autostart a program with a BASIC start line, `{ "program": "game.prg", "load": true }` to load it with the CPU stopped (set `pc` in a step), or `{ "snapshot": "snapshots/room0.vsf" }`.
 - `symbols`: optional, `knowledge`, `none` (default), or a JSON file as for a subject.
 - `videoStandard`: optional, `pal` (default) or `ntsc`.
-- `steps`: the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage` and `observe`.
+- `steps`: the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage`, `trace` and `observe`.
+
+A `trace` step has a name, `points` (1 to 8), `frames` (1 to 3000) and an optional `maxHits` (at most 20000). A point has `kind` (`exec`, `read` or `write`), `at` and an optional `end`. The step writes `<name>.json` with each hit. `results.json` gives the file, the count of hits, the frames and why the trace ended. A trace that a breakpoint, a watchpoint or a JAM ends also ends the run.
 
 In a run, a memory item has `at`, `size` (1 to 65536) and `view`. An item larger than 4096 bytes goes into the file `<observe>-<at>.bin`. `"memory": "all"` writes all 64 KiB of RAM to `<observe>.bin`.
 

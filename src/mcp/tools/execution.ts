@@ -3,8 +3,9 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { COMPARISONS, EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_TIMEOUT_FRAMES, POINT_STOP_REASONS, RUN_STATES, SPACES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
-import { AddressInput, AddressOutput, Byte, ConditionInput, defineTool, MemoryViewInput, SpaceInput, toCondition } from "../server.ts";
+import { COMPARISONS, EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_HISTORY, MAX_TIMEOUT_FRAMES, POINT_STOP_REASONS, RUN_STATES, SPACES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
+import { AddressInput, AddressOutput, Byte, ConditionInput, defineTool, MemoryViewInput, SpaceInput, toCondition, ToolOutput } from "../server.ts";
+import { c64Observe } from "./video.ts";
 
 export const c64Execution = defineTool({
   name: "c64_execution",
@@ -96,11 +97,16 @@ export const c64RunUntil = defineTool({
     "reached tells if the target occurred. stopReason tells why the CPU stopped: target, breakpoint, watchpoint, jam (a JAM opcode) or timeout. " +
     "pointId gives the id of the breakpoint or watchpoint that stopped the CPU. " +
     "space tells which CPU stopped: c64, or drive8 for a stop in the disk drive. pc is the address in that space. " +
+    "With observe, the result also gives what c64_observe gives at the stop, in observed. " +
+    `With history (1 to ${MAX_HISTORY}), it also gives the last instructions before the stop, as c64_cpu_history gives them. ` +
+    "Thus one call runs to a place and reads the machine there. " +
     "The CPU is always stopped after this tool.",
   inputSchema: z
     .object({
       target: RunTargetInput,
       timeoutFrames: z.number().int().min(1).max(MAX_TIMEOUT_FRAMES).default(3000),
+      observe: c64Observe.inputSchema.optional().describe("what to read at the stop, as for c64_observe"),
+      history: z.number().int().min(1).max(MAX_HISTORY).optional().describe("the number of instructions before the stop to give"),
     })
     .strict(),
   outputSchema: z.object({
@@ -110,6 +116,10 @@ export const c64RunUntil = defineTool({
     pc: AddressOutput,
     space: z.enum(SPACES),
     pointId: z.number().int().min(1).optional().describe("the id of the breakpoint or watchpoint that stopped the CPU"),
+    observed: c64Observe.outputSchema.optional(),
+    history: z
+      .array(z.object({ address: AddressOutput, bytes: z.string(), text: z.string(), a: Byte, x: Byte, y: Byte, sp: Byte, rasterLine: z.number().int().min(0).optional(), rasterCycle: z.number().int().min(0).optional() }))
+      .optional(),
   }),
   readOnly: false,
   async run(input, session) {
@@ -124,7 +134,16 @@ export const c64RunUntil = defineTool({
       target = given.cycle === undefined ? { kind: "raster", line: given.line } : { kind: "raster", line: given.line, cycle: given.cycle };
     }
     const result = await session.runUntil({ target, timeoutFrames: input.timeoutFrames });
-    return { ...result, pc: formatC64Address(result.pc) };
+    const answer = { ...result, pc: formatC64Address(result.pc) };
+    const history =
+      input.history === undefined
+        ? {}
+        : { history: (await session.cpuHistory({ limit: input.history, space: result.space })).entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+    if (input.observe === undefined) return { ...answer, ...history };
+    // The observation at the stop (M23.10): an image of the screen comes with the result as c64_observe gives it.
+    const observed = await c64Observe.run(input.observe, session);
+    if (observed instanceof ToolOutput) return new ToolOutput({ ...answer, ...history, observed: observed.structured }, observed.content);
+    return { ...answer, ...history, observed };
   },
 });
 

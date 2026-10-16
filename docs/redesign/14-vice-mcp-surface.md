@@ -113,6 +113,7 @@ advance-frames is a C64-domain operation. How VICE/raster state implements it is
 c64_breakpoint
 c64_watchpoint
 c64_cpu_history
+c64_trace
 c64_backtrace
 c64_profile
 c64_memmap

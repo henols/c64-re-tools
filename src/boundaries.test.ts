@@ -46,7 +46,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   package: [],
   "host-client": ["protocol", "c64", "project", "trace", "package"],
   mcp: ["host-client", "protocol", "c64", "trace", "package"],
-  host: ["native", "protocol", "c64", "graphics", "trace", "package"],
+  host: ["native", "protocol", "c64", "graphics", "opcodes", "trace", "package"],
   knowledge: ["c64", "project", "time"],
   // The error envelope of the skill scripts and the CLI. It takes other refusal classes as a parameter.
   script: ["protocol", "project", "trace"],

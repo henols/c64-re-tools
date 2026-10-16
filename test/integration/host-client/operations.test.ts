@@ -105,6 +105,11 @@ const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Pro
     params: { limit: 1, space: "c64" },
     result: { entries: [{ address: 0x2100, bytes: "a900", text: "LDA #$00", a: 0, x: 3, y: 0, sp: 249, rasterLine: 100, rasterCycle: 20 }] },
   },
+  trace: {
+    call: (c) => c.trace({ points: [{ kind: "write", start: 0xd011, end: 0xd011 }], frames: 2, maxHits: 10 }),
+    params: { points: [{ kind: "write", start: 0xd011, end: 0xd011 }], frames: 2, maxHits: 10 },
+    result: { hits: [{ point: 0, pc: 0x09c1, bytes: "8d11d0", text: "sta $d011", a: 0x8b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 279, rasterCycle: 22, address: 0xd011, value: 0x8b }], frames: 2, end: "frames", pc: 0x0440 },
+  },
   backtrace: { call: (c) => c.backtrace({ depth: 4, space: "c64" }), params: { depth: 4, space: "c64" }, result: { frames: [{ address: 0x2100, returnAddress: 0x1980 }] } },
   timing: { call: (c) => c.timing("read"), params: { action: "read" }, result: { cycles: "1234" } },
   profile: { call: (c) => c.profile({ action: "read", limit: 5 }), params: { action: "read", limit: 5 }, result: { entries: [{ address: 0x2100, totalCycles: "125000", selfCycles: "82000", percent: 17.4 }] } },
