@@ -337,7 +337,15 @@ export interface MachineStatus {
   pc?: number;
   /** True while a cartridge from an autostart is attached (D64). */
   cartridge: boolean;
+  /** Present only while stopped by a user breakpoint or watchpoint, or by a JAM. */
+  stopReason?: PointStopReason;
+  /** The id of the breakpoint or watchpoint that stopped the machine. */
+  pointId?: number;
 }
+
+/** What stopped the machine outside a request that stops it. */
+export const POINT_STOP_REASONS = ["breakpoint", "watchpoint", "jam"] as const;
+export type PointStopReason = (typeof POINT_STOP_REASONS)[number];
 
 export interface MemoryReadParams {
   address: number;
@@ -406,6 +414,10 @@ export interface ExecutionResult {
   pc?: number;
   executed?: number;
   advancedFrames?: number;
+  /** advance-frames only: frames when all frames ran, else what stopped the run early. */
+  stopReason?: "frames" | PointStopReason;
+  /** The id of the breakpoint or watchpoint that stopped the run. */
+  pointId?: number;
 }
 
 /** c64_run_until targets. */
@@ -425,6 +437,8 @@ export interface RunUntilResult {
   /** The PC of the CPU in `space`: the CPU that stopped. */
   pc: number;
   space: Space;
+  /** The id of the breakpoint or watchpoint that stopped the run. */
+  pointId?: number;
 }
 
 export interface ViceOperations {
@@ -469,7 +483,8 @@ export interface ViceOperations {
   backtrace: { params: { depth: number; space: Space }; result: { frames: BacktraceFrame[] } };
   /** `cycles` is a decimal string. */
   timing: { params: { action: (typeof TIMING_ACTIONS)[number] }; result: { started: boolean } | { cycles: string } };
-  profile: { params: { limit: number }; result: { entries: ProfileEntry[] } };
+  /** clear starts the profiler again from zero. */
+  profile: { params: { action: "read"; limit: number } | { action: "clear" }; result: { entries: ProfileEntry[] } | { cleared: boolean } };
   memmap: {
     params: { action: "read"; start: number; end: number; maxRanges: number } | { action: "clear" };
     /** `next`: more ranges follow from this address; read again from there. */
@@ -646,9 +661,11 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return result as ViceOperations[O]["params"];
     }
     case "profile": {
-      onlyFields(params, ["limit"]);
+      onlyFields(params, params.action === "clear" ? ["action"] : ["action", "limit"]);
+      if (params.action === "clear") return { action: "clear" } as ViceOperations[O]["params"];
+      if (params.action !== "read") invalid("action must be read or clear");
       if (!isInteger(params.limit, 1, MAX_PROFILE)) invalid(`limit must be an integer from 1 to ${MAX_PROFILE}`);
-      return { limit: params.limit } as ViceOperations[O]["params"];
+      return { action: "read", limit: params.limit } as ViceOperations[O]["params"];
     }
     case "memmap": {
       onlyFields(params, params.action === "clear" ? ["action"] : ["action", "start", "end", "maxRanges"]);
@@ -1011,7 +1028,9 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         typeof value.warp === "boolean" &&
         typeof value.window === "boolean" &&
         (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
-        typeof value.cartridge === "boolean";
+        typeof value.cartridge === "boolean" &&
+        (value.stopReason === undefined || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
+        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER));
       if (!ok) throw new ProtocolError("status result is malformed");
       break;
     }
@@ -1080,7 +1099,8 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         isOneOf(STOP_REASONS, value.stopReason) &&
         isOneOf(RUN_STATES, value.state) &&
         isInteger(value.pc, 0, 0xffff) &&
-        isOneOf(SPACES, value.space);
+        isOneOf(SPACES, value.space) &&
+        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER));
       if (!ok) throw new ProtocolError("runUntil result is malformed");
       break;
     }
@@ -1089,7 +1109,9 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         isOneOf(RUN_STATES, value.state) &&
         (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
         (value.executed === undefined || isInteger(value.executed, 0, MAX_EXECUTION_COUNT)) &&
-        (value.advancedFrames === undefined || isInteger(value.advancedFrames, 0, MAX_EXECUTION_COUNT));
+        (value.advancedFrames === undefined || isInteger(value.advancedFrames, 0, MAX_EXECUTION_COUNT)) &&
+        (value.stopReason === undefined || value.stopReason === "frames" || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
+        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER));
       if (!ok) throw new ProtocolError("execution result is malformed");
       break;
     }
@@ -1198,6 +1220,10 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       break;
     }
     case "profile": {
+      if ("cleared" in value) {
+        if (value.cleared !== true) throw new ProtocolError("profile result is malformed");
+        break;
+      }
       const ok =
         Array.isArray(value.entries) &&
         value.entries.every(

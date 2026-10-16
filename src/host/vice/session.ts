@@ -5,7 +5,7 @@
 
 import { isOneOf, WireFailure, type VideoStandard } from "../../protocol/messages.ts";
 import { DISK_IMAGE_TYPES, type DiskFile, type DiskImageType } from "../../protocol/tools.ts";
-import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type PointRemoved, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
+import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type PointRemoved, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type PointStopReason, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -183,6 +183,8 @@ export class ViceSession implements ViceSessionHandle {
   #driveStop = false;
   /** Counts stops caused by checkpoints or a CPU JAM rather than by a monitor command. */
   #haltCount = 0;
+  /** What stopped the machine last, when a user breakpoint or watchpoint or a JAM did; cleared when it runs again. */
+  #lastStop: { stopReason: PointStopReason; pointId?: number } | undefined;
   #queue: Promise<unknown> = Promise.resolve();
   #closed = false;
   #lost = false;
@@ -471,8 +473,12 @@ export class ViceSession implements ViceSessionHandle {
         return { cycles: (now - this.#timingStart).toString() };
       }
       case "profile": {
-        const { limit } = params as ViceOperations["profile"]["params"];
-        return { entries: await this.#observe(() => this.#machine.profile(limit)) };
+        const request = params as ViceOperations["profile"]["params"];
+        if (request.action === "clear") {
+          await this.#observe(() => this.#machine.startProfiler());
+          return { cleared: true };
+        }
+        return { entries: await this.#observe(() => this.#machine.profile(request.limit)) };
       }
       case "memmap": {
         const request = params as ViceOperations["memmap"]["params"];
@@ -517,7 +523,12 @@ export class ViceSession implements ViceSessionHandle {
     const warp = await this.#observe(() => this.#machine.warp());
     // Read after #observe: it resumes a running machine, unless a breakpoint or a JAM stopped it meanwhile.
     const status: MachineStatus = { state: this.#state, videoStandard: this.#videoStandard, warp, window: this.#mode === "window", cartridge: this.#cartridge };
-    if (status.state === "stopped") status.pc = await this.#pc();
+    if (status.state === "stopped") {
+      status.pc = await this.#pc();
+      // VICE 3.9 sends no JAM event: the opcode at the pc tells.
+      const stop = this.#lastStop ?? ((await this.#jammedAt(status.pc)) ? { stopReason: "jam" as const } : undefined);
+      if (stop !== undefined) Object.assign(status, stop);
+    }
     return status;
   }
 
@@ -548,7 +559,13 @@ export class ViceSession implements ViceSessionHandle {
         throw new WireFailure("invalid-input", `The anchor is outside the frame: a ${this.#videoStandard} frame has lines 0-${raster.lines - 1} and cycles 0-${raster.cycles - 1}.`);
       }
       const outcome = await this.#runFrames(params.count, undefined, params.anchor);
-      return { state: "stopped", pc: outcome.pc, advancedFrames: outcome.frames };
+      return {
+        state: "stopped",
+        pc: outcome.pc,
+        advancedFrames: outcome.frames,
+        stopReason: outcome.end === "target" ? "frames" : outcome.end,
+        ...(outcome.pointId === undefined ? {} : { pointId: outcome.pointId }),
+      };
     }
     await this.#stop();
     if (params.action === "until-return") {
@@ -609,7 +626,7 @@ export class ViceSession implements ViceSessionHandle {
    * checkpoint, a user breakpoint or watchpoint, or a JAM ends the run early.
    * The machine is stopped afterwards.
    */
-  async #runFrames(limit: number, target?: { checkpoint: number; deferred: boolean }, anchor?: { line: number; cycle: number }): Promise<{ end: RunEnd; frames: number; pc: number; space: "c64" | "drive8" }> {
+  async #runFrames(limit: number, target?: { checkpoint: number; deferred: boolean }, anchor?: { line: number; cycle: number }): Promise<{ end: RunEnd; frames: number; pc: number; space: "c64" | "drive8"; pointId?: number }> {
     await this.#stop();
     const lines = RASTER[this.#videoStandard].lines;
     // A frame ends where the raster passes the anchor; without one, where this run starts.
@@ -651,7 +668,8 @@ export class ViceSession implements ViceSessionHandle {
         }
         // A drive stop is completed before the result names the computer's pc; `space` says which CPU stopped.
         const driveStop = this.#driveStop;
-        return { end, frames, pc: (await this.#completeDriveStop()) ?? stop.pc, space: driveStop ? "drive8" : "c64" };
+        const pointId = end === "target" ? undefined : this.#userPoint(stop.hits)?.pointId;
+        return { end, frames, pc: (await this.#completeDriveStop()) ?? stop.pc, space: driveStop ? "drive8" : "c64", ...(pointId === undefined ? {} : { pointId }) };
       }
     } finally {
       await this.#machine.deleteCheckpoint(clock);
@@ -668,6 +686,8 @@ export class ViceSession implements ViceSessionHandle {
   async #completeDriveStop(): Promise<number | undefined> {
     if (!this.#driveStop) return undefined;
     this.#driveStop = false;
+    // The drive checkpoint stopped the machine; the stop at the boundary keeps that reason.
+    const reason = this.#lastStop;
     const boundary = await this.#machine.addCheckpoint({ start: 0x0000, end: 0xffff, operation: 0x04, space: "c64" });
     try {
       for (let attempt = 0; attempt < DRIVE_STOP_TRIES; attempt++) {
@@ -678,6 +698,7 @@ export class ViceSession implements ViceSessionHandle {
         // The drive can hit its checkpoint again before the computer gets to the next instruction.
         if (stop.hits.includes(boundary)) {
           this.#driveStop = false;
+          this.#lastStop = reason;
           trace().event("vice.drive-stop", { pc: stop.pc, resumes: attempt + 1 });
           return stop.pc;
         }
@@ -692,12 +713,18 @@ export class ViceSession implements ViceSessionHandle {
   /** Names what caused a stop during a frame-clocked run. */
   #stopCause(stop: Stop, clock: number, target: number | undefined): Exclude<RunEnd, "frames" | "jam"> | "clock" | "unknown" {
     if (target !== undefined && stop.hits.includes(target)) return "target";
-    const isPoint = (registry: Map<number, { checkpoint: number }>) =>
-      [...registry.values()].some((point) => stop.hits.includes(point.checkpoint));
-    if (isPoint(this.#breakpoints)) return "breakpoint";
-    if (isPoint(this.#watchpoints)) return "watchpoint";
+    const point = this.#userPoint(stop.hits);
+    if (point !== undefined) return point.stopReason;
     if (stop.hits.includes(clock)) return "clock";
     return "unknown";
+  }
+
+  /** The user breakpoint, else the user watchpoint, among the hit VICE checkpoints. */
+  #userPoint(hits: number[]): { stopReason: "breakpoint" | "watchpoint"; pointId: number } | undefined {
+    for (const [stopReason, registry] of [["breakpoint", this.#breakpoints], ["watchpoint", this.#watchpoints]] as const) {
+      for (const [pointId, point] of registry) if (hits.includes(point.checkpoint)) return { stopReason, pointId };
+    }
+    return undefined;
   }
 
   async #jammedAt(pc: number): Promise<boolean> {
@@ -745,7 +772,7 @@ export class ViceSession implements ViceSessionHandle {
       const stopReason = outcome.end === "frames" ? "timeout" : outcome.end;
       // A stop event carries the computer's PC; a stop in the drive reports the drive's (F-31).
       const pc = outcome.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc;
-      return { reached: stopReason === "target", stopReason, state: "stopped", pc, space: outcome.space };
+      return { reached: stopReason === "target", stopReason, state: "stopped", pc, space: outcome.space, ...(outcome.pointId === undefined ? {} : { pointId: outcome.pointId }) };
     } finally {
       await this.#machine.deleteCheckpoint(checkpoint);
     }
@@ -1194,6 +1221,7 @@ export class ViceSession implements ViceSessionHandle {
    */
   async #resumingCommand(send: () => Promise<void>): Promise<void> {
     this.#state = "running";
+    this.#lastStop = undefined;
     try {
       await send();
     } catch (error) {
@@ -1369,10 +1397,12 @@ export class ViceSession implements ViceSessionHandle {
       const stop: Stop = { pc: decodeProgramCounter(event.body), hits: this.#checkpointHits };
       if (stop.hits.length > 0 || event.type === ResponseType.jam) this.#haltCount++;
       if (stop.hits.some((hit) => this.#adapter?.isDriveCheckpoint(hit))) this.#driveStop = true;
+      this.#lastStop = event.type === ResponseType.jam ? { stopReason: "jam" } : this.#userPoint(stop.hits);
       this.#checkpointHits = [];
       this.#state = "stopped";
       this.#stopWaiters = this.#stopWaiters.filter((waiter) => !waiter(stop));
     } else if (event.type === ResponseType.resumed) {
+      this.#lastStop = undefined;
       this.#state = "running";
     }
   }

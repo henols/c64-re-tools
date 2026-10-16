@@ -272,6 +272,8 @@ Output:
 
 pc is present only when the C64 CPU is stopped. window is true while the c64_window window is open (D20 in docs/plan.md).
 
+When a user breakpoint, a user watchpoint or a JAM opcode stopped the CPU, stopReason gives breakpoint, watchpoint or jam, and pointId the id of the breakpoint or watchpoint. Both go away when the CPU runs again; a pause gives neither.
+
 ## 8. c64_reset
 
 Input:
@@ -432,11 +434,12 @@ advance-frames:
 {
   "state": "stopped",
   "pc": "$2137",
-  "advancedFrames": 20
+  "advancedFrames": 20,
+  "stopReason": "frames"
 }
 ~~~
 
-advance-frames always finishes stopped.
+advance-frames always finishes stopped. stopReason is frames when all frames ran, else breakpoint, watchpoint or jam; pointId gives the id of a breakpoint or watchpoint that stopped it. A large count waits for a breakpoint after resume.
 
 ## 11. c64_run_until
 
@@ -513,7 +516,7 @@ Output:
 }
 ~~~
 
-space is the CPU that stopped: c64, or drive8 for a stop in the disk drive, for example by a drive8 breakpoint during a c64 run. pc is the address in that space.
+space is the CPU that stopped: c64, or drive8 for a stop in the disk drive, for example by a drive8 breakpoint during a c64 run. pc is the address in that space. pointId gives the id of a breakpoint or watchpoint that stopped the run.
 
 stopReason:
 
@@ -1011,18 +1014,21 @@ Input:
 
 ~~~json
 {
+  "action": "read",
   "limit": 20
 }
 ~~~
 
-limit:
+action is read (default) or clear. clear starts the profile again from zero and gives `{ "cleared": true }`; it takes no limit.
+
+limit (read only):
 
 ~~~text
 1 .. 100
 default 20
 ~~~
 
-Output:
+Output of read:
 
 ~~~json
 {

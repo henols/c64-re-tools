@@ -2,7 +2,7 @@
 // one VICE. Exposes C64-domain operations only.
 
 import { ProtocolError, WireFailure, type VideoStandard } from "../protocol/messages.ts";
-import { validateViceResult, type Breakpoint, type BreakpointParams, type PointRemoved, type Watchpoint, type WatchpointParams, type ExecutionParams, type ExecutionResult, type JoystickState, type MachineStatus, type MemmapRange, type MemoryWriteParams, type RegisterValues, type ResetMode, type RunState, type RunTarget, type RunUntilResult, type MemoryReadParams, type MemoryReadResult, type Registers, type Space, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
+import { validateViceResult, type Breakpoint, type BreakpointParams, type PointRemoved, type Watchpoint, type WatchpointParams, type ExecutionParams, type ExecutionResult, type JoystickState, type MachineStatus, type MemmapRange, type MemoryWriteParams, type ProfileEntry, type RegisterValues, type ResetMode, type RunState, type RunTarget, type RunUntilResult, type MemoryReadParams, type MemoryReadResult, type Registers, type Space, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
 import { HostConnection } from "./connect.ts";
 import { readProjectFile } from "./transfer.ts";
 
@@ -186,8 +186,10 @@ export class ViceSessionClient {
     return this.#request("timing", { action });
   }
 
-  profile(limit: number): Promise<ViceOperations["profile"]["result"]> {
-    return this.#request("profile", { limit });
+  profile(params: { action: "read"; limit: number }): Promise<{ entries: ProfileEntry[] }>;
+  profile(params: { action: "clear" }): Promise<{ cleared: boolean }>;
+  profile(params: ViceOperations["profile"]["params"]): Promise<ViceOperations["profile"]["result"]> {
+    return this.#request("profile", params);
   }
 
   /** Action read gives the ranges; action clear gives cleared. */

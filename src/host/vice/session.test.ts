@@ -733,6 +733,7 @@ test("advance-frames counts two clock stops per frame and removes the clock", as
     state: "stopped",
     pc: 0x1006,
     advancedFrames: 3,
+    stopReason: "frames",
   });
   assert.equal(stops, 6);
   assert.equal(fake.checkpoints.size, 0, "the frame clock is gone");
@@ -771,15 +772,16 @@ test("run-until times out after its frames, and reports a user breakpoint", asyn
   const timeout = await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 2 });
   assert.deepEqual(timeout, { reached: false, stopReason: "timeout", state: "stopped", pc: 0x1000, space: "c64" });
 
+  await session.handle("watchpoint", { action: "add", address: 0x3000, size: 1, access: "write", space: "c64" });
   await session.handle("breakpoint", { action: "add", address: 0x2000, space: "c64" });
   fake.onResume = (vice) => {
     const user = [...vice.checkpoints.values()].find((checkpoint) => checkpoint.start === 0x2000)!;
     return { pc: 0x2000, hits: [user.number, clockOf(vice)!.number] };
   };
   const byBreakpoint = await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 2 });
-  assert.equal(byBreakpoint.stopReason, "breakpoint");
+  assert.deepEqual([byBreakpoint.stopReason, byBreakpoint.pointId], ["breakpoint", 2]);
   const advanced = await session.handle("execution", { action: "advance-frames", count: 5, space: "c64" });
-  assert.deepEqual(advanced, { state: "stopped", pc: 0x2000, advancedFrames: 0 });
+  assert.deepEqual(advanced, { state: "stopped", pc: 0x2000, advancedFrames: 0, stopReason: "breakpoint", pointId: 2 });
   await session.close();
 });
 
@@ -859,6 +861,8 @@ test("a stop in the drive is completed at the computer's next instruction before
     state: "stopped",
     pc: 0x1236,
     advancedFrames: 0,
+    stopReason: "breakpoint",
+    pointId: 1,
   });
   assert.equal(stops, 3);
   assert.deepEqual([...fake.checkpoints.values()].map((checkpoint) => checkpoint.number), [drive.number], "only the user breakpoint is left");
@@ -892,9 +896,36 @@ async function sessionWithDriveBreakpoint() {
 
 test("a stop in the drive that status sees first is completed before status reports the pc", async () => {
   const { fake, session } = await sessionWithDriveBreakpoint();
-  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0x1236 });
+  assert.deepEqual(await session.handle("status", {}), {
+    state: "stopped",
+    videoStandard: "pal",
+    warp: false,
+    window: false,
+    cartridge: false,
+    pc: 0x1236,
+    stopReason: "breakpoint",
+    pointId: 1,
+  });
   assert.equal(fake.running, false);
   assert.equal(fake.checkpoints.size, 1, "only the user breakpoint is left");
+  await session.close();
+});
+
+test("status names the breakpoint or the JAM that stopped the machine, until it runs again", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("breakpoint", { action: "add", address: 0x2000, space: "c64" });
+  const user = [...fake.checkpoints.values()].find((checkpoint) => checkpoint.start === 0x2000)!;
+  fake.stopsAtNextCommand = { pc: 0x2000, checkpoint: user.number };
+  const stopped = await session.handle("status", {});
+  assert.deepEqual([stopped.state, stopped.pc, stopped.stopReason, stopped.pointId], ["stopped", 0x2000, "breakpoint", 1]);
+  // The fake hits an exec checkpoint at the pc again when it resumes.
+  await session.handle("registersSet", { space: "c64", values: { pc: 0x2100 } });
+  await session.handle("execution", { action: "resume", space: "c64" });
+  await session.handle("execution", { action: "pause", space: "c64" });
+  const paused = await session.handle("status", {});
+  assert.equal(paused.stopReason, undefined, "a pause is no stop reason");
+  fake.ram[paused.pc!] = 0x02;
+  assert.equal((await session.handle("status", {})).stopReason, "jam", "a JAM opcode at the pc");
   await session.close();
 });
 
@@ -1017,9 +1048,12 @@ test("the profiler runs from session start; profile and memmap read through it",
   const { fake, session } = await startSession();
   assert.equal(fake.profilerOn, true);
   fake.profileRows = ["      1000  50.0%        800  40.0% c000", "       500  25.0%        500  25.0% c100"];
-  assert.deepEqual(await session.handle("profile", { limit: 1 }), {
+  assert.deepEqual(await session.handle("profile", { action: "read", limit: 1 }), {
     entries: [{ address: 0xc000, totalCycles: "1000", selfCycles: "800", percent: 40 }],
   });
+  const starts = fake.profileStarts;
+  assert.deepEqual(await session.handle("profile", { action: "clear" }), { cleared: true });
+  assert.equal(fake.profileStarts, starts + 1, "clear starts the profiler again");
   fake.memmapRows = ["c000: --- --- r-x", "c001: --- --- r-x"];
   assert.deepEqual(await session.handle("memmap", { action: "read", start: 0xc000, end: 0xc0ff, maxRanges: 10 }), {
     ranges: [{ start: 0xc000, end: 0xc001, flags: 5 }],

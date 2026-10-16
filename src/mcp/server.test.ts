@@ -9,7 +9,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { STOP_AND_ASK, WireFailure } from "../protocol/messages.ts";
-import { MAX_SEARCH_PATTERN, type Breakpoint, type BreakpointParams, type ExecutionParams, type JoystickState, type MemmapRange, type MemoryReadParams, type PointRemoved, type MemoryWriteParams, type ObserveParams, type ObserveResult, type RegisterValues, type Registers, type RunTarget, type ViceOperations, type Watchpoint, type WatchpointParams } from "../protocol/vice.ts";
+import { MAX_SEARCH_PATTERN, type Breakpoint, type BreakpointParams, type ExecutionParams, type JoystickState, type MemmapRange, type MemoryReadParams, type PointRemoved, type ProfileEntry, type MemoryWriteParams, type ObserveParams, type ObserveResult, type RegisterValues, type Registers, type RunTarget, type ViceOperations, type Watchpoint, type WatchpointParams } from "../protocol/vice.ts";
 import { startTrace, TRACE_VARIABLE } from "../trace.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
 import { debugTools } from "./tools/debug.ts";
@@ -158,7 +158,12 @@ class FakeSession implements ViceSessionApi {
   async backtrace() {
     return { frames: [{ address: 0x2100, returnAddress: 0x1980 }, { address: 0xfce2 }] };
   }
-  async profile() {
+  profiles: unknown[] = [];
+  profile(params: { action: "read"; limit: number }): Promise<{ entries: ProfileEntry[] }>;
+  profile(params: { action: "clear" }): Promise<{ cleared: boolean }>;
+  async profile(params: ViceOperations["profile"]["params"]): Promise<ViceOperations["profile"]["result"]> {
+    this.profiles.push(params);
+    if (params.action === "clear") return { cleared: true };
     return { entries: [{ address: 0x2100, totalCycles: "125000", selfCycles: "82000", percent: 17.4 }] };
   }
   memmaps: unknown[] = [];
@@ -344,7 +349,6 @@ test("the server lists exactly the public tools with object input and output sch
       "c64_cia",
       "c64_sid",
       "c64_backtrace",
-      "c64_profile",
       "c64_observe",
     ];
     assert.equal(tool.annotations?.readOnlyHint, readOnly.includes(tool.name), tool.name);
@@ -780,6 +784,9 @@ test("profile and memmap format addresses and fill read defaults", async () => {
   assert.deepEqual((await call(client, "c64_profile")).structuredContent, {
     entries: [{ address: "$2100", totalCycles: "125000", selfCycles: "82000", percent: 17.4 }],
   });
+  assert.deepEqual((await call(client, "c64_profile", { action: "clear" })).structuredContent, { cleared: true });
+  assert.deepEqual(session.profiles, [{ action: "read", limit: 20 }, { action: "clear" }]);
+  assert.equal(errorOf(await call(client, "c64_profile", { action: "clear", limit: 5 })).code, "invalid-input");
   assert.deepEqual((await call(client, "c64_memmap", { action: "read" })).structuredContent, {
     ranges: [{ start: "$2100", end: "$213f", execute: true, read: true, write: false, in: ["ram"] }],
   });

@@ -7,7 +7,7 @@ import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { COVERAGE, EXECUTE } from "../../../src/c64.ts";
-import type { MemmapRange } from "../../../src/protocol/vice.ts";
+import type { MemmapRange, ProfileEntry } from "../../../src/protocol/vice.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 let session: ViceSessionHandle;
@@ -31,10 +31,17 @@ test("a busy routine tops the profile and the memmap shows its accesses", { skip
   await session.handle("memmap", { action: "clear" });
   await session.handle("execution", { action: "advance-frames", count: 100, space: "c64" });
 
-  const { entries } = await session.handle("profile", { limit: 5 });
+  const { entries } = (await session.handle("profile", { action: "read", limit: 5 })) as { entries: ProfileEntry[] };
   const routine = entries.find((entry) => entry.address === 0xc010);
   assert.ok(routine !== undefined, JSON.stringify(entries));
   assert.ok(BigInt(routine.selfCycles) > 0n);
+
+  // After a clear, the profile counts only what runs after it.
+  assert.deepEqual(await session.handle("profile", { action: "clear" }), { cleared: true });
+  await session.handle("execution", { action: "advance-frames", count: 1, space: "c64" });
+  const { entries: fresh } = (await session.handle("profile", { action: "read", limit: 5 })) as { entries: ProfileEntry[] };
+  const again = fresh.find((entry) => entry.address === 0xc010);
+  assert.ok(again !== undefined && BigInt(again.totalCycles) < BigInt(routine.totalCycles), JSON.stringify(fresh));
 
   const { ranges } = (await session.handle("memmap", { action: "read", start: 0xc000, end: 0xc1ff, maxRanges: 50 })) as { ranges: MemmapRange[] };
   const covering = (address: number) => ranges.find((range) => range.start <= address && address <= range.end);

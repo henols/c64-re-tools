@@ -208,19 +208,33 @@ export const c64Profile = defineTool({
   name: "c64_profile",
   title: "Cycle profile",
   description:
-    "Get the routines where the C64 CPU spent the most cycles since the session started or since the last c64_window. " +
+    "Action read gets the routines where the C64 CPU spent the most cycles since the session started, the last clear or the last c64_window. " +
+    "Action clear sets all counts to zero, so that the next read measures only what runs after it. " +
+    "The emulator gives the cycles to the routine that a JSR called last. " +
+    "Code that the CPU enters with JMP or a branch counts for that routine. " +
     "After c64_window or a snapshot restore, the emulator can give the cycles to a routine that ran before the restore, for example $fd50. Do not trust the routine addresses then. " +
-    `limit is the maximum number of routines (1 to ${MAX_PROFILE}, default 20). ` +
+    `limit is the maximum number of routines for read (1 to ${MAX_PROFILE}, default 20). ` +
     "Each entry gives the routine address, its total cycles with the routines it calls, and its own cycles. " +
     "percent is the part of all cycles that the routine used itself. " +
     "Cycle counts are decimal strings.",
-  inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_PROFILE).default(20) }).strict(),
+  inputSchema: z
+    .object({
+      action: z.enum(["read", "clear"]).default("read"),
+      limit: z.number().int().min(1).max(MAX_PROFILE).optional().describe("read only. Default 20"),
+    })
+    .strict(),
   outputSchema: z.object({
-    entries: z.array(z.object({ address: AddressOutput, totalCycles: z.string(), selfCycles: z.string(), percent: z.number() })),
+    entries: z.array(z.object({ address: AddressOutput, totalCycles: z.string(), selfCycles: z.string(), percent: z.number() })).optional(),
+    cleared: z.boolean().optional(),
   }),
-  readOnly: true,
+  readOnly: false,
   async run(input, session) {
-    const { entries } = await session.profile(input.limit);
+    const { action, ...fields } = input;
+    if (action === "clear") {
+      requireFields("clear", fields, []);
+      return session.profile({ action: "clear" });
+    }
+    const { entries } = await session.profile({ action: "read", limit: fields.limit ?? 20 });
     return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
   },
 });

@@ -3,7 +3,7 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { COMPARISONS, EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_TIMEOUT_FRAMES, RUN_STATES, SPACES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
+import { COMPARISONS, EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_TIMEOUT_FRAMES, POINT_STOP_REASONS, RUN_STATES, SPACES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
 import { AddressInput, AddressOutput, Byte, ConditionInput, defineTool, MemoryViewInput, SpaceInput, toCondition } from "../server.ts";
 
 export const c64Execution = defineTool({
@@ -15,7 +15,9 @@ export const c64Execution = defineTool({
     "next executes count instructions (default 1) and treats a JSR and its subroutine as one instruction. " +
     "until-return runs until the current subroutine returns (after the next RTS or RTI). " +
     "advance-frames runs exactly count video frames (count is necessary). It stops at the same raster position, count frames later. " +
-    "A breakpoint or watchpoint can stop it before that. advancedFrames tells how many frames ran. " +
+    "A breakpoint, a watchpoint or a JAM opcode can stop it before that. advancedFrames tells how many frames ran. " +
+    "stopReason tells why it stopped: frames (all frames ran), breakpoint, watchpoint or jam. pointId gives the id of the breakpoint or watchpoint. " +
+    "To wait for a breakpoint or watchpoint after resume, use advance-frames with a large count. " +
     "step, next, until-return and advance-frames first stop a running CPU. Use count only with step, next and advance-frames. " +
     "step, next and until-return work only in space c64. For the drive, use c64_run_until with an address in space drive8.",
   inputSchema: z
@@ -36,6 +38,8 @@ export const c64Execution = defineTool({
     pc: AddressOutput.optional(),
     executed: z.number().int().min(0).max(MAX_EXECUTION_COUNT).optional().describe("instructions executed by step or next"),
     advancedFrames: z.number().int().min(0).max(MAX_EXECUTION_COUNT).optional().describe("frames advance-frames ran"),
+    stopReason: z.enum(["frames", ...POINT_STOP_REASONS]).optional().describe("advance-frames: why it stopped"),
+    pointId: z.number().int().min(1).optional().describe("the id of the breakpoint or watchpoint that stopped advance-frames"),
   }),
   readOnly: false,
   async run(input, session) {
@@ -46,6 +50,8 @@ export const c64Execution = defineTool({
       ...(result.pc === undefined ? {} : { pc: formatC64Address(result.pc) }),
       ...(result.executed === undefined ? {} : { executed: result.executed }),
       ...(result.advancedFrames === undefined ? {} : { advancedFrames: result.advancedFrames }),
+      ...(result.stopReason === undefined ? {} : { stopReason: result.stopReason }),
+      ...(result.pointId === undefined ? {} : { pointId: result.pointId }),
     };
   },
 });
@@ -88,6 +94,7 @@ export const c64RunUntil = defineTool({
     "Kind raster stops at the first instruction at or after a raster line and cycle. If the machine is there now, it stops at the next frame's pass. " +
     `timeoutFrames (1 to ${MAX_TIMEOUT_FRAMES}, default 3000) limits the run in video frames. ` +
     "reached tells if the target occurred. stopReason tells why the CPU stopped: target, breakpoint, watchpoint, jam (a JAM opcode) or timeout. " +
+    "pointId gives the id of the breakpoint or watchpoint that stopped the CPU. " +
     "space tells which CPU stopped: c64, or drive8 for a stop in the disk drive. pc is the address in that space. " +
     "The CPU is always stopped after this tool.",
   inputSchema: z
@@ -96,7 +103,14 @@ export const c64RunUntil = defineTool({
       timeoutFrames: z.number().int().min(1).max(MAX_TIMEOUT_FRAMES).default(3000),
     })
     .strict(),
-  outputSchema: z.object({ reached: z.boolean(), stopReason: z.enum(STOP_REASONS), state: z.enum(RUN_STATES), pc: AddressOutput, space: z.enum(SPACES) }),
+  outputSchema: z.object({
+    reached: z.boolean(),
+    stopReason: z.enum(STOP_REASONS),
+    state: z.enum(RUN_STATES),
+    pc: AddressOutput,
+    space: z.enum(SPACES),
+    pointId: z.number().int().min(1).optional().describe("the id of the breakpoint or watchpoint that stopped the CPU"),
+  }),
   readOnly: false,
   async run(input, session) {
     const { target: given } = input;

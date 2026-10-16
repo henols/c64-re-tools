@@ -107,7 +107,7 @@ const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Pro
   },
   backtrace: { call: (c) => c.backtrace({ depth: 4, space: "c64" }), params: { depth: 4, space: "c64" }, result: { frames: [{ address: 0x2100, returnAddress: 0x1980 }] } },
   timing: { call: (c) => c.timing("read"), params: { action: "read" }, result: { cycles: "1234" } },
-  profile: { call: (c) => c.profile(5), params: { limit: 5 }, result: { entries: [{ address: 0x2100, totalCycles: "125000", selfCycles: "82000", percent: 17.4 }] } },
+  profile: { call: (c) => c.profile({ action: "read", limit: 5 }), params: { action: "read", limit: 5 }, result: { entries: [{ address: 0x2100, totalCycles: "125000", selfCycles: "82000", percent: 17.4 }] } },
   memmap: {
     call: (c) => c.memmap({ action: "read", start: 0, end: 0xffff, maxRanges: 256 }),
     params: { action: "read", start: 0, end: 0xffff, maxRanges: 256 },

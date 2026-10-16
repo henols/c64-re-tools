@@ -151,6 +151,8 @@ export class FakeVice {
   profileRows: string[] = [];
   memmapRows: string[] = [];
   profilerOn = false;
+  /** How many times "profile on" came. */
+  profileStarts = 0;
   memmapCleared = false;
   /** The text monitor's default device and bank. */
   textDevice: "c" | "8" = "c";
@@ -642,6 +644,7 @@ export class FakeVice {
     else if (line === "stopwatch") output += `Stopwatch: ${this.clock.toString().padStart(10)}\n`;
     else if (line === "profile on") {
       this.profilerOn = true;
+      this.profileStarts++;
       output += "Profiling restarted.\n";
     } else if (/^profile flat \d+$/.test(line)) {
       output += "Total      %          Self      %\n------------- ------ ------------- ------\n" + this.profileRows.map((row) => `${row}\n`).join("");

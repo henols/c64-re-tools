@@ -53,7 +53,7 @@ test("a machine stopped at a breakpoint never runs through reads and idle time",
     await session.breakpoint({ action: "list" });
     await session.watchpoint({ action: "list" });
     await session.memmap({ action: "read", start: 0x0000, end: 0xffff, maxRanges: 8 });
-    await session.profile(5);
+    await session.profile({ action: "read", limit: 5 });
     await session.snapshot({ action: "list" });
     await neverRan("after every read-only operation");
 
