@@ -12,12 +12,15 @@ import { ImageError, readImage } from "#src/host-client/image.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
-import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
+import { KnowledgeError, openForRead, withTrial, withWrite } from "#src/knowledge/database.ts";
+import { readCoverageFiles } from "#src/host-client/coverage.ts";
 import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import {
   at,
   analyzerNamed,
+  analyzerNamesAt,
+  commentsAt,
   currentRevision,
   listAnalyzerNames,
   listComments,
@@ -31,7 +34,11 @@ import {
   listRegions,
   listSuppressions,
   listSymbols,
+  operandAt,
+  referencesFrom,
+  referencesTo,
   search,
+  symbolAt,
   symbolNamed,
   type CommentRow,
   type MacroRow,
@@ -91,6 +98,7 @@ import {
   type WriteContext,
 } from "#src/knowledge/write.ts";
 import { platformNames } from "#src/platform.ts";
+import { dump, graph, listing, listingText, type ListingSource } from "./lib/listing.ts";
 import { runScript, UsageError } from "#src/script.ts";
 
 const USAGE = `knowledge.ts <command> [arguments] [options]
@@ -116,6 +124,14 @@ Read (no database needed):
   revisions [--limit N --before R]
   revision <revision>
   export --out <file> [--start A --end A --origin O]   all current knowledge to a project file
+  listing <start> <end> --image <file> [--coverage <file>]... [--out <file>]
+                                      the image as ACME lines with names, operand
+                                      expressions, comments, the access of each line
+                                      (x executed, r read, w written) and the
+                                      references in and out; --out writes it as text
+  dump <start> <end> --image <file> [--out <file>]   the bytes with the names on each line
+  graph [--from A] [--depth N] [--out <file>]   the call graph of the routines as
+                                      Mermaid: --from starts at one routine
 
 Every command takes --space S: c64 (the default), drive8 for code in the 1541
 drive, or bank0 to bank255 for cartridge banks. A write in a batch can name its
@@ -167,6 +183,8 @@ Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
                            operand and module win, and its regions come last
   apply <file>             many writes from a JSON file ('-' reads standard input),
                            all as one revision, or none when one is refused;
+                           --dry-run gives the result and the refusals and
+                           writes nothing;
                            operand, patch and use writes need --image <file>
 
 Write options:
@@ -363,6 +381,10 @@ function run(argv: string[]): unknown {
       switch: { type: "string" },
       macro: { type: "string" },
       analyzer: { type: "boolean" },
+      coverage: { type: "string", multiple: true },
+      from: { type: "string" },
+      depth: { type: "string" },
+      "dry-run": { type: "boolean" },
       help: { type: "boolean" },
     },
   });
@@ -373,7 +395,7 @@ function run(argv: string[]): unknown {
   nameSpace = space;
   const range = { start: values.start === undefined ? 0x0000 : address(values.start, "--start"), end: values.end === undefined ? 0xffff : address(values.end, "--end") };
 
-  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "operands", "patches", "switches", "macros", "uses", "spaces", "history", "revisions", "revision", "export"]);
+  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "operands", "patches", "switches", "macros", "uses", "spaces", "history", "revisions", "revision", "export", "listing", "dump", "graph"]);
   const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "operand", "unoperand", "patch", "unpatch", "macro", "unmacro", "use", "unuse", "revert", "apply", "merge"]);
   // join reads batch files and writes one: no knowledge opens (D79).
   if (command === "join") return joinCommand(args, values.out, space);
@@ -424,11 +446,20 @@ function run(argv: string[]): unknown {
         : command === "patch" || command === "macro" || command === "use"
           ? sourceOperation(command, args, values, context, space)
           : writeOperation(command, args, values.kind, values.element, context, values.title, space);
+  if (values["dry-run"]) {
+    if (command !== "apply") throw new UsageError("--dry-run works only with apply");
+    // The same checks and result as a write, on a copy in memory (D78).
+    return { dryRun: true, ...(withTrial(operation) as Record<string, unknown>) };
+  }
   return withWrite(operation);
 }
 
 type ReadValues = {
   analyzer?: boolean | undefined;
+  image?: string | undefined;
+  coverage?: string[] | undefined;
+  from?: string | undefined;
+  depth?: string | undefined;
   kind?: string | undefined;
   type?: string | undefined;
   name?: string | undefined;
@@ -439,9 +470,80 @@ type ReadValues = {
   macro?: string | undefined;
 };
 
+/** The lookups of a listing or a dump (D78): the image, the knowledge of the space and the platform names of the C64. */
+function listingSource(db: DatabaseSync | undefined, imagePath: string | undefined, coveragePaths: string[], space: string): ListingSource {
+  if (imagePath === undefined) throw new UsageError("listing and dump read the bytes from the image: give --image <image.json|prg>");
+  let image: ReturnType<typeof readImage>;
+  try {
+    image = readImage(imagePath);
+  } catch (error) {
+    if (error instanceof ImageError) throw new UsageError(error.message);
+    throw error;
+  }
+  const coverage = readCoverageFiles(coveragePaths, (message) => {
+    throw new UsageError(message);
+  });
+  const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
+  const platform = new Map(space === DEFAULT_SPACE ? platformNames().map((entry) => [entry.address, entry.name]) : []);
+  return {
+    byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined),
+    // A user or LLM name, else the platform name; an analyzer name in symbols (knowledge from before D74) gives way to it (D61).
+    nameOf: (at) => {
+      const own = symbolAt(db, at, space);
+      return own !== undefined && (own.origin === "user" || own.origin === "llm") ? own.name : (platform.get(at) ?? own?.name);
+    },
+    secondNames: (at) => analyzerNamesAt(db, at, space).map((row) => row.name),
+    regions: listRegions(db, undefined, undefined, undefined, space),
+    comments: (at) => {
+      const rows = commentsAt(db, at, space);
+      const side = rows.find((row) => row.placement === "side")?.text;
+      return { line: rows.filter((row) => row.placement === "line").flatMap((row) => row.text.split(/\r?\n/)), ...(side === undefined ? {} : { side }) };
+    },
+    operand: (at) => {
+      const row = operandAt(db, at, space);
+      return row === undefined ? undefined : operandText(row);
+    },
+    references: (at) => ({ in: referencesTo(db, at, space).length, out: referencesFrom(db, at, space).length }),
+    ...(coverage === undefined ? {} : { coverage }),
+  };
+}
+
 /** The answer of one read command. */
 function readAnswer(db: DatabaseSync | undefined, command: string, args: string[], values: ReadValues, range: { start: number; end: number }, origins: Origin[] | undefined, space: string): Record<string, unknown> {
   switch (command) {
+    case "listing":
+    case "dump": {
+      if (args.length !== 2) throw new UsageError(`${command} needs <start> <end>`);
+      const start = address(args[0], "start");
+      const end = address(args[1], "end");
+      if (end < start) throw new UsageError("the end must not be before the start");
+      const source = listingSource(db, values.image, command === "listing" ? (values.coverage ?? []) : [], space);
+      if (command === "dump") {
+        const lines = dump(source, start, end).map((row) => ({ address: formatC64Address(row.address), hex: row.hex, ...(row.names === undefined ? {} : { names: row.names.map((item) => ({ address: formatC64Address(item.address), name: item.name })) }) }));
+        if (values.out === undefined) return { lines };
+        writeProjectFile(values.out, Buffer.from(lines.map((row) => `${row.address}  ${row.hex}${row.names === undefined ? "" : `  ; ${row.names.map((item) => `${item.address} ${item.name}`).join(", ")}`}`).join("\n") + "\n", "utf8"), { what: "--out" });
+        return { out: values.out, lines: lines.length };
+      }
+      const lines = listing(source, start, end);
+      if (values.out !== undefined) {
+        writeProjectFile(values.out, Buffer.from(listingText(lines), "utf8"), { what: "--out" });
+        return { out: values.out, lines: lines.length };
+      }
+      return { lines: lines.map((row) => ({ ...row, address: formatC64Address(row.address) })) };
+    }
+    case "graph": {
+      const named = listSymbols(db, undefined, "routine", undefined, space);
+      const taken = new Set(named.map((row) => row.address));
+      const second = listAnalyzerNames(db, undefined, "routine", undefined, space).filter((row) => !taken.has(row.address) && taken.add(row.address) !== undefined);
+      const depth = values.depth === undefined ? undefined : integer(values.depth, "--depth");
+      const root = values.from === undefined ? undefined : address(values.from, "--from");
+      const drawn = graph([...named, ...second], listReferences(db, undefined, undefined, undefined, space), root, depth);
+      if (values.out !== undefined) {
+        writeProjectFile(values.out, Buffer.from(drawn.mermaid, "utf8"), { what: "--out" });
+        return { out: values.out, nodes: drawn.nodes, edges: drawn.edges };
+      }
+      return drawn;
+    }
     case "at": {
       const known = at(db, address(args[0]), space);
       return {

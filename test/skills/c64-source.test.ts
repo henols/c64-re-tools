@@ -17,7 +17,7 @@ import { ACME, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
 import { ciaSection, copyOrder, loaderLimits, planLoader, readEntryState, simulate, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
-import { MODE_LENGTH, OPCODES } from "../../skills/c64-source/scripts/lib/opcodes.ts";
+import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
 import { entriesInData, entryOutsideImage, layout, render, type SourceInput } from "../../skills/c64-source/scripts/lib/source.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 

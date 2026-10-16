@@ -38,6 +38,10 @@ A symbol is the name of an address from the user or the LLM. An analyzer name is
 | The names that DXA, Ghidra and the idioms gave | `symbols --analyzer` |
 | Only some origins | add `--origin semantic`, `--origin analyzer` (dxa, ghidra and heuristic), or `--origin user,llm` |
 | All knowledge in one file | `export --out exports/knowledge.json` |
+| The code of a range with names, comments, access and references | `listing '$0400' '$04ff' --image unpacked/image.json --coverage coverage/game.bin` |
+| The bytes of a range with the names in it | `dump '$2fa0' '$2fff' --image unpacked/image.json` |
+| The call graph as Mermaid | `graph --from cold_start --depth 2 --out .c64-re-tools/local/calls.mmd` |
+| Check a batch and write nothing | `apply batch.json --dry-run` |
 | Name the symbol at an address | `rename '$2100' update_player --kind routine` |
 | Remove a symbol | `remove-symbol '$2100'` |
 | Classify memory | `classify '$3000' '$303f' sprite` |
@@ -137,9 +141,17 @@ The ops and their fields:
 | `unmacro` | `name` |
 | `use` | `start`, `end`, `macro`, `args` (a list or a comma list) |
 
-A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. `apply` with an `operand`, `patch` or `use` write needs `--image`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
+A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. `apply` with an `operand`, `patch` or `use` write needs `--image`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write. `--dry-run` does the same checks on a copy of the knowledge. It gives the result or the refusal, and it writes nothing.
 
 The c64-provenance skill writes a batch with `match --out`. The batch holds the names of library routines at their addresses in this program. Read the `batch.leftOut` of its result first. Then apply the batch with the command in its `apply`.
+
+## Listing, dump and graph
+
+These commands read the image and the knowledge, and write no knowledge. Use them in place of your own disassembler or hex dump.
+
+- `listing` gives one line for each instruction of a code region, and one `!byte` line for other bytes. A line has the name of the address, the instruction with the names of its target, and the comments. An operand expression of the knowledge replaces the operand. `analyzerNames` gives the second names. `referencesIn` and `referencesOut` count the references. With `--coverage`, `access` tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line, or `-` for none. `--out` writes the listing as text to a project file.
+- `dump` gives 16 bytes on each line, and the names of the addresses on the line.
+- `graph` gives the routines and the call and jump references between them as a Mermaid flowchart. A call is a solid arrow, and a jump is a dotted arrow. `--from` starts at one routine, and `--depth` limits the steps from it.
 
 ## Batches of parallel agents
 

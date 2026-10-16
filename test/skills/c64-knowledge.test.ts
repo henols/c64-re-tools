@@ -9,6 +9,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
+import { COVERAGE } from "../../src/c64.ts";
+
 const script = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
 const projects: string[] = [];
 after(() => {
@@ -357,4 +359,47 @@ test("join makes one batch of the batches of parallel agents, and apply writes i
   writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x04, 0xa9, 0x00]));
   assert.equal(knowledge(root, "apply", "joined.json", "--image", "game.prg").status, 0);
   assert.equal((knowledge(root, "at", "draw_room").json as { symbol: { name: string } }).symbol.name, "draw_room", "a name gives the address");
+});
+
+test("listing, dump and graph read the image with the knowledge, and apply --dry-run writes nothing (D78)", () => {
+  const root = project();
+  // $1000 JSR $1010 / LDA $1020 / STA $d020 / RTS; $1010 RTS; $1020 a table.
+  const bytes = [0x20, 0x10, 0x10, 0xad, 0x20, 0x10, 0x8d, 0x20, 0xd0, 0x60, 0, 0, 0, 0, 0, 0, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 8];
+  writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x10, ...bytes]));
+  writeFileSync(
+    join(root, "batch.json"),
+    JSON.stringify([
+      { op: "rename", address: "$1000", name: "main", kind: "routine" },
+      { op: "rename", address: "$1010", name: "helper", kind: "routine" },
+      { op: "rename", address: "$1020", name: "table", kind: "data" },
+      { op: "classify", start: "$1000", end: "$1009", type: "code" },
+      { op: "classify", start: "$1010", end: "$1010", type: "code" },
+      { op: "comment", address: "$1003", placement: "side", text: "First entry." },
+      { op: "reference", from: "$1000", to: "$1010", kind: "call" },
+    ]),
+  );
+  const dry = knowledge(root, "apply", "batch.json", "--dry-run");
+  assert.equal(dry.status, 0, JSON.stringify(dry.json));
+  assert.equal(dry.json.dryRun, true);
+  assert.equal(existsSync(join(root, ".c64-re-tools")), false, "a dry run writes nothing");
+  assert.equal(knowledge(root, "rename", "$1000", "x", "--dry-run").status, 2, "--dry-run works only with apply");
+  assert.equal(knowledge(root, "apply", "batch.json").status, 0);
+
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x1000] = COVERAGE.ramExecute;
+  coverage[0x1003] = COVERAGE.ramExecute;
+  coverage[0x1020] = COVERAGE.ramRead;
+  writeFileSync(join(root, "run.bin"), coverage);
+  const listed = knowledge(root, "listing", "$1000", "$1021", "--image", "game.prg", "--coverage", "run.bin").json.lines as Array<Record<string, unknown>>;
+  assert.deepEqual(listed[0], { address: "$1000", bytes: "20 10 10", label: "main", text: "jsr helper", access: "x", referencesIn: 0, referencesOut: 1 });
+  assert.deepEqual(listed[1], { address: "$1003", bytes: "ad 20 10", text: "lda table", access: "x", referencesIn: 0, referencesOut: 0, comment: "First entry." });
+  assert.equal(listed[2]!.text, "sta EXTCOL", "a platform name");
+  assert.deepEqual(listed.at(-1), { address: "$1020", bytes: "07 08", label: "table", text: "!byte $07,$08", access: "r", referencesIn: 0, referencesOut: 0 });
+  assert.equal(knowledge(root, "listing", "$1000", "$1001").status, 2, "listing needs --image");
+
+  assert.deepEqual(knowledge(root, "dump", "$1010", "$1021", "--image", "game.prg").json.lines, [
+    { address: "$1010", hex: "60 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", names: [{ address: "$1010", name: "helper" }] },
+    { address: "$1020", hex: "07 08 .. .. .. .. .. .. .. .. .. .. .. .. .. ..", names: [{ address: "$1020", name: "table" }] },
+  ]);
+  assert.deepEqual(knowledge(root, "graph", "--from", "main").json, { mermaid: 'flowchart TD\n  r1000["main $1000"]\n  r1010["helper $1010"]\n  r1000 --> r1010\n', nodes: 2, edges: 1 });
 });

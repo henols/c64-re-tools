@@ -1,4 +1,4 @@
-// The ACME spelling of each 6510 opcode (D48): the mnemonic and the addressing
+// The ACME spelling of each 6510 opcode (D48, D78): the mnemonic and the addressing
 // mode, undocumented opcodes included. Ghidra gives the instruction
 // boundaries; this table gives the text. Where several opcodes share one
 // spelling, ACME writes only one of them: the generator finds those with a

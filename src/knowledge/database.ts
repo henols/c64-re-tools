@@ -197,6 +197,24 @@ export function withWrite<T>(work: (db: DatabaseSync) => T, root: string = proje
   }
 }
 
+/**
+ * Runs a write on a copy of the knowledge in memory, made from the text of the
+ * project (D78: apply --dry-run). The write gives the same result and the same
+ * refusals as a real write, and nothing on disk changes.
+ */
+export function withTrial<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
+  refuseOldLayout(root);
+  const trial = new DatabaseSync(":memory:");
+  try {
+    configure(trial);
+    ensureSchema(trial);
+    if (existsSync(textPath(root))) loadText(trial, readText(textPath(root)));
+    return work(trial);
+  } finally {
+    trial.close();
+  }
+}
+
 /** The newest revision id, or "0" when there is none. */
 function newest(db: DatabaseSync): string {
   return (db.prepare("SELECT max(id) AS id FROM revisions").get() as { id: string | null }).id ?? "0";

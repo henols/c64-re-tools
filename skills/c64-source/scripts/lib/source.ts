@@ -14,7 +14,7 @@ import { identifiers, operandText, replaceIdentifiers, type OperandExpression } 
 import { ANALYZERS } from "#src/knowledge/import.ts";
 import { isGeneratedFile, type CommentPlacement, type Origin, type RegionType } from "#src/knowledge/schema.ts";
 import type { Area } from "#src/platform.ts";
-import { hasZeroPageForm, MNEMONICS, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type Mode, type UseKind } from "./opcodes.ts";
+import { hasZeroPageForm, MNEMONICS, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type Mode, type UseKind } from "#src/opcodes.ts";
 
 export interface Range {
   start: number;

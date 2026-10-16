@@ -14,6 +14,7 @@ Do not create a workspace/monorepo package graph unless a future concrete requir
 c64-re-tools/
 ├── src/
 │   ├── c64.ts
+│   ├── opcodes.ts
 │   ├── platform.ts
 │   ├── project.ts
 │   ├── protocol.ts
@@ -118,6 +119,10 @@ Keep small C64-wide primitives here:
 - byte/range helpers that are truly shared.
 
 Do not turn this into a generic domain layer.
+
+### src/opcodes.ts
+
+The ACME spelling of each 6510 opcode, undocumented opcodes included. c64-source writes its instructions with it, and the c64-knowledge listing decodes the image with it (D78). It imports nothing.
 
 ### src/platform.ts
 
