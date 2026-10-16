@@ -8,7 +8,7 @@
 // patch is written as !if SWITCH { code } else { original } (D72), and a
 // macro use as one +name args line (D73).
 
-import { COVERAGE, formatC64Address } from "#src/c64.ts";
+import { COVERAGE, formatC64Address, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
 import { ANALYZERS } from "#src/knowledge/import.ts";
@@ -550,19 +550,12 @@ export function layout(input: SourceInput): Layout {
 }
 
 /** The pointer region types: a table of addresses, or of addresses minus 1 for RTS. */
-const POINTER_TYPES: ReadonlyArray<DataItem["type"]> = ["addresses", "addresses-split", "rts-addresses", "rts-addresses-split"];
+const POINTER_TYPES: ReadonlyArray<DataItem["type"]> = POINTER_TABLE_TYPES;
+const isPointerTable = (region: Region): region is Region & { type: PointerTableType } => (POINTER_TABLE_TYPES as readonly string[]).includes(region.type);
 
 /** The pairs of a pointer table: the address of each low and high byte, and the target it names. */
 function pairsOf(region: Region, byteAt: (address: number) => number): Array<{ low: number; high: number; target: number }> {
-  const length = region.end - region.start + 1;
-  const split = region.type === "addresses-split" || region.type === "rts-addresses-split";
-  const minus = region.type === "rts-addresses" || region.type === "rts-addresses-split" ? 1 : 0;
-  const count = Math.floor(length / 2);
-  return Array.from({ length: count }, (_, index) => {
-    const low = split ? region.start + index : region.start + 2 * index;
-    const high = split ? region.start + count + index : low + 1;
-    return { low, high, target: ((byteAt(low) | (byteAt(high) << 8)) + minus) & 0xffff };
-  });
+  return isPointerTable(region) ? pointerTableEntries(region, byteAt) : [];
 }
 
 function pointersOf(item: DataItem, byteAt: (address: number) => number): number[] {
@@ -814,8 +807,9 @@ function switchLines(layout: Layout): string[] {
 }
 
 /** constants.asm: the names outside the image by platform area, each with what it is and how the source uses it. */
-function constantsText(layout: Layout): string {
+function constantsText(layout: Layout): { text: string; labels: SourceLabel[] } {
   const { describe } = layout;
+  const labels: SourceLabel[] = [];
   const rows = layout.constants.map((address) => {
     const comment = [describeConstant(layout, address), usageText(layout.uses.get(address))].filter((text) => text !== undefined).join(" ");
     return { address, name: layout.names.get(address)!, value: constantValue(address), comment };
@@ -839,11 +833,28 @@ function constantsText(layout: Layout): string {
     }
     const line = `${row.name.padEnd(nameColumn)} = ${row.value.padEnd(valueColumn)}`;
     out.push(row.comment === "" ? line.trimEnd() : `${line} ; ${row.comment}`);
+    labels.push({ address: row.address, name: row.name, file: "constants.asm", line: out.length });
   }
-  return `${out.join("\n")}\n`;
+  return { text: `${out.join("\n")}\n`, labels };
 }
 
 // --- Rendering --------------------------------------------------------------
+
+/** The line of a name: its label line, or its line in constants.asm (1 is the first line of the text) (D80). */
+export interface SourceLabel {
+  address: number;
+  name: string;
+  file: string;
+  line: number;
+}
+
+/** The first line of an instruction, a macro use or a data line, and the addresses that it writes (D80). */
+export interface SourceItem {
+  start: number;
+  end: number;
+  file: string;
+  line: number;
+}
 
 export interface Rendered {
   files: Array<{ name: string; text: string }>;
@@ -866,6 +877,9 @@ export interface Rendered {
   macrosAsInstructions: MacroAsInstructions[];
   /** The lines of each macro in macros.asm, from its !macro line to its closing brace. */
   macroLines: Map<string, { first: number; last: number }>;
+  /** The source map (D80): the line of each name, and the line of each address that the source writes. */
+  labels: SourceLabel[];
+  items: SourceItem[];
 }
 
 /** macros.asm (D73): each macro with its comment, as ACME reads it; a param is .name in the body. */
@@ -927,6 +941,8 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     uses: [],
     macrosAsInstructions: [...layout.macrosAsInstructions],
     macroLines: new Map(),
+    labels: [],
+    items: [],
   };
   for (const [start, reason] of asInstructions) {
     const use = layout.macroUses.get(start);
@@ -968,14 +984,21 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
       if (patch?.start === address) return;
       for (const text of lineComments.get(address) ?? []) out.push(`; ${text}`.trimEnd());
       const label = layout.names.get(address);
-      if (label !== undefined && patch === undefined) out.push(label);
+      if (label !== undefined && patch === undefined) {
+        out.push(label);
+        result.labels.push({ address, name: label, file: piece.file, line: out.length });
+      }
     };
+    const mapLine = (start: number, end: number) => result.items.push({ start, end, file: piece.file, line: out.length });
     for (const item of piece.items) {
       const itemStart = item.kind === "instruction" ? item.address : item.start;
       const opened = layout.patches.get(itemStart);
       if (opened !== undefined) {
         head(itemStart);
-        for (const address of opened.inner) out.push(`${layout.names.get(address)!} = * + ${address - opened.start}`);
+        for (const address of opened.inner) {
+          out.push(`${layout.names.get(address)!} = * + ${address - opened.start}`);
+          result.labels.push({ address, name: layout.names.get(address)!, file: piece.file, line: out.length });
+        }
         out.push(...patchOpening(opened));
         patch = opened;
         result.patches++;
@@ -1003,6 +1026,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         }
         out.push(withSide(`${INDENT}+${macroUse.macro}${macroUse.args.length === 0 ? "" : ` ${macroUse.args.join(", ")}`}`, sides.length === 0 ? undefined : sides.join(" ")));
         result.uses.push({ start: macroUse.start, end: macroUse.end, macro: macroUse.macro, file: piece.file, line: out.length });
+        mapLine(macroUse.start, macroUse.end);
         result.instructions++;
         useEnd = macroUse.end;
         continue;
@@ -1015,7 +1039,10 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         for (let offset = 1; offset < item.length; offset++) {
           const inside = item.address + offset;
           const label = layout.names.get(inside);
-          if (label !== undefined && patch === undefined) out.push(`${label} = * + ${offset}`);
+          if (label !== undefined && patch === undefined) {
+            out.push(`${label} = * + ${offset}`);
+            result.labels.push({ address: inside, name: label, file: piece.file, line: out.length });
+          }
           for (const text of lineComments.get(inside) ?? []) sides.push(text);
           if (sideComments.has(inside)) sides.push(sideComments.get(inside)!);
         }
@@ -1046,6 +1073,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
           const expression = takesAddress(mode) ? (layout.names.get(value) ?? literalOperand(item.opcode, value)) : literalOperand(item.opcode, value);
           out.push(withSide(`${INDENT}${instructionText(item.opcode, form.suffix, expression)}`, sides.length === 0 ? undefined : sides.join(" ")));
         }
+        mapLine(item.address, item.address + item.length - 1);
         result.instructions++;
         close();
         continue;
@@ -1057,6 +1085,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         const note = item.type === "undecoded" && index === 0 ? "not decoded" : undefined;
         const side = [note, sideComments.get(line.address)].filter((text) => text !== undefined).join(" ");
         out.push(withSide(`${INDENT}${line.text}`, side === "" ? undefined : side));
+        mapLine(line.address, (lines[index + 1]?.address ?? item.end + 1) - 1);
       });
       const bytes = item.end - item.start + 1;
       if (item.type === "undecoded") result.undecodedBytes += bytes;
@@ -1066,7 +1095,9 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     result.files.push({ name: piece.file, text: `${out.join("\n")}\n` });
   }
 
-  result.files.push({ name: "constants.asm", text: constantsText(layout) });
+  const constants = constantsText(layout);
+  result.files.push({ name: "constants.asm", text: constants.text });
+  result.labels.push(...constants.labels);
   if (layout.macros.length > 0) {
     const macros = macrosText(layout);
     result.files.push({ name: "macros.asm", text: macros.text });

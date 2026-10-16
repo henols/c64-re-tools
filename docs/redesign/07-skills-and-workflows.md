@@ -383,6 +383,7 @@ c64-basic
 c64-unpacker
 c64-memory-map
 c64-provenance
+c64-docs
 ```
 
 Directional changes from the current catalogue:
@@ -439,6 +440,10 @@ Interpret C64/KERNAL/BASIC/hardware addresses and register-derived locations. Pr
 ### c64-provenance
 
 Specialized workflow for distinguishing original application bytes/behavior from cracker or release-specific modifications.
+
+### c64-docs
+
+Document a program (D80): generated reference pages from the knowledge, the source map and the image, pages that the agent writes by fixed page types, and links from each name to its source line and from each address to its reference entry. Local scripts; no knowledge writes.
 
 ## 15. Handoff behavior
 

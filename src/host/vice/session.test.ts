@@ -5,7 +5,7 @@ import { after, test } from "node:test";
 import { WireFailure } from "../../protocol/messages.ts";
 import { Command } from "./binary-monitor.ts";
 import { FakeVice } from "./fake-vice.testkit.ts";
-import { readPng } from "./png.testkit.ts";
+import { readPng } from "../../graphics.testkit.ts";
 import { ViceSession, type SessionOptions } from "./session.ts";
 
 const fakes: FakeVice[] = [];

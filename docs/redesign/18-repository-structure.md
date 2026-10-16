@@ -84,7 +84,8 @@ c64-re-tools/
 │   ├── c64-basic/
 │   ├── c64-unpacker/
 │   ├── c64-memory-map/
-│   └── c64-provenance/
+│   ├── c64-provenance/
+│   └── c64-docs/
 │
 ├── distribution/
 │   └── plugin.ts
@@ -121,6 +122,10 @@ Do not turn this into a generic domain layer.
 ### src/platform.ts
 
 The C64 platform memory map: names and meanings of system variables, ROM entries and I/O registers, and the register decoders. c64-memory-map answers from it, and c64-source names addresses with it (D52). It imports only `src/c64.ts`.
+
+### src/graphics.ts
+
+Indexed images (D80): the PNG encoder of emulator frames, and sprites, bitmaps and screens of memory as images or text. The host encodes its screen captures with it, and c64-docs its graphics pages. It imports nothing of the repository.
 
 ### src/project.ts
 
@@ -586,6 +591,13 @@ c64-memory-map
 c64-provenance
   SKILL.md
   references/...
+
+c64-docs
+  SKILL.md
+  scripts/generate.ts
+  scripts/link.ts
+  references/page-types.md
+  references/style.md
 ~~~
 
 Do not add a script merely because every skill could have one.
@@ -710,9 +722,10 @@ More concretely:
 
 - mcp may import host-client, protocol and c64;
 - host-client may import protocol, c64 and project;
-- host may import protocol and c64;
+- host may import protocol, c64 and graphics;
 - knowledge may import c64 and project;
-- skill scripts may import host-client/knowledge/project/c64 as their job requires;
+- graphics (`src/graphics.ts`: the PNG encoder, and sprites and bitmaps as images, D80) imports nothing of the repository;
+- skill scripts may import host-client/knowledge/project/c64/graphics as their job requires;
 - distribution may consume built artifacts;
 - CLI may delegate to distribution/host diagnostics.
 

@@ -15,8 +15,8 @@ function areaOf(path: string): string | undefined {
   const parts = path.split("/");
   if (parts[0] === "src") {
     if (parts.length === 2) {
-      const leaf = parts[1]!.replace(/\.ts$/, "");
-      return ["c64", "package", "platform", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
+      const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
+      return ["c64", "graphics", "package", "platform", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -32,6 +32,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   c64: [],
   // The platform memory map (D52): names and meanings of C64 addresses.
   platform: ["c64"],
+  // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images (D80).
+  graphics: [],
   // The one time format (ISO 8601 at +01:00).
   time: [],
   // The opt-in trace of a process, for people. Every program may write to it.
@@ -42,7 +44,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   package: [],
   "host-client": ["protocol", "c64", "project", "trace", "package"],
   mcp: ["host-client", "protocol", "c64", "trace", "package"],
-  host: ["native", "protocol", "c64", "trace", "package"],
+  host: ["native", "protocol", "c64", "graphics", "trace", "package"],
   knowledge: ["c64", "project", "time"],
   // The error envelope of the skill scripts and the CLI. It takes other refusal classes as a parameter.
   script: ["protocol", "project", "trace"],
@@ -53,7 +55,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   distribution: ["package"],
   convert: ["knowledge"],
 };
-const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "platform", "script", "time"];
+const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "graphics", "platform", "script", "time"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.
@@ -157,6 +159,8 @@ test("checkImport refuses every forbidden direction", () => {
     ["src/knowledge/write.ts", "../trace.ts"],
     ["distribution/plugin.ts", "../src/trace.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/trace.ts"],
+    ["src/graphics.ts", "./host/vice/screen.ts"],
+    ["src/mcp/server.ts", "../graphics.ts"],
   ];
   for (const [from, specifier] of refused) {
     assert.notEqual(checkImport(from, specifier), undefined, `${from} -> ${specifier} must be refused`);
@@ -166,6 +170,8 @@ test("checkImport refuses every forbidden direction", () => {
 test("checkImport accepts every allowed direction", () => {
   const accepted: Array<[string, string]> = [
     ["src/mcp/server.ts", "../host-client/vice-session.ts"],
+    ["src/host/vice/session.ts", "../../graphics.ts"],
+    ["skills/c64-docs/scripts/generate.ts", "#src/graphics.ts"],
     ["src/mcp/tools/memory.ts", "../../c64.ts"],
     ["src/host-client/connect.ts", "../protocol/messages.ts"],
     ["src/host-client/transfer.ts", "../project.ts"],

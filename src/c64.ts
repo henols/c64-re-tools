@@ -47,6 +47,23 @@ export function prgRange(prg: Uint8Array): { start: number; end: number; body: U
   return { start, end: start + prg.length - 3, body: prg.subarray(2) };
 }
 
+/** The tables of addresses: words, or words minus 1 for an RTS dispatch; a split table has all low bytes, then all high bytes. */
+export const POINTER_TABLE_TYPES = ["addresses", "addresses-split", "rts-addresses", "rts-addresses-split"] as const;
+export type PointerTableType = (typeof POINTER_TABLE_TYPES)[number];
+
+/** The entries of a table of addresses in [start, end]: the address of each low and high byte, and the target that the entry names. */
+export function pointerTableEntries(table: { start: number; end: number; type: PointerTableType }, byteAt: (address: number) => number): Array<{ low: number; high: number; target: number }> {
+  const length = table.end - table.start + 1;
+  const split = table.type === "addresses-split" || table.type === "rts-addresses-split";
+  const minus = table.type === "rts-addresses" || table.type === "rts-addresses-split" ? 1 : 0;
+  const count = Math.floor(length / 2);
+  return Array.from({ length: count }, (_, index) => {
+    const low = split ? table.start + index : table.start + 2 * index;
+    const high = split ? table.start + count + index : low + 1;
+    return { low, high, target: ((byteAt(low) | (byteAt(high) << 8)) + minus) & 0xffff };
+  });
+}
+
 /** How 6502 code refers to an address. A pointer is code that builds the address from immediates (D65). */
 export const REFERENCE_KINDS = ["call", "jump", "read", "write", "reference", "pointer"] as const;
 export type ReferenceKind = (typeof REFERENCE_KINDS)[number];

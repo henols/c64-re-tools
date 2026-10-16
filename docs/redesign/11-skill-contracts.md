@@ -48,6 +48,7 @@ All skills follow these rules:
 | c64-unpacker | broker-backed detection + MCP when runtime depack is needed | none | unpacked subject/artifact |
 | c64-memory-map | local deterministic lookup/decoder | none | C64 address/register meaning |
 | c64-provenance | local/broker-backed comparison as required | none | release/origin comparison result |
+| c64-docs | local scripts | none | reference pages, linked and checked documentation pages (D80) |
 
 ## 4. c64-reverse-engineering
 
@@ -802,7 +803,61 @@ Do not label a byte original solely because one crack contains it.
 - analyse differing code → c64-static-analysis
 - record application conclusion → c64-knowledge
 
-## 15. Trigger design
+## 15. c64-docs
+
+### Purpose
+
+Document a program as a reader needs it: the flows, the state machines, the tables, the data formats and the graphics, with links between the pages and to the code (D80).
+
+### Inputs
+
+- the source directory of c64-source with its `source-map.json`, from the current knowledge revision;
+- the image of the source, for the tables and the graphics;
+- the documentation directory, with the reference in a directory of its own.
+
+### Tools / execution path
+
+Two local scripts. `generate.ts` writes the reference pages: one page for each module (call graph, data with readers and writers, an entry for each name with its callers and callees), and the pages of the names, the variables outside the image, the tables entry by entry, the memory map and the graphics (sprites and bitmaps in hires and in multicolour, screens as text). `link.ts` writes the links of the pages that the agent writes, and checks every link and image.
+
+### Workflow
+
+~~~text
+complete names, comments, regions and modules (c64-knowledge)
+    ↓
+generate the source and its map (c64-source)
+    ↓
+generate the reference
+    ↓
+write the pages by their types, one subsystem each
+    ↓
+link and check; record each new fact in the knowledge
+~~~
+
+### Knowledge
+
+Read:
+- symbols, regions, comments, references and modules of the space of the source.
+
+Automatic write:
+- none.
+
+A fact that a page finds goes into the knowledge first, so the source and the reference show it.
+
+### Result
+
+The reference pages, and the pages of the agent with a link from each name to its source line and from each address to its reference entry, or to its line for a place inside the name. `link.ts` reports unknown names, addresses that do not agree with the knowledge, and links to nothing.
+
+### Failure and conflicts
+
+A source or a reference older than the knowledge is refused or reported; generate them again. A page of a person in the reference directory is refused. Links to the files of a run are not made: evidence stays text.
+
+### Handoffs
+
+- record a fact → c64-knowledge
+- the source and its map → c64-source
+- a fact that needs a run → c64-testing or c64-emulator
+
+## 16. Trigger design
 
 Skill descriptions should be written so that selection follows intent.
 
@@ -816,7 +871,7 @@ Examples:
 
 Do not mention low-level internal transport or package mechanics in trigger descriptions.
 
-## 16. Script contract
+## 17. Script contract
 
 A deterministic skill script returns one structured result representing:
 

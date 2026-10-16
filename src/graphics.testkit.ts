@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { crc32, inflateSync } from "node:zlib";
 
-import type { IndexedFrame } from "./screen.ts";
+import type { IndexedFrame } from "./graphics.ts";
 
 export function readPng(png: Buffer): IndexedFrame & { palette: number[][] } {
   assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);

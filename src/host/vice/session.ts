@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { formatC64Address } from "../../c64.ts";
+import { encodePng, type IndexedFrame } from "../../graphics.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
 import { trace } from "../../trace.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
@@ -27,7 +28,7 @@ import {
 } from "./adapter.ts";
 import { decodeProgramCounter, MonitorConnectionError, MonitorError, MonitorTimeoutError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
 import { decodeCia, decodeSid, decodeSprite, decodeVicii } from "./chips.ts";
-import { compareFrames, differenceImage, encodePng, type IndexedFrame } from "./screen.ts";
+import { compareFrames, differenceImage } from "./screen.ts";
 import { launchVice, startErrorLines, type ViceMode, type ViceProcess } from "./process.ts";
 import { TextMonitorError, TextMonitorTimeoutError } from "./text-monitor.ts";
 

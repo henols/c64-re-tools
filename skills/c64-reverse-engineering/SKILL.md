@@ -73,7 +73,7 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 
 | Stage | Work | Exit check |
 |---|---|---|
-| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these: identical source, a verified loader, passed c64-testing scenarios, a list of the code that no run executed. Write the criteria in `report.md`. | The user gave the criteria. |
+| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these: identical source, a verified loader, passed c64-testing scenarios, and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. Write the criteria in `report.md`. | The user gave the criteria. |
 | 2. Get | c64-disk: list the disk. Extract the start file into `original/`. | The start file is in the project. |
 | 3. Start | c64-basic: find the SYS address of the BASIC start. | You have the entry address. |
 | 4. Unpack | c64-unpacker: examine the program. Capture a packed program into `unpacked/`. | `image.json` and `entry_state.json` exist, or the evidence shows no packer. |
@@ -82,7 +82,8 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 7. Name | c64-provenance: if the workspace has a library, find its routines with `match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
 | 8. Generate | c64-source with `--coverage` into `src/`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
 | 9. Build and test | c64-assembler with `--compare` into `build/`. c64-testing scenarios in `tests/`. | The criteria of stage 1 are true. |
-| 10. Report | Write `report.md`. | The report has all its sections. |
+| 10. Document | When the criteria ask for documentation: c64-docs into `docs/`. | `link.ts --check` of c64-docs gives no problem. |
+| 11. Report | Write `report.md`. Link to `docs/` when it exists. | The report has all its sections. |
 
 In stage 5, if you cannot get to a part of the program, ask the user how to get to it. Do stages 7 and 8 again until the source is clear. Each run of c64-source writes the source again.
 
@@ -96,6 +97,7 @@ After stage 7, save each routine that other programs can have to the library wit
 - the generated source
 - the built program and the loader
 - the c64-testing scenarios and their results
+- the documentation in `docs/`, when the criteria ask for it
 - `report.md`.
 
 ### The report
@@ -121,6 +123,7 @@ coverage/      coverage files from c64_memmap
 src/           the generated source from c64-source
 build/         programs from c64-assembler
 tests/         c64-testing scenarios and their results
+docs/          the documentation from c64-docs, with the reference in docs/reference/
 report.md      the report
 ```
 

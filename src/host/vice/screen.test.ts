@@ -1,22 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readPng } from "./png.testkit.ts";
-import { compareFrames, decodeDisplay, decodePalette, differenceImage, encodePng, visibleFrame } from "./screen.ts";
-
-test("a PNG round-trips size, palette and every pixel", () => {
-  const frame = { width: 3, height: 2, pixels: Uint8Array.from([0, 1, 2, 2, 1, 0]) };
-  const palette = [
-    [0, 0, 0],
-    [255, 255, 255],
-    [136, 0, 0],
-  ] as const;
-  const decoded = readPng(encodePng(frame, palette));
-  assert.equal(decoded.width, 3);
-  assert.equal(decoded.height, 2);
-  assert.deepEqual([...decoded.pixels], [0, 1, 2, 2, 1, 0]);
-  assert.deepEqual(decoded.palette, palette);
-  assert.throws(() => encodePng({ width: 1, height: 1, pixels: Uint8Array.from([3]) }, palette), /not in the/);
-});
+import { compareFrames, decodeDisplay, decodePalette, differenceImage, visibleFrame } from "./screen.ts";
 
 function displayBody(width: number, height: number, innerX: number, innerY: number, fill: (x: number, y: number) => number): Buffer {
   const header = Buffer.alloc(4 + 13 + 4);

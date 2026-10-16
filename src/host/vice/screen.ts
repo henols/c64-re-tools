@@ -1,17 +1,9 @@
 // Canonical emulator-frame capture: VICE's own rendered VIC-II frame, never a
 // desktop screenshot; the frame comparison and difference image for baselines.
 
-import { crc32, deflateSync } from "node:zlib";
-
+import type { IndexedFrame } from "../../graphics.ts";
 import type { VideoStandard } from "../../protocol/messages.ts";
 import { FRAME_SIZE } from "../../protocol/vice.ts";
-
-export interface IndexedFrame {
-  width: number;
-  height: number;
-  /** One palette index per pixel, row by row. */
-  pixels: Uint8Array;
-}
 
 export interface RawDisplay {
   /** Full buffer size, blanking included. */
@@ -81,39 +73,6 @@ export function decodePalette(body: Buffer): Array<[number, number, number]> {
     offset += size + 1;
   }
   return colours;
-}
-
-function chunk(type: string, data: Uint8Array): Buffer {
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(data.length, 0);
-  const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(body), 0);
-  return Buffer.concat([length, body, crc]);
-}
-
-/** Encodes an indexed frame as an 8-bit palette PNG. */
-export function encodePng(frame: IndexedFrame, palette: ReadonlyArray<readonly [number, number, number]>): Buffer {
-  for (const index of frame.pixels) {
-    if (index >= palette.length) throw new Error(`pixel colour ${index} is not in the ${palette.length}-colour palette`);
-  }
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(frame.width, 0);
-  header.writeUInt32BE(frame.height, 4);
-  header[8] = 8; // bit depth
-  header[9] = 3; // indexed colour
-  const rows = Buffer.alloc((frame.width + 1) * frame.height);
-  for (let row = 0; row < frame.height; row++) {
-    // Filter byte 0 (none), then the row.
-    rows.set(frame.pixels.subarray(row * frame.width, (row + 1) * frame.width), row * (frame.width + 1) + 1);
-  }
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", header),
-    chunk("PLTE", Buffer.from(palette.flat())),
-    chunk("IDAT", deflateSync(rows)),
-    chunk("IEND", new Uint8Array(0)),
-  ]);
 }
 
 export interface FrameDifference {

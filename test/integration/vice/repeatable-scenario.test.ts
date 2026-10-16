@@ -12,7 +12,7 @@ import { after, test } from "node:test";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { readPng } from "../../../src/host/vice/png.testkit.ts";
+import { readPng } from "../../../src/graphics.testkit.ts";
 import { FRAMES_SEEN, joystickCounterPrg, LEFT_SEEN } from "../../fixtures/prg/joystick-counter.ts";
 import { startMcp } from "../../kit.ts";
 import { liveSkip, startHost, stopHosts } from "./live.ts";
