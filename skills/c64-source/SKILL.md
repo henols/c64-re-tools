@@ -94,7 +94,7 @@ The script writes a macro use only when the use gives the bytes of the image. Fi
 `--loader` writes `loader.asm` and assembles it to `loader.prg`. The loader does these steps:
 
 1. `10 SYS 2061` starts it.
-2. It moves its copier to two free pages. The copier runs with interrupts off and with all RAM visible.
+2. It stops the interrupts and makes all RAM visible. Then it moves its copier to two free pages. Thus a copier at $a000 or higher is not read from the BASIC ROM.
 3. It copies each segment and the pages $0002-$03ff of the entry state into place. The script selects an order in which no copy writes over the packed bytes of a copy that has not run yet.
 4. It sets the display registers of the VIC-II and the VIC bank from `io` in the entry state. Then it waits for the raster line of the entry.
 5. It sets the CIA timers, their latches and the interrupt masks from `io` and `cia` in the entry state. A running timer gets the value that counts down to the timer value of the entry at the entry.

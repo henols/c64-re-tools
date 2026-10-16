@@ -212,6 +212,23 @@ test("with real ACME, the loader takes its copies and its jump from labels, so c
   assert.deepEqual([...relocated.program.subarray(at, at + 3)], [0x4c, 0x30, 0x10], "the loader jumps to the moved entry");
 });
 
+test("with real ACME, the loader stub switches the BASIC ROM out before it moves a copier at $a000 or higher", { skip: acmeSkip }, async () => {
+  // Found in a field run on a 46 KB game: with the BASIC ROM in, the stub moved ROM bytes as the copier.
+  const bytes = Array.from({ length: 0xa000 }, (_, offset) => offset & 0xff);
+  const source = input(bytes, 0x1000, { regions: [{ start: 0x1000, end: 0xafff, type: "bytes" }] });
+  const rendered = render(layout(source), new Set(), []);
+  const plan = planLoader({ segments: [{ start: 0x1000, end: 0xafff, files: ["segment_1000.asm"] }], byteAt: source.byteAt, state: state({ pc: 0x1000 }), entry: 0x1000, header: [] });
+  const files = [...rendered.files, { name: "loader.asm", text: plan.text }];
+  const contents = files.map((file) => Buffer.from(file.text));
+  const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
+  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+  const program = attachments![0]!;
+  assert.equal(program.length - 2, plan.end - 0x0801 + 1, "the plan has the size of the stub");
+  assert.deepEqual([...program.subarray(2 + 0x080d - 0x0801, 2 + 0x0812 - 0x0801)], [0x78, 0xa9, 0x34, 0x85, 0x01], "sei, lda #$34, sta $01");
+  const copierSource = result.symbols!.find((symbol) => symbol.name === "loader_copier_src")!;
+  assert.ok(copierSource.kind === "address" && copierSource.address >= 0xa000, "the copier lies under the BASIC ROM");
+});
+
 test("an entry state file is read with its flags as PLP reads them, and a wrong one is refused", () => {
   const pages = Object.fromEntries(["$0000", "$0100", "$0200", "$0300"].map((page) => [page, "00".repeat(256)]));
   const read = readEntryState(JSON.stringify({ registers: { pc: "$0810", a: 1, x: 2, y: 3, sp: 0xf0, flags: { n: true, i: true, c: true } }, cpuPort: { $00: 0x2f, $01: 0x35 }, pages }), "e.json");

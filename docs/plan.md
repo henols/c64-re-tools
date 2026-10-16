@@ -336,6 +336,17 @@ The agent must turn code of an analysed program on and off (a crack, a trainer, 
 - [x] M22.7 **Texts** — c64-knowledge, c64-source, c64-static-analysis and c64-assembler SKILL.md; 06 §4 and 11. ASD-STE100, ste-lint at 0 hard.
 - [x] M22.8 **Acceptance** — `test/e2e/switches-macros.test.ts`: a switch with three patches and one with only NOP, a macro with two uses of which one falls back; the source is `check.identical`, the switch `fits`, a build with the switch on differs only in the patched ranges, and the analyzer batch applied keeps the source identical (with ACME and Ghidra).
 
+## M23 — Bruce Lee field-run findings
+
+An agent reverse-engineered the SSG crack of *Bruce Lee* (`bruce_lee.zip`, 2026-10-16) with the skills. Each artefact that no skill made shows work outside the toolkit. Only M23.1 is decided; each other step needs a decision before it is built.
+
+- [x] M23.1 **Loader under the BASIC ROM** — the stub moved its copier from the end of the loader file with the BASIC ROM in, so a game of 46 KB got ROM bytes as its copier (the agent patched `loader.asm` in a `build.sh`). The stub now sets `$01` to `$34` before the move.
+- [ ] M23.2 **Drop ranges from a capture** — the agent wrote `unpacked/clean/` by hand: the image without the crack's leftovers at `$A000-$A9FF` and `$FE00-$FFF9`.
+- [ ] M23.3 **Asset extraction** — a 1854-line `extract_assets.py` (with a 6502 interpreter for the room setup handlers) wrote 72 files: room renders and maps, charsets, sprites, fonts, texts, tables, sound and demo input, from format notes in `local/formats*.md`. No skill extracts assets, and the knowledge has no place for data formats.
+- [ ] M23.4 **Merge of parallel naming batches** — seven agents named address ranges in parallel; `merge.py` joined their batches (owner range wins, manual names, module and file fixes, duplicate names).
+- [ ] M23.5 **Differences inside one run** — the agent computed screen, colour RAM and variable differences between the observations of a c64-testing run by hand.
+- [ ] M23.6 **Untested code by file and routine** — the report table groups `not_executed.json` by module file and routine; the agent made it by hand.
+
 ## Decisions
 
 Points the design leaves open, decided for M1. Revisit a row before changing the behavior it describes.

@@ -145,8 +145,8 @@ export const LOADER_JUMP = "c64_source_loader_jump";
 
 const LOAD = 0x0801;
 const STUB = 0x080d;
-/** sei, ldx, the 2-page move loop and jmp. */
-const STUB_SIZE = 21;
+/** sei, all RAM, ldx, the 2-page move loop and jmp. */
+const STUB_SIZE = 25;
 /** The copier code and its three variables, without the table. */
 const COPIER_CODE_SIZE = 167;
 /** The VIC-II code of the copier (D60), without its two tables of one byte per register. */
@@ -437,6 +437,9 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   lines.push(
     "!zone loader_stub {",
     "        sei",
+    // The copier lies at the end of the loader file, which can be at $a000 or higher, under the BASIC ROM.
+    "        lda #$34",
+    "        sta $01",
     "        ldx #0",
     `-       lda ${COPIER_SOURCE},x`,
     `        sta ${hex4(copier)},x`,
