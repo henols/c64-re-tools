@@ -30,7 +30,7 @@ import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/nativ
 import { describeAddress, platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { LOADER_JUMP, planLoader, rasterLine, readEntryState, simulate, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
+import { LOADER_JUMP, loaderLimits, planLoader, rasterLine, readEntryState, simulate, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
 import { OPCODES } from "./lib/opcodes.ts";
 import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Range, type Rendered } from "./lib/source.ts";
 
@@ -672,7 +672,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     stackByte: formatC64Address(loader.stackByte),
     ...ran,
     // What the loader cannot set as it was at the entry (D63).
-    ...(loader.cia === undefined || loader.cia.limits.length === 0 ? {} : { limits: loader.cia.limits }),
+    ...(loaderLimits(loader).length === 0 ? {} : { limits: loaderLimits(loader) }),
   };
   return { output, failed: !ran.verified || sourceFailed };
 }

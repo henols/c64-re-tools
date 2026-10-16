@@ -16,7 +16,7 @@ import { assemble } from "../../src/native/acme.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ciaSection, copyOrder, planLoader, readEntryState, simulate, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { ciaSection, copyOrder, loaderLimits, planLoader, readEntryState, simulate, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { MODE_LENGTH, OPCODES } from "../../skills/c64-source/scripts/lib/opcodes.ts";
 import { entriesInData, entryOutsideImage, layout, render, type SourceInput } from "../../skills/c64-source/scripts/lib/source.ts";
 import { describeAddress, platformNames } from "../../src/platform.ts";
@@ -631,6 +631,8 @@ test("the loader sets only the CIA timers that differ from the KERNAL's, and a r
   assert.equal(0x1264 - 0x1234, 12 + 4 + 33 - 1);
   assert.deepEqual(section.plan.timers[0], { cia: 1, timer: "A", control: 0x01, latch: 0x4025, counterAtJump: 0x1237 });
   assert.deepEqual(section.plan.limits, []);
+  assert.deepEqual(loaderLimits({ cia: section.plan }), []);
+  assert.match(loaderLimits({}).join("\n"), /no CIA values.*Capture the program again with c64-unpacker/, "an entry state from before D63");
 });
 
 test("a CIA timer that the loader cannot set as it was is a named limit (D63)", () => {

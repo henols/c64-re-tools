@@ -129,6 +129,17 @@ export interface LoaderPlan {
   cia?: CiaPlan;
 }
 
+/**
+ * What the loader cannot set as it was at the entry (D63). An entry state
+ * without CIA values (from a capture before D63) gives no timers at all.
+ */
+export function loaderLimits(plan: { cia?: CiaPlan }): string[] {
+  if (plan.cia === undefined) {
+    return ["The entry state has no CIA values, so the loader does not set the CIA timers. Capture the program again with c64-unpacker to get them."];
+  }
+  return plan.cia.limits;
+}
+
 /** The label of the loader's jump to the entry, in ACME's symbol list. */
 export const LOADER_JUMP = "c64_source_loader_jump";
 
