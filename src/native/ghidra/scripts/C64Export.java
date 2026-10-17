@@ -3,7 +3,7 @@
 // Writes the structural result for the loaded image: functions with the
 // source of their names, code and defined-data regions, memory references
 // from instructions, every instruction with its bytes, mnemonic, operand
-// text and flow targets (D44), and the requested decompilations within their bounds.
+// text and flow targets, and the requested decompilations within their bounds.
 //@category c64-re-tools
 
 import java.io.FileReader;

@@ -1,4 +1,4 @@
-// The machine state that a capture writes (D43): RAM, the CPU port, pages
+// The machine state that a capture writes: RAM, the CPU port, pages
 // 0-3, the chip registers read without side effects, and the vectors. The
 // capture and loads commands of the unpacker share it.
 
@@ -9,12 +9,12 @@ type Registers = Awaited<ReturnType<ViceSessionClient["registersGet"]>>;
 
 const MAX_READ = 4096;
 
-/** The I/O areas of the entry state, read without side effects (D43). */
+/** The I/O areas of the entry state, read without side effects. */
 export const IO_AREAS = { vic: [0xd000, 0x2f], sid: [0xd400, 0x1d], cia1: [0xdc00, 0x10], cia2: [0xdd00, 0x10] } as const;
 /** Frames from a hard reset to the READY prompt, with margin. */
 export const READY_FRAMES = 200;
 
-/** What no register read of a CIA gives (D63). */
+/** What no register read of a CIA gives. */
 export interface CiaHidden {
   latchA: number;
   latchB: number;
@@ -70,7 +70,7 @@ export function entryState(registers: Registers, state: MachineState, vectors: R
     cpuPort: { $00: state.port[0], $01: state.port[1] },
     pages: Object.fromEntries([0, 1, 2, 3].map((page) => [formatC64Address(page << 8), state.pages.subarray(page << 8, (page + 1) << 8).toString("hex")])),
     io: Object.fromEntries(Object.entries(IO_AREAS).map(([name, [address]]) => [name, { from: formatC64Address(address), bytes: state.io[name as keyof typeof IO_AREAS].toString("hex") }])),
-    // The CIA latches and interrupt masks: write-only on the chip, so the I/O bytes do not hold them (D63).
+    // The CIA latches and interrupt masks: write-only on the chip, so the I/O bytes do not hold them.
     cia: state.cia,
     vectors,
     ...(differsFromReset === undefined ? {} : { differsFromReset }),

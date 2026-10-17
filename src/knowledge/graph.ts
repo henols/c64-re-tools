@@ -1,4 +1,4 @@
-// The routine graph of the knowledge (D78, D80): which routine calls, jumps
+// The routine graph of the knowledge: which routine calls, jumps
 // to or dispatches through a table to which other routine, and the same
 // graph as a mermaid flowchart. The callers give the rows, so the graph needs
 // no database and the documentation and the knowledge script draw one graph.

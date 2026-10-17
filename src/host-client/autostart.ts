@@ -42,7 +42,7 @@ export async function runProgram(client: ViceSessionClient, path: string, prg: U
 /**
  * Types RUN at the READY prompt and stops where BASIC starts the first line,
  * before its SYS. Every tool that starts a loaded program this way reaches
- * its entry at the same raster line and timer values (D62). False when BASIC
+ * its entry at the same raster line and timer values. False when BASIC
  * runs no line within RUN_LIMIT_FRAMES.
  */
 export async function typeRun(client: ViceSessionClient): Promise<boolean> {

@@ -1,4 +1,4 @@
-// The c64-docs scripts (D80), run as the LLM runs them: a small project with
+// The c64-docs scripts, run as the LLM runs them: a small project with
 // knowledge, a PRG, and a source with its source map written by hand, so the
 // tests need neither ACME nor Ghidra.
 
@@ -88,7 +88,7 @@ function project(): { root: string; revision: string } {
       { op: "reference", from: "$1015", to: "$0002", kind: "write" },
     ]),
   );
-  // The program goes into the knowledge first (D83): the reference decodes its tables and draws its graphics.
+  // The program goes into the knowledge first: the reference decodes its tables and draws its graphics.
   assert.equal(knowledge(root, "image", "game.prg").status, 0);
   assert.equal(knowledge(root, "apply", "batch.json").status, 0);
   const revision = revisionOf(root);

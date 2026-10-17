@@ -37,7 +37,7 @@ export function hostEndpoints(env: NodeJS.ProcessEnv = process.env): Endpoint[] 
   return ["127.0.0.1", "host.docker.internal", "host.containers.internal"].map((host) => ({ host, port: DEFAULT_HOST_PORT }));
 }
 
-/** A host that does not run or cannot be reached is machine-unavailable for every role (D37). */
+/** A host that does not run or cannot be reached is machine-unavailable for every role. */
 function unreachable(): WireFailure {
   return new WireFailure(
     "machine-unavailable",

@@ -1,5 +1,5 @@
 // A program that writes a routine and calls it, as a relocated game does
-// with its generated playfield code (D59): no stage starts there.
+// with its generated playfield code: no stage starts there.
 //   $080d: copies 128 bytes to $9e00, then loops: JSR $0823 ; INC $4100 ; JMP $081a
 //   $0823: JMP $9e00 (a tail call: the routine returns to the loop)
 //   $9e00: INC $4101 ; RTS, NOP-padded to 128 bytes

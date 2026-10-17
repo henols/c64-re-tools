@@ -1,4 +1,4 @@
-// The loads command of c64-unpacker (D53): a program on a disk loads a second
+// The loads command of c64-unpacker: a program on a disk loads a second
 // part with the KERNAL; a capture step after each part writes what the C64
 // side changed since the capture before, and --drive the drive RAM.
 // Opt-in with C64RT_LIVE_VICE.

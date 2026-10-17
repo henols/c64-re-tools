@@ -49,7 +49,7 @@ export interface Revision {
   description?: string;
   inputHash?: string;
   toolVersion?: string;
-  /** What the change rests on (D42). */
+  /** What the change rests on. */
   evidence?: Evidence[];
 }
 
@@ -88,7 +88,7 @@ function entry<E extends HistoryEntry["entity"]>(entity: E, row: unknown, raw: R
   return result;
 }
 
-/** Revision ids sort in time order as text (D69); a current row sorts after every closed one. */
+/** Revision ids sort in time order as text; a current row sorts after every closed one. */
 function bySequence(a: HistoryEntry, b: HistoryEntry): number {
   return compareText(a.from, b.from) || compareText(a.to ?? "~", b.to ?? "~");
 }

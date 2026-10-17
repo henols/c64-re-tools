@@ -1,5 +1,5 @@
 // Current-state knowledge queries. A project without knowledge
-// reads as empty knowledge. Each query reads one address space (D53); the
+// reads as empty knowledge. Each query reads one address space; the
 // default is the C64.
 
 import type { DatabaseSync } from "node:sqlite";
@@ -22,7 +22,7 @@ export interface RegionRow {
   start: number;
   end: number;
   type: RegionType;
-  /** Bytes per element of a table; the length is a multiple of it (D42). */
+  /** Bytes per element of a table; the length is a multiple of it. */
   element?: number;
   origin: Origin;
   revision: string;
@@ -46,7 +46,7 @@ export interface ReferenceRow {
   revision: string;
 }
 
-/** A place that a user/LLM removal blocks for every analyzer (D36). `to` and `kind` are set for a reference only. */
+/** A place that a user/LLM removal blocks for every analyzer. `to` and `kind` are set for a reference only. */
 export interface SuppressionRow {
   space: Space;
   entity: SuppressionEntity;
@@ -58,7 +58,7 @@ export interface SuppressionRow {
   revision: string;
 }
 
-/** Where a file of the generated source starts (D48): it runs to the next module or the end of its segment. */
+/** Where a file of the generated source starts: it runs to the next module or the end of its segment. */
 export interface ModuleRow {
   space: Space;
   start: number;
@@ -69,7 +69,7 @@ export interface ModuleRow {
 }
 
 /**
- * How the operand of the instruction at `address` is written (D65): a byte
+ * How the operand of the instruction at `address` is written: a byte
  * (lo, hi) or the value of a symbol plus an offset, or expression text (expr).
  */
 export interface OperandRow {
@@ -86,7 +86,7 @@ export interface OperandRow {
 
 /**
  * Code that replaces [start, end] when the build defines the switch as 1
- * (D72). The code fits the range; NOP fills the rest. Empty code is only NOP.
+ *. The code fits the range; NOP fills the rest. Empty code is only NOP.
  */
 export interface PatchRow {
   space: Space;
@@ -99,7 +99,7 @@ export interface PatchRow {
   revision: string;
 }
 
-/** An ACME macro of the generated source (D73). The body names a parameter with a dot in front: .dst. */
+/** An ACME macro of the generated source. The body names a parameter with a dot in front: .dst. */
 export interface MacroRow {
   space: Space;
   name: string;
@@ -110,7 +110,7 @@ export interface MacroRow {
   revision: string;
 }
 
-/** The instructions in [start, end] written as one use of a macro, with one expression for each parameter (D73). */
+/** The instructions in [start, end] written as one use of a macro, with one expression for each parameter. */
 export interface MacroUseRow {
   space: Space;
   start: number;
@@ -236,7 +236,7 @@ export function toMacroUse(row: Raw): MacroUseRow {
   };
 }
 
-/** The id of the newest revision, or "0" when the knowledge has none (D69). */
+/** The id of the newest revision, or "0" when the knowledge has none. */
 export function currentRevision(db: DatabaseSync | undefined): string {
   if (db === undefined) return "0";
   return (db.prepare("SELECT max(id) AS id FROM revisions").get() as { id: string | null }).id ?? "0";
@@ -246,7 +246,7 @@ export function currentRevision(db: DatabaseSync | undefined): string {
 const NAMED_REVISIONS = 5;
 
 /**
- * The revision that `text` names (D69): "0" (no revision), a full revision id,
+ * The revision that `text` names: "0" (no revision), a full revision id,
  * or a start of an id that only one revision has.
  */
 export function resolveRevision(db: DatabaseSync | undefined, text: string): string {
@@ -271,7 +271,7 @@ export function symbolNamed(db: DatabaseSync | undefined, name: string, space: S
   return row === undefined ? undefined : toSymbol(row);
 }
 
-/** The analyzer names at an address (D74): one for each analyzer, in the order heuristic, Ghidra, DXA. */
+/** The analyzer names at an address: one for each analyzer, in the order heuristic, Ghidra, DXA. */
 export function analyzerNamesAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): SymbolRow[] {
   if (db === undefined) return [];
   return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND address = ?`).all(space, address) as Raw[]).map(toSymbol).sort(byAnalyzer);
@@ -283,7 +283,7 @@ export function analyzerNamed(db: DatabaseSync | undefined, name: string, space:
   return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map(toSymbol).sort(byAnalyzer);
 }
 
-/** The analyzers in the order that their names are used when no other name exists (D74). */
+/** The analyzers in the order that their names are used when no other name exists. */
 export const ANALYZER_NAME_ORDER: readonly Origin[] = ["heuristic", "ghidra", "dxa"];
 const byAnalyzer = (a: SymbolRow, b: SymbolRow) => a.address - b.address || ANALYZER_NAME_ORDER.indexOf(a.origin) - ANALYZER_NAME_ORDER.indexOf(b.origin);
 
@@ -400,18 +400,18 @@ export interface AddressKnowledge {
   space: Space;
   address: number;
   symbol?: SymbolRow;
-  /** The second names that analyzers gave the address (D74). */
+  /** The second names that analyzers gave the address. */
   analyzerNames: SymbolRow[];
   /** The current region that contains the address. */
   region?: RegionRow;
   comments: CommentRow[];
   referencesFrom: ReferenceRow[];
   referencesTo: ReferenceRow[];
-  /** How the operand of the instruction here is written (D65). */
+  /** How the operand of the instruction here is written. */
   operand?: OperandRow;
-  /** The patch whose range holds the address (D72). */
+  /** The patch whose range holds the address. */
   patch?: PatchRow;
-  /** The macro use whose range holds the address (D73). */
+  /** The macro use whose range holds the address. */
   macroUse?: MacroUseRow;
   /** What user/LLM removals block here for the analyzers. */
   suppressions: SuppressionRow[];
@@ -449,7 +449,7 @@ export interface Range {
 
 const ALL: Range = { start: 0x0000, end: 0xffff };
 
-/** Rows of these origins only; undefined keeps every origin (D42). */
+/** Rows of these origins only; undefined keeps every origin. */
 export type OriginFilter = readonly Origin[] | undefined;
 const kept = (origins: OriginFilter) => (row: { origin: Origin }) => origins === undefined || origins.includes(row.origin);
 

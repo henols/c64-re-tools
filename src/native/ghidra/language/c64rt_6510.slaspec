@@ -265,7 +265,7 @@ REL: target      is rel [ target = inst_next + rel; ] { export *:2 target; }
 # BRK skips its padding byte: the return address is two bytes on.
 # The vector at $FFFE is in ROM unless the program banks the KERNAL out, and
 # the analysis cannot know the banking. Thus BRK ends the flow, and Ghidra
-# does not follow the RAM bytes at $FFFE of a flat image (R2-07).
+# does not follow the RAM bytes at $FFFE of a flat image.
 :BRK is op=0x00 {
 	*:2 (SP - 1) = inst_next + 1;
 	SP = SP - 2;

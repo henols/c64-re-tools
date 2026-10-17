@@ -122,7 +122,7 @@ test("an operation refuses a field it does not take, also inside a nested object
   assert.throws(() => validateViceParams("snapshot", { action: "list", name: "a" }), unknown("name"));
   assert.throws(() => validateViceParams("breakpoint", { action: "list", space: "c64" }), unknown("space"));
   assert.throws(() => validateViceParams("breakpoint", { action: "add", address: 0, space: "c64", access: "read" }), unknown("access"));
-  assert.deepEqual(validateViceParams("breakpoint", { action: "add", address: 0xc000, space: "c64", size: 128 }), { action: "add", address: 0xc000, space: "c64", size: 128 }, "a breakpoint over a range (D43)");
+  assert.deepEqual(validateViceParams("breakpoint", { action: "add", address: 0xc000, space: "c64", size: 128 }), { action: "add", address: 0xc000, space: "c64", size: 128 }, "a breakpoint over a range");
   assert.throws(() => validateViceParams("breakpoint", { action: "add", address: 0xffff, space: "c64", size: 2 }), /inside \$0000-\$ffff/);
   assert.throws(() => validateViceParams("observe", { memory: [{ ...range, extra: 1 }] }), unknown("extra"));
   assert.throws(() => validateViceParams("memoryCompare", { left: { address: 0, space: "c64", view: "cpu", bank: 1 }, right: { address: 0, space: "c64", view: "cpu" }, size: 1 }), unknown("bank"));
@@ -302,7 +302,7 @@ test("advance-frames needs a count and run-until targets are validated", () => {
     count: 20,
     space: "c64",
   });
-  // An anchor keeps the frames of one timeline across stops (D62).
+  // An anchor keeps the frames of one timeline across stops.
   assert.deepEqual(validateViceParams("execution", { action: "advance-frames", count: 2, space: "c64", anchor: { line: 251, cycle: 3 } }).anchor, { line: 251, cycle: 3 });
   assert.throws(() => validateViceParams("execution", { action: "step", space: "c64", anchor: { line: 1, cycle: 1 } }), /anchor is not used with action step/);
   assert.throws(() => validateViceParams("execution", { action: "advance-frames", count: 1, space: "c64", anchor: { line: 512, cycle: 0 } }), /anchor needs line/);
@@ -428,7 +428,7 @@ test("petcat.decode takes only the program and validates its result", () => {
   assert.throws(() => validateToolResult("petcat.decode", { ...decoded, handoffs: [{ kind: "sys", line: 10, address: 1, computed: true }] }, []), ProtocolError);
 });
 
-test("a refusal that only the user can fix ends with the stop instruction once (D37)", () => {
+test("a refusal that only the user can fix ends with the stop instruction once", () => {
   assert.equal(shownMessage({ code: "installation-incomplete", message: "dxa is not installed." }), `dxa is not installed. ${STOP_AND_ASK}`);
   assert.equal(withStopAndAsk(withStopAndAsk("The host runtime is not running.")), `The host runtime is not running. ${STOP_AND_ASK}`);
   assert.equal(shownMessage({ code: "machine-unavailable", message: "The VICE window closed." }), "The VICE window closed.", "other refusals keep their own advice");

@@ -106,7 +106,7 @@ async function main(): Promise<number> {
   }
   log(`VICE ${vice.major}.${vice.minor}${vice.revision === undefined ? "" : ` r${vice.revision}`} starts`);
   const flaws = viceFlaws(vice);
-  // A known VICE flaw is named, not worked around (D56).
+  // A known VICE flaw is named, not worked around.
   for (const flaw of flaws) log(`Known VICE flaw: ${flaw}`);
 
   let server;
@@ -119,7 +119,7 @@ async function main(): Promise<number> {
         supervisor,
         log,
         flaws,
-        // c1541 lists the disk, so an autostart index selects a program (R2-08).
+        // c1541 lists the disk, so an autostart index selects a program.
         directory: async (imageType, image) => {
           const { result } = await inspect({ action: "directory", imageType }, image, { supervisor, signal: new AbortController().signal, log });
           return result.action === "directory" ? result.entries : [];

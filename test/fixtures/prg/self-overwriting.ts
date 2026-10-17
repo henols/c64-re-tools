@@ -1,4 +1,4 @@
-// A release in the shape of a cracked game (F-17): a "1993 SYS π*656" line
+// A release in the shape of a cracked game: a "1993 SYS π*656" line
 // with the start code right after it and no end marker; a stub that copies a
 // mover to $0340 and jumps there; the mover copies the payload to $0801, over
 // the stub; the payload copies its last part over its own start code and

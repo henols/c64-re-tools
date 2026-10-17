@@ -12,6 +12,6 @@ test("petcat's listing lines become number and text", () => {
   assert.throws(() => parseListing("-{$e9}{blu};_"), (error: unknown) => error instanceof WireFailure && error.code === "operation-failed");
 });
 
-test("petcat's ~ for the π token shows as π (F-13)", () => {
+test("petcat's ~ for the π token shows as π", () => {
   assert.deepEqual(parseListing("   20 sys~*656\n"), [{ number: 20, text: "sysπ*656" }]);
 });

@@ -1,10 +1,10 @@
-// 6502 idioms that hide code from a disassembler (D44): RTS dispatch tables,
+// 6502 idioms that hide code from a disassembler: RTS dispatch tables,
 // JMP tables and BIT skips are found by their exact instruction patterns and
 // become heuristic findings and entry points; DOP padding and self-modified
 // opcodes are only reported. The CBM80 header of a cartridge bank at $8000
-// gives its two start vectors as entry points (F-29). A self-modified opcode is one that one run wrote
-// and executed, in either order, since a coverage file holds no order (R3-04):
-// a copier's writes in one run and their execution in another do not count (F-16). A table's length is not known statically: entries
+// gives its two start vectors as entry points. A self-modified opcode is one that one run wrote
+// and executed, in either order, since a coverage file holds no order:
+// a copier's writes in one run and their execution in another do not count. A table's length is not known statically: entries
 // count while each target is a plausible instruction in the program.
 
 import { COVERAGE } from "#src/c64.ts";
@@ -43,7 +43,7 @@ const word = (byteAt: ImageByte, address: number) => {
   return low === undefined || high === undefined ? undefined : low | (high << 8);
 };
 
-/** `covered` is the coverage of the knowledge (D83): the joined map, and the addresses that one run wrote and executed. */
+/** `covered` is the coverage of the knowledge: the joined map, and the addresses that one run wrote and executed. */
 export function findIdioms(byteAt: ImageByte, range: { start: number; end: number }, covered?: { map: Uint8Array; selfModified: Uint8Array }): Idioms {
   const coverage = covered?.map;
   const regions: NormalizedFindings["regions"] = [];

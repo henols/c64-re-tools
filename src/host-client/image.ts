@@ -1,5 +1,5 @@
 // An image.json of the c64-unpacker skill (a 64 KiB memory and its segments)
-// or a PRG, read from the project to put it into the knowledge (D83).
+// or a PRG, read from the project to put it into the knowledge.
 
 import { posix } from "node:path";
 

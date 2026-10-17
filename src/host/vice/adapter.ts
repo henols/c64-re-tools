@@ -261,7 +261,7 @@ function unknownForm(what: string, lines: string[]): WireFailure {
   return new WireFailure("operation-failed", `VICE printed the ${what} in a form that c64-re-tools does not read: ${JSON.stringify(lines.slice(0, 3))}`);
 }
 
-/** The coverage byte (D40) of one memmap row's I/O, ROM and RAM columns, each "rwx" with "-" for no access. */
+/** The coverage byte of one memmap row's I/O, ROM and RAM columns, each "rwx" with "-" for no access. */
 export function memmapFlags(io: string, rom: string, ram: string): number {
   let flags = 0;
   if (ram[0] === "r") flags |= COVERAGE.ramRead;
@@ -435,7 +435,7 @@ export class ViceAdapter {
 
   /**
    * The timer latches and the interrupt mask of the CIA at `base`, from VICE's
-   * text-monitor dump: no register read gives them (D63).
+   * text-monitor dump: no register read gives them.
    */
   async ciaHidden(base: 0xdc00 | 0xdd00): Promise<CiaHidden> {
     const answer = await this.#computerText(`io ${hex4(base)}`);

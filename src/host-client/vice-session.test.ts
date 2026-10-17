@@ -41,7 +41,7 @@ test("a malformed result is refused and the connection dropped", async () => {
   await assert.rejects(client.status(), failsWith("machine-state-lost"));
 });
 
-test("losing the host before the emulator answered fails pending and later operations as a call to do again (D57)", async () => {
+test("losing the host before the emulator answered fails pending and later operations as a call to do again", async () => {
   const env = await fakeHost((socket) => socket.destroy());
   const client = await ViceSessionClient.open({ videoStandard: "pal", env });
   await assert.rejects(client.registersGet("c64"), (error: unknown) => {
@@ -53,7 +53,7 @@ test("losing the host before the emulator answered fails pending and later opera
   assert.equal(client.lost, true);
 });
 
-test("a lost session tells whether it served calls and whether a call got the loss (D57)", async () => {
+test("a lost session tells whether it served calls and whether a call got the loss", async () => {
   // A host that answers warp and then drops the connection on the next request.
   let requests = 0;
   const env = await fakeHost((socket, request) => {

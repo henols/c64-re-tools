@@ -116,7 +116,7 @@ test("every address in $d000-$dfff says that it is visible only while $01 maps I
   assert.deepEqual(visible, [true, true, true, true, false, false]);
 });
 
-test("the platform names are symbols, each name once (D52)", () => {
+test("the platform names are symbols, each name once", () => {
   const names = platformNames();
   assert.ok(names.every((item) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(item.name)));
   assert.equal(new Set(names.map((item) => item.name)).size, names.length);
@@ -124,7 +124,7 @@ test("the platform names are symbols, each name once (D52)", () => {
   assert.ok(names.some((item) => item.name === "CHROUT" && item.address === 0xffd2));
 });
 
-test("export writes the platform names as an ACME include that ACME reads (D52)", { skip: acmeSkip }, async () => {
+test("export writes the platform names as an ACME include that ACME reads", { skip: acmeSkip }, async () => {
   const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memmap.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "export", "--out", "src/hw.asm"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);

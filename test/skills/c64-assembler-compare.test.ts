@@ -1,4 +1,4 @@
-// The byte check of a build (D47): against the program in the knowledge (D83),
+// The byte check of a build: against the program in the knowledge,
 // segment by segment.
 
 import assert from "node:assert/strict";

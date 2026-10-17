@@ -124,9 +124,9 @@ export interface SessionOptions {
   launch?: ViceLauncher;
   /** Makes the host remove a path if it dies; returns the release. */
   ownPath?: (path: string) => () => void;
-  /** The known flaws of this VICE version (D56); keyboard and joystick results name them. */
+  /** The known flaws of this VICE version; keyboard and joystick results name them. */
   flaws?: readonly string[];
-  /** Lists the entries of a disk image, so an autostart index is checked first (R2-08). Without it, VICE gets the index unchecked. */
+  /** Lists the entries of a disk image, so an autostart index is checked first. Without it, VICE gets the index unchecked. */
   directory?: DiskDirectory;
 }
 
@@ -394,7 +394,7 @@ export class ViceSession implements ViceSessionHandle {
           this.#cartridge = false;
           this.#replaceStaged("cartridge", undefined);
         }
-        // Port 1 shares the keyboard lines: a held direction types keys into the RUN that the autostart types (R3-05).
+        // Port 1 shares the keyboard lines: a held direction types keys into the RUN that the autostart types.
         const centred: Array<1 | 2> = [];
         for (const [port, joystick] of this.#joysticks) {
           if (joystick.direction === "center" && !joystick.fire) continue;
@@ -681,7 +681,7 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   /**
-   * A trace (D76): runs the machine for up to `frames` frames, counted as
+   * A trace: runs the machine for up to `frames` frames, counted as
    * #runFrames counts them, with a stopping checkpoint for each point. At each
    * hit the session records the instruction, its registers and the raster
    * position, and runs on. It ends at the frame limit, at `maxHits` hits, or
@@ -887,7 +887,7 @@ export class ViceSession implements ViceSessionHandle {
       if (expression !== undefined) await this.#machine.setCondition(checkpoint, expression);
       const outcome = await this.#runFrames(params.timeoutFrames, { checkpoint, deferred });
       const stopReason = outcome.end === "frames" ? "timeout" : outcome.end;
-      // A stop event carries the computer's PC; a stop in the drive reports the drive's (F-31).
+      // A stop event carries the computer's PC; a stop in the drive reports the drive's.
       const pc = outcome.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc;
       return { reached: stopReason === "target", stopReason, state: "stopped", pc, space: outcome.space, ...(outcome.pointId === undefined ? {} : { pointId: outcome.pointId }) };
     } finally {
@@ -954,7 +954,7 @@ export class ViceSession implements ViceSessionHandle {
     if (params.action === "list") return { breakpoints: [...this.#breakpoints.values()].map(publicView) };
     if (params.action === "remove") return this.#removePoint(this.#breakpoints, "breakpoint", params.id);
     if (params.action !== "add") return publicView(await this.#changePoint(this.#breakpoints, "breakpoint", params));
-    // A breakpoint over a range stops at the first instruction executed in it: exec, not a watch (D43).
+    // A breakpoint over a range stops at the first instruction executed in it: exec, not a watch.
     const added = await this.#addPoint({
       ...(params.size === undefined ? pointRange({ address: params.address }) : { start: params.address, end: params.address + params.size - 1, operation: 0x04 }),
       space: params.space,
@@ -1155,7 +1155,7 @@ export class ViceSession implements ViceSessionHandle {
     return { restored: true, state: "stopped" };
   }
 
-  /** A snapshot as bytes (D41): export a named one into `reply`, or restore from the attached .vsf. */
+  /** A snapshot as bytes: export a named one into `reply`, or restore from the attached .vsf. */
   async #snapshotFile(params: ViceOperations["snapshotFile"]["params"], attachments: Buffer[], reply: Buffer[]): Promise<ViceOperations["snapshotFile"]["result"]> {
     if (params.action === "export") {
       const file = this.#snapshots.get(params.name);
@@ -1165,7 +1165,7 @@ export class ViceSession implements ViceSessionHandle {
       return { exported: true, bytes: bytes.length };
     }
     const bytes = onlyAttachment(attachments);
-    // Checked before the machine stops: VICE gives no reason for a file that is no snapshot (F-07).
+    // Checked before the machine stops: VICE gives no reason for a file that is no snapshot.
     if (!bytes.subarray(0, VSF_MAGIC.length).equals(VSF_MAGIC)) throw new WireFailure("invalid-input", "The file is not a VICE snapshot file (.vsf). Give a file that c64_snapshot save wrote.");
     const file = this.#stage(bytes, "vsf");
     try {
@@ -1559,7 +1559,7 @@ async function setPoint(
 /**
  * Refuses an autostart index that selects no program: VICE numbers the
  * entries from 1, and the caller from 0, as the c64-disk directory list does.
- * A DEL entry holds no program (R2-08), and an index past the last entry selects nothing.
+ * A DEL entry holds no program, and an index past the last entry selects nothing.
  */
 function checkDirectoryEntry(entries: DiskFile[], index: number): void {
   const entry = entries[index - 1];

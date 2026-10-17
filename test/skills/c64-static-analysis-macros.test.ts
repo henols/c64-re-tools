@@ -1,4 +1,4 @@
-// Macro candidates (D73): runs of instructions that a macro of the fixed
+// Macro candidates: runs of instructions that a macro of the fixed
 // catalogue writes as one line, found in code regions and only reported.
 
 import assert from "node:assert/strict";

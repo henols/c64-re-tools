@@ -85,7 +85,7 @@ test("only differences outside the explicit tolerance count", () => {
   );
 });
 
-test("an excluded byte does not count, and steps for one side and the new step kinds check (D46)", () => {
+test("an excluded byte does not count, and steps for one side and the new step kinds check", () => {
   const observation = (bytes: number[]) => ({ memory: [{ label: "$d01e (2 bytes)", address: 0xd01e, bytes, tolerance: 0, excluded: [{ offset: 0, at: "$d01e", reason: "latched collision, not writable" }] }], registers: {} });
   assert.deepEqual(compare(new Map([["c", observation([1, 5])]]), new Map([["c", observation([0, 5])]])), [], "the excluded first byte differs");
   assert.equal(compare(new Map([["c", observation([1, 5])]]), new Map([["c", observation([1, 6])]])).length, 1, "the second byte still counts");
@@ -170,7 +170,7 @@ test("each step is checked before the scenario runs", () => {
     assert.throws(() => readScenario(scenarioFile(`${name}.json`, { ...valid, steps: [step, observe] })), ScenarioError, name);
   }
   assert.throws(() => readScenario(scenarioFile("standard.json", { ...valid, videoStandard: "secam" })), ScenarioError);
-  // The NTSC frame is 247 lines high: a mask of 384x247 covers it, and on PAL it leaves 25 lines (b2/03).
+  // The NTSC frame is 247 lines high: a mask of 384x247 covers it, and on PAL it leaves 25 lines.
   const ntscMask = { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 384, height: 247 }] } };
   assert.throws(() => readScenario(scenarioFile("ntsc-mask.json", { ...valid, videoStandard: "ntsc", steps: [ntscMask] })), /covers the whole screen/);
   assert.doesNotThrow(() => readScenario(scenarioFile("pal-mask.json", { ...valid, steps: [ntscMask] })));
@@ -227,7 +227,7 @@ test("the checklist refuses a bad scenario or no scenario as invalid input, with
   }
 });
 
-test("a run refuses a bad call before it opens an emulator (D45)", () => {
+test("a run refuses a bad call before it opens an emulator", () => {
   const script = resolvePath(home, "skills/c64-testing/scripts/run.ts");
   const call = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   writeFileSync(join(project, "run.json"), JSON.stringify({ name: "r", start: { program: "game.prg" }, steps: [{ screen: "../escape" }] }));
@@ -238,7 +238,7 @@ test("a run refuses a bad call before it opens an emulator (D45)", () => {
   }
 });
 
-test("diff gives the changed ranges of two memory files and the changed items of two observations of one run (D77)", () => {
+test("diff gives the changed ranges of two memory files and the changed items of two observations of one run", () => {
   // The Bruce Lee run: the agent wrote the same diff script about six times.
   const ranges = changedRanges(Uint8Array.from([1, 2, 3, 4, 5, 6]), Uint8Array.from([1, 9, 3, 4, 8, 8]), 0xc000);
   assert.deepEqual(ranges, { changedBytes: 3, ranges: [{ start: 0xc001, end: 0xc001, a: "02", b: "09" }, { start: 0xc004, end: 0xc005, a: "0506", b: "0808" }] });

@@ -1,4 +1,4 @@
-// The c64-testing run script (D45): runs steps in its own emulator, from a
+// The c64-testing run script: runs steps in its own emulator, from a
 // program or a snapshot file, and writes what the steps ask for into a
 // directory: screens, coverage maps, snapshot files, and results.json with
 // the observations. One side, no comparison. Exit status: 0 when every step
@@ -165,7 +165,7 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
         write(`${step.coverage}.bin`, await readCoverage(client));
         await client.memmap({ action: "clear" });
       } else if ("trace" in step) {
-        // A trace (D76): every hit of the points while the program runs on, to <name>.json.
+        // A trace: every hit of the points while the program runs on, to <name>.json.
         const points = step.points.map((point) => ({ kind: point.kind, start: at(point.at), end: at(point.end ?? point.at) }));
         if (points.some((point) => point.end < point.start)) throw new UsageError(`the trace ${step.trace} has a point whose end is before its start`);
         const traced = await client.trace({ points, frames: step.frames, maxHits: step.maxHits ?? MAX_TRACE_HITS });
@@ -178,7 +178,7 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
       } else if ("observe" in step) {
         const seen: Record<string, unknown> = {};
         if (step.memory === "all") {
-          // All 64 KiB of RAM, also under the ROMs and the I/O area, as one file (M23.9).
+          // All 64 KiB of RAM, also under the ROMs and the I/O area, as one file.
           write(`${step.observe}.bin`, await readMemoryInParts(client, 0x0000, 0x10000, "ram"));
           seen.memory = { file: `${step.observe}.bin` };
         } else if (step.memory !== undefined) {

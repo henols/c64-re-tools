@@ -1,4 +1,4 @@
-// c64-docs link.ts (D80): links the name mentions of the documentation to the
+// c64-docs link.ts: links the name mentions of the documentation to the
 // source and the reference, and checks every link and image of the pages.
 // With --check it writes nothing and fails when a page is not up to date.
 

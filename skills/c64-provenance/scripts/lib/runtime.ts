@@ -1,4 +1,4 @@
-// Runtime evidence for the differences between releases (D50): each release
+// Runtime evidence for the differences between releases: each release
 // runs in its own emulator, and each differing range gets its first access
 // (read, write, execute or none) and whether its bytes changed by the end.
 // Watchpoints and range breakpoints stop the run at an access; the coverage
@@ -112,7 +112,7 @@ export async function watchRelease(
    * After a stop: the ranges that the coverage shows accessed get their first
    * access, and lose their points. VICE marks only the opcode byte of an
    * executed instruction, so an instruction that starts up to two bytes before
-   * a range, or in it, executes its operand bytes too (F-27).
+   * a range, or in it, executes its operand bytes too.
    */
   const settle = async (): Promise<boolean> => {
     const map = await readCoverage(client);

@@ -1,4 +1,4 @@
-// The committed knowledge as text (D69): .c64-re-tools/knowledge/ holds
+// The committed knowledge as text: .c64-re-tools/knowledge/ holds
 // revisions.jsonl and one <table>.jsonl for each fact table. Each line is one
 // JSON object with its keys in a fixed order, and the lines are sorted, so a
 // change of the knowledge is a small diff and git can join the work of two
@@ -83,7 +83,7 @@ const origin = field("origin", "origin", "text");
 /** The fact tables. Each line has `id`, these fields, then `added` and `closed` (the revisions; closed is null while the row is current). */
 export const TABLES: readonly TableSpec[] = [
   { table: "symbols", file: "symbols.jsonl", sort: "address", fields: [space, field("address", "address", "address"), field("name", "name", "text"), field("kind", "kind", "text"), origin] },
-  // The names that analyzers give: a second name of an address, for reference (D74).
+  // The names that analyzers give: a second name of an address, for reference.
   { table: "analyzer_names", file: "analyzer_names.jsonl", sort: "address", fields: [space, field("address", "address", "address"), field("name", "name", "text"), field("kind", "kind", "text"), origin] },
   {
     table: "regions",
@@ -163,16 +163,16 @@ export const TABLES: readonly TableSpec[] = [
     sort: "start_address",
     fields: [space, field("start", "start_address", "address"), field("end", "end_address", "address"), field("macro", "macro", "text"), field("args", "args", "text"), origin],
   },
-  // The program itself (D83): its bytes, at most 64 to a row, so a changed byte changes one line.
+  // The program itself: its bytes, at most 64 to a row, so a changed byte changes one line.
   { table: "memory", file: "memory.jsonl", sort: "address", fields: [space, field("at", "address", "address"), field("bytes", "bytes", "hex"), origin] },
-  // Where the program starts, the machine state there, and the stages of its unpacker (D83).
+  // Where the program starts, the machine state there, and the stages of its unpacker.
   {
     table: "entries",
     file: "entry.jsonl",
     sort: "address",
     fields: [space, field("entry", "address", "address"), field("state", "state", "json", true), field("stages", "stages", "json", true), origin],
   },
-  // What the runs did: the union of the coverage maps as ranges of one kind each (D83).
+  // What the runs did: the union of the coverage maps as ranges of one kind each.
   { table: "coverage", file: "coverage.jsonl", sort: "start_address", fields: [space, field("kind", "kind", "text"), field("start", "start_address", "address"), field("end", "end_address", "address"), origin] },
 ];
 

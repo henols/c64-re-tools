@@ -31,7 +31,7 @@ const b: Batch = {
   ],
 };
 
-test("join keeps the owner's name and comment, follows replaced names into operands, and puts the owner's regions last (D79)", () => {
+test("join keeps the owner's name and comment, follows replaced names into operands, and puts the owner's regions last", () => {
   const joined = joinBatches([a, b]);
   assert.deepEqual(joined.clashes, []);
   const of = (op: string) => joined.ops.filter((write) => write.op === op);

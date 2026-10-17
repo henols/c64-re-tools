@@ -1,4 +1,4 @@
-// Traces (D76): checkpoints that record each hit while the program runs on,
+// Traces: checkpoints that record each hit while the program runs on,
 // with the instruction, its registers and the raster position. Opt-in with
 // C64RT_LIVE_VICE.
 

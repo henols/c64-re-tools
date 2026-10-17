@@ -87,12 +87,12 @@ import {
 } from "./schema.ts";
 import { newRevisionId, rowId, sqlName } from "./text.ts";
 
-/** What a change rests on (D42): a coverage run, a test or another project file with its SHA-256, or a note. */
+/** What a change rests on: a coverage run, a test or another project file with its SHA-256, or a note. */
 export interface Evidence {
   kind: EvidenceKind;
   ref: string;
   sha256?: string;
-  /** The space that a coverage map was imported into (D86); none is the C64, as for a row. */
+  /** The space that a coverage map was imported into; none is the C64, as for a row. */
   space?: Space;
 }
 
@@ -105,7 +105,7 @@ export interface WriteContext {
   expectedRevision?: string;
   /** Kept with the revision when the write changes something. */
   evidence?: Evidence[];
-  /** The image that an operand, patch or macro use write is checked against (D65, D72, D73). */
+  /** The image that an operand, patch or macro use write is checked against. */
   image?: OperandImage;
 }
 
@@ -188,7 +188,7 @@ export class Change {
     this.#db = db;
     this.#context = context;
     this.#operation = operation;
-    // A merge of two computers' work can leave conflicts: only a merge revision writes then (D69).
+    // A merge of two computers' work can leave conflicts: only a merge revision writes then.
     const found = operation === "merge" ? [] : conflicts(db);
     if (found.length > 0) {
       throw new KnowledgeError(
@@ -205,7 +205,7 @@ export class Change {
     }
   }
 
-  /** The id of this write's revision, created on first use with its evidence (D69: an id that sorts after every revision). */
+  /** The id of this write's revision, created on first use with its evidence (an id that sorts after every revision). */
   id(): string {
     if (this.revision !== null) return this.revision;
     const now = new Date();
@@ -243,7 +243,7 @@ export class Change {
     this.#db.prepare("INSERT INTO symbols (id, space, address, name, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)").run(this.#rowId(), row.space, row.address, row.name, row.kind, row.origin, this.id());
   }
 
-  /** A second name of an address from an analyzer (D74). */
+  /** A second name of an address from an analyzer. */
   insertAnalyzerName(row: Omit<SymbolRow, "revision">): void {
     this.#db.prepare("INSERT INTO analyzer_names (id, space, address, name, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)").run(this.#rowId(), row.space, row.address, row.name, row.kind, row.origin, this.id());
   }
@@ -302,19 +302,19 @@ export class Change {
       .run(this.#rowId(), row.space, row.entity, row.start, row.end, row.to ?? null, row.kind ?? null, row.origin, this.id());
   }
 
-  /** Bytes of the program (D83), as hex digits. */
+  /** Bytes of the program, as hex digits. */
   insertMemory(row: { space: Space; address: number; bytes: string; origin: Origin }): void {
     this.#db.prepare("INSERT INTO memory (id, space, address, bytes, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?)").run(this.#rowId(), row.space, row.address, row.bytes, row.origin, this.id());
   }
 
-  /** The entry of the program, with the machine state and the unpacker stages as JSON text when it has them (D83). */
+  /** The entry of the program, with the machine state and the unpacker stages as JSON text when it has them. */
   insertEntry(row: { space: Space; address: number; state: string | null; stages: string | null; origin: Origin }): void {
     this.#db
       .prepare("INSERT INTO entries (id, space, address, state, stages, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(this.#rowId(), row.space, row.address, row.state, row.stages, row.origin, this.id());
   }
 
-  /** One coverage range of one kind (D83). */
+  /** One coverage range of one kind. */
   insertCoverage(row: { space: Space; kind: string; start: number; end: number; origin: Origin }): void {
     this.#db
       .prepare("INSERT INTO coverage (id, space, kind, start_address, end_address, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
@@ -378,9 +378,9 @@ const result = <T, P>(written: { revision: string | null; current: Step<T, P> })
   written.current.previous === undefined ? { revision: written.revision, current: written.current.current } : { revision: written.revision, current: written.current.current, previous: written.current.previous };
 
 // Each write has a check, which refuses bad input before anything opens, and a
-// step, which runs inside a change. A single write and a batch share both (D42).
+// step, which runs inside a change. A single write and a batch share both.
 
-/** Every request names its space (D53); without one it is the C64. */
+/** Every request names its space; without one it is the C64. */
 type InSpace = { space?: Space };
 type SymbolRequest = InSpace & { address: number; name: string; kind?: SymbolKind };
 type RegionRequest = InSpace & { start: number; end: number; type: RegionType; element?: number };
@@ -442,7 +442,7 @@ function removeSymbolStep(db: DatabaseSync, change: Change, origin: Origin, requ
   if (uses.length > 0) {
     throw new KnowledgeError("conflict", `The macro uses at ${uses.map((row) => hex(row.start)).join(", ")} use ${existing.name}. Change or remove them first (unuse), or rename the symbol.`);
   }
-  // No suppression: an analyzer name is a second name and never comes back as the name (D74).
+  // No suppression: an analyzer name is a second name and never comes back as the name.
   change.close("symbols", "space = ? AND address = ?", space, request.address);
   return { current: null };
 }
@@ -548,7 +548,7 @@ function checkReference(request: ReferenceRequest): void {
   checkAddress(request.from, "from");
   checkAddress(request.to, "to");
   checkOneOf(REFERENCE_KINDS, request.kind, "kind");
-  if (request.kind === POINTER_KIND) throw new KnowledgeError("invalid-input", "Only an operand expression writes a pointer reference (D65): use operand and unoperand.");
+  if (request.kind === POINTER_KIND) throw new KnowledgeError("invalid-input", "Only an operand expression writes a pointer reference: use operand and unoperand.");
 }
 
 function referenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<ReferenceRow> {
@@ -612,7 +612,7 @@ function checkOperand(request: OperandRequest): void {
 const shown = (value: number, size: number) => (value < 0 ? String(value) : `$${value.toString(16).padStart(size === 0x100 ? 2 : 4, "0")}`);
 
 /**
- * Refuses an expression whose value is not the operand in the image (D65), and
+ * Refuses an expression whose value is not the operand in the image, and
  * returns the addresses of its names. Symbols of the knowledge come first, then
  * the platform names of the C64 space.
  */
@@ -692,7 +692,7 @@ function checkModule(request: ModuleRequest): void {
 function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: ModuleRequest): Step<ModuleRow> {
   const space = spaceOf(request);
   const existing = moduleAt(db, request.start, space);
-  // A module write without a title keeps the title it has (F-26).
+  // A module write without a title keeps the title it has.
   const title = request.title === undefined ? existing?.title : request.title.trim();
   if (existing !== undefined && existing.file === request.file && existing.title === title) return { current: existing };
   const owner = moduleWithFile(db, request.file, space);
@@ -971,7 +971,7 @@ export function removeReference(db: DatabaseSync, context: WriteContext, request
   return result(write(db, context, "remove-reference", (change) => unreferenceStep(db, change, context.origin, request)));
 }
 
-/** Starts a file of the generated source at an address (D48); one module per address and per file. */
+/** Starts a file of the generated source at an address; one module per address and per file. */
 export function setModule(db: DatabaseSync, context: WriteContext, request: ModuleRequest): WriteResult<ModuleRow> {
   checkModule(request);
   return result(write(db, context, "set-module", (change) => moduleStep(db, change, context.origin, request)));
@@ -984,7 +984,7 @@ export function removeModule(db: DatabaseSync, context: WriteContext, request: I
 }
 
 /**
- * Writes the operand expression of the instruction at an address (D65), after
+ * Writes the operand expression of the instruction at an address, after
  * a check against the image, and a pointer reference to each name it uses.
  */
 export function setOperand(db: DatabaseSync, context: WriteContext, request: OperandRequest): WriteResult<OperandRow, OperandRow> {
@@ -1000,7 +1000,7 @@ export function removeOperand(db: DatabaseSync, context: WriteContext, request: 
 
 /**
  * Writes code that replaces [start, end] when the build defines the switch
- * (D72), after a check that the range is in the image and overlaps no other
+ *, after a check that the range is in the image and overlaps no other
  * patch or macro use.
  */
 export function setPatch(db: DatabaseSync, context: WriteContext, request: PatchRequest): WriteResult<PatchRow, PatchRow> {
@@ -1014,7 +1014,7 @@ export function removePatch(db: DatabaseSync, context: WriteContext, request: In
   return result(write(db, context, "remove-patch", (change) => unpatchStep(db, change, context.origin, request)));
 }
 
-/** Writes a macro of the generated source (D73). */
+/** Writes a macro of the generated source. */
 export function setMacro(db: DatabaseSync, context: WriteContext, request: MacroRequest): WriteResult<MacroRow, MacroRow> {
   checkMacro(request);
   return result(write(db, context, "set-macro", (change) => macroStep(db, change, context.origin, request)));
@@ -1026,7 +1026,7 @@ export function removeMacro(db: DatabaseSync, context: WriteContext, request: In
   return result(write(db, context, "remove-macro", (change) => unmacroStep(db, change, context.origin, request)));
 }
 
-/** Writes the instructions in [start, end] as one use of a macro (D73), after a check against the image. */
+/** Writes the instructions in [start, end] as one use of a macro, after a check against the image. */
 export function setMacroUse(db: DatabaseSync, context: WriteContext, request: MacroUseRequest): WriteResult<MacroUseRow, MacroUseRow> {
   checkMacroUse(request);
   return result(write(db, context, "set-macro-use", (change) => useStep(db, change, context, request)));
@@ -1038,7 +1038,7 @@ export function removeMacroUse(db: DatabaseSync, context: WriteContext, request:
   return result(write(db, context, "remove-macro-use", (change) => unuseStep(db, change, context.origin, request)));
 }
 
-/** One write of a batch (D42), named as the command that does it alone. */
+/** One write of a batch, named as the command that does it alone. */
 export type BatchOperation =
   | ({ op: "rename" } & SymbolRequest)
   | ({ op: "remove-symbol" } & AddressRequest)
@@ -1068,7 +1068,7 @@ export type BatchStep = Step<
 >;
 
 /**
- * Applies many writes as one revision in one transaction (D42): all of them,
+ * Applies many writes as one revision in one transaction: all of them,
  * or none when one is refused. Every write is checked before anything opens.
  */
 export function applyBatch(db: DatabaseSync, context: WriteContext, operations: BatchOperation[]): { revision: string | null; steps: BatchStep[] } {
@@ -1177,7 +1177,7 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
 }
 
 /** Row content without its revision, as a comparable key. */
-/** The tables of the program (D83) and the columns that make a row. */
+/** The tables of the program and the columns that make a row. */
 const PROGRAM_TABLES = [
   ["memory", "space, address, bytes, origin"],
   ["entries", "space, address, state, stages, origin"],
@@ -1261,7 +1261,7 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         else change.insertReference(mapped);
       }
     }
-    // The program (D83): a row is the same when all its values are the same.
+    // The program: a row is the same when all its values are the same.
     for (const [table, columns] of PROGRAM_TABLES) {
       const then = db.prepare(`SELECT ${columns}, id FROM ${table} WHERE ${at}`).all(restored, restored) as Array<Record<string, unknown>>;
       const now = db.prepare(`SELECT ${columns}, id FROM ${table} WHERE valid_to_revision IS NULL`).all() as Array<Record<string, unknown>>;
@@ -1293,7 +1293,7 @@ export interface MergeChoice {
 const MAX_CHOICES = 100_000;
 
 /**
- * Decides every conflict of a git merge in one merge revision (D69). Of the
+ * Decides every conflict of a git merge in one merge revision. Of the
  * rows of one conflict, the row of the newest revision stays and the others
  * close; an older region keeps its parts outside the newer regions. Where an
  * operand expression closes, the pointer references of its address follow the

@@ -1,4 +1,4 @@
-// CRT and T64 files in the c64-disk script (D54): read locally, without the
+// CRT and T64 files in the c64-disk script: read locally, without the
 // host; each CRT bank becomes a PRG for its knowledge space.
 
 import assert from "node:assert/strict";

@@ -8,7 +8,7 @@ const refuse = (message: string): never => {
   throw new Error(message);
 };
 
-test("a steps file has action steps with $ addresses only (D43)", () => {
+test("a steps file has action steps with $ addresses only", () => {
   const steps = [{ frames: 50 }, { type: " " }, { joystick: { port: 2, direction: "up" } }, { runUntil: { at: "$c000" }, timeoutFrames: 300 }, { write: { at: "$d020", bytes: [0] } }];
   assert.deepEqual(checkActionSteps(steps, refuse), steps);
   for (const [bad, why] of [

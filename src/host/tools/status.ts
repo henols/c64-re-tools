@@ -38,7 +38,7 @@ export async function hostStatus(context: ToolContext, started?: ViceVersion): P
   );
   const tools = started === undefined ? probed : [{ name: VICE.name, found: true, path: findVice(context.env ?? process.env), version: versionText(started), runs: true }, ...probed];
   const checked = tools.map((status, index) => requireMinimum(status, specs[index]!));
-  // VICE runs with its known flaws; status names them (D56).
+  // VICE runs with its known flaws; status names them.
   const vice = checked[0]!;
   const version = vice.runs ? viceVersionOf(vice.version ?? "") : undefined;
   const flaws = version === undefined ? [] : viceFlaws(version);

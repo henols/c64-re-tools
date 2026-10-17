@@ -33,7 +33,7 @@ try {
 
 const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-"));
-// The program is the first revision of the knowledge (D83).
+// The program is the first revision of the knowledge.
 importPrg(project, analysisSubjectPrg);
 after(() => rmSync(project, { recursive: true, force: true }));
 
@@ -65,7 +65,7 @@ test("an analysis imports Ghidra's structure into knowledge and reports it", { s
   assert.equal((json.decompilations as Array<{ entry: string }>)[0]?.entry, "$0818");
 
   const db = openForRead(project);
-  assert.equal(symbolAt(db, ROUTINE), undefined, "an analyzer name is no symbol (D74)");
+  assert.equal(symbolAt(db, ROUTINE), undefined, "an analyzer name is no symbol");
   assert.equal(analyzerNamesAt(db, ROUTINE)[0]?.origin, "ghidra");
   assert.deepEqual(regionsOverlapping(db, 0, 0xffff).map((region) => [region.start, region.end, region.type, region.origin]), [
     [MAIN, 0x0815, "code", "ghidra"],

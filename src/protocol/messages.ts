@@ -108,7 +108,7 @@ export class ProtocolError extends Error {
 /** Thrown by parameter/result validators; carries the wire code to answer with. */
 /**
  * The instruction at the end of a refusal that only the user can fix: a
- * missing or broken tool, or a Host Runtime that does not run (D37).
+ * missing or broken tool, or a Host Runtime that does not run.
  */
 export const STOP_AND_ASK = "Stop the task. Give this message to the user and wait for the user. Do not make a replacement for the tool or the host runtime.";
 

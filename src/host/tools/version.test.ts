@@ -66,7 +66,7 @@ test("a caller that cancels does not cancel the version check that another calle
   await first;
 });
 
-test("a known VICE flaw is named for the versions that have it, and not for a build with the fix (D56)", () => {
+test("a known VICE flaw is named for the versions that have it, and not for a build with the fix", () => {
   assert.equal(viceFlaws({ major: 3, minor: 9 }).length, 1);
   assert.match(viceFlaws({ major: 3, minor: 10 })[0]!, /VICE bug #2202/);
   assert.equal(viceFlaws({ major: 3, minor: 10, revision: 45970 }).length, 1);

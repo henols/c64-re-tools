@@ -1,6 +1,6 @@
 // A program that reads the CIA timer at its entry, as a game that seeds its
 // random numbers from it: capture, source with a loader, and a c64-testing
-// scenario against the original. The loader sets the CIA timers (D63), so
+// scenario against the original. The loader sets the CIA timers, so
 // the rebuild reads the same value; a loader without them reads another.
 // Needs real VICE (C64RT_LIVE_VICE), Ghidra (C64RT_GHIDRA) and ACME.
 
@@ -56,7 +56,7 @@ async function skill(address: string, name: string, file: string, ...args: strin
   return { status, stdout, json: JSON.parse(stdout) as Record<string, any> };
 }
 
-test("a rebuild whose loader sets the CIA timers reads the timer value of the original at the entry (D63)", { skip, timeout: 900_000 }, async () => {
+test("a rebuild whose loader sets the CIA timers reads the timer value of the original at the entry", { skip, timeout: 900_000 }, async () => {
   mkdirSync(join(project, "original"));
   writeFileSync(join(project, "original", "timer.prg"), timerPrg());
   const { address } = await startHost();

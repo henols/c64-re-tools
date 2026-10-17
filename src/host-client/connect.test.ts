@@ -79,7 +79,7 @@ test("a host that is not running is machine-unavailable for every role and names
     assert.ok(failsWith("machine-unavailable")(error));
     assert.match((error as Error).message, /npx -y --package=@henols\/c64-re-tools@(latest|next) c64-re-tools-host/);
     assert.doesNotMatch((error as Error).message, /127\.0\.0\.1|\d{4,}/);
-    assert.ok((error as Error).message.endsWith(STOP_AND_ASK), "only the user can start the host (D37)");
+    assert.ok((error as Error).message.endsWith(STOP_AND_ASK), "only the user can start the host");
     return true;
   });
   await assert.rejects(

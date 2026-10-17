@@ -1,4 +1,4 @@
-// Cartridge and tape containers that c64-disk reads locally (D54): no host
+// Cartridge and tape containers that c64-disk reads locally: no host
 // tool reads them. A CRT file holds CHIP packets, each a bank of ROM at a
 // load address; a T64 file holds a directory of PRG files. TAP files hold
 // raw pulses and go through the emulator only.
@@ -8,7 +8,7 @@ import { formatC64Address, petsciiNameToText } from "#src/c64.ts";
 /** A refusal of a container file: the caller turns it into a usage error. */
 export class ContainerError extends Error {}
 
-/** The CRT hardware types this toolkit reads, by type number (D54). */
+/** The CRT hardware types this toolkit reads, by type number. */
 export const CRT_TYPES: Record<number, string> = { 0: "normal", 5: "Ocean", 19: "Magic Desk", 32: "EasyFlash" };
 
 export interface CrtChip {

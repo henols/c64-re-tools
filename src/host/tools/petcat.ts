@@ -18,7 +18,7 @@ const TIMEOUT_MS = 30_000;
 const LISTING = "listing.txt";
 /**
  * petcat's listing lines ("   10 sys2061"), as number and text. petcat
- * prints π ($ff) as `~`, which is no PETSCII character: the text has π (F-13).
+ * prints π ($ff) as `~`, which is no PETSCII character: the text has π.
  */
 export function parseListing(listing: string): Array<{ number: number; text: string }> {
   const lines: Array<{ number: number; text: string }> = [];

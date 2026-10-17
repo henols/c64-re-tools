@@ -1,4 +1,4 @@
-// Conflicts after a git merge (D69): two computers write the same project, git
+// Conflicts after a git merge: two computers write the same project, git
 // keeps the lines of both, and the knowledge shows the conflicts until a merge
 // revision decides them.
 
@@ -186,7 +186,7 @@ test("a write that would leave two current rows is refused before it commits", (
   assert.equal(read(root, (db) => symbolAt(db, 0x2100)?.name), "main");
 });
 
-test("patches, macros and macro uses have their conflicts, and merge keeps the newest (D72, D73)", () => {
+test("patches, macros and macro uses have their conflicts, and merge keeps the newest", () => {
   const bytes = new Map([[0x8100, 0xe6], [0x8101, 0xfb], [0x8102, 0xd0], [0x8103, 0x02], [0x8104, 0xe6], [0x8105, 0xfc], [0x8106, 0xea]]);
   const image: OperandImage = { byteAt: (address) => bytes.get(address), platform: new Map() };
   const root = computers(

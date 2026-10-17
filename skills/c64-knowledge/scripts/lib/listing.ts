@@ -1,4 +1,4 @@
-// One listing of the image with its knowledge (D78): the lines of a range as
+// One listing of the image with its knowledge: the lines of a range as
 // ACME text with names, operand expressions and comments, the access class of
 // the bytes from coverage files, and the references in and out. Nothing here
 // reads files: knowledge.ts gives the lookups.
@@ -11,13 +11,13 @@ export interface ListingSource {
   byteAt: (address: number) => number | undefined;
   /** The name of an address: a symbol, else a platform name. */
   nameOf: (address: number) => string | undefined;
-  /** The analyzer names of an address (D74), for reference. */
+  /** The analyzer names of an address, for reference. */
   secondNames: (address: number) => string[];
   /** The knowledge regions, in address order. */
   regions: ReadonlyArray<{ start: number; end: number; type: string }>;
   /** The line and side comments of an address. */
   comments: (address: number) => { line: string[]; side?: string };
-  /** The operand expression of the instruction at an address (D65), as ACME text. */
+  /** The operand expression of the instruction at an address, as ACME text. */
   operand: (address: number) => string | undefined;
   /** The references to and from an address. */
   references: (address: number) => { in: number; out: number };

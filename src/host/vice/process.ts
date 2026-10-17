@@ -12,7 +12,7 @@
 // - autostart of a PRG needs `-autostartprgmode 1` (inject into RAM);
 // - the joyport command reaches the C64 only through the "Joyport I/O
 //   simulation" device (37). In VICE 3.10 and older it holds bits 5-7 of
-//   both CIA 1 ports low (VICE bug #2202, a known flaw named by D56);
+//   both CIA 1 ports low (VICE bug #2202, a known flaw);
 // - with the default JAM action a jammed CPU hangs silently; -jamaction 2
 //   enters the monitor instead;
 // - the monitor's profiler prints numbers in the host locale, so VICE runs
@@ -97,7 +97,7 @@ export function viceArguments(options: {
     // Autostart injects a PRG into RAM; the default mode copies it to a disk image first.
     "-autostartprgmode",
     "1",
-    // VICE's default waits a random time before an autostart types its LOAD, so two runs of one file differ (R2-12).
+    // VICE's default waits a random time before an autostart types its LOAD, so two runs of one file differ.
     "+autostart-delay-random",
     // The same RAM after every power-up: a hard reset is a power cycle, and VICE's default can flip
     // random bits, so two runs from one start state could differ.

@@ -1,12 +1,12 @@
 // ACME source from an image, current knowledge and Ghidra's instruction
-// boundaries (D48). The same input gives the same text. Names come from
+// boundaries. The same input gives the same text. Names come from
 // knowledge; a target that knowledge does not name gets l_xxxx. Data is
 // written by its region type. The source assembles to the same bytes: the
 // generator forces operand sizes, and writes an opcode form that ACME
 // encodes differently as bytes (see the probe in generate.ts). An operand
-// expression of the knowledge is written in place of its number (D65). A
-// patch is written as !if SWITCH { code } else { original } (D72), and a
-// macro use as one +name args line (D73).
+// expression of the knowledge is written in place of its number. A
+// patch is written as !if SWITCH { code } else { original }, and a
+// macro use as one +name args line.
 
 import { COVERAGE, formatC64Address, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
@@ -36,25 +36,25 @@ export interface SourceInput {
   modules: ReadonlyArray<{ start: number; file: string; title?: string }>;
   /** Targets of knowledge references: each one inside the image gets a label. */
   referenceTargets: readonly number[];
-  /** Joined coverage files (D40): an instruction that no run executed is marked (D49). */
+  /** Joined coverage files: an instruction that no run executed is marked. */
   coverage?: Uint8Array;
-  /** Platform names (D52): the name of an address that knowledge does not name, the last address of its entry, and what it is. */
+  /** Platform names: the name of an address that knowledge does not name, the last address of its entry, and what it is. */
   platform?: ReadonlyArray<{ address: number; end: number; name: string; meaning?: string }>;
   /** The platform area of an address, and the register that an I/O mirror repeats: constants.asm groups and describes its names with them. */
   describe?: (address: number) => { area: Area; mirrorOf?: number };
   /** What a value in a platform register means (c64-memory-map): an immediate stored to such a register gets it as a side comment. Throws for a register without a decoder. */
   decode?: (register: number, value: number) => Record<string, unknown>;
-  /** Operand expressions of the knowledge (D65), by instruction address. */
+  /** Operand expressions of the knowledge, by instruction address. */
   operands?: ReadonlyArray<OperandExpression & { address: number }>;
-  /** Patches of the knowledge (D72): code that replaces a range when the build defines the switch. */
+  /** Patches of the knowledge: code that replaces a range when the build defines the switch. */
   patches?: ReadonlyArray<{ start: number; end: number; switch: string; code: string; comment?: string }>;
-  /** Macros of the knowledge (D73), written to macros.asm. */
+  /** Macros of the knowledge, written to macros.asm. */
   macros?: ReadonlyArray<{ name: string; params: readonly string[]; body: string; comment?: string }>;
-  /** Macro uses of the knowledge (D73): the instructions of a range, written as one use of a macro. */
+  /** Macro uses of the knowledge: the instructions of a range, written as one use of a macro. */
   macroUses?: ReadonlyArray<{ start: number; end: number; macro: string; args: readonly string[] }>;
 }
 
-/** A macro use that the source writes (D73), with its args in the names of this source. */
+/** A macro use that the source writes, with its args in the names of this source. */
 export interface MacroUseBlock {
   start: number;
   end: number;
@@ -70,7 +70,7 @@ export interface MacroAsInstructions {
   reason: string;
 }
 
-/** A patch that the source writes (D72), with the addresses inside it that have a name. */
+/** A patch that the source writes, with the addresses inside it that have a name. */
 export interface PatchBlock {
   start: number;
   end: number;
@@ -126,7 +126,7 @@ function decodedText(decoded: Record<string, unknown>): string {
 /**
  * Side comments for an immediate that the next instruction stores to a platform
  * register with a decoder, for example "$d011: yScroll 3, rows 25". A knowledge
- * side comment at the store wins (M23.7).
+ * side comment at the store wins.
  */
 function decodedStores(pieces: readonly Piece[], input: SourceInput): Array<{ address: number; placement: CommentPlacement; text: string }> {
   if (input.decode === undefined) return [];
@@ -198,14 +198,14 @@ export interface Layout {
   generatedLabels: number;
   namedLabels: number;
   unusedModules: Array<{ start: number; file: string }>;
-  /** The operand of an instruction as an expression with the names of this source (D65). */
+  /** The operand of an instruction as an expression with the names of this source. */
   operands: Map<number, string>;
   /** Operand expressions that cannot be written. */
   operandsAsNumbers: OperandAsNumber[];
-  /** The patches that the source writes, by start (D72). */
+  /** The patches that the source writes, by start. */
   patches: Map<number, PatchBlock>;
   patchesNotWritten: PatchNotWritten[];
-  /** The macros, by name (D73). */
+  /** The macros, by name. */
   macros: NonNullable<SourceInput["macros"]>;
   /** The macro uses that the source can write, by start. */
   macroUses: Map<number, MacroUseBlock>;
@@ -229,8 +229,8 @@ function operandValue(address: number, opcode: number, byteAt: (address: number)
 
 /**
  * Each entry point inside a data region of the knowledge, with that region.
- * A data region wins over an entry (D44, D48): Ghidra does not decode there,
- * and the source has data there. A code region in the knowledge changes that (F-27).
+ * A data region wins over an entry: Ghidra does not decode there,
+ * and the source has data there. A code region in the knowledge changes that.
  */
 export function entriesInData<R extends { start: number; end: number; type: RegionType }>(entries: readonly number[], regions: readonly R[]): Array<{ entry: number; region: R }> {
   return entries.flatMap((entry) => {
@@ -239,7 +239,7 @@ export function entriesInData<R extends { start: number; end: number; type: Regi
   });
 }
 
-/** Why an image without its entry fails: the image does not hold the program (R2-02). Undefined when the entry is in a segment, or the image has no entry. */
+/** Why an image without its entry fails: the image does not hold the program. Undefined when the entry is in a segment, or the image has no entry. */
 export function entryOutsideImage(entry: number | undefined, segments: readonly Range[]): string | undefined {
   if (entry === undefined || segments.some((segment) => entry >= segment.start && entry <= segment.end)) return undefined;
   return `The entry ${hex4(entry)} is in no segment of the image: the image does not hold the program. Capture it again with c64-unpacker loads or capture.`;
@@ -260,7 +260,7 @@ export function layout(input: SourceInput): Layout {
   const modules = [...input.modules].sort((a, b) => a.start - b.start);
   const unusedModules = modules.filter((module) => !inImage(module.start)).map(({ start, file }) => ({ start, file }));
 
-  // A patch starts and ends at an item boundary, so a data run stops there (D72).
+  // A patch starts and ends at an item boundary, so a data run stops there.
   const patches = [...(input.patches ?? [])].sort((a, b) => a.start - b.start);
   const macroUses = [...(input.macroUses ?? [])].sort((a, b) => a.start - b.start);
   const cuts = new Set([...patches, ...macroUses].flatMap((range) => [range.start, range.end + 1]));
@@ -328,10 +328,10 @@ export function layout(input: SourceInput): Layout {
   // A platform name that knowledge gives to another address, or that reads as an instruction, is not used.
   const knowledgeNames = new Set(input.symbols.map((symbol) => symbol.name));
   const platform = new Map((input.platform ?? []).filter(({ name }) => !knowledgeNames.has(name) && !MNEMONICS.has(name.toLowerCase())).map(({ address, name }) => [address, name]));
-  // An analyzer name (DXA's ld020) gives way to the platform name (EXTCOL); a user or LLM name wins (D61).
+  // An analyzer name (DXA's ld020) gives way to the platform name (EXTCOL); a user or LLM name wins.
   const isAnalyzer = (origin: Origin | undefined) => (ANALYZERS as readonly (Origin | undefined)[]).includes(origin);
   const symbols = new Map(input.symbols.filter((symbol) => !(isAnalyzer(symbol.origin) && platform.has(symbol.address))).map((symbol) => [symbol.address, symbol.name]));
-  /** Addresses outside the image without a name of their own, inside a named platform entry of more bytes: the start of that entry (F-20). */
+  /** Addresses outside the image without a name of their own, inside a named platform entry of more bytes: the start of that entry. */
   const insideEntry = new Map<number, number>();
   const uses = new Map<number, Map<UseKind, number>>();
   const count = (constant: number, kind: UseKind) => {
@@ -340,7 +340,7 @@ export function layout(input: SourceInput): Layout {
     kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
     uses.set(constant, kinds);
   };
-  /** The start of the named data region that holds an address without a name of its own: the operand is written name+offset (M23.6). */
+  /** The start of the named data region that holds an address without a name of its own: the operand is written name+offset. */
   const tableStart = (address: number) => {
     if (symbols.has(address)) return undefined;
     const region = input.regions.find((row) => address > row.start && address <= row.end && !CODE_TYPES.includes(row.type) && row.type !== "dual-use");
@@ -359,12 +359,12 @@ export function layout(input: SourceInput): Layout {
       insideEntry.set(address, entry.address);
     }
   };
-  // The names of an operand expression are found by name, a knowledge symbol before a platform name, and written with the name the source gives that address (D65).
+  // The names of an operand expression are found by name, a knowledge symbol before a platform name, and written with the name the source gives that address.
   const byName = new Map<string, number>();
   for (const row of input.platform ?? []) if (!byName.has(row.name)) byName.set(row.name, row.address);
   for (const symbol of input.symbols) byName.set(symbol.name, symbol.address);
   const instructionAt = new Map(pieces.flatMap((piece) => piece.items.flatMap((item) => (item.kind === "instruction" ? [[item.address, item] as const] : []))));
-  // A macro use is a run of whole instructions of one file, of a macro with one param for each arg, whose args name known names (D73).
+  // A macro use is a run of whole instructions of one file, of a macro with one param for each arg, whose args name known names.
   const macrosByName = new Map((input.macros ?? []).map((macro) => [macro.name, macro]));
   const macrosAsInstructions: MacroAsInstructions[] = [];
   const candidates: Array<{ use: (typeof macroUses)[number]; items: InstructionItem[] }> = [];
@@ -419,7 +419,7 @@ export function layout(input: SourceInput): Layout {
     expressions.push({ address: operand.address, text: expression, kind: mode === "imm" ? "address" : useKind(item!.opcode) });
   }
   for (const { text: expression, kind } of expressions) for (const name of identifiers(expression)) use(byName.get(name)!, kind);
-  // An instruction with an expression names what the expression names, not its plain target (D65).
+  // An instruction with an expression names what the expression names, not its plain target.
   const written = new Set(expressions.map((expression) => expression.address));
   for (const piece of pieces) {
     for (const item of piece.items) {
@@ -432,7 +432,7 @@ export function layout(input: SourceInput): Layout {
   }
   for (const candidate of candidates) for (const arg of candidate.use.args) for (const name of identifiers(arg)) use(byName.get(name)!, "macro argument");
   for (const symbol of input.symbols) want(symbol.address);
-  // A reference target inside a named data region without its own name is that region's name plus the offset: it makes no label (D84).
+  // A reference target inside a named data region without its own name is that region's name plus the offset: it makes no label.
   for (const target of input.referenceTargets) want(tableStart(target) ?? target);
   if (input.entry !== undefined) want(input.entry);
   // A use with a label inside it is written as its instructions, which then name their targets: that can put a label inside another use.
@@ -476,7 +476,7 @@ export function layout(input: SourceInput): Layout {
     names.set(address, name);
     generatedLabels++;
   }
-  // A patch is written when its range is whole items of one file and its switch is no name of the source (D72).
+  // A patch is written when its range is whole items of one file and its switch is no name of the source.
   const blocks = new Map<number, PatchBlock>();
   const patchesNotWritten: PatchNotWritten[] = [];
   const sourceNames = new Set([...names.values(), ...taken]);
@@ -788,7 +788,7 @@ function usageText(kinds: ReadonlyMap<UseKind, number> | undefined): string | un
   return parts.length === 0 ? undefined : `Used: ${parts.join(", ")}.`;
 }
 
-/** The switches of the patches (D72), each 0 unless the build defines it, with the ranges of its patches. */
+/** The switches of the patches, each 0 unless the build defines it, with the ranges of its patches. */
 export function switchesOf(layout: Pick<Layout, "patches">): Map<string, PatchBlock[]> {
   const switches = new Map<string, PatchBlock[]>();
   for (const patch of [...layout.patches.values()].sort((a, b) => a.start - b.start)) switches.set(patch.switch, [...(switches.get(patch.switch) ?? []), patch]);
@@ -841,7 +841,7 @@ function constantsText(layout: Layout): { text: string; labels: SourceLabel[] } 
 
 // --- Rendering --------------------------------------------------------------
 
-/** The line of a name: its label line, or its line in constants.asm (1 is the first line of the text) (D80). */
+/** The line of a name: its label line, or its line in constants.asm (1 is the first line of the text). */
 export interface SourceLabel {
   address: number;
   name: string;
@@ -849,7 +849,7 @@ export interface SourceLabel {
   line: number;
 }
 
-/** The first line of an instruction, a macro use or a data line, and the addresses that it writes (D80). */
+/** The first line of an instruction, a macro use or a data line, and the addresses that it writes. */
 export interface SourceItem {
   start: number;
   end: number;
@@ -868,22 +868,22 @@ export interface Rendered {
   notExecuted?: { instructions: number; ranges: Range[] };
   /** Each instruction written with an operand expression: its file and line (1 is the first line of the text). */
   expressions: Array<{ address: number; length: number; file: string; line: number }>;
-  /** Operand expressions written as numbers, in address order (D65). */
+  /** Operand expressions written as numbers, in address order. */
   operandsAsNumbers: OperandAsNumber[];
-  /** The patches written, in address order (D72). */
+  /** The patches written, in address order. */
   patches: number;
-  /** Each macro use written: its file and line (1 is the first line of the text) (D73). */
+  /** Each macro use written: its file and line (1 is the first line of the text). */
   uses: Array<{ start: number; end: number; macro: string; file: string; line: number }>;
   /** The macro uses written as instructions, in address order, with the reason. */
   macrosAsInstructions: MacroAsInstructions[];
   /** The lines of each macro in macros.asm, from its !macro line to its closing brace. */
   macroLines: Map<string, { first: number; last: number }>;
-  /** The source map (D80): the line of each name, and the line of each address that the source writes. */
+  /** The source map: the line of each name, and the line of each address that the source writes. */
   labels: SourceLabel[];
   items: SourceItem[];
 }
 
-/** macros.asm (D73): each macro with its comment, as ACME reads it; a param is .name in the body. */
+/** macros.asm: each macro with its comment, as ACME reads it; a param is .name in the body. */
 function macrosText(layout: Layout): { text: string; lines: Map<string, { first: number; last: number }> } {
   const out = ["; Macros of the knowledge. The source writes a use as +name args."];
   const lines = new Map<string, { first: number; last: number }>();
@@ -897,7 +897,7 @@ function macrosText(layout: Layout): { text: string; lines: Map<string, { first:
   return { text: `${out.join("\n")}\n`, lines };
 }
 
-/** The lines that open a patch (D72): its zone, the switch, the code, and the guard that stops a patch longer than its range. */
+/** The lines that open a patch: its zone, the switch, the code, and the guard that stops a patch longer than its range. */
 function patchOpening(patch: PatchBlock): string[] {
   const bytes = patch.end - patch.start + 1;
   const range = `${hex4(patch.start)}-${hex4(patch.end)}`;
@@ -929,7 +929,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     if (comment.placement === "line") lineComments.set(comment.address, comment.text.split(/\r?\n/));
     else sideComments.set(comment.address, comment.text.replace(/\s*\r?\n\s*/g, " "));
   }
-  // A name with an offset (table+5, M23.6) names an operand only: it is no label, so no line starts there.
+  // A name with an offset (table+5) names an operand only: it is no label, so no line starts there.
   const labelAt = (address: number) => {
     const name = layout.names.get(address);
     return name === undefined || name.includes("+") ? undefined : name;
@@ -965,9 +965,9 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     let running = false;
     /** The line of the mark of the open range of instructions that did not execute. */
     let markLine = 0;
-    /** The open patch: its labels are defined before it, so the original code writes none (D72). */
+    /** The open patch: its labels are defined before it, so the original code writes none. */
     let patch: PatchBlock | undefined;
-    /** The last address of the macro use just written: its instructions are in the use line (D73). */
+    /** The last address of the macro use just written: its instructions are in the use line. */
     let useEnd = -1;
     /** Marks the start of a range of instructions that no run executed, or makes the open range longer. */
     const mark = (address: number, last: number, count: number) => {
@@ -979,7 +979,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
           markLine = out.length;
           out.push("");
         }
-        // The mark gives the range, so a reader finds it in the full list (D49).
+        // The mark gives the range, so a reader finds it in the full list.
         const range = notExecuted.ranges.at(-1)!;
         out[markLine] = `; not executed ${hex4(range.start)}-${hex4(range.end)}`;
         notExecuted.instructions += count;
@@ -1057,7 +1057,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         const value = mode === "imp" ? 0 : operandValue(item.address, item.opcode, layout.byteAt)!;
         const literal = instructionText(item.opcode, "", literalOperand(item.opcode, value));
         let written = layout.operands.get(item.address);
-        // An expression that is not written stays visible as a side comment (D65).
+        // An expression that is not written stays visible as a side comment.
         const asNumber = (expression: string, reason: string) => {
           sides.unshift(`= ${expression}`);
           result.operandsAsNumbers.push({ address: item.address, expression, reason });

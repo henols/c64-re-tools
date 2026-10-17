@@ -1,4 +1,4 @@
-// The c64-testing run (D45): steps in its own emulator, with screens, a
+// The c64-testing run: steps in its own emulator, with screens, a
 // coverage map, a snapshot file and observations written to a directory; a
 // second run starts from the snapshot file of the first. Opt-in with C64RT_LIVE_VICE.
 
@@ -85,7 +85,7 @@ test("a runUntil that does not reach its target ends the run with the reason", {
   assert.deepEqual(json.files, ["results.json"], "the steps after it did not run");
 });
 
-test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff finds the change between two snapshots (M23.9)", { skip: liveSkip, timeout: 300_000 }, async () => {
+test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff finds the change between two snapshots", { skip: liveSkip, timeout: 300_000 }, async () => {
   writeFileSync(join(project, "counter.prg"), joystickCounterPrg);
   writeFileSync(
     join(project, "under.json"),
@@ -124,7 +124,7 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
   assert.ok(diff.memory.listed.some((range) => range.start === "$e000" && range.end === "$e003" && range.b === "01020304"), stdout);
 });
 
-test("a trace step writes each write to the counter with the instruction and raster line 128 (D76)", { skip: liveSkip, timeout: 300_000 }, async () => {
+test("a trace step writes each write to the counter with the instruction and raster line 128", { skip: liveSkip, timeout: 300_000 }, async () => {
   writeFileSync(join(project, "counter.prg"), joystickCounterPrg);
   writeFileSync(
     join(project, "traced.json"),

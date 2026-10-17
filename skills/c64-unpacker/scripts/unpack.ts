@@ -4,7 +4,7 @@
 // cruncher whose bytes look like code. "capture" runs the program in an
 // emulator until it reaches a given address (the unpacked entry point) and
 // writes the memory into the project. "loads" captures each part of a
-// multi-load program (D53). No native unpack tool is used.
+// multi-load program. No native unpack tool is used.
 
 import { parseArgs } from "node:util";
 
@@ -76,7 +76,7 @@ const MAX_ADVANCE = 10_000;
 /** The most ranges one memory map read gives. */
 const MAX_RANGES = 1000;
 
-/** Reads and checks a steps file: action steps with $ addresses only (D43). */
+/** Reads and checks a steps file: action steps with $ addresses only. */
 function readSteps(path: string): ActionStep[] {
   let value: unknown;
   try {
@@ -191,7 +191,7 @@ const SYS_FRAMES = 50;
  * BASIC computes: an exec breakpoint over that part of the program stops there.
  */
 /**
- * Starts the program as a c64-testing scenario does (D62): hard reset, load,
+ * Starts the program as a c64-testing scenario does: hard reset, load,
  * an empty memory map, then RUN up to the first BASIC line, or the pc at
  * `entry`. Gives why it did not start.
  */
@@ -204,7 +204,7 @@ async function startLoaded(client: ViceSessionClient, program: string, bytes: Ui
   return undefined;
 }
 
-/** The raster position now: where a step's frames end (D62). */
+/** The raster position now: where a step's frames end. */
 async function rasterAt(client: ViceSessionClient): Promise<{ line: number; cycle: number }> {
   const { timing } = await client.observe({ timing: true });
   return { line: timing!.rasterLine, cycle: timing!.rasterCycle };
@@ -220,7 +220,7 @@ const MAX_STAGES = 16;
 /** Most stops of one re-run of a chunk: own code and writes over it each stop once. */
 const MAX_STAGE_STOPS = 4096;
 const STAGE_SNAPSHOT = "stage-chunk";
-/** The snapshot at a call into written code, while the run checks if the call returns (D59). */
+/** The snapshot at a call into written code, while the run checks if the call returns. */
 const CALL_SNAPSHOT = "stage-call";
 
 interface Stage {
@@ -246,7 +246,7 @@ function trackedRunUntil(step: ActionStep): step is { runUntil: { at: string }; 
 }
 
 /**
- * Starts the program and follows its stages (D43). The memory map holds what
+ * Starts the program and follows its stages. The memory map holds what
  * the current stage wrote; when the CPU executed a block of at least
  * `minStage` written bytes during a chunk of frames, the chunk runs again from
  * its snapshot with exec breakpoints over those blocks, which stop at the
@@ -267,7 +267,7 @@ async function follow(
   if (options.entry === undefined && basic === undefined) throw new UsageError(NO_BASIC);
   const notStarted = await startLoaded(client, program, bytes, options.entry);
   if (notStarted !== undefined) return { stages: [], frames: 0, reached: false, failed: notStarted };
-  // The frames of each step end where a scenario's do: the first step counts from RUN, a later one from where it starts (D62).
+  // The frames of each step end where a scenario's do: the first step counts from RUN, a later one from where it starts.
   let anchor: { line: number; cycle: number } | undefined = await rasterAt(client);
   const framed = () => (anchor === undefined ? {} : { anchor });
   const found: Stage[] = [];
@@ -277,10 +277,10 @@ async function follow(
   let firstFrame = 0;
   let total = 0;
   let ended = false;
-  /** Where the run stops: the target of a runUntil step while it runs, then until (R2-06). */
+  /** Where the run stops: the target of a runUntil step while it runs, then until. */
   let stopAt: number | undefined;
   const atTarget = (pc: number) => stopAt !== undefined && pc === stopAt;
-  // The current stage: its memory map since it started, chunk by chunk, its own code, and the written code it calls (D59).
+  // The current stage: its memory map since it started, chunk by chunk, its own code, and the written code it calls.
   let stage = { map: new Uint8Array(0x10000), own: new Set<number>(), called: [] as Range[] };
   const startStage = async (next: number, last: Uint8Array) => {
     mergeMaps(stage.map, last);
@@ -356,7 +356,7 @@ async function follow(
         left -= advanced;
         const pc = run.pc ?? (await client.registersGet("c64")).pc;
         map = await readCoverage(client);
-        // A frame can end in written code that the stage called before (D59): that stop starts no stage.
+        // A frame can end in written code that the stage called before: that stop starts no stage.
         if (inRanges(candidates, pc) && !inRanges(stage.called, pc)) {
           if (written(pc)) {
             const back = left > 0 && !atTarget(pc) ? await returns(map, left) : undefined;
@@ -444,7 +444,7 @@ async function follow(
       stopAt = undefined;
     }
   };
-  // The steps run first and in the tracked time: a frames step and a runUntil step to an address (R2-06). The others act between two chunks.
+  // The steps run first and in the tracked time: a frames step and a runUntil step to an address. The others act between two chunks.
   for (const [index, step] of options.steps.entries()) {
     if ("frames" in step) await track(step.frames);
     else if (trackedRunUntil(step)) {

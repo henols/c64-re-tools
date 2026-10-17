@@ -1,4 +1,4 @@
-// The program in the knowledge (D83): its bytes, its entry with the machine
+// The program in the knowledge: its bytes, its entry with the machine
 // state and the stages of its unpacker, and the coverage of the runs. A
 // capture and the coverage maps are imported one time; every later step reads
 // them here, so a project needs no image or coverage files to be made again.
@@ -14,7 +14,7 @@ import { checkSpace, hex, write, type AddressRange, type Evidence, type WriteCon
 /** The 64 KiB of one space: offset n is address n. */
 const SIZE = 0x10000;
 
-/** The coverage map flag of each kind; wx has its own map (D83). */
+/** The coverage map flag of each kind; wx has its own map. */
 const KIND_BITS: Record<Exclude<CoverageKind, "wx">, number> = {
   r: COVERAGE.ramRead,
   w: COVERAGE.ramWrite,
@@ -146,7 +146,7 @@ function currentCoverage(db: DatabaseSync, space: Space): Map<CoverageKind, Uint
   return maps;
 }
 
-/** One import of a coverage map: its project path, its SHA-256, the space it went into (D86) and the revision. */
+/** One import of a coverage map: its project path, its SHA-256, the space it went into and the revision. */
 export interface CoverageRun {
   name: string;
   sha256: string;
@@ -163,7 +163,7 @@ export function coverageRuns(db: DatabaseSync | undefined): CoverageRun[] {
 }
 
 /**
- * Joins coverage maps into the coverage of a space (D83): adds the ranges of
+ * Joins coverage maps into the coverage of a space: adds the ranges of
  * the flags that no imported run set before, and as wx the addresses that one
  * run both wrote and executed. Each new map is evidence of the revision, with
  * its space. A map that the space has with the same name and bytes is not

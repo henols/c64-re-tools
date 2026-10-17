@@ -1,6 +1,6 @@
 // The one error envelope for the skill scripts and the CLI: a script prints one JSON line,
 // a refusal prints {"error":{code,message}} with exit status 1, and a usage error prints the
-// usage text as an invalid-input error with exit status 2. Every script takes --project <folder> (D67).
+// usage text as an invalid-input error with exit status 2. Every script takes --project <folder>.
 
 import { ProjectError, useProject } from "./project.ts";
 import { shownMessage, WireFailure } from "./protocol/messages.ts";
@@ -57,7 +57,7 @@ function printLine(value: unknown): void {
 }
 
 /**
- * Runs a script body with the command line of the process, without --project: that sets the project first (D67).
+ * Runs a script body with the command line of the process, without --project: that sets the project first.
  * Prints its result as one JSON line when it returns a value (undefined prints nothing).
  * A refusal (WireFailure and ProjectError always, plus `refusals`) prints {"error":{code,message}} with exit status 1.
  * A UsageError or a node:util parseArgs error (code ERR_PARSE_ARGS_*) prints {"error":{"code":"invalid-input",

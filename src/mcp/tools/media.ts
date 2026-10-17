@@ -1,5 +1,5 @@
 // Media tools: c64_autostart, c64_program_load, c64_disk_attach and
-// c64_snapshot. Paths are relative to the project folder (D68); the host-client
+// c64_snapshot. Paths are relative to the project folder; the host-client
 // reads the file and the Host Runtime receives only its bytes.
 
 import { z } from "zod";

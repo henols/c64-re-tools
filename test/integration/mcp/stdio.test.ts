@@ -91,7 +91,7 @@ test("a host that starts after the MCP is used on the next tool call", async () 
   await waitFor(() => state.closed === 1, "the session closed");
 });
 
-test("after the host comes back, the next call opens a new session; a lost session that served calls says so once (D57)", async () => {
+test("after the host comes back, the next call opens a new session; a lost session that served calls says so once", async () => {
   const port = await freePort();
   const code = (result: CallToolResult) => (result.isError === true ? JSON.parse((result.content[0] as { text: string }).text).code : "ok");
   const host = async (state: StubState) => {

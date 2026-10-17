@@ -1,9 +1,9 @@
-// The c64-source script (D48): generates ACME source from the program and the
-// knowledge (D83) and Ghidra's instructions, which it runs itself, and checks
+// The c64-source script: generates ACME source from the program and the
+// knowledge and Ghidra's instructions, which it runs itself, and checks
 // with ACME that the source assembles to the program byte by byte. With --loader it
 // also writes a loader that recreates the entry state, simulates it, and
-// checks it in the emulator. Each switch of the patches (D72) is built on
-// alone and checked. A macro use (D73) that does not give the bytes of the
+// checks it in the emulator. Each switch of the patches is built on
+// alone and checked. A macro use that does not give the bytes of the
 // image is written as its instructions. Exit status: 0 when every check
 // passes, 1 when one fails, 2 for a bad call.
 
@@ -35,7 +35,7 @@ import { entriesInData, entryOutsideImage, instructionText, layout, literalOpera
 
 const USAGE = `generate.ts --out <dir> [options]
 
-The program, its entry state and the coverage come from the knowledge (D83):
+The program, its entry state and the coverage come from the knowledge:
 put them in with knowledge.ts image and coverage of the c64-knowledge skill.
 Code that no imported run executed is marked and listed; <dir>/not_executed.json
 has all of its ranges.
@@ -48,23 +48,23 @@ has all of its ranges.
                      segments into place, sets the entry state of the knowledge,
                      and jumps to the entry; it is checked in the emulator
   --analyzer-names   name an address that has no name of the user or the LLM, and
-                     no platform name, with its analyzer name (D74)
+                     no platform name, with its analyzer name
 
 The result is one JSON object. Addresses are $ and four hex digits.`;
 
 const MAX_LISTED = 20;
-/** Rounds of assembly that move operand expressions to numbers (D65) and macro uses to instructions (D73). */
+/** Rounds of assembly that move operand expressions to numbers and macro uses to instructions. */
 const ROUNDS = 6;
 const PROBE_BASE = 0x1000;
 const PROBE_SLOT = 4;
 /** The copies of a full 64 KiB take about 140 frames. */
 const LOADER_FRAMES = 1500;
 
-/** The knowledge of one space that the source uses, read once. With `analyzerNames`, an address without a name takes its first analyzer name (D74). */
+/** The knowledge of one space that the source uses, read once. With `analyzerNames`, an address without a name takes its first analyzer name. */
 function readKnowledge(space: Space, analyzerNames = false) {
   const db = openForRead();
   try {
-    // With conflicts from a git merge, the source would depend on which of two rows comes first (D69).
+    // With conflicts from a git merge, the source would depend on which of two rows comes first.
     const found = conflicts(db).length;
     if (found > 0) throw new KnowledgeError("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was generated. Run c64-knowledge's knowledge.ts merge, then generate again.`);
     const symbols = listSymbols(db, undefined, undefined, undefined, space);
@@ -72,7 +72,7 @@ function readKnowledge(space: Space, analyzerNames = false) {
     return {
       revision: currentRevision(db),
       program: requireProgram(db, space),
-      // The coverage is of the C64: drive code and banks have none (D40).
+      // The coverage is of the C64: drive code and banks have none.
       coverage: space === DEFAULT_SPACE ? programCoverage(db)?.map : undefined,
       symbols: analyzerNames ? withAnalyzerNames(symbols, second) : symbols,
       // Analyzer routines are entry points for the decode, also without --analyzer-names.
@@ -93,9 +93,9 @@ function readKnowledge(space: Space, analyzerNames = false) {
 
 /**
  * The names of the user and the LLM, and for each address without one the
- * first analyzer name in the order heuristic, Ghidra, DXA (D74). An analyzer
+ * first analyzer name in the order heuristic, Ghidra, DXA. An analyzer
  * name that another address has already is left out. The analyzer names keep
- * their origin, so a platform name still wins over them (D61).
+ * their origin, so a platform name still wins over them.
  */
 function withAnalyzerNames(symbols: SymbolRow[], second: SymbolRow[]): SymbolRow[] {
   const named = new Set(symbols.map((symbol) => symbol.address));
@@ -116,7 +116,7 @@ function withAnalyzerNames(symbols: SymbolRow[], second: SymbolRow[]): SymbolRow
  * Ghidra's instruction starts and lengths inside the image, seeded from the
  * entry, from knowledge of any origin, and from the coverage: a run's flow
  * starts, also after a JSR, so code that an analyzer does not reach by itself
- * is in the source (D74).
+ * is in the source.
  */
 async function decode(image: ProgramImage, knowledge: ReturnType<typeof readKnowledge>, entries: number[], coverage: Uint8Array | undefined): Promise<Map<number, number>> {
   const inImage = (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end);
@@ -130,7 +130,7 @@ async function decode(image: ProgramImage, knowledge: ReturnType<typeof readKnow
   }
   const entryPoints = [...seeds].filter(inImage).sort((a, b) => a - b);
   if (entryPoints.length === 0) {
-    // An entry in no segment is a capture fault: the image is data only, and the result says entryOutside (R3-01).
+    // An entry in no segment is a capture fault: the image is data only, and the result says entryOutside.
     if (image.entry !== undefined && !inImage(image.entry)) return new Map();
     throw new UsageError("Ghidra needs an entry point: give --entry, or record a routine or a code region in knowledge with the c64-knowledge skill");
   }
@@ -243,7 +243,7 @@ function firstDifference(start: number, built: (address: number) => number, orig
 /**
  * Assembles each macro use alone at its own address, with the constants and
  * the macros, and gives the uses that ACME refuses or assembles to other bytes
- * than the image, with the reason (D73). A use of another length moves no
+ * than the image, with the reason. A use of another length moves no
  * other use, so each one is checked on its own, as the opcode probe does.
  */
 async function probeUses(laid: Layout, rendered: Rendered, image: ProgramImage): Promise<Map<number, string>> {
@@ -291,7 +291,7 @@ async function probeUses(laid: Layout, rendered: Rendered, image: ProgramImage):
 }
 
 /**
- * The operand expressions (D65) and macro uses (D73) that made the assembly
+ * The operand expressions and macro uses that made the assembly
  * fail or that ACME assembled to other bytes than the image, with the
  * reason. `markLines` is the number of lines added before the rendered text of
  * each file. A use of another length moves every byte after it: then only the
@@ -358,7 +358,7 @@ function check(program: Buffer, start: number, image: ProgramImage): { identical
   return { identical: segments.every((segment) => segment.result === "identical"), segments };
 }
 
-/** What a build with one switch on gives (D72). */
+/** What a build with one switch on gives. */
 interface SwitchCheck {
   name: string;
   define: string;
@@ -423,7 +423,7 @@ async function readRam(client: ViceSessionClient, start: number, size: number): 
  * Runs the loader in the emulator to its jump to the entry and compares the
  * machine with the entry state there. At the jump, every byte and register is
  * set and no interrupt has run since the PLP: the 6502 takes one only after
- * the JMP, as the original program can take one right at its entry (F-32).
+ * the JMP, as the original program can take one right at its entry.
  */
 /** What the check of the loader gives. `stop`: why the loader did not get to its copier or its jump. */
 interface LoaderRun {
@@ -476,7 +476,7 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
     const flags = (["n", "v", "d", "i", "z", "c"] as const).reduce((value, name, index) => value | (registers.flags[name] ? [0x80, 0x40, 0x08, 0x04, 0x02, 0x01][index]! : 0), 0);
     differ("flags", flags, state.flags & 0xcf);
     if (state.vic !== undefined) {
-      // The display registers and the raster line (D60): the loader waited for the line, so the jump comes in it or the next one.
+      // The display registers and the raster line: the loader waited for the line, so the jump comes in it or the next one.
       const vic = Buffer.from((await client.ioRead(0xd000, 0x2f)).data, "hex");
       for (const { register, mask } of VIC_DISPLAY_REGISTERS) differ(formatC64Address(0xd000 + register), vic[register]! & mask, state.vic.registers[register]! & mask);
       differ("the VIC bank", Buffer.from((await client.ioRead(0xdd00, 1)).data, "hex")[0]! & 0x03, state.vic.bank);
@@ -485,7 +485,7 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
       if (line !== wanted && line !== wanted + 1) differences.push(`the raster line is ${line}, not ${wanted}`);
     }
     if (plan.cia !== undefined) {
-      // The CIA timers (D63): at the jump a running timer is 3 cycles, the JMP, before its value at the entry.
+      // The CIA timers: at the jump a running timer is 3 cycles, the JMP, before its value at the entry.
       const chips = (await client.cia("both")).chips;
       const word = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
       const differWord = (what: string, got: number, wanted: number) => got !== wanted && differences.push(`${what} is ${word(got)}, not ${word(wanted)}`);
@@ -506,7 +506,7 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
 }
 
 /**
- * The ROMs the program uses (D75): from the coverage when the knowledge has
+ * The ROMs the program uses: from the coverage when the knowledge has
  * it, else from $01 of the entry state, else both.
  */
 function romsInUse(image: ProgramImage, coverage: Uint8Array | undefined): RomUse & { from: "coverage" | "entry state" | "none" } {
@@ -518,14 +518,14 @@ function romsInUse(image: ProgramImage, coverage: Uint8Array | undefined): RomUs
 
 /** The first words of every file that the script writes. */
 const GENERATED_MARK = "; Generated by c64-source";
-/** The file with every range of instructions that no run executed (D49). */
+/** The file with every range of instructions that no run executed. */
 const NOT_EXECUTED_FILE = "not_executed.json";
-/** The line of each name and address in the source, for links from the documentation (D80). */
+/** The line of each name and address in the source, for links from the documentation. */
 const SOURCE_MAP_FILE = "source-map.json";
 
 /** Removes the .asm files of an earlier run that this run does not write, and an earlier loader.prg and not_executed.json; other files stay. */
 /**
- * source-map.json (D80): the line of each name and of each address that the
+ * source-map.json: the line of each name and of each address that the
  * files write, after the mark line. One entry per line of the file, so a diff
  * of two maps stays short.
  */
@@ -605,13 +605,13 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     macros: knowledge.macros,
     macroUses: knowledge.macroUses,
     ...(coverage === undefined ? {} : { coverage }),
-    // The platform names are C64 names: drive code and banks get none. A ROM that the program does not use gives none (D75).
+    // The platform names are C64 names: drive code and banks get none. A ROM that the program does not use gives none.
     ...(space === DEFAULT_SPACE ? { platform: platformNamesFor(romUse), describe: describeAddress, decode: decodeRegister } : {}),
   });
   const asBytes = await probe(laid);
   const header = [`Generated by c64-source from knowledge revision ${knowledge.revision}${space === DEFAULT_SPACE ? "" : ` in space ${space}`}.`, "Change names, comments, regions and modules in knowledge, then generate again."];
   let loader: LoaderPlan | undefined;
-  // An image without its entry has no program: the source is still written and checked, but the run fails (R2-02).
+  // An image without its entry has no program: the source is still written and checked, but the run fails.
   const missingEntry = entryOutsideImage(image.entry, image.segments);
   // A loader that cannot be planned does not stop the source: the source is written and checked, and the result says why.
   let loaderRefused: string | undefined = state === undefined ? undefined : missingEntry;
@@ -625,11 +625,11 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
       loaderRefused = error.message;
     }
   }
-  // Every generated file starts with the mark, so a later run knows its own files and removes the ones it does not write again (F-25).
+  // Every generated file starts with the mark, so a later run knows its own files and removes the ones it does not write again.
   const marked = (list: Array<{ name: string; text: string }>) => list.map((file) => ({ ...file, text: `${GENERATED_MARK}. Do not edit: change the knowledge and generate again.\n${file.text}` }));
   const loaderFiles = loader === undefined ? [] : [{ name: "loader.asm", text: loader.text }];
   // An operand expression that ACME refuses, or assembles to other bytes, is written as its number, and a macro use as its
-  // instructions; then the source is assembled again (D65, D73).
+  // instructions; then the source is assembled again.
   const numbers = new Map<number, string>();
   const asInstructions = new Map<number, string>();
   let rendered = render(laid, asBytes, header, numbers, asInstructions);
@@ -652,7 +652,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   const showRange = (range: Range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
   if (rendered.notExecuted !== undefined) {
-    // Each range with the file of the source that holds it and the routine before it, as a report groups them (M23.6).
+    // Each range with the file of the source that holds it and the routine before it, as a report groups them.
     const routines = knowledge.symbols.filter((symbol) => symbol.kind === "routine").sort((a, b) => a.address - b.address);
     const placed = rendered.notExecuted.ranges.map((range) => {
       const file = laid.pieces.find((piece) => range.start >= piece.start && range.start <= piece.end)?.file;
@@ -673,11 +673,11 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     instructions: rendered.instructions,
     dataBytes: rendered.dataBytes,
     ...(rendered.undecodedBytes === 0 ? {} : { undecodedBytes: rendered.undecodedBytes }),
-    // The ROM names that the source leaves out, and the evidence (D75).
+    // The ROM names that the source leaves out, and the evidence.
     ...(space !== DEFAULT_SPACE || (romUse.basic && romUse.kernal) ? {} : { romNamesLeftOut: { roms: [...(romUse.basic ? [] : ["BASIC"]), ...(romUse.kernal ? [] : ["KERNAL"])], ...(romUse.basic || romUse.kernal ? {} : { systemArea: true }), from: romUse.from } }),
     ...(missingEntry === undefined ? {} : { entryOutside: { entry: formatC64Address(image.entry!), reason: missingEntry } }),
     labels: { named: laid.namedLabels, generated: laid.generatedLabels },
-    // An --entry in a data region decodes nothing: the result says so, and a code region in the knowledge changes it (F-27).
+    // An --entry in a data region decodes nothing: the result says so, and a code region in the knowledge changes it.
     ...(inData.length === 0
       ? {}
       : { entriesInData: inData.map(({ entry, region }) => ({ entry: formatC64Address(entry), region: { ...showRange(region), type: region.type }, origin: region.origin })) }),
@@ -705,7 +705,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
           },
         }),
     ...(rendered.uses.length === 0 && rendered.macrosAsInstructions.length === 0 ? {} : { macroUses: rendered.uses.length }),
-    // A macro use that the source writes as its instructions does not fail the run: the source stays identical (D73).
+    // A macro use that the source writes as its instructions does not fail the run: the source stays identical.
     ...(rendered.macrosAsInstructions.length === 0
       ? {}
       : {
@@ -714,7 +714,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
             listed: rendered.macrosAsInstructions.slice(0, MAX_LISTED).map((item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), macro: item.macro, reason: item.reason })),
           },
         }),
-    // A patch that the source cannot write fails the run: the switch would miss a part (D72).
+    // A patch that the source cannot write fails the run: the switch would miss a part.
     ...(laid.patchesNotWritten.length === 0
       ? {}
       : {
@@ -732,7 +732,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   const checked = check(built.program, built.start!, image);
   output.check = checked;
   if (!checked.identical) return { output: { ...output, ...notBuilt("The source does not assemble to the image, and the loader includes it.") }, failed: true };
-  // Each switch on alone, against the default build (D72); combinations are not built.
+  // Each switch on alone, against the default build; combinations are not built.
   const switches: SwitchCheck[] = [];
   for (const [name, patches] of switchesOf(laid)) switches.push(await checkSwitch(name, patches, files, { program: built.program, start: built.start! }, laid.names));
   if (switches.length > 0) output.switches = switches;
@@ -772,7 +772,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     copier: formatC64Address(loader.copier),
     stackByte: formatC64Address(loader.stackByte),
     ...ran,
-    // What the loader cannot set as it was at the entry (D63).
+    // What the loader cannot set as it was at the entry.
     ...(loaderLimits(loader).length === 0 ? {} : { limits: loaderLimits(loader) }),
   };
   return { output, failed: !ran.verified || sourceFailed };

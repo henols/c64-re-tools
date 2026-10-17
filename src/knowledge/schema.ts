@@ -1,4 +1,4 @@
-// The schema of the knowledge index, .c64-re-tools/local/knowledge.db (D69).
+// The schema of the knowledge index, .c64-re-tools/local/knowledge.db.
 // The index is made from the text in .c64-re-tools/knowledge/; an index with
 // another version is emptied and made again.
 
@@ -7,7 +7,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { REFERENCE_KINDS, type ReferenceKind } from "../c64.ts";
 import { OPERAND_SELECTS } from "./expression.ts";
 
-/** heuristic: 6502 idioms that the static analysis finds by pattern (D44); an analyzer origin. */
+/** heuristic: 6502 idioms that the static analysis finds by pattern; an analyzer origin. */
 export const ORIGINS = ["user", "llm", "dxa", "ghidra", "heuristic"] as const;
 export type Origin = (typeof ORIGINS)[number];
 export const SYMBOL_KINDS = ["label", "routine", "variable", "data", "vector"] as const;
@@ -31,34 +31,34 @@ export const REGION_TYPES = [
   "dual-use",
 ] as const;
 export type RegionType = (typeof REGION_TYPES)[number];
-/** Region types that are code: a JMP table is code too. dual-use is neither code nor data (D42). */
+/** Region types that are code: a JMP table is code too. dual-use is neither code nor data. */
 export const CODE_REGION_TYPES: readonly RegionType[] = ["code", "jumps"];
 /** Region types that take no element size: their elements are instructions. */
 export const NO_ELEMENT_TYPES: readonly RegionType[] = ["code", "jumps"];
 export const MAX_ELEMENT = 256;
-/** What a revision can name as its evidence (D42): a coverage run, a test, any project file, or a note. */
+/** What a revision can name as its evidence: a coverage run, a test, any project file, or a note. */
 export const EVIDENCE_KINDS = ["coverage", "test", "file", "note"] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 export const COMMENT_PLACEMENTS = ["line", "side"] as const;
 export type CommentPlacement = (typeof COMMENT_PLACEMENTS)[number];
 export { REFERENCE_KINDS, type ReferenceKind };
-/** The reference kind that only operand expressions write (D65): code that builds the address of a symbol. */
+/** The reference kind that only operand expressions write: code that builds the address of a symbol. */
 export const POINTER_KIND: ReferenceKind = "pointer";
 export { OPERAND_SELECTS, type OperandSelect } from "./expression.ts";
-/** What a suppression blocks: a symbol address, a region range or one reference (D36). */
+/** What a suppression blocks: a symbol address, a region range or one reference. */
 export const SUPPRESSION_ENTITIES = ["symbol", "region", "reference"] as const;
 export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 
-/** A module file of the generated source (D48): a plain name that ends in .asm, no directory. */
+/** A module file of the generated source: a plain name that ends in .asm, no directory. */
 export const MODULE_FILE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}\.asm$/;
-/** A switch of the generated source (D72): upper case, so it reads as a build option and not as a label. */
+/** A switch of the generated source: upper case, so it reads as a build option and not as a label. */
 export const SWITCH_NAME = /^[A-Z][A-Z0-9_]{1,31}$/;
-/** A macro name and a macro parameter (D73). The body names a parameter with a dot in front: .dst. */
+/** A macro name and a macro parameter. The body names a parameter with a dot in front: .dst. */
 export const MACRO_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
 export const MACRO_PARAM = /^[a-z_][a-z0-9_]{0,31}$/;
 
 /**
- * The kinds of a coverage range (D83), one for each flag of a coverage map
+ * The kinds of a coverage range, one for each flag of a coverage map
  * (COVERAGE in c64.ts), and wx: written and executed in the same run, so
  * self-modified code still shows after the runs are joined.
  */
@@ -76,7 +76,7 @@ export function isGeneratedFile(file: string): boolean {
 }
 
 /**
- * The address space of a knowledge row (D53): the C64, the 1541 drive, or a
+ * The address space of a knowledge row: the C64, the 1541 drive, or a
  * cartridge bank. Drive code and banks reuse C64 addresses.
  */
 export const SPACE = /^(c64|drive8|bank(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$/;

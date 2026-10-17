@@ -7,7 +7,7 @@ const SYMBOLS: Record<string, number> = { sprite_bank: 0x3000, VICSCN: 0x0400, C
 const resolve = (name: string) => SYMBOLS[name];
 const at = (text: string) => evaluate(text, resolve);
 
-test("the expressions of the Hover Bovver specification have the values of its image (D65)", () => {
+test("the expressions of the Hover Bovver specification have the values of its image", () => {
   assert.equal(at("<irq_handler") & 0xff, 0xc0);
   assert.equal(at(">irq_handler"), 0x80);
   assert.equal(at(">(sprite_bank + $1000)"), 0x40);

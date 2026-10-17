@@ -1,4 +1,4 @@
-// The action steps of the step language (D43): write, registers, joystick,
+// The action steps of the step language: write, registers, joystick,
 // type, frames and runUntil. c64-testing scenarios and the c64-unpacker
 // steps file share them; each caller adds its own steps around them.
 
@@ -95,7 +95,7 @@ export function checkActionStep(kind: string, step: Record<string, unknown>, at:
     case "runUntil": {
       const target = step.runUntil;
       const keys = isObject(target) ? Object.keys(target).sort().join(",") : "";
-      // at, raster, at with raster (the address only on that line, D46), or memory.
+      // at, raster, at with raster (the address only on that line), or memory.
       if (!["at", "raster", "at,raster", "memory"].includes(keys)) return fail(`${at}: runUntil needs at, raster, at and raster, or memory`);
       const until = target as Record<string, unknown>;
       if ("raster" in until && !isInteger(until.raster, 0, MAX_RASTER_LINE)) fail(`${at}: runUntil.raster must be a raster line from 0 to ${MAX_RASTER_LINE}`);

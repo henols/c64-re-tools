@@ -1,4 +1,4 @@
-// The c64-static-analysis script: analyzes the program in the knowledge (D83)
+// The c64-static-analysis script: analyzes the program in the knowledge
 // with DXA (fast first pass) or Ghidra (deeper), which it runs itself, seeded
 // from current knowledge and the coverage of the knowledge, and imports the
 // structural findings into .c64-re-tools/knowledge/.
@@ -32,7 +32,7 @@ import { findPointers, type PointerCandidate } from "./lib/pointers.ts";
 
 const USAGE = `analyze.ts [options]
 
-The program and the coverage come from the knowledge (D83): put them in with
+The program and the coverage come from the knowledge: put them in with
 knowledge.ts image and coverage of the c64-knowledge skill. The executed code of
 the coverage is seeded, and analyzer data over it is reported.
 
@@ -61,7 +61,7 @@ function listed<T, U>(items: T[], max: number, show: (item: T) => U, all: string
   return { count: items.length, listed: items.slice(0, max).map(show), ...(items.length > max ? { rest: all } : {}) };
 }
 
-/** A pitfall with $ addresses and what goes wrong (M23.7). */
+/** A pitfall with $ addresses and what goes wrong. */
 function showPitfall(pitfall: Pitfall) {
   return {
     kind: pitfall.kind,
@@ -71,7 +71,7 @@ function showPitfall(pitfall: Pitfall) {
   };
 }
 
-/** A pointer candidate with $ addresses, and the operand writes that would name it (D65). */
+/** A pointer candidate with $ addresses, and the operand writes that would name it. */
 function showPointer(candidate: PointerCandidate) {
   const hex = formatC64Address;
   if (candidate.kind === "sprite pointer") {
@@ -80,13 +80,13 @@ function showPointer(candidate: PointerCandidate) {
   return { kind: candidate.kind, to: hex(candidate.to), target: hex(candidate.target), low: hex(candidate.low), high: hex(candidate.high) };
 }
 
-/** A macro candidate with $ addresses and its source line (D73). */
+/** A macro candidate with $ addresses and its source line. */
 function showMacro(candidate: MacroCandidate) {
   return { macro: candidate.macro, start: formatC64Address(candidate.start), end: formatC64Address(candidate.end), args: candidate.args, text: `+${candidate.macro} ${candidate.args.join(", ")}` };
 }
 
 /**
- * The macro candidates (D73) in the current code regions of every origin,
+ * The macro candidates in the current code regions of every origin,
  * with the names of the knowledge in their args. A candidate is left out when
  * a name or a reference target is inside it, or a patch or a use overlaps it:
  * c64-source would write its instructions. The same use in the knowledge is
@@ -255,24 +255,24 @@ async function run(argv: string[]): Promise<unknown> {
   if (!SPACE.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
   const reader = openForRead();
   const program = requireProgram(reader, space);
-  // A coverage map is of the C64 CPU: VICE keeps none for the drive (D53).
+  // A coverage map is of the C64 CPU: VICE keeps none for the drive.
   const covered = space === DEFAULT_SPACE ? programCoverage(reader) : undefined;
   const coverage = covered?.map;
   const { bytes, kind: imageKind } = analyzedBytes(program);
   // The analyzer sees all bytes it gets; the coverage seeds only the program, as c64-source does.
   const byteAt = imageReader(bytes, imageKind);
   const inProgram: ImageByte = (address) => (program.segments.some((segment) => address >= segment.start && address <= segment.end) ? program.byteAt(address) : undefined);
-  // With coverage, a code finding over an executed instruction start replaces the data of the other analyzer (D58).
+  // With coverage, a code finding over an executed instruction start replaces the data of the other analyzer.
   const executed = coverage === undefined ? {} : { executed: (address: number) => (coverage[address]! & COVERAGE.ramExecute) !== 0 };
   const loaded = imageKind === "flat64k" ? { start: 0x0000, end: 0xffff } : prgRange(bytes);
   const idioms = findIdioms(byteAt, { start: loaded.start, end: loaded.end }, covered);
 
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries, space);
-  // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound (D44).
+  // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound.
   const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, inProgram);
   const known = [...seeds.entryPoints, ...codeEntries(reader, byteAt, space)];
-  // Ghidra takes the coverage as code starts without a function (D74); DXA has one list.
+  // Ghidra takes the coverage as code starts without a function; DXA has one list.
   const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, inProgram);
   const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines])];
   seeds.entryPoints = ordered.slice(0, GHIDRA_LIMITS.entryPoints).sort((a, b) => a - b);
@@ -295,9 +295,9 @@ async function run(argv: string[]): Promise<unknown> {
   /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
   const idiomsResult = () => {
     const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: "Idioms in the program" }));
-    // The macro candidates read the code regions after both imports (D73).
+    // The macro candidates read the code regions after both imports.
     const macros = macroCandidates(space, byteAt, values["macro-batch"]);
-    // Platform pitfalls are C64 facts: drive code and banks get none (M23.7).
+    // Platform pitfalls are C64 facts: drive code and banks get none.
     const pitfallDb = openForRead();
     const pitfalls = space === DEFAULT_SPACE ? findPitfalls(byteAt, listRegions(pitfallDb, undefined, "code", undefined, space)) : [];
     pitfallDb?.close();

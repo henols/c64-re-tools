@@ -1,4 +1,4 @@
-// The c64-testing diff script (D77): what changed between two machine states.
+// The c64-testing diff script: what changed between two machine states.
 // Two snapshot files are restored one after the other in an own emulator,
 // which reads RAM, colour RAM and the chip and CPU registers with the readers
 // that the runs use: VICE reads its own snapshot format. Two memory files of a

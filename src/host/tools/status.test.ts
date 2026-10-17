@@ -60,7 +60,7 @@ test("host.status reports a tool from a VICE older than 3.9 as not working, with
   }
 });
 
-test("host.status reports VICE with the version that the host read at start, without -version, and names its flaws (D56)", { skip, timeout: 30_000 }, async () => {
+test("host.status reports VICE with the version that the host read at start, without -version, and names its flaws", { skip, timeout: 30_000 }, async () => {
   const env = {
     PATH: "/usr/bin:/bin",
     // As the Homebrew x64sc of VICE 3.10 on macOS: -version stops with an error.

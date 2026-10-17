@@ -1,4 +1,4 @@
-// Coverage as static-analysis evidence (D44): the seeds it gives, the check
+// Coverage as static-analysis evidence: the seeds it gives, the check
 // it makes, and a DXA run that finds the code that only a vector reaches.
 
 import assert from "node:assert/strict";
@@ -36,7 +36,7 @@ after(() => {
   for (const root of cases) rmSync(root, { recursive: true, force: true });
 });
 
-/** A project of its own: the coverage of the knowledge only grows (D83). */
+/** A project of its own: the coverage of the knowledge only grows. */
 function fresh(): string {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-case-"));
   cases.push(root);
@@ -61,7 +61,7 @@ test("coverage seeds the first instruction of each flow, not every instruction",
   assert.deepEqual(entries, [0xc000, 0xc006, 0xc010]);
 });
 
-test("after an executed JSR the next instruction starts a flow, and a branch target or a return point is a code start, not a routine (D74)", () => {
+test("after an executed JSR the next instruction starts a flow, and a branch target or a return point is a code start, not a routine", () => {
   // The Bruce Lee run: Ghidra took a called routine for one that does not return and left the code after the JSR undecoded.
   const image = new Uint8Array(0x10000);
   // $c000 JSR $c100 / $c003 BNE $c007 / $c005 LDA #1 / $c007 RTS; $c100 RTS; $c200 is reached only through a vector.
@@ -91,7 +91,7 @@ test("code regions and JMP tables are entry points, and analyzer data over execu
 /**
  * A flat image whose program calls the KERNAL and stops: $080d JSR $FFE4 / BRK.
  * The RAM under the KERNAL holds leftover code at $ffe4, and its IRQ vector at
- * $fffe points to leftover code at $0016. The run executed the ROM there, never the RAM (R2-07).
+ * $fffe points to leftover code at $0016. The run executed the ROM there, never the RAM.
  */
 function kernalCall(): { image: Uint8Array; map: Uint8Array } {
   const image = new Uint8Array(0x10000);
@@ -106,7 +106,7 @@ function kernalCall(): { image: Uint8Array; map: Uint8Array } {
   return { image, map };
 }
 
-test("the RAM under ROM that the runs never read or ran is data for the analysis run (R2-07)", () => {
+test("the RAM under ROM that the runs never read or ran is data for the analysis run", () => {
   const { image, map } = kernalCall();
   map[0xe000] = COVERAGE.romExecute | COVERAGE.ramExecute;
   map[0xa000] = COVERAGE.romRead | COVERAGE.ramRead;
@@ -116,7 +116,7 @@ test("the RAM under ROM that the runs never read or ran is data for the analysis
   assert.deepEqual(romOnlyRanges(map, imageReader(prg, "prg")), [{ start: 0xa001, end: 0xa001 }], "only bytes of the image");
 });
 
-test("with coverage, Ghidra does not follow a KERNAL call or the IRQ vector into the RAM under the KERNAL (R2-07)", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
+test("with coverage, Ghidra does not follow a KERNAL call or the IRQ vector into the RAM under the KERNAL", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
   const { image, map } = kernalCall();
   const root = fresh();
   // The program and the RAM under the KERNAL that holds bytes like code.
@@ -153,8 +153,8 @@ test("with coverage, DXA finds the code that only a vector reaches", { skip: dxa
   assert.deepEqual(seeded.coverageConflicts, []);
 });
 
-test("with coverage, a branch target after an RTS is no Ghidra function, and no executed start is missing (D74, M23.4)", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
-  // $0810 LDA $02 / BEQ $0815 / RTS / $0815 INC $d020 / RTS: before M23.4 the coverage seed at $0815 became FUN_0815.
+test("with coverage, a branch target after an RTS is no Ghidra function, and no executed start is missing", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
+  // $0810 LDA $02 / BEQ $0815 / RTS / $0815 INC $d020 / RTS: the coverage seed at $0815 must not become FUN_0815.
   const prg = Buffer.from([0x10, 0x08, 0xa5, 0x02, 0xf0, 0x01, 0x60, 0xee, 0x20, 0xd0, 0x60]);
   const root = fresh();
   importPrg(root, prg);

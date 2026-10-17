@@ -111,7 +111,7 @@ Read (no database needed):
   search <text>                       symbol names, analyzer names and comment texts
   symbols [--start A --end A --kind K --origin O] [--analyzer]
                                       --analyzer: the second names that DXA, Ghidra
-                                      and the idioms gave (D74)
+                                      and the idioms gave
   regions [--start A --end A --type T --origin O]
   comments [--start A --end A --origin O]
   references [--start A --end A --kind K --origin O]
@@ -123,7 +123,7 @@ Read (no database needed):
   macros [--origin O]                 the macros of the generated source
   uses [--start A --end A --macro M --origin O]   instructions written as a macro
   spaces                              the address spaces that hold knowledge
-  program                             the program in the knowledge (D83): its
+  program                             the program in the knowledge: its
                                       segments and entry, and the coverage maps
                                       that coverage imported, with the ranges
   history <address> | history --name <name> | history --macro <name>
@@ -175,12 +175,12 @@ Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
                            write the instructions <start>-<end> as one use of
                            the macro, with one expression for each param
   unuse <start>
-  image <image.json|prg>   put the program into the knowledge (D83): its bytes, and
+  image <image.json|prg>   put the program into the knowledge: its bytes, and
                            for an image.json of c64-unpacker capture also the
                            entry, the entry state and the stages; with --space for
                            drive code or a cartridge bank. Only changed bytes write
   coverage <map.bin>...    join coverage maps of c64_memmap or a run into the
-                           coverage of the knowledge (D83); each map is evidence
+                           coverage of the knowledge; each map is evidence
                            of the revision, named by its path
   revert <revision>
   merge                    decide the conflicts that a git merge of two
@@ -213,7 +213,7 @@ the id that only one revision has; 0 is the knowledge before every revision.`;
 /** The space whose names give addresses: the --space of the command. */
 let nameSpace = DEFAULT_SPACE;
 
-/** An address as $ and four hex digits, or the address of a symbol name, else of an analyzer name (D74). */
+/** An address as $ and four hex digits, or the address of a symbol name, else of an analyzer name. */
 function address(value: string | undefined, what = "address"): number {
   if (value === undefined) throw new UsageError(`${what} is missing`);
   if (SYMBOL_NAME.test(value)) return addressOfName(value, what);
@@ -249,7 +249,7 @@ function integer(value: string | undefined, what: string): number {
 }
 
 // Output shapes: addresses as $xxxx, nothing internal.
-/** The space of a row, shown only when it is not the C64 (D53). */
+/** The space of a row, shown only when it is not the C64. */
 const spaceOf = (row: { space: string }) => (row.space === "c64" ? {} : { space: row.space });
 const symbol = (row: SymbolRow) => ({ ...spaceOf(row), address: formatC64Address(row.address), name: row.name, kind: row.kind, origin: row.origin, revision: row.revision });
 const region = (row: RegionRow) => ({
@@ -332,7 +332,7 @@ function historyEntry(entry: HistoryEntry) {
   return { entity: entry.entity, ...row, fromRevision: entry.from, ...(entry.to === undefined ? {} : { toRevision: entry.to }) };
 }
 
-/** A conflict of a git merge (D69): what is wrong, and the rows, oldest first. */
+/** A conflict of a git merge: what is wrong, and the rows, oldest first. */
 function showConflict(conflict: Conflict) {
   return { conflict: CONFLICT_RULES[conflict.rule], ...spaceOf(conflict), rows: conflict.rows.map(historyEntry) };
 }
@@ -403,7 +403,7 @@ function run(argv: string[]): unknown {
 
   const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "operands", "patches", "switches", "macros", "uses", "spaces", "program", "history", "revisions", "revision", "export", "listing"]);
   const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "operand", "unoperand", "patch", "unpatch", "macro", "unmacro", "use", "unuse", "revert", "apply", "merge", "image", "coverage"]);
-  // join reads batch files and writes one: no knowledge opens (D79).
+  // join reads batch files and writes one: no knowledge opens.
   if (command === "join") return joinCommand(args, values.out, space);
   // Refuse a mistyped command before anything opens, so no database appears by accident.
   if (!read.has(command) && !write.has(command)) throw new UsageError(`unknown command: ${command}`);
@@ -414,7 +414,7 @@ function run(argv: string[]): unknown {
     try {
       const answer = readAnswer(db, command, args, values, range, origins, space);
       const found = conflicts(db);
-      // A git merge can leave conflicts: every read shows them until merge decides them (D69).
+      // A git merge can leave conflicts: every read shows them until merge decides them.
       return found.length === 0 ? answer : { ...answer, conflicts: found.map(showConflict) };
     } finally {
       db?.close();
@@ -468,7 +468,7 @@ type ReadValues = {
   macro?: string | undefined;
 };
 
-/** The lookups of a listing (D78): the program and the coverage in the knowledge (D83), the knowledge of the space and the platform names of the C64. */
+/** The lookups of a listing: the program and the coverage in the knowledge, the knowledge of the space and the platform names of the C64. */
 function listingSource(db: DatabaseSync | undefined, space: string): ListingSource {
   const image = requireProgram(db, space);
   const coverage = programCoverage(db, space)?.map;
@@ -476,7 +476,7 @@ function listingSource(db: DatabaseSync | undefined, space: string): ListingSour
   const platform = new Map(space === DEFAULT_SPACE ? platformNames().map((entry) => [entry.address, entry.name]) : []);
   return {
     byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined),
-    // A user or LLM name, else the platform name; an analyzer name in symbols (knowledge from before D74) gives way to it (D61).
+    // A user or LLM name, else the platform name; an analyzer name in symbols (knowledge from an older version) gives way to it.
     nameOf: (at) => {
       const own = symbolAt(db, at, space);
       return own !== undefined && (own.origin === "user" || own.origin === "llm") ? own.name : (platform.get(at) ?? own?.name);
@@ -615,7 +615,7 @@ function readAnswer(db: DatabaseSync | undefined, command: string, args: string[
     case "spaces":
       return { spaces: listSpaces(db) };
     case "history":
-      // Each row with the reason and the evidence of the revision that wrote it (F-26).
+      // Each row with the reason and the evidence of the revision that wrote it.
       return {
         history: (values.macro !== undefined ? historyOfMacro(db, values.macro, space) : values.name === undefined ? historyAt(db, address(args[0]), space) : historyNamed(db, values.name, space)).map((entry) => ({ ...historyEntry(entry), ...revisionNote(db, entry.from) })),
       };
@@ -655,7 +655,7 @@ function knowledgePath(path: string, what: string): string {
 
 /**
  * --evidence kind:ref. A file kind names a project file and keeps its SHA-256, so a later change of the file shows.
- * A file in .c64-re-tools/local/ is refused (D82): git ignores it, and the move that keeps it changes the path.
+ * A file in .c64-re-tools/local/ is refused: git ignores it, and the move that keeps it changes the path.
  */
 function evidenceOf(value: string, space: string): Evidence {
   const colon = value.indexOf(":");
@@ -664,7 +664,7 @@ function evidenceOf(value: string, space: string): Evidence {
   if (given === "") throw new UsageError(`--evidence needs ${kind}:<${kind === "note" ? "text" : "file"}>`);
   if (kind === "note") return { kind, ref: given };
   const ref = knowledgePath(given, `--evidence ${kind}:<file>`);
-  // A coverage map is evidence by the name that coverage imported it with (D83): the latest import into the space of the write (D86).
+  // A coverage map is evidence by the name that coverage imported it with: the latest import into the space of the write.
   if (kind === "coverage") {
     const db = openForRead();
     try {
@@ -684,7 +684,7 @@ function evidenceOf(value: string, space: string): Evidence {
   return { kind, ref, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
-/** An image.json of c64-unpacker capture or a PRG as a write of the program (D83). */
+/** An image.json of c64-unpacker capture or a PRG as a write of the program. */
 function imageRequest(path: string, space: string): ImageRequest {
   let image: ReturnType<typeof readImage>;
   try {
@@ -719,7 +719,7 @@ function imageRequest(path: string, space: string): ImageRequest {
   return request;
 }
 
-/** image and coverage (D83): the program and what the runs did go into the knowledge, so no project file is made again. */
+/** image and coverage: the program and what the runs did go into the knowledge, so no project file is made again. */
 function programOperation(command: "image" | "coverage", args: string[], context: WriteContext, space: string): WriteOperation {
   if (command === "image") {
     if (args.length !== 1) throw new UsageError("image needs one image.json or PRG");
@@ -738,8 +738,8 @@ function programOperation(command: "image" | "coverage", args: string[], context
 }
 
 /**
- * The program in the knowledge (D83) that operand, patch and macro use writes
- * are checked against (D65, D72, D73), with the platform names. A byte outside
+ * The program in the knowledge that operand, patch and macro use writes
+ * are checked against, with the platform names. A byte outside
  * the segments of the program is not in it.
  */
 function operandImage(db: DatabaseSync, space: string): OperandImage {
@@ -790,7 +790,7 @@ function textOrFile(values: Record<string, unknown>, option: string, what: strin
   return inline;
 }
 
-/** patch, macro and use: the writes of the generated source (D72, D73). */
+/** patch, macro and use: the writes of the generated source. */
 function sourceOperation(command: "patch" | "macro" | "use", args: string[], values: Record<string, unknown>, context: WriteContext, space: string): WriteOperation {
   const comment = values.comment as string | undefined;
   switch (command) {
@@ -840,7 +840,7 @@ function applyOperation(args: string[], context: WriteContext, space: string): W
   const checked = operations.some((operation) => operation.op === "operand" || operation.op === "patch" || operation.op === "use");
   return (db) => {
     const applied = applyBatch(db, checked ? { ...context, image: operandImage(db, space) } : context, operations);
-    // replaced: each write that replaced a row of another origin, with that row as previous gives it for one write (b2/07).
+    // replaced: each write that replaced a row of another origin, with that row as previous gives it for one write.
     const replaced = applied.steps.flatMap((step, index) =>
       step.previous === undefined
         ? []
@@ -891,7 +891,7 @@ function batchJson(write: BatchOperation): Record<string, unknown> {
   return out;
 }
 
-/** Reads the batches, joins them, and writes the joined batch to --out (D79). One name or one module file at two addresses writes nothing. */
+/** Reads the batches, joins them, and writes the joined batch to --out. One name or one module file at two addresses writes nothing. */
 function joinCommand(files: string[], out: string | undefined, space: string): Record<string, unknown> {
   if (files.length < 2) throw new UsageError("join needs two or more batch files");
   if (out === undefined) throw new UsageError("join needs --out <file>");

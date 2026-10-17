@@ -25,7 +25,7 @@ export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoint
   return {
     entryPoints,
     dataRanges: listRegions(db, undefined, undefined, undefined, space)
-      // A JMP table is code and dual-use bytes are both: neither is a data range (D42).
+      // A JMP table is code and dual-use bytes are both: neither is a data range.
       .filter((region) => semantic(region) && !CODE_REGION_TYPES.includes(region.type) && region.type !== "dual-use")
       .map((region) => ({ start: region.start, end: region.end })),
     labels: symbols.map((symbol) => ({ address: symbol.address, name: symbol.name })),
@@ -46,7 +46,7 @@ export function ghidraFindings(result: GhidraResult): NormalizedFindings {
   for (const fn of result.functions) uses.set(fn.name, (uses.get(fn.name) ?? 0) + 1);
   const nameOf = (fn: GhidraResult["functions"][number]) =>
     fn.nameSource !== "seed" && uses.get(fn.name)! > 1 ? `${fn.name}_${fn.entry.toString(16).padStart(4, "0")}` : fn.name;
-  // A function that branches and jumps reach, and no call, is a place in a routine: a label (D74).
+  // A function that branches and jumps reach, and no call, is a place in a routine: a label.
   const called = new Set(result.references.filter((reference) => reference.type === "call").map((reference) => reference.to));
   const jumped = new Set(result.references.filter((reference) => reference.type === "jump").map((reference) => reference.to));
   const kindOf = (fn: GhidraResult["functions"][number]) => (jumped.has(fn.entry) && !called.has(fn.entry) ? ("label" as const) : ("routine" as const));

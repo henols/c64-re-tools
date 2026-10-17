@@ -1,4 +1,4 @@
-// Runtime evidence for static analysis (D44): the coverage as entry points,
+// Runtime evidence for static analysis: the coverage as entry points,
 // user/LLM code regions and JMP tables as entry points, and the check that
 // shows analyzer data over executed code.
 
@@ -28,7 +28,7 @@ const RAM_USE = COVERAGE.ramRead | COVERAGE.ramExecute;
 
 /**
  * The image bytes under ROM that the runs never used: the CPU read or ran the
- * ROM there, and never read or ran the RAM (R2-07). A JSR $FFE4 or an IRQ
+ * ROM there, and never read or ran the RAM. A JSR $FFE4 or an IRQ
  * vector at $FFFE then leads into ROM, not into the leftover RAM bytes of a
  * flat image, so the ranges are data for the analysis run.
  */

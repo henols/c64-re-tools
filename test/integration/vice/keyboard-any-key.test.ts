@@ -1,4 +1,4 @@
-// The keyboard note of D55 and D56: a wait for any key that reads all
+// The keyboard note: a wait for any key that reads all
 // keyboard columns ends without input only on a VICE with the known flaw
 // (bug #2202: the joyport simulation holds bits 5-7 of CIA 1 low). With the
 // fix, the wait goes on, as on a C64. Opt-in with C64RT_LIVE_VICE.

@@ -1,4 +1,4 @@
-// c64-testing for real releases (D46): steps for one side, a raster sync, a
+// c64-testing for real releases: steps for one side, a raster sync, a
 // normalize step, an exclude with its reason, and the files of a FAIL.
 // The original is the key-gated packed counter; the rebuild is the plain
 // counter, loaded and started without BASIC. Opt-in with C64RT_LIVE_VICE.
@@ -56,7 +56,7 @@ test("one-side steps, a raster sync, normalize and an exclude make two different
   writeFileSync(join(project, "gated.prg"), gatedPackedPrg);
   writeFileSync(join(project, "counter.prg"), ORIGINAL.prg);
   const page = (fill: number) => Buffer.alloc(256, fill).toString("hex");
-  // The entry state that normalize writes is in the knowledge, with its program (D83).
+  // The entry state that normalize writes is in the knowledge, with its program.
   importImage(project, new Uint8Array(0x10000), { segments: [{ start: 0xc000, end: 0xc000 }], entry: 0xc000, state: { cpuPort: { $00: 0x2f, $01: 0x37 }, pages: { $0000: page(0x11), $0100: page(0x22), $0200: page(0x33), $0300: page(0x44) } } });
   const subjects = { original: { program: "gated.prg", symbols: "none" }, rebuild: { program: "counter.prg", symbols: "none" } };
   // The exclude: after normalize the rebuild writes $0002 again, so only that byte differs.

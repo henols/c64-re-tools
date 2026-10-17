@@ -25,11 +25,11 @@ export interface MemoryObservation {
   at: Location;
   /** Bytes from `at`; 1 when not given, at most 64 KiB. */
   size?: number;
-  /** cpu (the default) reads as the CPU sees memory; ram reads the RAM under the ROMs and the I/O area (M23.9). */
+  /** cpu (the default) reads as the CPU sees memory; ram reads the RAM under the ROMs and the I/O area. */
   view?: "cpu" | "ram";
   /** The largest allowed difference per byte; 0 when not given. */
   tolerance?: number;
-  /** Bytes in the range that the comparison leaves out, each with the reason (D46). */
+  /** Bytes in the range that the comparison leaves out, each with the reason. */
   exclude?: Array<{ at: Location; reason: string }>;
 }
 
@@ -49,7 +49,7 @@ type StepBody =
   | ActionStep
   | { observe: string; memory?: Array<Location | MemoryObservation>; registers?: ObservedRegister[]; screen?: ScreenPolicy; vicii?: boolean; sprites?: number[] };
 
-/** A step; with side, only that side does it (D46). An observe step has no side: it compares both. */
+/** A step; with side, only that side does it. An observe step has no side: it compares both. */
 export type Step = StepBody & { side?: Side };
 
 export interface Subject {
@@ -82,7 +82,7 @@ export interface ScenarioResult {
   reason?: string;
   checkpoints: string[];
   differences: Difference[];
-  /** The bytes that the comparison left out, with their reasons (D46). */
+  /** The bytes that the comparison left out, with their reasons. */
   excluded?: Array<{ checkpoint: string; at: Location; reason: string }>;
   /** The files that a FAIL wrote with --out. */
   files?: string[];
@@ -220,7 +220,7 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
           isInteger(rectangle.height, 1, 4096);
         if (!ok) fail(`${at}: a screen.mask rectangle needs whole numbers x and y from 0, and width and height from 1`);
       }
-      // The emulator refuses such a compare too, but only after the original side ran (b2/03).
+      // The emulator refuses such a compare too, but only after the original side ran.
       if (maskCoversFrame(screen.mask as Array<{ x: number; y: number; width: number; height: number }>, videoStandard)) fail(`${at}: screen.mask covers the whole screen, so nothing is compared`);
     }
   }
@@ -240,7 +240,7 @@ export function loadSymbols(subject: Subject): Map<string, number> {
   if (subject.symbols === "knowledge") {
     const db = openForRead();
     for (const symbol of listSymbols(db)) symbols.set(symbol.name, symbol.address);
-    // An analyzer name gives an address too, when no symbol has the name and only one analyzer gives it (D74).
+    // An analyzer name gives an address too, when no symbol has the name and only one analyzer gives it.
     const second = new Map<string, number[]>();
     for (const row of listAnalyzerNames(db)) second.set(row.name, [...(second.get(row.name) ?? []), row.address]);
     for (const [name, addresses] of second) if (!symbols.has(name) && new Set(addresses).size === 1) symbols.set(name, addresses[0]!);
@@ -297,12 +297,12 @@ interface Observation {
   screen?: { match: boolean; mismatchingPixels: number; comparedPixels: number; mismatchRatio: number; bounds?: unknown };
   vicii?: unknown;
   sprites?: unknown;
-  /** PNG images for the files of a FAIL (D46): the side's screen, and on the rebuild the difference image. */
+  /** PNG images for the files of a FAIL: the side's screen, and on the rebuild the difference image. */
   png?: string;
   diffPng?: string;
 }
 
-/** Writes pages 0-3 and $00/$01 from the entry state of the knowledge (D43, D46, D83): both sides then start from the same RAM. */
+/** Writes pages 0-3 and $00/$01 from the entry state of the knowledge: both sides then start from the same RAM. */
 async function normalize(client: ViceSessionClient): Promise<void> {
   const db = openForRead();
   let state: { pages?: Record<string, string>; cpuPort?: Record<string, number> } | undefined;
@@ -440,7 +440,7 @@ export function compare(original: Map<string, Observation>, rebuild: Map<string,
 }
 
 /**
- * Writes the files of a FAIL into `out` (D46): for a screen difference both
+ * Writes the files of a FAIL into `out`: for a screen difference both
  * screens and the difference image, and memory.json with each differing byte.
  */
 function writeFailFiles(out: string, original: Map<string, Observation>, rebuild: Map<string, Observation>, differences: Difference[]): string[] {

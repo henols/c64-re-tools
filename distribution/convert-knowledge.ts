@@ -1,7 +1,7 @@
 // Converts the knowledge of one project from the schema 7 .c64-re-tools/knowledge.db
-// to the text in .c64-re-tools/knowledge/ (D69). A one-off tool, run by hand
+// to the text in .c64-re-tools/knowledge/. A one-off tool, run by hand
 // for each project from this repository; it is not in the package, and the
-// code keeps no conversion (D28).
+// code keeps no conversion.
 //
 //   node distribution/convert-knowledge.ts <project folder>
 //

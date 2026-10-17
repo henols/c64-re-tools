@@ -1,4 +1,4 @@
-// The structured instruction list (D44): Ghidra's decode with the mode, the
+// The structured instruction list: Ghidra's decode with the mode, the
 // operand in 6502 syntax, the target, and whether the coverage saw it run.
 
 import assert from "node:assert/strict";

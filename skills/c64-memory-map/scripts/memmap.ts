@@ -1,6 +1,6 @@
 // The c64-memory-map script: the platform meaning of C64 addresses and of
 // values in platform registers. Local lookup only; nothing is stored. export
-// writes the platform names to a project file as an ACME include (D52).
+// writes the platform names to a project file as an ACME include.
 
 import { parseArgs } from "node:util";
 

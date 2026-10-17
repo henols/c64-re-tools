@@ -64,7 +64,7 @@ export function pointerTableEntries(table: { start: number; end: number; type: P
   });
 }
 
-/** How 6502 code refers to an address. A pointer is code that builds the address from immediates (D65). */
+/** How 6502 code refers to an address. A pointer is code that builds the address from immediates. */
 export const REFERENCE_KINDS = ["call", "jump", "read", "write", "reference", "pointer"] as const;
 export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
 
@@ -190,9 +190,9 @@ const MIN_BASIC_LOAD = 0x0400;
  * zero, the "marker" is the first machine code after the BASIC text (SYS
  * lines that jump right behind themselves). The stored links are not read:
  * BASIC relinks a loaded program, and a crack can store odd links to hide
- * lines from LIST. A load address below $0400 is a memory dump (F-12), and so
+ * lines from LIST. A load address below $0400 is a memory dump, and so
  * is a file whose bytes run past $ffff: a 64 KiB dump from $0000 always does
- * (b2/01, R3-02).
+ *.
  */
 export function parseTokenized(program: Uint8Array): TokenizedProgram {
   if (program.length < 4) return { reason: "The file is too short for a BASIC program." };
@@ -374,7 +374,7 @@ export function findHandoffs(lines: TokenizedLine[]): BasicHandoff[] {
   return handoffs;
 }
 
-// Execution coverage (D40): the byte format of a coverage map, and the 6502
+// Execution coverage: the byte format of a coverage map, and the 6502
 // instruction lengths that turn the instruction starts in it into code ranges.
 // VICE marks only the opcode byte of an executed instruction as executed.
 
@@ -437,7 +437,7 @@ export function executedRamCode(map: Uint8Array, base: number, memory: Uint8Arra
   return ranges;
 }
 
-// Coverage flows (D44, D74): the seeds that a coverage map gives a static analysis.
+// Coverage flows: the seeds that a coverage map gives a static analysis.
 
 /**
  * Instructions after which the next instruction starts a flow for the seeds: the
@@ -476,7 +476,7 @@ const BRANCHES = new Set([0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xf0]);
 const NO_FALL = new Set([0x00, 0x40, 0x4c, 0x60, 0x6c]);
 
 /**
- * The coverage flow starts split for Ghidra (D74). A start is a code start, a
+ * The coverage flow starts split for Ghidra. A start is a code start, a
  * place in a routine, when it follows an executed JSR, or when an executed
  * branch or JMP from outside its own flow reaches it (the loop of a routine
  * that jumps back to its own start does not count). Any other start, for

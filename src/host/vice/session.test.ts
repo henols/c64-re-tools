@@ -427,7 +427,7 @@ test("autostart stages the bytes with their type and leaves the machine running"
   await session.close();
 });
 
-test("an autostart index of a DEL entry or past the last entry is refused before VICE sees it (R2-08)", async () => {
+test("an autostart index of a DEL entry or past the last entry is refused before VICE sees it", async () => {
   const listed: string[] = [];
   const entries = [
     { name: "GAME", type: "prg" as const, blocks: 10, closed: true, locked: false },
@@ -591,7 +591,7 @@ test("joystick states set active-low lines on the right port and are held", asyn
   await session.close();
 });
 
-test("an autostart centres the held joysticks first and names them (R3-05)", async () => {
+test("an autostart centres the held joysticks first and names them", async () => {
   const { fake, session } = await startSession();
   const prg = Buffer.from([0x01, 0x08, 0x60]);
   assert.deepEqual(await session.handle("autostart", { type: "prg", index: 0, run: true }, [prg]), { state: "running" }, "nothing held, nothing named");
@@ -602,7 +602,7 @@ test("an autostart centres the held joysticks first and names them (R3-05)", asy
   await session.close();
 });
 
-test("keyboard and joystick results name the known VICE flaws of the session, and only then (D56)", async () => {
+test("keyboard and joystick results name the known VICE flaws of the session, and only then", async () => {
   const { session } = await startSession({ flaws: ["Bits 5-7 read low.", "Another flaw."] });
   assert.deepEqual(await session.handle("joystick", { port: 2, direction: "center", fire: true }), { port: 2, direction: "center", fire: true, emulatorFlaw: "Bits 5-7 read low. Another flaw." });
   assert.deepEqual(await session.handle("keyboard", { data: "52" }), { queuedBytes: 1, emulatorFlaw: "Bits 5-7 read low. Another flaw." });
@@ -714,7 +714,7 @@ test("advance-frames without a count is refused and leaves the machine running",
   await session.close();
 });
 
-test("an advance-frames anchor outside the frame is refused (D62)", async () => {
+test("an advance-frames anchor outside the frame is refused", async () => {
   const { fake, session } = await startSession();
   await assert.rejects(session.handle("execution", { action: "advance-frames", count: 1, space: "c64", anchor: { line: 312, cycle: 0 } }), /lines 0-311 and cycles 0-62/);
   await assert.rejects(session.handle("execution", { action: "advance-frames", count: 1, space: "c64", anchor: { line: 0, cycle: 63 } }), failsWith("invalid-input"));

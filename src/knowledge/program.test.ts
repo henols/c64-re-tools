@@ -170,7 +170,7 @@ test("revert takes the image and the coverage back too", () => {
   assert.equal(read.coverage, undefined);
 });
 
-test("a coverage map is known only in the space that it went into, and the runs of a name are oldest first (D86)", () => {
+test("a coverage map is known only in the space that it went into, and the runs of a name are oldest first", () => {
   const root = project();
   const first = map([0x1000, 0x1002, COVERAGE.ramExecute]);
   const second = map([0x2000, 0x2002, COVERAGE.ramExecute]);

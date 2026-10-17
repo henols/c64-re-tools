@@ -46,7 +46,7 @@ export interface GhidraParams {
   imageKind: ImageKind;
   /** Seeds from current knowledge. */
   entryPoints: number[];
-  /** Executed instruction starts that Ghidra disassembles without making a function (D74): a branch target is no routine. */
+  /** Executed instruction starts that Ghidra disassembles without making a function: a branch target is no routine. */
   codeStarts?: number[];
   dataRanges: Array<{ start: number; end: number }>;
   labels: Array<{ address: number; name: string }>;
@@ -73,7 +73,7 @@ export interface GhidraResult {
   decompilations: Array<{ entry: number; text: string; truncated: boolean }>;
   /** Requested routines without decompiled code, with the decompiler's reason. */
   notDecompiled?: Array<{ entry: number; reason: string }>;
-  /** Every instruction in the coverage, as Ghidra decoded it (D44). */
+  /** Every instruction in the coverage, as Ghidra decoded it. */
   instructions: GhidraInstruction[];
   /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { functions: boolean; regions: boolean; references: boolean };

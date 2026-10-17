@@ -88,7 +88,7 @@ test("run-until with a drive8 address tells when the drive executes it, and wher
   assert.equal(reached.pc, (await session.handle("registersGet", { space: "drive8" })).pc);
 });
 
-test("a drive8 breakpoint that stops a c64 run gives the drive's pc and space drive8 (F-31)", { skip: liveSkip, timeout: 60_000 }, async () => {
+test("a drive8 breakpoint that stops a c64 run gives the drive's pc and space drive8", { skip: liveSkip, timeout: 60_000 }, async () => {
   await session.handle("reset", { mode: "hard", run: true });
   await session.handle("execution", { action: "advance-frames", count: 100, space: "c64" });
   const { pc } = await session.handle("registersGet", { space: "drive8" });

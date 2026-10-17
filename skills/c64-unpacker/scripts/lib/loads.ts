@@ -1,4 +1,4 @@
-// The loads command of c64-unpacker (D53): one capture for each part of a
+// The loads command of c64-unpacker: one capture for each part of a
 // multi-load program. The steps file has action steps and capture steps; a
 // capture writes what the C64 side changed since the previous capture as an
 // image with its entry state, and with --drive the drive RAM as a PRG for
@@ -66,7 +66,7 @@ export function readLoadSteps(path: string): LoadStep[] {
  * Ranges from $0400 that the CPU wrote since the last capture, joined across
  * gaps of up to `join` bytes, each with at least one changed byte. With
  * `writesKnown`, every written byte counts, also one written with the value
- * that was there (zeros over the zeros of VICE's start pattern, F-20).
+ * that was there (zeros over the zeros of VICE's start pattern).
  * Without it, the KERNAL RAM test wrote all of RAM after the map was cleared,
  * and only the changed bytes count.
  */
@@ -102,7 +102,7 @@ export async function loads(program: string, options: { out: string; steps: Load
     let loadedProgram: Buffer | undefined;
     /** False while the map holds the writes of the KERNAL RAM test. */
     let writesKnown = true;
-    /** A known flaw of the host's VICE version that a tape load meets (D56). */
+    /** A known flaw of the host's VICE version that a tape load meets. */
     let emulatorFlaw: string | undefined;
     if (program.toLowerCase().endsWith(".prg")) {
       const { bytes } = readProjectFile(program);
@@ -113,7 +113,7 @@ export async function loads(program: string, options: { out: string; steps: Load
       previous.fill(0, load, Math.min(0x10000, load + bytes.length - 2));
       loadedProgram = bytes;
       await client.memmap({ action: "clear" });
-      // RUN as c64-testing types it: the steps start at the same time as a scenario's (D62).
+      // RUN as c64-testing types it: the steps start at the same time as a scenario's.
       if (!(await typeRun(client))) return { output: { loaded: false, reason: `After RUN, BASIC ran no program line in ${RUN_LIMIT_FRAMES} frames.` }, failed: true };
     } else {
       // A disk, tape or cartridge: VICE loads and starts it. The RAM test of the KERNAL puts back what it writes.

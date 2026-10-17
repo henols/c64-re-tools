@@ -1,4 +1,4 @@
-// Conflicts (D69): current rows that break a current-row rule. One computer
+// Conflicts: current rows that break a current-row rule. One computer
 // never writes them, but git joins the knowledge of two computers line by
 // line, so after a merge two names can be current at one address, or two
 // regions can overlap. Reads show them; writes are refused until a merge

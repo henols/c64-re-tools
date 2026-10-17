@@ -1,4 +1,4 @@
-; Fixture for the c64-assembler skill and the M5 acceptance: a BASIC start line,
+; Fixture for the c64-assembler skill: a BASIC start line,
 ; then a loop that counts to MAX in $c100 and stops in an endless loop.
 !source "consts.a"
 

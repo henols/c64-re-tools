@@ -82,14 +82,14 @@ test("bytes that are no BASIC program give a reason, not lines", () => {
   assert.ok(!("reason" in unterminated) && unterminated.lines.length === 1, "a file may end right after its last line");
 });
 
-test("a memory dump is no BASIC program: a load address below $0400 or bytes past $ffff; odd links are BASIC still (F-12)", () => {
+test("a memory dump is no BASIC program: a load address below $0400 or bytes past $ffff; odd links are BASIC still", () => {
   // 64 KiB of RAM from $0000: the "load address" is the bytes at $0000-$0001.
   const dump = new Uint8Array(0x10000);
   dump.set([0x00, 0x00, 0x09, 0x00, 0xb1, 0x91, 0x3c, 0x22, 0x22, 0x00, 0x0e, 0x00]);
   assert.match((parseTokenized(dump) as { reason: string }).reason, /load address \$0000 is below \$0400/);
   assert.match((parseTokenized(Uint8Array.from([0xff, 0x03, 0, 0])) as { reason: string }).reason, /below \$0400/);
   // A dump in the CPU view starts with the processor port ($2f $37), a "load address" above $0400;
-  // a started C64 holds the vectors $b1aa and $b391 at $0003, which read as line 37297 (b2/01, R3-02).
+  // a started C64 holds the vectors $b1aa and $b391 at $0003, which read as line 37297.
   for (const start of [[0x2f, 0x37], [0x00, 0x0b]]) {
     const started = new Uint8Array(0x10000);
     started.set([...start, 0xaa, 0xb1, 0x91, 0xb3, 0x3c, 0x22, 0x00, 0x00, 0x00]);
@@ -190,7 +190,7 @@ test("the VIC-II bank comes from CIA 2 port A, inverted, with undriven lines hig
 });
 
 test("the instruction length of all 256 opcodes, as VICE's disassembler gives them", () => {
-  // Row n is the opcodes $n0 to $nf. Checked against VICE 3.9 for every opcode (D40).
+  // Row n is the opcodes $n0 to $nf. Checked against VICE 3.9 for every opcode.
   const table = [
     "1212222212123333",
     "2212222213133333",

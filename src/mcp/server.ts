@@ -266,7 +266,7 @@ async function runCall(
     try {
       output = await tool.run(parsed.data, await session());
     } catch (error) {
-      // A session that the emulator never answered had no machine state: the call goes again on a new session (D57).
+      // A session that the emulator never answered had no machine state: the call goes again on a new session.
       if (!(error instanceof LostBeforeAnswer)) throw error;
       output = await tool.run(parsed.data, await session());
     }

@@ -60,7 +60,7 @@ export interface Routine {
   regions: Array<{ start: number; end: number; type: RegionType; element?: number }>;
   comments: Array<{ at: number; placement: CommentPlacement; text: string }>;
   references: Array<{ from: number; to: number; kind: ReferenceKind }>;
-  /** Operand expressions (D65); `offset` is added to the symbol, as in knowledge. */
+  /** Operand expressions; `offset` is added to the symbol, as in knowledge. */
   operands: Array<{ at: number; select: OperandSelect; symbol?: string; offset?: number; expression?: string }>;
 }
 
@@ -93,7 +93,7 @@ export interface RoutineSource {
   comments: CommentRow[];
   references: ReferenceRow[];
   operands: OperandRow[];
-  /** The C64 platform names (D52): an operand expression may use them in any program. */
+  /** The C64 platform names: an operand expression may use them in any program. */
   platform: ReadonlyMap<string, number>;
 }
 
@@ -426,7 +426,7 @@ export interface ProgramKnowledge {
   commentsAt: (address: number) => CommentRow[];
   referencesFrom: (address: number) => ReferenceRow[];
   operandAt: (address: number) => OperandRow | undefined;
-  /** True when a user or LLM removal holds at the place (D36). */
+  /** True when a user or LLM removal holds at the place. */
   symbolSuppressed: (address: number) => boolean;
   regionSuppressed: (start: number, end: number) => boolean;
   referenceSuppressed: (reference: { from: number; to: number; kind: ReferenceKind }) => boolean;
@@ -563,7 +563,7 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
   return { batch, known, leftOut };
 }
 
-/** Why the expression is not the operand of the instruction at `address` in the image, or undefined when it is (D65). */
+/** Why the expression is not the operand of the instruction at `address` in the image, or undefined when it is. */
 function operandProblem(address: number, text: string, image: Searched, resolveName: (name: string) => number | undefined): string | undefined {
   const opcode = image.byteAt(address);
   const size = instructionLength(opcode);

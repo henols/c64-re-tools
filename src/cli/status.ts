@@ -38,7 +38,7 @@ export async function hostStatusLines(options: ToolCallOptions = {}): Promise<{ 
   try {
     ({ host, tools } = await hostTools(options));
   } catch (error) {
-    // status is read by a person: the instruction for an agent (D37) stays out.
+    // status is read by a person: the instruction for an agent stays out.
     return { lines: [`Host Runtime: not reachable. ${(error as Error).message.replace(` ${STOP_AND_ASK}`, "")}`], ready: false };
   }
   const mixed = mixedViceBuilds(tools);
@@ -66,7 +66,7 @@ export function mixedViceBuilds(tools: readonly ToolStatus[]): string | undefine
 
 /**
  * The skills and MCP declarations that install wrote for this project and
- * globally (b's R2-01): the c64-re-tools version of each harness's skills,
+ * globally: the c64-re-tools version of each harness's skills,
  * from their package.json, and the command that starts the MCP server. A
  * warning names skills of another version than this one.
  */

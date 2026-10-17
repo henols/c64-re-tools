@@ -1,4 +1,4 @@
-// M22.8: code switches and macros (D72, D73). A program with a copy check
+// Code switches and macros. A program with a copy check
 // gets a CRACK switch of three patches and a TRAINER switch of only NOP; a
 // macro writes one of two 16-bit increments, and the other one, with a label
 // inside it, stays instructions. The source is identical to the program, each

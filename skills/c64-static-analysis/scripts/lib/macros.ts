@@ -1,4 +1,4 @@
-// Macro candidates (D73): runs of instructions that are a known 6502 idiom,
+// Macro candidates: runs of instructions that are a known 6502 idiom,
 // such as a 16-bit increment, and that a macro can write as one line. They
 // are only reported, never written: the LLM applies them as macro uses with
 // c64-knowledge, and c64-source writes a use only when it gives the bytes of
@@ -6,7 +6,7 @@
 //
 // The catalogue is fixed, so each candidate has a name and a body that is
 // known to be correct. A search for any repeated sequence was weighed and not
-// chosen: it gives many candidates without a name (D73).
+// chosen: it gives many candidates without a name.
 
 import { instructionLength } from "#src/c64.ts";
 import type { ImageByte } from "./coverage.ts";

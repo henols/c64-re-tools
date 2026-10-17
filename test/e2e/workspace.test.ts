@@ -1,5 +1,5 @@
-// M19.5: one repository with a folder for each program, and the skill scripts
-// run from its root as the agent runs them (D67, D68, D70). The MCP side of
+// One repository with a folder for each program, and the skill scripts
+// run from its root as the agent runs them. The MCP side of
 // the same rules is in src/mcp/server.test.ts.
 
 import assert from "node:assert/strict";

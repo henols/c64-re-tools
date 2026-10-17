@@ -120,7 +120,7 @@ test("profile counts grouped by the host locale parse as plain digits (macOS)", 
   assert.throws(() => parseProfile("Total %\nsomething else entirely"), /does not read/);
   // A condition line that the binary monitor caused can come late in the answer.
   assert.deepEqual(parseProfile("Setting checkpoint 1 condition to: ( X == $05 )\n            0  -nan%             0  -nan% ROOT\n"), []);
-  // A profile that counted no cycles yet, as after a window move (R2-04).
+  // A profile that counted no cycles yet, as after a window move.
   assert.deepEqual(parseProfile("Total      %          Self      %\n------------- ------ ------------- ------\n            0  -nan%             0  -nan% ROOT\n"), []);
 });
 

@@ -1,4 +1,4 @@
-// The structured instruction list (D44): Ghidra's decoded instructions with
+// The structured instruction list: Ghidra's decoded instructions with
 // the addressing mode, the operand in 6502 syntax, the flow target and,
 // with a coverage file, whether the instruction ran.
 

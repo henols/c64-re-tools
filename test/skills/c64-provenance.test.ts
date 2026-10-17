@@ -20,7 +20,7 @@ after(() => {
   for (const root of programs) rmSync(root, { recursive: true, force: true });
 });
 
-/** A project of its own for one program in the knowledge (D83). */
+/** A project of its own for one program in the knowledge. */
 function fresh(): string {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-program-"));
   programs.push(root);
@@ -59,7 +59,7 @@ test("a release at another address gets a suggested shift", () => {
   assert.deepEqual(suggestShifts(at("release", 0x0801, base), at("moved", 0x0901, base)), [{ shift: -256, matches: 2041 }]);
 });
 
-test("data that stayed and code that moved both get a shift, and the present alignment is marked current (b2/04)", () => {
+test("data that stayed and code that moved both get a shift, and the present alignment is marked current", () => {
   const data = seededBytes(0x1234, 256);
   const code = seededBytes(0x6510, 2048);
   const prg = (bytes: Uint8Array[]) => Buffer.concat([Buffer.from([0x00, 0x20]), ...bytes]);
@@ -73,7 +73,7 @@ test("data that stayed and code that moved both get a shift, and the present ali
   assert.deepEqual(result.suggestedShifts.map((item) => [item.release, item.shift, item.current ?? false]), [[2, -256, false], [2, 0, true]]);
 });
 
-test("a shift that moves a segment out of $0000-$ffff is not suggested: the opposite shift of release 1 is, or the reason (F-25)", () => {
+test("a shift that moves a segment out of $0000-$ffff is not suggested: the opposite shift of release 1 is, or the reason", () => {
   const found = { shift: 920, matches: 3544 };
   const high = { name: "high", segments: [{ start: 0x5000, end: 0x9000 }, { start: 0xe000, end: 0xffff }], byteAt: () => 0 };
   const low = { name: "low", segments: [{ start: 0x0801, end: 0x9000 }], byteAt: () => 0 };
@@ -113,7 +113,7 @@ test("a missing release is not-found", () => {
   assert.equal((JSON.parse(missing.stdout) as { error: { code: string } }).error.code, "not-found");
 });
 
-test("an image release counts only inside its segments, and a common range never joins across a gap (D50)", () => {
+test("an image release counts only inside its segments, and a common range never joins across a gap", () => {
   const memory = new Uint8Array(0x10000);
   memory.set(base.subarray(0, 0x100), 0x0801);
   memory.set(base.subarray(0x200, 0x300), 0x0a01);
@@ -131,7 +131,7 @@ test("an image release counts only inside its segments, and a common range never
   assert.equal(steps.status, 2, "--steps needs --run");
 });
 
-test("separate gives each range its stage and access, each code region its reachability, and what runs outside the image (D51)", () => {
+test("separate gives each range its stage and access, each code region its reachability, and what runs outside the image", () => {
   const memory = new Uint8Array(0x10000);
   memory.set([0x20, 0x08, 0x10, 0x60, 0x01, 0x02, 0x03, 0x04, 0x60, 0x00, 0xea, 0x60], 0x1000);
   const coverage = new Uint8Array(0x10000);
@@ -180,7 +180,7 @@ test("separate gives each range its stage and access, each code region its reach
   assert.deepEqual(found.outside, { read: [{ start: 0xc000, end: 0xc000 }], executed: [{ start: 0xc200, end: 0xc200 }], generated: [{ start: 0xc100, end: 0xc100 }] });
 });
 
-test("generated code outside the image joins over gaps of up to two operand bytes, never over the image (F-28)", () => {
+test("generated code outside the image joins over gaps of up to two operand bytes, never over the image", () => {
   const coverage = new Uint8Array(0x10000);
   const ran = COVERAGE.ramWrite | COVERAGE.ramExecute;
   // Opcodes at $c000, $c002, $c005; $c009 is four bytes on; $1ffe-$2002 goes over the image byte $2000.
@@ -194,7 +194,7 @@ test("generated code outside the image joins over gaps of up to two operand byte
   ]);
 });
 
-test("the separate command reads the program with its stages and the coverage from the knowledge and writes all ranges to --out (D83)", () => {
+test("the separate command reads the program with its stages and the coverage from the knowledge and writes all ranges to --out", () => {
   const memory = new Uint8Array(0x10000);
   memory.fill(0xea, 0x2000, 0x20ff);
   const root = fresh();
@@ -213,9 +213,9 @@ test("the separate command reads the program with its stages and the coverage fr
   assert.equal(result.ranges.count, 2);
   assert.equal(result.ranges.listed.length, 1);
   assert.equal(result.outside.generated.count, 3);
-  assert.deepEqual(result.outside.generated.listed, [{ start: "$c000", end: "$c000" }], "--max-listed caps the outside lists too (F-28)");
+  assert.deepEqual(result.outside.generated.listed, [{ start: "$c000", end: "$c000" }], "--max-listed caps the outside lists too");
   assert.deepEqual(result.outside.read, { count: 0, listed: [] });
-  assert.deepEqual(result.codeRegions, { total: 0, unreachable: { count: 0, listed: [] } }, "unreachable is a list like the others (b2/08)");
+  assert.deepEqual(result.codeRegions, { total: 0, unreachable: { count: 0, listed: [] } }, "unreachable is a list like the others");
   const written = JSON.parse(readFileSync(join(root, "separate.json"), "utf8")) as { ranges: unknown[]; outside: { generated: unknown[] } };
   assert.equal(written.ranges.length, 2);
   assert.equal(written.outside.generated.length, 3);
@@ -226,7 +226,7 @@ test("the separate command reads the program with its stages and the coverage fr
   assert.match(empty.stdout, /knowledge\.ts image/);
 });
 
-test("separate says when the program has no stage log, and a run of releases without differences says why nothing ran (F-28)", () => {
+test("separate says when the program has no stage log, and a run of releases without differences says why nothing ran", () => {
   const memory = new Uint8Array(0x10000);
   memory.fill(0xea, 0x3000, 0x30ff);
   const root = fresh();

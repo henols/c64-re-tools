@@ -1,4 +1,4 @@
-// The one-off conversion of a schema 7 knowledge.db to the knowledge text (M20.5).
+// The one-off conversion of a schema 7 knowledge.db to the knowledge text.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

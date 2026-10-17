@@ -1,4 +1,4 @@
-// The loads command of c64-unpacker (D53): the steps file with capture steps,
+// The loads command of c64-unpacker: the steps file with capture steps,
 // and the blocks that a capture writes.
 
 import assert from "node:assert/strict";
@@ -47,7 +47,7 @@ test("a capture block is RAM from $0400 that changed and that the CPU wrote, joi
   ]);
 });
 
-test("with known writes, a capture block keeps the bytes written with the value that was there (F-20)", () => {
+test("with known writes, a capture block keeps the bytes written with the value that was there", () => {
   // A program at $2000-$20ff whose middle 64 bytes are zeros over a zero area of the start pattern.
   const before = new Uint8Array(0x10000);
   const after = new Uint8Array(0x10000);

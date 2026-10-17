@@ -45,7 +45,7 @@ export interface PackingEvidence {
   /** The first SYS line and its address (null when the argument needs run-time values, with the argument), or null when the program has no SYS. */
   basicStart: { line: number; sys: string | null; expression?: string } | null;
   entropy: { blocks: number; highBlocks: number; median: number | null };
-  /** The BASIC lines as text: a packer or a crack often puts its banner there (D43). */
+  /** The BASIC lines as text: a packer or a crack often puts its banner there. */
   basicText: string[];
   /** Runs of readable PETSCII near the start of the code, raw. */
   strings: string[];

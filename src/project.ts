@@ -1,8 +1,8 @@
-// The project (D67): the nearest folder at or above the working directory that
+// The project: the nearest folder at or above the working directory that
 // holds .c64-re-tools/, below the home folder, the way git finds .git. A skill
 // script names it with --project <folder> and an MCP tool with `project`. Every
-// project path is relative to that folder (D68). .c64-re-tools/local/ holds what
-// the agent saves for itself and ignores itself in git (D70).
+// project path is relative to that folder. .c64-re-tools/local/ holds what
+// the agent saves for itself and ignores itself in git.
 
 import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -11,7 +11,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 /** The folder that marks a project and holds its knowledge. */
 export const PROJECT_DIRECTORY = ".c64-re-tools";
 
-/** The folder for machine-local scratch: saved results, batches and step files (D70). */
+/** The folder for machine-local scratch: saved results, batches and step files. */
 export const LOCAL_DIRECTORY = "local";
 
 /** The .gitignore of LOCAL_DIRECTORY: git ignores everything in it, the .gitignore too. */
@@ -44,7 +44,7 @@ const SCRIPT_REMEDY = "Give --project <folder>";
 /** The folder that --project chose for this process, or undefined. */
 let chosen: string | undefined;
 
-/** The project that the D67 lookup found from a working directory, kept for the next call from the same directory. */
+/** The project that the project lookup found from a working directory, kept for the next call from the same directory. */
 let found: { cwd: string; root: string } | undefined;
 
 function isProject(folder: string): boolean {
@@ -92,7 +92,7 @@ function listed(projects: readonly string[]): string {
 }
 
 /**
- * The project of the working directory `cwd` by the D67 rules: the nearest
+ * The project of the working directory `cwd` by the project rules: the nearest
  * folder at or above it with .c64-re-tools/, below the home folder. Without
  * one, `cwd` itself, unless projects are below it or it is the home folder:
  * then a ProjectError names them and the remedy, so no write lands outside a
@@ -136,7 +136,7 @@ export function namedProject(folder: string, cwd: string = process.cwd()): strin
 
 /**
  * Makes .c64-re-tools/local/ with its .gitignore when the project has
- * .c64-re-tools/ and local/ has no .gitignore yet (D70). A folder that is not
+ * .c64-re-tools/ and local/ has no .gitignore yet. A folder that is not
  * yet a project gets nothing. A failure (for example a read-only project) is
  * left to the write into local/ that needs the folder.
  */
@@ -152,7 +152,7 @@ export function ensureLocal(root: string): void {
   }
 }
 
-/** The project of an MCP call or another caller without process state: `folder` when given, else the D67 lookup from `cwd`. */
+/** The project of an MCP call or another caller without process state: `folder` when given, else the project lookup from `cwd`. */
 export function resolveProject(folder: string | undefined, cwd: string = process.cwd(), options: ProjectRemedy = {}): string {
   const root = folder === undefined ? findProject(cwd, options) : namedProject(folder, cwd);
   ensureLocal(root);
@@ -164,7 +164,7 @@ export function useProject(folder: string): void {
   chosen = namedProject(folder);
 }
 
-/** The project folder of this process: the --project choice, else the D67 lookup from the working directory. */
+/** The project folder of this process: the --project choice, else the project lookup from the working directory. */
 export function projectRoot(): string {
   let root = chosen;
   if (root === undefined) {

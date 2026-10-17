@@ -167,7 +167,7 @@ jobs:
         with:
           node-version: "24"
 
-      # The dev container Feature (D38), referenced by the https URL of this asset.
+      # The dev container Feature, referenced by the https URL of this asset.
       # The spec wants the name devcontainer-feature-<id>.tgz.
       - name: Attach the dev container Feature
         env:

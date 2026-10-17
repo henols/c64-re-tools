@@ -1,4 +1,4 @@
-// 6502 idioms that hide code (D44): found by pattern, written as heuristic
+// 6502 idioms that hide code: found by pattern, written as heuristic
 // findings, and their targets seeded into the same analysis run.
 
 import assert from "node:assert/strict";
@@ -65,7 +65,7 @@ test("three JMP abs in a row are a JMP table; a BIT skip is dual-use bytes with 
   assert.deepEqual(skip.findings.references, [{ from: 0x1810, to: 0x1801, kind: "jump" }]);
 });
 
-/** The coverage of the knowledge from runs (D83): the joined map, and wx where one run wrote and executed. */
+/** The coverage of the knowledge from runs: the joined map, and wx where one run wrote and executed. */
 function covered(...runs: Uint8Array[]): { map: Uint8Array; selfModified: Uint8Array } {
   const both = COVERAGE.ramWrite | COVERAGE.ramExecute;
   const map = new Uint8Array(0x10000);
@@ -89,7 +89,7 @@ test("DOP padding and self-modified opcodes are candidates from the coverage onl
   assert.deepEqual(findIdioms(byteAt, RANGE).candidates, { dop: [], selfModified: [] });
 });
 
-test("a self-modified opcode is written and executed in one run: a copier's writes in another run do not count (F-16)", () => {
+test("a self-modified opcode is written and executed in one run: a copier's writes in another run do not count", () => {
   const { byteAt } = image({ 0x1a00: [0xa9, 0x01, 0xa9, 0x02] });
   // The copier run writes $1a00-$1a03; the game run executes them and writes $1a02 again.
   const copier = new Uint8Array(0x10000).fill(COVERAGE.ramWrite, 0x1a00, 0x1a04);
@@ -123,7 +123,7 @@ test("an analysis writes the idioms as heuristic knowledge and DXA finds the cod
   db?.close();
 });
 
-test("pointer candidates: immediate pairs stored to a vector or a (zp),y pair, and sprite pointers in a sprite region (D65)", () => {
+test("pointer candidates: immediate pairs stored to a vector or a (zp),y pair, and sprite pointers in a sprite region", () => {
   const { byteAt } = image({
     // $1000: SEI / LDA #$c0 / STA $0314 / LDA #$10 / STA $0315: CINV gets $10c0.
     0x1000: [0x78, 0xa9, 0xc0, 0x8d, 0x14, 0x03, 0xa9, 0x10, 0x8d, 0x15, 0x03],
@@ -145,7 +145,7 @@ test("pointer candidates: immediate pairs stored to a vector or a (zp),y pair, a
   ]);
 });
 
-test("the CBM80 header of a cartridge bank gives its two start vectors as entry points (F-29)", () => {
+test("the CBM80 header of a cartridge bank gives its two start vectors as entry points", () => {
   // $8000: cold start $8009, warm start $8020, then "CBM80"; code at both targets.
   const { byteAt } = image({ 0x8000: [0x09, 0x80, 0x20, 0x80, 0xc3, 0xc2, 0xcd, 0x38, 0x30, 0x78], 0x8020: [0x40] });
   const bank = { start: 0x8000, end: 0x9fff };
@@ -160,7 +160,7 @@ test("the CBM80 header of a cartridge bank gives its two start vectors as entry 
   assert.equal(findIdioms(plain.byteAt, bank).counts.cartridgeHeaders, 0, "no header without CBM80");
 });
 
-test("a $D011 value written back with raster bit 8 is a pitfall; AND #$7F, a new load or a branch between is not (M23.7)", () => {
+test("a $D011 value written back with raster bit 8 is a pitfall; AND #$7F, a new load or a branch between is not", () => {
   const image = new Uint8Array(0x10000);
   // The Bruce Lee freeze: $09bc LDA $d011 / AND #$ef / STA $d011.
   image.set([0xad, 0x11, 0xd0, 0x29, 0xef, 0x8d, 0x11, 0xd0], 0x09bc);

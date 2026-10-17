@@ -1,11 +1,11 @@
-// The stage rule of the c64-unpacker script (D43, F-17). The memory map keeps
+// The stage rule of the c64-unpacker script. The memory map keeps
 // no order: a written and executed byte can be code that ran first and was
 // written over later, as a decruncher does to its own start code. So a stage
 // starts only where the CPU executes an opcode byte that the current stage
 // wrote before the CPU got there. Code that the stage executed before it wrote
 // it is the stage's own code: it stops the run once, and then a write watch
 // over it arms it again. Written code that the stage calls, and that returns
-// to the stage, is the stage's own code too (D59): a packer hands off by JMP,
+// to the stage, is the stage's own code too: a packer hands off by JMP,
 // RTS or RTI and never runs its own code again.
 
 import { COVERAGE } from "#src/c64.ts";
@@ -71,7 +71,7 @@ export function inRanges(ranges: readonly Range[], address: number): boolean {
 }
 
 /**
- * Where a call returns to the stage (D59): the return address on top of the
+ * Where a call returns to the stage: the return address on top of the
  * stack, when a JSR that the stage executed pushed it. `stack` is page 1.
  * Returns the address of the instruction after that JSR.
  */
@@ -100,10 +100,10 @@ export function executedIn(map: Uint8Array, block: Range): Range[] {
 
 /**
  * The segments of a capture: the blocks that the stages wrote, without loader
- * leftovers, joined into ranges that do not overlap or touch (F-26). A block
+ * leftovers, joined into ranges that do not overlap or touch. A block
  * is a leftover when it holds the entry of an intermediate stage that started
  * after the block's writer, and no write from that stage on replaced the code
- * at that entry (R2-01). Code that a stage ran before a later stage wrote over
+ * at that entry. Code that a stage ran before a later stage wrote over
  * it never drops a block, and the block that holds the capture entry is always
  * a segment. The filter comes before the join: a join first would drop the
  * program with a leftover. `writtenBy` is the last stage that wrote into the

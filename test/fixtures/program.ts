@@ -1,4 +1,4 @@
-// Puts a program and coverage into the knowledge of a test project (D83), as
+// Puts a program and coverage into the knowledge of a test project, as
 // knowledge.ts image and coverage do, without a script run.
 
 import { prgRange } from "../../src/c64.ts";

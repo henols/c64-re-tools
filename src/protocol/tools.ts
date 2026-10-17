@@ -80,7 +80,7 @@ export interface ToolStatus {
   runs: boolean;
   /** What is wrong and what to do, when it is missing or does not run. */
   problem?: string;
-  /** Known flaws of this version, each with the version that fixes it (D56). The tool still runs. */
+  /** Known flaws of this version, each with the version that fixes it. The tool still runs. */
   flaws?: string[];
 }
 

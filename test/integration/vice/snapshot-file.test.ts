@@ -1,5 +1,5 @@
 // A snapshot saved as bytes in one session restores in a new one, and a file
-// that is not a snapshot is refused by name (D41). Opt-in with C64RT_LIVE_VICE.
+// that is not a snapshot is refused by name. Opt-in with C64RT_LIVE_VICE.
 
 import assert from "node:assert/strict";
 import { after, test } from "node:test";

@@ -44,7 +44,7 @@ function findings(analyzer: Analyzer, start: number, end: number, parts: Partial
 const regionList = (db: DatabaseSync) => regionsOverlapping(db, 0, 0xffff).map((region) => [region.start, region.end, region.type, region.origin]);
 const count = (db: DatabaseSync, sql: string) => (db.prepare(sql).get() as { n: number }).n;
 
-test("a re-analysis closes the analyzer's own name that it no longer finds; analyzer names are second names, not symbols (D74)", () => {
+test("a re-analysis closes the analyzer's own name that it no longer finds; analyzer names are second names, not symbols", () => {
   const db = fresh();
   const first = importFindings(
     db,
@@ -176,7 +176,7 @@ test("an analyzer does not replace another analyzer; a contradiction is a confli
       ["FUN_3000", "ghidra"],
       ["l3000", "dxa"],
     ],
-    "each analyzer keeps its own name (D74)",
+    "each analyzer keeps its own name",
   );
 });
 
@@ -190,7 +190,7 @@ test("a non-authoritative category adds facts but retires none", () => {
   assert.equal(listReferences(db).length, 2);
 });
 
-test("an analyzer name that a symbol has elsewhere is no conflict: it is a second name (D74)", () => {
+test("an analyzer name that a symbol has elsewhere is no conflict: it is a second name", () => {
   const db = fresh();
   renameSymbol(db, { origin: "llm" }, { address: 0x9000, name: "FUN_2100", kind: "routine" });
   const result = importFindings(db, findings("ghidra", 0x2000, 0x21ff, { symbols: [{ address: 0x2100, name: "FUN_2100", kind: "routine" }] }));
@@ -259,7 +259,7 @@ test("an analyzer import records the image hash and the analyzer version in its 
   );
 });
 
-test("a re-run replaces all of the analyzer's own names in its coverage, also when its labels are not complete (D74)", () => {
+test("a re-run replaces all of the analyzer's own names in its coverage, also when its labels are not complete", () => {
   const db = fresh();
   const partial = (symbols: NormalizedFindings["symbols"]) => {
     const result = findings("ghidra", 0x2000, 0x2fff, { symbols });
@@ -293,7 +293,7 @@ test("a non-authoritative region import changes the type of the analyzer's own r
   ]);
 });
 
-// D36: a user/LLM removal is a suppression that holds against every later import.
+// A user/LLM removal is a suppression that holds against every later import.
 
 const ghidraRun = () =>
   findings("ghidra", 0x0400, 0x04ff, {
@@ -319,7 +319,7 @@ test("removals by the LLM hold: the same analyzer run adds nothing again and cou
   assert.deepEqual(regionList(db), [[0x0400, 0x047f, "code", "ghidra"]]);
 });
 
-test("the removal of a name writes no suppression: an analyzer name there stays a second name (D74)", () => {
+test("the removal of a name writes no suppression: an analyzer name there stays a second name", () => {
   const db = fresh();
   renameSymbol(db, { origin: "llm" }, { address: 0x0415, name: "boot_check" });
   removeSymbol(db, { origin: "llm" }, { address: 0x0415 });
@@ -385,7 +385,7 @@ test("a revision shows the suppression it wrote", () => {
   assert.deepEqual(changes.closed.map((entry) => entry.entity), ["reference"]);
 });
 
-test("a JMP table is code, and dual-use bytes conflict with no finding (D42)", () => {
+test("a JMP table is code, and dual-use bytes conflict with no finding", () => {
   const db = fresh();
   classifyRegion(db, { origin: "llm" }, { start: 0x0500, end: 0x0508, type: "jumps" });
   classifyRegion(db, { origin: "llm" }, { start: 0x0408, end: 0x0409, type: "dual-use" });
@@ -405,7 +405,7 @@ test("a JMP table is code, and dual-use bytes conflict with no finding (D42)", (
   );
 });
 
-test("a heuristic region replaces the DXA region where it lies, and DXA never replaces a heuristic region (D44)", () => {
+test("a heuristic region replaces the DXA region where it lies, and DXA never replaces a heuristic region", () => {
   const db = fresh();
   importFindings(db, findings("dxa", 0x1000, 0x10ff, { regions: [{ start: 0x1000, end: 0x10ff, type: "code" }] }));
   importFindings(db, findings("heuristic", 0x1000, 0x10ff, { regions: [{ start: 0x1040, end: 0x104f, type: "rts-addresses" }] }));
@@ -419,7 +419,7 @@ test("a heuristic region replaces the DXA region where it lies, and DXA never re
   assert.equal(again.conflicts.length, 1, "DXA's code over the table is a conflict");
 });
 
-test("a code finding over an executed instruction start replaces another analyzer's data, and nothing else (D58)", () => {
+test("a code finding over an executed instruction start replaces another analyzer's data, and nothing else", () => {
   const db = fresh();
   importFindings(db, findings("dxa", 0x1000, 0x10ff, { regions: [{ start: 0x1000, end: 0x10ff, type: "bytes" }], symbols: [{ address: 0x1010, name: "d1010", kind: "data" }] }));
   const ghidra = (executed?: (address: number) => boolean) =>

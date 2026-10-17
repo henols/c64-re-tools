@@ -1,4 +1,4 @@
-// The links of a page written by a person (D80). A name in backticks links to
+// The links of a page written by a person. A name in backticks links to
 // its line in the source; the address after it links to the entry of the name
 // in the reference, or, for an address inside the routine or the data of the
 // name ("draw_room $0AAF", a place in draw_room), to the line of that address. A link that points into the source or the reference is

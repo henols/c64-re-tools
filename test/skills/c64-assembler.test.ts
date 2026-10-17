@@ -85,7 +85,7 @@ test("bad options are refused before anything is sent", { skip: acmeSkip }, asyn
   }
 });
 
-test("a missing ACME is refused with the stop instruction (D37)", async () => {
+test("a missing ACME is refused with the stop instruction", async () => {
   const child = spawn(process.execPath, [...process.execArgv, script, "--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/none.prg"], { cwd: project, env: { ...process.env, C64RT_ACME: join(project, "no-acme") }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
@@ -96,7 +96,7 @@ test("a missing ACME is refused with the stop instruction (D37)", async () => {
   assert.ok(error.message.endsWith(STOP_AND_ASK), error.message);
 });
 
-test("--compare checks the build against the program in the knowledge and fails on a difference (D47, D83)", { skip: acmeSkip }, async () => {
+test("--compare checks the build against the program in the knowledge and fails on a difference", { skip: acmeSkip }, async () => {
   const first = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/reference.prg");
   assert.equal(first.status, 0, JSON.stringify(first.json));
   const refused = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare");

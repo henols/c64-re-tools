@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { COVERAGE } from "./c64.ts";
 import { platformNames, platformNamesFor, romUseOf, romUseOfPort } from "./platform.ts";
 
-test("a program without the KERNAL and BASIC gets no system or ROM names, only the processor port and I/O (D75)", () => {
+test("a program without the KERNAL and BASIC gets no system or ROM names, only the processor port and I/O", () => {
   // The Bruce Lee run: the source named the game's zero page CHRGET, PNTR and ADRAY2.
   const names = (use: { basic: boolean; kernal: boolean }) => new Set(platformNamesFor(use).map((entry) => entry.name));
   const none = names({ basic: false, kernal: false });

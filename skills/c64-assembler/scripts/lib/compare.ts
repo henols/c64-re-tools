@@ -1,5 +1,5 @@
-// The byte check of a build (D47): the assembled program against the program
-// in the knowledge (D83), segment by segment.
+// The byte check of a build: the assembled program against the program
+// in the knowledge, segment by segment.
 
 import { formatC64Address, prgRange } from "#src/c64.ts";
 

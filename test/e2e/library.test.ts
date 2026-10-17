@@ -1,4 +1,4 @@
-// M21.6: a library of routines beside two projects of one workspace (D71). A
+// A library of routines beside two projects of one workspace (D71). A
 // routine is saved from program A, found in program B at another address with
 // its own outside addresses, its names applied there, and the source of B is
 // generated with those names and is identical to B.

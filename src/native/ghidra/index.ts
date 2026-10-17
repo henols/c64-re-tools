@@ -129,7 +129,7 @@ export interface HeadlessOptions {
 /** What Ghidra's launcher (launch.sh, launch.bat) prints when it finds no Java that it can use. */
 export const NO_USABLE_JDK = /The 'java' command could not be found in your PATH or with JAVA_HOME|Unable to prompt user for JDK path, no TTY detected|Failed to find a supported JDK/;
 
-/** A Ghidra without a usable JDK is an incomplete installation that names the Java version it needs (D38). */
+/** A Ghidra without a usable JDK is an incomplete installation that names the Java version it needs. */
 export function noJdk(ghidra: GhidraInstallation): WireFailure {
   const java = ghidra.javaMin === undefined ? "a JDK" : `JDK ${ghidra.javaMin} or later`;
   return new WireFailure(

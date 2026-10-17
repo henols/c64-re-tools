@@ -50,7 +50,7 @@ const regions = () => {
 test("DXA findings reconcile through the importer, protect semantic knowledge and never import half a result", { skip, timeout: 300_000 }, async () => {
   const env = process.env;
 
-  // 1. The program goes into the knowledge (D83); the first DXA pass makes its regions and labels DXA knowledge.
+  // 1. The program goes into the knowledge; the first DXA pass makes its regions and labels DXA knowledge.
   assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "image", "game.prg")).json.revision, nthIn(project, 1));
   const first = await skill(env, "c64-static-analysis", "analyze.ts", "--analyzer", "dxa");
   assert.equal(first.status, 0, JSON.stringify(first.json));
@@ -94,7 +94,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   assert.deepEqual(nameHistory, [
     ["analyzer-name", "l818", "dxa", null],
     ["symbol", "init_result", "llm", null],
-  ], "the DXA label stays a second name next to the name of the LLM (D74)");
+  ], "the DXA label stays a second name next to the name of the LLM");
   const before = currentRevision(db);
   db?.close();
 

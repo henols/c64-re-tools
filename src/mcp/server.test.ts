@@ -343,7 +343,7 @@ test("the server lists exactly the public tools with object input and output sch
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object");
     assert.equal(tool.outputSchema?.type, "object");
-    // c64_memory_read, c64_disassemble and c64_cpu_history can write a project file (out, D39).
+    // c64_memory_read, c64_disassemble and c64_cpu_history can write a project file (out).
     const readOnly = [
       "c64_status",
       "c64_memory_search",
@@ -430,7 +430,7 @@ test("host and session failures keep their code and message", async () => {
   await unavailable.close();
 });
 
-test("an installation-incomplete error tells the agent to stop and ask the user (D37)", async () => {
+test("an installation-incomplete error tells the agent to stop and ask the user", async () => {
   const broken = await connect(async () => {
     throw new WireFailure("installation-incomplete", "VICE (x64sc) is not installed on the host.");
   });
@@ -558,7 +558,7 @@ test("media tools pass the project path and fill defaults", async () => {
   });
   assert.deepEqual((await call(client, "c64_disk_attach", { path: "original/game.d64" })).structuredContent, { attached: true });
   await call(client, "c64_autostart", { path: "original/game.d64", index: 1 });
-  // The project folder of a call without project: the D67 lookup from the working directory.
+  // The project folder of a call without project: the project lookup from the working directory.
   const root = process.cwd();
   assert.deepEqual(session.media, [
     ["autostart", { path: "original/game.d64", index: 0, run: true, root }],
@@ -895,7 +895,7 @@ test("with C64RT_TRACE every tool call leaves one trace line with its name, argu
   }
 });
 
-test("out writes memory, a listing, the history and a screen to project files (D39)", async () => {
+test("out writes memory, a listing, the history and a screen to project files", async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-out-"));
   const home = process.cwd();
   process.chdir(project);
@@ -932,7 +932,7 @@ test("out writes memory, a listing, the history and a screen to project files (D
   }
 });
 
-test("in a folder with projects below it, a tool with a path takes project and refuses without it (D67, D68)", async () => {
+test("in a folder with projects below it, a tool with a path takes project and refuses without it", async () => {
   const workspace = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-workspace-")));
   for (const name of ["a", "b"]) mkdirSync(join(workspace, name, ".c64-re-tools"), { recursive: true });
   const home = process.cwd();
@@ -964,7 +964,7 @@ test("in a folder with projects below it, a tool with a path takes project and r
   }
 });
 
-test("c64_memmap writes a coverage map with out and gives a summary (D40)", async () => {
+test("c64_memmap writes a coverage map with out and gives a summary", async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-coverage-"));
   const home = process.cwd();
   process.chdir(project);
@@ -992,7 +992,7 @@ test("c64_memmap writes a coverage map with out and gives a summary (D40)", asyn
   }
 });
 
-test("c64_snapshot writes a snapshot file with out and restores one with file (D41)", async () => {
+test("c64_snapshot writes a snapshot file with out and restores one with file", async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-snapshot-"));
   const home = process.cwd();
   process.chdir(project);
@@ -1019,7 +1019,7 @@ test("c64_snapshot writes a snapshot file with out and restores one with file (D
   }
 });
 
-test("c64_trace takes points with an optional end and gives the hits with $ addresses (D76)", async () => {
+test("c64_trace takes points with an optional end and gives the hits with $ addresses", async () => {
   const client = await connect(async () => new FakeSession());
   const traced = (await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011" }], frames: 100 })).structuredContent;
   assert.deepEqual(traced, {
@@ -1034,7 +1034,7 @@ test("c64_trace takes points with an optional end and gives the hits with $ addr
   await client.close();
 });
 
-test("c64_run_until gives the observation and the history at the stop in one call (M23.10)", async () => {
+test("c64_run_until gives the observation and the history at the stop in one call", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
   const plain = (await call(client, "c64_run_until", { target: { kind: "address", address: "$c00b" } })).structuredContent as Record<string, unknown>;

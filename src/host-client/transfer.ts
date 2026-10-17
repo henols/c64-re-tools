@@ -21,14 +21,14 @@ function asWireFailure<T>(lookup: () => T): T {
 
 /**
  * The project folder of a call that names it with `project` (relative to the
- * working directory) or not (D67, D68). Throws WireFailure when the rules
+ * working directory) or not. Throws WireFailure when the rules
  * refuse it, for example at a folder with several projects below it.
  */
 export function projectFolder(project: string | undefined): string {
   return asWireFailure(() => resolveProject(project, process.cwd(), { remedy: "Give project: <folder>" }));
 }
 
-/** The project folder of this process (--project or the D67 lookup), or a WireFailure. */
+/** The project folder of this process (--project or the project lookup), or a WireFailure. */
 function currentProject(): string {
   return asWireFailure(projectRoot);
 }

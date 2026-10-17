@@ -164,7 +164,7 @@ test("every operation crosses the real host boundary with its parameters and res
   }
 });
 
-test("a snapshot export comes back as the one attachment of the reply (D41)", async () => {
+test("a snapshot export comes back as the one attachment of the reply", async () => {
   const exporting = await startHostServer({
     port: 0,
     createViceSession: async () => ({

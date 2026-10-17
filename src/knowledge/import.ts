@@ -7,7 +7,7 @@
 // another analyzer are never replaced: a finding that contradicts one is
 // reported as a conflict. Code against data is a contradiction; a different
 // name or a finer data type for the same kind of memory is not. One exception
-// (D58): where a run executed an instruction start, a code finding replaces
+//: where a run executed an instruction start, a code finding replaces
 // the data of another analyzer, never of the user, the LLM or a heuristic.
 
 import { createHash } from "node:crypto";
@@ -38,7 +38,7 @@ export type Analyzer = (typeof ANALYZERS)[number];
 
 export interface NormalizedFindings {
   analyzer: Analyzer;
-  /** The address space that the analyzed image belongs to (D53); the C64 when absent. */
+  /** The address space that the analyzed image belongs to; the C64 when absent. */
   space?: Space;
   /** The address ranges the analyzer examined; it makes claims only there. */
   coverage: AddressRange[];
@@ -48,7 +48,7 @@ export interface NormalizedFindings {
   regions: Array<{ start: number; end: number; type: RegionType }>;
   /** Owned and covered by their source address. */
   references: Array<{ from: number; to: number; kind: ReferenceKind }>;
-  /** True for an address where a coverage run executed an instruction start (D58). */
+  /** True for an address where a coverage run executed an instruction start. */
   executed?: (address: number) => boolean;
 }
 
@@ -85,16 +85,16 @@ export interface ImportCounts {
   changed: number;
   retired: number;
   unchanged: number;
-  /** Findings at a place that a user/LLM removal blocks (D36); not written. */
+  /** Findings at a place that a user/LLM removal blocks; not written. */
   suppressed: number;
 }
 
 export interface ImportResult {
   /** The new revision, or null when nothing changed. */
   revision: string | null;
-  /** The analyzer names (D74). */
+  /** The analyzer names. */
   names: ImportCounts;
-  /** The analyzer's own rows from before D74 that the run closed in symbols: only `retired` counts. */
+  /** The analyzer's own rows from an older version that the run closed in symbols: only `retired` counts. */
   symbols: ImportCounts;
   regions: ImportCounts;
   references: ImportCounts;
@@ -165,7 +165,7 @@ export function validateFindings(findings: NormalizedFindings): AddressRange[] {
     checkAddress(reference.to, "reference target");
     if (!covering(reference.from, reference.from)) invalid(`the reference from ${hex(reference.from)} is outside the coverage.`);
     if (!(REFERENCE_KINDS as readonly string[]).includes(reference.kind)) invalid(`the reference kind ${reference.kind} is not known.`);
-    if (reference.kind === POINTER_KIND) invalid(`only an operand expression writes a pointer reference (D65), not an analyzer.`);
+    if (reference.kind === POINTER_KIND) invalid(`only an operand expression writes a pointer reference, not an analyzer.`);
   }
   return coverage;
 }
@@ -192,10 +192,10 @@ function ownNames(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, spa
 }
 
 /**
- * The names of an analyzer are second names (D74): they go to analyzer_names,
+ * The names of an analyzer are second names: they go to analyzer_names,
  * one for each analyzer at an address, and never to symbols. A run replaces
  * the analyzer's own names in its coverage, and closes the analyzer's old rows
- * in symbols there (knowledge from before D74). A name that the user or the LLM
+ * in symbols there (knowledge from an older version). A name that the user or the LLM
  * gave the address already is not kept twice. A code or data kind that
  * disagrees with the name of the address is a conflict.
  */
@@ -248,9 +248,9 @@ function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindi
   }
 }
 
-/** Analyzers whose regions a heuristic finding replaces where it lies (D44): user/LLM > heuristic > DXA/Ghidra. */
+/** Analyzers whose regions a heuristic finding replaces where it lies: user/LLM > heuristic > DXA/Ghidra. */
 const YIELDS_TO_HEURISTIC = new Set<Origin>(["dxa", "ghidra"]);
-/** Analyzers whose data gives way to a code finding over an executed instruction start (D58). */
+/** Analyzers whose data gives way to a code finding over an executed instruction start. */
 const YIELDS_TO_EXECUTED_CODE = new Set<Origin>(["dxa", "ghidra"]);
 
 /** True when an address in the range is an executed instruction start. */
@@ -272,7 +272,7 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
       }
     }
   }
-  // Executed code is evidence about its bytes (D58): another analyzer's data region under a code finding gives way where a run executed an instruction start.
+  // Executed code is evidence about its bytes: another analyzer's data region under a code finding gives way where a run executed an instruction start.
   for (const region of findings.regions.filter((candidate) => isCode(candidate.type))) {
     for (const row of regionsOverlapping(db, region.start, region.end, space)) {
       if (row.origin === analyzer || !YIELDS_TO_EXECUTED_CODE.has(row.origin) || isCode(row.type) || row.type === "dual-use") continue;
@@ -283,7 +283,7 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
     }
   }
   const conflictWith = (row: RegionRow, region: { start: number; end: number; type: RegionType }) => {
-    // dual-use bytes are code at one time and data at another: neither finding contradicts them (D42).
+    // dual-use bytes are code at one time and data at another: neither finding contradicts them.
     if (isCode(row.type) === isCode(region.type) || row.type === "dual-use") return;
     result.conflicts.push({
       category: "region",

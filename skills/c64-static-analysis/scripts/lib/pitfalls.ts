@@ -1,5 +1,5 @@
-// Platform pitfalls in code regions (M23.7): code that a C64 runs in another
-// way than it reads. A fixed catalogue, reported as candidates only (D51).
+// Platform pitfalls in code regions: code that a C64 runs in another
+// way than it reads. A fixed catalogue, reported as candidates only.
 //
 // raster-bit-8: a read of $D011 gives bit 8 of the current raster line in
 // bit 7. Code that writes the value back without clearing bit 7 sets bit 8 of

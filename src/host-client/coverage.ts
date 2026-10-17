@@ -1,11 +1,11 @@
-// Reads the emulator's memory access map as coverage bytes (D40): one byte
+// Reads the emulator's memory access map as coverage bytes: one byte
 // per address, RAM, ROM and I/O apart. The MCP tool and the skill scripts share it.
 
 import { COVERAGE, type CodeRange } from "../c64.ts";
 import { MAX_MEMMAP_RANGES, type MemmapRange } from "../protocol/vice.ts";
 import type { ViceSessionClient } from "./vice-session.ts";
 
-/** A full coverage file: offset n is address n (D40). */
+/** A full coverage file: offset n is address n. */
 export const FULL_COVERAGE = 0x10000;
 
 /** The coverage bytes of start..end, read from the session in parts. */

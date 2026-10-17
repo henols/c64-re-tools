@@ -1,5 +1,5 @@
 // Indexed images: the PNG encoder of emulator frames, and the C64 graphics
-// in memory as images for the documentation (D80). A region of the knowledge
+// in memory as images for the documentation. A region of the knowledge
 // gives no display mode and no colours, so a sprite, a bitmap or a charset is read
 // both in hires and in multicolour, with fixed pattern palettes.
 

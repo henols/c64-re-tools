@@ -1,4 +1,4 @@
-// A release in stages, as a cracked one-file program is (D43):
+// A release in stages, as a cracked one-file program is:
 //   stage 0 at $080d: an XOR decoder puts stage 1 at $c000 and jumps there
 //   stage 1 at $c000: an intro waits for a key, copies the program to $4000
 //                     and jumps there

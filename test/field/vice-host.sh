@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Starts the c64-re-tools Host Runtime with a chosen VICE, for a field test
-# with more than one VICE version (D56). It can also build VICE from the
+# with more than one VICE version. It can also build VICE from the
 # newest trunk of VICE's source (the VICE-Team/svn-mirror git repository),
 # stamped with its SVN revision, so that the host can tell a build with the
 # fix for VICE bug #2202 (r45971 and later) from a flawed one.

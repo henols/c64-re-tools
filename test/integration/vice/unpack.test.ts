@@ -100,7 +100,7 @@ test("trace finds no written code in a program that runs as it loaded; a program
   assert.deepEqual(started.json.writtenThenExecuted, [], "the counter runs where it loaded");
 });
 
-test("a steps file presses the key that an intro waits for (D43)", { skip: liveSkip, timeout: 240_000 }, async () => {
+test("a steps file presses the key that an intro waits for", { skip: liveSkip, timeout: 240_000 }, async () => {
   const end = 0xc000 + ORIGINAL.prg.length - 3;
   const range = ["--range", "$c000", `$${end.toString(16)}`];
   const blocked = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/blocked", "--timeout-frames", "300", ...range);
@@ -113,7 +113,7 @@ test("a steps file presses the key that an intro waits for (D43)", { skip: liveS
   assert.ok((traced.json.writtenThenExecuted as Array<{ start: string }>).some((range) => range.start === "$c000"), JSON.stringify(traced.json));
 });
 
-test("stages finds each stage of a staged release and where the next one starts (D43)", { skip: liveSkip, timeout: 300_000 }, async () => {
+test("stages finds each stage of a staged release and where the next one starts", { skip: liveSkip, timeout: 300_000 }, async () => {
   const { status, json } = await unpack("stages", "staged.prg", "--steps", "press-key.json", "--frames", "400");
   assert.equal(status, 0, JSON.stringify(json));
   const found = json.stages as Array<{ stage: number; entry: string; next?: string; wrote: Array<{ start: string; end: string }> }>;
@@ -130,7 +130,7 @@ test("stages finds each stage of a staged release and where the next one starts 
   assert.deepEqual(found[1]!.wrote, [{ start: "$4000", end: "$407f" }], "stage 1 wrote the program");
 });
 
-test("a capture at the last stage writes the image, its segments and the entry state (D43)", { skip: liveSkip, timeout: 300_000 }, async () => {
+test("a capture at the last stage writes the image, its segments and the entry state", { skip: liveSkip, timeout: 300_000 }, async () => {
   const { status, json } = await unpack("capture", "staged.prg", "--until", "$4000", "--out", "unpacked/staged", "--steps", "press-key.json", "--timeout-frames", "400");
   assert.equal(status, 0, JSON.stringify(json));
   const image = JSON.parse(readFileSync(join(project, "unpacked", "staged", "image.json"), "utf8")) as Record<string, unknown>;
@@ -147,7 +147,7 @@ test("a capture at the last stage writes the image, its segments and the entry s
   assert.equal(state.vectors.irq, "$ea31", "the KERNAL IRQ handler: this release does not change it");
   assert.ok(Array.isArray(state.differsFromReset) && state.differsFromReset.length > 0, "a run leaves zero page and stack different from a fresh READY");
 
-  // A scenario starts the program and runs the same steps: it reaches $4000 at the same raster position and timer values (D62).
+  // A scenario starts the program and runs the same steps: it reaches $4000 at the same raster position and timer values.
   const client = await ViceSessionClient.open({ videoStandard: "pal", env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` } });
   const cwd = process.cwd();
   process.chdir(project);
@@ -166,7 +166,7 @@ test("a capture at the last stage writes the image, its segments and the entry s
   }
 });
 
-test("stages follows a release whose stages write over code that ran before, and a SYS π*656 start (F-17, F-15)", { skip: liveSkip, timeout: 300_000 }, async () => {
+test("stages follows a release whose stages write over code that ran before, and a SYS π*656 start", { skip: liveSkip, timeout: 300_000 }, async () => {
   const { status, json } = await unpack("stages", "self-overwriting.prg", "--frames", "100");
   assert.equal(status, 0, JSON.stringify(json));
   const found = json.stages as Array<{ entry: string; next?: string; wrote: Array<{ start: string; end: string }> }>;
@@ -184,7 +184,7 @@ test("stages follows a release whose stages write over code that ran before, and
   assert.deepEqual(found[2]!.wrote, [{ start: "$0801", end: "$0840" }], "the payload wrote over its own start code");
 });
 
-test("a capture keeps the program that a mover wrote back over the first stage, also at a later arrival after a runUntil step (R2-01, R2-06)", { skip: liveSkip, timeout: 300_000 }, async () => {
+test("a capture keeps the program that a mover wrote back over the first stage, also at a later arrival after a runUntil step", { skip: liveSkip, timeout: 300_000 }, async () => {
   const first = await unpack("capture", "self-overwriting.prg", "--until", "$0801", "--out", "unpacked/first", "--timeout-frames", "100");
   assert.equal(first.status, 0, JSON.stringify(first.json));
   assert.deepEqual(first.json.segments, [{ start: "$0801", end: "$0900" }], "the stub at $080c ran before the mover wrote over it");
@@ -201,7 +201,7 @@ test("a capture keeps the program that a mover wrote back over the first stage, 
   assert.deepEqual((staged.json.stages as Array<{ entry: string }>).map((stage) => stage.entry), ["$080c", "$0340", "$0801", "$0801"]);
 });
 
-test("a routine that the program writes and calls, and that returns, starts no stage (D59)", { skip: liveSkip, timeout: 300_000 }, async () => {
+test("a routine that the program writes and calls, and that returns, starts no stage", { skip: liveSkip, timeout: 300_000 }, async () => {
   const { status, json } = await unpack("stages", "generated-call.prg", "--frames", "100");
   assert.equal(status, 0, JSON.stringify(json));
   const found = json.stages as Array<{ entry: string; next?: string; wrote: Array<{ start: string; end: string }> }>;

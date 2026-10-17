@@ -58,7 +58,7 @@ test("status shows a Host Runtime that does not answer as not reachable, with th
   assert.doesNotMatch(lines[0]!, /Stop the task/, "the instruction for an agent is not for a person");
 });
 
-test("status warns when x64sc, c1541 and petcat come from different VICE builds (R2-11)", () => {
+test("status warns when x64sc, c1541 and petcat come from different VICE builds", () => {
   const tool = (name: string, version: string): ToolStatus => ({ name, found: true, path: `/bin/${name}`, version, runs: true });
   assert.equal(mixedViceBuilds([tool("VICE", "x64sc (VICE 3.10)"), tool("c1541", "c1541 (VICE 3.10)"), tool("petcat", "petcat (VICE 3.10)")]), undefined);
   const mixed = mixedViceBuilds([tool("VICE", "x64sc (VICE 3.10 SVN r46282)"), tool("c1541", "c1541 (VICE 3.10)"), tool("petcat", "petcat (VICE 3.10)")]);

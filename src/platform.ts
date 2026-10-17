@@ -1,5 +1,5 @@
 // C64 platform reference data and decoders: the c64-memory-map script, and the
-// platform names that c64-source uses (D52).
+// platform names that c64-source uses.
 // Names follow "Mapping the Commodore 64". Only platform facts live here:
 // an address without one belongs to the application.
 
@@ -365,7 +365,7 @@ export function lookup(address: number): Lookup {
 }
 
 /**
- * The platform name of each named address (D52): system variables, ROM
+ * The platform name of each named address: system variables, ROM
  * entries and I/O registers, not mirrors, in address order. Only names that
  * an assembler can use as a symbol, and each name once, at its lowest address.
  * `end` is the last address of the entry: a vector has two bytes.
@@ -380,14 +380,14 @@ export function platformNames(): Array<{ address: number; end: number; name: str
     .filter((entry) => !seen.has(entry.name) && seen.add(entry.name) !== undefined);
 }
 
-/** Which ROMs a program uses (D75): a ROM it does not use gives no names, and without both the system area gives none. */
+/** Which ROMs a program uses: a ROM it does not use gives no names, and without both the system area gives none. */
 export interface RomUse {
   basic: boolean;
   kernal: boolean;
 }
 
 /**
- * The platform names of a program that uses only some ROMs (D75): the BASIC
+ * The platform names of a program that uses only some ROMs: the BASIC
  * ROM entries need the BASIC ROM, the KERNAL ROM entries the KERNAL, and the
  * system variables of $0002-$03FF (the workspace of both) one of them. The
  * processor port and the I/O registers always stay.

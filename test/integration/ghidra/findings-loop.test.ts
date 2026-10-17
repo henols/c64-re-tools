@@ -41,7 +41,7 @@ async function skill(name: string, file: string, ...args: string[]): Promise<Rec
 }
 
 test("Ghidra findings, a semantic rename and a seeded re-run go through one importer", { skip, timeout: 900_000 }, async () => {
-  // 1. The program goes into the knowledge (D83); the first Ghidra pass makes generated names, regions and references Ghidra knowledge.
+  // 1. The program goes into the knowledge; the first Ghidra pass makes generated names, regions and references Ghidra knowledge.
   assert.equal((await skill("c64-knowledge", "knowledge.ts", "image", "game.prg", "--origin", "user")).revision, nthIn(project, 1));
   const first = await skill("c64-static-analysis", "analyze.ts", "--entry", "$080d");
   assert.equal(first.revision, nthIn(project, 2), JSON.stringify(first));
@@ -70,7 +70,7 @@ test("Ghidra findings, a semantic rename and a seeded re-run go through one impo
   // 4. Knowledge after the loop: semantic names stay with their owners, history is complete.
   const at = await skill("c64-knowledge", "knowledge.ts", "at", "$0818");
   assert.deepEqual(at.symbol, { address: "$0818", name: "init_result", kind: "routine", origin: "llm", revision: nthIn(project, 3) });
-  assert.deepEqual((at.analyzerNames as Array<{ name: string }>).map((row) => row.name), ["FUN_0818"], "Ghidra's own name stays a second name (D74)");
+  assert.deepEqual((at.analyzerNames as Array<{ name: string }>).map((row) => row.name), ["FUN_0818"], "Ghidra's own name stays a second name");
   const history = (await skill("c64-knowledge", "knowledge.ts", "history", "$0818")) as { history: Array<{ entity: string; name?: string; origin: string }> };
   assert.deepEqual(
     history.history.filter((entry) => entry.entity === "symbol" || entry.entity === "analyzer-name").map((entry) => [entry.entity, entry.name, entry.origin]),

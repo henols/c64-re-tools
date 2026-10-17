@@ -15,7 +15,7 @@ function write(path: string, content: unknown): void {
   writeFileSync(join(project, path), JSON.stringify(content));
 }
 
-test("status names the version of the installed skills, warns on another version, and gives the MCP command (b's R2-01)", () => {
+test("status names the version of the installed skills, warns on another version, and gives the MCP command", () => {
   assert.match(installedLines(project).join("\n"), /^Installed: nothing in this project or globally\.$|^Installed globally:/);
   const skill = (name: string, scripts: boolean) => ({ harness: "claude", kind: "skill", name, files: [`.claude/skills/${name}/SKILL.md`, ...(scripts ? [`.claude/skills/${name}/package.json`] : [])] });
   write(".ap-sdk/install-manifest.json", {

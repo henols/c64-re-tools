@@ -111,7 +111,7 @@ test("a named project must be a folder, not the home folder and not inside anoth
   });
 });
 
-test("a project gets .c64-re-tools/local/ with a .gitignore that ignores everything; a plain folder gets nothing (D70)", () => {
+test("a project gets .c64-re-tools/local/ with a .gitignore that ignores everything; a plain folder gets nothing", () => {
   withHome((home) => {
     const game = join(home, "game");
     mkdirSync(join(game, ".c64-re-tools"), { recursive: true });

@@ -1,4 +1,4 @@
-// The reference pages of the documentation (D80): generated from the
+// The reference pages of the documentation: generated from the
 // knowledge, the source map and the image, never edited. A name links to its
 // line in the source; an address links to the entry of its name; a call site
 // links to its line.

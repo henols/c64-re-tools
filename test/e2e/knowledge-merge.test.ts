@@ -1,4 +1,4 @@
-// M20.6: the knowledge of one project in git on two computers (D69). Two
+// The knowledge of one project in git on two computers. Two
 // clones write, git merges the knowledge text without a stop, the reads show
 // the conflicts, merge decides them in one revision, and after a pull both
 // clones have the same knowledge and generate the same source.

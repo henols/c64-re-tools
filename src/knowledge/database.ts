@@ -1,5 +1,5 @@
 // The one place that opens the knowledge. The knowledge is text in
-// .c64-re-tools/knowledge/ (D69); .c64-re-tools/local/knowledge.db is an index
+// .c64-re-tools/knowledge/; .c64-re-tools/local/knowledge.db is an index
 // that is made again from the text when the text changed.
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";

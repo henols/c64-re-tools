@@ -9,7 +9,7 @@ import { MAX_COMPARE_DIFFERENCES, MAX_COMPARE_SIZE, MAX_DISASSEMBLE, MAX_MEMORY_
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, AddressOutput, Byte, defineTool, HexData, HexDataInput, MemoryViewInput, requireFields, SpaceInput } from "../server.ts";
 
-/** With out, a read or a disassembly can be larger than one answer of the session: it is read in parts (D39). */
+/** With out, a read or a disassembly can be larger than one answer of the session: it is read in parts. */
 const MAX_MEMORY_READ_OUT = 0x10000;
 const MAX_DISASSEMBLE_OUT = 32768;
 /** A memory byte in a result: two lowercase hex digits, as memory data is. */

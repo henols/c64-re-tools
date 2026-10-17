@@ -1,4 +1,4 @@
-// Evidence from one release (D51): for each range of the image, the unpack
+// Evidence from one release: for each range of the image, the unpack
 // stage that wrote it and the access class from coverage; for each code
 // region of knowledge, whether call and jump references reach it from the
 // entry; and what the program reads or executes outside the image. Evidence
@@ -16,7 +16,7 @@ export interface SeparationInput {
   entry?: number;
   /** The stages of an unpacker capture, in order; the last one is the program. */
   stages?: Array<{ entry: number; wrote: Range[] }>;
-  /** Joined coverage files (D40). */
+  /** Joined coverage files. */
   coverage?: Uint8Array;
   codeRegions: Array<Range & { type: string }>;
   references: Array<{ from: number; to: number; kind: string }>;
@@ -131,7 +131,7 @@ export function separate(input: SeparationInput): Separation {
     }
   }
   // The image has no bytes of generated code, so only its opcode bytes count as executed. VICE marks only
-  // opcode bytes: a gap of at most two operand bytes outside the image stays inside one piece of code (F-28).
+  // opcode bytes: a gap of at most two operand bytes outside the image stays inside one piece of code.
   const outsideImage = (from: number, to: number) => {
     for (let address = from + 1; address < to; address++) if (inImage(address)) return false;
     return true;

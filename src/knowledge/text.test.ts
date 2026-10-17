@@ -161,7 +161,7 @@ test("a row must be added in the revision of its id, and its revisions must be i
   assert.throws(() => load(symbolLine("main", null).replace("/1", "/0")), /is not a row id/);
 });
 
-test("the evidence of a coverage map keeps a space other than the C64 in the text, and a space that is not known is refused (D86)", () => {
+test("the evidence of a coverage map keeps a space other than the C64 in the text, and a space that is not known is refused", () => {
   const { db } = fullProject();
   const log = revisionsText(db);
   db.close();

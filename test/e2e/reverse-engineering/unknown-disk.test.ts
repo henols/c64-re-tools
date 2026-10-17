@@ -73,7 +73,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   const packing = await run("c64-unpacker", "unpack.ts", "inspect", "extracted/game.prg");
   assert.deepEqual(packing.json.basicStart, { line: 10, sys: "$080d" });
 
-  // 4. The program goes into the knowledge (D83), and a fast DXA first pass finds the BASIC start by itself.
+  // 4. The program goes into the knowledge, and a fast DXA first pass finds the BASIC start by itself.
   assert.equal((await run("c64-knowledge", "knowledge.ts", "image", "extracted/game.prg")).status, 0);
   const first = await run("c64-static-analysis", "analyze.ts", "--analyzer", "dxa", "--listing", "analysis/game.lst");
   assert.equal(first.status, 0, first.stdout);

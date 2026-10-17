@@ -1,4 +1,4 @@
-// The source map that c64-source writes next to the source (D80): the line of
+// The source map that c64-source writes next to the source: the line of
 // each name and of each address. The documentation links to these lines.
 
 import { posix } from "node:path";

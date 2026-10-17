@@ -16,7 +16,7 @@ import { channelOf } from "../src/package.ts";
 /** The files that repeat the package version, relative to the repository root. */
 export const MANIFESTS = [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"];
 
-/** The dev container Feature (D38): only its own, top-level version follows the package; its dependencies keep theirs. */
+/** The dev container Feature: only its own, top-level version follows the package; its dependencies keep theirs. */
 export const FEATURE = "devcontainer/src/c64-re-tools/devcontainer-feature.json";
 
 const VERSION_FIELD = /("version"\s*:\s*")([^"]*)(")/g;

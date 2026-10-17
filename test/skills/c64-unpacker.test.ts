@@ -112,7 +112,7 @@ test("inspect refuses a link to a file outside the project", { skip: process.pla
   }
 });
 
-test("inspect reports the start code that decodes and moves bytes, and the BASIC text, as evidence (D43)", () => {
+test("inspect reports the start code that decodes and moves bytes, and the BASIC text, as evidence", () => {
   const result = inspect(xorPackedPrg);
   assert.deepEqual(result.basicText, ["10 SYS2061"]);
   assert.deepEqual(result.start, { at: "$080d", jumpsOutside: "$c000", writesOutside: "$c000" });
@@ -139,7 +139,7 @@ test("plain-looking bytes behind start code that moves them are unclear, not unl
   assert.match(result.evidence, /decodes or moves bytes outside the program/);
 });
 
-test("a written block is a stage candidate only through code that is not own code the stage has not written (F-17)", () => {
+test("a written block is a stage candidate only through code that is not own code the stage has not written", () => {
   const stage = new Uint8Array(0x10000);
   const chunk = new Uint8Array(0x10000);
   // The chunk wrote $0800-$08ff over start code at $080c that it executed before.
@@ -154,7 +154,7 @@ test("a written block is a stage candidate only through code that is not own cod
   assert.deepEqual(stageCandidates(stage, chunk, new Set(), 512), []);
 });
 
-test("a call into written code returns to the instruction after a JSR that the stage executed (D59)", () => {
+test("a call into written code returns to the instruction after a JSR that the stage executed", () => {
   const stack = new Uint8Array(0x100);
   // JSR $7ec3 at $7a10 pushed $7a12; SP is $f7 after the push.
   stack[0xf8] = 0x12;
@@ -171,7 +171,7 @@ test("a call into written code returns to the instruction after a JSR that the s
   assert.equal(callReturn(wrapped, 0xfe, byteAt, () => true), 0x7a13);
 });
 
-test("the code that a called block ran, with operand bytes, is the stage's own code and makes no candidate (D59)", () => {
+test("the code that a called block ran, with operand bytes, is the stage's own code and makes no candidate", () => {
   const map = new Uint8Array(0x10000);
   for (const address of [0x9e00, 0x9e02, 0x9e05, 0x9e40]) map[address] = COVERAGE.ramExecute;
   assert.deepEqual(executedIn(map, { start: 0x9e00, end: 0x9e41 }), [
@@ -186,7 +186,7 @@ test("the code that a called block ran, with operand bytes, is the stage's own c
   assert.deepEqual(stagePoints([{ start: 0x9e00, end: 0x9e09 }], new Set(), () => true, [{ start: 0x9e00, end: 0x9e07 }]), { exec: [{ start: 0x9e08, end: 0x9e09 }], watch: [] });
 });
 
-test("the points of a run: exec breakpoints over the blocks, write watches over own code that is not written (F-17)", () => {
+test("the points of a run: exec breakpoints over the blocks, write watches over own code that is not written", () => {
   const own = new Set([0x0802, 0x0803, 0x0810]);
   const written = (address: number) => address === 0x0810;
   assert.deepEqual(stagePoints([{ start: 0x0800, end: 0x0811 }], own, written), {
@@ -200,7 +200,7 @@ test("the points of a run: exec breakpoints over the blocks, write watches over 
 
 const range = (start: number, end: number) => ({ start, end });
 
-test("capture segments do not overlap, and a block that later stages wrote over is no leftover (F-26)", () => {
+test("capture segments do not overlap, and a block that later stages wrote over is no leftover", () => {
   // The stages of a tape release in the rc.5 test run, captured at $8ab2.
   const segments = captureSegments(
     [
@@ -235,7 +235,7 @@ test("--exclude leaves ranges out of the capture segments, and a segment that a 
   assert.deepEqual(withoutRanges([range(0x1000, 0x1fff)], [range(0x0800, 0x2fff)]), []);
 });
 
-test("a block with the code of a later intermediate stage is a leftover; the block with the capture entry never is (R2-01)", () => {
+test("a block with the code of a later intermediate stage is a leftover; the block with the capture entry never is", () => {
   // A packer: $080d copies a depacker to $c000; $c000 writes the program to $4000.
   const staged = [
     { entry: 0x080d, wrote: [range(0xc000, 0xc07f)] },

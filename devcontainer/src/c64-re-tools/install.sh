@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The c64-re-tools dev container Feature: the native tools of the skill
 # scripts at image build time, and a script that installs the toolkit into
-# the project after create and updates it on each start (D38). Node 24 and
+# the project after create and updates it on each start. Node 24 and
 # Java 21 come from the official Node and Java Features (dependsOn).
 
 set -Eeuo pipefail

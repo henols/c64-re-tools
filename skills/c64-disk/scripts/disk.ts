@@ -1,6 +1,6 @@
 // The c64-disk script: inspects a project disk image with c1541 through the
 // Host Runtime and extracts files into the project. T64 tape files and CRT
-// cartridge files are read locally (D54): no host tool reads them.
+// cartridge files are read locally: no host tool reads them.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -74,7 +74,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   return { output, failed: false };
 }
 
-/** A tape or cartridge file, read here (D54). */
+/** A tape or cartridge file, read here. */
 function local(kind: "t64" | "crt", action: Action, image: string, name: string | undefined, out: string | undefined): { output: unknown; failed: boolean } {
   const { bytes } = readProjectFile(image);
   if (kind === "t64") {

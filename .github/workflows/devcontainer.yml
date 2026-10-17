@@ -1,6 +1,6 @@
 name: Dev container Feature
 
-# Builds the c64-re-tools dev container Feature (D38) on the base images of
+# Builds the c64-re-tools dev container Feature on the base images of
 # devcontainer/test/c64-re-tools/scenarios.json and checks that every tool
 # runs and that the toolkit is in the project. arm64 builds Ghidra's natives.
 # Runs when the Feature changes, by hand, and before a release (ci.yml).

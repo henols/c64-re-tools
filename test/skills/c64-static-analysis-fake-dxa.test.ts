@@ -36,7 +36,7 @@ function fakeDxa(name: string, lines: string[]): string {
   return program;
 }
 
-/** A project with the PRG as its program in the knowledge (D83): the image is revision 1. */
+/** A project with the PRG as its program in the knowledge: the image is revision 1. */
 function project(name: string, space = "c64"): string {
   const root = join(scratch, name);
   mkdirSync(root);
@@ -123,7 +123,7 @@ test("an import refused because knowledge changed during the analysis tells to r
   assert.match(error.message, /Run the analysis again\.$/);
 });
 
-test("--space imports the findings into that space and leaves the C64 alone (D53)", { timeout: 60_000 }, async () => {
+test("--space imports the findings into that space and leaves the C64 alone", { timeout: 60_000 }, async () => {
   const root = project("space", "drive8");
   const dxa = fakeDxa("dxa-space", LISTING);
   const run = await analyze(root, dxa, "--space", "drive8");

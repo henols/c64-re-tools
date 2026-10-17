@@ -1,6 +1,6 @@
 // Byte comparison of releases for the c64-provenance script. Each release
 // has bytes in one or more segments: a PRG at its load address plus an
-// optional shift, or the segments of an unpacker image (D50). The comparison
+// optional shift, or the segments of an unpacker image. The comparison
 // covers the addresses where every release has bytes, and reports where the
 // releases differ and which releases agree there. It never decides which
 // bytes are original: that needs evidence beyond one comparison.
@@ -93,7 +93,7 @@ function addressesOf(release: Release): number[] {
   return release.segments.flatMap((segment) => Array.from({ length: segment.end - segment.start + 1 }, (_, offset) => segment.start + offset));
 }
 
-/** Most shifts that suggestShifts gives: data that did not move can outvote code that did (b2/04). */
+/** Most shifts that suggestShifts gives: data that did not move can outvote code that did. */
 export const MAX_SUGGESTED_SHIFTS = 3;
 
 /**
@@ -129,7 +129,7 @@ export type ShiftSuggestion = { release: number; shift: number; matchingSequence
 
 /**
  * The --shift to suggest for release `index` (0 = the first) from `found`,
- * the best shift of that release over the first one (F-25). The shift is the
+ * the best shift of that release over the first one. The shift is the
  * full value for --shift: `applied` holds the shifts already given. A shift
  * that moves a segment out of $0000-$ffff is not suggested: with two releases,
  * the opposite shift of the first release is suggested when it fits, else the

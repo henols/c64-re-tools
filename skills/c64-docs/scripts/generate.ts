@@ -1,4 +1,4 @@
-// c64-docs generate.ts (D80): the reference pages of a program from the
+// c64-docs generate.ts: the reference pages of a program from the
 // knowledge, the source map of c64-source and the program in the knowledge. The pages are
 // generated and never edited; the pages of a person link to them.
 
@@ -25,7 +25,7 @@ const USAGE = `generate.ts --source <dir> --out <dir>
                    folder, for example docs/reference; generate.ts writes only
                    there and refuses a page in it that it did not write
 When the knowledge has the program of the source (knowledge.ts image of the
-c64-knowledge skill, D83), the reference decodes the tables and shows the
+c64-knowledge skill), the reference decodes the tables and shows the
 graphics. The result is one JSON object.`;
 
 /** The files of an earlier run in `directory`, the real folder of --out, or a refusal that names a file of a person. */

@@ -1,5 +1,5 @@
 // Joins the batches of agents that worked in parallel, each on its own range
-// of addresses (D79), into one batch for apply. The owner of an address is
+// of addresses, into one batch for apply. The owner of an address is
 // the batch whose range holds it: its name, comment, operand and module win
 // there; at an address that no batch owns, the first batch in the order given
 // wins. A name that a batch gave to an address, and that the join replaced

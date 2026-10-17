@@ -26,7 +26,7 @@ const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [
   --define NAME=VALUE      assembler symbol: an integer ($hex allowed) or true/false (repeatable)
   --set-pc <address>       start address when the source sets none, for example '$0801'
   --compare                check the program byte by byte against the program in the
-                           knowledge (D83), each segment; put it in with knowledge.ts
+                           knowledge, each segment; put it in with knowledge.ts
                            image of the c64-knowledge skill
   --space <space>          with --compare: the knowledge space of the program, c64 (the
                            default), drive8, or bank0 to bank255

@@ -272,7 +272,7 @@ test("an unclassify over a range that is partly suppressed adds only the free pa
   );
 });
 
-// D42: element sizes, batches, evidence and the origin filter.
+// Element sizes, batches, evidence and the origin filter.
 
 test("a data region takes an element size that divides its length, and a split keeps it where it still fits", () => {
   const db = fresh();
@@ -341,12 +341,12 @@ test("a module starts a file of generated source: one per address and per file, 
   setModule(db, { origin: "user" }, { start: 0x2000, file: "player.asm" });
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
   for (const file of ["../x.asm", "sub/x.asm", "x.a", ".asm", "x y.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
-  // c64-source writes these files itself; macOS and Windows ignore the letter case (F-31).
+  // c64-source writes these files itself; macOS and Windows ignore the letter case.
   for (const file of ["main.asm", "loader.asm", "constants.asm", "macros.asm", "Main.asm", "CONSTANTS.asm"]) {
     assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof KnowledgeError && error.code === "invalid-input" && /writes main\.asm, loader\.asm, constants\.asm, macros\.asm itself/.test(error.message), file);
   }
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
-  assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: nth(db, 3) }, "a write without a title keeps it (F-26)");
+  assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: nth(db, 3) }, "a write without a title keeps it");
   assert.deepEqual(listModules(db, undefined, ["user"]).map((row) => row.file), ["player.asm"]);
   assert.equal(revisionChanges(db, nth(db, 3)).closed[0]?.entity, "module");
 
@@ -358,7 +358,7 @@ test("a module starts a file of generated source: one per address and per file, 
   assert.deepEqual(listModules(db).map((row) => [row.start, row.file]), [[0x0801, "boot.asm"], [0x2100, "player.asm"]]);
 });
 
-test("each space has its own rows and names (D53)", () => {
+test("each space has its own rows and names", () => {
   const db = fresh();
   renameSymbol(db, llm, { address: 0x0500, name: "loop" });
   renameSymbol(db, llm, { space: "drive8", address: 0x0500, name: "loop" });
@@ -369,7 +369,7 @@ test("each space has its own rows and names (D53)", () => {
   removeSymbol(db, llm, { space: "drive8", address: 0x0500 });
   assert.equal(symbolAt(db, 0x0500, "drive8"), undefined);
   assert.equal(symbolAt(db, 0x0500)?.name, "loop", "the C64 row stays");
-  assert.deepEqual(listSuppressions(db, undefined, "drive8"), [], "the removal of a name writes no suppression (D74)");
+  assert.deepEqual(listSuppressions(db, undefined, "drive8"), [], "the removal of a name writes no suppression");
   classifyRegion(db, llm, { space: "bank3", start: 0x8000, end: 0x80ff, type: "bytes" });
   assert.deepEqual(regionsOverlapping(db, 0x8000, 0x8000), []);
   assert.throws(() => renameSymbol(db, llm, { space: "bank256", address: 0x8000, name: "x" }), failsWith("invalid-input"));
@@ -402,7 +402,7 @@ function operands(): { db: DatabaseSync; context: WriteContext } {
   return { db, context: { origin: "llm", image: operandImage() } };
 }
 
-test("an operand expression is checked against the image and writes pointer references (D65)", () => {
+test("an operand expression is checked against the image and writes pointer references", () => {
   const { db, context } = operands();
   const lo = setOperand(db, context, { address: 0x8079, select: "lo", symbol: "irq_handler" });
   assert.deepEqual(lo.current, { space: "c64", address: 0x8079, select: "lo", symbol: "irq_handler", offset: 0, origin: "llm", revision: nth(db, 4) });
@@ -418,7 +418,7 @@ test("an operand expression is checked against the image and writes pointer refe
   assert.deepEqual(historyAt(db, 0x8079).map((entry) => entry.entity), ["reference", "operand"]);
 });
 
-test("an operand expression that does not give the operand in the image is refused with both values (D65)", () => {
+test("an operand expression that does not give the operand in the image is refused with both values", () => {
   const { db, context } = operands();
   assert.throws(() => setOperand(db, context, { address: 0x8079, select: "hi", symbol: "irq_handler" }), /At \$8079, >irq_handler gives \$80, but the operand in the image is \$c0\./);
   assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "value", symbol: "bar_colours" }), /gives \$8a98, but the operand in the image is \$8a97/);
@@ -435,7 +435,7 @@ test("an operand expression that does not give the operand in the image is refus
   assert.equal(currentRevision(db), nth(db, 3), "a refused write leaves no revision");
 });
 
-test("a rename of a symbol follows into operand expressions, and a removal is refused while one uses it (D65)", () => {
+test("a rename of a symbol follows into operand expressions, and a removal is refused while one uses it", () => {
   const { db, context } = operands();
   setOperand(db, context, { address: 0x8079, select: "lo", symbol: "irq_handler" });
   setOperand(db, { ...context, origin: "user" }, { address: 0x82aa, select: "expr", expression: "((VICSCN & $3c00) >> 6) | ((charset & $3800) >> 10)" });
@@ -451,7 +451,7 @@ test("a rename of a symbol follows into operand expressions, and a removal is re
   assert.throws(() => removeOperand(db, llm, { address: 0x8079 }), failsWith("not-found"));
 });
 
-test("a batch writes symbols and the operands that use them, and a revert restores operands (D65)", () => {
+test("a batch writes symbols and the operands that use them, and a revert restores operands", () => {
   const db = fresh();
   const context: WriteContext = { origin: "llm", image: operandImage() };
   const applied = applyBatch(db, context, [
@@ -482,7 +482,7 @@ function sourceImage(): OperandImage {
   return { byteAt: (address) => bytes.get(address) ?? image.byteAt(address), platform: image.platform };
 }
 
-test("a patch puts code in a range of the image under a switch (D72)", () => {
+test("a patch puts code in a range of the image under a switch", () => {
   const db = fresh();
   const context: WriteContext = { origin: "llm", image: sourceImage() };
   const first = setPatch(db, context, { start: 0x8079, end: 0x807d, switch: "CRACK", code: "  lda #0\n  rts  \n", comment: "Skips the check." });
@@ -511,7 +511,7 @@ test("a patch puts code in a range of the image under a switch (D72)", () => {
   assert.deepEqual(listPatches(db).map((row) => row.start), [0x8079, 0x807e], "a revert restores patches");
 });
 
-test("a macro and its uses: the use is whole instructions, its args are known names, and a rename follows (D73)", () => {
+test("a macro and its uses: the use is whole instructions, its args are known names, and a rename follows", () => {
   const db = fresh();
   const context: WriteContext = { origin: "llm", image: sourceImage() };
   renameSymbol(db, llm, { address: 0x00fb, name: "ptr" });
@@ -552,7 +552,7 @@ test("a macro and its uses: the use is whole instructions, its args are known na
   assert.ok(history.every((entry) => entry.to !== undefined));
 });
 
-test("a batch writes a macro and its uses in one revision, and a revert restores them (D73)", () => {
+test("a batch writes a macro and its uses in one revision, and a revert restores them", () => {
   const db = fresh();
   const context: WriteContext = { origin: "llm", image: sourceImage() };
   const applied = applyBatch(db, context, [

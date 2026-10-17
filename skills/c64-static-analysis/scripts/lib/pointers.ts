@@ -1,4 +1,4 @@
-// Pointer candidates (D65): code that builds an address from immediates. The
+// Pointer candidates: code that builds an address from immediates. The
 // byte of each immediate is the low or high byte of the address, so a rebuild
 // that moves the address needs an operand expression there. They are only
 // reported, never written: the LLM records the expressions with c64-knowledge.

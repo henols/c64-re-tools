@@ -13,7 +13,7 @@ const SESSION_CLOSED = "The C64 session is closed because the c64-re-tools MCP s
 const LOST_BEFORE_ANSWER = "The connection to the c64-re-tools host runtime was lost before the emulator answered. No machine state was lost. Do the call again.";
 
 /**
- * The loss of a session that never answered (D57): it had no machine state,
+ * The loss of a session that never answered: it had no machine state,
  * so the caller can do the call again on a new session.
  */
 export class LostBeforeAnswer extends WireFailure {
@@ -178,7 +178,7 @@ export class ViceSessionClient {
     return this.#request("cpuHistory", params);
   }
 
-  /** Records each hit of the points while the program runs on (D76). */
+  /** Records each hit of the points while the program runs on. */
   trace(params: ViceOperations["trace"]["params"]): Promise<ViceOperations["trace"]["result"]> {
     return this.#request("trace", params);
   }
@@ -238,7 +238,7 @@ export class ViceSessionClient {
     return this.#request("snapshot", params);
   }
 
-  /** The bytes of a named snapshot, as a .vsf file holds them (D41). */
+  /** The bytes of a named snapshot, as a .vsf file holds them. */
   async snapshotExport(name: string): Promise<Buffer> {
     const { attachments } = await this.#requestWithAttachments("snapshotFile", { action: "export", name });
     const [bytes] = attachments;
@@ -273,12 +273,12 @@ export class ViceSessionClient {
     return this.#lost !== undefined;
   }
 
-  /** True when the emulator answered a request: then the session had machine state to lose (D57). */
+  /** True when the emulator answered a request: then the session had machine state to lose. */
   get answered(): boolean {
     return this.#answered;
   }
 
-  /** The loss of a lost session, when no request got it; undefined while the session lives (D57). */
+  /** The loss of a lost session, when no request got it; undefined while the session lives. */
   get unreportedLoss(): WireFailure | undefined {
     return this.#lost?.code === "machine-state-lost" && !this.#lossReported ? this.#lost : undefined;
   }
@@ -323,7 +323,7 @@ export class ViceSessionClient {
 }
 
 
-/** Reads `size` bytes from `address` of the C64 in reads of at most 4 KiB, in one view: up to all 64 KiB (M23.9). */
+/** Reads `size` bytes from `address` of the C64 in reads of at most 4 KiB, in one view: up to all 64 KiB. */
 export async function readMemoryInParts(client: Pick<ViceSessionClient, "memoryRead">, address: number, size: number, view: "cpu" | "ram"): Promise<Buffer> {
   const parts: Buffer[] = [];
   for (let at = address; at < address + size; at += MAX_MEMORY_READ) {

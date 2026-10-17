@@ -12,23 +12,16 @@ building and testing new C64 applications.
 read and write memory, set checkpoints, inspect chip state — and keep working
 when the emulator misbehaves.
 
-## Status: greenfield rewrite
+## Status
 
-The repo holds only the rewrite. The design is frozen in `docs/redesign/`
-(start at its `README.md`; `18-repository-structure.md` is the target layout,
-`19-implementation-plan.md` the milestones). `docs/plan.md` tracks the steps
-and their status; work its first unchecked step. Do not pre-create empty files
-to match the layout.
-
-The old implementation (`@henols/vice-mcp`, the broker, twelve skills) was
-deleted. Everything is built new from scratch; nothing from the old code is
-mined, ported or kept for reference.
+Released as 2.0.0. `README.md` is the user documentation. Do not add design
+documents, plans or decision numbers to the repository.
 
 Architecture in one line: one MCP process owns one VICE instance and is
 VICE-only; a Host Runtime on the graphical host owns VICE and the tools that
 come with it (c1541, petcat); skill scripts call the Host Runtime for those,
-run ACME, DXA and Ghidra themselves (D16), and keep project knowledge local as
-text in `.c64-re-tools/knowledge/` (D69), with a SQLite index in `local/`.
+run ACME, DXA and Ghidra themselves, and keep project knowledge local as
+text in `.c64-re-tools/knowledge/`, with a SQLite index in `local/`.
 
 ## Commands
 
@@ -58,11 +51,11 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
 
 ## Conventions that bite
 
-- **TypeScript only (D17).** No `.js`/`.mjs` anywhere, also not installed: nothing is built, there is no `dist/`. Users run everything through `npx -y @henols/c64-re-tools@latest` (the MCP declaration too), so it updates itself; never link (`npm link`, `npm install -g <dir>`). Node never strips types under `node_modules`, so the bins are `.ts` with a `#!/usr/bin/env tsx` shebang, and every spawn of node on our own `.ts` passes `process.execArgv`. Skill scripts import `src/` as `#src/...`. npx exits on SIGTERM without passing it on: signal the process group.
+- **TypeScript only.** No `.js`/`.mjs` anywhere, also not installed: nothing is built, there is no `dist/`. Users run everything through `npx -y @henols/c64-re-tools@latest` (the MCP declaration too), so it updates itself; never link (`npm link`, `npm install -g <dir>`). Node never strips types under `node_modules`, so the bins are `.ts` with a `#!/usr/bin/env tsx` shebang, and every spawn of node on our own `.ts` passes `process.execArgv`. Skill scripts import `src/` as `#src/...`. npx exits on SIGTERM without passing it on: signal the process group.
 - The Host Runtime runs only VICE, c1541 and petcat. Skill scripts run ACME, DXA and Ghidra through `src/native/` (supervisor, staging, bounded `runTool`); never a bare `spawnSync`. Never auto-install external tools: detect, refuse by name, print the remedy.
 - The host refuses to start unless VICE starts (ROMs present); the host is started by hand only.
 - Tools take client paths and stream bytes; never a fixed file list or a path over the socket.
 - Stopping the Host Runtime or a skill script must stop every emulator, tool and descendant it started.
-- Every date and time the code writes is ISO 8601 in CET at a fixed `+01:00` (D30); never `toISOString()` (UTC) or a local-time format.
+- Every date and time the code writes is ISO 8601 in CET at a fixed `+01:00`; never `toISOString()` (UTC) or a local-time format.
 - Skill docs (`SKILL.md`, references, descriptions) are written in ASD-STE100 (use the `asd-ste100` skill).
 - Don't put `\u0000`, backticks or `\b` in Write/Edit params or `node -e` edit scripts — they land as raw bytes or shell commands; use a scratch `.ts` file.

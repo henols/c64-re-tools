@@ -1,7 +1,7 @@
-// The loader of a generated source (D48): a PRG that copies each segment and
+// The loader of a generated source: a PRG that copies each segment and
 // the entry state's pages $0002-$03ff into place, sets the display registers
-// of the VIC-II and the VIC bank, waits for the entry's raster line (D60),
-// sets the CIA timers and interrupt masks (D63), sets $00/$01, the stack
+// of the VIC-II and the VIC bank, waits for the entry's raster line,
+// sets the CIA timers and interrupt masks, sets $00/$01, the stack
 // pointer, A, X, Y and the flags, and jumps to the entry. The copies run
 // from a free page with SEI and all RAM visible, in an order where no copy
 // overwrites the packed bytes of a copy that has not run yet. The plan is
@@ -22,9 +22,9 @@ export interface EntryState {
   port: [number, number];
   /** $0000-$03ff at the entry. */
   pages: Uint8Array;
-  /** The VIC-II at the entry (D60): $d000-$d02e, and the VIC bank (bits 0-1 of $dd00). */
+  /** The VIC-II at the entry: $d000-$d02e, and the VIC bank (bits 0-1 of $dd00). */
   vic?: { registers: Uint8Array; bank: number };
-  /** CIA 1 and CIA 2 at the entry (D63). */
+  /** CIA 1 and CIA 2 at the entry. */
   cia?: [EntryCia, EntryCia];
 }
 
@@ -37,7 +37,7 @@ export interface EntryCia {
 }
 
 /**
- * The VIC-II registers that the loader sets (D60), each with the bits that a
+ * The VIC-II registers that the loader sets, each with the bits that a
  * read gives back: not the raster, the light pen, the interrupt registers or
  * the collisions. The raster line comes from a wait instead.
  */
@@ -125,13 +125,13 @@ export interface LoaderPlan {
   stackByte: number;
   end: number;
   text: string;
-  /** The CIA timers and masks that the loader sets, when the entry state has them (D63). */
+  /** The CIA timers and masks that the loader sets, when the entry state has them. */
   cia?: CiaPlan;
 }
 
 /**
- * What the loader cannot set as it was at the entry (D63). An entry state
- * without CIA values (from a capture before D63) gives no timers at all.
+ * What the loader cannot set as it was at the entry. An entry state
+ * without CIA values (from a capture of an older version) gives no timers at all.
  */
 export function loaderLimits(plan: { cia?: CiaPlan }): string[] {
   if (plan.cia === undefined) {
@@ -149,7 +149,7 @@ const STUB = 0x080d;
 const STUB_SIZE = 25;
 /** The copier code and its three variables, without the table. */
 const COPIER_CODE_SIZE = 167;
-/** The VIC-II code of the copier (D60), without its two tables of one byte per register. */
+/** The VIC-II code of the copier, without its two tables of one byte per register. */
 const VIC_CODE_SIZE = 44;
 const VIC_SIZE = VIC_CODE_SIZE + 2 * VIC_DISPLAY_REGISTERS.length;
 /** The copier and the stub's move of it: two pages. */
@@ -296,7 +296,7 @@ interface Op {
 }
 
 /**
- * The copier's CIA part (D63), after the raster wait: the timers and
+ * The copier's CIA part, after the raster wait: the timers and
  * interrupt masks of the entry state. A running timer is stopped, loaded
  * with its counter at the entry plus the cycles to the entry, started, and
  * given its latch, so it counts to the entry's value just at the entry.
@@ -390,14 +390,14 @@ export interface LoaderInput {
   byteAt: (address: number) => number;
   state: EntryState;
   entry: number;
-  /** The label of the entry in the source: the loader jumps to it, so the jump follows the code when it moves (D66). */
+  /** The label of the entry in the source: the loader jumps to it, so the jump follows the code when it moves. */
   entryName?: string;
   header: string[];
-  /** The source has macros.asm (D73): the loader includes it after the constants. */
+  /** The source has macros.asm: the loader includes it after the constants. */
   macros?: boolean;
 }
 
-/** The label of a block (D66): its first byte and the byte after it in the loader file, and its first address where it runs. */
+/** The label of a block: its first byte and the byte after it in the loader file, and its first address where it runs. */
 const blockLabel = (start: number, part: "from" | "end" | "to") => `loader_${part}_${start.toString(16).padStart(4, "0")}`;
 const plus = (label: string, offset: number) => (offset === 0 ? label : `${label}+${offset}`);
 /** The label of the copier in the loader file, which the stub moves to its two pages. */
@@ -475,7 +475,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     `        jmp ${hex4(copier)}`,
     "}",
   );
-  // The labels around each block give the copy table its numbers, so a block can change its length (D66).
+  // The labels around each block give the copy table its numbers, so a block can change its length.
   for (const block of blocks) {
     lines.push("", `; ${block.what}`, blockLabel(block.range.start, "from"), `!pseudopc ${hex4(block.pseudo)} {`, blockLabel(block.range.start, "to"));
     if (block.files !== undefined) for (const file of block.files) lines.push(`!source "${file}"`);
@@ -562,7 +562,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     `        ldx #${hex2(state.x)}`,
     `        ldy #${hex2(state.y)}`,
     "        plp",
-    // A global label: the check of the loader stops here, before an interrupt can run (F-32).
+    // A global label: the check of the loader stops here, before an interrupt can run.
     `${LOADER_JUMP} jmp ${input.entryName ?? hex4(input.entry)}`,
     ".count  !word 0",
     ".index  !byte 0",
@@ -599,7 +599,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
 }
 
 /**
- * The copier's VIC-II part (D60): with the I/O area visible it sets the
+ * The copier's VIC-II part: with the I/O area visible it sets the
  * display registers and the VIC bank of the entry state, then waits for the
  * entry's raster line, so the program starts in the same phase of the frame.
  */

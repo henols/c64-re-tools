@@ -140,7 +140,7 @@ export const c64RunUntil = defineTool({
         ? {}
         : { history: (await session.cpuHistory({ limit: input.history, space: result.space })).entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
     if (input.observe === undefined) return { ...answer, ...history };
-    // The observation at the stop (M23.10): an image of the screen comes with the result as c64_observe gives it.
+    // The observation at the stop: an image of the screen comes with the result as c64_observe gives it.
     const observed = await c64Observe.run(input.observe, session);
     if (observed instanceof ToolOutput) return new ToolOutput({ ...answer, ...history, observed: observed.structured }, observed.content);
     return { ...answer, ...history, observed };

@@ -1,5 +1,5 @@
-// Enforces the dependency rules of docs/redesign/18-repository-structure.md §15
-// by scanning every import in src/, skills/ and distribution/.
+// Enforces the dependency rules between the parts of the repository by
+// scanning every import in src/, skills/ and distribution/.
 
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -22,7 +22,7 @@ function areaOf(path: string): string | undefined {
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
   }
   if (parts[0] === "skills" && parts.length > 2) return `skill:${parts[1]}`;
-  // The one-off conversion of an old knowledge.db (M20.5) is no part of the package edge.
+  // The one-off conversion of an old knowledge.db is no part of the package edge.
   if (parts[0] === "distribution") return parts[1] === "convert-knowledge.ts" ? "convert" : "distribution";
   return undefined;
 }
@@ -30,11 +30,11 @@ function areaOf(path: string): string | undefined {
 /** Areas each area may import besides itself. */
 const ALLOWED: Record<string, readonly string[]> = {
   c64: [],
-  // The ACME spelling of each 6510 opcode (D78): c64-source and the listing of c64-knowledge decode with one table.
+  // The ACME spelling of each 6510 opcode: c64-source and the listing of c64-knowledge decode with one table.
   opcodes: [],
-  // The platform memory map (D52): names and meanings of C64 addresses.
+  // The platform memory map: names and meanings of C64 addresses.
   platform: ["c64"],
-  // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images (D80).
+  // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images.
   graphics: [],
   // The one time format (ISO 8601 at +01:00).
   time: [],

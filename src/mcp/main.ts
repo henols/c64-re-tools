@@ -46,7 +46,7 @@ function videoStandard(env: NodeJS.ProcessEnv): VideoStandard {
  * One session at a time (1 MCP = 1 session = 1 VICE). It opens at start; if
  * that fails (for example the host was not running yet), the next tool call
  * tries again. When the host connection is lost, the next call opens a new
- * session (D57). A lost session that the emulator answered first gives its
+ * session. A lost session that the emulator answered first gives its
  * machine-state-lost once, unless a pending call got it already. Close stops
  * an open that is still waiting for the host at once.
  */

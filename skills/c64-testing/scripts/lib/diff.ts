@@ -1,4 +1,4 @@
-// The differences between two machine states (D77): changed ranges of RAM and
+// The differences between two machine states: changed ranges of RAM and
 // colour RAM, and changed chip registers and CPU registers. The states come
 // from snapshots that VICE restores, from memory files, or from the
 // observations of runs; this file only compares.

@@ -94,7 +94,7 @@ export const MAX_WATCH_SIZE = 256;
 export interface Breakpoint {
   id: number;
   address: number;
-  /** A range from address: the CPU stops at the first instruction it executes in it (D43). One address when not given. */
+  /** A range from address: the CPU stops at the first instruction it executes in it. One address when not given. */
   size?: number;
   space: Space;
   enabled: boolean;
@@ -168,7 +168,7 @@ export interface CiaState {
   ddrB: number;
   timerA: number;
   timerB: number;
-  /** The values that a timer loads at an underflow: write-only on the chip, from VICE's dump (D63). */
+  /** The values that a timer loads at an underflow: write-only on the chip, from VICE's dump. */
   latchA: number;
   latchB: number;
   controlA: number;
@@ -217,7 +217,7 @@ export interface HistoryEntry {
   rasterCycle?: number;
 }
 
-// Traces (D76): checkpoints that record each hit and let the program run on.
+// Traces: checkpoints that record each hit and let the program run on.
 
 export const TRACE_KINDS = ["exec", "read", "write"] as const;
 export type TraceKind = (typeof TRACE_KINDS)[number];
@@ -282,7 +282,7 @@ export interface ProfileEntry {
   percent: number;
 }
 
-/** Addresses with the same access flags: the coverage byte of src/c64.ts (D40), RAM, ROM and I/O apart. */
+/** Addresses with the same access flags: the coverage byte of src/c64.ts, RAM, ROM and I/O apart. */
 export interface MemmapRange {
   start: number;
   end: number;
@@ -448,7 +448,7 @@ export interface ExecutionParams {
   /**
    * advance-frames only: the raster position that ends a frame, instead of the
    * position where this call starts. Runs that stop between frames then keep
-   * the frames of one timeline (D62).
+   * the frames of one timeline.
    */
   anchor?: { line: number; cycle: number };
 }
@@ -488,7 +488,7 @@ export interface RunUntilResult {
 export interface ViceOperations {
   status: { params: Record<string, never>; result: MachineStatus };
   memoryRead: { params: MemoryReadParams; result: MemoryReadResult };
-  /** The I/O registers at $d000-$dfff as the chips hold them, whatever the CPU banks in, without side effects (D43). */
+  /** The I/O registers at $d000-$dfff as the chips hold them, whatever the CPU banks in, without side effects. */
   ioRead: { params: { address: number; size: number }; result: MemoryReadResult };
   registersGet: { params: { space: Space }; result: Registers };
   memoryWrite: { params: MemoryWriteParams; result: { address: number; bytesWritten: number } };
@@ -509,8 +509,8 @@ export interface ViceOperations {
   programLoad: { params: { address?: number }; result: { state: RunState; loadAddress: number; size: number } };
   /** Attachment: the program or image bytes; `type` is the file's extension. `index` is VICE's file number: 0 loads "*", 1 is the first directory entry. */
   /**
-   * `emulatorFlaw`: for a tape image, a known flaw of the host's VICE version that a tape load meets (D56).
-   * `joysticksCentred`: the control ports that held a direction or fire and were centred first (R3-05).
+   * `emulatorFlaw`: for a tape image, a known flaw of the host's VICE version that a tape load meets.
+   * `joysticksCentred`: the control ports that held a direction or fire and were centred first.
    */
   autostart: { params: { type: string; index: number; run: boolean }; result: { state: RunState; emulatorFlaw?: string; joysticksCentred?: Array<1 | 2> } };
   /** Attachment: the disk image bytes; `type` is the file's extension. */
@@ -518,7 +518,7 @@ export interface ViceOperations {
   /** pc is the reset vector when run is false: the CPU stops there. */
   reset: { params: { mode: ResetMode; run: boolean }; result: { state: RunState; pc?: number } };
   /** `data`: PETSCII bytes as lowercase hex. */
-  /** `emulatorFlaw`: a known flaw of the host's VICE version that this input meets (D56). */
+  /** `emulatorFlaw`: a known flaw of the host's VICE version that this input meets. */
   keyboard: { params: { data: string }; result: { queuedBytes: number; emulatorFlaw?: string } };
   joystick: { params: JoystickState; result: JoystickState & { emulatorFlaw?: string } };
   breakpoint: { params: BreakpointParams; result: Breakpoint | PointRemoved | { breakpoints: Breakpoint[] } };
@@ -553,7 +553,7 @@ export interface ViceOperations {
     result: { saved: boolean; name: string } | { restored: boolean; state: RunState } | { snapshots: string[] } | { discarded: boolean };
   };
   /**
-   * Snapshot files (D41): export sends the bytes of a named snapshot back as
+   * Snapshot files: export sends the bytes of a named snapshot back as
    * one attachment; restore takes the bytes of a .vsf as one attachment.
    */
   snapshotFile: {

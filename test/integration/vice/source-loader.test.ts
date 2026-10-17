@@ -1,7 +1,7 @@
-// The loader of c64-source (D48): generated from the program in the knowledge
-// (D83), put in from an image.json and an entry_state.json, simulated, then
+// The loader of c64-source: generated from the program in the knowledge
+//, put in from an image.json and an entry_state.json, simulated, then
 // run in the emulator to the entry, where memory, $00/$01, the registers,
-// the VIC-II display registers, the VIC bank and the raster line (D60) must
+// the VIC-II display registers, the VIC bank and the raster line must
 // equal the entry state. The segments
 // lie under the loader, at $c000 and under the I/O area. Opt-in with
 // C64RT_LIVE_VICE; Ghidra and ACME are necessary too.
@@ -70,8 +70,8 @@ test("the loader puts every segment and pages 0-3 in place and gets to the entry
       registers: { pc: hex(ENTRY), a: 1, x: 2, y: 3, sp: 0xf0, flags: { n: true, v: false, b: false, d: false, i: true, z: false, c: true } },
       cpuPort: { $00: 0x2f, $01: 0x35 },
       pages: Object.fromEntries([0, 1, 2, 3].map((page) => [hex(page << 8), Buffer.from(pages.subarray(page << 8, (page + 1) << 8)).toString("hex")])),
-      // The VIC-II at the entry (D60): raster line $123, screen at $0c00 with bitmap mode, VIC bank 2, other colours.
-      // The CIAs (D63): CIA 1 timer A runs with TOD at 50 Hz and its own latch, timer B counts its underflows;
+      // The VIC-II at the entry: raster line $123, screen at $0c00 with bitmap mode, VIC bank 2, other colours.
+      // The CIAs: CIA 1 timer A runs with TOD at 50 Hz and its own latch, timer B counts its underflows;
       // CIA 2 timer A runs one-shot, timer B is as the KERNAL leaves it. CIA 1 has timers A and B as interrupt sources.
       io: {
         vic: { from: "$d000", bytes: Buffer.from(vic).toString("hex") },
@@ -82,7 +82,7 @@ test("the loader puts every segment and pages 0-3 in place and gets to the entry
     }),
   );
 
-  // The capture goes into the knowledge (D83), and the loader is generated from there.
+  // The capture goes into the knowledge, and the loader is generated from there.
   const knowledgeScript = resolve(import.meta.dirname, "../../../skills/c64-knowledge/scripts/knowledge.ts");
   const imported = spawnSync(process.execPath, [...process.execArgv, knowledgeScript, "image", "unpacked/image.json"], { cwd: project, encoding: "utf8" });
   assert.equal(imported.status, 0, imported.stdout + imported.stderr);

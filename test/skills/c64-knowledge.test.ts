@@ -145,7 +145,7 @@ test("a removal shows as a suppression with its reason, in at and in the history
   knowledge(root, "unreference", "$0410", "$ef29", "jump", "--reason", "the vector is written at run time");
   knowledge(root, "unclassify", "$0480", "$04ff");
   assert.deepEqual(knowledge(root, "suppressions").json, {
-    // A removal of a name writes no suppression (D74).
+    // A removal of a name writes no suppression.
     suppressions: [
       { suppresses: "reference", from: "$0410", to: "$ef29", kind: "jump", origin: "llm", revision: rev(root, 5), reason: "the vector is written at run time" },
       { suppresses: "region", start: "$0480", end: "$04ff", origin: "llm", revision: rev(root, 6) },
@@ -154,10 +154,10 @@ test("a removal shows as a suppression with its reason, in at and in the history
   assert.equal(knowledge(root, "at", "$0408").json.suppressions, undefined);
   assert.deepEqual(knowledge(root, "at", "$0480").json.suppressions, [{ suppresses: "region", start: "$0480", end: "$04ff", origin: "llm", revision: rev(root, 6) }]);
   const history = knowledge(root, "history", "$0410").json.history as Array<Record<string, unknown>>;
-  assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "reference", from: "$0410", to: "$ef29", kind: "jump", origin: "llm", fromRevision: rev(root, 5), reason: "the vector is written at run time" }, "the history gives the reason of the revision (F-26)");
+  assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "reference", from: "$0410", to: "$ef29", kind: "jump", origin: "llm", fromRevision: rev(root, 5), reason: "the vector is written at run time" }, "the history gives the reason of the revision");
 });
 
-test("apply writes a batch from a file or standard input as one revision (D42)", () => {
+test("apply writes a batch from a file or standard input as one revision", () => {
   const root = project();
   writeFileSync(
     join(root, "batch.json"),
@@ -169,7 +169,7 @@ test("apply writes a batch from a file or standard input as one revision (D42)",
   assert.deepEqual(knowledge(root, "apply", "batch.json", "--reason", "first names", "--evidence", "note:seen in the attract mode").json, { revision: rev(root, 1), writes: 2, replaced: [] });
   const piped = spawnSync(process.execPath, [...process.execArgv, script, "apply", "-"], { cwd: root, encoding: "utf8", input: JSON.stringify([{ op: "comment", address: "$2100", placement: "line", text: "Reads joystick 2." }]) });
   assert.deepEqual(JSON.parse(piped.stdout), { revision: rev(root, 2), writes: 1, replaced: [] });
-  // A batch lists each row of another origin that it replaced, as previous does for one write (b2/07).
+  // A batch lists each row of another origin that it replaced, as previous does for one write.
   knowledge(root, "rename", "$2200", "l2200", "--origin", "user");
   writeFileSync(join(root, "over.json"), JSON.stringify([{ op: "comment", address: "$2200", placement: "line", text: "x" }, { op: "rename", address: "$2200", name: "draw_cave" }]));
   assert.deepEqual(knowledge(root, "apply", "over.json").json.replaced, [{ write: 2, op: "rename", previous: { address: "$2200", name: "l2200", kind: "label", origin: "user", revision: rev(root, 3) } }]);
@@ -188,7 +188,7 @@ test("evidence names a project file with its SHA-256, and --origin filters the r
   const evidence = ((knowledge(root, "revision", String(written.revision)).json.revision as { evidence: unknown[] }).evidence);
   assert.deepEqual(evidence, [{ kind: "file", ref: "coverage/attract.bin", sha256: createHash("sha256").update(Buffer.from([4, 0, 4])).digest("hex") }]);
   assert.equal((knowledge(root, "rename", "$2200", "x", "--evidence", "file:coverage/missing.bin").json.error as { code: string }).code, "not-found");
-  // Scratch in local/ is no evidence (D82), also through a path that only resolves into it.
+  // Scratch in local/ is no evidence, also through a path that only resolves into it.
   mkdirSync(join(root, ".c64-re-tools", "local", "runs", "rooms"), { recursive: true });
   writeFileSync(join(root, ".c64-re-tools", "local", "runs", "rooms", "results.json"), "{}");
   for (const ref of [".c64-re-tools/local/runs/rooms/results.json", "coverage/../.c64-re-tools/local/runs/rooms/results.json"]) {
@@ -204,7 +204,7 @@ test("evidence names a project file with its SHA-256, and --origin filters the r
   assert.equal(knowledge(root, "symbols", "--origin", "robot").status, 2);
 });
 
-test("image puts a capture into the knowledge, and coverage joins maps that are evidence by their path (D83)", () => {
+test("image puts a capture into the knowledge, and coverage joins maps that are evidence by their path", () => {
   const root = project();
   const capture = join(root, ".c64-re-tools", "local", "capture");
   mkdirSync(capture, { recursive: true });
@@ -254,7 +254,7 @@ test("image puts a capture into the knowledge, and coverage joins maps that are 
   }
 });
 
-test("coverage imports a map into each space, by one spelling of its path, and --evidence cites the latest import in the space of the write (D86)", () => {
+test("coverage imports a map into each space, by one spelling of its path, and --evidence cites the latest import in the space of the write", () => {
   const root = project();
   const runs = join(root, "runs");
   mkdirSync(runs);
@@ -297,7 +297,7 @@ test("export writes all current knowledge to a project file and answers with cou
   assert.equal(knowledge(root, "export").status, 2, "export needs --out");
 });
 
-test("module records where a file of generated source starts, and modules lists them (D48)", () => {
+test("module records where a file of generated source starts, and modules lists them", () => {
   const root = project();
   const set = knowledge(root, "module", "$0801", "boot.asm", "--title", "BASIC start");
   assert.equal(set.status, 0, JSON.stringify(set.json));
@@ -309,7 +309,7 @@ test("module records where a file of generated source starts, and modules lists 
   assert.deepEqual(knowledge(root, "history", "$0801").json.history, [{ entity: "module", start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", fromRevision: rev(root, 1), toRevision: rev(root, 2) }]);
 });
 
-test("--space keeps drive code and cartridge banks apart from the C64 (D53)", () => {
+test("--space keeps drive code and cartridge banks apart from the C64", () => {
   const root = project();
   assert.equal(knowledge(root, "rename", "$0500", "loop").status, 0);
   const drive = knowledge(root, "rename", "$0500", "loop", "--space", "drive8");
@@ -325,7 +325,7 @@ test("--space keeps drive code and cartridge banks apart from the C64 (D53)", ()
   assert.equal(knowledge(root, "symbols", "--space", "drive9").status, 2);
 });
 
-test("operand writes an expression after a check against the program in the knowledge, and at and operands show it (D65, D83)", () => {
+test("operand writes an expression after a check against the program in the knowledge, and at and operands show it", () => {
   const root = project();
   // $8079 LDA #$c0 / STA $0314 / LDA #$80
   writeFileSync(join(root, "game.prg"), Buffer.from([0x79, 0x80, 0xa9, 0xc0, 0x8d, 0x14, 0x03, 0xa9, 0x80]));
@@ -370,7 +370,7 @@ test("a command takes a start of a revision id that only one revision has, and 0
   assert.equal(((knowledge(root, "revisions", "--before", rev(root, 2)).json.revisions as Array<{ id: string }>).map((row) => row.id)).join(), first);
 });
 
-test("patch, macro and use write the source knowledge, and patches, switches, macros, uses, at and history read it (D72, D73)", () => {
+test("patch, macro and use write the source knowledge, and patches, switches, macros, uses, at and history read it", () => {
   const root = project();
   // $8100 INC $fb / BNE +2 / INC $fc / LDA #$00 / STA $d020
   writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x81, 0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xa9, 0x00, 0x8d, 0x20, 0xd0]));
@@ -421,7 +421,7 @@ test("patch, macro and use write the source knowledge, and patches, switches, ma
   assert.deepEqual((knowledge(root, "export", "--out", "k.json").json as { counts: Record<string, number> }).counts, { symbols: 1, analyzerNames: 0, regions: 0, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0, patches: 1, macros: 1, macroUses: 1 });
 });
 
-test("join makes one batch of the batches of parallel agents, and apply writes it as one revision (D79)", () => {
+test("join makes one batch of the batches of parallel agents, and apply writes it as one revision", () => {
   const root = project();
   // The Bruce Lee run: each agent named its own range; batch b owns $1000-$1fff.
   writeFileSync(join(root, "a.json"), JSON.stringify({ owner: "$0200-$0fff", ops: [{ op: "rename", address: "$0400", name: "cold_start", kind: "routine" }, { op: "rename", address: "$1000", name: "draw_room_a" }, { op: "operand", address: "$0400", select: "lo", symbol: "draw_room_a" }] }));
@@ -455,7 +455,7 @@ test("join makes one batch of the batches of parallel agents, and apply writes i
   assert.equal((knowledge(root, "at", "draw_room").json as { symbol: { name: string } }).symbol.name, "draw_room", "a name gives the address");
 });
 
-test("listing reads the program and the coverage in the knowledge (D78, D83)", () => {
+test("listing reads the program and the coverage in the knowledge", () => {
   const root = project();
   // $1000 JSR $1010 / LDA $1020 / STA $d020 / RTS; $1010 RTS; $1020 a table.
   const bytes = [0x20, 0x10, 0x10, 0xad, 0x20, 0x10, 0x8d, 0x20, 0xd0, 0x60, 0, 0, 0, 0, 0, 0, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 8];

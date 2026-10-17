@@ -7,7 +7,7 @@ import { isAbsolute, join, posix, win32 } from "node:path";
 
 import { WireFailure } from "../protocol/messages.ts";
 
-/** Where the user finds the install steps of the native tools for each system (D38). */
+/** Where the user finds the install steps of the native tools for each system. */
 export const INSTALL_STEPS = "Steps for each system: https://github.com/henols/c64-re-tools/blob/main/docs/install-tools.md";
 
 export interface ToolSpec {
@@ -84,7 +84,7 @@ export function viceVersionOf(text: string): ViceVersion | undefined {
 }
 
 /**
- * Known flaws of VICE versions that c64-re-tools still runs on (D56). A flaw
+ * Known flaws of VICE versions that c64-re-tools still runs on. A flaw
  * is not worked around: it is named with the VICE version that fixes it.
  * `upTo` is the last flawed major.minor; `fixedRevision` the first SVN
  * revision with the fix, for builds from VICE's source tree.

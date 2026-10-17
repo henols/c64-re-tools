@@ -1,9 +1,9 @@
 // The c64-provenance script: compares two or more releases byte by byte at
 // their addresses and reports where they differ and which releases agree. A
-// release is a PRG or an unpacker image.json (D50). With --run, each release
+// release is a PRG or an unpacker image.json. With --run, each release
 // runs in its own emulator, and each listed difference gets its first access
 // and whether the run changed it. The separate command gives evidence from
-// the program in the knowledge (D51, D83). The routine and match commands keep
+// the program in the knowledge. The routine and match commands keep
 // routines that several programs share in a library folder and find them in the
 // program (D71).
 
@@ -57,7 +57,7 @@ provenance.ts match --library <folder> [--out <file>] [--max-listed <n>]
                         give each listed difference its first access and whether it changed
   --steps <file>        with --run: action steps (JSON) to run before the frames
 
-separate gives evidence from the program in the knowledge (D83): the unpack stage
+separate gives evidence from the program in the knowledge: the unpack stage
 that wrote each range, its access in the coverage of the knowledge, whether call
 and jump references in knowledge reach each code region from the entry, and what
 the program reads or executes outside its segments. --out writes all ranges to a file;
@@ -65,7 +65,7 @@ the result lists at most --max-listed of each list (default 50) and its count.
 
 routine saves a routine of the program in the knowledge to a library: a plain folder of routine
 files, beside the projects (--library, relative to the working directory, as
---project). It takes a module (D48) of the knowledge, or --start and --end. Its
+--project). It takes a module of the knowledge, or --start and --end. Its
 code regions give the instructions; the user and LLM names, regions, comments,
 references and operand expressions go into the file at offsets. --name defaults
 to the user or LLM name at the start, --title to the module title.
@@ -262,7 +262,7 @@ async function run(argv: string[]): Promise<unknown> {
   const compared = comparison.identicalBytes + comparison.differingBytes;
   const identicalShare = compared === 0 ? 0 : comparison.identicalBytes / compared;
   // A poor match at the load addresses can mean that the releases are placed differently.
-  // Each release gets its best shifts: data that stayed can outvote code that moved, so one is not enough (b2/04).
+  // Each release gets its best shifts: data that stayed can outvote code that moved, so one is not enough.
   const applied = loaded.map((item) => item.shift);
   const suggestions =
     identicalShare < 0.5
@@ -313,7 +313,7 @@ async function run(argv: string[]): Promise<unknown> {
       end: formatC64Address(difference.end),
       values: Object.fromEntries(Object.entries(difference.values).map(([name, bytes]) => [name, hexBytes(bytes.slice(0, 32)) + (bytes.length > 32 ? " ..." : "")])),
       groups: difference.groups,
-      // runtime gives the release's own addresses: with a shift, they are not the addresses of the difference (F-24).
+      // runtime gives the release's own addresses: with a shift, they are not the addresses of the difference.
       ...(runtime.size === 0
         ? {}
         : {
@@ -347,7 +347,7 @@ function stagesOf(stages: Array<Record<string, unknown>> | undefined): Array<{ e
   }));
 }
 
-/** separate: evidence from the program in the knowledge (D51, D83), with all ranges in --out and the first ones in the result. */
+/** separate: evidence from the program in the knowledge, with all ranges in --out and the first ones in the result. */
 function separateCommand(out: string | undefined, maxListed: string | undefined): unknown {
   const max = maxListed ?? "50";
   if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
@@ -393,7 +393,7 @@ function separateCommand(out: string | undefined, maxListed: string | undefined)
         }),
     ...(coverage === undefined ? {} : { bytesByAccess: Object.fromEntries((["executed", "read", "written", "read-written", "untouched"] as const).map((access) => [access, bytes((range) => range.access === access)])) }),
     ranges: listed(ranges),
-    // total counts every code region; unreachable is a list like the others (b2/08).
+    // total counts every code region; unreachable is a list like the others.
     codeRegions: {
       total: codeRegions.length,
       ...(loaded.entry === undefined ? {} : { unreachable: listed(codeRegions.filter((region) => region.reachable === false)) }),

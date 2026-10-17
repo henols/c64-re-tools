@@ -2,7 +2,7 @@ name: Live
 
 # The live suites with a real VICE on Linux, macOS and Windows. CI installs
 # VICE itself; the product never does (it refuses by name with the remedy).
-# c64-re-tools needs VICE 3.9 or later and supports the latest release (D56):
+# c64-re-tools needs VICE 3.9 or later and supports the latest release:
 # Linux runs in Debian 13, whose package is VICE 3.9, the minimum (Ubuntu
 # 24.04 has 3.7.1). Windows and macOS (Homebrew), which run the latest release, are off for now.
 

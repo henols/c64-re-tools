@@ -1,4 +1,4 @@
-// Operand expressions (D65): the part of ACME's expression syntax that names
+// Operand expressions: the part of ACME's expression syntax that names
 // an operand by symbols and numbers. Knowledge checks an expression against
 // the image with it, and c64-source writes it with the names of its layout.
 //
