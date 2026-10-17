@@ -1,10 +1,10 @@
 {
   "bookworm": {
     "image": "mcr.microsoft.com/devcontainers/base:bookworm",
-    "features": { "c64-re-tools": { "channel": "next" } }
+    "features": { "c64-re-tools": { "channel": "latest" } }
   },
   "noble": {
     "image": "mcr.microsoft.com/devcontainers/base:noble",
-    "features": { "c64-re-tools": { "channel": "next" } }
+    "features": { "c64-re-tools": { "channel": "latest" } }
   }
 }
