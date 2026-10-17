@@ -925,9 +925,9 @@ test("with real Ghidra and ACME, a macro use that ACME refuses or assembles to o
   assert.equal(knowledge("apply", "batch.json").status, 0);
   const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout);
-  const json = JSON.parse(run.stdout) as { check: { identical: boolean }; files: string[]; macroUses: number; macrosAsInstructions: { listed: Array<{ start: string; macro: string; reason: string }> } };
+  const json = JSON.parse(run.stdout) as { check: { identical: boolean }; files: Array<{ out: string }>; macroUses: number; macrosAsInstructions: { listed: Array<{ start: string; macro: string; reason: string }> } };
   assert.equal(json.check.identical, true);
-  assert.deepEqual(json.files, ["segment_1000.asm", "constants.asm", "macros.asm", "main.asm"]);
+  assert.deepEqual(json.files.map((file) => file.out), ["src/segment_1000.asm", "src/constants.asm", "src/macros.asm", "src/main.asm", "src/source-map.json"]);
   assert.equal(json.macroUses, 1);
   assert.deepEqual(json.macrosAsInstructions.listed.map((row) => [row.start, row.macro]), [["$1006", "short"], ["$100c", "broken"]]);
   assert.equal(json.macrosAsInstructions.listed[0]!.reason, "ACME assembles it to 2 bytes, and the range has 6.");
