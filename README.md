@@ -1,5 +1,8 @@
 # c64-re-tools
 
+![C64 RE Tools — Commodore-inspired logo](assets/branding/c64-re-tools-dark.svg)
+
+
 Let an AI agent work on Commodore 64 programs. The agent drives a real VICE
 emulator and runs ACME, DXA and Ghidra. Use it to build new C64 apps and games,
 and to reverse engineer old ones.
