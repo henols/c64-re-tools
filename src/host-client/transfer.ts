@@ -1,23 +1,14 @@
 // Reads project files on the client side for transfer to the Host Runtime.
 // The host never sees a client path: only bytes and the file's type.
 
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, relative, sep } from "node:path";
 
-import { isInside, ProjectError, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "../project.ts";
+import { isInside, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "../project.ts";
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { MAX_TREE_FILES, type SourceTree } from "../protocol/tools.ts";
-
-/** Runs a project lookup and gives a refusal of the project rules as a WireFailure with the same code and message. */
-function asWireFailure<T>(lookup: () => T): T {
-  try {
-    return lookup();
-  } catch (error) {
-    if (error instanceof ProjectError) throw new WireFailure(error.code, error.message);
-    throw error;
-  }
-}
 
 /**
  * The project folder of a call that names it with `project` (relative to the
@@ -25,12 +16,12 @@ function asWireFailure<T>(lookup: () => T): T {
  * refuse it, for example at a folder with several projects below it.
  */
 export function projectFolder(project: string | undefined): string {
-  return asWireFailure(() => resolveProject(project, process.cwd(), { remedy: "Give project: <folder>" }));
+  return resolveProject(project, process.cwd(), { remedy: "Give project: <folder>" });
 }
 
 /** The project folder of this process (--project or the project lookup), or a WireFailure. */
 function currentProject(): string {
-  return asWireFailure(projectRoot);
+  return projectRoot();
 }
 
 export interface ProjectFile {
@@ -104,6 +95,20 @@ const SKIPPED_DIRECTORIES = new Set([".git", ".hg", ".svn", ".c64-re-tools"]);
  * files with relative POSIX paths. A symbolic link is followed only when its
  * target stays inside the source root; otherwise the tree is refused.
  */
+/** What a result says of a file that it wrote: the path, the size and the SHA-256. The MCP tools and the scripts report a written file in this form. */
+export interface Written {
+  out: string;
+  bytes: number;
+  sha256: string;
+}
+
+/** Writes the bytes to a project file as writeProjectFile does, and reports the file. */
+export function writeReported(path: string, data: Uint8Array | string, options: { root?: string; what?: string } = {}): Written {
+  const bytes = typeof data === "string" ? Buffer.from(data, "utf8") : data;
+  writeProjectFile(path, bytes, options);
+  return { out: path, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+}
+
 export function readProjectTree(path: string, options: { root?: string } = {}): { files: SourceTree; contents: Buffer[] } {
   const projectRootPath = options.root ?? currentProject();
   let sourceRoot: string;

@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { KnowledgeError, openForWrite } from "./database.ts";
+import { Refusal } from "../errors.ts";
+import { openForWrite } from "./database.ts";
 import { revision as revisionChanges, revisions } from "./history.ts";
 import { importFindings, runProvenance, type Analyzer, type NormalizedFindings } from "./import.ts";
 import { analyzerNamesAt, currentRevision, listAnalyzerNames, listReferences, listSuppressions, listSymbols, regionsOverlapping, symbolAt } from "./read.ts";
@@ -27,7 +28,7 @@ function fresh(): DatabaseSync {
   return db;
 }
 
-const failsWith = (code: string) => (error: unknown) => error instanceof KnowledgeError && error.code === code;
+const failsWith = (code: string) => (error: unknown) => error instanceof Refusal && error.code === code;
 
 function findings(analyzer: Analyzer, start: number, end: number, parts: Partial<NormalizedFindings> = {}): NormalizedFindings {
   return {

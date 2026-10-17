@@ -171,7 +171,7 @@ test("generate.ts refuses a page of a person in the output directory and a sourc
   mkdirSync(join(root, "docs/reference"), { recursive: true });
   writeFileSync(join(root, "docs/reference/notes.md"), "# My notes\n");
   const refused = generate(root, "--source", "src", "--out", "docs/reference");
-  assert.equal(refused.status, 1);
+  assert.equal(refused.status, 2);
   assert.match(String((refused.json.error as { message: string }).message), /docs\/reference\/notes\.md is not a page of generate\.ts/);
   rmSync(join(root, "docs/reference/notes.md"));
   // An earlier run's pages go; the run writes them again.
@@ -182,9 +182,9 @@ test("generate.ts refuses a page of a person in the output directory and a sourc
 
   knowledge(root, "rename", "$1028", "handler_two");
   const stale = generate(root, "--source", "src", "--out", "docs/reference");
-  assert.equal(stale.status, 1);
+  assert.equal(stale.status, 2);
   assert.match(String((stale.json.error as { message: string }).message), /Generate the source again with c64-source/);
-  assert.equal(generate(root, "--source", "missing", "--out", "docs/reference").status, 1);
+  assert.equal(generate(root, "--source", "missing", "--out", "docs/reference").status, 2);
   assert.equal(generate(root, "--out", "docs/reference").status, 2);
 });
 
@@ -278,7 +278,7 @@ test("link.ts takes the entry page in the project folder beside the docs directo
   assert.equal(link(root, "README.md", "docs", "README.md", "--source", "src", "--check").status, 0);
   writeFileSync(join(root, "notes.txt"), "text\n");
   assert.equal(link(root, "notes.txt", "--source", "src").status, 2);
-  assert.equal(link(root, "MISSING.md", "--source", "src").status, 1);
+  assert.equal(link(root, "MISSING.md", "--source", "src").status, 2);
 });
 
 test("link.ts reports a source and a reference that are older than the knowledge", () => {
@@ -289,7 +289,7 @@ test("link.ts reports a source and a reference that are older than the knowledge
   const stale = link(root, "docs", "--source", "src", "--check");
   assert.equal(stale.status, 1);
   assert.deepEqual((stale.json.problems as { byKind: Record<string, number> }).byKind, { "stale-reference": 1 });
-  assert.equal(link(root, "missing", "--source", "src").status, 1);
+  assert.equal(link(root, "missing", "--source", "src").status, 2);
   assert.equal(link(root, "docs").status, 2);
 });
 
@@ -320,6 +320,6 @@ test("link.ts reports a page that is a symbolic link to no file or out of the pr
   // A directory of pages that leads out of the project is refused.
   symlinkSync(outside, join(root, "elsewhere"));
   const refused = link(root, "elsewhere", "--source", "src");
-  assert.equal(refused.status, 1);
+  assert.equal(refused.status, 2);
   assert.match(String((refused.json.error as { message: string }).message), /elsewhere leads out of the project folder/);
 });

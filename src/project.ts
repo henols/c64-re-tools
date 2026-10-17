@@ -4,6 +4,7 @@
 // project path is relative to that folder. .c64-re-tools/local/ holds what
 // the agent saves for itself and ignores itself in git.
 
+import { Refusal } from "./errors.ts";
 import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -22,17 +23,6 @@ const SEARCH_DEPTH = 3;
 
 /** At most this many projects are named in a refusal. */
 const LISTED_PROJECTS = 20;
-
-/** A refusal of the project rules, with a stable code, shown to the LLM unchanged. */
-export class ProjectError extends Error {
-  override name = "ProjectError";
-  readonly code: "invalid-input" | "not-found";
-
-  constructor(code: "invalid-input" | "not-found", message: string) {
-    super(message);
-    this.code = code;
-  }
-}
 
 /** How a refusal tells the caller to name a project: "--project <folder>" for a script, "project" for an MCP tool. */
 export interface ProjectRemedy {
@@ -95,7 +85,7 @@ function listed(projects: readonly string[]): string {
  * The project of the working directory `cwd` by the project rules: the nearest
  * folder at or above it with .c64-re-tools/, below the home folder. Without
  * one, `cwd` itself, unless projects are below it or it is the home folder:
- * then a ProjectError names them and the remedy, so no write lands outside a
+ * then a Refusal names them and the remedy, so no write lands outside a
  * project.
  */
 export function findProject(cwd: string = process.cwd(), options: ProjectRemedy = {}): string {
@@ -105,11 +95,11 @@ export function findProject(cwd: string = process.cwd(), options: ProjectRemedy 
     if (isProject(folder)) return folder;
   }
   if (start === homedir()) {
-    throw new ProjectError("invalid-input", `The home folder is not a project folder. Start in a project folder, or ${remedy.charAt(0).toLowerCase()}${remedy.slice(1)}.`);
+    throw new Refusal("invalid-input", `The home folder is not a project folder. Start in a project folder, or ${remedy.charAt(0).toLowerCase()}${remedy.slice(1)}.`);
   }
   const below = projectsBelow(start);
   if (below.length > 0) {
-    throw new ProjectError("invalid-input", `${start} is not a project folder. These folders below it are projects: ${listed(below)}. ${remedy} with one of them.`);
+    throw new Refusal("invalid-input", `${start} is not a project folder. These folders below it are projects: ${listed(below)}. ${remedy} with one of them.`);
   }
   return start;
 }
@@ -121,15 +111,15 @@ export function findProject(cwd: string = process.cwd(), options: ProjectRemedy 
  * home folder.
  */
 export function namedProject(folder: string, cwd: string = process.cwd()): string {
-  if (folder.length === 0) throw new ProjectError("invalid-input", "The project folder must not be empty.");
+  if (folder.length === 0) throw new Refusal("invalid-input", "The project folder must not be empty.");
   const path = resolve(cwd, folder);
   const stat = statSync(path, { throwIfNoEntry: false });
-  if (stat === undefined) throw new ProjectError("not-found", `There is no folder ${folder}.`);
-  if (!stat.isDirectory()) throw new ProjectError("invalid-input", `${folder} is not a folder.`);
-  if (path === homedir()) throw new ProjectError("invalid-input", "The home folder is not a project folder.");
+  if (stat === undefined) throw new Refusal("not-found", `There is no folder ${folder}.`);
+  if (!stat.isDirectory()) throw new Refusal("invalid-input", `${folder} is not a folder.`);
+  if (path === homedir()) throw new Refusal("invalid-input", "The home folder is not a project folder.");
   const outer = foldersUpFrom(path).slice(1).find(isProject);
   if (outer !== undefined) {
-    throw new ProjectError("invalid-input", `${folder} is inside the project ${relative(cwd, outer) || "."}. Give that project folder.`);
+    throw new Refusal("invalid-input", `${folder} is inside the project ${relative(cwd, outer) || "."}. Give that project folder.`);
   }
   return path;
 }
@@ -159,7 +149,7 @@ export function resolveProject(folder: string | undefined, cwd: string = process
   return root;
 }
 
-/** Sets the project of this process from --project. Throws ProjectError for a folder that the rules refuse. */
+/** Sets the project of this process from --project. Refuses a folder that the rules refuse. */
 export function useProject(folder: string): void {
   chosen = namedProject(folder);
 }

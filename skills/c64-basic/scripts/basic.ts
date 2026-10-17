@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import { formatC64Address } from "#src/c64.ts";
 import { decodeBasic } from "#src/host-client/tools.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 
 const USAGE = `basic.ts <program>
 
@@ -36,7 +36,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   };
 }
 
-await runScript(
+await runBody(
   async (argv) => {
     const { output, failed } = await run(argv);
     if (failed) process.exitCode = 1;

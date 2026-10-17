@@ -237,12 +237,7 @@ export function imageRange(kind: ImageKind, image: Uint8Array): { start: number;
     if (image.length !== 0x10000) throw new WireFailure("invalid-input", "A flat 64 KiB image has exactly 65536 bytes.");
     return { start: 0, end: 0xffff, body: image };
   }
-  try {
-    return prgRange(image);
-  } catch (error) {
-    if (!(error instanceof RangeError)) throw error;
-    throw new WireFailure("invalid-input", error.message);
-  }
+  return prgRange(image);
 }
 
 /**

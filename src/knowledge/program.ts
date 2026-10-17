@@ -6,8 +6,9 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
+import { Refusal } from "../errors.ts";
 import { COVERAGE } from "../c64.ts";
-import { KnowledgeError } from "./database.ts";
+
 import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
 import { checkSpace, hex, write, type AddressRange, type Evidence, type WriteContext } from "./write.ts";
 
@@ -84,13 +85,13 @@ function memoryRows(segments: readonly AddressRange[], byteAt: (address: number)
 }
 
 function checkSegments(segments: readonly AddressRange[]): void {
-  if (segments.length === 0) throw new KnowledgeError("invalid-input", "An image has at least one segment.");
+  if (segments.length === 0) throw new Refusal("invalid-input", "An image has at least one segment.");
   const sorted = [...segments].sort((a, b) => a.start - b.start);
   sorted.forEach((segment, index) => {
     if (!Number.isInteger(segment.start) || !Number.isInteger(segment.end) || segment.start < 0 || segment.end > 0xffff || segment.end < segment.start) {
-      throw new KnowledgeError("invalid-input", `The segment ${hex(segment.start)}-${hex(segment.end)} is not a range from $0000 to $ffff.`);
+      throw new Refusal("invalid-input", `The segment ${hex(segment.start)}-${hex(segment.end)} is not a range from $0000 to $ffff.`);
     }
-    if (index > 0 && segment.start <= sorted[index - 1]!.end) throw new KnowledgeError("invalid-input", `The segments at ${hex(sorted[index - 1]!.start)} and ${hex(segment.start)} overlap.`);
+    if (index > 0 && segment.start <= sorted[index - 1]!.end) throw new Refusal("invalid-input", `The segments at ${hex(sorted[index - 1]!.start)} and ${hex(segment.start)} overlap.`);
   });
 }
 
@@ -102,8 +103,8 @@ function checkSegments(segments: readonly AddressRange[]): void {
 export function setImage(db: DatabaseSync, context: WriteContext, request: ImageRequest): { revision: string | null; current: { space: Space; bytes: number; rowsAdded: number; rowsClosed: number; entry: boolean } } {
   checkSpace(request);
   checkSegments(request.segments);
-  if (request.entry !== undefined && (!Number.isInteger(request.entry) || request.entry < 0 || request.entry > 0xffff)) throw new KnowledgeError("invalid-input", "The entry must be from $0000 to $ffff.");
-  if (request.entry === undefined && (request.state !== undefined || request.stages !== undefined)) throw new KnowledgeError("invalid-input", "A machine state or stages need an entry.");
+  if (request.entry !== undefined && (!Number.isInteger(request.entry) || request.entry < 0 || request.entry > 0xffff)) throw new Refusal("invalid-input", "The entry must be from $0000 to $ffff.");
+  if (request.entry === undefined && (request.state !== undefined || request.stages !== undefined)) throw new Refusal("invalid-input", "A machine state or stages need an entry.");
   const space = request.space ?? DEFAULT_SPACE;
   const wanted = memoryRows(request.segments, request.byteAt);
   return write(db, context, "image", (change) => {
@@ -177,7 +178,7 @@ export function addCoverage(
   checkSpace(request);
   const space = request.space ?? DEFAULT_SPACE;
   for (const map of request.maps) {
-    if (map.bytes.length !== SIZE) throw new KnowledgeError("invalid-input", `${map.name} has ${map.bytes.length} bytes; a coverage map has 65536, one for each address.`);
+    if (map.bytes.length !== SIZE) throw new Refusal("invalid-input", `${map.name} has ${map.bytes.length} bytes; a coverage map has 65536, one for each address.`);
   }
   const hashed = request.maps.map((map) => ({ ...map, sha256: createHash("sha256").update(map.bytes).digest("hex") }));
   const known = new Set(coverageRuns(db).filter((run) => run.space === space).map((run) => `${run.name}\n${run.sha256}`));
@@ -235,7 +236,7 @@ export function requireProgram(db: DatabaseSync | undefined, space: Space = DEFA
   if (image !== undefined) return image;
   const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
   const option = space === DEFAULT_SPACE ? "" : ` --space ${space}`;
-  throw new KnowledgeError("not-found", `The knowledge has no program${where}. Put it in with knowledge.ts image <image.json|prg>${option} of the c64-knowledge skill.`);
+  throw new Refusal("not-found", `The knowledge has no program${where}. Put it in with knowledge.ts image <image.json|prg>${option} of the c64-knowledge skill.`);
 }
 
 /** The bytes for an analyzer: a PRG for one segment without an entry state, else the 64 KiB. */

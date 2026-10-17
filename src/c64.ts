@@ -1,24 +1,39 @@
-const ADDRESS_PATTERN = /^\$([0-9a-fA-F]{4})$/;
+import { Refusal } from "./errors.ts";
 
-/** Returns the value when it is a C64 address (0-$ffff). Throws RangeError otherwise. */
+/** A C64 address as text: $ and 1 to 4 hex digits, either case. */
+const ADDRESS_PATTERN = /^\$([0-9a-fA-F]{1,4})$/;
+
+/** The address that the text gives ($ and 1 to 4 hex digits), or undefined. */
+export function c64AddressOf(text: string): number | undefined {
+  const match = ADDRESS_PATTERN.exec(text);
+  return match === null ? undefined : Number.parseInt(match[1]!, 16);
+}
+
+/** Returns the value when it is a C64 address (0-$ffff). Refuses it otherwise. */
 function checkAddress(value: number): number {
-  if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
-    throw new RangeError(`C64 address out of range: ${value}`);
-  }
+  if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new Refusal("invalid-input", `${value} is not a C64 address: an address is from $0000 to $ffff.`);
   return value;
 }
 
-export function parseC64Address(value: string): number {
-  const match = ADDRESS_PATTERN.exec(value);
-  if (match === null) {
-    throw new TypeError(`Invalid C64 address: ${value}`);
-  }
-  return checkAddress(Number.parseInt(match[1]!, 16));
+/** The address of $ and 1 to 4 hex digits. Refuses other text. */
+export function parseC64Address(text: string): number {
+  const value = c64AddressOf(text);
+  if (value === undefined) throw new Refusal("invalid-input", `${JSON.stringify(text)} is not a C64 address: give $ and 1 to 4 hex digits, for example $c000 or $fb.`);
+  return value;
 }
 
 export function formatC64Address(value: number): string {
   return `$${checkAddress(value).toString(16).padStart(4, "0")}`;
 }
+
+/** An inclusive span of C64 addresses. */
+export interface AddressRange {
+  start: number;
+  end: number;
+}
+
+/** The knowledge spaces: the C64, the 1541 drive in unit 8, and cartridge banks 0 to 255. */
+export const SPACE_PATTERN = /^(c64|drive8|bank(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$/;
 
 /** VIC-II state with its addresses as $xxxx; the other values stay numbers. */
 export function formatVicii<T extends { screenAddress: number; graphicsAddress: number }>(state: T): Omit<T, "screenAddress" | "graphicsAddress"> & { screenAddress: string; graphicsAddress: string } {
@@ -30,20 +45,20 @@ export function formatSprite<T extends { dataAddress: number }>(sprite: T): Omit
   return { ...sprite, dataAddress: formatC64Address(sprite.dataAddress) };
 }
 
-/** A byte as $xx. Throws RangeError outside 0-255. */
+/** A byte as $xx. Refuses a value outside 0-255. */
 export function formatC64Byte(value: number): string {
-  if (!Number.isInteger(value) || value < 0 || value > 0xff) throw new RangeError(`C64 byte out of range: ${value}`);
+  if (!Number.isInteger(value) || value < 0 || value > 0xff) throw new Refusal("invalid-input", `${value} is not a byte: a byte is from 0 to 255.`);
   return `$${value.toString(16).padStart(2, "0")}`;
 }
 
 /**
  * The memory a PRG loads into: the 2-byte load address, then the body.
- * Throws RangeError for a file shorter than 3 bytes or one that runs past $ffff.
+ * Refuses a file shorter than 3 bytes or one that runs past $ffff.
  */
 export function prgRange(prg: Uint8Array): { start: number; end: number; body: Uint8Array } {
-  if (prg.length < 3) throw new RangeError("A PRG has a 2-byte load address and at least one byte.");
+  if (prg.length < 3) throw new Refusal("invalid-input", "A PRG has a 2-byte load address and at least one byte.");
   const start = prg[0]! | (prg[1]! << 8);
-  if (start + prg.length - 2 > 0x10000) throw new RangeError("The PRG runs past $ffff.");
+  if (start + prg.length - 2 > 0x10000) throw new Refusal("invalid-input", "The PRG runs past $ffff.");
   return { start, end: start + prg.length - 3, body: prg.subarray(2) };
 }
 
@@ -86,7 +101,7 @@ export function d018Offsets(d018: number): { screen: number; characters: number;
  * Converts text to the PETSCII bytes the C64 keyboard types after a reset
  * (upper case/graphics mode). Letters of either case type the unshifted key,
  * which shows as an upper-case letter. "\n" and "\r\n" type RETURN.
- * Throws RangeError naming the first character that has no key.
+ * Refuses the text with the first character that has no key.
  */
 export function textToPetscii(text: string): Uint8Array {
   const bytes: number[] = [];
@@ -100,7 +115,7 @@ export function textToPetscii(text: string): Uint8Array {
     else if (character === "£") bytes.push(0x5c);
     else if (character === "↑" || character === "^") bytes.push(0x5e);
     else if (character === "←") bytes.push(0x5f);
-    else throw new RangeError(`There is no C64 key for ${JSON.stringify(character)}`);
+    else throw new Refusal("invalid-input", `There is no C64 key for ${JSON.stringify(character)}`);
   }
   return Uint8Array.from(bytes);
 }
@@ -125,7 +140,7 @@ export function petsciiNameToText(bytes: Uint8Array): string {
 
 /**
  * The reverse of petsciiNameToText. Letters of either case are the unshifted
- * letters ($41-$5a). Throws RangeError for text that is no name.
+ * letters ($41-$5a). Refuses text that is no name.
  */
 export function textToPetsciiName(text: string): Uint8Array {
   const bytes: number[] = [];
@@ -144,7 +159,7 @@ export function textToPetsciiName(text: string): Uint8Array {
     else if (character === "↑") bytes.push(0x5e);
     else if (character === "←") bytes.push(0x5f);
     else if (code >= 0x20 && code <= 0x5d) bytes.push(code);
-    else throw new RangeError(`${JSON.stringify(character)} is not a name character. Write other bytes as {$xx}.`);
+    else throw new Refusal("invalid-input", `${JSON.stringify(character)} is not a name character. Write other bytes as {$xx}.`);
     index++;
   }
   return Uint8Array.from(bytes);

@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { KnowledgeError, openForWrite } from "./database.ts";
+import { Refusal } from "../errors.ts";
+import { openForWrite } from "./database.ts";
 import { at, commentsAt, currentRevision, listMacroUses, listModules, listPatches, listSuppressions, listSymbols, macroNamed, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
 import { historyAt, historyOfMacro, revision as revisionChanges } from "./history.ts";
 import {
@@ -50,7 +51,7 @@ function fresh(): DatabaseSync {
 }
 
 const llm: WriteContext = { origin: "llm" };
-const failsWith = (code: string) => (error: unknown) => error instanceof KnowledgeError && error.code === code;
+const failsWith = (code: string) => (error: unknown) => error instanceof Refusal && error.code === code;
 
 function count(db: DatabaseSync, sql: string): number {
   return (db.prepare(sql).get() as { n: number }).n;
@@ -343,7 +344,7 @@ test("a module starts a file of generated source: one per address and per file, 
   for (const file of ["../x.asm", "sub/x.asm", "x.a", ".asm", "x y.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
   // c64-source writes these files itself; macOS and Windows ignore the letter case.
   for (const file of ["main.asm", "loader.asm", "constants.asm", "macros.asm", "Main.asm", "CONSTANTS.asm"]) {
-    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof KnowledgeError && error.code === "invalid-input" && /writes main\.asm, loader\.asm, constants\.asm, macros\.asm itself/.test(error.message), file);
+    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /writes main\.asm, loader\.asm, constants\.asm, macros\.asm itself/.test(error.message), file);
   }
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
   assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: nth(db, 3) }, "a write without a title keeps it");

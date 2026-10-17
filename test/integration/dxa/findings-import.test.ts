@@ -106,7 +106,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   const program = process.platform === "win32" ? join(project, "fake-dxa.cmd") : fake;
   if (program !== fake) writeFileSync(program, `@"${process.execPath}" "${fake}" %*\r\n`);
   const broken = await skill({ ...process.env, C64RT_DXA: program }, "c64-static-analysis", "analyze.ts", "--analyzer", "dxa");
-  assert.equal(broken.status, 1);
+  assert.equal(broken.status, 2);
   assert.match((broken.json.error as { message: string }).message, /incomplete or inconsistent listing\. Nothing was imported/);
   const after = openForRead(project);
   assert.equal(currentRevision(after), before, "no revision for a malformed result");

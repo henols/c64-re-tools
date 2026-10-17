@@ -1,6 +1,7 @@
 // The message layer of the Host Runtime wire: protocol identity, error codes, the message shapes and
 // their parsers, and the field checks that every validator uses.
 
+import { ERROR_CODES, Refusal, type ErrorCode } from "../errors.ts";
 import type { ToolOperation, ToolOperations } from "./tools.ts";
 import type { ViceOperation, ViceOperations } from "./vice.ts";
 
@@ -17,20 +18,6 @@ export const DEFAULT_HOST_PORT = 6464;
 
 // ---------------------------------------------------------------------------
 // Shared vocabulary
-
-export const ERROR_CODES = [
-  "invalid-input",
-  "machine-running",
-  "machine-unavailable",
-  "machine-state-lost",
-  "not-found",
-  "media-error",
-  "limit-exceeded",
-  "unsupported-in-space",
-  "installation-incomplete",
-  "operation-failed",
-] as const;
-export type ErrorCode = (typeof ERROR_CODES)[number];
 
 /** An actionable failure carried on the wire and shown to the LLM unchanged. */
 export interface WireError {
@@ -122,14 +109,9 @@ export function shownMessage(error: { code: string; message: string }): string {
   return error.code === "installation-incomplete" ? withStopAndAsk(error.message) : error.message;
 }
 
-export class WireFailure extends Error implements WireError {
+/** A refusal that crosses the Host Runtime wire. */
+export class WireFailure extends Refusal implements WireError {
   override name = "WireFailure";
-  readonly code: ErrorCode;
-
-  constructor(code: ErrorCode, message: string) {
-    super(message);
-    this.code = code;
-  }
 
   toWire(): WireError {
     return { code: this.code, message: this.message };

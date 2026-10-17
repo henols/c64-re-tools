@@ -176,6 +176,6 @@ test("the leftovers command reads the program, its stages and the coverage from 
   const empty = mkdtempSync(join(tmpdir(), "c64-re-tools-leftovers-"));
   roots.push(empty);
   const none = script(provenance, ["leftovers"], empty);
-  assert.equal(none.status, 1, "no program in the knowledge");
+  assert.equal(none.status, 2, "no program in the knowledge");
   assert.match(none.stdout, /knowledge\.ts image/);
 });

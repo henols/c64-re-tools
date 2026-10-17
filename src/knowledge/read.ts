@@ -4,7 +4,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { KnowledgeError } from "./database.ts";
+import { Refusal } from "../errors.ts";
 import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SuppressionEntity, type SymbolKind } from "./schema.ts";
 import { NO_REVISION } from "./text.ts";
 
@@ -251,12 +251,12 @@ const NAMED_REVISIONS = 5;
  */
 export function resolveRevision(db: DatabaseSync | undefined, text: string): string {
   if (text === NO_REVISION) return NO_REVISION;
-  if (!/^[0-9a-zT.-]+$/.test(text)) throw new KnowledgeError("invalid-input", `${JSON.stringify(text)} is not a revision id. A revision id looks like 20261015T214501.123-k3f9qz; its start is enough when only one revision has it.`);
+  if (!/^[0-9a-zT.-]+$/.test(text)) throw new Refusal("invalid-input", `${JSON.stringify(text)} is not a revision id. A revision id looks like 20261015T214501.123-k3f9qz; its start is enough when only one revision has it.`);
   const found = (db?.prepare("SELECT id FROM revisions WHERE substr(id, 1, ?) = ? ORDER BY id LIMIT ?").all(text.length, text, NAMED_REVISIONS + 1) ?? []) as Array<{ id: string }>;
-  if (found.length === 0) throw new KnowledgeError("not-found", `There is no revision ${text}.`);
+  if (found.length === 0) throw new Refusal("not-found", `There is no revision ${text}.`);
   if (found.length > 1) {
     const named = found.slice(0, NAMED_REVISIONS).map((row) => row.id).join(", ");
-    throw new KnowledgeError("invalid-input", `${text} is the start of more than one revision: ${named}${found.length > NAMED_REVISIONS ? ", ..." : ""}. Give more of the id.`);
+    throw new Refusal("invalid-input", `${text} is the start of more than one revision: ${named}${found.length > NAMED_REVISIONS ? ", ..." : ""}. Give more of the id.`);
   }
   return found[0]!.id;
 }
@@ -452,7 +452,6 @@ const ALL: Range = { start: 0x0000, end: 0xffff };
 /** Rows of these origins only; undefined keeps every origin. */
 export type OriginFilter = readonly Origin[] | undefined;
 const kept = (origins: OriginFilter) => (row: { origin: Origin }) => origins === undefined || origins.includes(row.origin);
-
 
 export function listSymbols(db: DatabaseSync | undefined, range: Range = ALL, kind?: SymbolKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): SymbolRow[] {
   if (db === undefined) return [];

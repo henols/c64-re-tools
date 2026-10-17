@@ -91,7 +91,7 @@ test("a missing ACME is refused with the stop instruction", async () => {
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   const { error } = JSON.parse(stdout) as { error: { code: string; message: string } };
-  assert.equal(status, 1);
+  assert.equal(status, 2);
   assert.equal(error.code, "installation-incomplete");
   assert.ok(error.message.endsWith(STOP_AND_ASK), error.message);
 });
@@ -100,7 +100,7 @@ test("--compare checks the build against the program in the knowledge and fails 
   const first = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/reference.prg");
   assert.equal(first.status, 0, JSON.stringify(first.json));
   const refused = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare");
-  assert.equal(refused.status, 1, "no program in the knowledge yet");
+  assert.equal(refused.status, 2, "no program in the knowledge yet");
   assert.match((refused.json.error as { message: string }).message, /knowledge\.ts image/);
   importPrg(project, readFileSync(join(project, "build", "reference.prg")));
   const same = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare");

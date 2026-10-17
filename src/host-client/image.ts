@@ -3,13 +3,9 @@
 
 import { posix } from "node:path";
 
+import { Refusal } from "../errors.ts";
 import { formatC64Address, prgRange } from "../c64.ts";
 import { readProjectFile } from "./transfer.ts";
-
-/** A file that is no image: the scripts report it as a bad call. */
-export class ImageError extends Error {
-  override name = "ImageError";
-}
 
 export interface Image {
   segments: Array<{ start: number; end: number }>;
@@ -30,12 +26,12 @@ export function readImage(path: string): Image {
     try {
       range = prgRange(bytes);
     } catch (error) {
-      throw new ImageError(`${path}: ${(error as Error).message}`);
+      throw new Refusal("invalid-input", `${path}: ${(error as Error).message}`);
     }
     return { segments: [{ start: range.start, end: range.end }], byteAt: (address) => range.body[address - range.start]! };
   }
   const fail = (what: string): never => {
-    throw new ImageError(`${path} is not an image.json of the c64-unpacker skill: ${what}`);
+    throw new Refusal("invalid-input", `${path} is not an image.json of the c64-unpacker skill: ${what}`);
   };
   const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
   let parsed: unknown;

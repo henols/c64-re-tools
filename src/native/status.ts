@@ -6,7 +6,7 @@
 import { tmpdir } from "node:os";
 import { stripVTControlCharacters } from "node:util";
 
-import { WireFailure } from "../protocol/messages.ts";
+import { isRefusal } from "../errors.ts";
 import { type ToolStatus } from "../protocol/tools.ts";
 import { ACME, C64RUN, DXA, findTool, INSTALL_STEPS } from "./discover.ts";
 import { findGhidra, ghidraVersion, NO_USABLE_JDK, noJdk } from "./ghidra/index.ts";
@@ -55,7 +55,7 @@ async function run(
 }
 
 function missing(name: string, error: unknown): ToolStatus {
-  if (!(error instanceof WireFailure)) throw error;
+  if (!isRefusal(error)) throw error;
   return { name, found: false, runs: false, problem: error.message };
 }
 

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { checkExpression, evaluate, ExpressionError, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
+import { Refusal } from "../errors.ts";
+import { checkExpression, evaluate, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
 
 const SYMBOLS: Record<string, number> = { sprite_bank: 0x3000, VICSCN: 0x0400, COLOR_RAM: 0xd800, charset: 0x2000, irq_handler: 0x80c0, a: 0x3000 };
 const resolve = (name: string) => SYMBOLS[name];
@@ -35,7 +36,7 @@ test("priorities and number forms are ACME's, as measured with ACME 0.97", () =>
 });
 
 test("a bad expression is refused with the reason", () => {
-  for (const text of ["", "a +", "(a", "a)", "a ? 1", "a b", "#<a", "$"]) assert.throws(() => checkExpression(text), ExpressionError, text);
+  for (const text of ["", "a +", "(a", "a)", "a ? 1", "a b", "#<a", "$"]) assert.throws(() => checkExpression(text), Refusal, text);
   assert.throws(() => at("unknown_name + 1"), /"unknown_name" is no symbol/);
   assert.throws(() => at("a / 0"), /divides by zero/);
 });

@@ -49,7 +49,7 @@ test("from the workspace root, scripts write into the project that --project nam
 
 test("without --project, the root refuses and lists the projects, and a folder in a project finds it", () => {
   const refused = knowledge(["symbols"]);
-  assert.equal(refused.status, 1);
+  assert.equal(refused.status, 2);
   const { error } = refused.json as { error: { code: string; message: string } };
   assert.equal(error.code, "invalid-input");
   assert.match(error.message, /These folders below it are projects: boulder-dash, hover-bovver\. Give --project <folder> with one of them\./);
@@ -61,7 +61,7 @@ test("without --project, the root refuses and lists the projects, and a folder i
   assert.deepEqual((found.json.symbols as Array<{ name: string }>).map((symbol) => symbol.name), ["start"]);
 
   const nested = knowledge(["symbols", "--project", join("hover-bovver", "src")]);
-  assert.equal(nested.status, 1);
+  assert.equal(nested.status, 2);
   assert.match((nested.json.error as { message: string }).message, /inside the project hover-bovver\. Give that project folder\./);
   assert.ok(!existsSync(join(workspace, "hover-bovver", "src", ".c64-re-tools")));
 });

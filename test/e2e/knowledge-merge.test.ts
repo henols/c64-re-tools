@@ -112,7 +112,7 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
   assert.deepEqual(conflicts.map((conflict) => conflict.conflict), ["two symbols at one address", "regions that overlap"]);
   assert.deepEqual(conflicts[0]!.rows.map((row) => row.name), ["copy_loop", "fill_screen"]);
   const refused = knowledge(second, "rename", "$1001", "x");
-  assert.equal(refused.status, 1);
+  assert.equal(refused.status, 2);
   assert.equal((refused.json.error as { code: string }).code, "conflict");
   assert.match((refused.json.error as { message: string }).message, /knowledge\.ts merge/);
 

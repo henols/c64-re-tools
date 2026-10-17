@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["c64", "graphics", "opcodes", "package", "platform", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
+      return ["c64", "errors", "graphics", "opcodes", "package", "platform", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -29,6 +29,8 @@ function areaOf(path: string): string | undefined {
 
 /** Areas each area may import besides itself. */
 const ALLOWED: Record<string, readonly string[]> = {
+  // The error codes and the refusal class import nothing.
+  errors: [],
   c64: [],
   // The ACME spelling of each 6510 opcode: c64-source and the listing of c64-knowledge decode with one table.
   opcodes: [],
@@ -48,8 +50,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   mcp: ["host-client", "protocol", "c64", "trace", "package"],
   host: ["native", "protocol", "c64", "graphics", "opcodes", "trace", "package"],
   knowledge: ["c64", "project", "time"],
-  // The error envelope of the skill scripts and the CLI. It takes other refusal classes as a parameter.
-  script: ["protocol", "project", "trace"],
+  // The call contract of the skill scripts: the command line, the values, the envelope.
+  script: ["protocol", "project", "trace", "c64"],
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
   native: ["protocol", "c64", "trace"],
   // The installation and status edge: host tool status through the host-client, local tool status through native.
@@ -87,6 +89,8 @@ function checkTarget(from: string, source: string, target: string): string | und
   const targetArea = areaOf(target);
   if (targetArea === undefined) return `${from}: imports ${target}, which is outside every source area`;
   if (targetArea === source) return undefined;
+  // The one list of error codes and the one refusal class: every area reports failures with them.
+  if (targetArea === "errors") return undefined;
 
   const allowed = source.startsWith("skill:") ? SKILL_ALLOWED : (ALLOWED[source] ?? []);
   return allowed.includes(targetArea) ? undefined : `${from}: ${source} must not import ${targetArea} (${target})`;
@@ -145,7 +149,7 @@ test("checkImport refuses every forbidden direction", () => {
     ["distribution/plugin.ts", "../src/project.ts"],
     ["src/script.ts", "./knowledge/database.ts"],
     ["src/script.ts", "./host-client/tools.ts"],
-    ["src/script.ts", "./c64.ts"],
+    ["src/script.ts", "./knowledge/read.ts"],
     ["src/mcp/server.ts", "../script.ts"],
     ["src/host/server.ts", "../script.ts"],
     ["src/knowledge/database.ts", "../script.ts"],
@@ -191,6 +195,9 @@ test("checkImport accepts every allowed direction", () => {
     ["src/host/server.ts", "node:net"],
     ["src/script.ts", "./protocol/messages.ts"],
     ["src/script.ts", "./project.ts"],
+    ["src/script.ts", "./c64.ts"],
+    ["src/knowledge/read.ts", "../errors.ts"],
+    ["src/c64.ts", "./errors.ts"],
     ["src/cli/main.ts", "../script.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/script.ts"],
     ["src/protocol/framing.testkit.ts", "./messages.ts"],

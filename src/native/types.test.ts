@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { WireFailure } from "../protocol/messages.ts";
+import { isRefusal } from "../errors.ts";
 import { checkDxaResult, checkGhidraResult, imageRange, seedsInside } from "./types.ts";
 
 test("an analyzer image is a PRG at its load address or 64 KiB from $0000", () => {
@@ -12,7 +12,7 @@ test("an analyzer image is a PRG at its load address or 64 KiB from $0000", () =
     ["prg", Buffer.from([0xff, 0xff, 1, 2])],
     ["flat64k", Buffer.alloc(100)],
   ] as const) {
-    assert.throws(() => imageRange(kind, bytes), (error: unknown) => error instanceof WireFailure && error.code === "invalid-input");
+    assert.throws(() => imageRange(kind, bytes), (error: unknown) => isRefusal(error) && error.code === "invalid-input");
   }
 });
 

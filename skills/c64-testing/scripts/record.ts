@@ -11,7 +11,7 @@ import { C64RunSession, PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { play } from "./lib/play.ts";
 import { record, readRecordFile, RECORDING_FILES } from "./lib/recording.ts";
 import { ScenarioError } from "./lib/scenario.ts";
@@ -93,4 +93,4 @@ async function run(argv: string[]): Promise<Record<string, unknown>> {
   }
 }
 
-await runScript(run, { usage: USAGE });
+await runBody(run, { usage: USAGE });

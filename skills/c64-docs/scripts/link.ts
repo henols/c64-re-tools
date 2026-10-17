@@ -8,10 +8,10 @@ import { parseArgs } from "node:util";
 
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile } from "#src/host-client/transfer.ts";
-import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
+import { openForRead } from "#src/knowledge/database.ts";
 import { currentRevision, listSymbols } from "#src/knowledge/read.ts";
 import { resolveProjectFile, resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { checkLinks, linkPage, type Files, type Problem } from "./lib/links.ts";
 import { GENERATED_MARK } from "./lib/reference.ts";
 import { readSourceMap } from "./lib/source-map.ts";
@@ -229,11 +229,11 @@ function run(argv: string[]): { output: Record<string, unknown>; failed: boolean
   return { output, failed: problems.length > 0 || (values.check === true && links > 0) };
 }
 
-await runScript(
+await runBody(
   (argv) => {
     const { output, failed } = run(argv);
     if (failed) process.exitCode = 1;
     return output;
   },
-  { usage: USAGE, refusals: [KnowledgeError] },
+  { usage: USAGE },
 );

@@ -14,7 +14,7 @@ import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TR
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { loadSymbols } from "./lib/scenario.ts";
 
 const USAGE = `run.ts <run.json> --out <dir>
@@ -222,7 +222,7 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
   }
 }
 
-await runScript(
+await runBody(
   async (argv) => {
     const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { out: { type: "string" }, help: { type: "boolean" } } });
     if (values.help) throw new UsageError("");

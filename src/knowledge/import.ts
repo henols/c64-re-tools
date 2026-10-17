@@ -13,7 +13,8 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import { KnowledgeError, transaction } from "./database.ts";
+import { Refusal } from "../errors.ts";
+import { transaction } from "./database.ts";
 import {
   analyzerNamed,
   REFERENCE_COLUMNS,
@@ -106,7 +107,7 @@ const isCode = (value: SymbolKind | RegionType) => value === "label" || value ==
 const counts = (): ImportCounts => ({ added: 0, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
 
 function invalid(message: string): never {
-  throw new KnowledgeError("invalid-input", `The analyzer result is not usable: ${message} Nothing was imported.`);
+  throw new Refusal("invalid-input", `The analyzer result is not usable: ${message} Nothing was imported.`);
 }
 
 /** Sorted, merged coverage ranges. */

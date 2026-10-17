@@ -7,21 +7,22 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { COVERAGE, formatC64Address, parseC64Address, prgRange } from "#src/c64.ts";
+import { Refusal } from "#src/errors.ts";
+import { COVERAGE, formatC64Address, parseC64Address, prgRange, SPACE_PATTERN } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile } from "#src/host-client/transfer.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS } from "#src/native/types.ts";
-import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
+import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { analyzedBytes, programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import { importFindings, runProvenance, type Analyzer, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { DEFAULT_SPACE, SPACE } from "#src/knowledge/schema.ts";
+import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
@@ -192,8 +193,8 @@ function record(findings: NormalizedFindings, revision: string, description: str
   try {
     imported = withWrite((db) => importFindings(db, findings, { expectedRevision: revision, description, ...provenance }));
   } catch (error) {
-    if (error instanceof KnowledgeError && error.code === "stale-revision") {
-      throw new KnowledgeError("stale-revision", "The knowledge changed during the analysis. Nothing was imported. Run the analysis again.");
+    if (error instanceof Refusal && error.code === "stale-revision") {
+      throw new Refusal("stale-revision", "The knowledge changed during the analysis. Nothing was imported. Run the analysis again.");
     }
     throw error;
   }
@@ -252,7 +253,7 @@ async function run(argv: string[]): Promise<unknown> {
   }
 
   const space = values.space ?? DEFAULT_SPACE;
-  if (!SPACE.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
+  if (!SPACE_PATTERN.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
   const reader = openForRead();
   const program = requireProgram(reader, space);
   // A coverage map is of the C64 CPU: VICE keeps none for the drive.
@@ -401,4 +402,4 @@ async function run(argv: string[]): Promise<unknown> {
   };
 }
 
-await runScript((argv) => run(argv), { usage: USAGE, refusals: [KnowledgeError] });
+await runBody((argv) => run(argv), { usage: USAGE });

@@ -67,7 +67,7 @@ test("errors are JSON with a stable code and a non-zero exit", () => {
   const root = project();
   knowledge(root, "rename", "$2100", "loop");
   const conflict = knowledge(root, "rename", "$2200", "loop");
-  assert.equal(conflict.status, 1);
+  assert.equal(conflict.status, 2);
   assert.equal((conflict.json.error as { code: string }).code, "conflict");
   const stale = knowledge(root, "rename", "$2300", "other", "--expect-revision", "0");
   assert.equal((stale.json.error as { code: string }).code, "stale-revision");
@@ -303,7 +303,7 @@ test("module records where a file of generated source starts, and modules lists 
   assert.equal(set.status, 0, JSON.stringify(set.json));
   assert.deepEqual(set.json, { revision: rev(root, 1), module: { start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", revision: rev(root, 1) } });
   assert.deepEqual(knowledge(root, "modules").json, { modules: [{ start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", revision: rev(root, 1) }] });
-  assert.equal(knowledge(root, "module", "$1000", "sub/x.asm").status, 1);
+  assert.equal(knowledge(root, "module", "$1000", "sub/x.asm").status, 2);
   assert.equal(knowledge(root, "rename", "$1000", "x", "--title", "T").status, 2, "--title is for module only");
   assert.equal(knowledge(root, "unmodule", "$0801").json.revision, rev(root, 2));
   assert.deepEqual(knowledge(root, "history", "$0801").json.history, [{ entity: "module", start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", fromRevision: rev(root, 1), toRevision: rev(root, 2) }]);
@@ -331,7 +331,7 @@ test("operand writes an expression after a check against the program in the know
   writeFileSync(join(root, "game.prg"), Buffer.from([0x79, 0x80, 0xa9, 0xc0, 0x8d, 0x14, 0x03, 0xa9, 0x80]));
   knowledge(root, "rename", "$80c0", "irq_handler");
   const without = knowledge(root, "operand", "$8079", "--lo", "irq_handler");
-  assert.equal(without.status, 1, "operand needs the program in the knowledge");
+  assert.equal(without.status, 2, "operand needs the program in the knowledge");
   assert.match((without.json.error as { message: string }).message, /knowledge\.ts image/);
   assert.equal(knowledge(root, "image", "game.prg").json.revision, rev(root, 2));
   assert.equal(knowledge(root, "operand", "$8079", "--lo", "irq_handler", "--hi", "irq_handler").status, 2, "one selector only");
@@ -340,7 +340,7 @@ test("operand writes an expression after a check against the program in the know
     operand: { address: "$8079", select: "lo", symbol: "irq_handler", text: "<irq_handler", origin: "llm", revision: rev(root, 3) },
   });
   const refused = knowledge(root, "operand", "$807e", "--lo", "irq_handler");
-  assert.equal(refused.status, 1);
+  assert.equal(refused.status, 2);
   assert.match((refused.json.error as { message: string }).message, /<irq_handler gives \$c0, but the operand in the image is \$80/);
   assert.equal(knowledge(root, "operand", "$807b", "--value", "CINV", "--offset=0").json.revision, rev(root, 4), "a platform name");
   writeFileSync(join(root, "batch.json"), JSON.stringify([{ op: "operand", address: "$807e", select: "expr", expression: ">irq_handler" }]));
@@ -349,7 +349,7 @@ test("operand writes an expression after a check against the program in the know
   assert.equal(known.operand.text, ">irq_handler");
   assert.deepEqual(known.referencesFrom.map((row) => [row.to, row.kind]), [["$80c0", "pointer"]]);
   assert.deepEqual((knowledge(root, "operands").json.operands as Array<{ address: string }>).map((row) => row.address), ["$8079", "$807b", "$807e"]);
-  assert.equal(knowledge(root, "remove-symbol", "$80c0").status, 1, "the operands use it");
+  assert.equal(knowledge(root, "remove-symbol", "$80c0").status, 2, "the operands use it");
   assert.equal(knowledge(root, "unoperand", "$807e").json.revision, rev(root, 6));
 });
 
@@ -361,7 +361,7 @@ test("a command takes a start of a revision id that only one revision has, and 0
   assert.match(first, /^\d{8}T\d{6}\.\d{3}-[0-9a-z]{6}$/);
   assert.equal(((knowledge(root, "revision", first.slice(0, 26)).json.revision as { description: string }).description), "the entry", "the date, the time and part of the random characters");
   const ambiguous = knowledge(root, "revision", first.slice(0, 8));
-  assert.equal(ambiguous.status, 1);
+  assert.equal(ambiguous.status, 2);
   assert.match((ambiguous.json.error as { message: string }).message, /is the start of more than one revision/);
   assert.equal(knowledge(root, "revert", first.slice(0, 26)).status, 0);
   assert.equal((knowledge(root, "at", "$2100").json.symbol as { name: string }).name, "main");
@@ -374,7 +374,7 @@ test("patch, macro and use write the source knowledge, and patches, switches, ma
   const root = project();
   // $8100 INC $fb / BNE +2 / INC $fc / LDA #$00 / STA $d020
   writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x81, 0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xa9, 0x00, 0x8d, 0x20, 0xd0]));
-  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--nop").status, 1, "patch needs the program in the knowledge");
+  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--nop").status, 2, "patch needs the program in the knowledge");
   assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK").status, 2, "patch needs --code, --code-file or --nop");
   assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--nop", "--code", "nop").status, 2, "only one of them");
   assert.equal(knowledge(root, "rename", "$8106", "x", "--code", "nop").status, 2, "--code works only with patch");
@@ -408,7 +408,7 @@ test("patch, macro and use write the source knowledge, and patches, switches, ma
   assert.deepEqual((knowledge(root, "macros").json.macros as Array<{ name: string; params: string[] }>).map((row) => [row.name, row.params]), [["inc16", ["dst"]]]);
   assert.deepEqual((knowledge(root, "uses", "--macro", "inc16").json.uses as Array<{ start: string }>).map((row) => row.start), ["$8100"]);
   assert.deepEqual((knowledge(root, "history", "--macro", "inc16").json.history as Array<{ entity: string }>).map((row) => row.entity), ["macro", "macro-use"]);
-  assert.equal(knowledge(root, "unmacro", "inc16").status, 1, "the macro has a use");
+  assert.equal(knowledge(root, "unmacro", "inc16").status, 2, "the macro has a use");
 
   writeFileSync(join(root, "batch.json"), JSON.stringify([
     { op: "unuse", start: "$8100" },
@@ -486,6 +486,6 @@ test("listing reads the program and the coverage in the knowledge", () => {
   assert.deepEqual(listed[1], { address: "$1003", bytes: "ad 20 10", text: "lda table", access: "x", referencesIn: 0, referencesOut: 0, comment: "First entry." });
   assert.equal(listed[2]!.text, "sta EXTCOL", "a platform name");
   assert.deepEqual(listed.at(-1), { address: "$1020", bytes: "07 08", label: "table", text: "!byte $07,$08", access: "r", referencesIn: 0, referencesOut: 0 });
-  assert.equal(knowledge(project(), "listing", "$1000", "$1001").status, 1, "listing needs the program in the knowledge");
+  assert.equal(knowledge(project(), "listing", "$1000", "$1001").status, 2, "listing needs the program in the knowledge");
 
 });

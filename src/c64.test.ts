@@ -1,14 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { basicLineText, constantExpression, COVERAGE, executedRamCode, findHandoffs, formatC64Address, formatSprite, formatVicii, instructionLength, parseC64Address, parseTokenized, petsciiNameToText, textToPetscii, textToPetsciiName, type TokenizedLine, vicBankBase } from "./c64.ts";
+import { Refusal } from "./errors.ts";
+
+import { basicLineText, c64AddressOf, constantExpression, COVERAGE, executedRamCode, findHandoffs, formatC64Address, formatSprite, formatVicii, instructionLength, parseC64Address, parseTokenized, petsciiNameToText, textToPetscii, textToPetsciiName, SPACE_PATTERN, type TokenizedLine, vicBankBase } from "./c64.ts";
 
 test("C64 address primitives use canonical four-digit hexadecimal", () => {
   assert.equal(parseC64Address("$d020"), 0xd020);
   assert.equal(parseC64Address("$D020"), 0xd020);
   assert.equal(formatC64Address(0x2a), "$002a");
-  assert.throws(() => parseC64Address("d020"));
-  assert.throws(() => formatC64Address(0x10000));
+  assert.equal(parseC64Address("$fb"), 0xfb);
+  assert.equal(parseC64Address("$0"), 0);
+  assert.equal(c64AddressOf("$c000"), 0xc000);
+  assert.equal(c64AddressOf("c000"), undefined);
+  for (const text of ["d020", "$", "$12345", "$g0", " $d020"]) assert.throws(() => parseC64Address(text), (error: unknown) => error instanceof Refusal && error.code === "invalid-input", text);
+  assert.throws(() => formatC64Address(0x10000), Refusal);
+  assert.ok(SPACE_PATTERN.test("bank255") && SPACE_PATTERN.test("drive8") && !SPACE_PATTERN.test("bank256") && !SPACE_PATTERN.test("drive9"));
 });
 
 test("text becomes the PETSCII the keyboard types", () => {
@@ -17,7 +24,7 @@ test("text becomes the PETSCII the keyboard types", () => {
   assert.deepEqual([...textToPetscii('10 PRINT "HI";A$(1)')], [...Buffer.from('10 PRINT "HI";A$(1)', "latin1")]);
   assert.deepEqual([...textToPetscii("@[]£↑←")], [0x40, 0x5b, 0x5d, 0x5c, 0x5e, 0x5f]);
   assert.throws(() => textToPetscii("tab\there"), /\\t/);
-  assert.throws(() => textToPetscii("{"), RangeError);
+  assert.throws(() => textToPetscii("{"), Refusal);
 });
 
 test("a PETSCII name shows as directory text and converts back to the same bytes", () => {
@@ -27,8 +34,8 @@ test("a PETSCII name shows as directory text and converts back to the same bytes
   assert.deepEqual([...textToPetsciiName(text)], [...bytes]);
   assert.deepEqual([...textToPetsciiName("game")], [0x47, 0x41, 0x4d, 0x45], "either letter case is the unshifted letter");
   assert.deepEqual([...textToPetsciiName("{$A0}")], [0xa0]);
-  assert.throws(() => textToPetsciiName("a{b"), RangeError);
-  assert.throws(() => textToPetsciiName("é"), RangeError);
+  assert.throws(() => textToPetsciiName("a{b"), Refusal);
+  assert.throws(() => textToPetsciiName("é"), Refusal);
 });
 
 const SYS = 0x9e;

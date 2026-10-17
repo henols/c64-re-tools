@@ -10,8 +10,8 @@ import { readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "no
 import type { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 
+import { Refusal } from "../errors.ts";
 import { isoCet } from "../time.ts";
-import { KnowledgeError } from "./database.ts";
 
 /** The value of "no revision": empty knowledge. It sorts before every revision id. */
 export const NO_REVISION = "0";
@@ -248,7 +248,7 @@ export function readText(directory: string): Map<string, { text: string; sha256:
   const files = new Map<string, { text: string; sha256: string }>();
   for (const name of readdirSync(directory).sort()) {
     if (!name.endsWith(".jsonl")) continue;
-    if (!known.has(name)) throw new KnowledgeError("invalid-database", `.c64-re-tools/knowledge/${name} is not a knowledge file. Knowledge files are ${[...known].join(", ")}.`);
+    if (!known.has(name)) throw new Refusal("invalid-database", `.c64-re-tools/knowledge/${name} is not a knowledge file. Knowledge files are ${[...known].join(", ")}.`);
     const bytes = readFileSync(join(directory, name));
     files.set(name, { text: bytes.toString("utf8"), sha256: sha256(bytes) });
   }
@@ -269,7 +269,7 @@ export function writeAtomic(path: string, text: string): void {
 
 /** One line of a knowledge file that cannot be read. */
 function bad(file: string, line: number, message: string): never {
-  throw new KnowledgeError("invalid-database", `.c64-re-tools/knowledge/${file}:${line}: ${message}`);
+  throw new Refusal("invalid-database", `.c64-re-tools/knowledge/${file}:${line}: ${message}`);
 }
 
 function parseLines(file: string, text: string): Array<{ line: number; value: Raw }> {
@@ -396,7 +396,7 @@ export function loadText(db: DatabaseSync, files: ReadonlyMap<string, { text: st
       insertRevision.run(...(REVISION_FIELDS.map((item) => revision.columns[item.column]) as Array<string | null>));
       for (const item of revision.evidence) insertEvidence.run(revision.id, item.kind as string, item.ref as string, item.sha256 as string | null, item.space as string | null);
     } catch (error) {
-      throw new KnowledgeError("invalid-database", `.c64-re-tools/knowledge/${REVISIONS_FILE}: the revision ${revision.id} is not valid: ${(error as Error).message}`);
+      throw new Refusal("invalid-database", `.c64-re-tools/knowledge/${REVISIONS_FILE}: the revision ${revision.id} is not valid: ${(error as Error).message}`);
     }
   }
   for (const spec of TABLES) {
@@ -408,7 +408,7 @@ export function loadText(db: DatabaseSync, files: ReadonlyMap<string, { text: st
       try {
         insert.run(...(columns.map((column) => row.columns[column]) as Array<string | number | null>));
       } catch (error) {
-        throw new KnowledgeError("invalid-database", `.c64-re-tools/knowledge/${spec.file}: the row ${row.id} is not valid: ${(error as Error).message}`);
+        throw new Refusal("invalid-database", `.c64-re-tools/knowledge/${spec.file}: the row ${row.id} is not valid: ${(error as Error).message}`);
       }
     }
   }

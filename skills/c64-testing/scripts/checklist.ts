@@ -4,7 +4,7 @@
 
 import { parseArgs } from "node:util";
 
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { readScenario, ScenarioError, type Scenario } from "./lib/scenario.ts";
 
 const USAGE = `checklist.ts <scenario.json> [<scenario.json> ...] [--item <text> ...]
@@ -43,9 +43,4 @@ function run(argv: string[]): string {
   return `${lines.join("\n")}\n`;
 }
 
-await runScript(
-  (argv) => {
-    process.stdout.write(run(argv));
-  },
-  { usage: USAGE },
-);
+await runBody((argv) => ({ text: run(argv) }), { usage: USAGE });

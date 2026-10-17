@@ -77,7 +77,7 @@ test("a refused DXA import writes no revision and no listing", { timeout: 60_000
   const root = project("refused");
   const twoNames = ["1000 start:", "1000 a9 00 \tlda #$00", "1002 start:", "1002 60 \trts", "1003 01 02 \t.byt $01,$02", ""];
   const { status, json } = await analyze(root, fakeDxa("dxa-two-names", twoNames), "--listing", "analysis/game.lst");
-  assert.equal(status, 1, JSON.stringify(json));
+  assert.equal(status, 2, JSON.stringify(json));
   assert.equal((json.error as { code: string }).code, "invalid-input");
   assert.equal(readFileSync(join(root, ".c64-re-tools", "knowledge", "revisions.jsonl"), "utf8").trim().split("\n").length, 1, "only the image");
   assert.equal(existsSync(join(root, "analysis")), false);
@@ -117,7 +117,7 @@ test("an import refused because knowledge changed during the analysis tells to r
     writeFileSync(program, `@"${process.execPath}" "${fake}" %*\r\n`);
   }
   const { status, json } = await analyze(root, program);
-  assert.equal(status, 1, JSON.stringify(json));
+  assert.equal(status, 2, JSON.stringify(json));
   const error = json.error as { code: string; message: string };
   assert.equal(error.code, "stale-revision");
   assert.match(error.message, /Run the analysis again\.$/);

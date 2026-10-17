@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 
+import { Refusal } from "../errors.ts";
 import { ensureLocal, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRoot } from "../project.ts";
 import { ensureSchema } from "./schema.ts";
 import { compareText, loadText, readText, REVISIONS_FILE, revisionsText, sha256, sqlName, TABLES, tableText, writeAtomic } from "./text.ts";
@@ -18,27 +19,6 @@ export const INDEX_FILE = "knowledge.db";
 /** Git keeps the lines of both sides when two computers changed the same knowledge file. */
 // eol=lf: with core.autocrlf (the Windows default) git would check the files out with CRLF, so two computers would hold other bytes.
 export const GIT_ATTRIBUTES = "# The knowledge of c64-re-tools: git keeps the lines of both sides of a merge, with LF line ends on every system.\n*.jsonl merge=union text eol=lf\n.gitattributes text eol=lf\n";
-
-export const KNOWLEDGE_ERROR_CODES = [
-  "invalid-input",
-  "not-found",
-  "conflict",
-  "stale-revision",
-  "invalid-database",
-  "unsupported-schema",
-] as const;
-export type KnowledgeErrorCode = (typeof KNOWLEDGE_ERROR_CODES)[number];
-
-/** A refused knowledge operation, with a stable code and an actionable message. */
-export class KnowledgeError extends Error {
-  override name = "KnowledgeError";
-  readonly code: KnowledgeErrorCode;
-
-  constructor(code: KnowledgeErrorCode, message: string) {
-    super(message);
-    this.code = code;
-  }
-}
 
 /** The folder of the knowledge text: .c64-re-tools/knowledge/. */
 export function textPath(root: string = projectRoot()): string {
@@ -53,7 +33,7 @@ export function indexPath(root: string = projectRoot()): string {
 /** Refuses a project that has only the knowledge.db of an older c64-re-tools. */
 function refuseOldLayout(root: string): void {
   if (!existsSync(textPath(root)) && existsSync(join(root, KNOWLEDGE_DIRECTORY, INDEX_FILE))) {
-    throw new KnowledgeError(
+    throw new Refusal(
       "unsupported-schema",
       `${KNOWLEDGE_DIRECTORY}/${INDEX_FILE} is the knowledge of an older c64-re-tools. This c64-re-tools keeps the knowledge as text in ${KNOWLEDGE_DIRECTORY}/${TEXT_DIRECTORY}/. Convert it one time with distribution/convert-knowledge.ts of the c64-re-tools source repository.`,
     );
@@ -71,7 +51,7 @@ function open(path: string, readOnly: boolean): DatabaseSync {
     configure(db);
     db.prepare("SELECT count(*) FROM sqlite_master").get();
   } catch (error) {
-    throw new KnowledgeError("invalid-database", `${KNOWLEDGE_DIRECTORY}/${LOCAL_DIRECTORY}/${INDEX_FILE} is not a readable SQLite database: ${(error as Error).message} Delete it: it is made again from the knowledge text.`);
+    throw new Refusal("invalid-database", `${KNOWLEDGE_DIRECTORY}/${LOCAL_DIRECTORY}/${INDEX_FILE} is not a readable SQLite database: ${(error as Error).message} Delete it: it is made again from the knowledge text.`);
   }
   return db;
 }

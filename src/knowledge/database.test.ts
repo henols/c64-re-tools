@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { indexPath, KnowledgeError, openForRead, openForWrite, textPath, transaction, withWrite } from "./database.ts";
+import { Refusal } from "../errors.ts";
+import { indexPath, openForRead, openForWrite, textPath, transaction, withWrite } from "./database.ts";
 import { currentRevision, symbolAt } from "./read.ts";
 import { ensureSchema, INDEX_VERSION } from "./schema.ts";
 import { REVISION_ID } from "./text.ts";
@@ -29,7 +30,7 @@ function project(): string {
   return root;
 }
 
-const failsWith = (code: string) => (error: unknown) => error instanceof KnowledgeError && error.code === code;
+const failsWith = (code: string) => (error: unknown) => error instanceof Refusal && error.code === code;
 const text = (root: string, file: string) => readFileSync(join(textPath(root), file), "utf8");
 
 test("a read of a project without knowledge creates nothing", () => {

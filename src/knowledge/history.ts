@@ -3,7 +3,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { KnowledgeError } from "./database.ts";
+import { Refusal } from "../errors.ts";
 import {
   COMMENT_COLUMNS,
   MACRO_COLUMNS,
@@ -182,7 +182,7 @@ export interface RevisionChanges {
 export function revision(db: DatabaseSync | undefined, text: string): RevisionChanges {
   const id = resolveRevision(db, text);
   const raw = db?.prepare("SELECT * FROM revisions WHERE id = ?").get(id) as Raw | undefined;
-  if (db === undefined || raw === undefined) throw new KnowledgeError("not-found", `There is no revision ${id}.`);
+  if (db === undefined || raw === undefined) throw new Refusal("not-found", `There is no revision ${id}.`);
   const tables = [
     ["symbol", "symbols", SYMBOL_COLUMNS, toSymbol],
     ["analyzer-name", "analyzer_names", SYMBOL_COLUMNS, toSymbol],

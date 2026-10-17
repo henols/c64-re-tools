@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import { Refusal } from "../errors.ts";
 import { COVERAGE } from "../c64.ts";
-import { indexPath, KnowledgeError, openForRead, textPath, withWrite } from "./database.ts";
+import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
 import { listSpaces } from "./read.ts";
 import { addCoverage, analyzedBytes, coverageRuns, programCoverage, programImage, setImage, type ImageRequest } from "./program.ts";
 import { revert } from "./write.ts";
@@ -95,7 +96,7 @@ test("a PRG without an entry closes the entry of an earlier capture, and spaces 
 
 test("an image is refused when its segments overlap or a state has no entry", () => {
   const root = project();
-  const refused = (code: string) => (error: unknown) => error instanceof KnowledgeError && error.code === code;
+  const refused = (code: string) => (error: unknown) => error instanceof Refusal && error.code === code;
   assert.throws(() => withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x1010 }, { start: 0x1010, end: 0x1020 }])), root), refused("invalid-input"));
   assert.throws(() => withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x1010 }], 0, { state: {} })), root), refused("invalid-input"));
 });
@@ -154,7 +155,7 @@ test("a coverage map that the knowledge has is not imported again; one that adds
   } finally {
     db.close();
   }
-  assert.throws(() => withWrite((db) => addCoverage(db, llm, { maps: [{ name: "short.bin", bytes: new Uint8Array(10) }] }), root), (error: unknown) => error instanceof KnowledgeError && error.code === "invalid-input");
+  assert.throws(() => withWrite((db) => addCoverage(db, llm, { maps: [{ name: "short.bin", bytes: new Uint8Array(10) }] }), root), (error: unknown) => error instanceof Refusal && error.code === "invalid-input");
 });
 
 test("revert takes the image and the coverage back too", () => {

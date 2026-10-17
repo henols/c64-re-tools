@@ -6,10 +6,7 @@
 // << >> >>>, unary < and >, &, XOR, |. A unary < or > takes everything of a
 // higher priority after it, so <a+1 is the low byte of a+1.
 
-/** An expression that does not parse, or that names a symbol with no value. */
-export class ExpressionError extends Error {
-  override name = "ExpressionError";
-}
+import { Refusal } from "../errors.ts";
 
 /** The selectors of an operand expression: a byte of a symbol, its value, or free expression text. */
 export const OPERAND_SELECTS = ["lo", "hi", "value", "expr"] as const;
@@ -54,7 +51,7 @@ function tokenize(text: string): Token[] {
     }
     const number: RegExpExecArray | null = operandNext ? /^(\$[0-9A-Fa-f]+|%[01]+|[0-9]+)/.exec(rest) : null;
     const match: RegExpExecArray | null = number ?? /^(>>>|<<|>>|XOR\b)/.exec(rest) ?? NAME.exec(rest) ?? /^[-+*/%&|!<>()]/.exec(rest);
-    if (!match) throw new ExpressionError(`"${text}" has an unknown character at position ${at + 1}: "${rest[0]}".`);
+    if (!match) throw new Refusal("invalid-input", `"${text}" has an unknown character at position ${at + 1}: "${rest[0]}".`);
     const token: string = match[0];
     tokens.push({ text: token, at });
     at += token.length;
@@ -65,13 +62,13 @@ function tokenize(text: string): Token[] {
 }
 
 function parse(text: string): Node {
-  if (text.trim().length === 0) throw new ExpressionError("An expression is empty.");
-  if (text.length > MAX_TEXT) throw new ExpressionError(`An expression has at most ${MAX_TEXT} characters.`);
+  if (text.trim().length === 0) throw new Refusal("invalid-input", "An expression is empty.");
+  if (text.length > MAX_TEXT) throw new Refusal("invalid-input", `An expression has at most ${MAX_TEXT} characters.`);
   const tokens = tokenize(text);
   let index = 0;
   const peek = () => tokens[index]?.text;
   const fail = (what: string): never => {
-    throw new ExpressionError(`"${text}" ${what}.`);
+    throw new Refusal("invalid-input", `"${text}" ${what}.`);
   };
 
   const operand = (): Node => {
@@ -122,7 +119,7 @@ function value(node: Node, resolve: (name: string) => number | undefined): numbe
       return node.value;
     case "name": {
       const found = resolve(node.name);
-      if (found === undefined) throw new ExpressionError(`"${node.name}" is no symbol of the knowledge and no platform name.`);
+      if (found === undefined) throw new Refusal("invalid-input", `"${node.name}" is no symbol of the knowledge and no platform name.`);
       return found;
     }
     case "unary": {
@@ -139,7 +136,7 @@ function value(node: Node, resolve: (name: string) => number | undefined): numbe
           return left * right;
         case "/":
         case "%":
-          if (right === 0) throw new ExpressionError("An expression divides by zero.");
+          if (right === 0) throw new Refusal("invalid-input", "An expression divides by zero.");
           return node.operator === "/" ? Math.trunc(left / right) : left % right;
         case "+":
           return left + right;
@@ -162,7 +159,7 @@ function value(node: Node, resolve: (name: string) => number | undefined): numbe
   }
 }
 
-/** Throws ExpressionError when the text is no expression of this syntax. */
+/** Throws an invalid-input Refusal when the text is no expression of this syntax. */
 export function checkExpression(text: string): void {
   parse(text);
 }

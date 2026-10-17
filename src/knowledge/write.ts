@@ -3,11 +3,12 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { instructionLength, SYMBOL_NAME } from "../c64.ts";
+import { Refusal } from "../errors.ts";
+import { instructionLength, SYMBOL_NAME, SPACE_PATTERN } from "../c64.ts";
 import { isoCet } from "../time.ts";
 import { CONFLICT_RULES, conflicts, conflictTable, type Conflict, type ConflictRow } from "./conflicts.ts";
-import { KnowledgeError, transaction } from "./database.ts";
-import { checkExpression, evaluate, ExpressionError, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
+import { transaction } from "./database.ts";
+import { checkExpression, evaluate, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
 import {
   COMMENT_COLUMNS,
   commentsAt,
@@ -58,33 +59,7 @@ import {
   type SuppressionRow,
   type SymbolRow,
 } from "./read.ts";
-import {
-  COMMENT_PLACEMENTS,
-  EVIDENCE_KINDS,
-  MAX_ELEMENT,
-  MODULE_FILE,
-  DEFAULT_SPACE,
-  GENERATED_FILES,
-  isGeneratedFile,
-  MACRO_NAME,
-  MACRO_PARAM,
-  SPACE,
-  SWITCH_NAME,
-  NO_ELEMENT_TYPES,
-  OPERAND_SELECTS,
-  POINTER_KIND,
-  REFERENCE_KINDS,
-  REGION_TYPES,
-  SYMBOL_KINDS,
-  type CommentPlacement,
-  type EvidenceKind,
-  type OperandSelect,
-  type Origin,
-  type ReferenceKind,
-  type RegionType,
-  type Space,
-  type SymbolKind,
-} from "./schema.ts";
+import { COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, MACRO_NAME, MACRO_PARAM, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName } from "./text.ts";
 
 /** What a change rests on: a coverage run, a test or another project file with its SHA-256, or a note. */
@@ -132,11 +107,11 @@ const MAX_PARAMS = 16;
 const MAX_EVIDENCE_REF = 1000;
 
 export function checkAddress(value: number, what = "address"): void {
-  if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new KnowledgeError("invalid-input", `${what} must be from $0000 to $ffff.`);
+  if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new Refusal("invalid-input", `${what} must be from $0000 to $ffff.`);
 }
 
 function checkOneOf<T extends string>(values: readonly T[], value: string, what: string): asserts value is T {
-  if (!(values as readonly string[]).includes(value)) throw new KnowledgeError("invalid-input", `${what} must be one of: ${values.join(", ")}.`);
+  if (!(values as readonly string[]).includes(value)) throw new Refusal("invalid-input", `${what} must be one of: ${values.join(", ")}.`);
 }
 
 export function hex(value: number): string {
@@ -191,14 +166,14 @@ export class Change {
     // A merge of two computers' work can leave conflicts: only a merge revision writes then.
     const found = operation === "merge" ? [] : conflicts(db);
     if (found.length > 0) {
-      throw new KnowledgeError(
+      throw new Refusal(
         "conflict",
         `The knowledge has ${found.length} conflict${found.length === 1 ? "" : "s"} from a git merge, for example ${describe(found[0]!)}. Nothing was written. Run knowledge.ts merge to decide them, then write again.`,
       );
     }
     const current = currentRevision(db);
     if (context.expectedRevision !== undefined && resolveRevision(db, context.expectedRevision) !== current) {
-      throw new KnowledgeError(
+      throw new Refusal(
         "stale-revision",
         `Knowledge changed since revision ${context.expectedRevision}; it is now at revision ${current}. Read it again and decide again.`,
       );
@@ -226,7 +201,7 @@ export class Change {
   check(): void {
     if (this.revision === null) return;
     const [found] = conflicts(this.#db);
-    if (found !== undefined) throw new KnowledgeError("conflict", `The write would leave ${describe(found)}. Nothing was written.`);
+    if (found !== undefined) throw new Refusal("conflict", `The write would leave ${describe(found)}. Nothing was written.`);
   }
 
   /** The id of the next row this write inserts. */
@@ -348,8 +323,8 @@ function liftRegionSuppressions(db: DatabaseSync, change: Change, start: number,
 function checkEvidence(evidence: Evidence[] | undefined): void {
   for (const item of evidence ?? []) {
     checkOneOf(EVIDENCE_KINDS, item.kind, "evidence kind");
-    if (item.ref.trim().length === 0 || item.ref.length > MAX_EVIDENCE_REF) throw new KnowledgeError("invalid-input", `evidence has 1 to ${MAX_EVIDENCE_REF} characters after its kind.`);
-    if (item.sha256 !== undefined && !/^[0-9a-f]{64}$/.test(item.sha256)) throw new KnowledgeError("invalid-input", "evidence sha256 must be 64 lowercase hex digits.");
+    if (item.ref.trim().length === 0 || item.ref.length > MAX_EVIDENCE_REF) throw new Refusal("invalid-input", `evidence has 1 to ${MAX_EVIDENCE_REF} characters after its kind.`);
+    if (item.sha256 !== undefined && !/^[0-9a-f]{64}$/.test(item.sha256)) throw new Refusal("invalid-input", "evidence sha256 must be 64 lowercase hex digits.");
     checkSpace(item);
   }
 }
@@ -357,7 +332,7 @@ function checkEvidence(evidence: Evidence[] | undefined): void {
 /** Runs semantic writes in one transaction, as one revision. */
 export function write<T>(db: DatabaseSync, context: WriteContext, operation: string, work: (change: Change) => T): { revision: string | null; current: T } {
   if (context.origin !== "user" && context.origin !== "llm") {
-    throw new KnowledgeError("invalid-input", "A semantic write comes from the user or the LLM.");
+    throw new Refusal("invalid-input", "A semantic write comes from the user or the LLM.");
   }
   checkEvidence(context.evidence);
   return transaction(db, () => {
@@ -393,14 +368,14 @@ type AddressRequest = InSpace & { address: number };
 const spaceOf = (request: InSpace): Space => request.space ?? DEFAULT_SPACE;
 
 export function checkSpace(request: InSpace): void {
-  if (request.space !== undefined && !SPACE.test(request.space)) throw new KnowledgeError("invalid-input", "space must be c64, drive8, or bank0 to bank255.");
+  if (request.space !== undefined && !SPACE_PATTERN.test(request.space)) throw new Refusal("invalid-input", "space must be c64, drive8, or bank0 to bank255.");
 }
 
 function checkSymbol(request: SymbolRequest): void {
   checkSpace(request);
   checkAddress(request.address);
   if (!SYMBOL_NAME.test(request.name)) {
-    throw new KnowledgeError("invalid-input", "A symbol name is a letter or underscore, then letters, digits or underscores (at most 64), with an optional leading dot.");
+    throw new Refusal("invalid-input", "A symbol name is a letter or underscore, then letters, digits or underscores (at most 64), with an optional leading dot.");
   }
   if (request.kind !== undefined) checkOneOf(SYMBOL_KINDS, request.kind, "kind");
 }
@@ -412,10 +387,10 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
   if (existing !== undefined && existing.name === request.name && existing.kind === kind) return { current: existing };
   const owner = symbolNamed(db, request.name, space);
   if (owner !== undefined && owner.address !== request.address) {
-    throw new KnowledgeError("conflict", `The name ${request.name} already belongs to ${hex(owner.address)}. Rename or remove that symbol first.`);
+    throw new Refusal("conflict", `The name ${request.name} already belongs to ${hex(owner.address)}. Rename or remove that symbol first.`);
   }
   const [patch] = listPatches(db, undefined, request.name, undefined, space);
-  if (patch !== undefined) throw new KnowledgeError("conflict", `${request.name} is the switch of the patch at ${hex(patch.start)}-${hex(patch.end)}. Give the symbol another name.`);
+  if (patch !== undefined) throw new Refusal("conflict", `${request.name} is the switch of the patch at ${hex(patch.start)}-${hex(patch.end)}. Give the symbol another name.`);
   if (existing !== undefined) change.close("symbols", "space = ? AND address = ?", space, request.address);
   change.insertSymbol({ space, address: request.address, name: request.name, kind, origin });
   if (existing !== undefined && existing.name !== request.name) {
@@ -430,17 +405,17 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
 function removeSymbolStep(db: DatabaseSync, change: Change, origin: Origin, request: AddressRequest): Step<null> {
   const space = spaceOf(request);
   const existing = symbolAt(db, request.address, space);
-  if (existing === undefined) throw new KnowledgeError("not-found", `There is no symbol at ${hex(request.address)}.`);
+  if (existing === undefined) throw new Refusal("not-found", `There is no symbol at ${hex(request.address)}.`);
   const users = operandsNaming(db, space, existing.name);
   if (users.length > 0) {
-    throw new KnowledgeError(
+    throw new Refusal(
       "conflict",
       `The operand expressions at ${users.map((row) => hex(row.address)).join(", ")} use ${existing.name}. Change or remove them first (unoperand), or rename the symbol.`,
     );
   }
   const uses = usesNaming(db, space, existing.name);
   if (uses.length > 0) {
-    throw new KnowledgeError("conflict", `The macro uses at ${uses.map((row) => hex(row.start)).join(", ")} use ${existing.name}. Change or remove them first (unuse), or rename the symbol.`);
+    throw new Refusal("conflict", `The macro uses at ${uses.map((row) => hex(row.start)).join(", ")} use ${existing.name}. Change or remove them first (unuse), or rename the symbol.`);
   }
   // No suppression: an analyzer name is a second name and never comes back as the name.
   change.close("symbols", "space = ? AND address = ?", space, request.address);
@@ -451,17 +426,17 @@ function checkRange(request: RangeRequest): void {
   checkSpace(request);
   checkAddress(request.start, "start");
   checkAddress(request.end, "end");
-  if (request.end < request.start) throw new KnowledgeError("invalid-input", "end must not be before start.");
+  if (request.end < request.start) throw new Refusal("invalid-input", "end must not be before start.");
 }
 
 function checkRegion(request: RegionRequest): void {
   checkRange(request);
   checkOneOf(REGION_TYPES, request.type, "type");
   if (request.element === undefined) return;
-  if (NO_ELEMENT_TYPES.includes(request.type)) throw new KnowledgeError("invalid-input", `A ${request.type} region has no element size.`);
-  if (!Number.isInteger(request.element) || request.element < 1 || request.element > MAX_ELEMENT) throw new KnowledgeError("invalid-input", `element must be from 1 to ${MAX_ELEMENT}.`);
+  if (NO_ELEMENT_TYPES.includes(request.type)) throw new Refusal("invalid-input", `A ${request.type} region has no element size.`);
+  if (!Number.isInteger(request.element) || request.element < 1 || request.element > MAX_ELEMENT) throw new Refusal("invalid-input", `element must be from 1 to ${MAX_ELEMENT}.`);
   const length = request.end - request.start + 1;
-  if (length % request.element !== 0) throw new KnowledgeError("invalid-input", `The region has ${length} bytes, which is not a multiple of the element size ${request.element}.`);
+  if (length % request.element !== 0) throw new Refusal("invalid-input", `The region has ${length} bytes, which is not a multiple of the element size ${request.element}.`);
 }
 
 /** The element size of a piece of a region: kept when the piece still holds whole elements. */
@@ -499,7 +474,7 @@ function classifyStep(db: DatabaseSync, change: Change, origin: Origin, request:
 function unclassifyStep(db: DatabaseSync, change: Change, origin: Origin, request: RangeRequest): Step<null> {
   const space = spaceOf(request);
   if (regionsOverlapping(db, request.start, request.end, space).length === 0) {
-    throw new KnowledgeError("not-found", `No region covers ${hex(request.start)}-${hex(request.end)}.`);
+    throw new Refusal("not-found", `No region covers ${hex(request.start)}-${hex(request.end)}.`);
   }
   clearRange(db, change, request.start, request.end, space);
   // Suppress only the parts that no region suppression holds yet, so suppressions never overlap.
@@ -514,7 +489,7 @@ function checkComment(request: CommentRequest): string {
   checkAddress(request.address);
   checkOneOf(COMMENT_PLACEMENTS, request.placement, "placement");
   const text = request.text.trim();
-  if (text.length === 0 || text.length > MAX_COMMENT) throw new KnowledgeError("invalid-input", `A comment has 1 to ${MAX_COMMENT} characters.`);
+  if (text.length === 0 || text.length > MAX_COMMENT) throw new Refusal("invalid-input", `A comment has 1 to ${MAX_COMMENT} characters.`);
   return text;
 }
 
@@ -537,7 +512,7 @@ function checkPlacement(request: PlacementRequest): void {
 function uncommentStep(db: DatabaseSync, change: Change, _origin: Origin, request: PlacementRequest): Step<null> {
   const space = spaceOf(request);
   if (!commentsAt(db, request.address, space).some((comment) => comment.placement === request.placement)) {
-    throw new KnowledgeError("not-found", `There is no ${request.placement} comment at ${hex(request.address)}.`);
+    throw new Refusal("not-found", `There is no ${request.placement} comment at ${hex(request.address)}.`);
   }
   change.close("comments", "space = ? AND address = ? AND placement = ?", space, request.address, request.placement);
   return { current: null };
@@ -548,7 +523,7 @@ function checkReference(request: ReferenceRequest): void {
   checkAddress(request.from, "from");
   checkAddress(request.to, "to");
   checkOneOf(REFERENCE_KINDS, request.kind, "kind");
-  if (request.kind === POINTER_KIND) throw new KnowledgeError("invalid-input", "Only an operand expression writes a pointer reference: use operand and unoperand.");
+  if (request.kind === POINTER_KIND) throw new Refusal("invalid-input", "Only an operand expression writes a pointer reference: use operand and unoperand.");
 }
 
 function referenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<ReferenceRow> {
@@ -564,7 +539,7 @@ function referenceStep(db: DatabaseSync, change: Change, origin: Origin, request
 function unreferenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<null> {
   const space = spaceOf(request);
   if (!referencesFrom(db, request.from, space).some((reference) => reference.to === request.to && reference.kind === request.kind)) {
-    throw new KnowledgeError("not-found", `There is no ${request.kind} reference from ${hex(request.from)} to ${hex(request.to)}.`);
+    throw new Refusal("not-found", `There is no ${request.kind} reference from ${hex(request.from)} to ${hex(request.to)}.`);
   }
   change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.from, request.to, request.kind);
   change.insertSuppression({ space, entity: "reference", start: request.from, end: request.from, to: request.to, kind: request.kind, origin: origin as SuppressionRow["origin"] });
@@ -594,19 +569,14 @@ function checkOperand(request: OperandRequest): void {
   checkAddress(request.address);
   checkOneOf(OPERAND_SELECTS, request.select, "select");
   if (request.select === "expr") {
-    if (request.symbol !== undefined || request.offset !== undefined) throw new KnowledgeError("invalid-input", "An expr operand has expression text, and no symbol or offset.");
-    if (typeof request.expression !== "string") throw new KnowledgeError("invalid-input", "An expr operand has expression text.");
-    try {
-      checkExpression(request.expression);
-    } catch (error) {
-      if (error instanceof ExpressionError) throw new KnowledgeError("invalid-input", error.message);
-      throw error;
-    }
+    if (request.symbol !== undefined || request.offset !== undefined) throw new Refusal("invalid-input", "An expr operand has expression text, and no symbol or offset.");
+    if (typeof request.expression !== "string") throw new Refusal("invalid-input", "An expr operand has expression text.");
+    checkExpression(request.expression);
     return;
   }
-  if (request.expression !== undefined) throw new KnowledgeError("invalid-input", `A ${request.select} operand has a symbol and an optional offset, and no expression text.`);
-  if (request.symbol === undefined || !SYMBOL_NAME.test(request.symbol)) throw new KnowledgeError("invalid-input", `A ${request.select} operand names a symbol: a letter or underscore, then letters, digits or underscores.`);
-  if (request.offset !== undefined && (!Number.isInteger(request.offset) || Math.abs(request.offset) > 0xffff)) throw new KnowledgeError("invalid-input", "offset must be a whole number from -$ffff to $ffff.");
+  if (request.expression !== undefined) throw new Refusal("invalid-input", `A ${request.select} operand has a symbol and an optional offset, and no expression text.`);
+  if (request.symbol === undefined || !SYMBOL_NAME.test(request.symbol)) throw new Refusal("invalid-input", `A ${request.select} operand names a symbol: a letter or underscore, then letters, digits or underscores.`);
+  if (request.offset !== undefined && (!Number.isInteger(request.offset) || Math.abs(request.offset) > 0xffff)) throw new Refusal("invalid-input", "offset must be a whole number from -$ffff to $ffff.");
 }
 
 const shown = (value: number, size: number) => (value < 0 ? String(value) : `$${value.toString(16).padStart(size === 0x100 ? 2 : 4, "0")}`);
@@ -619,34 +589,34 @@ const shown = (value: number, size: number) => (value < 0 ? String(value) : `$${
 function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, request: OperandRequest, text: string): number[] {
   const where = hex(request.address);
   const opcode = image.byteAt(request.address);
-  if (opcode === undefined) throw new KnowledgeError("invalid-input", `${where} is outside the image.`);
+  if (opcode === undefined) throw new Refusal("invalid-input", `${where} is outside the image.`);
   const length = instructionLength(opcode);
-  if (length === 1) throw new KnowledgeError("invalid-input", `The instruction at ${where} (opcode ${shown(opcode, 0x100)}) has no operand.`);
-  if ((opcode & 0x1f) === 0x10) throw new KnowledgeError("invalid-input", `The instruction at ${where} is a branch: its operand is a distance, not a value.`);
+  if (length === 1) throw new Refusal("invalid-input", `The instruction at ${where} (opcode ${shown(opcode, 0x100)}) has no operand.`);
+  if ((opcode & 0x1f) === 0x10) throw new Refusal("invalid-input", `The instruction at ${where} is a branch: its operand is a distance, not a value.`);
   if ((request.select === "lo" || request.select === "hi") && length === 3) {
-    throw new KnowledgeError("invalid-input", `lo and hi give one byte, but the instruction at ${where} has a 2-byte operand. Use value.`);
+    throw new Refusal("invalid-input", `lo and hi give one byte, but the instruction at ${where} has a 2-byte operand. Use value.`);
   }
   const bytes = [image.byteAt(request.address + 1), length === 3 ? image.byteAt(request.address + 2) : 0];
-  if (bytes.some((byte) => byte === undefined)) throw new KnowledgeError("invalid-input", `The instruction at ${where} runs past the end of the image.`);
+  if (bytes.some((byte) => byte === undefined)) throw new Refusal("invalid-input", `The instruction at ${where} runs past the end of the image.`);
   const operand = bytes[0]! | (bytes[1]! << 8);
   const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? (space === DEFAULT_SPACE ? image.platform.get(name) : undefined);
   let value: number;
   try {
     value = evaluate(text, resolve);
   } catch (error) {
-    if (error instanceof ExpressionError) throw new KnowledgeError("invalid-input", `${where}: ${error.message}`);
+    if (error instanceof Refusal) throw new Refusal(error.code, `${where}: ${error.message}`);
     throw error;
   }
   const size = length === 2 ? 0x100 : 0x10000;
   if (value < -size / 2 || value >= size || ((value % size) + size) % size !== operand) {
-    throw new KnowledgeError("invalid-input", `At ${where}, ${text} gives ${shown(value, size)}, but the operand in the image is ${shown(operand, size)}.`);
+    throw new Refusal("invalid-input", `At ${where}, ${text} gives ${shown(value, size)}, but the operand in the image is ${shown(operand, size)}.`);
   }
   return identifiers(text).map((name) => resolve(name)!);
 }
 
 function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: OperandImage }, request: OperandRequest): Step<OperandRow, OperandRow> {
   const space = spaceOf(request);
-  if (context.image === undefined) throw new KnowledgeError("invalid-input", "An operand expression is checked against the image, and no image was given.");
+  if (context.image === undefined) throw new Refusal("invalid-input", "An operand expression is checked against the image, and no image was given.");
   const wanted: Omit<OperandRow, "space" | "address" | "origin" | "revision"> = { select: request.select, offset: request.offset ?? 0 };
   if (request.symbol !== undefined) wanted.symbol = request.symbol;
   if (request.expression !== undefined) wanted.expression = request.expression.trim();
@@ -671,7 +641,7 @@ function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & 
 
 function unoperandStep(db: DatabaseSync, change: Change, _origin: Origin, request: AddressRequest): Step<null> {
   const space = spaceOf(request);
-  if (operandAt(db, request.address, space) === undefined) throw new KnowledgeError("not-found", `There is no operand expression at ${hex(request.address)}.`);
+  if (operandAt(db, request.address, space) === undefined) throw new Refusal("not-found", `There is no operand expression at ${hex(request.address)}.`);
   change.close("operands", "space = ? AND address = ?", space, request.address);
   change.close('"references"', "space = ? AND from_address = ? AND kind = ?", space, request.address, POINTER_KIND);
   return { current: null };
@@ -682,11 +652,11 @@ type ModuleRequest = InSpace & { start: number; file: string; title?: string };
 function checkModule(request: ModuleRequest): void {
   checkSpace(request);
   checkAddress(request.start, "start");
-  if (!MODULE_FILE.test(request.file)) throw new KnowledgeError("invalid-input", "A module file is a name of letters, digits, underscores or hyphens (at most 60) that ends in .asm, without a directory.");
+  if (!MODULE_FILE.test(request.file)) throw new Refusal("invalid-input", "A module file is a name of letters, digits, underscores or hyphens (at most 60) that ends in .asm, without a directory.");
   if (isGeneratedFile(request.file)) {
-    throw new KnowledgeError("invalid-input", `c64-source writes ${GENERATED_FILES.join(", ")} itself, in any letter case, so a module cannot have the file ${request.file}. Give the module another file.`);
+    throw new Refusal("invalid-input", `c64-source writes ${GENERATED_FILES.join(", ")} itself, in any letter case, so a module cannot have the file ${request.file}. Give the module another file.`);
   }
-  if (request.title !== undefined && (request.title.trim().length === 0 || request.title.length > MAX_COMMENT)) throw new KnowledgeError("invalid-input", `A module title has 1 to ${MAX_COMMENT} characters.`);
+  if (request.title !== undefined && (request.title.trim().length === 0 || request.title.length > MAX_COMMENT)) throw new Refusal("invalid-input", `A module title has 1 to ${MAX_COMMENT} characters.`);
 }
 
 function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: ModuleRequest): Step<ModuleRow> {
@@ -697,7 +667,7 @@ function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: M
   if (existing !== undefined && existing.file === request.file && existing.title === title) return { current: existing };
   const owner = moduleWithFile(db, request.file, space);
   if (owner !== undefined && owner.start !== request.start) {
-    throw new KnowledgeError("conflict", `The file ${request.file} already belongs to the module at ${hex(owner.start)}. Give this module another file, or remove that module first.`);
+    throw new Refusal("conflict", `The file ${request.file} already belongs to the module at ${hex(owner.start)}. Give this module another file, or remove that module first.`);
   }
   if (existing !== undefined) change.close("modules", "space = ? AND start_address = ?", space, request.start);
   change.insertModule({ space, start: request.start, file: request.file, ...(title === undefined ? {} : { title }), origin: origin as ModuleRow["origin"] });
@@ -706,7 +676,7 @@ function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: M
 
 function unmoduleStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
   const space = spaceOf(request);
-  if (moduleAt(db, request.start, space) === undefined) throw new KnowledgeError("not-found", `No module starts at ${hex(request.start)}.`);
+  if (moduleAt(db, request.start, space) === undefined) throw new Refusal("not-found", `No module starts at ${hex(request.start)}.`);
   change.close("modules", "space = ? AND start_address = ?", space, request.start);
   return { current: null };
 }
@@ -729,20 +699,20 @@ function checkBraces(text: string, what: string): void {
       if (character === ";") break;
       if (character === '"' || character === "'") quote = character;
       else if (character === "{") depth++;
-      else if (character === "}" && --depth < 0) throw new KnowledgeError("invalid-input", `${what} has a } with no { before it.`);
+      else if (character === "}" && --depth < 0) throw new Refusal("invalid-input", `${what} has a } with no { before it.`);
     }
   }
-  if (depth !== 0) throw new KnowledgeError("invalid-input", `${what} has a { with no }.`);
+  if (depth !== 0) throw new Refusal("invalid-input", `${what} has a { with no }.`);
 }
 
 function checkCommentText(comment: string | undefined, what: string): void {
-  if (comment !== undefined && (comment.trim().length === 0 || comment.length > MAX_COMMENT)) throw new KnowledgeError("invalid-input", `${what} has 1 to ${MAX_COMMENT} characters.`);
+  if (comment !== undefined && (comment.trim().length === 0 || comment.length > MAX_COMMENT)) throw new Refusal("invalid-input", `${what} has 1 to ${MAX_COMMENT} characters.`);
 }
 
 /** Refuses a range with a byte outside the image. */
 function checkInImage(image: OperandImage, start: number, end: number, what: string): void {
   for (let address = start; address <= end; address++) {
-    if (image.byteAt(address) === undefined) throw new KnowledgeError("invalid-input", `${hex(address)} is outside the image: ${what} is a range of the image.`);
+    if (image.byteAt(address) === undefined) throw new Refusal("invalid-input", `${hex(address)} is outside the image: ${what} is a range of the image.`);
   }
 }
 
@@ -751,9 +721,9 @@ type PatchRequest = InSpace & { start: number; end: number; switch: string; code
 function checkPatch(request: PatchRequest): void {
   checkRange(request);
   if (typeof request.switch !== "string" || !SWITCH_NAME.test(request.switch)) {
-    throw new KnowledgeError("invalid-input", "A switch name is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example CRACK.");
+    throw new Refusal("invalid-input", "A switch name is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example CRACK.");
   }
-  if (typeof request.code !== "string" || request.code.length > MAX_CODE) throw new KnowledgeError("invalid-input", `Patch code has at most ${MAX_CODE} characters; empty code fills the range with NOP.`);
+  if (typeof request.code !== "string" || request.code.length > MAX_CODE) throw new Refusal("invalid-input", `Patch code has at most ${MAX_CODE} characters; empty code fills the range with NOP.`);
   checkBraces(request.code, "The patch code");
   checkCommentText(request.comment, "A patch comment");
 }
@@ -761,18 +731,18 @@ function checkPatch(request: PatchRequest): void {
 function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: OperandImage }, request: PatchRequest): Step<PatchRow, PatchRow> {
   const space = spaceOf(request);
   const range = `${hex(request.start)}-${hex(request.end)}`;
-  if (context.image === undefined) throw new KnowledgeError("invalid-input", "A patch is checked against the image, and no image was given.");
+  if (context.image === undefined) throw new Refusal("invalid-input", "A patch is checked against the image, and no image was given.");
   checkInImage(context.image, request.start, request.end, "a patch");
   const symbol = symbolNamed(db, request.switch, space);
-  if (symbol !== undefined) throw new KnowledgeError("conflict", `The switch name ${request.switch} is the name of the symbol at ${hex(symbol.address)}. Give the switch another name.`);
-  if (space === DEFAULT_SPACE && context.image.platform.has(request.switch)) throw new KnowledgeError("conflict", `The switch name ${request.switch} is a C64 platform name. Give the switch another name.`);
+  if (symbol !== undefined) throw new Refusal("conflict", `The switch name ${request.switch} is the name of the symbol at ${hex(symbol.address)}. Give the switch another name.`);
+  if (space === DEFAULT_SPACE && context.image.platform.has(request.switch)) throw new Refusal("conflict", `The switch name ${request.switch} is a C64 platform name. Give the switch another name.`);
   const other = patchesOverlapping(db, request.start, request.end, space).find((row) => row.start !== request.start);
   if (other !== undefined) {
-    throw new KnowledgeError("conflict", `The patch ${range} overlaps the patch of ${other.switch} at ${hex(other.start)}-${hex(other.end)}. Change or remove that patch first (unpatch).`);
+    throw new Refusal("conflict", `The patch ${range} overlaps the patch of ${other.switch} at ${hex(other.start)}-${hex(other.end)}. Change or remove that patch first (unpatch).`);
   }
   const [use] = macroUsesOverlapping(db, request.start, request.end, space);
   if (use !== undefined) {
-    throw new KnowledgeError("conflict", `The patch ${range} overlaps the use of the macro ${use.macro} at ${hex(use.start)}-${hex(use.end)}. Remove that use first (unuse).`);
+    throw new Refusal("conflict", `The patch ${range} overlaps the use of the macro ${use.macro} at ${hex(use.start)}-${hex(use.end)}. Remove that use first (unuse).`);
   }
   const existing = patchesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start);
   const code = request.code.trimEnd();
@@ -788,7 +758,7 @@ function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { 
 
 function unpatchStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
   const space = spaceOf(request);
-  if (!patchesOverlapping(db, request.start, request.start, space).some((row) => row.start === request.start)) throw new KnowledgeError("not-found", `No patch starts at ${hex(request.start)}.`);
+  if (!patchesOverlapping(db, request.start, request.start, space).some((row) => row.start === request.start)) throw new Refusal("not-found", `No patch starts at ${hex(request.start)}.`);
   change.close("patches", "space = ? AND start_address = ?", space, request.start);
   return { current: null };
 }
@@ -796,21 +766,21 @@ function unpatchStep(db: DatabaseSync, change: Change, _origin: Origin, request:
 type MacroRequest = InSpace & { name: string; params?: string[]; body: string; comment?: string };
 
 function checkMacroName(name: unknown, what = "A macro name"): void {
-  if (typeof name !== "string" || !MACRO_NAME.test(name)) throw new KnowledgeError("invalid-input", `${what} is a letter or underscore, then at most 31 letters, digits or underscores.`);
+  if (typeof name !== "string" || !MACRO_NAME.test(name)) throw new Refusal("invalid-input", `${what} is a letter or underscore, then at most 31 letters, digits or underscores.`);
 }
 
 function checkMacro(request: MacroRequest): void {
   checkSpace(request);
   checkMacroName(request.name);
   const params = request.params ?? [];
-  if (!Array.isArray(params) || params.length > MAX_PARAMS) throw new KnowledgeError("invalid-input", `A macro has 0 to ${MAX_PARAMS} params.`);
+  if (!Array.isArray(params) || params.length > MAX_PARAMS) throw new Refusal("invalid-input", `A macro has 0 to ${MAX_PARAMS} params.`);
   for (const param of params) {
     if (typeof param !== "string" || !MACRO_PARAM.test(param)) {
-      throw new KnowledgeError("invalid-input", "A macro param is a lower-case letter or underscore, then lower-case letters, digits or underscores, without a dot. The body names it with a dot: .dst.");
+      throw new Refusal("invalid-input", "A macro param is a lower-case letter or underscore, then lower-case letters, digits or underscores, without a dot. The body names it with a dot: .dst.");
     }
   }
-  if (new Set(params).size !== params.length) throw new KnowledgeError("invalid-input", "The params of a macro have different names.");
-  if (typeof request.body !== "string" || request.body.trim().length === 0 || request.body.length > MAX_CODE) throw new KnowledgeError("invalid-input", `A macro body has 1 to ${MAX_CODE} characters.`);
+  if (new Set(params).size !== params.length) throw new Refusal("invalid-input", "The params of a macro have different names.");
+  if (typeof request.body !== "string" || request.body.trim().length === 0 || request.body.length > MAX_CODE) throw new Refusal("invalid-input", `A macro body has 1 to ${MAX_CODE} characters.`);
   checkBraces(request.body, "The macro body");
   checkCommentText(request.comment, "A macro comment");
 }
@@ -825,7 +795,7 @@ function macroStep(db: DatabaseSync, change: Change, origin: Origin, request: Ma
   if (existing !== undefined && existing.params.length !== params.length) {
     const uses = listMacroUses(db, undefined, request.name, undefined, space);
     if (uses.length > 0) {
-      throw new KnowledgeError(
+      throw new Refusal(
         "conflict",
         `The macro ${request.name} has ${existing.params.length} params, and its uses at ${uses.map((row) => hex(row.start)).join(", ")} give that many args. Remove the uses first (unuse), or keep the number of params.`,
       );
@@ -839,9 +809,9 @@ function macroStep(db: DatabaseSync, change: Change, origin: Origin, request: Ma
 
 function unmacroStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { name: string }): Step<null> {
   const space = spaceOf(request);
-  if (macroNamed(db, request.name, space) === undefined) throw new KnowledgeError("not-found", `There is no macro ${request.name}.`);
+  if (macroNamed(db, request.name, space) === undefined) throw new Refusal("not-found", `There is no macro ${request.name}.`);
   const uses = listMacroUses(db, undefined, request.name, undefined, space);
-  if (uses.length > 0) throw new KnowledgeError("conflict", `The macro ${request.name} has uses at ${uses.map((row) => hex(row.start)).join(", ")}. Remove them first (unuse).`);
+  if (uses.length > 0) throw new Refusal("conflict", `The macro ${request.name} has uses at ${uses.map((row) => hex(row.start)).join(", ")}. Remove them first (unuse).`);
   change.close("macros", "space = ? AND name = ?", space, request.name);
   return { current: null };
 }
@@ -852,15 +822,10 @@ function checkMacroUse(request: MacroUseRequest): void {
   checkRange(request);
   checkMacroName(request.macro, "The macro of a use");
   const args = request.args ?? [];
-  if (!Array.isArray(args) || args.length > MAX_PARAMS) throw new KnowledgeError("invalid-input", `A macro use has 0 to ${MAX_PARAMS} args.`);
+  if (!Array.isArray(args) || args.length > MAX_PARAMS) throw new Refusal("invalid-input", `A macro use has 0 to ${MAX_PARAMS} args.`);
   for (const arg of args) {
-    if (typeof arg !== "string") throw new KnowledgeError("invalid-input", "Each arg of a macro use is expression text.");
-    try {
-      checkExpression(arg);
-    } catch (error) {
-      if (error instanceof ExpressionError) throw new KnowledgeError("invalid-input", error.message);
-      throw error;
-    }
+    if (typeof arg !== "string") throw new Refusal("invalid-input", "Each arg of a macro use is expression text.");
+    checkExpression(arg);
   }
 }
 
@@ -881,19 +846,19 @@ function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { im
   const space = spaceOf(request);
   const image = context.image;
   const range = `${hex(request.start)}-${hex(request.end)}`;
-  if (image === undefined) throw new KnowledgeError("invalid-input", "A macro use is checked against the image, and no image was given.");
+  if (image === undefined) throw new Refusal("invalid-input", "A macro use is checked against the image, and no image was given.");
   const macro = macroNamed(db, request.macro, space);
-  if (macro === undefined) throw new KnowledgeError("not-found", `There is no macro ${request.macro}. Write it first (macro).`);
+  if (macro === undefined) throw new Refusal("not-found", `There is no macro ${request.macro}. Write it first (macro).`);
   const args = (request.args ?? []).map((arg) => arg.trim());
   if (args.length !== macro.params.length) {
-    throw new KnowledgeError("invalid-input", `The macro ${macro.name} has ${macro.params.length} params (${listText(macro.params)}), and the use gives ${args.length} args.`);
+    throw new Refusal("invalid-input", `The macro ${macro.name} has ${macro.params.length} params (${listText(macro.params)}), and the use gives ${args.length} args.`);
   }
   const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? (space === DEFAULT_SPACE ? image.platform.get(name) : undefined);
   for (const arg of args) {
     try {
       evaluate(arg, resolve);
     } catch (error) {
-      if (error instanceof ExpressionError) throw new KnowledgeError("invalid-input", `${range}: ${error.message}`);
+      if (error instanceof Refusal) throw new Refusal(error.code, `${range}: ${error.message}`);
       throw error;
     }
   }
@@ -901,15 +866,15 @@ function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { im
   let next = request.start;
   while (next <= request.end) next += instructionLength(image.byteAt(next)!);
   if (next !== request.end + 1) {
-    throw new KnowledgeError("invalid-input", `A macro use is a run of whole instructions, but the instructions from ${hex(request.start)} end at ${hex(next - 1)}, not at ${hex(request.end)}.`);
+    throw new Refusal("invalid-input", `A macro use is a run of whole instructions, but the instructions from ${hex(request.start)} end at ${hex(next - 1)}, not at ${hex(request.end)}.`);
   }
   const [patch] = patchesOverlapping(db, request.start, request.end, space);
   if (patch !== undefined) {
-    throw new KnowledgeError("conflict", `The macro use ${range} overlaps the patch of ${patch.switch} at ${hex(patch.start)}-${hex(patch.end)}. Change or remove that patch first (unpatch).`);
+    throw new Refusal("conflict", `The macro use ${range} overlaps the patch of ${patch.switch} at ${hex(patch.start)}-${hex(patch.end)}. Change or remove that patch first (unpatch).`);
   }
   const other = macroUsesOverlapping(db, request.start, request.end, space).find((row) => row.start !== request.start);
   if (other !== undefined) {
-    throw new KnowledgeError("conflict", `The macro use ${range} overlaps the use of ${other.macro} at ${hex(other.start)}-${hex(other.end)}. Remove that use first (unuse).`);
+    throw new Refusal("conflict", `The macro use ${range} overlaps the use of ${other.macro} at ${hex(other.start)}-${hex(other.end)}. Remove that use first (unuse).`);
   }
   const existing = macroUsesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start);
   if (existing !== undefined && existing.end === request.end && existing.macro === request.macro && listText(existing.args) === listText(args)) return { current: existing };
@@ -922,7 +887,7 @@ function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { im
 
 function unuseStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
   const space = spaceOf(request);
-  if (!macroUsesOverlapping(db, request.start, request.start, space).some((row) => row.start === request.start)) throw new KnowledgeError("not-found", `No macro use starts at ${hex(request.start)}.`);
+  if (!macroUsesOverlapping(db, request.start, request.start, space).some((row) => row.start === request.start)) throw new Refusal("not-found", `No macro use starts at ${hex(request.start)}.`);
   change.close("macro_uses", "space = ? AND start_address = ?", space, request.start);
   return { current: null };
 }
@@ -1072,7 +1037,7 @@ export type BatchStep = Step<
  * or none when one is refused. Every write is checked before anything opens.
  */
 export function applyBatch(db: DatabaseSync, context: WriteContext, operations: BatchOperation[]): { revision: string | null; steps: BatchStep[] } {
-  if (operations.length === 0 || operations.length > MAX_BATCH) throw new KnowledgeError("invalid-input", `A batch has 1 to ${MAX_BATCH} writes.`);
+  if (operations.length === 0 || operations.length > MAX_BATCH) throw new Refusal("invalid-input", `A batch has 1 to ${MAX_BATCH} writes.`);
   operations.forEach((operation, index) => {
     try {
       switch (operation.op) {
@@ -1116,13 +1081,13 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
         case "use":
           return checkMacroUse(operation);
         default:
-          throw new KnowledgeError(
+          throw new Refusal(
             "invalid-input",
             `op must be one of rename, remove-symbol, classify, unclassify, comment, uncomment, reference, unreference, module, unmodule, operand, unoperand, patch, unpatch, macro, unmacro, use, unuse.`,
           );
       }
     } catch (error) {
-      if (error instanceof KnowledgeError) throw new KnowledgeError(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
+      if (error instanceof Refusal) throw new Refusal(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
       throw error;
     }
   });
@@ -1168,7 +1133,7 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
             return unuseStep(db, change, context.origin, operation);
         }
       } catch (error) {
-        if (error instanceof KnowledgeError) throw new KnowledgeError(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
+        if (error instanceof Refusal) throw new Refusal(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
         throw error;
       }
     }),
@@ -1303,7 +1268,7 @@ export function mergeConflicts(db: DatabaseSync, context: WriteContext, platform
   return write(db, context, "merge", (change) => {
     const choices: MergeChoice[] = [];
     for (let found = conflicts(db); found.length > 0; found = conflicts(db)) {
-      if (choices.length >= MAX_CHOICES) throw new KnowledgeError("invalid-database", `The merge made ${MAX_CHOICES} choices and still finds conflicts. Nothing was written.`);
+      if (choices.length >= MAX_CHOICES) throw new Refusal("invalid-database", `The merge made ${MAX_CHOICES} choices and still finds conflicts. Nothing was written.`);
       const conflict = found[0]!;
       const newest = conflict.rows.at(-1)!;
       const older = conflict.rows.slice(0, -1);

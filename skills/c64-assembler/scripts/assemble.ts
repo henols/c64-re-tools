@@ -5,17 +5,17 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { formatC64Address, parseC64Address, SPACE_PATTERN } from "#src/c64.ts";
 import { readProjectTree } from "#src/host-client/transfer.ts";
 import { assemble } from "#src/native/acme.ts";
 import { localToolContext } from "#src/native/local.ts";
 import type { AcmeParams } from "#src/native/types.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { compareBuild } from "./lib/compare.ts";
-import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
+import { openForRead } from "#src/knowledge/database.ts";
 import { requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
-import { DEFAULT_SPACE, SPACE } from "#src/knowledge/schema.ts";
+import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
 
 const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [options]
 
@@ -76,7 +76,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   }
   if (values.space !== undefined && !values.compare) throw new UsageError("--space works only with --compare");
   const space = values.space ?? DEFAULT_SPACE;
-  if (!SPACE.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
+  if (!SPACE_PATTERN.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
   // Read the program before ACME runs, so a project without it stops at once.
   let program: ProgramImage | undefined;
   if (values.compare) {
@@ -128,11 +128,11 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   };
 }
 
-await runScript(
+await runBody(
   async (argv) => {
     const { output, failed } = await run(argv);
     if (failed) process.exitCode = 1;
     return output;
   },
-  { usage: USAGE, refusals: [KnowledgeError] },
+  { usage: USAGE },
 );

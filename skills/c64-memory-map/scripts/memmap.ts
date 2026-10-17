@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 
 import { writeProjectFile } from "#src/host-client/transfer.ts";
 import { decode, IO, lookup, platformNames, ROM, SYSTEM, type Entry } from "#src/platform.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 
 const USAGE = `memmap.ts at <address> [<address> ...]
 memmap.ts decode <register> <value> [--bank <$dd00 value>]
@@ -89,4 +89,4 @@ function run(argv: string[]): unknown {
   }
 }
 
-await runScript((argv) => run(argv), { usage: USAGE });
+await runBody((argv) => run(argv), { usage: USAGE });

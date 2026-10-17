@@ -76,10 +76,9 @@ export function isGeneratedFile(file: string): boolean {
 }
 
 /**
- * The address space of a knowledge row: the C64, the 1541 drive, or a
- * cartridge bank. Drive code and banks reuse C64 addresses.
+ * The address space of a knowledge row: a name that SPACE_PATTERN of c64.ts
+ * accepts. Drive code and banks reuse C64 addresses.
  */
-export const SPACE = /^(c64|drive8|bank(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$/;
 export type Space = string;
 export const DEFAULT_SPACE: Space = "c64";
 const SPACE_CHECK = "space IN ('c64', 'drive8') OR space GLOB 'bank[0-9]' OR space GLOB 'bank[1-9][0-9]' OR space GLOB 'bank[12][0-9][0-9]'";

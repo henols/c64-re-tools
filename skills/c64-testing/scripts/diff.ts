@@ -12,7 +12,7 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { diffStates, type ChangedRange, type MachineState } from "./lib/diff.ts";
 
 const USAGE = `diff.ts <a> <b> [--gap N] [--max-listed N] [--ntsc] [--at <address>] [--out <file>]
@@ -164,4 +164,4 @@ async function run(argv: string[]): Promise<Record<string, unknown>> {
   };
 }
 
-await runScript(run, { usage: USAGE });
+await runBody(run, { usage: USAGE });

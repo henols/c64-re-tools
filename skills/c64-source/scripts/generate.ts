@@ -11,24 +11,25 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
-import { COVERAGE, coverageSeedKinds, formatC64Address, parseC64Address, textToPetscii } from "#src/c64.ts";
+import { Refusal } from "#src/errors.ts";
+import { COVERAGE, coverageSeedKinds, formatC64Address, parseC64Address, textToPetscii, SPACE_PATTERN } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
-import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
+import { openForRead } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
 import { analyzedBytes, programCoverage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
 import { ANALYZER_NAME_ORDER, currentRevision, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listSymbols, type SymbolRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, SPACE, type Space } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, type Space } from "#src/knowledge/schema.ts";
 import { assemble } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNamesFor, romUseOf, romUseOfPort, type RomUse } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, readEntryState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
 import { OPCODES } from "#src/opcodes.ts";
 import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Range, type Rendered } from "./lib/source.ts";
@@ -66,7 +67,7 @@ function readKnowledge(space: Space, analyzerNames = false) {
   try {
     // With conflicts from a git merge, the source would depend on which of two rows comes first.
     const found = conflicts(db).length;
-    if (found > 0) throw new KnowledgeError("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was generated. Run c64-knowledge's knowledge.ts merge, then generate again.`);
+    if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was generated. Run c64-knowledge's knowledge.ts merge, then generate again.`);
     const symbols = listSymbols(db, undefined, undefined, undefined, space);
     const second = listAnalyzerNames(db, undefined, undefined, undefined, space);
     return {
@@ -578,7 +579,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     }
   });
   const space = values.space ?? DEFAULT_SPACE;
-  if (!SPACE.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
+  if (!SPACE_PATTERN.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
   if (space !== DEFAULT_SPACE && values.loader) throw new UsageError("--loader works only in space c64");
   const knowledge = readKnowledge(space, values["analyzer-names"] === true);
   const image = knowledge.program;
@@ -778,11 +779,11 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   return { output, failed: !ran.verified || sourceFailed };
 }
 
-await runScript(
+await runBody(
   async (argv) => {
     const { output, failed } = await run(argv);
     if (failed) process.exitCode = 1;
     return output;
   },
-  { usage: USAGE, refusals: [KnowledgeError] },
+  { usage: USAGE },
 );

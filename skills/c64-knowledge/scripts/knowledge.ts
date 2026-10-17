@@ -8,12 +8,13 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address, SYMBOL_NAME } from "#src/c64.ts";
-import { ImageError, readImage } from "#src/host-client/image.ts";
+import { Refusal } from "#src/errors.ts";
+import { formatC64Address, parseC64Address, SYMBOL_NAME, SPACE_PATTERN } from "#src/c64.ts";
+import { readImage } from "#src/host-client/image.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
-import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
+import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import {
@@ -51,23 +52,7 @@ import {
   type SuppressionRow,
   type SymbolRow,
 } from "#src/knowledge/read.ts";
-import {
-  COMMENT_PLACEMENTS,
-  DEFAULT_SPACE,
-  EVIDENCE_KINDS,
-  OPERAND_SELECTS,
-  ORIGINS,
-  REFERENCE_KINDS,
-  REGION_TYPES,
-  SPACE,
-  SYMBOL_KINDS,
-  type CommentPlacement,
-  type OperandSelect,
-  type Origin,
-  type ReferenceKind,
-  type RegionType,
-  type SymbolKind,
-} from "#src/knowledge/schema.ts";
+import { COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type SymbolKind } from "#src/knowledge/schema.ts";
 import {
   addReference,
   applyBatch,
@@ -102,7 +87,7 @@ import { addCoverage, coverageRuns, programCoverage, programImage, requireProgra
 import { WireFailure } from "#src/host-client/tools.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 
 const USAGE = `knowledge.ts <command> [arguments] [options]
 
@@ -396,7 +381,7 @@ function run(argv: string[]): unknown {
   });
   const [command, ...args] = positionals;
   if (values.help || command === undefined) throw new UsageError("");
-  if (values.space !== undefined && !SPACE.test(values.space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
+  if (values.space !== undefined && !SPACE_PATTERN.test(values.space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
   const space = values.space ?? DEFAULT_SPACE;
   nameSpace = space;
   const range = { start: values.start === undefined ? 0x0000 : address(values.start, "--start"), end: values.end === undefined ? 0xffff : address(values.end, "--end") };
@@ -690,7 +675,7 @@ function imageRequest(path: string, space: string): ImageRequest {
   try {
     image = readImage(path);
   } catch (error) {
-    if (error instanceof ImageError) throw new UsageError(error.message);
+    if (error instanceof Refusal) throw new UsageError(error.message);
     throw error;
   }
   const request: ImageRequest = { space, segments: image.segments, byteAt: image.byteAt };
@@ -1114,4 +1099,4 @@ function writeOperation(command: string, args: string[], kind: string | undefine
   }
 }
 
-await runScript((argv) => run(argv), { usage: USAGE, refusals: [KnowledgeError] });
+await runBody((argv) => run(argv), { usage: USAGE });

@@ -1,6 +1,7 @@
 import { createServer, type Server, type Socket } from "node:net";
 
 import { encodeFrame, MessageReader } from "../protocol/framing.ts";
+import { isRefusal } from "../errors.ts";
 import { checkHello, isOneOf, HEARTBEAT_TIMEOUT_MS, parseClientMessage, ProtocolError, type HostMessage, type ReceivedRequest, type VideoStandard, type WireError, WireFailure } from "../protocol/messages.ts";
 import { TOOL_OPERATIONS, validateToolParams, type ToolOperation, type ToolOperations } from "../protocol/tools.ts";
 import { attachmentCount, VICE_OPERATIONS, validateViceParams, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
@@ -65,7 +66,7 @@ function describe(error: unknown): string {
 }
 
 function toWireError(error: unknown, fallback: WireError): WireError {
-  return error instanceof WireFailure ? error.toWire() : fallback;
+  return isRefusal(error) ? { code: error.code, message: error.message } : fallback;
 }
 
 /** Numbers the connections of this process, for the trace. */
@@ -267,7 +268,7 @@ class Connection {
       this.#send({ type: "reply", id: request.id, result }, replyAttachments);
       record({ ok: true, result });
     } catch (error) {
-      if (!(error instanceof WireFailure)) {
+      if (!isRefusal(error)) {
         this.#log(`operation ${request.op} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
       }
       const wire = toWireError(error, { code: "operation-failed", message: "The operation failed inside the host runtime." });

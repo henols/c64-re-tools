@@ -9,8 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import { Refusal } from "../errors.ts";
 import { conflicts, type Conflict } from "./conflicts.ts";
-import { KnowledgeError, openForRead, openForWrite, textPath, transaction, withWrite } from "./database.ts";
+import { openForRead, openForWrite, textPath, transaction, withWrite } from "./database.ts";
 import { importFindings } from "./import.ts";
 import { listRegions, operandAt, referencesFrom, symbolAt } from "./read.ts";
 import { listMacros, listMacroUses, listPatches } from "./read.ts";
@@ -70,7 +71,7 @@ function read<T>(root: string, work: (db: DatabaseSync) => T): T {
 }
 
 const rules = (found: Conflict[]) => found.map((conflict) => conflict.rule);
-const isConflict = (error: unknown) => error instanceof KnowledgeError && error.code === "conflict";
+const isConflict = (error: unknown) => error instanceof Refusal && error.code === "conflict";
 const nothing = () => undefined;
 
 test("two names at one address and one name at two addresses are conflicts, and merge keeps the newer name", () => {

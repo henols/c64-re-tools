@@ -10,7 +10,7 @@ import { parseArgs } from "node:util";
 import { oldNodeRefusal, PACKAGE } from "../package.ts";
 import { localToolContext } from "../native/local.ts";
 import { localToolStatus } from "../native/status.ts";
-import { WireFailure } from "../protocol/messages.ts";
+import { isRefusal } from "../errors.ts";
 import { startTrace } from "../trace.ts";
 import { runApSdk } from "./ap-sdk.ts";
 import { installedItems, parseTargets, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp, type Scope } from "./cleanup.ts";
@@ -124,7 +124,7 @@ try {
   if ((error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
     console.error(`${(error as Error).message}\n\n${HELP}`);
     process.exitCode = 2;
-  } else if (error instanceof WireFailure) {
+  } else if (isRefusal(error)) {
     // A refusal by name, for example AP SDK that did not finish in time.
     console.error(error.message);
     process.exitCode = 1;

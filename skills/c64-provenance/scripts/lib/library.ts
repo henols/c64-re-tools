@@ -7,8 +7,9 @@
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { Refusal } from "#src/errors.ts";
 import { formatC64Address, instructionLength } from "#src/c64.ts";
-import { evaluate, ExpressionError, identifiers, operandText } from "#src/knowledge/expression.ts";
+import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
 import { COMMENT_PLACEMENTS, OPERAND_SELECTS, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type OperandSelect, type ReferenceKind, type RegionType, type SymbolKind } from "#src/knowledge/schema.ts";
 import { PROJECT_DIRECTORY } from "#src/project.ts";
@@ -573,7 +574,7 @@ function operandProblem(address: number, text: string, image: Searched, resolveN
   try {
     value = evaluate(text, resolveName);
   } catch (error) {
-    if (error instanceof ExpressionError) return error.message;
+    if (error instanceof Refusal) return error.message;
     throw error;
   }
   const range = size === 2 ? 0x100 : 0x10000;

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { findProject, namedProject, ProjectError, projectRelative, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
+import { Refusal } from "./errors.ts";
+import { findProject, namedProject, projectRelative, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
 
 const root = process.cwd();
 
@@ -53,7 +54,7 @@ function withHome(check: (home: string) => void): void {
   }
 }
 
-const refusal = (code: string, pattern: RegExp) => (error: unknown) => error instanceof ProjectError && error.code === code && pattern.test(error.message);
+const refusal = (code: string, pattern: RegExp) => (error: unknown) => error instanceof Refusal && error.code === code && pattern.test(error.message);
 
 test("the project is the nearest folder at or above the working directory with .c64-re-tools/", () => {
   withHome((home) => {

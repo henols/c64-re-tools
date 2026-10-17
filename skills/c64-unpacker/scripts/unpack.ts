@@ -16,7 +16,7 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { basicStart, inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges, type Range } from "./lib/stages.ts";
@@ -690,7 +690,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   });
 }
 
-await runScript(
+await runBody(
   async (argv) => {
     const { output, failed } = await run(argv);
     if (failed) process.exitCode = 1;

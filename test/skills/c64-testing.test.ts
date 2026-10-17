@@ -109,10 +109,11 @@ test("the checklist lists each checkpoint and what only a person can judge", () 
   const checklist = resolvePath(home, "skills/c64-testing/scripts/checklist.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, checklist, "ok.json", "--item", "FIRE starts the game."], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
-  assert.match(run.stdout, /^# Playtest checklist/);
-  assert.match(run.stdout, /- \[ \] At "moved", the rebuild looks and behaves as the original\./);
-  assert.match(run.stdout, /- \[ \] FIRE starts the game\./);
-  assert.match(run.stdout, /music and the sound effects/);
+  const { text } = JSON.parse(run.stdout) as { text: string };
+  assert.match(text, /^# Playtest checklist/);
+  assert.match(text, /- \[ \] At "moved", the rebuild looks and behaves as the original\./);
+  assert.match(text, /- \[ \] FIRE starts the game\./);
+  assert.match(text, /music and the sound effects/);
 });
 
 test("each step is checked before the scenario runs", () => {
@@ -139,7 +140,7 @@ test("each step is checked before the scenario runs", () => {
     resetMode: { reset: "warm" },
     loadFalse: { load: false },
     writeNoAt: { write: { bytes: [1] } },
-    writeBadAddress: { write: { at: "$c00", bytes: [1] } },
+    writeBadAddress: { write: { at: "$c0000", bytes: [1] } },
     writeByte: { write: { at: "$c000", bytes: [256] } },
     writeNoBytes: { write: { at: "$c000", bytes: [] } },
     registerName: { registers: { q: 1 } },

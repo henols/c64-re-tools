@@ -16,7 +16,7 @@ import { checkActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT, WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
+import { openForRead } from "#src/knowledge/database.ts";
 import { programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import {
   commentsAt,
@@ -39,7 +39,7 @@ import {
 import { CODE_REGION_TYPES, type Origin } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { compareReleases, shiftSuggestion, suggestShifts, type Range, type Release } from "./lib/compare.ts";
 import { findRoutine, libraryFolder, LibraryError, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
 import { watchRelease, type ImageState, type Start } from "./lib/runtime.ts";
@@ -605,4 +605,4 @@ function matchCommand(library: string | undefined, out: string | undefined, maxL
   };
 }
 
-await runScript((argv) => run(argv), { usage: USAGE, refusals: [KnowledgeError, LibraryError] });
+await runBody((argv) => run(argv), { usage: USAGE });

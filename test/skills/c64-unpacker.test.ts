@@ -102,10 +102,10 @@ test("inspect refuses a link to a file outside the project", { skip: process.pla
     symlinkSync(join(outside, "game.prg"), join(project, "linked.prg"));
     const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpack.ts");
     const linked = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "linked.prg"], { cwd: project, encoding: "utf8" });
-    assert.equal(linked.status, 1, linked.stdout + linked.stderr);
+    assert.equal(linked.status, 2, linked.stdout + linked.stderr);
     assert.equal((JSON.parse(linked.stdout) as { error: { code: string } }).error.code, "invalid-input");
     const missing = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "missing.prg"], { cwd: project, encoding: "utf8" });
-    assert.equal(missing.status, 1, missing.stdout + missing.stderr);
+    assert.equal(missing.status, 2, missing.stdout + missing.stderr);
     assert.equal((JSON.parse(missing.stdout) as { error: { code: string } }).error.code, "not-found");
   } finally {
     rmSync(outside, { recursive: true, force: true });

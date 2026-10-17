@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { KnowledgeError, openForWrite, textPath } from "./database.ts";
+import { Refusal } from "../errors.ts";
+import { openForWrite, textPath } from "./database.ts";
 import { ensureSchema } from "./schema.ts";
 import { loadText, newRevisionId, REVISION_ID, REVISIONS_FILE, revisionsText, TABLES, tableText } from "./text.ts";
 import { importFindings } from "./import.ts";
@@ -151,7 +152,7 @@ test("the lines of one row from the two sides of a merge are joined: a closed li
   assert.deepEqual(closedOf(load(symbolLine("main", null) + symbolLine("main", null))), [null]);
   assert.throws(
     () => load(symbolLine("main", null) + symbolLine("other", null)),
-    (error: unknown) => error instanceof KnowledgeError && error.code === "invalid-database" && /symbols\.jsonl:2: the id .* is also on line 1 with other values/.test(error.message),
+    (error: unknown) => error instanceof Refusal && error.code === "invalid-database" && /symbols\.jsonl:2: the id .* is also on line 1 with other values/.test(error.message),
   );
 });
 
@@ -171,5 +172,5 @@ test("the evidence of a coverage map keeps a space other than the C64 in the tex
   const loaded = emptyIndex();
   loadText(loaded, new Map([[REVISIONS_FILE, { text: line("drive8") }]]));
   assert.deepEqual({ ...(loaded.prepare("SELECT space FROM evidence").get() as object) }, { space: "drive8" });
-  assert.throws(() => loadText(emptyIndex(), new Map([[REVISIONS_FILE, { text: line("drive9") }]])), (error: unknown) => error instanceof KnowledgeError && error.code === "invalid-database");
+  assert.throws(() => loadText(emptyIndex(), new Map([[REVISIONS_FILE, { text: line("drive9") }]])), (error: unknown) => error instanceof Refusal && error.code === "invalid-database");
 });

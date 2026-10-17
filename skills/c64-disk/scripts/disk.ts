@@ -10,7 +10,7 @@ import { formatC64Address } from "#src/c64.ts";
 import { inspectDisk } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { ContainerError, parseCrt, parseT64, tapeFile } from "./lib/containers.ts";
 
 const USAGE = `disk.ts <action> <image> [name] [--out <file>]
@@ -110,7 +110,7 @@ function local(kind: "t64" | "crt", action: Action, image: string, name: string 
   return { output: { ...output, out }, failed: false };
 }
 
-await runScript(
+await runBody(
   async (argv) => {
     const { output, failed } = await run(argv);
     if (failed) process.exitCode = 1;

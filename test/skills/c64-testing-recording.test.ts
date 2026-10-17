@@ -137,7 +137,7 @@ test("record and replay refuse by name when c64run is missing", () => {
       assert.match(JSON.parse(run.stdout).reason, /is not the program of the recording/);
       continue;
     }
-    assert.equal(run.status, 1, run.stderr);
+    assert.equal(run.status, 2, run.stderr);
     const error = JSON.parse(run.stdout).error;
     assert.equal(error.code, "installation-incomplete");
     assert.match(error.message, /C64RT_C64RUN/);

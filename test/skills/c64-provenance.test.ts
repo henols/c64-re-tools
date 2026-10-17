@@ -109,7 +109,7 @@ test("a missing release is not-found", () => {
   const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
   writeFileSync(join(project, "one.prg"), Buffer.from([0x01, 0x08, 0xea]));
   const missing = spawnSync(process.execPath, [...process.execArgv, script, "one.prg", "missing.prg"], { cwd: project, encoding: "utf8" });
-  assert.equal(missing.status, 1, missing.stdout + missing.stderr);
+  assert.equal(missing.status, 2, missing.stdout + missing.stderr);
   assert.equal((JSON.parse(missing.stdout) as { error: { code: string } }).error.code, "not-found");
 });
 
@@ -222,7 +222,7 @@ test("the separate command reads the program with its stages and the coverage fr
   assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "--run", "5"], { cwd: root, encoding: "utf8" }).status, 2);
   assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "image.json"], { cwd: root, encoding: "utf8" }).status, 2, "separate takes no release");
   const empty = spawnSync(process.execPath, [...process.execArgv, script, "separate"], { cwd: fresh(), encoding: "utf8" });
-  assert.equal(empty.status, 1, "no program in the knowledge");
+  assert.equal(empty.status, 2, "no program in the knowledge");
   assert.match(empty.stdout, /knowledge\.ts image/);
 });
 

@@ -6,13 +6,14 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parseArgs } from "node:util";
 
+import { Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile } from "#src/host-client/transfer.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
-import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
+import { openForRead } from "#src/knowledge/database.ts";
 import { currentRevision, listComments, listModules, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { resolveProjectFile, resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { buildReference, GENERATED_MARK } from "./lib/reference.ts";
 import { readSourceMap } from "./lib/source-map.ts";
 import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
@@ -77,7 +78,7 @@ function run(argv: string[]): Record<string, unknown> {
   try {
     image = programImage(db, map.space);
     const found = conflicts(db).length;
-    if (found > 0) throw new KnowledgeError("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was written. Run c64-knowledge's knowledge.ts merge, then generate the source and the reference again.`);
+    if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was written. Run c64-knowledge's knowledge.ts merge, then generate the source and the reference again.`);
     const revision = currentRevision(db);
     // A source of another revision has other lines: the links would point to the wrong code.
     if (map.revision !== revision) {
@@ -106,4 +107,4 @@ function run(argv: string[]): Record<string, unknown> {
   return { out: values.out, revision: knowledge.revision, index: posix.join(posix.normalize(values.out), "index.md"), ...built.counts, program: image === undefined ? "none: put the program into the knowledge with knowledge.ts image to decode the tables and show the graphics" : "the knowledge" };
 }
 
-await runScript(run, { usage: USAGE, refusals: [KnowledgeError] });
+await runBody(run, { usage: USAGE });

@@ -13,7 +13,7 @@ import { C64RunSession } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runScript, UsageError } from "#src/script.ts";
+import { runBody, UsageError } from "#src/script.ts";
 import { codeLabels, firstDifference, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./lib/recording.ts";
 import { ScenarioError } from "./lib/scenario.ts";
 
@@ -153,7 +153,7 @@ async function run(argv: string[]): Promise<ReplayResult> {
   }
 }
 
-await runScript(
+await runBody(
   async (argv) => {
     const result = await run(argv);
     process.exitCode = EXIT[result.result];

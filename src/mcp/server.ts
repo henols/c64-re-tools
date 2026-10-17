@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { formatC64Address, parseC64Address } from "../c64.ts";
 import { LostBeforeAnswer, type ViceSessionClient } from "../host-client/vice-session.ts";
+import { isRefusal } from "../errors.ts";
 import { shownMessage, WireFailure, type WireError } from "../protocol/messages.ts";
 import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, type Condition } from "../protocol/vice.ts";
 import { elapsedMs, trace, type TraceFields } from "../trace.ts";
@@ -282,7 +283,7 @@ async function runCall(
     const extra = output instanceof ToolOutput ? output.content : [];
     return { content: [{ type: "text", text: JSON.stringify(result) }, ...extra], structuredContent: result };
   } catch (error) {
-    if (error instanceof WireFailure) return errorResult(error.toWire());
+    if (isRefusal(error)) return errorResult({ code: error.code, message: error.message });
     log(`${name} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
     return errorResult(INTERNAL_FAILURE);
   }
