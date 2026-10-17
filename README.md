@@ -51,7 +51,7 @@ npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host
 
 ### Dev container
 
-This is the preferred way. The container gets ACME, dxa, Java 21 and Ghidra,
+This is the preferred way. The container gets Node.js 24, ACME, dxa, Java 21 and Ghidra,
 installs the toolkit into the project when it is created, and updates it at
 each start. Add to `.devcontainer/devcontainer.json`:
 

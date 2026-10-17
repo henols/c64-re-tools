@@ -13,7 +13,7 @@ import { machineTools } from "./tools/machine.ts";
 import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 import { videoTools } from "./tools/video.ts";
-import { PACKAGE } from "../package.ts";
+import { oldNodeRefusal, PACKAGE } from "../package.ts";
 
 const HELP = `c64-re-tools-mcp
 
@@ -129,6 +129,12 @@ async function main(): Promise<void> {
   process.once("SIGTERM", () => void stop());
 
   await server.connect(new StdioServerTransport());
+}
+
+const oldNode = oldNodeRefusal();
+if (oldNode !== undefined) {
+  log(oldNode);
+  process.exit(1);
 }
 
 await main();

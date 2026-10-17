@@ -14,8 +14,18 @@ export function channelOf(version: string): "latest" | "next" {
   return version.includes("-") ? "next" : "latest";
 }
 
-/** The name, version and dist-tag of this npm package, from its package.json. */
+/** The name, version and dist-tag of this npm package, and the Node.js major version that its engines field requires. */
 export const PACKAGE = (() => {
-  const metadata = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { name: string; version: string };
-  return { name: metadata.name, version: metadata.version, tag: channelOf(metadata.version) };
+  const metadata = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { name: string; version: string; engines?: { node?: string } };
+  const nodeMajor = Number(/(\d+)/.exec(metadata.engines?.node ?? "")?.[1]);
+  return { name: metadata.name, version: metadata.version, tag: channelOf(metadata.version), nodeMajor: Number.isInteger(nodeMajor) ? nodeMajor : undefined };
 })();
+
+/**
+ * The refusal for a Node.js older than `required`, or undefined. An older Node.js
+ * cannot run the skill scripts: they are TypeScript and use node:sqlite.
+ */
+export function oldNodeRefusal(version: string = process.versions.node, required: number | undefined = PACKAGE.nodeMajor): string | undefined {
+  if (required === undefined || Number(version.split(".")[0]) >= required) return undefined;
+  return `c64-re-tools needs Node.js ${required} or newer, and this is Node.js ${version}. Install Node.js ${required} from https://nodejs.org/ and run the command again.`;
+}

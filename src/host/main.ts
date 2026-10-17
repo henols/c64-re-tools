@@ -11,7 +11,7 @@ import { inspect } from "./tools/c1541.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
-import { PACKAGE } from "../package.ts";
+import { oldNodeRefusal, PACKAGE } from "../package.ts";
 
 const HELP = `c64-re-tools-host
 
@@ -142,6 +142,12 @@ async function main(): Promise<number> {
   await server.close();
   await supervisor.stopAll();
   return 0;
+}
+
+const oldNode = oldNodeRefusal();
+if (oldNode !== undefined) {
+  log(oldNode);
+  process.exit(1);
 }
 
 process.exitCode = await main();

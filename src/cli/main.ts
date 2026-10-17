@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { PACKAGE } from "../package.ts";
+import { oldNodeRefusal, PACKAGE } from "../package.ts";
 import { localToolContext } from "../native/local.ts";
 import { localToolStatus } from "../native/status.ts";
 import { WireFailure } from "../protocol/messages.ts";
@@ -110,6 +110,12 @@ async function main(argv: string[]): Promise<number> {
       console.error(`Unknown command ${command}.\n\n${HELP}`);
       return 2;
   }
+}
+
+const oldNode = oldNodeRefusal();
+if (oldNode !== undefined) {
+  console.error(oldNode);
+  process.exit(1);
 }
 
 try {
