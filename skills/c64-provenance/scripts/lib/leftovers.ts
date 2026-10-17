@@ -6,13 +6,12 @@
 // its bytes from the separation. Evidence only: nothing here decides what a
 // leftover is or who made it.
 
-import { basicLineText } from "#src/c64.ts";
+import { type AddressRange, basicLineText } from "#src/c64.ts";
 import { MNEMONICS } from "#src/opcodes.ts";
-import type { Range } from "./compare.ts";
 import type { Access, Separation } from "./separate.ts";
 
 export interface LeftoversInput {
-  segments: Range[];
+  segments: AddressRange[];
   /** 64 KiB with the program bytes at their addresses. */
   memory: Uint8Array;
   separation: Separation;
@@ -33,7 +32,7 @@ export interface Placement {
 /** high-bit is text with bit 7 set: ASCII as the Apple II keeps it, or C64 shifted letters with $a0 spaces. Its spaces can also be $20. */
 export type TextEncoding = "petscii" | "screen" | "ascii" | "high-bit";
 
-export interface TextFinding extends Range, Placement {
+export interface TextFinding extends AddressRange, Placement {
   encoding: TextEncoding;
   /** Screen codes with bit 7 set: the characters show reversed. */
   reversed?: boolean;
@@ -45,26 +44,26 @@ export interface TextFinding extends Range, Placement {
   mnemonics?: number;
 }
 
-export interface BasicFinding extends Range, Placement {
+export interface BasicFinding extends AddressRange, Placement {
   /** The address of the first line where the links put it: where the lines were when BASIC linked them. */
   linkedAt: number;
   lines: string[];
 }
 
-export interface FillFinding extends Range, Placement {
+export interface FillFinding extends AddressRange, Placement {
   pattern: number[];
 }
 
 /** Untouched bytes that are no text, BASIC, fill or code region. */
-export type ResidueFinding = Range & Placement;
+export type ResidueFinding = AddressRange & Placement;
 
-export interface CopyFinding extends Range, Placement {
+export interface CopyFinding extends AddressRange, Placement {
   /** The first address of the same bytes earlier in the program. */
   copyOf: number;
 }
 
 /** A code region that no call or jump reaches from the entry, and that no run executed. */
-export interface DeadCodeFinding extends Range, Placement {
+export interface DeadCodeFinding extends AddressRange, Placement {
   type: string;
   /** false when the coverage shows that it did not run; absent without coverage. */
   executed?: false;
@@ -228,7 +227,7 @@ function ownEncoding(encoding: TextEncoding, bytes: number[], characters: Charac
 }
 
 /** The runs of one encoding in a segment that read as text. `reversed` reads the bytes with bit 7 set, without that bit. */
-function textRuns(memory: Uint8Array, segment: Range, encoding: TextEncoding, reversed: boolean, min: number): TextFinding[] {
+function textRuns(memory: Uint8Array, segment: AddressRange, encoding: TextEncoding, reversed: boolean, min: number): TextFinding[] {
   const decode = { petscii: petsciiOrLineEnd, screen: screenCharacter, ascii: asciiCharacter, "high-bit": highAsciiCharacter }[encoding];
   const found: TextFinding[] = [];
   let run: Array<{ address: number; character: Character }> = [];
@@ -276,10 +275,10 @@ function textRuns(memory: Uint8Array, segment: Range, encoding: TextEncoding, re
   return found;
 }
 
-export function findText(memory: Uint8Array, segments: Range[], min = MIN_TEXT): TextFinding[] {
+export function findText(memory: Uint8Array, segments: AddressRange[], min = MIN_TEXT): TextFinding[] {
   const scan = (encoding: TextEncoding, reversed = false) => segments.flatMap((segment) => textRuns(memory, segment, encoding, reversed, min));
   // A run that is mostly a run of an earlier list is the same text, read in another encoding, with stray bytes at its edges.
-  const overlap = (a: Range, b: Range) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start) + 1);
+  const overlap = (a: AddressRange, b: AddressRange) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start) + 1);
   const kept: TextFinding[] = [];
   for (const list of [[...scan("high-bit"), ...scan("ascii")], scan("petscii"), [...scan("screen"), ...scan("screen", true)]]) {
     kept.push(...list.filter((run) => !kept.some((other) => overlap(run, other) * 2 > run.end - run.start + 1)));
@@ -303,7 +302,7 @@ function tokensFit(tokens: Uint8Array): boolean {
  * a finding. The links give the address where BASIC put the lines, which can
  * be another address than where they are now.
  */
-export function findBasic(memory: Uint8Array, segments: Range[], basicStart?: number): BasicFinding[] {
+export function findBasic(memory: Uint8Array, segments: AddressRange[], basicStart?: number): BasicFinding[] {
   const found: BasicFinding[] = [];
   for (const segment of segments) {
     const word = (at: number) => memory[at]! | (memory[at + 1]! << 8);
@@ -348,7 +347,7 @@ export function findBasic(memory: Uint8Array, segments: Range[], basicStart?: nu
 }
 
 /** Runs of one byte of at least MIN_FILL bytes, and runs of a pattern of two to four bytes of at least twice that. */
-export function findFills(memory: Uint8Array, segments: Range[]): FillFinding[] {
+export function findFills(memory: Uint8Array, segments: AddressRange[]): FillFinding[] {
   const found: FillFinding[] = [];
   for (const segment of segments) {
     for (let at = segment.start; at <= segment.end; ) {
@@ -374,7 +373,7 @@ export function findFills(memory: Uint8Array, segments: Range[]): FillFinding[] 
 }
 
 /** Exact copies of at least MIN_COPY bytes of an earlier range, with enough different byte values to be no fill. */
-export function findCopies(memory: Uint8Array, segments: Range[]): CopyFinding[] {
+export function findCopies(memory: Uint8Array, segments: AddressRange[]): CopyFinding[] {
   const found: CopyFinding[] = [];
   const seen = new Map<string, number>();
   const inside = (address: number) => segments.some((segment) => address >= segment.start && address <= segment.end);
@@ -399,8 +398,8 @@ export function findCopies(memory: Uint8Array, segments: Range[]): CopyFinding[]
 }
 
 /** Splits `range` at the parts that `taken` covers, and keeps the pieces of at least `min` bytes. */
-function without(range: Range, taken: Range[], min: number): Range[] {
-  const pieces: Range[] = [];
+function without(range: AddressRange, taken: AddressRange[], min: number): AddressRange[] {
+  const pieces: AddressRange[] = [];
   let start = range.start;
   for (const part of taken.filter((item) => item.start <= range.end && item.end >= range.start).sort((a, b) => a.start - b.start)) {
     if (part.start > start) pieces.push({ start, end: part.start - 1 });
@@ -413,19 +412,19 @@ function without(range: Range, taken: Range[], min: number): Range[] {
 export function findLeftovers(input: LeftoversInput): Leftovers {
   const { memory, segments, separation } = input;
   const ranges = separation.ranges;
-  const placement = (range: Range): Placement => {
+  const placement = (range: AddressRange): Placement => {
     const parts = ranges.filter((part) => part.start <= range.end && part.end >= range.start);
     const stages = [...new Set(parts.flatMap((part) => (part.stage === undefined ? [] : [part.stage])))].sort((a, b) => a - b);
     const access = [...new Set(parts.flatMap((part) => (part.access === undefined ? [] : [part.access])))];
     return { ...(stages.length === 0 ? {} : { stages }), ...(access.length === 0 ? {} : { access }) };
   };
-  const placed = <T extends Range>(items: T[]) => items.map((item) => ({ ...item, ...placement(item) }));
+  const placed = <T extends AddressRange>(items: T[]) => items.map((item) => ({ ...item, ...placement(item) }));
 
   const text = findText(memory, segments, input.minText);
   const basic = findBasic(memory, segments, input.basicStart);
   const fill = findFills(memory, segments);
   // Untouched bytes that no other finding explains.
-  const untouched: Range[] = [];
+  const untouched: AddressRange[] = [];
   for (const part of ranges) {
     if (part.access !== "untouched") continue;
     const last = untouched.at(-1);

@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import { Refusal } from "#src/errors.ts";
-import { COVERAGE, coverageSeedKinds, formatC64Address, parseC64Address, textToPetscii, SPACE_PATTERN } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, coverageSeedKinds, formatC64Address, parseC64Address, SPACE_PATTERN, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile } from "#src/host-client/transfer.ts";
@@ -32,7 +32,7 @@ import { resolveProjectPath } from "#src/project.ts";
 import { runBody, UsageError } from "#src/script.ts";
 import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, readEntryState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
 import { OPCODES } from "#src/opcodes.ts";
-import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Range, type Rendered } from "./lib/source.ts";
+import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered } from "./lib/source.ts";
 
 const USAGE = `generate.ts --out <dir> [options]
 
@@ -650,7 +650,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   removeOldFiles(values.out, new Set(files.map((file) => file.name)));
   for (const file of files) writeProjectFile(`${values.out}/${file.name}`, Buffer.from(file.text, "utf8"), { what: "--out" });
   writeProjectFile(`${values.out}/${SOURCE_MAP_FILE}`, Buffer.from(sourceMapText(rendered, space, knowledge.revision, files), "utf8"), { what: "--out" });
-  const showRange = (range: Range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const showRange = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
   if (rendered.notExecuted !== undefined) {
     // Each range with the file of the source that holds it and the routine before it, as a report groups them.

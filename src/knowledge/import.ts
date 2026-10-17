@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
+import { type AddressRange, formatC64Address } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { transaction } from "./database.ts";
 import {
@@ -30,9 +31,8 @@ import {
   type SymbolRow,
 } from "./read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
-import { Change, checkAddress, checkSpace, hex, subtract, SYMBOL_NAME, type AddressRange, type Evidence } from "./write.ts";
+import { Change, checkAddress, checkSpace, subtract, SYMBOL_NAME, type Evidence } from "./write.ts";
 
-export type { AddressRange };
 
 export const ANALYZERS = ["dxa", "ghidra", "heuristic"] as const satisfies readonly Origin[];
 export type Analyzer = (typeof ANALYZERS)[number];
@@ -134,7 +134,7 @@ export function validateFindings(findings: NormalizedFindings): AddressRange[] {
   for (const range of findings.coverage) {
     checkAddress(range.start, "coverage start");
     checkAddress(range.end, "coverage end");
-    if (range.end < range.start) invalid(`coverage ${hex(range.start)}-${hex(range.end)} ends before it starts.`);
+    if (range.end < range.start) invalid(`coverage ${formatC64Address(range.start)}-${formatC64Address(range.end)} ends before it starts.`);
   }
   const coverage = mergeCoverage(findings.coverage);
   const covering = (start: number, end: number) => coverage.some((range) => range.start <= start && end <= range.end);
@@ -143,10 +143,10 @@ export function validateFindings(findings: NormalizedFindings): AddressRange[] {
   const names = new Set<string>();
   for (const symbol of findings.symbols) {
     checkAddress(symbol.address);
-    if (!covering(symbol.address, symbol.address)) invalid(`the symbol at ${hex(symbol.address)} is outside the coverage.`);
+    if (!covering(symbol.address, symbol.address)) invalid(`the symbol at ${formatC64Address(symbol.address)} is outside the coverage.`);
     if (!SYMBOL_NAME.test(symbol.name)) invalid(`the symbol name ${JSON.stringify(symbol.name)} is not valid.`);
     if (!(SYMBOL_KINDS as readonly string[]).includes(symbol.kind)) invalid(`the symbol kind ${symbol.kind} is not known.`);
-    if (addresses.has(symbol.address)) invalid(`two symbols are at ${hex(symbol.address)}.`);
+    if (addresses.has(symbol.address)) invalid(`two symbols are at ${formatC64Address(symbol.address)}.`);
     if (names.has(symbol.name)) invalid(`the name ${symbol.name} is at two addresses.`);
     addresses.add(symbol.address);
     names.add(symbol.name);
@@ -155,16 +155,16 @@ export function validateFindings(findings: NormalizedFindings): AddressRange[] {
   regions.forEach((region, index) => {
     checkAddress(region.start, "region start");
     checkAddress(region.end, "region end");
-    if (region.end < region.start) invalid(`the region ${hex(region.start)}-${hex(region.end)} ends before it starts.`);
-    if (!covering(region.start, region.end)) invalid(`the region ${hex(region.start)}-${hex(region.end)} is not inside the coverage.`);
+    if (region.end < region.start) invalid(`the region ${formatC64Address(region.start)}-${formatC64Address(region.end)} ends before it starts.`);
+    if (!covering(region.start, region.end)) invalid(`the region ${formatC64Address(region.start)}-${formatC64Address(region.end)} is not inside the coverage.`);
     if (!(REGION_TYPES as readonly string[]).includes(region.type)) invalid(`the region type ${region.type} is not known.`);
     const previous = regions[index - 1];
-    if (previous !== undefined && region.start <= previous.end) invalid(`the regions at ${hex(previous.start)} and ${hex(region.start)} overlap.`);
+    if (previous !== undefined && region.start <= previous.end) invalid(`the regions at ${formatC64Address(previous.start)} and ${formatC64Address(region.start)} overlap.`);
   });
   for (const reference of findings.references) {
     checkAddress(reference.from, "reference source");
     checkAddress(reference.to, "reference target");
-    if (!covering(reference.from, reference.from)) invalid(`the reference from ${hex(reference.from)} is outside the coverage.`);
+    if (!covering(reference.from, reference.from)) invalid(`the reference from ${formatC64Address(reference.from)} is outside the coverage.`);
     if (!(REFERENCE_KINDS as readonly string[]).includes(reference.kind)) invalid(`the reference kind ${reference.kind} is not known.`);
     if (reference.kind === POINTER_KIND) invalid(`only an operand expression writes a pointer reference, not an analyzer.`);
   }

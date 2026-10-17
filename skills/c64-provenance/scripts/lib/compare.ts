@@ -5,15 +5,12 @@
 // releases differ and which releases agree there. It never decides which
 // bytes are original: that needs evidence beyond one comparison.
 
-export interface Range {
-  start: number;
-  end: number;
-}
+import { type AddressRange, formatC64Address } from "#src/c64.ts";
 
 export interface Release {
   name: string;
   /** Where the release has bytes, after the shift, in address order. */
-  segments: Range[];
+  segments: AddressRange[];
   /** The byte at an address inside a segment. */
   byteAt: (address: number) => number;
 }
@@ -29,7 +26,7 @@ export interface DifferingRange {
 
 export interface Comparison {
   /** The addresses where every release has bytes. */
-  common: Range[];
+  common: AddressRange[];
   identicalBytes: number;
   differingBytes: number;
   differences: DifferingRange[];
@@ -43,8 +40,8 @@ const JOIN_GAP = 4;
 export const covers = (release: Release, address: number) => release.segments.some((segment) => address >= segment.start && address <= segment.end);
 
 /** The ranges where every release has bytes, inside from..to. */
-export function commonRanges(releases: Release[], from = 0x0000, to = 0xffff): Range[] {
-  const ranges: Range[] = [];
+export function commonRanges(releases: Release[], from = 0x0000, to = 0xffff): AddressRange[] {
+  const ranges: AddressRange[] = [];
   for (let address = from; address <= to; address++) {
     if (!releases.every((release) => covers(release, address))) continue;
     const last = ranges.at(-1);
@@ -67,7 +64,7 @@ export function compareReleases(releases: Release[], options: { from?: number; t
   }
   // A joined range stays inside one common range, so every release has all of its bytes.
   const inSameCommon = (a: number, b: number) => common.some((range) => a >= range.start && b <= range.end);
-  const ranges: Range[] = [];
+  const ranges: AddressRange[] = [];
   for (const address of differing) {
     const last = ranges.at(-1);
     if (last !== undefined && address - last.end <= JOIN_GAP && inSameCommon(last.start, address)) last.end = address;
@@ -137,9 +134,8 @@ export type ShiftSuggestion = { release: number; shift: number; matchingSequence
  */
 export function shiftSuggestion(releases: Release[], applied: number[], index: number, found: { shift: number; matches: number }): ShiftSuggestion {
   const outside = (release: Release, by: number) => release.segments.find((segment) => segment.start + by < 0 || segment.end + by > 0xffff);
-  const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
-  const why = (number: number, by: number, segment: Range) =>
-    `release ${number} moved by ${by} puts ${hex(segment.start)}-${hex(segment.end)} ${segment.start + by < 0 ? "below $0000" : "past $ffff"}`;
+  const why = (number: number, by: number, segment: AddressRange) =>
+    `release ${number} moved by ${by} puts ${formatC64Address(segment.start)}-${formatC64Address(segment.end)} ${segment.start + by < 0 ? "below $0000" : "past $ffff"}`;
   const own = outside(releases[index]!, found.shift);
   if (own === undefined) return { release: index + 1, shift: applied[index]! + found.shift, matchingSequences: found.matches };
   const reasons = [why(index + 1, found.shift, own)];

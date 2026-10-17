@@ -4,6 +4,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
+import type { AddressRange } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SuppressionEntity, type SymbolKind } from "./schema.ts";
 import { NO_REVISION } from "./text.ts";
@@ -288,7 +289,7 @@ export const ANALYZER_NAME_ORDER: readonly Origin[] = ["heuristic", "ghidra", "d
 const byAnalyzer = (a: SymbolRow, b: SymbolRow) => a.address - b.address || ANALYZER_NAME_ORDER.indexOf(a.origin) - ANALYZER_NAME_ORDER.indexOf(b.origin);
 
 /** Current analyzer names in a range, in address order and then heuristic, Ghidra, DXA. */
-export function listAnalyzerNames(db: DatabaseSync | undefined, range: Range = ALL, kind?: SymbolKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): SymbolRow[] {
+export function listAnalyzerNames(db: DatabaseSync | undefined, range: AddressRange = ALL, kind?: SymbolKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): SymbolRow[] {
   if (db === undefined) return [];
   return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND address BETWEEN ? AND ?`).all(space, range.start, range.end) as Raw[])
     .map(toSymbol)
@@ -442,18 +443,13 @@ export function at(db: DatabaseSync | undefined, address: number, space: Space =
   return result;
 }
 
-export interface Range {
-  start: number;
-  end: number;
-}
-
-const ALL: Range = { start: 0x0000, end: 0xffff };
+const ALL: AddressRange = { start: 0x0000, end: 0xffff };
 
 /** Rows of these origins only; undefined keeps every origin. */
 export type OriginFilter = readonly Origin[] | undefined;
 const kept = (origins: OriginFilter) => (row: { origin: Origin }) => origins === undefined || origins.includes(row.origin);
 
-export function listSymbols(db: DatabaseSync | undefined, range: Range = ALL, kind?: SymbolKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): SymbolRow[] {
+export function listSymbols(db: DatabaseSync | undefined, range: AddressRange = ALL, kind?: SymbolKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): SymbolRow[] {
   if (db === undefined) return [];
   const rows =
     kind === undefined
@@ -462,11 +458,11 @@ export function listSymbols(db: DatabaseSync | undefined, range: Range = ALL, ki
   return rows.map((row) => toSymbol(row as Raw)).filter(kept(origins));
 }
 
-export function listRegions(db: DatabaseSync | undefined, range: Range = ALL, type?: RegionType, origins?: OriginFilter, space: Space = DEFAULT_SPACE): RegionRow[] {
+export function listRegions(db: DatabaseSync | undefined, range: AddressRange = ALL, type?: RegionType, origins?: OriginFilter, space: Space = DEFAULT_SPACE): RegionRow[] {
   return regionsOverlapping(db, range.start, range.end, space).filter((region) => (type === undefined || region.type === type) && kept(origins)(region));
 }
 
-export function listComments(db: DatabaseSync | undefined, range: Range = ALL, origins?: OriginFilter, space: Space = DEFAULT_SPACE): CommentRow[] {
+export function listComments(db: DatabaseSync | undefined, range: AddressRange = ALL, origins?: OriginFilter, space: Space = DEFAULT_SPACE): CommentRow[] {
   if (db === undefined) return [];
   return db
     .prepare(`SELECT ${COMMENT_COLUMNS} FROM current_comments WHERE space = ? AND address BETWEEN ? AND ? ORDER BY address, placement`)
@@ -476,7 +472,7 @@ export function listComments(db: DatabaseSync | undefined, range: Range = ALL, o
 }
 
 /** Current references whose source or target lies in the range. */
-export function listReferences(db: DatabaseSync | undefined, range: Range = ALL, kind?: ReferenceKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): ReferenceRow[] {
+export function listReferences(db: DatabaseSync | undefined, range: AddressRange = ALL, kind?: ReferenceKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): ReferenceRow[] {
   if (db === undefined) return [];
   return db
     .prepare(
@@ -488,7 +484,7 @@ export function listReferences(db: DatabaseSync | undefined, range: Range = ALL,
 }
 
 /** Current suppressions whose place lies in the range: a reference by its source or target. */
-export function listSuppressions(db: DatabaseSync | undefined, range: Range = ALL, space: Space = DEFAULT_SPACE): SuppressionRow[] {
+export function listSuppressions(db: DatabaseSync | undefined, range: AddressRange = ALL, space: Space = DEFAULT_SPACE): SuppressionRow[] {
   if (db === undefined) return [];
   return db
     .prepare(
@@ -499,7 +495,7 @@ export function listSuppressions(db: DatabaseSync | undefined, range: Range = AL
 }
 
 /** Current modules that start in the range, in address order. */
-export function listModules(db: DatabaseSync | undefined, range: Range = ALL, origins?: OriginFilter, space: Space = DEFAULT_SPACE): ModuleRow[] {
+export function listModules(db: DatabaseSync | undefined, range: AddressRange = ALL, origins?: OriginFilter, space: Space = DEFAULT_SPACE): ModuleRow[] {
   if (db === undefined) return [];
   return db
     .prepare(`SELECT ${MODULE_COLUMNS} FROM current_modules WHERE space = ? AND start_address BETWEEN ? AND ? ORDER BY start_address`)
@@ -509,7 +505,7 @@ export function listModules(db: DatabaseSync | undefined, range: Range = ALL, or
 }
 
 /** Current operand expressions of instructions in the range, in address order. */
-export function listOperands(db: DatabaseSync | undefined, range: Range = ALL, origins?: OriginFilter, space: Space = DEFAULT_SPACE): OperandRow[] {
+export function listOperands(db: DatabaseSync | undefined, range: AddressRange = ALL, origins?: OriginFilter, space: Space = DEFAULT_SPACE): OperandRow[] {
   if (db === undefined) return [];
   return db
     .prepare(`SELECT ${OPERAND_COLUMNS} FROM current_operands WHERE space = ? AND address BETWEEN ? AND ? ORDER BY address`)
@@ -519,7 +515,7 @@ export function listOperands(db: DatabaseSync | undefined, range: Range = ALL, o
 }
 
 /** Current patches that share an address with the range, of one switch or of all, in address order. */
-export function listPatches(db: DatabaseSync | undefined, range: Range = ALL, switchName?: string, origins?: OriginFilter, space: Space = DEFAULT_SPACE): PatchRow[] {
+export function listPatches(db: DatabaseSync | undefined, range: AddressRange = ALL, switchName?: string, origins?: OriginFilter, space: Space = DEFAULT_SPACE): PatchRow[] {
   return patchesOverlapping(db, range.start, range.end, space).filter((patch) => (switchName === undefined || patch.switch === switchName) && kept(origins)(patch));
 }
 
@@ -534,7 +530,7 @@ export function listMacros(db: DatabaseSync | undefined, origins?: OriginFilter,
 }
 
 /** Current macro uses that share an address with the range, of one macro or of all, in address order. */
-export function listMacroUses(db: DatabaseSync | undefined, range: Range = ALL, macro?: string, origins?: OriginFilter, space: Space = DEFAULT_SPACE): MacroUseRow[] {
+export function listMacroUses(db: DatabaseSync | undefined, range: AddressRange = ALL, macro?: string, origins?: OriginFilter, space: Space = DEFAULT_SPACE): MacroUseRow[] {
   return macroUsesOverlapping(db, range.start, range.end, space).filter((use) => (macro === undefined || use.macro === macro) && kept(origins)(use));
 }
 

@@ -8,15 +8,10 @@
 // to the stage, is the stage's own code too: a packer hands off by JMP,
 // RTS or RTI and never runs its own code again.
 
-import { COVERAGE } from "#src/c64.ts";
+import { type AddressRange, COVERAGE } from "#src/c64.ts";
 import { writtenBlocks } from "#src/host-client/coverage.ts";
 
-export interface Range {
-  start: number;
-  end: number;
-}
-
-const contains = (range: Range, address: number) => address >= range.start && address <= range.end;
+const contains = (range: AddressRange, address: number) => address >= range.start && address <= range.end;
 
 /** The flags of two maps from $0000 in one. */
 export function mergeMaps(into: Uint8Array, from: Uint8Array): void {
@@ -28,7 +23,7 @@ export function mergeMaps(into: Uint8Array, from: Uint8Array): void {
  * code that can start a stage: every executed address except own code that
  * the stage has not written.
  */
-export function stageCandidates(stage: Uint8Array, chunk: Uint8Array, own: ReadonlySet<number>, minimum: number, called: readonly Range[] = []): Range[] {
+export function stageCandidates(stage: Uint8Array, chunk: Uint8Array, own: ReadonlySet<number>, minimum: number, called: readonly AddressRange[] = []): AddressRange[] {
   const combined = Uint8Array.from(stage);
   mergeMaps(combined, chunk);
   return writtenBlocks(combined, minimum).filter((block) => {
@@ -47,10 +42,10 @@ export function stageCandidates(stage: Uint8Array, chunk: Uint8Array, own: Reado
  * them except own code that is not written yet, and write watches over that
  * own code.
  */
-export function stagePoints(blocks: readonly Range[], own: ReadonlySet<number>, written: (address: number) => boolean, called: readonly Range[] = []): { exec: Range[]; watch: Range[] } {
-  const exec: Range[] = [];
-  const watch: Range[] = [];
-  const add = (list: Range[], address: number) => {
+export function stagePoints(blocks: readonly AddressRange[], own: ReadonlySet<number>, written: (address: number) => boolean, called: readonly AddressRange[] = []): { exec: AddressRange[]; watch: AddressRange[] } {
+  const exec: AddressRange[] = [];
+  const watch: AddressRange[] = [];
+  const add = (list: AddressRange[], address: number) => {
     const last = list[list.length - 1];
     if (last !== undefined && last.end === address - 1) last.end = address;
     else list.push({ start: address, end: address });
@@ -66,7 +61,7 @@ export function stagePoints(blocks: readonly Range[], own: ReadonlySet<number>, 
 }
 
 /** True when the address lies in one of the ranges. */
-export function inRanges(ranges: readonly Range[], address: number): boolean {
+export function inRanges(ranges: readonly AddressRange[], address: number): boolean {
   return ranges.some((range) => contains(range, address));
 }
 
@@ -86,8 +81,8 @@ export function callReturn(stack: Uint8Array, sp: number, byteAt: (address: numb
  * The code that ran in a block: its executed opcode bytes with the two bytes
  * after each, which can be operands, joined and cut at the block's end.
  */
-export function executedIn(map: Uint8Array, block: Range): Range[] {
-  const ranges: Range[] = [];
+export function executedIn(map: Uint8Array, block: AddressRange): AddressRange[] {
+  const ranges: AddressRange[] = [];
   for (let address = block.start; address <= block.end; address++) {
     if ((map[address]! & COVERAGE.ramExecute) === 0) continue;
     const end = Math.min(block.end, address + 2);
@@ -109,16 +104,16 @@ export function executedIn(map: Uint8Array, block: Range): Range[] {
  * program with a leftover. `writtenBy` is the last stage that wrote into the
  * range.
  */
-export function captureSegments(stages: ReadonlyArray<{ entry: number; wrote: readonly Range[] }>, entry: number): Array<Range & { writtenBy: number }> {
+export function captureSegments(stages: ReadonlyArray<{ entry: number; wrote: readonly AddressRange[] }>, entry: number): Array<AddressRange & { writtenBy: number }> {
   const last = stages.length - 1;
   const replaced = (from: number, address: number) => stages.slice(from).some((stage) => inRanges(stage.wrote, address));
-  const leftover = (block: Range, writer: number) =>
+  const leftover = (block: AddressRange, writer: number) =>
     !contains(block, entry) && stages.some((stage, index) => index > writer && index < last && contains(block, stage.entry) && !replaced(index, stage.entry));
   const blocks = stages
     .flatMap((stage, index) => stage.wrote.map((range) => ({ start: range.start, end: range.end, writtenBy: index })))
     .filter((block) => !leftover(block, block.writtenBy))
     .sort((a, b) => a.start - b.start);
-  const segments: Array<Range & { writtenBy: number }> = [];
+  const segments: Array<AddressRange & { writtenBy: number }> = [];
   for (const block of blocks) {
     const previous = segments[segments.length - 1];
     if (previous !== undefined && block.start <= previous.end + 1) {
@@ -130,7 +125,7 @@ export function captureSegments(stages: ReadonlyArray<{ entry: number; wrote: re
 }
 
 /** The segments without the bytes of `holes`: a segment that a hole cuts gives its parts, each with the fields of the segment. */
-export function withoutRanges<T extends Range>(segments: readonly T[], holes: readonly Range[]): T[] {
+export function withoutRanges<T extends AddressRange>(segments: readonly T[], holes: readonly AddressRange[]): T[] {
   let pieces = [...segments];
   for (const hole of holes) {
     pieces = pieces.flatMap((piece) => {

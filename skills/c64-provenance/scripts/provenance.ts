@@ -11,7 +11,7 @@
 import { basename, posix, relative } from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, parseC64Address } from "#src/c64.ts";
 import { checkActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT, WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
@@ -40,7 +40,7 @@ import { CODE_REGION_TYPES, type Origin } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { runBody, UsageError } from "#src/script.ts";
-import { compareReleases, shiftSuggestion, suggestShifts, type Range, type Release } from "./lib/compare.ts";
+import { compareReleases, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
 import { findRoutine, libraryFolder, LibraryError, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
 import { watchRelease, type ImageState, type Start } from "./lib/runtime.ts";
 import { findLeftovers } from "./lib/leftovers.ts";
@@ -107,7 +107,7 @@ interface LoadedRelease {
   /** 64 KiB with the release bytes at their own addresses. */
   memory: Uint8Array;
   entry?: number;
-  stages?: Array<{ entry: number; wrote: Range[] }>;
+  stages?: Array<{ entry: number; wrote: AddressRange[] }>;
 }
 
 /** Reads entry_state.json of the c64-unpacker skill for a start by writes. */
@@ -147,8 +147,8 @@ function entryState(path: string): ImageState | string {
 
 function readRelease(path: string, shift: number): LoadedRelease {
   const { bytes } = readProjectFile(path);
-  const moved = (range: Range) => ({ start: range.start + shift, end: range.end + shift });
-  const inside = (range: Range) => range.start >= 0 && range.end <= 0xffff;
+  const moved = (range: AddressRange) => ({ start: range.start + shift, end: range.end + shift });
+  const inside = (range: AddressRange) => range.start >= 0 && range.end <= 0xffff;
   if (!path.endsWith(".json")) {
     if (bytes.length < 3) throw new UsageError(`${path} is too short for a PRG`);
     const load = bytes.readUInt16LE(0);
@@ -294,7 +294,7 @@ async function run(argv: string[]): Promise<unknown> {
   const notSuggested = suggestions.filter((suggestion) => "reason" in suggestion);
 
   // The runtime evidence: one emulator for each release, the differences at the release's own addresses.
-  const runtime = new Map<string, Array<Range & { first: string; changed: boolean }>>();
+  const runtime = new Map<string, Array<AddressRange & { first: string; changed: boolean }>>();
   const runs: Record<string, unknown> = {};
   if (frames !== undefined && comparison.differences.length > 0) {
     for (const item of loaded) {
@@ -351,7 +351,7 @@ async function run(argv: string[]): Promise<unknown> {
 }
 
 /** The stages of the capture in the knowledge as ranges; a stage that is not a capture stage is refused. */
-function stagesOf(stages: Array<Record<string, unknown>> | undefined): Array<{ entry: number; wrote: Range[] }> | undefined {
+function stagesOf(stages: Array<Record<string, unknown>> | undefined): Array<{ entry: number; wrote: AddressRange[] }> | undefined {
   if (stages === undefined) return undefined;
   const parse = (value: unknown) => {
     if (typeof value === "string" && /^\$[0-9a-f]{4}$/i.test(value)) return Number.parseInt(value.slice(1), 16);
@@ -399,7 +399,7 @@ function separateCommand(out: string | undefined, maxListed: string | undefined)
   if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
   const { program, stages, coverage, found } = programEvidence();
   const loaded = { entry: program.entry, stages };
-  const show = (range: Range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
   const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }) }));
   const outside = { read: found.outside.read.map(show), executed: found.outside.executed.map(show), generated: found.outside.generated.map(show) };
@@ -444,7 +444,7 @@ function leftoversCommand(out: string | undefined, minText: string | undefined, 
     ...(program.segments.some((segment) => segment.start === 0x0801) ? { basicStart: 0x0801 } : {}),
     minText: Number(min),
   });
-  const show = <T extends Range & { stages?: number[]; access?: string[] }>({ start, end, stages: wrote, access, ...rest }: T) => ({
+  const show = <T extends AddressRange & { stages?: number[]; access?: string[] }>({ start, end, stages: wrote, access, ...rest }: T) => ({
     start: formatC64Address(start),
     end: formatC64Address(end),
     ...rest,

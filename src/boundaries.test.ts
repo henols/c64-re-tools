@@ -33,7 +33,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   errors: [],
   c64: [],
   // The ACME spelling of each 6510 opcode: c64-source and the listing of c64-knowledge decode with one table.
-  opcodes: [],
+  opcodes: ["c64"],
   // The platform memory map: names and meanings of C64 addresses.
   platform: ["c64"],
   // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images.

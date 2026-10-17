@@ -4,14 +4,13 @@
 // Watchpoints and range breakpoints stop the run at an access; the coverage
 // map then tells which range and which access it was.
 
-import { COVERAGE, formatC64Address, instructionLength } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, formatC64Address, instructionLength } from "#src/c64.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_MEMORY_READ, MAX_MEMORY_WRITE } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
-import type { Range } from "./compare.ts";
 
 export type FirstAccess = "read" | "write" | "execute" | "none";
 
@@ -24,7 +23,7 @@ export interface RangeAccess {
 /** How a release starts in the emulator. */
 export type Start =
   | { kind: "program"; path: string }
-  | { kind: "image"; segments: Range[]; byteAt: (address: number) => number; state: ImageState };
+  | { kind: "image"; segments: AddressRange[]; byteAt: (address: number) => number; state: ImageState };
 
 export interface ImageState {
   pc: number;
@@ -86,7 +85,7 @@ async function start(client: ViceSessionClient, how: Start): Promise<string | un
 export async function watchRelease(
   client: ViceSessionClient,
   how: Start,
-  ranges: Range[],
+  ranges: AddressRange[],
   release: (address: number) => number,
   run: { frames: number; steps: ActionStep[] },
 ): Promise<{ started: true; accesses: RangeAccess[] } | { started: false; reason: string }> {
@@ -188,4 +187,4 @@ export async function watchRelease(
   return { started: true, accesses };
 }
 
-export const showRange = (range: Range) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
+export const showRange = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;

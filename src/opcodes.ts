@@ -4,6 +4,8 @@
 // spelling, ACME writes only one of them: the generator finds those with a
 // probe and writes the others as bytes.
 
+import { formatC64Byte, formatC64Address } from "./c64.ts";
+
 export type Mode = "imp" | "imm" | "zp" | "zpx" | "zpy" | "abs" | "abx" | "aby" | "ind" | "izx" | "izy" | "rel";
 
 export interface Opcode {
@@ -75,8 +77,6 @@ export function useKind(opcode: number): UseKind {
   return "read";
 }
 
-const hex2 = (value: number) => `$${value.toString(16).padStart(2, "0")}`;
-const hex4 = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
 
 /** The text of the instruction in `bytes` at `pc`, for example "sta $d011" or "bne $c002". */
 export function instructionText(bytes: readonly number[], pc: number): string {
@@ -85,17 +85,17 @@ export function instructionText(bytes: readonly number[], pc: number): string {
   const word = low | ((bytes[2] ?? 0) << 8);
   const operand: Record<Mode, string> = {
     imp: "",
-    imm: `#${hex2(low)}`,
-    zp: hex2(low),
-    zpx: `${hex2(low)},x`,
-    zpy: `${hex2(low)},y`,
-    abs: hex4(word),
-    abx: `${hex4(word)},x`,
-    aby: `${hex4(word)},y`,
-    ind: `(${hex4(word)})`,
-    izx: `(${hex2(low)},x)`,
-    izy: `(${hex2(low)}),y`,
-    rel: hex4((pc + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff),
+    imm: `#${formatC64Byte(low)}`,
+    zp: formatC64Byte(low),
+    zpx: `${formatC64Byte(low)},x`,
+    zpy: `${formatC64Byte(low)},y`,
+    abs: formatC64Address(word),
+    abx: `${formatC64Address(word)},x`,
+    aby: `${formatC64Address(word)},y`,
+    ind: `(${formatC64Address(word)})`,
+    izx: `(${formatC64Byte(low)},x)`,
+    izy: `(${formatC64Byte(low)}),y`,
+    rel: formatC64Address((pc + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff),
   };
   return operand[mode] === "" ? mnemonic : `${mnemonic} ${operand[mode]}`;
 }

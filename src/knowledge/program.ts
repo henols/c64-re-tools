@@ -7,10 +7,10 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
-import { COVERAGE } from "../c64.ts";
+import { type AddressRange, COVERAGE, formatC64Address } from "../c64.ts";
 
 import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
-import { checkSpace, hex, write, type AddressRange, type Evidence, type WriteContext } from "./write.ts";
+import { checkSpace, write, type Evidence, type WriteContext } from "./write.ts";
 
 /** The 64 KiB of one space: offset n is address n. */
 const SIZE = 0x10000;
@@ -89,9 +89,9 @@ function checkSegments(segments: readonly AddressRange[]): void {
   const sorted = [...segments].sort((a, b) => a.start - b.start);
   sorted.forEach((segment, index) => {
     if (!Number.isInteger(segment.start) || !Number.isInteger(segment.end) || segment.start < 0 || segment.end > 0xffff || segment.end < segment.start) {
-      throw new Refusal("invalid-input", `The segment ${hex(segment.start)}-${hex(segment.end)} is not a range from $0000 to $ffff.`);
+      throw new Refusal("invalid-input", `The segment ${formatC64Address(segment.start)}-${formatC64Address(segment.end)} is not a range from $0000 to $ffff.`);
     }
-    if (index > 0 && segment.start <= sorted[index - 1]!.end) throw new Refusal("invalid-input", `The segments at ${hex(sorted[index - 1]!.start)} and ${hex(segment.start)} overlap.`);
+    if (index > 0 && segment.start <= sorted[index - 1]!.end) throw new Refusal("invalid-input", `The segments at ${formatC64Address(sorted[index - 1]!.start)} and ${formatC64Address(segment.start)} overlap.`);
   });
 }
 

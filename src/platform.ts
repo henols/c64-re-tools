@@ -3,7 +3,7 @@
 // Names follow "Mapping the Commodore 64". Only platform facts live here:
 // an address without one belongs to the application.
 
-import { d018Offsets, vicBankBase } from "./c64.ts";
+import { d018Offsets, formatC64Address, vicBankBase } from "./c64.ts";
 
 export interface Entry {
   start: number;
@@ -321,7 +321,6 @@ const AREAS: Array<{ start: number; end: number; area: string; kind: Lookup["kin
   { start: 0xe000, end: 0xffff, area: "KERNAL ROM or RAM", kind: "platform", meaning: "KERNAL ROM when $01 bit 1 is set, else RAM." },
 ];
 
-const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
 
 export interface Area {
   name: string;
@@ -353,7 +352,7 @@ export function lookup(address: number): Lookup {
     const base = block.start + ((address - block.start) % block.period);
     const register = block.registers.find((entry) => entry.start === base);
     const mirror = base !== address ? { mirrorOf: base } : {};
-    if (register === undefined) return { address, kind: "platform", area: block.area, meaning: `Unused register (${hex(base)}): reads give no useful value.`, ...mirror };
+    if (register === undefined) return { address, kind: "platform", area: block.area, meaning: `Unused register (${formatC64Address(base)}): reads give no useful value.`, ...mirror };
     return { address, kind: "platform", area: block.area, name: register.name, meaning: register.meaning, ...mirror };
   }
   const entry = [...SYSTEM, ...ROM].find((candidate) => address >= candidate.start && address <= candidate.end);
@@ -455,13 +454,13 @@ export function decode(register: number, value: number, dd00?: number): Decoded 
       return { xScroll: value & 0x07, columns: value & 0x08 ? 40 : 38, multicolorMode: (value & 0x10) !== 0 };
     case 0xd018: {
       const { screen, characters, bitmap } = d018Offsets(value);
-      const result: Decoded = { screenOffset: hex(screen), characterOffset: hex(characters), bitmapOffset: hex(bitmap) };
+      const result: Decoded = { screenOffset: formatC64Address(screen), characterOffset: formatC64Address(characters), bitmapOffset: formatC64Address(bitmap) };
       if (dd00 !== undefined) {
         const bank = vicBank(dd00);
         result.bank = bank.bank;
-        result.screen = hex(bank.start + screen);
-        result.characters = hex(bank.start + characters);
-        result.bitmap = hex(bank.start + bitmap);
+        result.screen = formatC64Address(bank.start + screen);
+        result.characters = formatC64Address(bank.start + characters);
+        result.bitmap = formatC64Address(bank.start + bitmap);
         if (bank.bank === 0 || bank.bank === 2) result.note = "In banks 0 and 2 the VIC-II sees the character ROM at offsets $1000-$1FFF.";
       } else {
         result.note = "Offsets are inside the VIC-II bank; give --bank with the $DD00 value for addresses.";
@@ -470,7 +469,7 @@ export function decode(register: number, value: number, dd00?: number): Decoded 
     }
     case 0xdd00: {
       const bank = vicBank(value);
-      return { vicBank: bank.bank, vicAddresses: `${hex(bank.start)}-${hex(bank.end)}` };
+      return { vicBank: bank.bank, vicAddresses: `${formatC64Address(bank.start)}-${formatC64Address(bank.end)}` };
     }
     case 0xd015:
     case 0xd017:
@@ -499,6 +498,6 @@ export function decode(register: number, value: number, dd00?: number): Decoded 
       };
     }
     default:
-      throw new RangeError(`no decoder for ${hex(register)}; decoders exist for $0001, $d010, $d011, $d015-$d01f (sprite and interrupt bits), $d016, $d018, $dc0d, $dd00 and $dd0d`);
+      throw new RangeError(`no decoder for ${formatC64Address(register)}; decoders exist for $0001, $d010, $d011, $d015-$d01f (sprite and interrupt bits), $d016, $d018, $dc0d, $dd00 and $dd0d`);
   }
 }

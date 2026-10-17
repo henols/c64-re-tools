@@ -4,31 +4,30 @@
 // entry; and what the program reads or executes outside the image. Evidence
 // only: nothing here decides what is original.
 
-import { COVERAGE, executedRamCode } from "#src/c64.ts";
-import type { Range } from "./compare.ts";
+import { type AddressRange, COVERAGE, executedRamCode } from "#src/c64.ts";
 
 export type Access = "executed" | "read" | "written" | "read-written" | "untouched";
 
 export interface SeparationInput {
-  segments: Range[];
+  segments: AddressRange[];
   /** 64 KiB with the image bytes at their addresses. */
   memory: Uint8Array;
   entry?: number;
   /** The stages of an unpacker capture, in order; the last one is the program. */
-  stages?: Array<{ entry: number; wrote: Range[] }>;
+  stages?: Array<{ entry: number; wrote: AddressRange[] }>;
   /** Joined coverage files. */
   coverage?: Uint8Array;
-  codeRegions: Array<Range & { type: string }>;
+  codeRegions: Array<AddressRange & { type: string }>;
   references: Array<{ from: number; to: number; kind: string }>;
 }
 
-export interface EvidenceRange extends Range {
+export interface EvidenceRange extends AddressRange {
   /** The last stage that wrote the range; absent when no stage wrote it. */
   stage?: number;
   access?: Access;
 }
 
-export interface CodeRegionEvidence extends Range {
+export interface CodeRegionEvidence extends AddressRange {
   type: string;
   /** Absent when the image has no entry. */
   reachable?: boolean;
@@ -45,14 +44,14 @@ export interface Separation {
    * those bytes there), and `generated` it wrote and then executed, in
    * pieces of code with gaps of up to two operand bytes.
    */
-  outside: { read: Range[]; executed: Range[]; generated: Range[] };
+  outside: { read: AddressRange[]; executed: AddressRange[]; generated: AddressRange[] };
 }
 
 const SYSTEM_PAGES_END = 0x03ff;
 
 /** Joins addresses in order into ranges; `gap` is the most bytes between two addresses in one range. */
-function merge(addresses: number[], gap = 0, joins: (from: number, to: number) => boolean = () => true): Range[] {
-  const ranges: Range[] = [];
+function merge(addresses: number[], gap = 0, joins: (from: number, to: number) => boolean = () => true): AddressRange[] {
+  const ranges: AddressRange[] = [];
   for (const address of addresses) {
     const last = ranges.at(-1);
     if (last !== undefined && address - last.end - 1 <= gap && joins(last.end, address)) last.end = address;

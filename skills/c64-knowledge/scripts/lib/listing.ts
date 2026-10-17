@@ -3,7 +3,7 @@
 // the bytes from coverage files, and the references in and out. Nothing here
 // reads files: knowledge.ts gives the lookups.
 
-import { COVERAGE } from "#src/c64.ts";
+import { COVERAGE, formatC64Address, formatC64Byte } from "#src/c64.ts";
 import { MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
@@ -41,8 +41,6 @@ export interface ListingLine {
 }
 
 const CODE = new Set(["code", "jumps"]);
-const hex2 = (value: number) => `$${value.toString(16).padStart(2, "0")}`;
-const hex4 = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
 const DATA_PER_LINE = 8;
 
 /** The access class of bytes from the coverage: x, r and w as they occur, or - for none. */
@@ -57,12 +55,12 @@ function accessOf(coverage: Uint8Array | undefined, start: number, length: numbe
 /** The operand of an instruction in ACME syntax, with the name of its target where one exists. */
 function operandOf(mode: Mode, address: number, low: number, high: number, nameOf: ListingSource["nameOf"]): string {
   const word = low | (high << 8);
-  const named = (target: number, digits: 2 | 4) => nameOf(target) ?? (digits === 2 ? hex2(target) : hex4(target));
+  const named = (target: number, digits: 2 | 4) => nameOf(target) ?? (digits === 2 ? formatC64Byte(target) : formatC64Address(target));
   switch (mode) {
     case "imp":
       return "";
     case "imm":
-      return `#${hex2(low)}`;
+      return `#${formatC64Byte(low)}`;
     case "zp":
       return named(low, 2);
     case "zpx":
@@ -138,7 +136,7 @@ export function listing(source: ListingSource, start: number, end: number): List
       values.push(source.byteAt(at)!);
       at++;
     }
-    if (address >= start) lines.push(line(address, values.length, `!byte ${values.map(hex2).join(",")}`));
+    if (address >= start) lines.push(line(address, values.length, `!byte ${values.map(formatC64Byte).join(",")}`));
     address = at;
   }
   return lines;
@@ -149,7 +147,7 @@ export function listingText(lines: readonly ListingLine[]): string {
   const out: string[] = [];
   for (const item of lines) {
     for (const comment of item.lineComments ?? []) out.push(`                         ; ${comment}`);
-    const head = `${hex4(item.address)}  ${item.bytes.padEnd(9)} ${(item.access ?? "").padEnd(3)}`;
+    const head = `${formatC64Address(item.address)}  ${item.bytes.padEnd(9)} ${(item.access ?? "").padEnd(3)}`;
     const body = (item.label === undefined ? "" : `${item.label} `).padEnd(20) + item.text;
     const notes = [
       ...(item.comment === undefined ? [] : [item.comment]),

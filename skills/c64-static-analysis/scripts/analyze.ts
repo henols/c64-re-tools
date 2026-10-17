@@ -74,11 +74,10 @@ function showPitfall(pitfall: Pitfall) {
 
 /** A pointer candidate with $ addresses, and the operand writes that would name it. */
 function showPointer(candidate: PointerCandidate) {
-  const hex = formatC64Address;
   if (candidate.kind === "sprite pointer") {
-    return { kind: candidate.kind, at: hex(candidate.at), to: hex(candidate.to), value: `$${candidate.value.toString(16).padStart(2, "0")}`, target: hex(candidate.target), assumes: "VIC bank 0 and the screen at $0400" };
+    return { kind: candidate.kind, at: formatC64Address(candidate.at), to: formatC64Address(candidate.to), value: `$${candidate.value.toString(16).padStart(2, "0")}`, target: formatC64Address(candidate.target), assumes: "VIC bank 0 and the screen at $0400" };
   }
-  return { kind: candidate.kind, to: hex(candidate.to), target: hex(candidate.target), low: hex(candidate.low), high: hex(candidate.high) };
+  return { kind: candidate.kind, to: formatC64Address(candidate.to), target: formatC64Address(candidate.target), low: formatC64Address(candidate.low), high: formatC64Address(candidate.high) };
 }
 
 /** A macro candidate with $ addresses and its source line. */

@@ -8,7 +8,7 @@
 // patch is written as !if SWITCH { code } else { original }, and a
 // macro use as one +name args line.
 
-import { COVERAGE, formatC64Address, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
 import { ANALYZERS } from "#src/knowledge/import.ts";
@@ -16,14 +16,9 @@ import { isGeneratedFile, type CommentPlacement, type Origin, type RegionType } 
 import type { Area } from "#src/platform.ts";
 import { hasZeroPageForm, MNEMONICS, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type Mode, type UseKind } from "#src/opcodes.ts";
 
-export interface Range {
-  start: number;
-  end: number;
-}
-
 export interface SourceInput {
   /** In address order, without overlap. */
-  segments: Range[];
+  segments: AddressRange[];
   /** The image byte at an address inside a segment. */
   byteAt: (address: number) => number;
   entry?: number;
@@ -144,7 +139,7 @@ function decodedStores(pieces: readonly Piece[], input: SourceInput): Array<{ ad
       if (input.segments.some((segment) => target >= segment.start && target <= segment.end)) continue;
       try {
         const text = decodedText(input.decode(target, input.byteAt(load.address + 1)));
-        if (text !== "") found.push({ address: store.address, placement: "side", text: `${hex4(target)}: ${text}` });
+        if (text !== "") found.push({ address: store.address, placement: "side", text: `${formatC64Address(target)}: ${text}` });
       } catch {
         // No decoder for this register.
       }
@@ -212,10 +207,8 @@ export interface Layout {
   macrosAsInstructions: MacroAsInstructions[];
 }
 
-const hex2 = (value: number) => `$${value.toString(16).padStart(2, "0")}`;
-const hex4 = (value: number) => formatC64Address(value);
 /** ACME reads leading zeros as a 16-bit value, so a zero-page name gets two digits. */
-const constantValue = (address: number) => (address < 0x100 ? hex2(address) : hex4(address));
+const constantValue = (address: number) => (address < 0x100 ? formatC64Byte(address) : formatC64Address(address));
 const signed = (byte: number) => (byte < 0x80 ? byte : byte - 0x100);
 
 function operandValue(address: number, opcode: number, byteAt: (address: number) => number): number | undefined {
@@ -240,9 +233,9 @@ export function entriesInData<R extends { start: number; end: number; type: Regi
 }
 
 /** Why an image without its entry fails: the image does not hold the program. Undefined when the entry is in a segment, or the image has no entry. */
-export function entryOutsideImage(entry: number | undefined, segments: readonly Range[]): string | undefined {
+export function entryOutsideImage(entry: number | undefined, segments: readonly AddressRange[]): string | undefined {
   if (entry === undefined || segments.some((segment) => entry >= segment.start && entry <= segment.end)) return undefined;
-  return `The entry ${hex4(entry)} is in no segment of the image: the image does not hold the program. Capture it again with c64-unpacker loads or capture.`;
+  return `The entry ${formatC64Address(entry)} is in no segment of the image: the image does not hold the program. Capture it again with c64-unpacker loads or capture.`;
 }
 
 /** Splits the segments into pieces at module starts and lays out instructions and data. */
@@ -255,7 +248,7 @@ export function layout(input: SourceInput): Layout {
   };
 
   for (const module of input.modules) {
-    if (isGeneratedFile(module.file)) throw new WireFailure("invalid-input", `The module at ${hex4(module.start)} has the file ${module.file}, which the generator writes itself. Give the module another file.`);
+    if (isGeneratedFile(module.file)) throw new WireFailure("invalid-input", `The module at ${formatC64Address(module.start)} has the file ${module.file}, which the generator writes itself. Give the module another file.`);
   }
   const modules = [...input.modules].sort((a, b) => a.start - b.start);
   const unusedModules = modules.filter((module) => !inImage(module.start)).map(({ start, file }) => ({ start, file }));
@@ -274,14 +267,14 @@ export function layout(input: SourceInput): Layout {
       const end = bounds[index + 1]! - 1;
       const module = modules.find((row) => row.start === start);
       const file = module?.file ?? `segment_${start.toString(16).padStart(4, "0")}.asm`;
-      const title = module?.title?.replace(/\s*\r?\n\s*/g, " ") ?? `Segment ${hex4(segment.start)}-${hex4(segment.end)}`;
+      const title = module?.title?.replace(/\s*\r?\n\s*/g, " ") ?? `Segment ${formatC64Address(segment.start)}-${formatC64Address(segment.end)}`;
       pieces.push({ start, end, file, title, segmentStart: index === 0, items: [] });
     }
   }
   const files = new Map<string, number>();
   for (const piece of pieces) {
     const other = files.get(piece.file);
-    if (other !== undefined) throw new WireFailure("invalid-input", `The file ${piece.file} is used at ${hex4(other)} and at ${hex4(piece.start)}. Give the module another file.`);
+    if (other !== undefined) throw new WireFailure("invalid-input", `The file ${piece.file} is used at ${formatC64Address(other)} and at ${formatC64Address(piece.start)}. Give the module another file.`);
     files.set(piece.file, piece.start);
   }
 
@@ -444,7 +437,7 @@ export function layout(input: SourceInput): Layout {
       if (inside === undefined) continue;
       accepted.delete(candidate);
       changed = true;
-      macrosAsInstructions.push({ start: candidate.use.start, end: candidate.use.end, macro: candidate.use.macro, reason: `The source has a label at ${hex4(inside)}, inside the use.` });
+      macrosAsInstructions.push({ start: candidate.use.start, end: candidate.use.end, macro: candidate.use.macro, reason: `The source has a label at ${formatC64Address(inside)}, inside the use.` });
       for (const item of candidate.items) {
         inUse.delete(item.address);
         if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address)) use(operandValue(item.address, item.opcode, input.byteAt)!, useKind(item.opcode));
@@ -459,7 +452,7 @@ export function layout(input: SourceInput): Layout {
   for (const address of [...wanted, ...outside].sort((a, b) => a - b)) {
     const known = symbols.get(address);
     if (known !== undefined) {
-      if (MNEMONICS.has(known.toLowerCase())) throw new WireFailure("invalid-input", `The symbol ${known} at ${hex4(address)} has the name of an instruction, which ACME cannot read as a label. Rename the symbol with c64-knowledge.`);
+      if (MNEMONICS.has(known.toLowerCase())) throw new WireFailure("invalid-input", `The symbol ${known} at ${formatC64Address(address)} has the name of an instruction, which ACME cannot read as a label. Rename the symbol with c64-knowledge.`);
       names.set(address, known);
       if (inImage(address)) namedLabels++;
       continue;
@@ -488,14 +481,14 @@ export function layout(input: SourceInput): Layout {
       continue;
     }
     if (patch.end > piece.end) {
-      refuse(`The range runs past the end of the file ${piece.file} at ${hex4(piece.end)}: a patch is in one file.`);
+      refuse(`The range runs past the end of the file ${piece.file} at ${formatC64Address(piece.end)}: a patch is in one file.`);
       continue;
     }
     const starts = new Set(piece.items.map((item) => (item.kind === "instruction" ? item.address : item.start)));
     const ends = new Set(piece.items.map((item) => (item.kind === "instruction" ? item.address + item.length - 1 : item.end)));
     if (!starts.has(patch.start) || !ends.has(patch.end)) {
       const cut = piece.items.find((item) => item.kind === "instruction" && ((patch.start > item.address && patch.start < item.address + item.length) || (patch.end >= item.address && patch.end < item.address + item.length - 1)));
-      refuse(cut === undefined ? "The range does not start and end at an item of the source." : `The range cuts the instruction at ${hex4((cut as InstructionItem).address)}.`);
+      refuse(cut === undefined ? "The range does not start and end at an item of the source." : `The range cuts the instruction at ${formatC64Address((cut as InstructionItem).address)}.`);
       continue;
     }
     if (sourceNames.has(patch.switch)) {
@@ -607,7 +600,7 @@ export function instructionText(opcode: number, suffix: string, expression: stri
 /** The plain number of an operand: what the probe assembles, and what a comment shows. */
 export function literalOperand(opcode: number, value: number): string {
   const { mode } = OPCODES[opcode]!;
-  return MODE_LENGTH[mode] === 3 || mode === "rel" ? hex4(value) : hex2(value);
+  return MODE_LENGTH[mode] === 3 || mode === "rel" ? formatC64Address(value) : formatC64Byte(value);
 }
 
 /** One instruction of each form, for the probe: the form, and the instruction bytes. */
@@ -659,9 +652,9 @@ function cellsOf(item: DataItem, layout: Layout, breaks: Set<number>): Cell[] {
   const { byteAt } = layout;
   const cells: Cell[] = [];
   const name = (address: number) => layout.names.get(address);
-  const expression = (target: number) => name(target) ?? hex4(target);
-  const rtsExpression = (target: number) => (name(target) === undefined ? hex4((target - 1) & 0xffff) : `${name(target)}-1`);
-  const byteCell = (address: number, text = hex2(byteAt(address))): Cell => ({ address, length: 1, directive: "!byte", text });
+  const expression = (target: number) => name(target) ?? formatC64Address(target);
+  const rtsExpression = (target: number) => (name(target) === undefined ? formatC64Address((target - 1) & 0xffff) : `${name(target)}-1`);
+  const byteCell = (address: number, text = formatC64Byte(byteAt(address))): Cell => ({ address, length: 1, directive: "!byte", text });
 
   if (item.region !== undefined && POINTER_TYPES.includes(item.type)) {
     const rts = item.type === "rts-addresses" || item.type === "rts-addresses-split";
@@ -696,7 +689,7 @@ function cellsOf(item: DataItem, layout: Layout, breaks: Set<number>): Cell[] {
       const offset = address - (item.region?.start ?? item.start);
       const last = odd && address === item.region!.end;
       if (offset % 2 === 0 && !last && address + 1 <= item.end && !breaks.has(address + 1)) {
-        cells.push({ address, length: 2, directive: "!word", text: hex4(byteAt(address) | (byteAt(address + 1) << 8)) });
+        cells.push({ address, length: 2, directive: "!word", text: formatC64Address(byteAt(address) | (byteAt(address + 1) << 8)) });
         address++;
       } else cells.push(byteCell(address));
     }
@@ -721,12 +714,12 @@ function cellsOf(item: DataItem, layout: Layout, breaks: Set<number>): Cell[] {
       let end = address;
       while (end + 1 <= item.end && byteAt(end + 1) === value && !breaks.has(end + 1)) end++;
       if (end - address + 1 >= MIN_FILL) {
-        cells.push({ address, length: end - address + 1, directive: "!fill", text: `${end - address + 1}, ${hex2(value)}` });
+        cells.push({ address, length: end - address + 1, directive: "!fill", text: `${end - address + 1}, ${formatC64Byte(value)}` });
         address = end;
         continue;
       }
     }
-    cells.push(byteCell(address, binary ? `%${value.toString(2).padStart(8, "0")}` : hex2(value)));
+    cells.push(byteCell(address, binary ? `%${value.toString(2).padStart(8, "0")}` : formatC64Byte(value)));
   }
   return cells;
 }
@@ -779,7 +772,7 @@ function describeConstant(layout: Layout, address: number): string | undefined {
   const mirrorOf = layout.describe?.(address).mirrorOf;
   if (mirrorOf === undefined) return undefined;
   const register = layout.platform.find((row) => row.address === mirrorOf);
-  return `Mirror of ${hex4(mirrorOf)}${register === undefined ? "" : ` (${register.name})`}.`;
+  return `Mirror of ${formatC64Address(mirrorOf)}${register === undefined ? "" : ` (${register.name})`}.`;
 }
 
 /** How the source uses a constant, for example "Used: read 4, written 1." */
@@ -801,7 +794,7 @@ function switchLines(layout: Layout): string[] {
   const width = Math.max(...[...switches.keys()].map((name) => name.length));
   const lines = ["; Switches: each is 0 unless the build defines it. Assemble with -DNAME=1", "; (c64-assembler --define NAME=1) to put in the patches of NAME."];
   for (const [name, patches] of switches) {
-    const ranges = patches.map((patch) => `${hex4(patch.start)}-${hex4(patch.end)}`).join(", ");
+    const ranges = patches.map((patch) => `${formatC64Address(patch.start)}-${formatC64Address(patch.end)}`).join(", ");
     lines.push(`!ifndef ${name} { ${name} = 0 }${" ".repeat(width - name.length)} ; ${patches.length} patch${patches.length === 1 ? "" : "es"}: ${ranges}`);
   }
   return [...lines, ""];
@@ -829,7 +822,7 @@ function constantsText(layout: Layout): { text: string; labels: SourceLabel[] } 
     const next = describe?.(row.address).area;
     if (next !== undefined && next.start !== area?.start) {
       area = next;
-      out.push("", `; ${area.name[0]!.toUpperCase()}${area.name.slice(1)} ${hex4(area.start)}-${hex4(area.end)}`);
+      out.push("", `; ${area.name[0]!.toUpperCase()}${area.name.slice(1)} ${formatC64Address(area.start)}-${formatC64Address(area.end)}`);
       if (area.meaning !== undefined) out.push(`; ${area.meaning}`);
     }
     const line = `${row.name.padEnd(nameColumn)} = ${row.value.padEnd(valueColumn)}`;
@@ -865,7 +858,7 @@ export interface Rendered {
   /** Instructions written as bytes, because ACME writes their form with other bytes. */
   asBytes: Array<{ address: number; text: string }>;
   /** With coverage: runs of instructions that no run executed. */
-  notExecuted?: { instructions: number; ranges: Range[] };
+  notExecuted?: { instructions: number; ranges: AddressRange[] };
   /** Each instruction written with an operand expression: its file and line (1 is the first line of the text). */
   expressions: Array<{ address: number; length: number; file: string; line: number }>;
   /** Operand expressions written as numbers, in address order. */
@@ -900,7 +893,7 @@ function macrosText(layout: Layout): { text: string; lines: Map<string, { first:
 /** The lines that open a patch: its zone, the switch, the code, and the guard that stops a patch longer than its range. */
 function patchOpening(patch: PatchBlock): string[] {
   const bytes = patch.end - patch.start + 1;
-  const range = `${hex4(patch.start)}-${hex4(patch.end)}`;
+  const range = `${formatC64Address(patch.start)}-${formatC64Address(patch.end)}`;
   const comment = patch.comment === undefined ? [] : patch.comment.split(/\r?\n/).map((line) => `${INDENT}; ${line}`.trimEnd());
   return [
     `!zone patch_${patch.switch}_${patch.start.toString(16).padStart(4, "0")} {`,
@@ -909,7 +902,7 @@ function patchOpening(patch: PatchBlock): string[] {
     `${INDENT}; ${patch.switch} on: ${bytes} byte${bytes === 1 ? "" : "s"} at ${range}, NOP after the code`,
     ...comment,
     ...(patch.code === "" ? [] : patch.code.split(/\r?\n/)),
-    `${INDENT}!if * - .patch_start > ${bytes} { !error "The patch ${patch.switch} at ${hex4(patch.start)} has ", * - .patch_start, " bytes; the range has ${bytes}." } else { !fill ${bytes} - (* - .patch_start), $ea }`,
+    `${INDENT}!if * - .patch_start > ${bytes} { !error "The patch ${patch.switch} at ${formatC64Address(patch.start)} has ", * - .patch_start, " bytes; the range has ${bytes}." } else { !fill ${bytes} - (* - .patch_start), $ea }`,
     "} else {",
   ];
 }
@@ -957,10 +950,10 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
   result.macrosAsInstructions.sort((a, b) => a.start - b.start);
   const unwritten = new Map(layout.operandsAsNumbers.map((row) => [row.address, row.expression]));
   const { coverage } = layout;
-  const notExecuted = { instructions: 0, ranges: [] as Range[] };
+  const notExecuted = { instructions: 0, ranges: [] as AddressRange[] };
 
   for (const piece of layout.pieces) {
-    const out: string[] = [`; ${piece.title}`, `; ${hex4(piece.start)}-${hex4(piece.end)}`, ""];
+    const out: string[] = [`; ${piece.title}`, `; ${formatC64Address(piece.start)}-${formatC64Address(piece.end)}`, ""];
     /** True while the instructions before have not executed: they form one range. */
     let running = false;
     /** The line of the mark of the open range of instructions that did not execute. */
@@ -981,7 +974,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         }
         // The mark gives the range, so a reader finds it in the full list.
         const range = notExecuted.ranges.at(-1)!;
-        out[markLine] = `; not executed ${hex4(range.start)}-${hex4(range.end)}`;
+        out[markLine] = `; not executed ${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
         notExecuted.instructions += count;
       }
       running = !executed;
@@ -1067,7 +1060,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         if (written !== undefined && numbers.has(item.address)) asNumber(written, numbers.get(item.address)!);
         if (unwritten.has(item.address)) sides.unshift(`= ${unwritten.get(item.address)!}`);
         if (asBytes.has(form.key)) {
-          const bytes = Array.from({ length: item.length }, (_, offset) => hex2(layout.byteAt(item.address + offset)));
+          const bytes = Array.from({ length: item.length }, (_, offset) => formatC64Byte(layout.byteAt(item.address + offset)));
           out.push(withSide(`${INDENT}!byte ${bytes.join(",")}`, [literal, ...sides].join(" ")));
           result.asBytes.push({ address: item.address, text: literal });
         } else if (written !== undefined) {
@@ -1111,7 +1104,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
   }
   const main = [...header.map((line) => `; ${line}`), "", "!cpu 6510", '!source "constants.asm"', ...(layout.macros.length > 0 ? ['!source "macros.asm"'] : [])];
   for (const piece of layout.pieces) {
-    if (piece.segmentStart) main.push("", `* = ${hex4(piece.start)}`);
+    if (piece.segmentStart) main.push("", `* = ${formatC64Address(piece.start)}`);
     main.push(`!source "${piece.file}"`);
   }
   result.files.push({ name: "main.asm", text: `${main.join("\n")}\n` });

@@ -8,7 +8,7 @@
 
 import { parseArgs } from "node:util";
 
-import { COVERAGE, EXECUTE, formatC64Address, parseC64Address, READ, WRITE } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, parseC64Address, READ, WRITE } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { checkActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
@@ -19,7 +19,7 @@ import { resolveProjectPath } from "#src/project.ts";
 import { runBody, UsageError } from "#src/script.ts";
 import { basicStart, inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
-import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges, type Range } from "./lib/stages.ts";
+import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges } from "./lib/stages.ts";
 import { entryState, IO_AREAS, json, machineState, readRam, READY_FRAMES, vectorsOf } from "./lib/machine.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
@@ -281,7 +281,7 @@ async function follow(
   let stopAt: number | undefined;
   const atTarget = (pc: number) => stopAt !== undefined && pc === stopAt;
   // The current stage: its memory map since it started, chunk by chunk, its own code, and the written code it calls.
-  let stage = { map: new Uint8Array(0x10000), own: new Set<number>(), called: [] as Range[] };
+  let stage = { map: new Uint8Array(0x10000), own: new Set<number>(), called: [] as AddressRange[] };
   const startStage = async (next: number, last: Uint8Array) => {
     mergeMaps(stage.map, last);
     found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(stage.map, options.minStage), next });
@@ -296,9 +296,9 @@ async function follow(
    * blocks, and stops at the first opcode that the stage wrote and the CPU
    * then executes. Own code stops the run once; a write watch arms it again.
    */
-  const rerun = async (candidates: Range[], frames: number): Promise<{ used: number; map: Uint8Array; next?: number; atTarget: boolean }> => {
+  const rerun = async (candidates: AddressRange[], frames: number): Promise<{ used: number; map: Uint8Array; next?: number; atTarget: boolean }> => {
     const points = new Map<string, { kind: "exec" | "watch"; id: number }>();
-    const arm = async (wanted: { exec: Range[]; watch: Range[] }) => {
+    const arm = async (wanted: { exec: AddressRange[]; watch: AddressRange[] }) => {
       const keys = new Set([...wanted.exec.map((range) => `exec:${range.start}:${range.end}`), ...wanted.watch.map((range) => `watch:${range.start}:${range.end}`)]);
       for (const [key, point] of points) {
         if (keys.has(key)) continue;
