@@ -83,8 +83,8 @@ button{font:inherit;font-size:12px;padding:3px 8px}
 table{border-collapse:collapse;font-size:13px}td{padding:2px 10px;border-top:1px solid #333}
 </style></head><body>
 <div class="row"><button id="start" disabled>Start (Enter)</button><button id="end" disabled>End and save (F12)</button><button id="cancel" disabled>Cancel (F11)</button><span class="gap"></span><button id="port">Port 2 (F9)</button><button id="arrows">Arrows: joystick (F10)</button><button id="map">Keys: symbolic</button></div>
-<div id="state">connecting</div>
 <canvas id="screen" width="392" height="272"></canvas>
+<div id="state">connecting</div>
 <table>
 <tr><td>Start, End, Cancel</td><td>Enter (on the start screen), F12, F11</td></tr>
 <tr><td>Joystick</td><td>arrow keys and space (when F10 sets joystick), or a gamepad</td></tr>
