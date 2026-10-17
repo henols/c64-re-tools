@@ -1,28 +1,17 @@
-// The c64-testing run script: runs steps in its own emulator, from a
-// program or a snapshot file, and writes what the steps ask for into a
-// directory: screens, coverage maps, snapshot files, and results.json with
-// the observations. One side, no comparison. Exit status: 0 when every step
-// ran, 1 when a step did not, 2 for a bad call.
-
-import { parseArgs } from "node:util";
+// The runs of c64-testing: steps in their own emulator, from a program or a
+// snapshot file, and what the steps ask for written into a folder: screens,
+// coverage maps, snapshot files, and results.json with the observations. One
+// side, no comparison.
 
 import { formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, WireFailure, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
-import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
+import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { resolveProjectPath } from "#src/project.ts";
-import { runBody, UsageError } from "#src/script.ts";
-import { namesOf } from "./lib/scenario.ts";
-
-const USAGE = `run.ts <run.json> --out <dir>
-
-<run.json> is a run file relative to the project folder: where to start,
-optional symbols, and the steps. See references/scenario-format.md, section
-Runs. The files that the steps write, and results.json, go into <dir>. The
-result is one JSON object.`;
+import { UsageError } from "#src/script.ts";
+import { namesOf } from "./scenario.ts";
 
 type RunStep =
   | ActionStep
@@ -125,7 +114,8 @@ function showHit(hit: TraceHit) {
   return { ...hit, pc: formatC64Address(hit.pc), ...(hit.address === undefined ? {} : { address: formatC64Address(hit.address) }) };
 }
 
-async function runFile(path: string, out: string): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+/** Runs the run file and writes its files into `out`. failed: a step did not run. */
+export async function runFile(path: string, out: string): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const run = readRun(path);
   const symbols = namesOf(run.symbols ?? "none");
   const at = (location: string): number => {
@@ -135,8 +125,9 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
     return address;
   };
   const files: string[] = [];
+  const written: Written[] = [];
   const write = (name: string, bytes: Uint8Array) => {
-    writeProjectFile(`${out}/${name}`, bytes, { what: "--out" });
+    written.push(writeReported(`${out}/${name}`, bytes, { what: "--out" }));
     files.push(name);
   };
   const observations: Record<string, unknown> = {};
@@ -220,26 +211,8 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
     const pc = (await client.registersGet("c64")).pc;
     const results = { name: run.name, completed: reason === undefined, steps: run.steps.length, done, ...(reason === undefined ? {} : { reason }), pc: formatC64Address(pc), files: [...files], observations, ...(Object.keys(traces).length === 0 ? {} : { traces }) };
     write("results.json", Buffer.from(`${JSON.stringify(results, null, 2)}\n`));
-    return { output: { ...results, files, observations: Object.keys(observations), out }, failed: reason !== undefined };
+    return { output: { ...results, files: written, observations: Object.keys(observations), out }, failed: reason !== undefined };
   } finally {
     await client.close();
   }
 }
-
-await runBody(
-  async (argv) => {
-    const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { out: { type: "string" }, help: { type: "boolean" } } });
-    if (values.help) throw new UsageError("");
-    if (positionals.length !== 1) throw new UsageError("give one run file");
-    if (values.out === undefined) throw new UsageError("run needs --out <dir>");
-    try {
-      resolveProjectPath(values.out);
-    } catch {
-      throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
-    }
-    const { output, failed } = await runFile(positionals[0]!, values.out);
-    if (failed) process.exitCode = 1;
-    return output;
-  },
-  { usage: USAGE },
-);

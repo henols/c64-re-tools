@@ -17,7 +17,7 @@ import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { joystickCounterPrg, LEFT_SEEN } from "../../fixtures/prg/joystick-counter.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/run.ts");
+const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-run-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -31,7 +31,7 @@ async function runSteps(...args: string[]): Promise<{ status: number | null; jso
     supervisor.installExitGuard();
     server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
   }
-  const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
+  const child = spawn(process.execPath, [...process.execArgv, script, "run", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
@@ -82,7 +82,7 @@ test("a runUntil that does not reach its target ends the run with the reason", {
   assert.equal(status, 1);
   assert.equal(json.completed, false);
   assert.match(json.reason as string, /Step 2 did not reach its target in 20 frames/);
-  assert.deepEqual(json.files, ["results.json"], "the steps after it did not run");
+  assert.deepEqual((json.files as Array<{ out: string }>).map((file: { out: string }) => file.out.split("/").at(-1)), ["results.json"], "the steps after it did not run");
 });
 
 test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff finds the change between two snapshots", { skip: liveSkip, timeout: 300_000 }, async () => {
@@ -114,8 +114,8 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
   assert.equal(all.length, 0x10000);
   assert.deepEqual([...all.subarray(0xe000, 0xe004)], [1, 2, 3, 4]);
 
-  const differ = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/diff.ts");
-  const child = spawn(process.execPath, [...process.execArgv, differ, "runs/under/a.vsf", "runs/under/b.vsf"], { cwd: project, env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` }, stdio: ["ignore", "pipe", "inherit"] });
+  const differ = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+  const child = spawn(process.execPath, [...process.execArgv, differ, "diff", "runs/under/a.vsf", "runs/under/b.vsf"], { cwd: project, env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];

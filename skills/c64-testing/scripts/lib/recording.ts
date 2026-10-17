@@ -11,13 +11,14 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
+import { isRefusal, Refusal } from "#src/errors.ts";
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
-import { readProjectFile } from "#src/host-client/transfer.ts";
+import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
-import { namesOf, ScenarioError, type Outcome } from "./scenario.ts";
+import { namesOf, type Outcome } from "./scenario.ts";
 
 export const RECORDING_FORMAT = 1;
 /**
@@ -127,7 +128,7 @@ const KEY_CODES = new Map<string, number>([
 export function keyCodes(text: string): number[] {
   return [...text.replace(/\r\n?/g, "\n")].map((character) => {
     const code = KEY_CODES.get(character.toUpperCase());
-    if (code === undefined) throw new ScenarioError(`press cannot press ${JSON.stringify(character)} on the keyboard of the replay core`);
+    if (code === undefined) throw new Refusal("invalid-input", `press cannot press ${JSON.stringify(character)} on the keyboard of the replay core`);
     return code;
   });
 }
@@ -142,7 +143,7 @@ export function joystickMask(direction: Extract<ActionStep, { joystick: unknown 
 export function parseStateItem(text: string): StateItem {
   const match = /^([^:]+)(?::(\d+))?$/.exec(text);
   const size = Number(match?.[2] ?? 1);
-  if (match === null || !isInteger(size, 1, MAX_STATE_BYTES)) throw new ScenarioError(`--state ${text}: give a name or a $ address, with :size from 1 to ${MAX_STATE_BYTES}`);
+  if (match === null || !isInteger(size, 1, MAX_STATE_BYTES)) throw new Refusal("invalid-input", `--state ${text}: give a name or a $ address, with :size from 1 to ${MAX_STATE_BYTES}`);
   return { at: match[1]!, size };
 }
 
@@ -166,15 +167,16 @@ function checkInputs(value: unknown, fail: (message: string) => never): string[]
   return (value as string[]).map((input) => input.toLowerCase());
 }
 
-/** Reads and checks a record file. Throws ScenarioError naming the first problem. */
+/** Reads and checks a record file. Refuses it with the first problem. */
 export function readRecordFile(path: string): RecordFile {
   const fail = (message: string): never => {
-    throw new ScenarioError(`record file ${path}: ${message}`);
+    throw new Refusal("invalid-input", `record file ${path}: ${message}`);
   };
   let value: unknown;
   try {
     value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
   } catch (error) {
+    if (isRefusal(error)) throw error;
     return fail((error as Error).message);
   }
   if (!isObject(value)) return fail("it must be a JSON object");
@@ -231,12 +233,13 @@ export function readRecording(folder: string): Recording {
   try {
     value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
   } catch (error) {
-    throw new ScenarioError(`recording ${path}: ${(error as Error).message}`);
+    if (isRefusal(error)) throw error;
+    throw new Refusal("invalid-input", `recording ${path}: ${(error as Error).message}`);
   }
-  if (!isObject(value) || value.format !== RECORDING_FORMAT) throw new ScenarioError(`recording ${path}: it is not a recording of format ${RECORDING_FORMAT}`);
-  for (const key of ["name", "program", "sha256", "symbols", "hash"]) if (typeof value[key] !== "string") throw new ScenarioError(`recording ${path}: ${key} is missing`);
-  for (const key of ["inputs", "events", "sites"]) if (!Array.isArray(value[key])) throw new ScenarioError(`recording ${path}: ${key} is missing`);
-  if (!isInteger(value.ticks, 1, Number.MAX_SAFE_INTEGER)) throw new ScenarioError(`recording ${path}: ticks is missing`);
+  if (!isObject(value) || value.format !== RECORDING_FORMAT) throw new Refusal("invalid-input", `recording ${path}: it is not a recording of format ${RECORDING_FORMAT}`);
+  for (const key of ["name", "program", "sha256", "symbols", "hash"]) if (typeof value[key] !== "string") throw new Refusal("invalid-input", `recording ${path}: ${key} is missing`);
+  for (const key of ["inputs", "events", "sites"]) if (!Array.isArray(value[key])) throw new Refusal("invalid-input", `recording ${path}: ${key} is missing`);
+  if (!isInteger(value.ticks, 1, Number.MAX_SAFE_INTEGER)) throw new Refusal("invalid-input", `recording ${path}: ticks is missing`);
   return value as unknown as Recording;
 }
 
@@ -254,7 +257,7 @@ function sideAddresses(symbols: Map<string, number>, side: string, move: { code:
   const resolve = (location: Location, kind: "code" | "data") => {
     if (location.startsWith("$")) return move[kind](parseC64Address(location));
     const address = symbols.get(location);
-    if (address === undefined) throw new ScenarioError(`the ${side} side has no symbol ${location}`);
+    if (address === undefined) throw new Refusal("invalid-input", `the ${side} side has no symbol ${location}`);
     return address;
   };
   return { code: (location) => resolve(location, "code"), data: (location) => resolve(location, "data") };
@@ -294,11 +297,11 @@ export function siteMap(sites: RecordedSite[], from: Map<string, number>, to: Ma
 
 /** Power-on and READY, then the program in memory as a LOAD leaves it, and RUN in the keyboard queue. */
 async function startProgram(core: C64RunSession, prg: Uint8Array, load: boolean): Promise<CoreStatus> {
-  if (prg.length < 3) throw new ScenarioError("the program is not a PRG file");
+  if (prg.length < 3) throw new Refusal("invalid-input", "the program is not a PRG file");
   await core.status(`run ${READY_FRAMES * PAL_FRAME_CYCLES}`);
   const start = prg[0]! | (prg[1]! << 8);
   const end = start + prg.length - 2;
-  if (!load && start !== 0x0801) throw new ScenarioError(`the program loads at ${formatC64Address(start)}, not at $0801 with a BASIC start line: give load true and a registers step that starts it`);
+  if (!load && start !== 0x0801) throw new Refusal("invalid-input", `the program loads at ${formatC64Address(start)}, not at $0801 with a BASIC start line: give load true and a registers step that starts it`);
   await core.write(start, prg.subarray(2));
   // The pointers that LOAD sets: the end of the program and of the variables.
   for (const pointer of [0x2d, 0x2f, 0x31, 0xae]) await core.write(pointer, Uint8Array.of(end & 0xff, end >> 8));
@@ -629,5 +632,5 @@ export interface ReplayResult {
   movedSites?: number;
   /** Input reads of the rebuild that the recording had no value for: they got the idle value. */
   idleReads?: number;
-  files?: string[];
+  files?: Written[];
 }

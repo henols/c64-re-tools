@@ -11,7 +11,8 @@ import { after, afterEach, beforeEach, test } from "node:test";
 
 import { STOP_AND_ASK } from "../../src/protocol/messages.ts";
 import { firstDifference, joystickMask, keyCodes, mover, parseStateItem, pinLines, readRecordFile, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
-import { namesOf, ScenarioError } from "../../skills/c64-testing/scripts/lib/scenario.ts";
+import { Refusal } from "../../src/errors.ts";
+import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-recording-"));
 mkdirSync(join(project, ".c64-re-tools"));
@@ -55,14 +56,14 @@ test("a record file needs a program and steps the replay core can do; a checkpoi
     badInput: { ...valid, inputs: ["$c000"] },
     badRange: { ...valid, inputs: ["$de00-$e000"] },
   })) {
-    assert.throws(() => readRecordFile(file(`${name}.json`, bad)), ScenarioError, name);
+    assert.throws(() => readRecordFile(file(`${name}.json`, bad)), Refusal, name);
   }
 });
 
 test("a state item of the command line is a name or an address with an optional size", () => {
   assert.deepEqual(parseStateItem("room"), { at: "room", size: 1 });
   assert.deepEqual(parseStateItem("$c100:2"), { at: "$c100", size: 2 });
-  assert.throws(() => parseStateItem("room:0"), ScenarioError);
+  assert.throws(() => parseStateItem("room:0"), Refusal);
 });
 
 test("an address of the original moves with the name before it", () => {
@@ -116,22 +117,22 @@ test("the first different checkpoint names the state items that differ", () => {
 test("record and replay refuse by name when c64run is missing", () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   for (const [script, args] of [
-    ["record.ts", ["ok.json", "--out", "tests/recordings/walk"]],
-    ["replay.ts", ["tests/recordings/walk"]],
+    ["record", ["ok.json", "--out", "tests/recordings/walk"]],
+    ["replay", ["tests/recordings/walk"]],
   ] as const) {
-    if (script === "replay.ts") {
+    if (script === "replay") {
       mkdirSync(join(project, "tests/recordings/walk"), { recursive: true });
       writeFileSync(
         join(project, "tests/recordings/walk/recording.json"),
         JSON.stringify({ format: 1, name: "walk", program: "game.prg", sha256: "a3", symbols: "none", inputs: [], events: [], sites: [], ticks: 1, hash: "00000000" }),
       );
     }
-    const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts", script), ...args], {
+    const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), script, ...args], {
       cwd: project,
       encoding: "utf8",
       env: { ...process.env, C64RT_C64RUN: join(project, "no-c64run") },
     });
-    if (script === "replay.ts") {
+    if (script === "replay") {
       // The program changed since the recording: that is found before the core starts.
       assert.equal(run.status, 3, run.stderr);
       assert.match(JSON.parse(run.stdout).reason, /is not the program of the recording/);

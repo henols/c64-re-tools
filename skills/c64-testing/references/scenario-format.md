@@ -81,7 +81,7 @@ A `pc` value is an address. Compare `pc` only when both programs have the code a
 
 ## Runs
 
-A run file (for `run.ts`) has:
+A run file (for `testing.ts run`) has:
 
 - `name`: a short name.
 - `start`: `{ "program": "game.prg" }` to autostart a program with a BASIC start line, `{ "program": "game.prg", "load": true }` to load it with the CPU stopped (set `pc` in a step), or `{ "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" }`.

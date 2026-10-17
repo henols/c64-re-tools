@@ -3,19 +3,18 @@
 // Observations name semantic symbols that resolve per side, comparisons are
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
+import { isRefusal, Refusal } from "#src/errors.ts";
 import { c64AddressOf, formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
 import { ACTION_STEP_KINDS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
 import { applyEntryState, parseEntryState } from "#src/host-client/entry-state.ts";
-import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
+import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { nameTable } from "#src/knowledge/names.ts";
 import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
 import { programImage } from "#src/knowledge/program.ts";
-
-export class ScenarioError extends Error {}
 
 export type Side = "original" | "rebuild";
 export const SIDES: Side[] = ["original", "rebuild"];
@@ -87,7 +86,7 @@ export interface ScenarioResult {
   /** The bytes that the comparison left out, with their reasons. */
   excluded?: Array<{ checkpoint: string; at: Location; reason: string }>;
   /** The files that a FAIL wrote with --out. */
-  files?: string[];
+  files?: Written[];
 }
 
 const STEP_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", ...ACTION_STEP_KINDS, "observe"];
@@ -101,16 +100,17 @@ const STEP_KEYS: Record<string, readonly string[]> = {
 export const OBSERVED_REGISTERS = ["pc", "a", "x", "y", "sp", "flags"] as const;
 type ObservedRegister = (typeof OBSERVED_REGISTERS)[number];
 
-/** Reads and checks a scenario file. Throws ScenarioError naming the first problem. */
+/** Reads and checks a scenario file. Refuses it with the first problem. */
 export function readScenario(path: string): Scenario {
   let value: unknown;
   try {
     value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
   } catch (error) {
-    throw new ScenarioError(`cannot read the scenario ${path}: ${(error as Error).message}`);
+    if (isRefusal(error)) throw error;
+    throw new Refusal("invalid-input", `cannot read the scenario ${path}: ${(error as Error).message}`);
   }
   const fail = (message: string): never => {
-    throw new ScenarioError(`scenario ${path}: ${message}`);
+    throw new Refusal("invalid-input", `scenario ${path}: ${message}`);
   };
   if (!isObject(value)) return fail("is not a JSON object");
   const scenario = value as unknown as Scenario;
@@ -255,7 +255,8 @@ export function namesOf(source: string, kinds: "code" | "all" = "all"): Map<stri
   try {
     value = JSON.parse(readProjectFile(source).bytes.toString("utf8"));
   } catch (error) {
-    throw new ScenarioError(`cannot read the symbols ${source}: ${(error as Error).message}`);
+    if (isRefusal(error)) throw error;
+    throw new Refusal("invalid-input", `cannot read the symbols ${source}: ${(error as Error).message}`);
   }
   const assembled = (value as { symbols?: Array<{ name: string; address?: string; value?: string }> }).symbols;
   const entries: Array<[string, unknown]> = Array.isArray(assembled)
@@ -269,7 +270,7 @@ export function namesOf(source: string, kinds: "code" | "all" = "all"): Map<stri
   const names = new Map<string, number>();
   for (const [name, address] of entries) {
     const at = typeof address === "string" ? c64AddressOf(address) : undefined;
-    if (at === undefined) throw new ScenarioError(`the symbol ${name} in ${source} has no $ address`);
+    if (at === undefined) throw new Refusal("invalid-input", `the symbol ${name} in ${source} has no $ address`);
     names.set(name, at);
   }
   return names;
@@ -283,7 +284,7 @@ export function resolve(location: Location, symbols: Map<string, number>, side: 
     try {
       return parseC64Address(location);
     } catch {
-      throw new ScenarioError(`${location} is not $ followed by four hex digits`);
+      throw new Refusal("invalid-input", `${location} is not $ followed by four hex digits`);
     }
   }
   const address = symbols.get(location);
@@ -311,7 +312,7 @@ async function normalize(client: ViceSessionClient): Promise<void> {
   } finally {
     db?.close();
   }
-  if (state === undefined) throw new ScenarioError("normalize needs the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json> of the c64-knowledge skill");
+  if (state === undefined) throw new Refusal("invalid-input", "normalize needs the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json> of the c64-knowledge skill");
   await applyEntryState(client, parseEntryState(state, "the entry state of the knowledge"), { registers: false });
 }
 
@@ -353,7 +354,7 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
         const read = { data: (await readMemoryInParts(client, address, size, spec.view ?? "cpu")).toString("hex") };
         const excluded = (spec.exclude ?? []).map((exclude) => {
           const offset = at(exclude.at) - address;
-          if (offset < 0 || offset >= size) throw new ScenarioError(`the exclude ${exclude.at} lies outside the observed ${spec.at} (${size} bytes)`);
+          if (offset < 0 || offset >= size) throw new Refusal("invalid-input", `the exclude ${exclude.at} lies outside the observed ${spec.at} (${size} bytes)`);
           return { offset, at: exclude.at, reason: exclude.reason };
         });
         observation.memory.push({ label: size > 1 ? `${spec.at} (${size} bytes)` : spec.at, address, bytes: [...Buffer.from(read.data, "hex")], tolerance: spec.tolerance ?? 0, excluded });
@@ -435,11 +436,10 @@ export function compare(original: Map<string, Observation>, rebuild: Map<string,
  * Writes the files of a FAIL into `out`: for a screen difference both
  * screens and the difference image, and memory.json with each differing byte.
  */
-function writeFailFiles(out: string, original: Map<string, Observation>, rebuild: Map<string, Observation>, differences: Difference[]): string[] {
-  const files: string[] = [];
+function writeFailFiles(out: string, original: Map<string, Observation>, rebuild: Map<string, Observation>, differences: Difference[]): Written[] {
+  const files: Written[] = [];
   const write = (name: string, bytes: Uint8Array) => {
-    writeProjectFile(`${out}/${name}`, bytes, { what: "--out" });
-    files.push(name);
+    files.push(writeReported(`${out}/${name}`, bytes, { what: "--out" }));
   };
   const memory: Array<{ checkpoint: string; what: string; bytes: Array<{ address: string; original: string; rebuild: string }> }> = [];
   const hex = (byte: number) => byte.toString(16).padStart(2, "0");

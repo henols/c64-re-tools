@@ -12,7 +12,8 @@ import { openForWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
 import type { ViceSessionClient } from "../../src/host-client/vice-session.ts";
 import { changedRanges, diffStates } from "../../skills/c64-testing/scripts/lib/diff.ts";
-import { compare, namesOf, readScenario, resolve, runScenario, ScenarioError } from "../../skills/c64-testing/scripts/lib/scenario.ts";
+import { Refusal } from "../../src/errors.ts";
+import { compare, namesOf, readScenario, resolve, runScenario } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-testing-"));
 const home = process.cwd();
@@ -44,9 +45,9 @@ test("a scenario needs a name, both subjects, known steps and at least one check
     sameCheckpoint: { ...valid, steps: [valid.steps[2], valid.steps[2]] },
     noTimeout: { ...valid, steps: [{ runUntil: { at: "done" } }, valid.steps[2]] },
   })) {
-    assert.throws(() => readScenario(scenarioFile(`${name}.json`, bad)), ScenarioError, name);
+    assert.throws(() => readScenario(scenarioFile(`${name}.json`, bad)), Refusal, name);
   }
-  assert.throws(() => readScenario("missing.json"), ScenarioError);
+  assert.throws(() => readScenario("missing.json"), Refusal);
 });
 
 test("each side resolves names from its own symbols", () => {
@@ -101,13 +102,13 @@ test("an excluded byte does not count, and steps for one side and the new step k
     [{ normalize: "entry_state.json" }],
     [{ observe: "y", memory: [{ at: "$d01e", exclude: [{ at: "$d01e" }] }] }],
   ]) {
-    assert.throws(() => readScenario(scenario(bad)), ScenarioError, JSON.stringify(bad));
+    assert.throws(() => readScenario(scenario(bad)), Refusal, JSON.stringify(bad));
   }
 });
 
 test("the checklist lists each checkpoint and what only a person can judge", () => {
-  const checklist = resolvePath(home, "skills/c64-testing/scripts/checklist.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, checklist, "ok.json", "--item", "FIRE starts the game."], { cwd: project, encoding: "utf8" });
+  const checklist = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, checklist, "checklist", "ok.json", "--item", "FIRE starts the game."], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const { text } = JSON.parse(run.stdout) as { text: string };
   assert.match(text, /^# Playtest checklist/);
@@ -168,9 +169,9 @@ test("each step is checked before the scenario runs", () => {
     observeVicii: { observe: "x", vicii: "yes" },
     observeTypo: { observe: "x", sprite: [0] },
   })) {
-    assert.throws(() => readScenario(scenarioFile(`${name}.json`, { ...valid, steps: [step, observe] })), ScenarioError, name);
+    assert.throws(() => readScenario(scenarioFile(`${name}.json`, { ...valid, steps: [step, observe] })), Refusal, name);
   }
-  assert.throws(() => readScenario(scenarioFile("standard.json", { ...valid, videoStandard: "secam" })), ScenarioError);
+  assert.throws(() => readScenario(scenarioFile("standard.json", { ...valid, videoStandard: "secam" })), Refusal);
   // The NTSC frame is 247 lines high: a mask of 384x247 covers it, and on PAL it leaves 25 lines.
   const ntscMask = { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 384, height: 247 }] } };
   assert.throws(() => readScenario(scenarioFile("ntsc-mask.json", { ...valid, videoStandard: "ntsc", steps: [ntscMask] })), /covers the whole screen/);
@@ -216,21 +217,23 @@ test("each side starts from a hard reset, each checkpoint has its own baseline, 
   assert.equal(new Set(captured).size, 2, "two checkpoints, two baselines");
 });
 
-test("the checklist refuses a bad scenario or no scenario as invalid input, with the usage text", () => {
-  const checklist = resolvePath(home, "skills/c64-testing/scripts/checklist.ts");
+test("the checklist refuses a bad scenario and, with the usage text, no scenario as invalid input", () => {
+  const checklist = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
   writeFileSync(join(project, "bad.json"), JSON.stringify({ name: "" }));
-  for (const args of [["bad.json"], []]) {
-    const run = spawnSync(process.execPath, [...process.execArgv, checklist, ...args], { cwd: project, encoding: "utf8" });
+  const call = (...args: string[]) => {
+    const run = spawnSync(process.execPath, [...process.execArgv, checklist, "checklist", ...args], { cwd: project, encoding: "utf8" });
     assert.equal(run.status, 2, args.join(" "));
-    const error = (JSON.parse(run.stdout) as { error: { code: string; message: string } }).error;
-    assert.equal(error.code, "invalid-input");
-    assert.match(error.message, /\n\nchecklist\.ts <scenario\.json>/, args.join(" "));
-  }
+    return (JSON.parse(run.stdout) as { error: { code: string; message: string } }).error;
+  };
+  assert.deepEqual(call("bad.json"), { code: "invalid-input", message: "scenario bad.json: needs a name" });
+  const none = call();
+  assert.equal(none.code, "invalid-input");
+  assert.match(none.message, /^checklist needs <scenario\.json>\.\.\.\n\ntesting\.ts checklist <scenario\.json>/);
 });
 
 test("a run refuses a bad call before it opens an emulator", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/run.ts");
-  const call = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+  const call = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, "run", ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   writeFileSync(join(project, "run.json"), JSON.stringify({ name: "r", start: { program: "game.prg" }, steps: [{ screen: "../escape" }] }));
   writeFileSync(join(project, "two.json"), JSON.stringify({ name: "r", start: { program: "game.prg", snapshot: "s.vsf" }, steps: [{ frames: 1 }] }));
   for (const args of [["run.json"], ["run.json", "--out", "../outside"], ["run.json", "--out", "out"], ["two.json", "--out", "out"]]) {
@@ -252,14 +255,14 @@ test("diff gives the changed ranges of two memory files and the changed items of
   writeFileSync(join(project, "before.bin"), before);
   writeFileSync(join(project, "after.bin"), after);
   writeFileSync(join(project, "results.json"), JSON.stringify({ observations: { start: { memory: { room: "00", $0400: "2020" }, registers: { a: 1, pc: "$0400" } }, later: { memory: { room: "05", $0400: "2020" }, registers: { a: 1, pc: "$0410" } } } }));
-  const script = resolvePath(import.meta.dirname, "../../skills/c64-testing/scripts/diff.ts");
-  const differ = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8" });
+  const script = resolvePath(import.meta.dirname, "../../skills/c64-testing/scripts/testing.ts");
+  const differ = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, "diff", ...args], { cwd: project, encoding: "utf8" });
   const memory = differ("before.bin", "after.bin");
   assert.equal(memory.status, 0, memory.stdout + memory.stderr);
-  assert.deepEqual(JSON.parse(memory.stdout).memory, { changedBytes: 2, ranges: 1, listed: [{ start: "$2fa1", end: "$2fa2", a: "0000", b: "0707" }] });
+  assert.deepEqual(JSON.parse(memory.stdout).memory, { changedBytes: 2, count: 1, listed: [{ start: "$2fa1", end: "$2fa2", a: "0000", b: "0707" }] });
   const observed = differ("results.json:start", "results.json:later");
   assert.equal(observed.status, 0, observed.stdout + observed.stderr);
-  assert.deepEqual(JSON.parse(observed.stdout), { a: "results.json:start", b: "results.json:later", registers: [{ name: "cpu.pc", a: 0x0400, b: 0x0410 }], observed: [{ at: "room", a: "00", b: "05" }] });
+  assert.deepEqual(JSON.parse(observed.stdout), { a: "results.json:start", b: "results.json:later", registers: { count: 1, listed: [{ name: "cpu.pc", a: 0x0400, b: 0x0410 }] }, observed: { count: 1, listed: [{ at: "room", a: "00", b: "05" }] } });
   assert.equal(differ("before.bin", "results.json:later").status, 2, "two states of one kind");
   assert.equal(differ("results.json:start", "results.json:nothing").status, 2);
 });

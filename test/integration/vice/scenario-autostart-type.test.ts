@@ -16,7 +16,7 @@ import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { keyWaitPrg } from "../../fixtures/prg/key-wait.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/test.ts");
+const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-autostart-type-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -39,7 +39,7 @@ test("a type step right after autostart reaches the program", { skip: liveSkip, 
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
   server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
-  const child = spawn(process.execPath, [...process.execArgv, script, "key.json"], {
+  const child = spawn(process.execPath, [...process.execArgv, script, "test", "key.json"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
     stdio: ["ignore", "pipe", "inherit"],

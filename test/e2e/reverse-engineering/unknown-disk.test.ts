@@ -121,7 +121,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
       ],
     }),
   );
-  const verified = await run("c64-testing", "test.ts", "counts.json");
+  const verified = await run("c64-testing", "testing.ts", "test", "counts.json");
   assert.deepEqual(verified.json, { result: "PASS", scenario: "counts to ten and turns the border green", checkpoints: ["counted"], differences: [] });
   assert.equal(verified.status, 0);
 });

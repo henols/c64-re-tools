@@ -19,7 +19,7 @@ import { gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { importImage } from "../../fixtures/program.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/test.ts");
+const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-d46-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -33,7 +33,7 @@ async function runTest(...args: string[]): Promise<{ status: number | null; json
     supervisor.installExitGuard();
     server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
   }
-  const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
+  const child = spawn(process.execPath, [...process.execArgv, script, "test", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
@@ -71,7 +71,8 @@ test("one-side steps, a raster sync, normalize and an exclude make two different
   const fail = await runTest("fail.json", "--out", "results/fail");
   assert.equal(fail.json.result, "FAIL", JSON.stringify(fail.json));
   assert.deepEqual((fail.json.differences as Array<{ what: string }>).map((difference) => difference.what), ["screen"]);
-  assert.deepEqual(fail.json.files, ["done-original.png", "done-rebuild.png", "done-diff.png"]);
-  for (const file of fail.json.files as string[]) assert.equal(readFileSync(join(project, "results", "fail", file)).subarray(1, 4).toString(), "PNG", file);
+  const files = (fail.json.files as Array<{ out: string }>).map((file) => file.out);
+  assert.deepEqual(files, ["results/fail/done-original.png", "results/fail/done-rebuild.png", "results/fail/done-diff.png"]);
+  for (const file of files) assert.equal(readFileSync(join(project, file)).subarray(1, 4).toString(), "PNG", file);
   assert.equal(existsSync(join(project, "results", "fail", "memory.json")), false, "no memory differed");
 });

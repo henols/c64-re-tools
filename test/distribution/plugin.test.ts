@@ -40,7 +40,7 @@ test("the plugin holds every skill with its scripts, their src/ modules, referen
   const paths = testing.resources!.map((resource) => resource.path);
   assert.deepEqual(
     testing.resources!.filter((resource) => resource.executable === true).map((resource) => resource.path),
-    ["scripts/checklist.ts", "scripts/diff.ts", "scripts/record.ts", "scripts/replay.ts", "scripts/run.ts", "scripts/test.ts"],
+    ["scripts/testing.ts"],
   );
   for (const path of [
     "scripts/lib/scenario.ts",

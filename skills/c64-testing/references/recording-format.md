@@ -2,7 +2,7 @@
 
 ## Record file
 
-A record file (for `record.ts`) is one JSON object in a project file.
+A record file (for `testing.ts record`) is one JSON object in a project file.
 
 ```json
 {
@@ -50,7 +50,7 @@ A `type` step can press A to Z, 0 to 9, space, return (`\n`) and `+-.:@,*;=/!"#$
 
 ## Play
 
-With `--play`, `record.ts` does the steps, then a person plays. The page on `http://localhost:<port>/` (`--http-port`, default 6465) shows the screen at 50 frames each second. It has no sound.
+With `--play`, `testing.ts record` does the steps, then a person plays. The page on `http://localhost:<port>/` (`--http-port`, default 6465) shows the screen at 50 frames each second. It has no sound.
 
 | Button | Effect |
 |---|---|
@@ -68,7 +68,7 @@ The page sends input only between Start and End. The input of the page goes into
 
 ## Recording folder
 
-`record.ts` writes these files into the `--out` folder:
+`testing.ts record` writes these files into the `--out` folder:
 
 | File | Content |
 |---|---|
@@ -80,7 +80,7 @@ A site is the address of the instruction that reads. The values are hex. `<from>
 
 ## Replay
 
-`replay.ts` replays a recording folder:
+`testing.ts replay` replays a recording folder:
 
 1. It replays the recording on the original program. The session must end with the recorded cycles and state hash. Else the result is INCONCLUSIVE. It also takes the state at each checkpoint of the original.
 2. With `--rebuild`, it replays the recording on the rebuild. At each checkpoint, the rebuild first gets the pinned values of the original. Then the script compares the state. The cycles can be different.

@@ -20,7 +20,7 @@ import { renameSymbol } from "../../../src/knowledge/write.ts";
 import { BROKEN, EQUIVALENT, ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/test.ts");
+const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m9-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -68,7 +68,7 @@ async function hostAddress(): Promise<string> {
 }
 
 async function runTest(scenario: string): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [...process.execArgv, script, scenario], { cwd: project, env: { ...process.env, C64RT_HOST: await hostAddress() }, stdio: ["ignore", "pipe", "inherit"] });
+  const child = spawn(process.execPath, [...process.execArgv, script, "test", scenario], { cwd: project, env: { ...process.env, C64RT_HOST: await hostAddress() }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];

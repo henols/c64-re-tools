@@ -22,8 +22,8 @@ A PASS proves only the behavior that the scenario does and observes. It does not
 The script starts one emulator through the host runtime. It runs the scenario on the original and then on the rebuild. Before each side, it does a hard reset of the emulator. The CPU then stops at the reset vector.
 
 ```
-node <skill>/scripts/test.ts tests/moves-left.json --out .c64-re-tools/local/results/moves-left
-node <skill>/scripts/checklist.ts tests/moves-left.json --item 'FIRE starts the game.'
+node <skill>/scripts/testing.ts test tests/moves-left.json --out .c64-re-tools/local/results/moves-left
+node <skill>/scripts/testing.ts checklist tests/moves-left.json --item 'FIRE starts the game.'
 ```
 
 The test script prints one JSON object. The exit status is 0 for PASS, 1 for FAIL, 3 for INCONCLUSIVE and 2 for a bad call. With `--out`, a FAIL writes files into that directory: both screens and the difference image for each screen difference, and `memory.json` with each byte that differs. `files` in the result names them. A PASS writes no files. To keep the screens of a PASS, use a run (below).
@@ -35,7 +35,7 @@ The checklist script prints a Markdown checklist for a human tester.
 A run does steps on one program, with no comparison, and keeps the results as files. Use it for many steps. One run replaces many emulator calls, for example a visit to each room of a game.
 
 ```
-node <skill>/scripts/run.ts .c64-re-tools/local/runs/rooms/run.json --out .c64-re-tools/local/runs/rooms
+node <skill>/scripts/testing.ts run .c64-re-tools/local/runs/rooms/run.json --out .c64-re-tools/local/runs/rooms
 ```
 
 The run file gives where to start (a program, or a snapshot file), the steps, and optional symbols. To go on from the live emulator, save its state with `c64_snapshot` action `save` and `out`, and start the run from that file. Besides the steps of a scenario, a run has these steps:
@@ -63,7 +63,7 @@ The record and replay scripts run the replay core `c64run` on this machine, not 
 Ask the user to play first. Tell the user which parts of the program the recordings must have, for example each room, a fight and a lost life. Make a scripted recording only for a part that the sessions of the user do not have, or when the user cannot play.
 
 ```
-node <skill>/scripts/record.ts tests/record/start.json --out tests/recordings/play1 --play --joystick 1
+node <skill>/scripts/testing.ts record tests/record/start.json --out tests/recordings/play1 --play --joystick 1
 ```
 
 - With `--play`, a person plays the program after the steps of the record file. The steps can start the program, for example a key for an intro.
@@ -76,15 +76,15 @@ node <skill>/scripts/record.ts tests/record/start.json --out tests/recordings/pl
 A scripted recording has only steps. See [references/recording-format.md](references/recording-format.md). The steps are `frames`, `joystick`, `type`, `write`, `registers` and `runUntil` with `at` or `memory`.
 
 ```
-node <skill>/scripts/record.ts tests/record/rooms.json --out tests/recordings/rooms
-node <skill>/scripts/replay.ts tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/game.prg --symbols build/game.json
+node <skill>/scripts/testing.ts record tests/record/rooms.json --out tests/recordings/rooms
+node <skill>/scripts/testing.ts replay tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/game.prg --symbols build/game.json
 ```
 
 - The record script writes the recording folder. The exit status is 0 when it recorded the session, 1 when the session did not complete, and 2 for a bad call. `executed` gives the instructions in the coverage map.
 - The replay script first replays the recording on the original. The original must end the session with the recorded state. Then the script replays the recording on the rebuild and compares the state at each checkpoint.
 - `--checkpoint` gives a routine, and `--state` gives each memory item to compare. Use the names that the knowledge has at the time of the replay. A `$` address is an address of the original. On the rebuild, it moves with the name before it.
 - The replay script gives PASS, FAIL or INCONCLUSIVE, with the exit status 0, 1 or 3. A FAIL gives the first checkpoint that is different and the state items that are different.
-- With `--out`, a FAIL writes the RAM of the two sides at that checkpoint. Compare the two files with `diff.ts`.
+- With `--out`, a FAIL writes the RAM of the two sides at that checkpoint. Compare the two files with `testing.ts diff`.
 - Without `--rebuild`, the replay script only replays the recording on the original.
 
 A checkpoint is one entry of a routine. Use a routine that the program executes one time in each pass of its game logic, for example the main loop. Do not use an interrupt handler.
@@ -106,11 +106,11 @@ Commit the recording folder with the scenarios. A recording is not knowledge.
 ### Differences
 
 ```
-node <skill>/scripts/diff.ts .c64-re-tools/local/runs/rooms/before.vsf .c64-re-tools/local/runs/rooms/after.vsf
-node <skill>/scripts/diff.ts .c64-re-tools/local/runs/rooms/results.json:room0 .c64-re-tools/local/runs/rooms/results.json:room3
+node <skill>/scripts/testing.ts diff .c64-re-tools/local/runs/rooms/before.vsf .c64-re-tools/local/runs/rooms/after.vsf
+node <skill>/scripts/testing.ts diff .c64-re-tools/local/runs/rooms/results.json:room0 .c64-re-tools/local/runs/rooms/results.json:room3
 ```
 
-`diff.ts` tells what changed between two states of one kind. Use it in place of your own compare script.
+`testing.ts diff` tells what changed between two states of one kind. Use it in place of your own compare script.
 
 - Two snapshot files: the script restores each one in its own emulator. It gives the changed ranges of the RAM and of the colour RAM, and the changed VIC-II, CIA, SID and CPU registers.
 - Two memory files of a run: the changed ranges. For a file of less than 64 KiB, `--at` gives the address of its first byte.
@@ -179,7 +179,7 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 - INCONCLUSIVE, "is not the program of the recording": the program file changed after the recording. Record the session again.
 - A record result with `recorded` false: a step did not reach its target. Change the step.
 - A record result with `executed` 0: the program never read its input from RAM, so the coverage map is empty. The recording can still replay.
-- A FAIL from a replay: compare the two RAM files of `--out` with `diff.ts`. Then examine the first different state item with the c64-emulator skill.
+- A FAIL from a replay: compare the two RAM files of `--out` with `testing.ts diff`. Then examine the first different state item with the c64-emulator skill.
 - A program that loads more files from a disk: the replay core has no disk drive. Use a test scenario in the emulator.
 - A byte that cannot be the same on both sides, for example a read-only collision register: use `exclude` with the reason. Do not use `exclude` to hide a real difference.
 

@@ -47,7 +47,7 @@ function symbols(base: number) {
 }
 
 function script(name: string, args: string[]): { status: number | null; result: Record<string, unknown> } {
-  const run = spawnSync(process.execPath, [...process.execArgv, join(root, "skills/c64-testing/scripts", name), ...args], { cwd: project, encoding: "utf8", timeout: 120_000 });
+  const run = spawnSync(process.execPath, [...process.execArgv, join(root, "skills/c64-testing/scripts/testing.ts"), name, ...args], { cwd: project, encoding: "utf8", timeout: 120_000 });
   assert.ok(run.stdout !== "", run.stderr);
   return { status: run.status, result: JSON.parse(run.stdout) as Record<string, unknown> };
 }
@@ -79,7 +79,7 @@ writeFileSync(
 const compare = ["--checkpoint", "count", "--state", "$c100:2"];
 
 test("a session records with no checkpoint, and replays on the original to the cycle", { skip, timeout: 120_000 }, () => {
-  const recorded = script("record.ts", ["walk.json", "--out", "tests/recordings/walk"]);
+  const recorded = script("record", ["walk.json", "--out", "tests/recordings/walk"]);
   assert.equal(recorded.status, 0, JSON.stringify(recorded.result));
   assert.equal(recorded.result.recorded, true);
   assert.ok((recorded.result.executed as number) > 10, `executed ${recorded.result.executed}`);
@@ -88,15 +88,15 @@ test("a session records with no checkpoint, and replays on the original to the c
   const coverage = readFileSync(join(project, "tests/recordings/walk/coverage.bin"));
   assert.equal(coverage.length, 65536);
   assert.equal(coverage[0xc015]! & 4, 4, "the counter loop is executed in the map");
-  const self = script("replay.ts", ["tests/recordings/walk"]);
+  const self = script("replay", ["tests/recordings/walk"]);
   assert.deepEqual([self.status, self.result.result], [0, "PASS"]);
-  const counted = script("replay.ts", ["tests/recordings/walk", ...compare]);
+  const counted = script("replay", ["tests/recordings/walk", ...compare]);
   assert.equal(counted.status, 0, JSON.stringify(counted.result));
   assert.ok((counted.result.checkpoints as number) >= 65, `${counted.result.checkpoints} checkpoints`);
 });
 
 test("a session is deterministic: two recordings of one record file are the same, byte for byte", { skip, timeout: 120_000 }, () => {
-  const again = script("record.ts", ["walk.json", "--out", "tests/recordings/walk-again"]);
+  const again = script("record", ["walk.json", "--out", "tests/recordings/walk-again"]);
   assert.equal(again.status, 0, JSON.stringify(again.result));
   for (const name of ["recording.json", "reads.txt", "coverage.bin"]) {
     assert.deepEqual(readFileSync(join(project, "tests/recordings/walk-again", name)), readFileSync(join(project, "tests/recordings/walk", name)), name);
@@ -104,14 +104,14 @@ test("a session is deterministic: two recordings of one record file are the same
 });
 
 test("a relocated rebuild replays the same, and a changed one fails at the first left frame", { skip, timeout: 120_000 }, () => {
-  const moved = script("replay.ts", ["tests/recordings/walk", ...compare, "--rebuild", "moved.prg", "--symbols", "moved.json"]);
+  const moved = script("replay", ["tests/recordings/walk", ...compare, "--rebuild", "moved.prg", "--symbols", "moved.json"]);
   assert.deepEqual([moved.status, moved.result.result, moved.result.movedSites, moved.result.idleReads], [0, "PASS", 1, undefined]);
-  const right = script("replay.ts", ["tests/recordings/walk", ...compare, "--rebuild", "right.prg", "--out", "out"]);
+  const right = script("replay", ["tests/recordings/walk", ...compare, "--rebuild", "right.prg", "--out", "out"]);
   assert.equal(right.status, 1, JSON.stringify(right.result));
   const difference = right.result.firstDifference as { checkpoint: number; items: Array<{ at: string; original: string; rebuild: string }> };
   // Left is pressed after 20 frames: the frame that sees it first differs, in the left count.
   assert.ok(difference.checkpoint >= 20 && difference.checkpoint <= 23, `checkpoint ${difference.checkpoint}`);
   assert.equal(difference.items[0]!.at, "$c100");
-  assert.deepEqual(right.result.files, [`original-${difference.checkpoint}.bin`, `rebuild-${difference.checkpoint}.bin`]);
+  assert.deepEqual((right.result.files as Array<{ out: string }>).map((file: { out: string }) => file.out.split("/").at(-1)), [`original-${difference.checkpoint}.bin`, `rebuild-${difference.checkpoint}.bin`]);
   assert.equal(readFileSync(join(project, "out", `rebuild-${difference.checkpoint}.bin`)).length, 65536);
 });

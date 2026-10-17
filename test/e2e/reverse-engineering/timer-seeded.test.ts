@@ -89,7 +89,7 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
         steps: [{ reset: "hard" }, { autostart: true }, { runUntil: { target: { kind: "address", address: "$c00c" }, timeoutFrames: 300 } }, { observe: "seeded", memory: [{ at: "$c100", size: 2 }] }],
       }),
     );
-    return run("c64-testing", "test.ts", name);
+    return run("c64-testing", "testing.ts", "test", name);
   };
   const withTimers = await scenario("timers.json", "src/loader.prg");
   assert.equal(withTimers.json.result, "PASS", withTimers.stdout);
