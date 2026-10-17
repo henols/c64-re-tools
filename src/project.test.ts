@@ -11,8 +11,8 @@ const root = process.cwd();
 
 test("project paths stay under the harness working directory", () => {
   assert.equal(resolveProjectPath("src/main.a", root), resolve(root, "src/main.a"));
-  assert.throws(() => resolveProjectPath("../outside", root), /escapes/);
-  assert.throws(() => resolveProjectPath(resolve(root, "absolute"), root), /relative/);
+  assert.throws(() => resolveProjectPath("../outside", root), /leads out of the project folder/);
+  assert.throws(() => resolveProjectPath(resolve(root, "absolute"), root), /is not relative/);
 });
 
 test("project files must really be inside the project, also through symbolic links", () => {
@@ -28,7 +28,7 @@ test("project files must really be inside the project, also through symbolic lin
     assert.equal(resolveProjectFile("build/game.prg", project), realpathSync(join(project, "build", "game.prg")));
     assert.equal(resolveProjectFile("inside-link", project), realpathSync(join(project, "build", "game.prg")));
     assert.throws(() => resolveProjectFile("outside-link", project), /symbolic link/);
-    assert.throws(() => resolveProjectFile("../secret", project), /escapes/);
+    assert.throws(() => resolveProjectFile("../secret", project), /leads out of the project folder/);
     assert.throws(() => resolveProjectFile("missing.prg", project), (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT");
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
@@ -153,5 +153,5 @@ test("projectRelative gives one spelling of a project path", () => {
   assert.equal(projectRelative("./runs/a.bin", root), "runs/a.bin");
   assert.equal(projectRelative("runs//x/../a.bin", root), "runs/a.bin");
   assert.equal(projectRelative(join("runs", "a.bin"), root), "runs/a.bin");
-  assert.throws(() => projectRelative("../a.bin", root), /escapes/);
+  assert.throws(() => projectRelative("../a.bin", root), /leads out of the project folder/);
 });

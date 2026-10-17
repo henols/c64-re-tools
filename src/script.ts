@@ -13,7 +13,7 @@ import { parseArgs } from "node:util";
 
 import { c64AddressOf, formatC64Address, SPACE_PATTERN, SYMBOL_NAME, type AddressRange } from "./c64.ts";
 import { isRefusal, Refusal, type ErrorCode } from "./errors.ts";
-import { useProject } from "./project.ts";
+import { projectRoot, resolveProjectPath, useProject } from "./project.ts";
 import { shownMessage } from "./protocol/messages.ts";
 import { elapsedMs, startTrace, trace, type TraceFields } from "./trace.ts";
 
@@ -380,6 +380,17 @@ function asksHelp(argv: readonly string[]): boolean {
   return (end < 0 ? argv : argv.slice(0, end)).includes("--help");
 }
 
+/** Refuses a path that is not relative to the project folder or that leads out of it. A refusal of the project lookup itself passes on. */
+function checkPath(text: string, what: string): void {
+  const root = projectRoot();
+  try {
+    resolveProjectPath(text, root);
+  } catch (error) {
+    if (isRefusal(error)) throw new UsageError(`${what}: ${error.message}`);
+    throw error;
+  }
+}
+
 /** Parses the command line of one command. Refuses a wrong count of subjects, an unknown option, a missing required option or a value of the wrong form. */
 export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readonly string[]): Call {
   const options = commandOptions(command);
@@ -417,6 +428,7 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
       if (spec.kind === "range" && rangeParts(text) === undefined) throw new UsageError(`--${name} must be <start>-<end>, each ${ADDRESS_FORM}, for example '$c000-$cfff', not ${JSON.stringify(text)}`);
       if (spec.kind === "space" && !SPACE_PATTERN.test(text)) throw new UsageError(`--${name} must be c64, drive8, or bank0 to bank255, not ${JSON.stringify(text)}`);
       if (spec.kind === "choice" && !(spec.choices ?? []).includes(text)) throw new UsageError(`--${name} must be one of ${(spec.choices ?? []).join(", ")}, not ${JSON.stringify(text)}`);
+      if (spec.kind === "path") checkPath(text, `--${name}`);
     }
   }
   const call = new Call(script.name, command.name, subjects, options, values, script.names);

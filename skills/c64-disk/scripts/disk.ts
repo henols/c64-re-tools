@@ -2,119 +2,145 @@
 // Host Runtime and extracts files into the project. T64 tape files and CRT
 // cartridge files are read locally: no host tool reads them.
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { parseArgs } from "node:util";
-
 import { formatC64Address } from "#src/c64.ts";
+import { isRefusal, Refusal } from "#src/errors.ts";
 import { inspectDisk } from "#src/host-client/tools.ts";
-import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
-import { resolveProjectPath } from "#src/project.ts";
-import { runBody, UsageError } from "#src/script.ts";
-import { ContainerError, parseCrt, parseT64, tapeFile } from "./lib/containers.ts";
+import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
+import { OPTIONS, runScript, type Call, type SubjectSpec } from "#src/script.ts";
+import { parseCrt, parseT64, tapeFile } from "./lib/containers.ts";
 
-const USAGE = `disk.ts <action> <image> [name] [--out <file>]
+const IMAGE: SubjectSpec = { name: "<image>", help: "a .d64, .d71, .d81 or .g64 disk image, relative to the project folder" };
+const NAME: SubjectSpec = { name: "<name>", help: "the file name as the directory shows it. Write a byte that has no character as {$xx}, for example {$c1}" };
 
-  directory <image>                 disk name, id, free blocks and the files
-  bam <image>                       free and used sectors of each track, and the
-                                    used sectors that no file holds
-  entry <image> <name>              the directory entry of one file
-  chain <image> <name>              the track and sector of each block of one file
-  read <image> <name> --out <file>  write the bytes of one file into the project
-  crt <file.crt> --out <dir>        write each CHIP packet of a cartridge as a PRG
+type Kind = "disk" | "t64" | "crt";
+const kindOf = (image: string): Kind => (image.toLowerCase().endsWith(".t64") ? "t64" : image.toLowerCase().endsWith(".crt") ? "crt" : "disk");
 
-<image> is a .d64, .d71, .d81 or .g64 file, relative to the project folder.
-directory and read also take a .t64 tape file, and directory a .crt cartridge
-file; the script reads those itself. A CRT can have hardware type 0 (normal
-8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) or 32 (EasyFlash).
-<name> is the file name as the directory shows it. Write a byte that has no
-character as {$xx}, for example {$c1}. The result is one JSON object.`;
-
-const ACTIONS = ["directory", "bam", "entry", "chain", "read", "crt"] as const;
-type Action = (typeof ACTIONS)[number];
-
-async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }> {
-  const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { out: { type: "string" }, help: { type: "boolean" } } });
-  if (values.help) throw new UsageError("");
-  const [action, image, name, ...extra] = positionals;
-  if (!ACTIONS.includes(action as Action)) throw new UsageError(`the action must be one of ${ACTIONS.join(", ")}`);
-  if (image === undefined) throw new UsageError("the disk image is necessary");
-  const named = action === "entry" || action === "chain" || action === "read";
-  if (named && name === undefined) throw new UsageError(`${action} needs a file name`);
-  if ((!named && name !== undefined) || extra.length > 0) throw new UsageError("too many arguments");
-  if ((action === "read" || action === "crt") && values.out === undefined) throw new UsageError(`${action} needs --out`);
-  if (action !== "read" && action !== "crt" && values.out !== undefined) throw new UsageError("only read and crt take --out");
-  let outPath: string | undefined;
-  if (values.out !== undefined) {
-    try {
-      outPath = resolveProjectPath(values.out);
-    } catch {
-      throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
-    }
+/** Runs `body` and names the file in a refusal of its content. */
+function about<T>(image: string, body: () => T): T {
+  try {
+    return body();
+  } catch (error) {
+    if (isRefusal(error) && error.code === "invalid-input") throw new Refusal(error.code, `${image}: ${error.message}`);
+    throw error;
   }
+}
 
-  const kind = image.toLowerCase().endsWith(".t64") ? "t64" : image.toLowerCase().endsWith(".crt") ? "crt" : "disk";
-  if (action === "crt" && kind !== "crt") throw new UsageError("crt needs a .crt file");
-  if (kind !== "disk") {
-    try {
-      return local(kind, action as Action, image, name, values.out);
-    } catch (error) {
-      if (error instanceof ContainerError) throw new UsageError(`${image}: ${error.message}`);
-      throw error;
-    }
-  }
-  const result = await inspectDisk({ image, action: action as Exclude<Action, "crt">, ...(name === undefined ? {} : { name }) });
-  if ("found" in result && !result.found) return { output: { found: false }, failed: true };
-  if (result.action === "read" && result.found) {
-    mkdirSync(dirname(outPath!), { recursive: true });
-    writeFileSync(outPath!, result.data!);
-    return { output: { found: true, name: result.name, bytes: result.bytes, output: values.out }, failed: false };
-  }
+/** A file that the image does not hold. */
+const noFile = (image: string, name: string) => new Refusal("not-found", `${image} has no file ${name}. Give the name as directory shows it.`);
+
+/** directory, bam, entry and chain of a disk image through c1541. */
+async function inspect(call: Call, action: "directory" | "bam" | "entry" | "chain"): Promise<unknown> {
+  const image = call.subject(0);
+  const name = call.subjects[1];
+  const result = await inspectDisk({ image, action, ...(name === undefined ? {} : { name }) });
+  if ("found" in result && !result.found) throw noFile(image, name!);
   const { action: _action, ...output } = result;
-  return { output, failed: false };
+  return output;
 }
 
-/** A tape or cartridge file, read here. */
-function local(kind: "t64" | "crt", action: Action, image: string, name: string | undefined, out: string | undefined): { output: unknown; failed: boolean } {
-  const { bytes } = readProjectFile(image);
-  if (kind === "t64") {
-    if (action !== "directory" && action !== "read") throw new UsageError(`a T64 file has only directory and read, not ${action}`);
-    const tape = parseT64(bytes);
-    const shown = (entry: (typeof tape.entries)[number]) => ({
-      name: entry.name,
-      start: formatC64Address(entry.start),
-      end: formatC64Address(entry.end),
-      bytes: entry.bytes,
-      ...(entry.fixedSize ? { fixedSize: true } : {}),
-    });
-    if (action === "directory") return { output: { name: tape.name, entries: tape.entries.map(shown) }, failed: false };
-    const entry = tape.entries.find((candidate) => candidate.name.toLowerCase() === name!.toLowerCase());
-    if (entry === undefined) return { output: { found: false }, failed: true };
-    const file = tapeFile(bytes, entry);
-    writeProjectFile(out!, file, { what: "--out" });
-    return { output: { found: true, name: entry.name, bytes: file.length, output: out }, failed: false };
-  }
-  if (action !== "directory" && action !== "crt") throw new UsageError(`a CRT file has only directory and crt, not ${action}`);
-  const crt = parseCrt(bytes);
-  const chips = crt.chips.map((chip) => ({
-    bank: chip.bank,
-    address: formatC64Address(chip.address),
-    size: chip.size,
-    space: `bank${chip.bank}`,
-    file: `bank${chip.bank}-${chip.address.toString(16).padStart(4, "0")}.prg`,
-  }));
-  const output = { name: crt.name, type: crt.type, typeName: crt.typeName, exrom: crt.exrom, game: crt.game, ...(crt.mode === undefined ? {} : { mode: crt.mode }), chips };
-  if (action === "directory") return { output: { ...output, chips: chips.map(({ file: _file, ...chip }) => chip) }, failed: false };
-  crt.chips.forEach((chip, index) => writeProjectFile(`${out}/${chips[index]!.file}`, Buffer.concat([Buffer.from([chip.address & 0xff, chip.address >> 8]), chip.data]), { what: "--out" }));
-  writeProjectFile(`${out}/crt.json`, Buffer.from(`${JSON.stringify(output, null, 2)}\n`), { what: "--out" });
-  return { output: { ...output, out }, failed: false };
+/** The directory of a T64 tape file. */
+function tapeDirectory(image: string) {
+  const tape = about(image, () => parseT64(readProjectFile(image).bytes));
+  return {
+    name: tape.name,
+    entries: tape.entries.map((entry) => ({ name: entry.name, start: formatC64Address(entry.start), end: formatC64Address(entry.end), bytes: entry.bytes, ...(entry.fixedSize ? { fixedSize: true } : {}) })),
+  };
 }
 
-await runBody(
-  async (argv) => {
-    const { output, failed } = await run(argv);
-    if (failed) process.exitCode = 1;
-    return output;
-  },
-  { usage: USAGE },
-);
+/** A CRT cartridge file: its header and CHIP packets, each with the PRG file name that crt writes. */
+function cartridge(image: string) {
+  const crt = about(image, () => parseCrt(readProjectFile(image).bytes));
+  const chips = crt.chips.map((chip) => ({ bank: chip.bank, address: formatC64Address(chip.address), size: chip.size, space: `bank${chip.bank}`, file: `bank${chip.bank}-${chip.address.toString(16).padStart(4, "0")}.prg` }));
+  return { crt, header: { name: crt.name, type: crt.type, typeName: crt.typeName, exrom: crt.exrom, game: crt.game, ...(crt.mode === undefined ? {} : { mode: crt.mode }) }, chips };
+}
+
+/** A command that takes only a disk image. */
+const diskOnly = (call: Call, action: string) => {
+  if (kindOf(call.subject(0)) !== "disk") throw new Refusal("invalid-input", `${action} needs a .d64, .d71, .d81 or .g64 disk image, not ${call.subject(0)}`);
+};
+
+await runScript({
+  name: "disk",
+  summary: "Inspects a disk image with c1541 and extracts files into the project. T64 tape files and CRT cartridge files are read here. A CRT can have hardware type 0 (normal 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) or 32 (EasyFlash).",
+  commands: [
+    {
+      name: "directory",
+      summary: "The disk name, the id, the free blocks and the files. It also reads a .t64 tape file and a .crt cartridge file.",
+      subjects: [{ ...IMAGE, help: "a disk image, a .t64 tape file or a .crt cartridge file, relative to the project folder" }],
+      run: async (call) => {
+        const image = call.subject(0);
+        const kind = kindOf(image);
+        if (kind === "t64") return tapeDirectory(image);
+        if (kind === "crt") {
+          const { header, chips } = cartridge(image);
+          return { ...header, chips: chips.map(({ file: _file, ...chip }) => chip) };
+        }
+        return inspect(call, "directory");
+      },
+    },
+    {
+      name: "bam",
+      summary: "The free and used sectors of each track, and the used sectors that no file holds.",
+      subjects: [IMAGE],
+      run: (call) => {
+        diskOnly(call, "bam");
+        return inspect(call, "bam");
+      },
+    },
+    {
+      name: "entry",
+      summary: "The directory entry of one file.",
+      subjects: [IMAGE, NAME],
+      run: (call) => {
+        diskOnly(call, "entry");
+        return inspect(call, "entry");
+      },
+    },
+    {
+      name: "chain",
+      summary: "The track and the sector of each block of one file.",
+      subjects: [IMAGE, NAME],
+      run: (call) => {
+        diskOnly(call, "chain");
+        return inspect(call, "chain");
+      },
+    },
+    {
+      name: "read",
+      summary: "Writes the bytes of one file into the project. It also reads a .t64 tape file.",
+      subjects: [{ ...IMAGE, help: "a disk image or a .t64 tape file, relative to the project folder" }, NAME],
+      options: { out: { ...OPTIONS.out, value: "<file>", help: "the file to write, relative to the project folder", required: true } },
+      run: async (call) => {
+        const [image, name] = [call.subject(0), call.subject(1)];
+        const out = call.string("out")!;
+        const kind = kindOf(image);
+        if (kind === "crt") throw new Refusal("invalid-input", `read takes a disk image or a .t64 tape file. Give crt for ${image}`);
+        if (kind === "t64") {
+          const { bytes } = readProjectFile(image);
+          const tape = about(image, () => parseT64(bytes));
+          const entry = tape.entries.find((candidate) => candidate.name.toLowerCase() === name.toLowerCase());
+          if (entry === undefined) throw noFile(image, name);
+          return { name: entry.name, ...writeReported(out, tapeFile(bytes, entry), { what: "--out" }) };
+        }
+        const result = await inspectDisk({ image, action: "read", name });
+        if (result.action !== "read" || !result.found) throw noFile(image, name);
+        return { name: result.name, ...writeReported(out, result.data!, { what: "--out" }) };
+      },
+    },
+    {
+      name: "crt",
+      summary: "Writes each CHIP packet of a cartridge as a PRG, and crt.json with the header and the packets.",
+      subjects: [{ name: "<file.crt>", help: "a .crt cartridge file, relative to the project folder" }],
+      options: { out: { ...OPTIONS.out, value: "<dir>", help: "the folder for the files, relative to the project folder", required: true } },
+      run: (call) => {
+        const image = call.subject(0);
+        if (kindOf(image) !== "crt") throw new Refusal("invalid-input", `crt needs a .crt file, not ${image}`);
+        const out = call.string("out")!;
+        const { crt, header, chips } = cartridge(image);
+        const files = crt.chips.map((chip, index) => writeReported(`${out}/${chips[index]!.file}`, Buffer.concat([Buffer.from([chip.address & 0xff, chip.address >> 8]), chip.data]), { what: "--out" }));
+        files.push(writeReported(`${out}/crt.json`, `${JSON.stringify({ ...header, chips }, null, 2)}\n`, { what: "--out" }));
+        return { ...header, chips, files };
+      },
+    },
+  ],
+});

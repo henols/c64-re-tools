@@ -60,10 +60,9 @@ async function basic(...args: string[]): Promise<{ status: number | null; json: 
 }
 
 test("a BASIC loader gives its listing and a handoff into the code after BASIC", { skip }, async () => {
-  const { status, json } = await basic("loop.prg");
+  const { status, json } = await basic("list", "loop.prg");
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json, {
-    decoded: true,
     loadRange: { start: "$0801", end: "$0812" },
     basicEnd: "$080d",
     listing: "10 sys2061",
@@ -71,14 +70,13 @@ test("a BASIC loader gives its listing and a handoff into the code after BASIC",
   });
 });
 
-test("machine code is not decoded and exits 1; bad calls exit 2", { skip }, async () => {
-  const code = await basic("code.prg");
-  assert.equal(code.status, 1);
-  assert.equal(code.json.decoded, false);
-  assert.equal(code.json.reason, "Line number 65535 is above 63999, so the bytes are no BASIC program.");
-  const missing = await basic("missing.prg");
+test("machine code is no BASIC program; every error exits 2", { skip }, async () => {
+  const code = await basic("list", "code.prg");
+  assert.equal(code.status, 2);
+  assert.deepEqual(code.json.error, { code: "invalid-input", message: "code.prg is no BASIC program: Line number 65535 is above 63999, so the bytes are no BASIC program." });
+  const missing = await basic("list", "missing.prg");
   assert.equal((missing.json.error as { code: string }).code, "not-found");
-  for (const args of [[], ["loop.prg", "code.prg"], ["--dialect", "70", "loop.prg"]]) {
+  for (const args of [[], ["list"], ["loop.prg"], ["list", "loop.prg", "code.prg"], ["list", "--dialect", "70", "loop.prg"]]) {
     const { status, json } = await basic(...args);
     assert.equal(status, 2, args.join(" "));
     assert.equal((json.error as { code: string }).code, "invalid-input");

@@ -6,6 +6,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSy
 import { dirname, extname, join, relative, sep } from "node:path";
 
 import { isInside, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "../project.ts";
+import { isRefusal } from "../errors.ts";
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { MAX_TREE_FILES, type SourceTree } from "../protocol/tools.ts";
@@ -44,7 +45,7 @@ export function readProjectFile(path: string, options: { root?: string } = {}): 
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new WireFailure("not-found", `There is no file at ${path} in the project folder.`);
     }
-    if (error instanceof TypeError) {
+    if (isRefusal(error) && error.code === "invalid-input") {
       throw new WireFailure("invalid-input", `${path}: give a path relative to the project folder that stays inside it.`);
     }
     throw error;
@@ -90,11 +91,6 @@ export function writeProjectFile(path: string, bytes: Uint8Array, options: { roo
 /** Directories never staged: version control and the toolkit's own project state. */
 const SKIPPED_DIRECTORIES = new Set([".git", ".hg", ".svn", ".c64-re-tools"]);
 
-/**
- * Reads a project folder as a source tree for staging: ordinary
- * files with relative POSIX paths. A symbolic link is followed only when its
- * target stays inside the source root; otherwise the tree is refused.
- */
 /** What a result says of a file that it wrote: the path, the size and the SHA-256. The MCP tools and the scripts report a written file in this form. */
 export interface Written {
   out: string;
@@ -109,6 +105,11 @@ export function writeReported(path: string, data: Uint8Array | string, options: 
   return { out: path, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
+/**
+ * Reads a project folder as a source tree for staging: ordinary
+ * files with relative POSIX paths. A symbolic link is followed only when its
+ * target stays inside the source root; otherwise the tree is refused.
+ */
 export function readProjectTree(path: string, options: { root?: string } = {}): { files: SourceTree; contents: Buffer[] } {
   const projectRootPath = options.root ?? currentProject();
   let sourceRoot: string;
@@ -116,7 +117,7 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
     sourceRoot = resolveProjectFile(path, projectRootPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new WireFailure("not-found", `There is no directory ${path} in the project folder.`);
-    if (error instanceof TypeError) throw new WireFailure("invalid-input", `${path}: give a directory relative to the project folder that stays inside it.`);
+    if (isRefusal(error) && error.code === "invalid-input") throw new WireFailure("invalid-input", `${path}: give a directory relative to the project folder that stays inside it.`);
     throw error;
   }
   if (!statSync(sourceRoot).isDirectory()) throw new WireFailure("invalid-input", `${path} is not a directory.`);

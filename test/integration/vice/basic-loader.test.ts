@@ -66,7 +66,7 @@ before(
     host = await startHost();
     const read = script("c64-disk", "disk.ts", ["read", "original/demo.d64", "BORDER LOADER", "--out", extracted], host.address);
     assert.equal(read.status, 0, JSON.stringify(read.json));
-    const decoded = script("c64-basic", "basic.ts", [extracted], host.address);
+    const decoded = script("c64-basic", "basic.ts", ["list", extracted], host.address);
     assert.equal(decoded.status, 0, JSON.stringify(decoded.json));
     handoff = (decoded.json.handoffs as Array<{ address: string }>)[0]!.address;
   },
@@ -85,7 +85,7 @@ test("a BASIC loader on a disk is found, extracted and decoded to its handoff", 
   const read = script("c64-disk", "disk.ts", ["read", "original/demo.d64", entries[0]!.name, "--out", "extracted/again.prg"], address);
   assert.equal(read.status, 0, JSON.stringify(read.json));
 
-  const decoded = script("c64-basic", "basic.ts", ["extracted/again.prg"], address);
+  const decoded = script("c64-basic", "basic.ts", ["list", "extracted/again.prg"], address);
   assert.equal(decoded.status, 0, JSON.stringify(decoded.json));
   assert.equal(decoded.json.listing, "10 sys2061");
   assert.deepEqual(decoded.json.handoffs, [{ kind: "sys", line: 10, address: "$080d" }]);

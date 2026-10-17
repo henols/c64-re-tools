@@ -109,7 +109,7 @@ test("a T64 lists its files, corrects a wrong end address, and extracts a file a
   const read = disk("read", "game.t64", "GAME", "--out", "extracted/game.prg");
   assert.equal(read.status, 0, JSON.stringify(read.json));
   assert.deepEqual([...readFileSync(join(project, "extracted", "game.prg"))], [0x01, 0x08, 1, 2, 3, 4]);
-  assert.equal(disk("read", "game.t64", "NONE", "--out", "x.prg").status, 1);
+  assert.equal(disk("read", "game.t64", "NONE", "--out", "x.prg").json.error.code, "not-found");
   assert.equal(existsSync(join(project, "x.prg")), false);
   assert.equal(disk("chain", "game.t64", "GAME").status, 2, "a T64 has no blocks");
 });

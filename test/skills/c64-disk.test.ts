@@ -67,14 +67,14 @@ test("the directory lists the disk and its files", { skip }, async () => {
   assert.deepEqual(json.entries, [{ name: "LOOP", type: "prg", blocks: 1, closed: true, locked: false }]);
 });
 
-test("read writes the file into the project; a missing file exits 1 with found false", { skip }, async () => {
+test("read writes the file into the project; a missing file is not-found", { skip }, async () => {
   const { status, json } = await disk("read", "original/game.d64", "loop", "--out", "extracted/loop.prg");
   assert.equal(status, 0, JSON.stringify(json));
-  assert.deepEqual(json, { found: true, name: "LOOP", bytes: borderLoopPrg.length, output: "extracted/loop.prg" });
+  assert.deepEqual({ ...json, sha256: undefined }, { name: "LOOP", out: "extracted/loop.prg", bytes: borderLoopPrg.length, sha256: undefined });
   assert.deepEqual([...readFileSync(join(project, "extracted", "loop.prg"))], [...borderLoopPrg]);
   const missing = await disk("read", "original/game.d64", "OTHER", "--out", "extracted/other.prg");
-  assert.equal(missing.status, 1);
-  assert.deepEqual(missing.json, { found: false });
+  assert.equal(missing.status, 2);
+  assert.deepEqual(missing.json.error, { code: "not-found", message: "original/game.d64 has no file OTHER. Give the name as directory shows it." });
   assert.equal(existsSync(join(project, "extracted", "other.prg")), false);
 });
 

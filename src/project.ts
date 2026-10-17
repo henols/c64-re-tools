@@ -169,18 +169,18 @@ export function projectRoot(): string {
 
 export function resolveProjectPath(path: string, root = projectRoot()): string {
   if (path.length === 0) {
-    throw new TypeError("Project path must not be empty");
+    throw new Refusal("invalid-input", "A project path must not be empty.");
   }
   if (isAbsolute(path)) {
-    throw new TypeError("Project path must be relative");
+    throw new Refusal("invalid-input", `${path} is not relative: give a path relative to the project folder.`);
   }
 
   const candidate = resolve(root, path);
   if (isInside(root, candidate)) return candidate;
-  throw new TypeError("Project path escapes the project root");
+  throw new Refusal("invalid-input", `${path} leads out of the project folder: give a path that stays inside it.`);
 }
 
-/** A project path in one spelling: relative to the project folder, with / and without ./, .. or a double /. Throws TypeError as resolveProjectPath does. */
+/** A project path in one spelling: relative to the project folder, with / and without ./, .. or a double /. Refuses a path as resolveProjectPath does. */
 export function projectRelative(path: string, root = projectRoot()): string {
   return relative(root, resolveProjectPath(path, root)).split(sep).join("/");
 }
@@ -194,13 +194,13 @@ export function isInside(root: string, candidate: string): boolean {
 /**
  * Resolves a project-relative path to an existing file system entry whose real
  * location is inside the project too, so a symbolic link cannot reach outside
- * it. Throws TypeError for a refused path; lets ENOENT through.
+ * it. Refuses a path that leads out; lets ENOENT through.
  */
 export function resolveProjectFile(path: string, root = projectRoot()): string {
   const candidate = resolveProjectPath(path, root);
   const real = realpathSync(candidate);
   if (!isInside(realpathSync(root), real)) {
-    throw new TypeError("Project path escapes the project root through a symbolic link");
+    throw new Refusal("invalid-input", `${path} leads out of the project folder through a symbolic link.`);
   }
   return real;
 }

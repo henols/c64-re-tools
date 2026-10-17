@@ -66,7 +66,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   assert.equal((await run("c64-disk", "disk.ts", "read", "original/mystery.d64", "GAME", "--out", "extracted/game.prg")).status, 0);
 
   // 2. BASIC: the start line hands over to machine code at $080d.
-  const basic = await run("c64-basic", "basic.ts", "extracted/game.prg");
+  const basic = await run("c64-basic", "basic.ts", "list", "extracted/game.prg");
   assert.deepEqual(basic.json.handoffs, [{ kind: "sys", line: 10, address: "$080d" }]);
 
   // 3. Packing: the BASIC start is the same; the file is too short for entropy evidence.
