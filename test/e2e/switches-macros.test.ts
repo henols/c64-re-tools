@@ -94,14 +94,14 @@ test("switches and macros: the source stays identical, each switch fits, and CRA
   assert.match(readFileSync(join(project, "src", "constants.asm"), "utf8"), /^!ifndef CRACK \{ CRACK = 0 \} {3}; 3 patches: \$100e-\$1010, \$1027-\$1028, \$102a-\$102c$/m);
 
   // The agent builds the cracked program with c64-assembler: only the bytes of the CRACK ranges differ.
-  const cracked = script("c64-assembler", "assemble.ts", ["--source-root", "src", "--entry", "main.asm", "--out", "build/cracked.prg", "--define", "CRACK=1", "--compare"]);
+  const cracked = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/cracked.prg", "--define", "CRACK=1", "--compare"]);
   assert.equal(cracked.status, 1, JSON.stringify(cracked.json));
   const [segment] = cracked.json.compare.segments as Array<{ differences: number; firstDifference: { address: string } }>;
   assert.deepEqual([segment!.differences, segment!.firstDifference.address], [8, "$100e"]);
   const built = readFileSync(join(project, "build", "cracked.prg"));
   assert.deepEqual([...built.subarray(2 + 0x0e, 2 + 0x11)], [0xea, 0xea, 0xea], "no JSR check");
   assert.deepEqual([...built.subarray(2 + 0x2a, 2 + 0x2d)], [0x60, 0xea, 0xea], "fail returns");
-  const off = script("c64-assembler", "assemble.ts", ["--source-root", "src", "--entry", "main.asm", "--out", "build/game.prg", "--compare"]);
+  const off = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/game.prg", "--compare"]);
   assert.equal(off.json.compare.identical, true, "without a define, every switch is off");
 
   // The analyzer finds the set16 at $1017 and knows the two uses of inc16 in the knowledge.

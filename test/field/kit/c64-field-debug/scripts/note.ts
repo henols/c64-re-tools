@@ -13,7 +13,7 @@ Options:
   --kind <kind>                bug, confusion, doc, missing, workaround, thought,
                                comprehension or praise
   --component <name>           the skill, the script or the MCP tool, for example
-                               c64-emulator, assemble.ts or c64_screen (default: general)
+                               c64-emulator, assembler.ts or c64_screen (default: general)
   --severity <low|medium|high> how much the problem blocks the work (default: medium)
   --by <llm|user>              who writes the note (default: llm)
   --intent <text>              what you wanted to do

@@ -23,7 +23,7 @@ This skill does not run the program and does not change project knowledge.
 The script runs ACME on this machine. It copies the source root to a temporary directory, assembles it there and writes the program into the project. The host runtime is not necessary.
 
 ```
-node <skill>/scripts/assemble.ts --source-root src --entry main.a --out build/game.prg
+node <skill>/scripts/assembler.ts build src main.a --out build/game.prg
 ```
 
 | Option | Meaning |
