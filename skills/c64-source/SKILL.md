@@ -24,9 +24,9 @@ This skill does not change the knowledge.
 The script runs Ghidra and ACME on this machine. With `--loader`, it also runs the loader in the emulator through the host runtime.
 
 ```
-node <skill>/scripts/generate.ts --out src
-node <skill>/scripts/generate.ts --out src --entry '$080d'
-node <skill>/scripts/generate.ts --out src --loader
+node <skill>/scripts/source.ts generate --out src
+node <skill>/scripts/source.ts generate --out src --entry '$080d'
+node <skill>/scripts/source.ts generate --out src --loader
 ```
 
 | Option | Meaning |

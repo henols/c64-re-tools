@@ -82,9 +82,9 @@ test("switches and macros: the source stays identical, each switch fits, and CRA
   ok("c64-knowledge", "knowledge.ts", ["patch", "$100b-$100d", "TRAINER", "--nop", "--comment", "Lives stay."]);
   assert.deepEqual(ok("c64-knowledge", "knowledge.ts", ["switches"]).switches.map((item: { name: string; patches: unknown[] }) => [item.name, item.patches.length]), [["CRACK", 3], ["TRAINER", 1]]);
 
-  const generated = ok("c64-source", "generate.ts", ["--out", "src"]);
+  const generated = ok("c64-source", "source.ts", ["generate", "--out", "src"]);
   assert.equal(generated.check.identical, true);
-  assert.deepEqual(generated.files, ["segment_1000.asm", "constants.asm", "macros.asm", "main.asm"]);
+  assert.deepEqual(generated.files.map((file: { out: string }) => file.out).filter((path: string) => path.endsWith(".asm")), ["src/segment_1000.asm", "src/constants.asm", "src/macros.asm", "src/main.asm"]);
   assert.deepEqual(generated.switches.map((item: { name: string; result: string; changedBytes: number }) => [item.name, item.result, item.changedBytes]), [["CRACK", "fits", 8], ["TRAINER", "fits", 3]]);
   assert.equal(generated.macroUses, 1);
   assert.deepEqual(generated.macrosAsInstructions.listed, [{ start: "$1011", end: "$1016", macro: "inc16", reason: "The source has a label at $1013, inside the use." }]);
@@ -110,7 +110,7 @@ test("switches and macros: the source stays identical, each switch fits, and CRA
   assert.deepEqual(macros.listed, [{ macro: "set16", start: "$1017", end: "$101e", args: ["ptr", "start"], text: "+set16 ptr, start" }]);
   assert.deepEqual([macros.known, macros.leftOut, macros.batch.writes], [2, undefined, 2], "the set16 macro and its use");
   ok("c64-knowledge", "knowledge.ts", ["apply", ".c64-re-tools/local/macros.json"]);
-  const again = ok("c64-source", "generate.ts", ["--out", "src"]);
+  const again = ok("c64-source", "source.ts", ["generate", "--out", "src"]);
   assert.equal(again.check.identical, true);
   assert.equal(again.macroUses, 2);
   assert.match(readFileSync(join(project, "src", "segment_1000.asm"), "utf8"), /^ {8}\+set16 ptr, start$/m);

@@ -3,7 +3,7 @@
 // knowledge; a target that knowledge does not name gets l_xxxx. Data is
 // written by its region type. The source assembles to the same bytes: the
 // generator forces operand sizes, and writes an opcode form that ACME
-// encodes differently as bytes (see the probe in generate.ts). An operand
+// encodes differently as bytes (see the probe in source.ts). An operand
 // expression of the knowledge is written in place of its number. A
 // patch is written as !if SWITCH { code } else { original }, and a
 // macro use as one +name args line.

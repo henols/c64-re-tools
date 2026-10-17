@@ -8,6 +8,8 @@
 // simulated here before the emulator runs it.
 
 import { type AddressRange, formatC64Address, formatC64Byte } from "#src/c64.ts";
+import { Refusal } from "#src/errors.ts";
+import { parseEntryState } from "#src/host-client/entry-state.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 
 export interface EntryState {
@@ -58,44 +60,20 @@ export function rasterLine(registers: Uint8Array): number {
   return ((registers[0x11]! & 0x80) << 1) | registers[0x12]!;
 }
 
-const FLAG_BITS: Record<string, number> = { n: 0x80, v: 0x40, b: 0x10, d: 0x08, i: 0x04, z: 0x02, c: 0x01 };
+const FLAG_BITS = { n: 0x80, v: 0x40, d: 0x08, i: 0x04, z: 0x02, c: 0x01 } as const;
 
-/** Reads entry_state.json of the c64-unpacker skill. */
-export function readEntryState(text: string, path: string): EntryState {
+/**
+ * The entry state that the loader recreates: the shared entry state of the
+ * c64-unpacker capture, with the flags as PLP reads them, the VIC-II and the CIAs.
+ */
+export function loaderState(value: unknown, where: string): EntryState {
+  const state = parseEntryState(value, where);
   const fail = (what: string): never => {
-    throw new WireFailure("invalid-input", `${path} is not an entry_state.json of the c64-unpacker skill: ${what}.`);
+    throw new Refusal("invalid-input", `${where} is not an entry state of a c64-unpacker capture: ${what}. Capture the program again with c64-unpacker capture or loads.`);
   };
-  let value: Record<string, any>;
-  try {
-    value = JSON.parse(text) as Record<string, any>;
-  } catch (error) {
-    return fail((error as Error).message);
-  }
-  const registers = value.registers;
-  const byte = (item: unknown, what: string) => (Number.isInteger(item) && (item as number) >= 0 && (item as number) <= 0xff ? (item as number) : fail(`${what} is not a byte`));
-  if (typeof registers !== "object" || registers === null) return fail("it has no registers");
-  const pc = typeof registers.pc === "string" && /^\$[0-9a-f]{4}$/i.test(registers.pc) ? Number.parseInt(registers.pc.slice(1), 16) : fail("registers.pc is not a $ address");
-  if (typeof registers.flags !== "object" || registers.flags === null) fail("registers.flags is missing");
   let flags = 0x20;
-  for (const [name, bit] of Object.entries(FLAG_BITS)) if (registers.flags[name] === true) flags |= bit;
-  const pages = new Uint8Array(0x400);
-  for (let page = 0; page < 4; page++) {
-    const hex = value.pages?.[formatC64Address(page << 8)];
-    if (typeof hex !== "string" || !/^[0-9a-f]{512}$/i.test(hex)) fail(`pages.${formatC64Address(page << 8)} is not 256 bytes of hex`);
-    pages.set(Buffer.from(hex as string, "hex"), page << 8);
-  }
-  return {
-    pc,
-    a: byte(registers.a, "registers.a"),
-    x: byte(registers.x, "registers.x"),
-    y: byte(registers.y, "registers.y"),
-    sp: byte(registers.sp, "registers.sp"),
-    flags,
-    port: [byte(value.cpuPort?.$00, "cpuPort.$00"), byte(value.cpuPort?.$01, "cpuPort.$01")],
-    pages,
-    ...readVic(value.io, fail),
-    ...readCia(value, fail),
-  };
+  for (const [name, bit] of Object.entries(FLAG_BITS)) if (state.flags[name as keyof typeof FLAG_BITS]) flags |= bit;
+  return { pc: state.pc, a: state.a, x: state.x, y: state.y, sp: state.sp, flags, port: state.port, pages: state.pages, ...readVic(state.raw.io as Record<string, any> | undefined, fail), ...readCia(state.raw, fail) };
 }
 
 export interface Copy {

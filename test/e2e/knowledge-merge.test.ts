@@ -152,7 +152,7 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
 
   if (generateSkip === false) {
     for (const clone of [first, second]) {
-      const generated = script(clone, "c64-source", "generate.ts", "--out", ".c64-re-tools/local/src");
+      const generated = script(clone, "c64-source", "source.ts", "generate", "--out", ".c64-re-tools/local/src");
       assert.equal(generated.status, 0, JSON.stringify(generated.json));
     }
     const source = (clone: string) => files(join(clone, "game", ".c64-re-tools", "local", "src"));

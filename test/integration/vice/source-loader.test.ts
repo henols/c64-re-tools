@@ -31,7 +31,7 @@ if (skip === false) {
   }
 }
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-source/scripts/generate.ts");
+const script = resolve(import.meta.dirname, "../../../skills/c64-source/scripts/source.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-loader-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -86,7 +86,7 @@ test("the loader puts every segment and pages 0-3 in place and gets to the entry
   const knowledgeScript = resolve(import.meta.dirname, "../../../skills/c64-knowledge/scripts/knowledge.ts");
   const imported = spawnSync(process.execPath, [...process.execArgv, knowledgeScript, "image", "unpacked/image.json"], { cwd: project, encoding: "utf8" });
   assert.equal(imported.status, 0, imported.stdout + imported.stderr);
-  const child = spawn(process.execPath, [...process.execArgv, script, "--out", "src", "--loader"], {
+  const child = spawn(process.execPath, [...process.execArgv, script, "generate", "--out", "src", "--loader"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
     stdio: ["ignore", "pipe", "inherit"],

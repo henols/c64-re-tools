@@ -68,7 +68,7 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
   assert.equal(state.cia.cia1.latchA, 0x4025, "the KERNAL's latch of CIA 1 timer A");
 
   assert.equal((await run("c64-knowledge", "knowledge.ts", "image", "unpacked/image.json")).status, 0);
-  const generated = await run("c64-source", "generate.ts", "--out", "src", "--loader");
+  const generated = await run("c64-source", "source.ts", "generate", "--out", "src", "--loader");
   assert.equal(generated.status, 0, generated.stdout);
   assert.equal(generated.json.loader.verified, true, generated.stdout);
 
@@ -76,7 +76,7 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
   delete state.cia;
   writeFileSync(join(project, "unpacked", "entry_state.json"), JSON.stringify(state));
   assert.equal((await run("c64-knowledge", "knowledge.ts", "image", "unpacked/image.json")).json.entryChanged, true);
-  const old = await run("c64-source", "generate.ts", "--out", "src-old", "--loader");
+  const old = await run("c64-source", "source.ts", "generate", "--out", "src-old", "--loader");
   assert.equal(old.json.loader.verified, true, old.stdout);
 
   const scenario = (name: string, loader: string) => {

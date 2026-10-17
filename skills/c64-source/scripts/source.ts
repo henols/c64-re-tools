@@ -4,18 +4,17 @@
 // also writes a loader that recreates the entry state, simulates it, and
 // checks it in the emulator. Each switch of the patches is built on
 // alone and checked. A macro use that does not give the bytes of the
-// image is written as its instructions. Exit status: 0 when every check
-// passes, 1 when one fails, 2 for a bad call.
+// image is written as its instructions. result is PASS when every check
+// passes, else FAIL.
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { parseArgs } from "node:util";
 
 import { Refusal } from "#src/errors.ts";
-import { type AddressRange, COVERAGE, coverageSeedKinds, formatC64Address, parseC64Address, SPACE_PATTERN, textToPetscii } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, coverageSeedKinds, formatC64Address, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
-import { writeProjectFile } from "#src/host-client/transfer.ts";
+import { writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead } from "#src/knowledge/database.ts";
@@ -29,31 +28,14 @@ import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNamesFor, romUseOf, romUseOfPort, type RomUse } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { runBody, UsageError } from "#src/script.ts";
-import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, readEntryState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
+import { listed, OPTIONS, runScript, UsageError, type Call } from "#src/script.ts";
+import { knowledgeNames } from "#src/knowledge/names.ts";
+import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, loaderState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
 import { OPCODES } from "#src/opcodes.ts";
 import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered } from "./lib/source.ts";
 
-const USAGE = `generate.ts --out <dir> [options]
-
-The program, its entry state and the coverage come from the knowledge:
-put them in with knowledge.ts image and coverage of the c64-knowledge skill.
-Code that no imported run executed is marked and listed; <dir>/not_executed.json
-has all of its ranges.
-
-  --out <dir>        the directory for the source files, relative to the project
-  --entry <address>  an entry point for Ghidra, for example '$080d' (repeatable)
-  --space <space>    the knowledge space of the program: c64 (the default), drive8,
-                     or bank0 to bank255; the coverage and --loader are for c64 only
-  --loader           also write loader.asm and loader.prg: the loader copies the
-                     segments into place, sets the entry state of the knowledge,
-                     and jumps to the entry; it is checked in the emulator
-  --analyzer-names   name an address that has no name of the user or the LLM, and
-                     no platform name, with its analyzer name
-
-The result is one JSON object. Addresses are $ and four hex digits.`;
-
-const MAX_LISTED = 20;
+/** At most this many diagnostics or differences of one check. */
+const MAX_DIAGNOSTICS = 20;
 /** Rounds of assembly that move operand expressions to numbers and macro uses to instructions. */
 const ROUNDS = 6;
 const PROBE_BASE = 0x1000;
@@ -393,7 +375,7 @@ async function checkSwitch(name: string, patches: PatchBlock[], files: Array<{ n
       return found === null ? [] : [{ start: found[1]!, message: found[0] }];
     });
     if (overflow.length > 0) return { ...shown, result: "overflow", overflow };
-    return { ...shown, result: "does not assemble", diagnostics: built.diagnostics.slice(0, MAX_LISTED) };
+    return { ...shown, result: "does not assemble", diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
   }
   const inside = (address: number) => patches.some((patch) => address >= patch.start && address <= patch.end);
   let changed = 0;
@@ -500,7 +482,7 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
       }
       plan.cia.masks.forEach((mask, index) => differ(`CIA ${index + 1} interrupt mask`, chips[index]!.interruptMask, mask));
     }
-    return { verified: differences.length === 0, differences: differences.slice(0, MAX_LISTED) };
+    return { verified: differences.length === 0, differences: differences.slice(0, MAX_DIAGNOSTICS) };
   } finally {
     await client.close();
   }
@@ -549,46 +531,21 @@ function removeOldFiles(out: string, keep: ReadonlySet<string>): void {
   }
 }
 
-async function run(argv: string[]): Promise<{ output: Record<string, unknown>; failed: boolean }> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    strict: true,
-    allowPositionals: true,
-    options: {
-      out: { type: "string" },
-      entry: { type: "string", multiple: true },
-      space: { type: "string" },
-      loader: { type: "boolean" },
-      "analyzer-names": { type: "boolean" },
-      help: { type: "boolean" },
-    },
-  });
-  if (values.help) throw new UsageError("");
-  if (positionals.length !== 0) throw new UsageError("generate takes no image: it reads the program from the knowledge (knowledge.ts image of the c64-knowledge skill puts it in)");
-  if (values.out === undefined) throw new UsageError("generate needs --out <dir>");
-  try {
-    resolveProjectPath(values.out);
-  } catch {
-    throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
-  }
-  const entries = (values.entry ?? []).map((value) => {
-    try {
-      return parseC64Address(value);
-    } catch {
-      throw new UsageError(`--entry must be $ followed by four hex digits, not ${value}`);
-    }
-  });
-  const space = values.space ?? DEFAULT_SPACE;
-  if (!SPACE_PATTERN.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
-  if (space !== DEFAULT_SPACE && values.loader) throw new UsageError("--loader works only in space c64");
-  const knowledge = readKnowledge(space, values["analyzer-names"] === true);
+async function generate(call: Call): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+  const out = call.string("out")!;
+  const entries = call.addresses("entry");
+  const max = call.count("max-listed")!;
+  const space = call.space;
+  const loaderWanted = call.flag("loader");
+  if (space !== DEFAULT_SPACE && loaderWanted) throw new UsageError("--loader works only in space c64");
+  const knowledge = readKnowledge(space, call.flag("analyzer-names"));
   const image = knowledge.program;
   const coverage = knowledge.coverage;
-  if (values.loader && (image.state === undefined || image.entry === undefined)) {
-    throw new UsageError("--loader needs the entry and the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json>");
+  if (loaderWanted && (image.state === undefined || image.entry === undefined)) {
+    throw new Refusal("not-found", "--loader needs the entry and the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json>");
   }
   // Read the entry state before the long steps, so a bad state stops the run at once.
-  const state = values.loader ? readEntryState(JSON.stringify(image.state), "the entry state of the knowledge") : undefined;
+  const state = loaderWanted ? loaderState(image.state, "the entry state of the knowledge") : undefined;
   const romUse = romsInUse(image, coverage);
   const instructions = await decode(image, knowledge, entries, coverage);
   const laid = layout({
@@ -647,9 +604,9 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     files = marked([...rendered.files, ...loaderFiles]);
     built = await assembleFiles(files, "main.asm");
   }
-  removeOldFiles(values.out, new Set(files.map((file) => file.name)));
-  for (const file of files) writeProjectFile(`${values.out}/${file.name}`, Buffer.from(file.text, "utf8"), { what: "--out" });
-  writeProjectFile(`${values.out}/${SOURCE_MAP_FILE}`, Buffer.from(sourceMapText(rendered, space, knowledge.revision, files), "utf8"), { what: "--out" });
+  removeOldFiles(out, new Set(files.map((file) => file.name)));
+  const written: Written[] = files.map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
+  written.push(writeReported(`${out}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.revision, files), { what: "--out" }));
   const showRange = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
   if (rendered.notExecuted !== undefined) {
@@ -663,13 +620,13 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     const files: Record<string, number> = {};
     for (const range of placed) if (range.file !== undefined) files[range.file] = (files[range.file] ?? 0) + 1;
     const all = { revision: knowledge.revision, instructions: rendered.notExecuted.instructions, files, ranges: placed };
-    writeProjectFile(`${values.out}/${NOT_EXECUTED_FILE}`, Buffer.from(`${JSON.stringify(all, null, 2)}\n`, "utf8"), { what: "--out" });
+    written.push(writeReported(`${out}/${NOT_EXECUTED_FILE}`, `${JSON.stringify(all, null, 2)}\n`, { what: "--out" }));
   }
 
   const output: Record<string, unknown> = {
-    out: values.out,
-    files: files.map((file) => file.name),
-    sourceMap: `${values.out}/${SOURCE_MAP_FILE}`,
+    out,
+    files: written,
+    sourceMap: `${out}/${SOURCE_MAP_FILE}`,
     revision: knowledge.revision,
     instructions: rendered.instructions,
     dataBytes: rendered.dataBytes,
@@ -684,51 +641,37 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
       : { entriesInData: inData.map(({ entry, region }) => ({ entry: formatC64Address(entry), region: { ...showRange(region), type: region.type }, origin: region.origin })) }),
     ...(rendered.asBytes.length === 0
       ? {}
-      : { asBytes: { count: rendered.asBytes.length, listed: rendered.asBytes.slice(0, MAX_LISTED).map((item) => ({ address: formatC64Address(item.address), instruction: item.text })) } }),
+      : { asBytes: listed(rendered.asBytes, max, (item) => ({ address: formatC64Address(item.address), instruction: item.text })) }),
     ...(rendered.notExecuted === undefined
       ? {}
       : {
-          notExecuted: {
-            instructions: rendered.notExecuted.instructions,
-            ranges: rendered.notExecuted.ranges.length,
-            listed: rendered.notExecuted.ranges.slice(0, MAX_LISTED).map(showRange),
-            all: `${values.out}/${NOT_EXECUTED_FILE}`,
-          },
+          notExecuted: { instructions: rendered.notExecuted.instructions, ...listed(rendered.notExecuted.ranges, max, showRange, `${out}/${NOT_EXECUTED_FILE}`) },
         }),
     ...(laid.unusedModules.length === 0 ? {} : { unusedModules: laid.unusedModules.map((module) => ({ start: formatC64Address(module.start), file: module.file })) }),
     ...(rendered.expressions.length === 0 && rendered.operandsAsNumbers.length === 0 ? {} : { operandExpressions: rendered.expressions.length }),
     ...(rendered.operandsAsNumbers.length === 0
       ? {}
       : {
-          operandsAsNumbers: {
-            count: rendered.operandsAsNumbers.length,
-            listed: rendered.operandsAsNumbers.slice(0, MAX_LISTED).map((item) => ({ address: formatC64Address(item.address), expression: item.expression, reason: item.reason })),
-          },
+          operandsAsNumbers: listed(rendered.operandsAsNumbers, max, (item) => ({ address: formatC64Address(item.address), expression: item.expression, reason: item.reason })),
         }),
     ...(rendered.uses.length === 0 && rendered.macrosAsInstructions.length === 0 ? {} : { macroUses: rendered.uses.length }),
     // A macro use that the source writes as its instructions does not fail the run: the source stays identical.
     ...(rendered.macrosAsInstructions.length === 0
       ? {}
       : {
-          macrosAsInstructions: {
-            count: rendered.macrosAsInstructions.length,
-            listed: rendered.macrosAsInstructions.slice(0, MAX_LISTED).map((item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), macro: item.macro, reason: item.reason })),
-          },
+          macrosAsInstructions: listed(rendered.macrosAsInstructions, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), macro: item.macro, reason: item.reason })),
         }),
     // A patch that the source cannot write fails the run: the switch would miss a part.
     ...(laid.patchesNotWritten.length === 0
       ? {}
       : {
-          patchesNotWritten: {
-            count: laid.patchesNotWritten.length,
-            listed: laid.patchesNotWritten.slice(0, MAX_LISTED).map((item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), switch: item.switch, reason: item.reason })),
-          },
+          patchesNotWritten: listed(laid.patchesNotWritten, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), switch: item.switch, reason: item.reason })),
         }),
   };
   // The loader includes the source, so it is built only from a source that is identical to the image.
   const notBuilt = (reason: string) => (state === undefined ? {} : { loader: { verified: false, reason: loaderRefused ?? reason } });
   if (built.program === undefined) {
-    return { output: { ...output, check: { identical: false, diagnostics: built.diagnostics.slice(0, MAX_LISTED) }, ...notBuilt("The source does not assemble, and the loader includes it.") }, failed: true };
+    return { output: { ...output, check: { identical: false, diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS) }, ...notBuilt("The source does not assemble, and the loader includes it.") }, failed: true };
   }
   const checked = check(built.program, built.start!, image);
   output.check = checked;
@@ -742,7 +685,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   if (loader === undefined || state === undefined) return { output, failed: missingEntry !== undefined || sourceFailed };
 
   const loaderBuilt = await assembleFiles(files, "loader.asm");
-  if (loaderBuilt.program === undefined) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics.slice(0, MAX_LISTED) } }, failed: true };
+  if (loaderBuilt.program === undefined) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics.slice(0, MAX_DIAGNOSTICS) } }, failed: true };
   const program = loaderBuilt.program;
   // The simulation: the loader in memory as it loads, then every copy in its order, byte by byte.
   const memory = new Int16Array(0x10000).fill(-1);
@@ -760,9 +703,8 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   const jump = jumpSymbol.kind === "address" ? jumpSymbol.address : jumpSymbol.value;
   const wrong = simulate(memory, loader.copies, expected);
   if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatC64Address(wrong)}. This is a defect of the c64-source script.`);
-  const loaderPath = `${values.out}/loader.prg`;
-  writeProjectFile(loaderPath, program, { what: "--out" });
-  (output.files as string[]).push("loader.prg");
+  const loaderPath = `${out}/loader.prg`;
+  written.push(writeReported(loaderPath, program, { what: "--out" }));
   const copierSymbol = loaderBuilt.symbols?.find((symbol) => symbol.name === COPIER_SOURCE);
   if (copierSymbol === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${COPIER_SOURCE} label. This is a defect of the c64-source script.`);
   const copierSource = copierSymbol.kind === "address" ? copierSymbol.address : copierSymbol.value;
@@ -779,11 +721,27 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   return { output, failed: !ran.verified || sourceFailed };
 }
 
-await runBody(
-  async (argv) => {
-    const { output, failed } = await run(argv);
-    if (failed) process.exitCode = 1;
-    return output;
-  },
-  { usage: USAGE },
-);
+await runScript({
+  name: "source",
+  summary: "Generates ACME source from the program and the knowledge, and checks with ACME that it assembles to the program byte by byte.",
+  names: knowledgeNames,
+  commands: [
+    {
+      name: "generate",
+      summary: "Writes the source files, source-map.json and not_executed.json, and checks them. result is PASS when every check passes, else FAIL.",
+      options: {
+        out: { ...OPTIONS.out, value: "<dir>", help: "the folder for the source files, relative to the project folder", required: true },
+        entry: { ...OPTIONS.entry, multiple: true, help: "an entry point for Ghidra" },
+        space: { ...OPTIONS.space, help: "the knowledge space of the program: c64 (the default), drive8, or bank0 to bank255. The coverage and --loader are for c64 only" },
+        loader: { kind: "flag", help: "also write loader.asm and loader.prg: the loader copies the segments into place, sets the entry state of the knowledge, and jumps to the entry. It is checked in the emulator" },
+        "analyzer-names": { kind: "flag", help: "name an address that has no name of the user or the LLM, and no platform name, with its analyzer name" },
+        "max-listed": OPTIONS["max-listed"],
+      },
+      notes: "The program, its entry state and the coverage come from the knowledge: put them in with knowledge.ts image and coverage of the c64-knowledge skill. Code that no imported run executed is marked and listed, and <dir>/not_executed.json has all of its ranges. Without --analyzer-names, an address without a name gets a name of the source, for example l_17e2.",
+      run: async (call) => {
+        const { output, failed } = await generate(call);
+        return { result: failed ? "FAIL" : "PASS", ...output };
+      },
+    },
+  ],
+});

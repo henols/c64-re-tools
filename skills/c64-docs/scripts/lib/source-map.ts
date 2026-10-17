@@ -38,7 +38,7 @@ export function readSourceMap(directory: string): SourceMap {
     text = readProjectFile(path).bytes.toString("utf8");
   } catch (error) {
     if (error instanceof WireFailure && error.code === "not-found") {
-      throw new WireFailure("not-found", `There is no ${path}. Generate the source with c64-source generate.ts --out ${directory}: it writes the source map.`);
+      throw new WireFailure("not-found", `There is no ${path}. Generate the source with c64-source source.ts generate --out ${directory}: it writes the source map.`);
     }
     throw error;
   }

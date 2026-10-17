@@ -107,7 +107,7 @@ test("a routine saved from program A is found in program B at another address, a
     t.diagnostic(generateSkip);
     return;
   }
-  const generated = ok("c64-source", "generate.ts", ["--out", ".c64-re-tools/local/src", "--project", "game-b"]);
+  const generated = ok("c64-source", "source.ts", ["generate", "--out", ".c64-re-tools/local/src", "--project", "game-b"]);
   assert.equal(generated.check.identical, true, JSON.stringify(generated.check));
   const source = readdirSync(join(workspace, "game-b", ".c64-re-tools", "local", "src"))
     .filter((file) => file.endsWith(".asm"))
