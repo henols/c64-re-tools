@@ -12,10 +12,11 @@ import { readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
 import { readActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
-import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
+import { readPrg } from "#src/host-client/image.ts";
+import { writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
-import { OPTIONS, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
+import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges } from "./lib/stages.ts";
@@ -38,10 +39,12 @@ async function runSteps(client: ViceSessionClient, steps: ActionStep[]): Promise
   return undefined;
 }
 
-async function trace(program: string, options: { frames: number; entry?: number; steps: ActionStep[] }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
-  const { bytes } = readProjectFile(program);
-  if (bytes.length < 3) throw new UsageError("the file is too short for a PRG");
-  if (options.entry === undefined && basicStart(bytes) === undefined) throw new UsageError(NO_BASIC);
+/** inspect, trace, stages and capture take a PRG: a disk, tape or cartridge file goes to loads. */
+const NOT_PRG_REMEDY = "Use loads, which runs a disk, tape or cartridge image, or get the PRG out of it with disk.ts read of the c64-disk skill";
+const readProgram = (path: string) => readPrg(path, NOT_PRG_REMEDY).bytes;
+
+async function trace(program: string, options: { frames: number; entry?: number; steps: ActionStep[]; max: number }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+  const bytes = startable(program, options.entry);
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     // Loaded but not started, so the memory map can start empty: the KERNAL start-up writes all of RAM.
@@ -54,7 +57,12 @@ async function trace(program: string, options: { frames: number; entry?: number;
       const step = await client.execution({ action: "advance-frames", count: Math.min(MAX_ADVANCE, options.frames - ran), space: "c64" });
       const advanced = step.advancedFrames ?? 0;
       ran += advanced;
-      if (advanced === 0) break;
+      // A JAM or a point stops the run before its frames: the evidence would be of a run that did not happen.
+      if ((step.stopReason !== undefined && step.stopReason !== "frames") || advanced === 0) {
+        const stopReason = step.stopReason ?? "no-frames";
+        const at = step.pc ?? (await client.registersGet("c64")).pc;
+        return { output: { traced: false, frames: ran, stopReason, pc: formatC64Address(at), reason: stoppedEarly(stopReason, at, ran, options.frames) }, failed: true };
+      }
     }
     const { pc } = await client.registersGet("c64");
     const ranges = await readMemoryMap(async (start) => {
@@ -80,7 +88,7 @@ async function trace(program: string, options: { frames: number; entry?: number;
         traced: true,
         frames: ran,
         pc: formatC64Address(pc),
-        writtenThenExecuted: written.map((range) => ({
+        writtenThenExecuted: listed(written, options.max, (range) => ({
           start: formatC64Address(range.start),
           end: formatC64Address(range.end),
           ...(underRom(range.start) ? { underRom: true } : {}),
@@ -106,6 +114,12 @@ async function trace(program: string, options: { frames: number; entry?: number;
 }
 
 const NO_BASIC = "the program is no BASIC program at $0801, so RUN cannot start it. Give --entry <address>.";
+
+/** Why a run stopped before its frames: what stopped the CPU, where, and after how many frames. */
+function stoppedEarly(stopReason: string, pc: number, ran: number, frames: number): string {
+  const what = stopReason === "jam" ? "a JAM instruction" : stopReason === "no-frames" ? "the emulator, which ran no frame" : `a ${stopReason}`;
+  return `The CPU stopped at ${formatC64Address(pc)} by ${what} after ${ran} of ${frames} frames. Check --entry and the steps: the program must run for the frames.`;
+}
 
 /** The first PC in one of the ranges within SYS_FRAMES frames, found with exec breakpoints over them. */
 async function firstPcIn(client: ViceSessionClient, ranges: Array<{ start: number; end: number }>): Promise<number | undefined> {
@@ -175,6 +189,8 @@ interface Followed {
   reached: boolean;
   /** Why the program did not start, when it did not. */
   failed?: string;
+  /** What stopped the CPU before the frames ran: a JAM or a point of the program. */
+  halted?: { stopReason: string; pc: number };
 }
 
 type RunUntilStep = Extract<ActionStep, { runUntil: unknown }>;
@@ -197,13 +213,11 @@ function trackedRunUntil(step: ActionStep): step is RunUntilStep & { runUntil: {
 async function follow(
   client: ViceSessionClient,
   program: string,
+  bytes: Uint8Array,
   options: { frames: number; entry?: number; steps: ActionStep[]; minStage: number; until?: number },
 ): Promise<Followed> {
-  const { bytes } = readProjectFile(program);
-  if (bytes.length < 3) throw new UsageError("the file is too short for a PRG");
   const load = bytes[0]! | (bytes[1]! << 8);
   const basic = basicStart(bytes);
-  if (options.entry === undefined && basic === undefined) throw new UsageError(NO_BASIC);
   const notStarted = await startLoaded(client, program, bytes, options.entry);
   if (notStarted !== undefined) return { stages: [], frames: 0, reached: false, failed: notStarted };
   // The frames of each step end where a scenario's do: the first step counts from RUN, a later one from where it starts.
@@ -216,6 +230,7 @@ async function follow(
   let firstFrame = 0;
   let total = 0;
   let ended = false;
+  let halted: { stopReason: string; pc: number } | undefined;
   /** Where the run stops: the target of a runUntil step while it runs, then until. */
   let stopAt: number | undefined;
   const atTarget = (pc: number) => stopAt !== undefined && pc === stopAt;
@@ -235,7 +250,7 @@ async function follow(
    * blocks, and stops at the first opcode that the stage wrote and the CPU
    * then executes. Own code stops the run once; a write watch arms it again.
    */
-  const rerun = async (candidates: AddressRange[], frames: number): Promise<{ used: number; map: Uint8Array; next?: number; atTarget: boolean }> => {
+  const rerun = async (candidates: AddressRange[], frames: number): Promise<{ used: number; map: Uint8Array; next?: number; atTarget: boolean; halted?: { stopReason: string; pc: number } }> => {
     const points = new Map<string, { kind: "exec" | "watch"; id: number }>();
     const arm = async (wanted: { exec: AddressRange[]; watch: AddressRange[] }) => {
       const keys = new Set([...wanted.exec.map((range) => `exec:${range.start}:${range.end}`), ...wanted.watch.map((range) => `watch:${range.start}:${range.end}`)]);
@@ -295,6 +310,7 @@ async function follow(
         left -= advanced;
         const pc = run.pc ?? (await client.registersGet("c64")).pc;
         map = await readCoverage(client);
+        if (run.stopReason === "jam") return { used, map, atTarget: false, halted: { stopReason: "jam", pc } };
         // A frame can end in written code that the stage called before: that stop starts no stage.
         if (inRanges(candidates, pc) && !inRanges(stage.called, pc)) {
           if (written(pc)) {
@@ -341,6 +357,14 @@ async function follow(
       const first = await client.execution({ action: "advance-frames", count: chunk, space: "c64", ...framed() });
       const firstPc = first.pc ?? (await client.registersGet("c64")).pc;
       const map = await readCoverage(client);
+      // A JAM, or a point that is not the target, ends the run before its frames.
+      if (first.stopReason !== undefined && first.stopReason !== "frames" && !atTarget(firstPc)) {
+        total += first.advancedFrames ?? 0;
+        mergeMaps(stage.map, map);
+        halted = { stopReason: first.stopReason, pc: firstPc };
+        ended = true;
+        continue;
+      }
       const candidates = stageCandidates(stage.map, map, stage.own, options.minStage, stage.called);
       if (candidates.length === 0) {
         const advanced = first.advancedFrames ?? 0;
@@ -369,6 +393,10 @@ async function follow(
       if (again.next !== undefined) await startStage(again.next, again.map);
       else mergeMaps(stage.map, again.map);
       if (again.atTarget) stopped = true;
+      if (again.halted !== undefined) {
+        halted = again.halted;
+        ended = true;
+      }
     }
     return stopped;
   };
@@ -389,7 +417,8 @@ async function follow(
     else if (trackedRunUntil(step)) {
       if (!(await trackTo(knowledgeAt()(step.runUntil.target.address), step.runUntil.timeoutFrames))) {
         const { pc } = await client.registersGet("c64");
-        return { stages: found, frames: total, reached: false, failed: `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It is at ${formatC64Address(pc)}.` };
+        const why = halted === undefined ? "" : ` ${stoppedEarly(halted.stopReason, halted.pc, total, step.runUntil.timeoutFrames)}`;
+        return { stages: found, frames: total, reached: false, failed: `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It is at ${formatC64Address(pc)}.${why}` };
       }
     } else await runActionStep(client, step, knowledgeAt());
   }
@@ -400,7 +429,7 @@ async function follow(
   await client.snapshot({ action: "remove", name: STAGE_SNAPSHOT }).catch(() => undefined);
   mergeMaps(stage.map, await readCoverage(client));
   found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(stage.map, options.minStage) });
-  return { stages: found, frames: total, reached };
+  return { stages: found, frames: total, reached, ...(halted === undefined ? {} : { halted }) };
 }
 
 const showRange = (range: { start: number; end: number }) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
@@ -413,11 +442,23 @@ const showStages = (stages: Stage[]) =>
     ...(stage.next === undefined ? {} : { next: formatC64Address(stage.next) }),
   }));
 
+/** The bytes of a PRG that the emulator starts: RUN needs a BASIC program at $0801, else --entry gives the start. Checked before the emulator opens. */
+function startable(program: string, entry: number | undefined): Uint8Array {
+  const bytes = readProgram(program);
+  if (entry === undefined && basicStart(bytes) === undefined) throw new UsageError(NO_BASIC);
+  return bytes;
+}
+
 async function stages(program: string, options: { frames: number; entry?: number; steps: ActionStep[]; minStage: number }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+  const bytes = startable(program, options.entry);
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
-    const followed = await follow(client, program, options);
+    const followed = await follow(client, program, bytes, options);
     if (followed.failed !== undefined) return { output: { followed: false, reason: followed.failed }, failed: true };
+    if (followed.halted !== undefined) {
+      const { stopReason, pc } = followed.halted;
+      return { output: { followed: false, frames: followed.frames, stopReason, pc: formatC64Address(pc), reason: stoppedEarly(stopReason, pc, followed.frames, options.frames), stages: showStages(followed.stages) }, failed: true };
+    }
     return {
       output: {
         followed: true,
@@ -437,14 +478,20 @@ async function capture(
   program: string,
   options: { until: number; out: string; range?: AddressRange; exclude: AddressRange[]; timeoutFrames: number; entry?: number; steps: ActionStep[]; minStage: number },
 ): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+  const bytes = startable(program, options.entry);
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
-    const followed = await follow(client, program, { frames: options.timeoutFrames, steps: options.steps, minStage: options.minStage, until: options.until, ...(options.entry === undefined ? {} : { entry: options.entry }) });
+    const followed = await follow(client, program, bytes, { frames: options.timeoutFrames, steps: options.steps, minStage: options.minStage, until: options.until, ...(options.entry === undefined ? {} : { entry: options.entry }) });
     if (followed.failed !== undefined) return { output: { captured: false, reason: followed.failed }, failed: true };
     const registers = await client.registersGet("c64");
     if (!followed.reached) {
       return {
-        output: { captured: false, reason: `The program did not get to ${formatC64Address(options.until)} in ${options.timeoutFrames} frames. It is at ${formatC64Address(registers.pc)}.`, stages: showStages(followed.stages) },
+        output: {
+          captured: false,
+          reason: `The program did not get to ${formatC64Address(options.until)} in ${options.timeoutFrames} frames. It is at ${formatC64Address(registers.pc)}.${followed.halted === undefined ? "" : ` ${stoppedEarly(followed.halted.stopReason, followed.halted.pc, followed.frames, options.timeoutFrames)}`}`,
+          ...(followed.halted === undefined ? {} : { stopReason: followed.halted.stopReason }),
+          stages: showStages(followed.stages),
+        },
         failed: true,
       };
     }
@@ -453,10 +500,6 @@ async function capture(
     const state = await machineState(client);
     // The segments: what the stages wrote, without loader leftovers, with no overlap.
     const found = options.range !== undefined ? [options.range] : captureSegments(followed.stages, registers.pc);
-    const inside = options.exclude.find((range) => registers.pc >= range.start && registers.pc <= range.end);
-    if (inside !== undefined) {
-      return { output: { captured: false, reason: `The entry ${formatC64Address(registers.pc)} is in --exclude ${formatC64Address(inside.start)}-${formatC64Address(inside.end)}. A segment must hold the entry.` }, failed: true };
-    }
     const segments = withoutRanges(found, options.exclude);
     const file = (path: string) => `${options.out}/${path}`;
     const written: Written[] = [];
@@ -534,14 +577,14 @@ const COMMANDS: CommandSpec[] = [
     name: "inspect",
     summary: "Packing evidence: the BASIC start and the entropy of the bytes.",
     subjects: [PROGRAM],
-    run: (call) => inspect(readProjectFile(call.subject(0)).bytes),
+    run: (call) => inspect(readProgram(call.subject(0))),
   },
   {
     name: "trace",
     summary: "Runs the program and reports the memory that it wrote and then executed.",
     subjects: [PROGRAM],
-    options: { frames: FRAMES, entry: ENTRY, steps: STEPS },
-    run: async (call) => outcome(await trace(call.subject(0), { frames: call.count("frames")!, steps: stepsOf(call), ...entryOf(call) })),
+    options: { frames: FRAMES, entry: ENTRY, steps: STEPS, "max-listed": OPTIONS["max-listed"] },
+    run: async (call) => outcome(await trace(call.subject(0), { frames: call.count("frames")!, steps: stepsOf(call), max: call.count("max-listed")!, ...entryOf(call) })),
   },
   {
     name: "stages",
@@ -573,7 +616,14 @@ const COMMANDS: CommandSpec[] = [
     notes: "entry_state.json has the registers, $00/$01, pages 0-3, the VIC, SID and CIA registers, the vectors, and what differs from a clean reset.",
     run: async (call) => {
       const range = call.range("range");
-      return outcome(await capture(call.subject(0), { until: call.address("until")!, out: call.string("out")!, ...(range === undefined ? {} : { range }), exclude: call.ranges("exclude"), timeoutFrames: call.count("timeout-frames")!, steps: stepsOf(call), minStage: call.count("min-stage")!, ...entryOf(call) }));
+      const until = call.address("until")!;
+      // A segment must hold the entry: refused before the emulator runs.
+      const show = (item: AddressRange) => `${formatC64Address(item.start)}-${formatC64Address(item.end)}`;
+      const holds = (item: AddressRange) => until >= item.start && until <= item.end;
+      const excluded = call.ranges("exclude").find(holds);
+      if (excluded !== undefined) throw new UsageError(`--exclude ${show(excluded)} holds the entry --until ${formatC64Address(until)}. A segment must hold the entry: give an --exclude range without it`);
+      if (range !== undefined && !holds(range)) throw new UsageError(`--range ${show(range)} does not hold the entry --until ${formatC64Address(until)}. Give a --range that holds the entry`);
+      return outcome(await capture(call.subject(0), { until, out: call.string("out")!, ...(range === undefined ? {} : { range }), exclude: call.ranges("exclude"), timeoutFrames: call.count("timeout-frames")!, steps: stepsOf(call), minStage: call.count("min-stage")!, ...entryOf(call) }));
     },
   },
   {

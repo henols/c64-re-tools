@@ -1,7 +1,7 @@
 // Local evidence of packing for the c64-unpacker script: where BASIC hands
 // over and how compressed the bytes look. It never names a packer.
 
-import { basicLineText, findHandoffs, formatC64Address, instructionLength, parseTokenized } from "#src/c64.ts";
+import { basicLineText, findHandoffs, formatC64Address, instructionLength, parseTokenized, prgRange } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 
 /** A 256-byte block above this many bits per byte looks compressed. */
@@ -111,9 +111,8 @@ function startSignals(program: Uint8Array, load: number, end: number, sys: numbe
 }
 
 export function inspect(program: Uint8Array): PackingEvidence {
-  if (program.length < 3) throw new Refusal("invalid-input", "the file is too short for a PRG");
-  const load = program[0]! | (program[1]! << 8);
-  const end = load + program.length - 3;
+  // A PRG ends at $ffff or before: a longer file (a disk image) is refused.
+  const { start: load, end } = prgRange(program);
   const basic = basicStart(program);
   const stub = basic?.sys;
   // Without BASIC, all bytes count; with it, only the bytes after the BASIC text.
@@ -132,7 +131,7 @@ export function inspect(program: Uint8Array): PackingEvidence {
   const packing = byEntropy === "unlikely" && startMoves ? "unclear" : byEntropy;
   const sorted = [...blocks].sort((a, b) => a - b);
   return {
-    loadRange: { start: formatC64Address(load), end: formatC64Address(Math.min(end, 0xffff)) },
+    loadRange: { start: formatC64Address(load), end: formatC64Address(end) },
     bytes: program.length - 2,
     basicStart: stub === undefined ? null : stub.address === undefined ? { line: stub.line, sys: null, expression: stub.expression! } : { line: stub.line, sys: formatC64Address(stub.address) },
     entropy: {

@@ -90,14 +90,28 @@ test("trace finds no written code in a program that runs as it loaded; a program
   const loop = await unpack("trace", "loop.prg", "--frames", "200");
   assert.equal(loop.status, 0, JSON.stringify(loop.json));
   assert.equal(loop.json.packing, "unlikely");
-  assert.deepEqual(loop.json.writtenThenExecuted, []);
+  assert.deepEqual(loop.json.writtenThenExecuted, { count: 0, listed: [] });
 
   writeFileSync(join(project, "counter.prg"), ORIGINAL.prg);
   assert.equal((await unpack("trace", "counter.prg")).status, 2, "no BASIC start line and no --entry");
   const started = await unpack("trace", "counter.prg", "--entry", "$c000", "--frames", "100");
   assert.equal(started.status, 0, JSON.stringify(started.json));
   assert.equal(started.json.packing, "unlikely");
-  assert.deepEqual(started.json.writtenThenExecuted, [], "the counter runs where it loaded");
+  assert.deepEqual(started.json.writtenThenExecuted, { count: 0, listed: [] }, "the counter runs where it loaded");
+});
+
+test("trace and stages give FAIL with the stop reason when the CPU stops before the frames ran", { skip: liveSkip, timeout: 180_000 }, async () => {
+  // A JAM at $c000: the CPU stops at the first instruction.
+  writeFileSync(join(project, "jam.prg"), Uint8Array.of(0x00, 0xc0, 0x02));
+  const traced = await unpack("trace", "jam.prg", "--entry", "$c000", "--frames", "200");
+  assert.equal(traced.status, 1, JSON.stringify(traced.json));
+  assert.equal(traced.json.result, "FAIL");
+  assert.equal(traced.json.stopReason, "jam");
+  assert.match(traced.json.reason as string, /^The CPU stopped at \$c00[01] by a JAM instruction after \d+ of 200 frames\./);
+  const staged = await unpack("stages", "jam.prg", "--entry", "$c000", "--frames", "200");
+  assert.equal(staged.status, 1, JSON.stringify(staged.json));
+  assert.equal(staged.json.stopReason, "jam");
+  assert.match(staged.json.reason as string, /by a JAM instruction after \d+ of 200 frames/);
 });
 
 test("a steps file presses the key that an intro waits for", { skip: liveSkip, timeout: 240_000 }, async () => {
@@ -110,7 +124,7 @@ test("a steps file presses the key that an intro waits for", { skip: liveSkip, t
   assert.deepEqual([...readFileSync(join(project, "unpacked", "gated", `segment-c000-${end.toString(16)}.prg`))], [...ORIGINAL.prg]);
   // Whether the CPU is in the unpacked code at the end depends on the moment (an IRQ can be running); that it ran there does not.
   const traced = await unpack("trace", "gated.prg", "--steps", "press-key.json", "--frames", "100");
-  assert.ok((traced.json.writtenThenExecuted as Array<{ start: string }>).some((range) => range.start === "$c000"), JSON.stringify(traced.json));
+  assert.ok((traced.json.writtenThenExecuted as { listed: Array<{ start: string }> }).listed.some((range) => range.start === "$c000"), JSON.stringify(traced.json));
 });
 
 test("stages finds each stage of a staged release and where the next one starts", { skip: liveSkip, timeout: 300_000 }, async () => {

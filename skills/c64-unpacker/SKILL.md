@@ -13,7 +13,7 @@ This skill does not change project knowledge.
 
 ## Inputs
 
-- The program: a PRG file, relative to the project folder.
+- The program: a PRG file, relative to the project folder. `inspect`, `trace`, `stages` and `capture` refuse a disk, tape or cartridge image. For such an image, use `loads`, or get the PRG with `disk.ts read` of the c64-disk skill.
 - For a capture: the address where the unpacked program starts, and the directory for the result.
 
 ## Tools / execution path
@@ -32,17 +32,18 @@ node <skill>/scripts/unpacker.ts loads original/game.d64 --steps .c64-re-tools/l
 |---|---|
 | `--until '$c000'` | `capture`: the address where the unpacked program starts. The capture stops there after the steps. To capture a later arrival at the address, add a `runUntil` step to an address after the first arrival. |
 | `--out .c64-re-tools/local/capture` | `capture` and `loads`: the folder for the result, relative to the project folder. |
-| `--range '$c000-$cfff'` | `capture` only: write this range as the one segment. Without it, the segments are the blocks that the stages wrote. |
-| `--exclude '$a000-$a9ff'` | `capture` only: remove this range from the segments. You can give it more than once. `image.json` lists the ranges in `excluded`. The entry must not be in the range. |
+| `--range '$c000-$cfff'` | `capture` only: write this range as the one segment. Without it, the segments are the blocks that the stages wrote. The range must hold the `--until` address. |
+| `--exclude '$a000-$a9ff'` | `capture` only: remove this range from the segments. You can give it more than once. `image.json` lists the ranges in `excluded`. The range must not hold the `--until` address. |
 | `--timeout-frames 3000` | `capture` only: how many frames the program can run before the capture stops (default 3000). |
 | `--frames 3000` | `trace` and `stages`: how many frames the program runs (default 3000). |
 | `--entry '$c000'` | `trace`, `stages` and `capture`: start the program at this address. Without it, the script types RUN. A file that is not a BASIC program at `$0801` needs it. |
 | `--steps input.json` | Input for the program, right after it starts: a JSON list of steps. Use it when an intro waits for a key or a menu waits for a choice. |
+| `--max-listed 50` | `trace` only: the most ranges that `writtenThenExecuted` lists (default 50). |
 | `--drive` | `loads` only: each capture also writes the 2 KiB RAM of the 1541 drive as `drive8.prg`. |
 | `--min-block 64` | `loads` only: the smallest block of changed memory that becomes a segment (default 64). The result counts smaller changes as `smallChanges`. |
 | `--min-stage 64` | `stages` and `capture`: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). |
 
-The capture reads RAM, also the RAM under the ROMs and the I/O area. The script refuses an option that the command does not use.
+The capture reads RAM, also the RAM under the ROMs and the I/O area. The script refuses an option that the command does not use. It refuses a wrong `--range` or `--exclude` before the emulator starts.
 
 A steps file is a JSON list of steps. Each step has the input of the MCP tool of the same action. An address in a step can be a name. For example, wait 50 frames and type a space:
 
@@ -58,6 +59,8 @@ A steps file is a JSON list of steps. Each step has the input of the MCP tool of
 - `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 300 } }` runs until the target. The target kinds are `address`, `memory` and `raster`. `timeoutFrames` is 1 to 30000 (default 3000).
 
 A program that reads the keyboard matrix does not see the keys of a `type` step. These scripts refuse a `press` step. A wait for any key that reads all keyboard columns can end without a key.
+
+The scripts refuse a step in the form of version 2.0, for example `{ "runUntil": { "at": "main_loop" }, "timeoutFrames": 300 }`. The message names the old field and gives the step to write.
 
 ### Calling the script
 
@@ -92,7 +95,7 @@ A program that reads the keyboard matrix does not see the keys of a `type` step.
    - `strings`: readable text near the start of the code.
    - `start`: the code at the SYS address. `jumpsOutside` and `writesOutside` give an address outside the loaded program, where the code jumps or writes.
    - `decodeLoops`: EOR instructions in loops that store with an index. This is usually decryption or decoding.
-2. Run `trace`. It gives the evidence from the run. Read `packing`:
+2. Run `trace`. It gives the evidence from the run. `writtenThenExecuted` lists the ranges that the program wrote and then executed. Read `packing`:
    - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code. `runningRange` is the written code that runs at the end of the trace. When the trace ends in ROM code, for example in an interrupt, it is the written code that runs next. Its `start` is code that runs after the unpacking. It is not always the entry point of the program. When no written code runs in 50 more frames, the result has no `runningRange` and no `suggestedUntil`.
    - `unclear`: the program executed a small quantity of code that it wrote. This can be code that changes itself.
    - `unlikely`: the program executed no code that it wrote. If the program waits for a key or a joystick, it can move code after that input. Then use the c64-emulator skill.
@@ -152,6 +155,7 @@ For `loads`: `captures`, with the name, the PC, the segments, the files and the 
 ## Failure and conflicts
 
 - `traced: false` or `followed: false`: the emulator did not load the program into memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
+- `traced: false` or `followed: false` with `stopReason`: the CPU stopped before the frames ran, for example at a JAM instruction. `pc` gives the address. Make sure that `--entry` is the start of the code that the file holds at that time, and that the steps are correct.
 - `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the c64-emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step.
 - A step did not reach its target: the reason names the step. Change the step or give it more frames.
 - `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited at READY. or at an INPUT statement. For a tape image, read `emulatorFlaw`. A known VICE flaw can stop a tape load. Tell the user to install the latest VICE.

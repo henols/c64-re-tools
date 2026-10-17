@@ -66,6 +66,35 @@ test("a short program is unclear, and the script reports it", () => {
   }
 });
 
+test("inspect, trace, stages and capture take a PRG: a disk image and a file past $ffff are refused before an emulator starts", () => {
+  writeFileSync(join(project, "packed.prg"), xorPackedPrg);
+  writeFileSync(join(project, "game.d64"), Buffer.alloc(174848, 1));
+  writeFileSync(join(project, "long.bin"), Buffer.concat([Buffer.from([0x01, 0x08]), Buffer.alloc(0x10000)]));
+  const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpacker.ts");
+  // No host listens at port 1: a call that got to the emulator would fail with machine-unavailable.
+  const refused = (...args: string[]) => {
+    const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+    assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
+    const { error } = JSON.parse(run.stdout) as { error: { code: string; message: string } };
+    assert.equal(error.code, "invalid-input", `${args.join(" ")}: ${error.message}`);
+    return error.message.split("\n")[0]!;
+  };
+  const disk = "game.d64 is a disk image (.d64), not a PRG. Use loads, which runs a disk, tape or cartridge image, or get the PRG out of it with disk.ts read of the c64-disk skill.";
+  for (const command of [["inspect"], ["trace"], ["stages"], ["capture", "--until", "$080d", "--out", "x"]]) assert.equal(refused(command[0]!, "game.d64", ...command.slice(1)), disk);
+  assert.match(refused("inspect", "long.bin"), /^long\.bin is not a PRG: The PRG runs past \$ffff\. Use loads/);
+  assert.throws(() => inspect(new Uint8Array(0x10003)), /runs past \$ffff/);
+  // A segment must hold the entry: refused before the emulator runs.
+  assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--exclude", "$0800-$0900"), "--exclude $0800-$0900 holds the entry --until $080d. A segment must hold the entry: give an --exclude range without it");
+  assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--range", "$c000-$cfff"), "--range $c000-$cfff does not hold the entry --until $080d. Give a --range that holds the entry");
+  // The steps of the unpacker run in VICE: a refusal lists the kinds that VICE runs, without press.
+  writeFileSync(join(project, "wait.json"), JSON.stringify([{ wait: 10 }]));
+  assert.equal(refused("trace", "packed.prg", "--steps", "wait.json"), "--steps wait.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil");
+  writeFileSync(join(project, "old.json"), JSON.stringify([{ runUntil: { at: "$0400" }, timeoutFrames: 100 }]));
+  assert.equal(refused("stages", "packed.prg", "--steps", "old.json"), '--steps old.json: step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "$0400"}, "timeoutFrames": 100}}');
+  writeFileSync(join(project, "parts.json"), JSON.stringify([{ wait: 10 }, { capture: "a" }]));
+  assert.equal(refused("loads", "game.d64", "--steps", "parts.json", "--out", "parts"), "--steps parts.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil, capture");
+});
+
 test("the memory map is read again from next until no more ranges follow", async () => {
   // One range for each executed byte in $2000-$27ff: more than one read gives.
   const executed = Array.from({ length: 0x800 }, (_, index) => ({ start: 0x2000 + index, end: 0x2000 + index, read: false, write: true, execute: true }));
