@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
+Branding assets are in [`assets/branding/`](assets/branding/README.md). The root README and human-facing docs use the compact transparent logo; keep skill instructions and test prompts free of decorative branding.
+
 **c64-re-tools** — an agent-friendly Commodore 64 engineering toolkit for
 reverse engineering unknown applications and for developing, debugging,
 building and testing new C64 applications.
