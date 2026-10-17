@@ -77,14 +77,14 @@ const PAGE = String.raw`<!doctype html>
 <style>
 body{margin:0;background:#111;color:#ddd;font:14px system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px}
 canvas{image-rendering:pixelated;width:min(784px,100%);aspect-ratio:392/272;background:#000}
-button{font:inherit;padding:6px 16px}
-.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:center}
+button{font:inherit;font-size:12px;padding:3px 8px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center}
+.gap{width:12px}
 table{border-collapse:collapse;font-size:13px}td{padding:2px 10px;border-top:1px solid #333}
 </style></head><body>
-<canvas id="screen" width="392" height="272"></canvas>
+<div class="row"><button id="start" disabled>Start (Enter)</button><button id="end" disabled>End and save (F12)</button><button id="cancel" disabled>Cancel (F11)</button><span class="gap"></span><button id="port">Port 2 (F9)</button><button id="arrows">Arrows: joystick (F10)</button><button id="map">Keys: symbolic</button></div>
 <div id="state">connecting</div>
-<div class="row"><button id="start" disabled>Start (Enter)</button><button id="end" disabled>End and save the recording (F12)</button><button id="cancel" disabled>Cancel (F11)</button></div>
-<div class="row"><button id="port">Joystick port 2 (F9)</button><button id="arrows">Arrow keys and space: joystick (F10)</button><button id="map">Key map: symbolic</button></div>
+<canvas id="screen" width="392" height="272"></canvas>
 <table>
 <tr><td>Start, End, Cancel</td><td>Enter (on the start screen), F12, F11</td></tr>
 <tr><td>Joystick</td><td>arrow keys and space (when F10 sets joystick), or a gamepad</td></tr>
@@ -109,9 +109,9 @@ function show() {
   $("start").disabled = phase !== "waiting";
   $("end").disabled = phase !== "playing";
   $("cancel").disabled = phase !== "waiting" && phase !== "playing";
-  $("port").textContent = "Joystick port " + port + " (F9)";
-  $("arrows").textContent = "Arrow keys and space: " + arrows + " (F10)";
-  $("map").textContent = "Key map: " + keyMap;
+  $("port").textContent = "Port " + port + " (F9)";
+  $("arrows").textContent = "Arrows: " + arrows + " (F10)";
+  $("map").textContent = "Keys: " + keyMap;
   if (phase === "waiting") state.textContent = "Frozen at the start: read the screen, then press Start.";
   else if (phase === "playing") state.textContent = "Frame " + frames;
   else if (phase === "ended") state.textContent = "Frozen at frame " + frames + ". The script saves the recording.";

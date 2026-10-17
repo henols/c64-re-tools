@@ -61,11 +61,13 @@ With `--play`, `testing.ts record` does the steps, then a person plays. The page
 | Button | Key | Effect |
 |---|---|---|
 | Start | Enter, on the start screen | The C64 runs. Before Start, the page shows the screen after the steps, and the C64 is frozen. The time before Start is not in the recording. |
-| End and save the recording | F12 | The C64 stops at the frame on the page, and the screen stays frozen. The script writes the recording folder. |
+| End and save | F12 | The C64 stops at the frame on the page, and the screen stays frozen. The script writes the recording folder. |
 | Cancel | F11 | The session stops before or during the play. The script writes no folder and gives `recorded: false`. |
-| Joystick port | F9 | The joystick goes to the other port. `--joystick` gives the first port (default 2). |
-| Arrow keys and space | F10 | The arrow keys and space change between the joystick and the C64 keys. At the start, they are the joystick. |
-| Key map | | The keyboard changes between the symbolic map (the default) and the positional map. |
+| Port | F9 | The joystick goes to the other port. `--joystick` gives the first port (default 2). |
+| Arrows | F10 | The arrow keys and space change between the joystick and the C64 keys. At the start, they are the joystick. |
+| Keys | | The keyboard changes between the symbolic map (the default) and the positional map. |
+
+The buttons are in one row above the screen.
 
 | Page input | C64 input |
 |---|---|
