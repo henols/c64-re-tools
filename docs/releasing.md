@@ -1,5 +1,7 @@
 # Releasing
 
+<img src="../assets/branding/c64-re-tools-transparent.svg" alt="C64 RE Tools" width="300">
+
 Push a tag on a commit of `main`. The tag gives the version. CI tests the commit, publishes it to npm and makes a GitHub Release.
 
 ```
