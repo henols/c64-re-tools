@@ -37,7 +37,7 @@ test("from the workspace root, scripts write into the project that --project nam
 
   const batch = JSON.stringify([{ op: "comment", address: "$c000", placement: "line", text: "Entry." }]);
   assert.equal(knowledge(["apply", "-", "--project", "hover-bovver"], { input: batch }).status, 0);
-  assert.equal(script("c64-memory-map", "memmap.ts", ["export", "--out", "src/hw.asm", "--project", "boulder-dash"]).status, 0);
+  assert.equal(script("c64-memory-map", "memory-map.ts", ["export", "--out", "src/hw.asm", "--project", "boulder-dash"]).status, 0);
   assert.ok(existsSync(join(workspace, "boulder-dash", "src", "hw.asm")));
 
   assert.equal(knowledge(["export", "--out", "exports/knowledge.json", "--project", "hover-bovver"]).status, 0);

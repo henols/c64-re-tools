@@ -27,7 +27,7 @@ test("install puts the skills and the MCP declaration into the project; uninstal
   const disk = join(project, ".claude", "skills", "c64-disk");
   for (const file of ["scripts/disk.ts", "src/host-client/tools.ts", "package.json"]) assert.ok(existsSync(join(disk, file)), file);
   // The installed TypeScript script runs from the project, outside this repository.
-  const memmap = spawnSync(process.execPath, [...process.execArgv, join(project, ".claude", "skills", "c64-memory-map", "scripts", "memmap.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
+  const memmap = spawnSync(process.execPath, [...process.execArgv, join(project, ".claude", "skills", "c64-memory-map", "scripts", "memory-map.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
   assert.equal(memmap.status, 0, memmap.stderr);
   assert.match(memmap.stdout, /EXTCOL/);
   assert.deepEqual(JSON.parse(readFileSync(join(project, ".mcp.json"), "utf8")), { mcpServers: { "c64-re-tools": mcpServerFor(process.platform) } });

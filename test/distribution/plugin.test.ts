@@ -110,7 +110,7 @@ test("every installed script runs without the repository", () => {
       assert.notEqual(run.status, 0, `${skill.name}/${resource.path} refuses an unknown option`);
     }
   }
-  const memmap = spawnSync(process.execPath, [...process.execArgv, join(skills, "c64-memory-map", "scripts", "memmap.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
+  const memmap = spawnSync(process.execPath, [...process.execArgv, join(skills, "c64-memory-map", "scripts", "memory-map.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
   assert.equal(memmap.status, 0, memmap.stderr);
   assert.equal((JSON.parse(memmap.stdout) as { addresses: Array<{ name: string }> }).addresses[0]?.name, "EXTCOL");
 });

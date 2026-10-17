@@ -122,7 +122,7 @@ describe("the packed package works through npx", { skip: liveSkip }, () => {
   });
 
   test("a local skill script runs from its installed location", () => {
-    const memmap = JSON.parse(sh(process.execPath, [...process.execArgv, join(skills, "c64-memory-map", "scripts", "memmap.ts"), "at", "$d020"], project)) as { addresses: Array<{ name: string }> };
+    const memmap = JSON.parse(sh(process.execPath, [...process.execArgv, join(skills, "c64-memory-map", "scripts", "memory-map.ts"), "at", "$d020"], project)) as { addresses: Array<{ name: string }> };
     assert.equal(memmap.addresses[0]?.name, "EXTCOL");
   });
 
