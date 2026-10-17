@@ -80,7 +80,7 @@ Write operations need a stopped CPU. Stop the CPU with `c64_execution` action `p
 
 A cartridge from `c64_autostart` stays in the C64 through every reset, as on a real C64. `c64_status` gives `cartridge: true` while the C64 has it, and `cartridge: false` when it does not. `c64_autostart` of a file that is not a cartridge removes the cartridge first. `c64_autostart` also sets both joysticks to the center first. `joysticksCentred` gives the ports that it changed.
 
-Step, next and until-return work only in space `c64`. The emulator cannot stop the disk drive CPU after one instruction. To find when the drive executes an address, use `c64_run_until` with an address target in space `drive8`, or a breakpoint in space `drive8`. The drive can execute a few more instructions before it stops. The computer completes its current instruction. The `pc` in the result is the drive address where it stopped.
+Step, next and until-return work only in space `c64`. The emulator cannot stop the disk drive CPU after one instruction. To find when the drive executes an address, use `c64_run_until` with an address target in space `drive8`, or a breakpoint in space `drive8`. The drive can execute a few more instructions before it stops. The computer completes its current instruction. The `pc` in the result is the drive address where it stopped. `space` in the result is `drive8`. A breakpoint or a watchpoint in space `drive8` that stops `advance-frames` gives the same `pc` and `space`.
 
 `c64_keyboard` puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard matrix directly does not see them. Many games do this. No MCP tool presses a key of the keyboard matrix. For such a program:
 
@@ -137,7 +137,13 @@ An error is `{"error": {"code": "...", "message": "..."}}`. The message tells wh
 - `machine-running`: stop the CPU first, then try again.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script. Do not try to repair the installation.
 - `c64_run_until` with `stopReason` `timeout`: the target did not occur in the frame limit. This is evidence too. Report it.
-- `c64_run_until` with `stopReason` `jam`: the CPU executed a JAM opcode and stopped. Report the address.
+- `stopReason` `jam`: the CPU executed a JAM opcode and stopped. Report the address. The CPU stays stopped, as on a real C64. Each run gives `jam` again. Step, next, until-return and resume refuse with `operation-failed`. Only `c64_reset`, a snapshot restore or `c64_autostart` starts the CPU again.
+- After a JAM, VICE records no CPU history until the next reset. If the CPU ran again after a snapshot restore, `c64_cpu_history` refuses with `operation-failed`. `c64_run_until` then gives `historyMissing` in place of `history`. Use `c64_reset`, or use `c64_trace`.
+- `invalid-input`: the message names the field and the rule. Change the call to obey the rule.
+- `not-found`: a file, a snapshot, a baseline or a point that the call names does not exist.
+- `unsupported-in-space`: the action works only in space `c64`.
+- `limit-exceeded`: the call goes past a limit of the session, for example the number of snapshots. The message names the limit.
+- `operation-failed`: the emulator did not do the operation. The message tells why.
 
 If the runtime evidence does not agree with the current knowledge, do not change the knowledge. Report the conflict and hand it to c64-knowledge.
 

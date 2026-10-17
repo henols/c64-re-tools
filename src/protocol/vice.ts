@@ -462,6 +462,8 @@ export interface ExecutionResult {
   stopReason?: "frames" | PointStopReason;
   /** The id of the breakpoint or watchpoint that stopped the run. */
   pointId?: number;
+  /** advance-frames only: the CPU that stopped, and so the space of pc. */
+  space?: "c64" | "drive8";
 }
 
 /** c64_run_until targets. */
@@ -1171,7 +1173,8 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         (value.executed === undefined || isInteger(value.executed, 0, MAX_EXECUTION_COUNT)) &&
         (value.advancedFrames === undefined || isInteger(value.advancedFrames, 0, MAX_EXECUTION_COUNT)) &&
         (value.stopReason === undefined || value.stopReason === "frames" || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
-        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER));
+        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER)) &&
+        (value.space === undefined || isOneOf(SPACES, value.space));
       if (!ok) throw new ProtocolError("execution result is malformed");
       break;
     }

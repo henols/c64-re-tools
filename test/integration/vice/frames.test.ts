@@ -136,3 +136,31 @@ test("run-until reports timeout, breakpoint and jam as the stop reason", { skip:
   const jam = await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 5 });
   assert.deepEqual(jam, { reached: false, stopReason: "jam", state: "stopped", pc: 0xc000, space: "c64" });
 });
+
+test("a JAM holds the CPU until a reset or a restore, and the CPU history stays old until a reset", { skip: liveSkip, timeout: 120_000 }, async (t) => {
+  const { session } = await open(t, "pal");
+  await load(session, COUNTER);
+  await session.handle("snapshot", { action: "save", name: "before" });
+  // NOP, then JAM at $c001.
+  await load(session, "ea02");
+  const first = await session.handle("execution", { action: "advance-frames", count: 5, space: "c64" });
+  assert.deepEqual({ stopReason: first.stopReason, pc: first.pc }, { stopReason: "jam", pc: 0xc001 });
+  // VICE reports a JAM only once, and a pc write does not start the CPU again.
+  await load(session, "ea02");
+  assert.equal((await session.handle("execution", { action: "advance-frames", count: 5, space: "c64" })).stopReason, "jam");
+  assert.equal((await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 5 })).stopReason, "jam");
+  await assert.rejects(session.handle("execution", { action: "step", count: 1, space: "c64" }), /The CPU is jammed by the JAM opcode/);
+  await assert.rejects(session.handle("execution", { action: "resume", space: "c64" }), /c64_reset, a snapshot restore or c64_autostart/);
+  assert.equal((await session.handle("status", {})).stopReason, "jam");
+  // The history up to the JAM is good.
+  assert.equal((await session.handle("cpuHistory", { limit: 1, space: "c64" })).entries.length, 1);
+
+  await session.handle("snapshot", { action: "restore", name: "before" });
+  const after = await session.handle("execution", { action: "advance-frames", count: 1, space: "c64" });
+  assert.deepEqual({ stopReason: after.stopReason, pc: after.pc }, { stopReason: "frames", pc: 0xc00b }, "a restore starts the CPU again");
+  await assert.rejects(session.handle("cpuHistory", { limit: 1, space: "c64" }), /no CPU history after a JAM until the next reset/);
+
+  await session.handle("reset", { mode: "soft", run: false });
+  await session.handle("execution", { action: "step", count: 3, space: "c64" });
+  assert.equal((await session.handle("cpuHistory", { limit: 3, space: "c64" })).entries.length, 3, "a reset starts the history again");
+});

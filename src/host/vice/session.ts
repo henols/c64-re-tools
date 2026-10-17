@@ -187,6 +187,16 @@ export class ViceSession implements ViceSessionHandle {
   #haltCount = 0;
   /** What stopped the machine last, when a user breakpoint or watchpoint or a JAM did; cleared when it runs again. */
   #lastStop: { stopReason: PointStopReason; pointId?: number } | undefined;
+  /**
+   * The pc of the JAM that holds the CPU. A jammed CPU runs again only after a
+   * reset, a snapshot restore or an autostart: VICE 3.10 keeps it jammed after a
+   * pc write, and reports the JAM only once.
+   */
+  #jammed: number | undefined;
+  /** VICE records no CPU history after a JAM until the next reset. */
+  #historyStopped = false;
+  /** The CPU ran again after a JAM without a reset: the CPU history that VICE gives is old. */
+  #historyOld = false;
   #queue: Promise<unknown> = Promise.resolve();
   #closed = false;
   #lost = false;
@@ -404,6 +414,7 @@ export class ViceSession implements ViceSessionHandle {
           centred.push(port);
         }
         await this.#runningCommand(() => this.#machine.autostart(file, index, run));
+        this.#clearJam();
         if (type === "crt") this.#cartridge = true;
         this.#replaceStaged(stagedKind(type), file);
         // A reset sets the CPU clock back, so the stopwatch starts again.
@@ -431,7 +442,7 @@ export class ViceSession implements ViceSessionHandle {
       case "screenCapture": {
         const { baseline } = params as ViceOperations["screenCapture"]["params"];
         if (baseline !== undefined && !this.#baselines.has(baseline) && this.#baselines.size >= MAX_BASELINES) {
-          throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_BASELINES} baselines. Discard one first.`);
+          throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_BASELINES} baselines. Remove one first with c64_screen action remove.`);
         }
         const shot = await this.#observe(() => this.#machine.captureFrame(this.#videoStandard));
         if (baseline !== undefined) this.#baselines.set(baseline, shot);
@@ -530,7 +541,7 @@ export class ViceSession implements ViceSessionHandle {
     if (status.state === "stopped") {
       status.pc = await this.#pc();
       // VICE 3.9 sends no JAM event: the opcode at the pc tells.
-      const stop = this.#lastStop ?? ((await this.#jammedAt(status.pc)) ? { stopReason: "jam" as const } : undefined);
+      const stop = this.#lastStop ?? ((await this.#jamAt(status.pc)) ? { stopReason: "jam" as const } : undefined);
       if (stop !== undefined) Object.assign(status, stop);
     }
     return status;
@@ -538,13 +549,19 @@ export class ViceSession implements ViceSessionHandle {
 
   async #execution(params: ExecutionParams): Promise<ExecutionResult> {
     if (params.action === "resume") {
-      if (this.#state === "stopped") await this.#resume();
+      if (this.#state === "stopped") {
+        await this.#refuseJammed("resume");
+        await this.#resume();
+      }
       return { state: "running" };
     }
     if (params.action === "pause") {
       await this.#stop();
       // A drive checkpoint can stop the machine just before the pause does.
       return { state: "stopped", pc: (await this.#completeDriveStop()) ?? (await this.#pc()) };
+    }
+    if (params.space === "drive8" && params.action === "advance-frames") {
+      throw new WireFailure("unsupported-in-space", "advance-frames counts the video frames of the computer: use space c64. A breakpoint or watchpoint in space drive8 also stops it.");
     }
     if (params.space === "drive8") {
       // Stock VICE runs the 1541 CPU in batches that catch up with the computer's clock;
@@ -565,13 +582,16 @@ export class ViceSession implements ViceSessionHandle {
       const outcome = await this.#runFrames(params.count, undefined, params.anchor);
       return {
         state: "stopped",
-        pc: outcome.pc,
+        // A stop event carries the computer's PC; a stop in the drive reports the drive's.
+        pc: outcome.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc,
+        space: outcome.space,
         advancedFrames: outcome.frames,
         stopReason: outcome.end === "target" ? "frames" : outcome.end,
         ...(outcome.pointId === undefined ? {} : { pointId: outcome.pointId }),
       };
     }
     await this.#stop();
+    await this.#refuseJammed(params.action);
     if (params.action === "until-return") {
       const stopped = this.#nextStop(this.#untilReturnLimitMs);
       await this.#resumingCommand(() => this.#machine.untilReturn());
@@ -599,6 +619,7 @@ export class ViceSession implements ViceSessionHandle {
 
   async #reset(params: { mode: "soft" | "hard"; run: boolean }): Promise<{ state: RunState; pc?: number }> {
     await this.#stop();
+    this.#clearJam();
     // A reset sets the CPU clock back, so the stopwatch starts again.
     this.#timingStart = 0n;
     if (params.run) {
@@ -637,11 +658,15 @@ export class ViceSession implements ViceSessionHandle {
     const start = anchor ?? (await this.#machine.rasterPosition());
     const arming = rasterLinesExpression((start.line + Math.floor(lines / 2)) % lines, lines);
     const ending = rasterWindowExpression(start.line, start.cycle, lines);
+    const startPc = await this.#pc();
+    if (await this.#jamAt(startPc)) return { end: "jam", frames: 0, pc: startPc, space: "c64" };
     const clock = await this.#machine.addCheckpoint({ start: 0x0000, end: 0xffff, operation: 0x04, space: "c64" });
     try {
       await this.#machine.setCondition(clock, arming);
       let armingPhase = true;
       let frames = 0;
+      // VICE reports a JAM only once until a reset: a jammed CPU stops the clock at the same pc again and again.
+      let clockPc = startPc;
       for (;;) {
         const next = this.#nextStop(HALF_FRAME_LIMIT_MS);
         await this.#resume();
@@ -652,6 +677,8 @@ export class ViceSession implements ViceSessionHandle {
         }
         const end = this.#stopCause(stop, clock, target?.checkpoint);
         if (end === "clock") {
+          if (stop.pc === clockPc && (await this.#jamAt(stop.pc))) return { end: "jam", frames, pc: stop.pc, space: "c64" };
+          clockPc = stop.pc;
           if (armingPhase) {
             await this.#machine.setCondition(clock, ending);
             if (target?.deferred) {
@@ -667,7 +694,7 @@ export class ViceSession implements ViceSessionHandle {
           continue;
         }
         if (end === "unknown") {
-          if (await this.#jammedAt(stop.pc)) return { end: "jam", frames, pc: stop.pc, space: "c64" };
+          if (await this.#jamAt(stop.pc)) return { end: "jam", frames, pc: stop.pc, space: "c64" };
           throw new WireFailure("operation-failed", "The emulator stopped the machine for a reason outside this run.");
         }
         // A drive stop is completed before the result names the computer's pc; `space` says which CPU stopped.
@@ -699,6 +726,9 @@ export class ViceSession implements ViceSessionHandle {
     const points: number[] = [];
     const hits: TraceHit[] = [];
     let frames = 0;
+    const startPc = await this.#pc();
+    if (await this.#jamAt(startPc)) return { hits, frames, end: "jam", pc: startPc };
+    let clockPc = startPc;
     const clock = await this.#machine.addCheckpoint({ start: 0x0000, end: 0xffff, operation: 0x04, space: "c64" });
     try {
       for (const point of params.points) points.push(await this.#machine.addCheckpoint({ start: point.start, end: point.end, operation: operation[point.kind], space: "c64" }));
@@ -718,6 +748,8 @@ export class ViceSession implements ViceSessionHandle {
           if (hits.length >= params.maxHits) return { hits, frames, end: "hits", pc: stop.pc };
         }
         if (stop.hits.includes(clock)) {
+          if (stop.pc === clockPc && (await this.#jamAt(stop.pc))) return { hits, frames, end: "jam", pc: stop.pc };
+          clockPc = stop.pc;
           if (armingPhase) await this.#machine.setCondition(clock, ending);
           else {
             frames++;
@@ -730,7 +762,7 @@ export class ViceSession implements ViceSessionHandle {
         if (traced.length > 0) continue;
         const point = this.#userPoint(stop.hits);
         if (point !== undefined) return { hits, frames, end: point.stopReason, pc: stop.pc };
-        if (await this.#jammedAt(stop.pc)) return { hits, frames, end: "jam", pc: stop.pc };
+        if (await this.#jamAt(stop.pc)) return { hits, frames, end: "jam", pc: stop.pc };
         throw new WireFailure("operation-failed", "The emulator stopped the machine for a reason outside this trace.");
       }
     } finally {
@@ -844,9 +876,40 @@ export class ViceSession implements ViceSessionHandle {
     return undefined;
   }
 
-  async #jammedAt(pc: number): Promise<boolean> {
+  /**
+   * True when a JAM holds the CPU at `pc`: the session saw a JAM since the last
+   * reset, restore or autostart, or the opcode at `pc` is a JAM. The CPU stops
+   * on such an opcode, so it executes nothing more. The session keeps the JAM.
+   */
+  async #jamAt(pc: number): Promise<boolean> {
+    if (this.#jammed !== undefined) return true;
     const opcode = await this.#machine.readMemory({ address: pc, size: 1, space: "c64", view: "cpu" });
-    return JAM_OPCODES.has(Number.parseInt(opcode, 16));
+    if (!JAM_OPCODES.has(Number.parseInt(opcode, 16))) return false;
+    this.#jam(pc);
+    return true;
+  }
+
+  #jam(pc: number): void {
+    this.#jammed = pc;
+    this.#historyStopped = true;
+  }
+
+  /** A reset or an autostart starts a jammed CPU and the CPU history again. */
+  #clearJam(): void {
+    this.#jammed = undefined;
+    this.#historyStopped = false;
+    this.#historyOld = false;
+  }
+
+  /** Refuses an action that needs the CPU to execute, while a JAM holds it. */
+  async #refuseJammed(action: string): Promise<void> {
+    const pc = await this.#pc();
+    if (!(await this.#jamAt(pc))) return;
+    throw new WireFailure(
+      "operation-failed",
+      `The CPU is jammed by the JAM opcode at ${formatC64Address(this.#jammed ?? pc)}, so ${action} cannot execute an instruction. ` +
+        "The CPU runs again only after c64_reset, a snapshot restore or c64_autostart.",
+    );
   }
 
   /** Runs until a target is reached or `timeoutFrames` frames pass. */
@@ -1050,6 +1113,13 @@ export class ViceSession implements ViceSessionHandle {
    * stop, whose position is known, mapped back through the frame.
    */
   async #cpuHistory(params: { limit: number; space: "c64" | "drive8" }): Promise<{ entries: HistoryEntry[] }> {
+    if (params.space === "c64" && this.#historyOld) {
+      throw new WireFailure(
+        "operation-failed",
+        "VICE records no CPU history after a JAM until the next reset, and the CPU ran after the JAM. The history would show old instructions. " +
+          "Use c64_reset to record again, or use c64_trace.",
+      );
+    }
     return this.#observe(async () => {
       const raw = await this.#machine.history(params.limit, params.space);
       if (params.space === "drive8") return { entries: raw.map(({ clock: _clock, ...entry }) => entry) };
@@ -1128,7 +1198,7 @@ export class ViceSession implements ViceSessionHandle {
     const existing = this.#snapshots.get(params.name);
     if (params.action === "save") {
       if (existing === undefined && this.#snapshots.size >= MAX_SNAPSHOTS) {
-        throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_SNAPSHOTS} snapshots. Discard one first.`);
+        throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_SNAPSHOTS} snapshots. Remove one first with action remove.`);
       }
       const file = existing ?? join(this.#workDir, `snapshot-${++this.#snapshotFiles}.vsf`);
       await this.#observe(() => this.#machine.saveSnapshot(file));
@@ -1149,6 +1219,9 @@ export class ViceSession implements ViceSessionHandle {
     await this.#stop();
     const elapsed = (await this.#machine.clock()) - this.#timingStart;
     await this.#machine.restoreSnapshot(file);
+    // A restore starts a jammed CPU again, but VICE still records no CPU history.
+    this.#jammed = undefined;
+    if (this.#historyStopped) this.#historyOld = true;
     this.#state = "stopped";
     // The cycle clock jumped with the restore; the stopwatch keeps its reading, as a window move does.
     this.#timingStart = (await this.#machine.clock()) - elapsed;
@@ -1168,13 +1241,26 @@ export class ViceSession implements ViceSessionHandle {
     // Checked before the machine stops: VICE gives no reason for a file that is no snapshot.
     if (!bytes.subarray(0, VSF_MAGIC.length).equals(VSF_MAGIC)) throw new WireFailure("invalid-input", "The file is not a VICE snapshot file (.vsf). Give a file that c64_snapshot save wrote.");
     const file = this.#stage(bytes, "vsf");
+    // VICE resets the machine after a snapshot file that it cannot read: a backup keeps the state before the restore.
+    const backup = join(this.#workDir, "before-restore.vsf");
+    await this.#stop();
+    await this.#machine.saveSnapshot(backup);
     try {
       return await this.#restoreFrom(file);
     } catch (error) {
+      const kept = await this.#restoreFrom(backup).then(
+        () => true,
+        () => false,
+      );
+      if (!kept) throw new WireFailure("machine-state-lost", "The emulator did not restore this snapshot file, and the machine state from before the restore is lost. Load the program again.");
       if (error instanceof WireFailure) throw error;
-      throw new WireFailure("invalid-input", "The emulator did not restore this snapshot file. A snapshot file restores only in the emulator version and with the machine settings that saved it.");
+      throw new WireFailure(
+        "invalid-input",
+        "The emulator did not restore this snapshot file. The machine state is as before. A snapshot file restores only in the emulator version and with the machine settings that saved it.",
+      );
     } finally {
       rmSync(file, { force: true });
+      rmSync(backup, { force: true });
     }
   }
 
@@ -1255,6 +1341,8 @@ export class ViceSession implements ViceSessionHandle {
       if (this.#closed) throw new WireFailure("machine-unavailable", "The emulator session is closed.");
       this.#vice = vice;
       this.#adapter = adapter;
+      // A new emulator: no JAM holds its CPU, and it records CPU history.
+      this.#clearJam();
       this.#mode = mode;
       for (const [point, checkpoint] of points) point.checkpoint = checkpoint;
       this.#timingStart = clock - handover.elapsed;
@@ -1515,6 +1603,7 @@ export class ViceSession implements ViceSessionHandle {
       if (stop.hits.length > 0 || event.type === ResponseType.jam) this.#haltCount++;
       if (stop.hits.some((hit) => this.#adapter?.isDriveCheckpoint(hit))) this.#driveStop = true;
       this.#lastStop = event.type === ResponseType.jam ? { stopReason: "jam" } : this.#userPoint(stop.hits);
+      if (event.type === ResponseType.jam) this.#jam(stop.pc);
       this.#checkpointHits = [];
       this.#state = "stopped";
       this.#stopWaiters = this.#stopWaiters.filter((waiter) => !waiter(stop));

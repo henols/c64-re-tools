@@ -139,7 +139,8 @@ test("step and next pause a running machine first and report the new pc", async 
     pc: 0xe5d2,
     executed: 3,
   });
-  assert.deepEqual(fake.commands.slice(0, 2), [Command.ping, Command.advanceInstructions]);
+  // The opcode at the pc tells whether a JAM holds the CPU.
+  assert.deepEqual(fake.commands.slice(0, 4), [Command.ping, Command.registersGet, Command.memoryGet, Command.advanceInstructions]);
   fake.stepTo = 0x2000;
   assert.deepEqual(await session.handle("execution", { action: "next", count: 1, space: "c64" }), {
     state: "stopped",
@@ -732,6 +733,7 @@ test("advance-frames counts two clock stops per frame and removes the clock", as
   assert.deepEqual(await session.handle("execution", { action: "advance-frames", count: 3, space: "c64" }), {
     state: "stopped",
     pc: 0x1006,
+    space: "c64",
     advancedFrames: 3,
     stopReason: "frames",
   });
@@ -781,7 +783,7 @@ test("run-until times out after its frames, and reports a user breakpoint", asyn
   const byBreakpoint = await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 2 });
   assert.deepEqual([byBreakpoint.stopReason, byBreakpoint.pointId], ["breakpoint", 2]);
   const advanced = await session.handle("execution", { action: "advance-frames", count: 5, space: "c64" });
-  assert.deepEqual(advanced, { state: "stopped", pc: 0x2000, advancedFrames: 0, stopReason: "breakpoint", pointId: 2 });
+  assert.deepEqual(advanced, { state: "stopped", pc: 0x2000, space: "c64", advancedFrames: 0, stopReason: "breakpoint", pointId: 2 });
   await session.close();
 });
 
@@ -796,10 +798,25 @@ test("a stop on a JAM opcode is a jam; another unexplained stop is an error", as
     pc: 0x3000,
     space: "c64",
   });
+  // The JAM holds the CPU: the next run is a jam at once, and a step is refused.
   fake.ram[0x3000] = 0xea;
-  await assert.rejects(session.handle("execution", { action: "advance-frames", count: 1, space: "c64" }), failsWith("operation-failed"));
+  let resumes = 0;
+  fake.onResume = () => {
+    resumes++;
+    return { pc: 0x3000, hits: [] };
+  };
+  assert.equal((await session.handle("execution", { action: "advance-frames", count: 1, space: "c64" })).stopReason, "jam");
+  assert.equal(resumes, 0);
+  await assert.rejects(session.handle("execution", { action: "step", count: 1, space: "c64" }), /The CPU is jammed/);
   assert.equal(fake.checkpoints.size, 0);
   await session.close();
+
+  const other = await startSession();
+  other.fake.ram[0x3000] = 0xea;
+  other.fake.onResume = () => ({ pc: 0x3000, hits: [] });
+  await assert.rejects(other.session.handle("execution", { action: "advance-frames", count: 1, space: "c64" }), failsWith("operation-failed"));
+  assert.equal(other.fake.checkpoints.size, 0);
+  await other.session.close();
 });
 
 test("a raster target the machine already stands in waits for its next pass", async () => {
@@ -857,9 +874,11 @@ test("a stop in the drive is completed at the computer's next instruction before
     if (stops <= 2) return { pc: 0x1234, hits: [drive.number] };
     return { pc: 0x1236, hits: [boundaryOf(vice)!.number] };
   };
+  // The result gives the drive's pc: the computer's is $1236.
   assert.deepEqual(await session.handle("execution", { action: "advance-frames", count: 5, space: "c64" }), {
     state: "stopped",
-    pc: 0x1236,
+    pc: (await session.handle("registersGet", { space: "drive8" })).pc,
+    space: "drive8",
     advancedFrames: 0,
     stopReason: "breakpoint",
     pointId: 1,

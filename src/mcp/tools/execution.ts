@@ -3,9 +3,10 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
+import { isRefusal } from "../../errors.ts";
 import { EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_HISTORY, MAX_TIMEOUT_FRAMES, POINT_STOP_REASONS, RUN_STATES, SPACES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
 import { Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
-import { AddressOutput, defineTool, toCondition, ToolOutput } from "../server.ts";
+import { AddressOutput, defineTool, toCondition, ToolOutput, type ViceSessionApi } from "../server.ts";
 import { c64Observe } from "./video.ts";
 
 export const c64Execution = defineTool({
@@ -19,6 +20,8 @@ export const c64Execution = defineTool({
     "advance-frames runs exactly count video frames (count is necessary). It stops at the same raster position, count frames later. " +
     "A breakpoint, a watchpoint or a JAM opcode can stop it before that. advancedFrames tells how many frames ran. " +
     "stopReason tells why it stopped: frames (all frames ran), breakpoint, watchpoint or jam. pointId gives the id of the breakpoint or watchpoint. " +
+    "space tells which CPU stopped: c64, or drive8 for a breakpoint or watchpoint in the disk drive. pc is the address in that space. " +
+    "A CPU that a JAM stopped runs again only after c64_reset, a snapshot restore or c64_autostart. " +
     "To wait for a breakpoint or watchpoint after resume, use advance-frames with a large count. " +
     "step, next, until-return and advance-frames first stop a running CPU. Use count only with step, next and advance-frames. " +
     "step, next and until-return work only in space c64. For the drive, use c64_run_until with an address in space drive8.",
@@ -42,6 +45,7 @@ export const c64Execution = defineTool({
     advancedFrames: z.number().int().min(0).max(MAX_EXECUTION_COUNT).optional().describe("frames advance-frames ran"),
     stopReason: z.enum(["frames", ...POINT_STOP_REASONS]).optional().describe("advance-frames: why it stopped"),
     pointId: z.number().int().min(1).optional().describe("the id of the breakpoint or watchpoint that stopped advance-frames"),
+    space: z.enum(SPACES).optional().describe("advance-frames: the CPU that stopped, c64 or drive8. pc is the address in that space"),
   }),
   readOnly: false,
   async run(input, session) {
@@ -54,6 +58,7 @@ export const c64Execution = defineTool({
       ...(result.advancedFrames === undefined ? {} : { advancedFrames: result.advancedFrames }),
       ...(result.stopReason === undefined ? {} : { stopReason: result.stopReason }),
       ...(result.pointId === undefined ? {} : { pointId: result.pointId }),
+      ...(result.space === undefined ? {} : { space: result.space }),
     };
   },
 });
@@ -93,6 +98,7 @@ export const c64RunUntil = defineTool({
     history: z
       .array(z.object({ address: AddressOutput, bytes: z.string(), text: z.string(), a: Byte, x: Byte, y: Byte, sp: Byte, rasterLine: z.number().int().min(0).optional(), rasterCycle: z.number().int().min(0).optional() }))
       .optional(),
+    historyMissing: z.string().optional().describe("why the result has no history, for example an old history after a JAM"),
   }),
   readOnly: false,
   async run(input, session) {
@@ -108,10 +114,7 @@ export const c64RunUntil = defineTool({
     }
     const result = await session.runUntil({ target, timeoutFrames: input.timeoutFrames });
     const answer = { ...result, pc: formatC64Address(result.pc) };
-    const history =
-      input.history === undefined
-        ? {}
-        : { history: (await session.cpuHistory({ limit: input.history, space: result.space })).entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+    const history = input.history === undefined ? {} : await runHistory(session, input.history, result.space);
     if (input.observe === undefined) return { ...answer, ...history };
     // The observation at the stop: an image of the screen comes with the result as c64_observe gives it.
     const observed = await c64Observe.run(input.observe, session);
@@ -119,5 +122,15 @@ export const c64RunUntil = defineTool({
     return { ...answer, ...history, observed };
   },
 });
+
+/** The history at the stop; the run result stays when the session refuses the history. */
+async function runHistory(session: ViceSessionApi, limit: number, space: "c64" | "drive8") {
+  try {
+    return { history: (await session.cpuHistory({ limit, space })).entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+  } catch (error) {
+    if (isRefusal(error) && error.code === "operation-failed") return { historyMissing: error.message };
+    throw error;
+  }
+}
 
 export const executionTools = [c64Execution, c64RunUntil];
