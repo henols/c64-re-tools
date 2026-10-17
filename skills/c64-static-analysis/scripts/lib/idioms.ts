@@ -31,7 +31,7 @@ export interface Idioms {
   candidates: { dop: number[]; selfModified: number[] };
 }
 
-/** True when an instruction can start at the address: inside the program, and no JAM. */
+/** True when an instruction can start at the address: inside the range and the program (`byteAt` gives a byte), and no JAM. */
 function plausible(byteAt: ImageByte, address: number, range: { start: number; end: number }): boolean {
   const opcode = byteAt(address);
   return address >= range.start && address <= range.end && opcode !== undefined && !JAMS.has(opcode);
@@ -43,7 +43,11 @@ const word = (byteAt: ImageByte, address: number) => {
   return low === undefined || high === undefined ? undefined : low | (high << 8);
 };
 
-/** `covered` is the coverage of the knowledge: the joined map, and the addresses that one run wrote and executed. */
+/**
+ * `byteAt` gives the bytes of the program and undefined outside it, so a
+ * table and its targets stay inside the program. `covered` is the coverage of
+ * the knowledge: the joined map, and the addresses that one run wrote and executed.
+ */
 export function findIdioms(byteAt: ImageByte, range: { start: number; end: number }, covered?: { map: Uint8Array; selfModified: Uint8Array }): Idioms {
   const coverage = covered?.map;
   const regions: NormalizedFindings["regions"] = [];

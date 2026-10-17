@@ -184,7 +184,8 @@ async function analyze(call: Call): Promise<unknown> {
   // With coverage, a code finding over an executed instruction start replaces the data of the other analyzer.
   const executed = coverage === undefined ? {} : { executed: (address: number) => (coverage[address]! & COVERAGE.ramExecute) !== 0 };
   const loaded = imageKind === "flat64k" ? { start: 0x0000, end: 0xffff } : prgRange(bytes);
-  const idioms = findIdioms(byteAt, { start: loaded.start, end: loaded.end }, covered);
+  // The idioms read only the program: a table that runs past a segment gets no targets from the 0 bytes of the 64 KiB.
+  const idioms = findIdioms(inProgram, { start: loaded.start, end: loaded.end }, covered);
 
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries, space);
@@ -281,7 +282,7 @@ async function analyze(call: Call): Promise<unknown> {
       coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
       ...imported,
       regions: result.regions.map((region) => ({ start: formatC64Address(region.start), end: formatC64Address(region.end), classification: region.classification })),
-      labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), "c64-knowledge: knowledge.ts symbols"),
+      labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), "c64-knowledge: knowledge.ts symbols --analyzer --origin dxa"),
       ...(written === undefined ? {} : { listing: written }),
     };
   }
@@ -311,7 +312,7 @@ async function analyze(call: Call): Promise<unknown> {
     ...(coverage === undefined ? {} : { coverageGaps: listed(gaps, max, formatC64Address, "a larger --max-listed") }),
     coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     ...imported,
-    functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), "c64-knowledge: knowledge.ts symbols --kind routine"),
+    functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), "c64-knowledge: knowledge.ts symbols --analyzer --origin ghidra"),
     decompilations: result.decompilations.map((item) => ({ entry: formatC64Address(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
     ...((result.notDecompiled ?? []).length === 0
       ? {}

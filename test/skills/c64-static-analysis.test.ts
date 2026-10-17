@@ -49,19 +49,14 @@ async function analyze(...args: string[]): Promise<{ status: number | null; json
 }
 
 test("an analysis imports Ghidra's structure into knowledge and reports it", { skip, timeout: 600_000 }, async () => {
-  const { status, json } = await analyze("--entry", "$080d", "--decompile", "$0818");
+  const { status, json } = await analyze("--entry", "$080d", "--decompile", "$0818", "--max-listed", "1");
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.coverage, [{ start: "$0801", end: "$0827" }]);
   assert.equal(json.revision, nthIn(project, 2));
   assert.deepEqual((json.changes as { names: unknown }).names, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
   assert.deepEqual(json.conflicts, []);
-  assert.deepEqual(json.functions, {
-    count: 2,
-    listed: [
-      { entry: "$080d", name: "FUN_080d" },
-      { entry: "$0818", name: "FUN_0818" },
-    ],
-  });
+  // The rest of the list is in the knowledge as the analyzer names of Ghidra.
+  assert.deepEqual(json.functions, { count: 2, listed: [{ entry: "$080d", name: "FUN_080d" }], rest: "c64-knowledge: knowledge.ts symbols --analyzer --origin ghidra" });
   assert.equal((json.decompilations as Array<{ entry: string }>)[0]?.entry, "$0818");
 
   const db = openForRead(project);
@@ -97,7 +92,7 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
   const cut = (await analyze("--analyzer", "dxa", "--max-listed", "1")).json.labels as { count: number; listed: unknown[]; rest?: string };
   assert.equal(cut.count, labels.count);
   assert.equal(cut.listed.length, 1);
-  assert.equal(cut.rest, "c64-knowledge: knowledge.ts symbols");
+  assert.equal(cut.rest, "c64-knowledge: knowledge.ts symbols --analyzer --origin dxa");
   const db = openForRead(project);
   // DXA's own facts sit beside Ghidra's from the test above; it does not replace them.
   assert.ok(regionsOverlapping(db, 0x0801, 0x080c).some((region) => region.origin === "dxa" && region.type === "bytes"));
