@@ -35,7 +35,7 @@ test("host → MCP → one VICE: KERNAL bytes, registers and running state", { s
     assert.equal(kernal.size, 8);
     assert.match(kernal.data as string, /^8556200f/);
 
-    const registers = await tool(client, "c64_registers", { action: "get" });
+    const registers = await tool(client, "c64_registers", { action: "read" });
     assert.match(registers.pc as string, /^\$[0-9a-f]{4}$/);
     for (const name of ["a", "x", "y", "sp"]) assert.ok(Number.isInteger(registers[name]));
     assert.equal(Object.keys(registers.flags as object).sort().join(""), "bcdinvz");

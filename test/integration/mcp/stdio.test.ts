@@ -81,7 +81,7 @@ test("a host that starts after the MCP is used on the next tool call", async () 
   const client = await mcp(port);
   const first = await status(client);
   assert.equal(first.isError, true);
-  assert.equal(JSON.parse((first.content[0] as { text: string }).text).code, "machine-unavailable");
+  assert.equal(JSON.parse((first.content[0] as { text: string }).text).error.code, "machine-unavailable");
 
   const state: StubState = { opened: [], closed: 0 };
   servers.push(await startHostServer({ port, createViceSession: stub(state) }));
@@ -93,7 +93,7 @@ test("a host that starts after the MCP is used on the next tool call", async () 
 
 test("after the host comes back, the next call opens a new session; a lost session that served calls says so once", async () => {
   const port = await freePort();
-  const code = (result: CallToolResult) => (result.isError === true ? JSON.parse((result.content[0] as { text: string }).text).code : "ok");
+  const code = (result: CallToolResult) => (result.isError === true ? JSON.parse((result.content[0] as { text: string }).text).error.code : "ok");
   const host = async (state: StubState) => {
     const server = await startHostServer({ port, createViceSession: stub(state) });
     servers.push(server);
@@ -131,7 +131,7 @@ test("a bad C64RT_VIDEO is reported to the caller", async () => {
   servers.push(server);
   const client = await mcp(server.port, { C64RT_VIDEO: "secam" });
   const result = await status(client);
-  assert.equal(JSON.parse((result.content[0] as { text: string }).text).code, "installation-incomplete");
+  assert.equal(JSON.parse((result.content[0] as { text: string }).text).error.code, "installation-incomplete");
   assert.equal(state.opened.length, 0);
   await client.close();
 });
@@ -150,7 +150,7 @@ test("a project path is read in the MCP's working directory and only its bytes r
     assert.deepEqual(result.structuredContent, { state: "stopped", loadAddress: "$0801", size: 3 });
     assert.deepEqual(state.received, [prg]);
     const missing = (await client.callTool({ name: "c64_program_load", arguments: { path: "build/none.prg" } })) as CallToolResult;
-    assert.equal(JSON.parse((missing.content[0] as { text: string }).text).code, "not-found");
+    assert.equal(JSON.parse((missing.content[0] as { text: string }).text).error.code, "not-found");
     await client.close();
   } finally {
     rmSync(project, { recursive: true, force: true });

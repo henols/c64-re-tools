@@ -1064,7 +1064,7 @@ test("the profiler runs from session start; profile and memmap read through it",
   await session.close();
 });
 
-test("screen baselines: capture under a name, compare with mask and ratio, list, discard", async () => {
+test("screen baselines: capture under a name, compare with mask and ratio, list, remove", async () => {
   const { fake, session } = await startSession();
   fake.ram[0xd020] = 2;
   fake.ram[0xd021] = 6;
@@ -1103,14 +1103,14 @@ test("screen baselines: capture under a name, compare with mask and ratio, list,
     failsWith("invalid-input", /mask covers the whole screen/),
   );
 
-  assert.deepEqual(await session.handle("screenDiscard", { baseline: "title" }), { discarded: true });
+  assert.deepEqual(await session.handle("screenDiscard", { baseline: "title" }), { removed: true });
   await assert.rejects(session.handle("screenDiscard", { baseline: "title" }), failsWith("not-found"));
   await assert.rejects(session.handle("screenCompare", { baseline: "title", maxMismatchRatio: 0, mask: [], includeDiff: false }), failsWith("not-found"));
   assert.equal(fake.running, true);
   await session.close();
 });
 
-test("snapshots save, restore to stopped, list and discard", async () => {
+test("snapshots save, restore to stopped, list and remove", async () => {
   const { fake, session } = await startSession();
   await session.handle("execution", { action: "pause", space: "c64" });
   fake.ram[0xc000] = 0x11;
@@ -1122,7 +1122,7 @@ test("snapshots save, restore to stopped, list and discard", async () => {
   assert.equal(fake.running, false);
   assert.equal((await session.handle("status", {})).state, "stopped");
   assert.deepEqual(await session.handle("snapshot", { action: "list" }), { snapshots: ["before-boss"] });
-  assert.deepEqual(await session.handle("snapshot", { action: "discard", name: "before-boss" }), { discarded: true });
+  assert.deepEqual(await session.handle("snapshot", { action: "remove", name: "before-boss" }), { removed: true });
   await assert.rejects(session.handle("snapshot", { action: "restore", name: "before-boss" }), failsWith("not-found"));
   await session.close();
 });

@@ -158,8 +158,9 @@ export function toolListing(tool: ToolDefinition): McpTool {
   };
 }
 
+/** An error in the one form of the toolkit: {"error":{"code","message"}}, as a script prints it. */
 function errorResult(error: WireError): CallToolResult {
-  return { isError: true, content: [{ type: "text", text: JSON.stringify({ code: error.code, message: shownMessage(error) }) }] };
+  return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: { code: error.code, message: shownMessage(error) } }) }] };
 }
 
 /** "address: Invalid string: must match ..." style messages, one sentence per problem. */
@@ -194,7 +195,7 @@ function outcome(result: CallToolResult): TraceFields {
   const first = result.content[0];
   const text = first?.type === "text" ? first.text : "";
   try {
-    return { ok: false, ...(JSON.parse(text) as WireError) };
+    return { ok: false, ...(JSON.parse(text) as { error: WireError }).error };
   } catch {
     return { ok: false, message: text };
   }

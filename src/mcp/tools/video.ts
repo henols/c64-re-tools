@@ -139,13 +139,13 @@ export const c64Screen = defineTool({
     "A mask that covers the whole frame is invalid input. comparedPixels is the number of pixels outside the mask. " +
     "match is true when the part of compared pixels that differ is at most maxMismatchRatio (default 0). bounds holds every different pixel. " +
     "With includeDiff, compare also returns an image with the different pixels in magenta. " +
-    "Action list gives the baseline names. Action discard removes a baseline. Baselines stay until the session ends. " +
+    "Action list gives the baseline names. Action remove removes a baseline. Baselines stay until the session ends. " +
     "The emulator draws frames while the CPU runs. After the CPU stops, the frame stays the same. " +
     "This does not change the run state of the machine.",
   inputSchema: z
     .object({
-      action: z.enum(["capture", "compare", "list", "discard"]),
-      baseline: TransientName.optional().describe("capture: keep the frame under this name. compare and discard: the baseline to use"),
+      action: z.enum(["capture", "compare", "list", "remove"]),
+      baseline: TransientName.optional().describe("capture: keep the frame under this name. compare and remove: the baseline to use"),
       maxMismatchRatio: z.number().min(0).max(1).optional().describe("compare only: 0 to 1, default 0"),
       mask: z.array(Rectangle).max(MAX_MASK_RECTANGLES).optional().describe("compare only: rectangles to ignore, in frame pixels"),
       includeDiff: z.boolean().optional().describe("compare only: also return a difference image"),
@@ -163,7 +163,7 @@ export const c64Screen = defineTool({
     mismatchRatio: z.number().min(0).max(1).optional(),
     bounds: Rectangle.optional(),
     baselines: z.array(z.string()).optional(),
-    discarded: z.boolean().optional(),
+    removed: z.boolean().optional(),
     ...WrittenOutput,
   }),
   readOnly: false,

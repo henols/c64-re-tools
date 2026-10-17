@@ -92,11 +92,11 @@ export const c64Snapshot = defineTool({
     "With out, save also writes it to that project file as a snapshot file (.vsf), so a later session can use it. " +
     "Action restore puts the machine back in that state and stops the CPU. Give name for a snapshot of this session, or file for a .vsf in the project. " +
     "A file restores only in the emulator version and with the machine settings that saved it. The c64_timing stopwatch keeps its reading. " +
-    `Action list gives the names, and action discard removes one. A session keeps at most ${MAX_SNAPSHOTS} snapshots until it ends.`,
+    `Action list gives the names, and action remove removes one. A session keeps at most ${MAX_SNAPSHOTS} snapshots until it ends.`,
   inputSchema: z
     .object({
-      action: z.enum(["save", "restore", "list", "discard"]),
-      name: TransientName.optional().describe("save and discard, and restore without file: 1 to 64 letters, digits, dots, underscores or hyphens"),
+      action: z.enum(["save", "restore", "list", "remove"]),
+      name: TransientName.optional().describe("save and remove, and restore without file: 1 to 64 letters, digits, dots, underscores or hyphens"),
       out: OutInput.optional().describe("save only: also write the snapshot to this project file, for example snapshots/room0.vsf. An existing file is overwritten"),
       file: ProjectPath.optional().describe("restore only: a .vsf file in the project, in place of name"),
       project: ProjectInput.optional().describe("save with out, and restore with file: the project folder, relative to the folder where the agent started. Give it when that folder is not in a project and has projects below it"),
@@ -108,7 +108,7 @@ export const c64Snapshot = defineTool({
     restored: z.boolean().optional(),
     state: z.enum(RUN_STATES).optional(),
     snapshots: z.array(z.string()).optional(),
-    discarded: z.boolean().optional(),
+    removed: z.boolean().optional(),
     ...WrittenOutput,
   }),
   readOnly: false,

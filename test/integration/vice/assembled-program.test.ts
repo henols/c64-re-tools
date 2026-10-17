@@ -62,7 +62,7 @@ test("assembled source loads into VICE and reaches its known end state", { skip,
   try {
     const loaded = await tool(client, "c64_program_load", { path: "build/counter.prg" });
     assert.equal(loaded.loadAddress, "$0801");
-    await tool(client, "c64_registers", { action: "set", values: { pc: symbol("start").address } });
+    await tool(client, "c64_registers", { action: "write", values: { pc: symbol("start").address } });
     const reached = await tool(client, "c64_run_until", { target: { kind: "address", address: symbol("done").address }, timeoutFrames: 50 });
     assert.equal(reached.stopReason, "target");
     const result = await tool(client, "c64_memory_read", { address: symbol("RESULT").value!, size: 1 });

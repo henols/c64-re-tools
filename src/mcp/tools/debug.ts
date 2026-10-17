@@ -24,7 +24,7 @@ const BreakpointOutput = z.object({
   enabled: z.boolean(),
   condition: ConditionOutput.optional(),
 });
-const WatchpointOutput = BreakpointOutput.extend({ size: z.number().int().min(1).max(MAX_WATCH_SIZE), access: z.enum(WATCH_ACCESS) });
+const WatchpointOutput = BreakpointOutput.omit({ address: true }).extend({ start: AddressOutput, end: AddressOutput, access: z.enum(WATCH_ACCESS) });
 
 function showBreakpoint(point: Breakpoint) {
   const { condition, ...rest } = point;
@@ -32,8 +32,8 @@ function showBreakpoint(point: Breakpoint) {
 }
 
 function showWatchpoint(point: Watchpoint) {
-  const { condition, ...rest } = point;
-  return { ...rest, address: formatC64Address(point.address), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
+  const { condition, address, size, ...rest } = point;
+  return { ...rest, start: formatC64Address(address), end: formatC64Address(address + size - 1), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
 }
 
 export const c64Breakpoint = defineTool({
@@ -84,15 +84,15 @@ export const c64Watchpoint = defineTool({
   title: "C64 watchpoints",
   description:
     "Manage watchpoints. A watchpoint stops the CPU when an instruction reads or writes memory in a range. " +
-    `Action add sets one at address for size bytes (1 to ${MAX_WATCH_SIZE}, default 1), with access read, write or read-write. ` +
+    `Action add sets one from start to end (at most ${MAX_WATCH_SIZE} bytes, end defaults to start), with access read, write or read-write. ` +
     "With a condition, it stops only when the condition is true. For a write, a memory condition sees the memory after the write. " +
     "add returns the new id. Breakpoints and watchpoints take their ids from one counter, so the ids of one kind can have gaps. " +
     "Actions remove, enable and disable take that id. remove returns removed true and the id. Action list gives all watchpoints. Each watchpoint shows its condition, when it has one.",
   inputSchema: z
     .object({
       action: z.enum(CHECKPOINT_ACTIONS),
-      address: AddressInput.optional().describe("add only"),
-      size: z.number().int().min(1).max(MAX_WATCH_SIZE).optional().describe("add only. Default 1"),
+      start: AddressInput.optional().describe("add only: the first address"),
+      end: AddressInput.optional().describe("add only: the last address. Default start"),
       access: z.enum(WATCH_ACCESS).optional().describe("add only"),
       space: OptionalSpace,
       condition: TOOL_INPUTS.condition.optional().describe("add only: stop only when this is true"),
@@ -113,11 +113,15 @@ export const c64Watchpoint = defineTool({
       if (action === "remove") return session.watchpoint({ action, id: fields.id! });
       return showWatchpoint(await session.watchpoint({ action, id: fields.id! }));
     }
-    requireFields(action, fields, ["address", "size", "access", "space", "condition"], ["address", "access"]);
+    requireFields(action, fields, ["start", "end", "access", "space", "condition"], ["start", "access"]);
+    const start = fields.start!;
+    const end = fields.end ?? start;
+    if (end < start) throw new WireFailure("invalid-input", "end must not be before start.");
+    if (end - start + 1 > MAX_WATCH_SIZE) throw new WireFailure("invalid-input", `A watchpoint covers at most ${MAX_WATCH_SIZE} bytes. This one covers ${end - start + 1}.`);
     const added = await session.watchpoint({
       action,
-      address: fields.address!,
-      size: fields.size ?? 1,
+      address: start,
+      size: end - start + 1,
       access: fields.access!,
       space: fields.space ?? "c64",
       ...(fields.condition === undefined ? {} : { condition: toCondition(fields.condition) }),

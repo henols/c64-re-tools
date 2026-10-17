@@ -450,7 +450,7 @@ export class ViceSession implements ViceSessionHandle {
       case "screenDiscard": {
         const { baseline } = params as ViceOperations["screenDiscard"]["params"];
         if (!this.#baselines.delete(baseline)) throw new WireFailure("not-found", `There is no baseline named ${baseline}.`);
-        return { discarded: true };
+        return { removed: true };
       }
       case "snapshot":
         return this.#snapshot(params as ViceOperations["snapshot"]["params"]);
@@ -1122,7 +1122,7 @@ export class ViceSession implements ViceSessionHandle {
     });
   }
 
-  /** Saves, restores, lists and discards machine snapshots. */
+  /** Saves, restores, lists and removes machine snapshots. */
   async #snapshot(params: ViceOperations["snapshot"]["params"]): Promise<ViceOperations["snapshot"]["result"]> {
     if (params.action === "list") return { snapshots: [...this.#snapshots.keys()] };
     const existing = this.#snapshots.get(params.name);
@@ -1136,10 +1136,10 @@ export class ViceSession implements ViceSessionHandle {
       return { saved: true, name: params.name };
     }
     if (existing === undefined) throw new WireFailure("not-found", `There is no snapshot named ${params.name}.`);
-    if (params.action === "discard") {
+    if (params.action === "remove") {
       rmSync(existing, { force: true });
       this.#snapshots.delete(params.name);
-      return { discarded: true };
+      return { removed: true };
     }
     return this.#restoreFrom(existing);
   }

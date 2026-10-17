@@ -549,8 +549,8 @@ export interface ViceOperations {
   };
   screenBaselines: { params: Record<string, never>; result: { baselines: string[] } };
   snapshot: {
-    params: { action: "save" | "restore" | "discard"; name: string } | { action: "list" };
-    result: { saved: boolean; name: string } | { restored: boolean; state: RunState } | { snapshots: string[] } | { discarded: boolean };
+    params: { action: "save" | "restore" | "remove"; name: string } | { action: "list" };
+    result: { saved: boolean; name: string } | { restored: boolean; state: RunState } | { snapshots: string[] } | { removed: boolean };
   };
   /**
    * Snapshot files: export sends the bytes of a named snapshot back as
@@ -560,7 +560,7 @@ export interface ViceOperations {
     params: { action: "export"; name: string } | { action: "restore" };
     result: { exported: boolean; bytes: number } | { restored: boolean; state: RunState };
   };
-  screenDiscard: { params: { baseline: string }; result: { discarded: boolean } };
+  screenDiscard: { params: { baseline: string }; result: { removed: boolean } };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
   window: { params: { action: (typeof WINDOW_ACTIONS)[number] }; result: WindowResult };
 }
@@ -633,8 +633,8 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
     case "snapshot": {
       onlyFields(params, params.action === "list" ? ["action"] : ["action", "name"]);
       if (params.action === "list") return { action: "list" } as ViceOperations[O]["params"];
-      if (params.action !== "save" && params.action !== "restore" && params.action !== "discard") {
-        invalid("action must be save, restore, list or discard");
+      if (params.action !== "save" && params.action !== "restore" && params.action !== "remove") {
+        invalid("action must be save, restore, list or remove");
       }
       return { action: params.action, name: validName(params.name, "name") } as ViceOperations[O]["params"];
     }
@@ -1231,7 +1231,7 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       break;
     }
     case "screenDiscard": {
-      if (value.discarded !== true) throw new ProtocolError("screenDiscard result is malformed");
+      if (value.removed !== true) throw new ProtocolError("screenDiscard result is malformed");
       break;
     }
     case "snapshot": {
@@ -1239,7 +1239,7 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         (value.saved === true && typeof value.name === "string") ||
         (value.restored === true && isOneOf(RUN_STATES, value.state)) ||
         (Array.isArray(value.snapshots) && value.snapshots.every((name) => typeof name === "string")) ||
-        value.discarded === true;
+        value.removed === true;
       if (!ok) throw new ProtocolError("snapshot result is malformed");
       break;
     }

@@ -276,7 +276,7 @@ async function follow(
         return undefined;
       } finally {
         await client.breakpoint({ action: "remove", id: point.id });
-        await client.snapshot({ action: "discard", name: CALL_SNAPSHOT });
+        await client.snapshot({ action: "remove", name: CALL_SNAPSHOT });
       }
     };
     let left = frames;
@@ -397,7 +397,7 @@ async function follow(
   let reached = false;
   if (options.until === undefined) await track(left);
   else reached = await trackTo(options.until, left);
-  await client.snapshot({ action: "discard", name: STAGE_SNAPSHOT }).catch(() => undefined);
+  await client.snapshot({ action: "remove", name: STAGE_SNAPSHOT }).catch(() => undefined);
   mergeMaps(stage.map, await readCoverage(client));
   found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(stage.map, options.minStage) });
   return { stages: found, frames: total, reached };

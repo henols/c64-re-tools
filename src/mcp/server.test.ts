@@ -243,7 +243,7 @@ class FakeSession implements ViceSessionApi {
     if (params.action === "list") return { snapshots: ["before-boss"] };
     if (params.action === "save") return { saved: true, name: params.name };
     if (params.action === "restore") return { restored: true, state: "stopped" as const };
-    return { discarded: true };
+    return { removed: true };
   }
   restoredFiles: string[] = [];
   async snapshotExport(name: string) {
@@ -270,7 +270,7 @@ class FakeSession implements ViceSessionApi {
   }
   async screenDiscard(baseline: string) {
     this.baselines.delete(baseline);
-    return { discarded: true };
+    return { removed: true };
   }
 
   media: Array<[string, unknown]> = [];
@@ -333,7 +333,7 @@ function errorOf(result: CallToolResult): { code: string; message: string } {
   assert.equal(result.isError, true, JSON.stringify(result));
   const first = result.content[0];
   assert.equal(first?.type, "text");
-  return JSON.parse((first as { text: string }).text) as { code: string; message: string };
+  return (JSON.parse((first as { text: string }).text) as { error: { code: string; message: string } }).error;
 }
 
 test("the server lists exactly the public tools with object input and output schemas", async () => {
@@ -652,16 +652,16 @@ test("c64_breakpoint passes typed conditions through and checks fields per actio
   await client.close();
 });
 
-test("c64_watchpoint fills size and space and needs access", async () => {
+test("c64_watchpoint takes start and end, fills end and space, and needs access", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
   const added = await call(client, "c64_watchpoint", {
     action: "add",
-    address: "$c020",
+    start: "$c020",
     access: "write",
     condition: { kind: "memory", address: "$c020", operator: "eq", value: 3 },
   });
-  assert.deepEqual(added.structuredContent, { id: 2, address: "$c020", size: 1, access: "write", space: "c64", enabled: true });
+  assert.deepEqual(added.structuredContent, { id: 2, start: "$c020", end: "$c020", access: "write", space: "c64", enabled: true });
   assert.deepEqual(session.points[0], {
     action: "add",
     address: 0xc020,
@@ -670,8 +670,11 @@ test("c64_watchpoint fills size and space and needs access", async () => {
     space: "c64",
     condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
   });
-  assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", address: "$c020" })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", start: "$c020" })).code, "invalid-input");
   assert.deepEqual((await call(client, "c64_watchpoint", { action: "remove", id: 2 })).structuredContent, { removed: true, id: 2 });
+  assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", start: "$c020", end: "$c01f", access: "read" })).code, "invalid-input", "end before start");
+  assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", start: "$c000", end: "$cfff", access: "read" })).code, "invalid-input", "more bytes than a watchpoint covers");
+  assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", address: "$c020", access: "read" })).code, "invalid-input", "address is the field of a breakpoint");
   await client.close();
 });
 
@@ -806,7 +809,7 @@ test("profile and memmap format addresses and fill read defaults", async () => {
   await client.close();
 });
 
-test("c64_screen baselines: capture, compare with a diff image, list and discard", async () => {
+test("c64_screen baselines: capture, compare with a diff image, list and remove", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
   const captured = await call(client, "c64_screen", { action: "capture", baseline: "title-original" });
@@ -818,10 +821,10 @@ test("c64_screen baselines: capture, compare with a diff image, list and discard
   assert.deepEqual(session.compares[0], { baseline: "title-original", maxMismatchRatio: 0, mask: [{ x: 250, y: 20, width: 80, height: 16 }], includeDiff: true });
   const plain = await call(client, "c64_screen", { action: "compare", baseline: "title-original" });
   assert.equal(plain.content.length, 1, "no image without includeDiff");
-  assert.deepEqual((await call(client, "c64_screen", { action: "discard", baseline: "title-original" })).structuredContent, { discarded: true });
+  assert.deepEqual((await call(client, "c64_screen", { action: "remove", baseline: "title-original" })).structuredContent, { removed: true });
   for (const args of [
     { action: "compare" },
-    { action: "discard" },
+    { action: "remove" },
     { action: "list", baseline: "x" },
     { action: "capture", baseline: "has space" },
     { action: "capture", mask: [] },
@@ -1007,7 +1010,7 @@ test("c64_snapshot writes a snapshot file with out and restores one with file", 
     for (const args of [
       { action: "restore", file: "snapshots/room0.vsf", name: "room0" },
       { action: "restore", out: "x.vsf", name: "room0" },
-      { action: "discard", name: "room0", file: "x.vsf" },
+      { action: "remove", name: "room0", file: "x.vsf" },
     ]) {
       assert.equal(errorOf(await call(client, "c64_snapshot", args)).code, "invalid-input", JSON.stringify(args));
     }

@@ -40,7 +40,7 @@ async function scenario(client: Client) {
   assert.deepEqual((await tool(client, "c64_reset", { mode: "hard" })).result, { state: "stopped", pc: "$fce2" });
   const loaded = (await tool(client, "c64_program_load", { path: "build/counter.prg" })).result;
   assert.deepEqual(loaded, { state: "stopped", loadAddress: "$c000", size: joystickCounterPrg.length - 2 });
-  await tool(client, "c64_registers", { action: "set", values: { pc: "$c000" } });
+  await tool(client, "c64_registers", { action: "write", values: { pc: "$c000" } });
   await tool(client, "c64_joystick", { port: 2, direction: "left" });
 
   const reached = (await tool(client, "c64_run_until", { target: { kind: "address", address: hex(LEFT_SEEN) }, timeoutFrames: 10 })).result;
@@ -52,7 +52,7 @@ async function scenario(client: Client) {
   const counters = (await tool(client, "c64_memory_read", { address: hex(FRAMES_SEEN), size: 2 })).result;
   // One frame to reach the target, then 20 more; left was held for the 20.
   assert.deepEqual(counters, { address: "$c100", size: 2, data: "1514" });
-  const registers = (await tool(client, "c64_registers", { action: "get" })).result;
+  const registers = (await tool(client, "c64_registers", { action: "read" })).result;
 
   const screen = await tool(client, "c64_screen", { action: "capture" });
   const image = (screen.raw.content as Array<{ type: string; data?: string }>).find((block) => block.type === "image")!;

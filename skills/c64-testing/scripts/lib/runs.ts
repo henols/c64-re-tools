@@ -153,7 +153,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
       } else if ("save" in step) {
         await client.snapshot({ action: "save", name: "run-save" });
         write(`${step.save}.vsf`, await client.snapshotExport("run-save"));
-        await client.snapshot({ action: "discard", name: "run-save" });
+        await client.snapshot({ action: "remove", name: "run-save" });
       } else if ("screen" in step) {
         write(`${step.screen}.png`, Buffer.from((await client.screenCapture()).png, "base64"));
       } else if ("coverage" in step) {

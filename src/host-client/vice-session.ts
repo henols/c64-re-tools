@@ -255,7 +255,7 @@ export class ViceSessionClient {
     return this.#request("screenBaselines", {});
   }
 
-  screenDiscard(baseline: string): Promise<{ discarded: boolean }> {
+  screenDiscard(baseline: string): Promise<{ removed: boolean }> {
     return this.#request("screenDiscard", { baseline });
   }
 

@@ -96,7 +96,7 @@ const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Pro
     result: { match: false, mismatchingPixels: 42, comparedPixels: 104436, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 }, diffPng: PNG },
   },
   screenBaselines: { call: (c) => c.screenBaselines(), params: {}, result: { baselines: ["title"] } },
-  screenDiscard: { call: (c) => c.screenDiscard("title"), params: { baseline: "title" }, result: { discarded: true } },
+  screenDiscard: { call: (c) => c.screenDiscard("title"), params: { baseline: "title" }, result: { removed: true } },
   snapshot: { call: (c) => c.snapshot({ action: "restore", name: "boss" }), params: { action: "restore", name: "boss" }, result: { restored: true, state: "stopped" } },
   snapshotFile: { call: (c) => c.snapshotRestore(Buffer.from("VICE Snapshot File")), params: { action: "restore" }, result: { restored: true, state: "stopped" }, attachments: 1 },
   ioRead: { call: (c) => c.ioRead(0xd011, 2), params: { address: 0xd011, size: 2 }, result: { address: 0xd011, data: "1b00" } },
