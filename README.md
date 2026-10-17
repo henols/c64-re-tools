@@ -1,6 +1,6 @@
 # c64-re-tools
 
-![C64 RE Tools — Commodore-inspired logo](assets/branding/c64-re-tools-dark.svg)
+<img src="assets/branding/c64-re-tools-transparent.svg" alt="C64 RE Tools" width="440">
 
 
 Let an AI agent work on Commodore 64 programs. The agent drives a real VICE
