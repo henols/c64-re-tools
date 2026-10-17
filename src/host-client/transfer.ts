@@ -58,10 +58,33 @@ export function readProjectFile(path: string, options: { root?: string } = {}): 
   return { bytes: readFileSync(real), type: extname(path).slice(1).toLowerCase() };
 }
 
+/** Why a file cannot be written, by the error code of the file system; the codes that are a fault of the path. */
+const WRITE_PROBLEMS: Record<string, string> = {
+  EISDIR: "is a folder. Give the path of a file",
+  EEXIST: "has a file where a folder must be. Give a path whose folders are folders",
+  ENOTDIR: "has a file where a folder must be. Give a path whose folders are folders",
+  ENOENT: "is in a folder that does not exist",
+  EACCES: "cannot be written: there is no permission. Give a path that you can write",
+  EPERM: "cannot be written: there is no permission. Give a path that you can write",
+  EROFS: "is on a file system that is read-only. Give another path",
+  ENAMETOOLONG: "is too long. Give a shorter path",
+};
+
+/**
+ * The refusal for a write that the file system refused because of the path
+ * (a folder, a file in place of a folder, no permission): invalid-input with
+ * the path. Undefined for another error, which is no fault of the path.
+ */
+export function writeRefusal(error: unknown, path: string, what?: string): WireFailure | undefined {
+  const problem = WRITE_PROBLEMS[(error as NodeJS.ErrnoException | undefined)?.code ?? ""];
+  return problem === undefined ? undefined : new WireFailure("invalid-input", `${what === undefined ? "" : `${what}: `}${path} ${problem}.`);
+}
+
 /**
  * Writes bytes to a project file on the client side, making its directories
  * and overwriting it. Throws WireFailure(invalid-input) for a path outside the
- * project, also one that leaves it through a symbolic link.
+ * project, also one that leaves it through a symbolic link, and for a path
+ * that the file system refuses: a folder, a file in place of a folder, no permission.
  */
 export function writeProjectFile(path: string, bytes: Uint8Array, options: { root?: string; what?: string } = {}): void {
   const root = options.root ?? currentProject();
@@ -76,16 +99,20 @@ export function writeProjectFile(path: string, bytes: Uint8Array, options: { roo
   let existing = dirname(file);
   while (!existsSync(existing)) existing = dirname(existing);
   if (!isInside(realpathSync(root), realpathSync(existing))) throw refuse();
-  mkdirSync(dirname(file), { recursive: true });
-  if (!isInside(realpathSync(root), realpathSync(dirname(file)))) throw refuse();
-  let link = false;
   try {
-    link = lstatSync(file).isSymbolicLink();
+    mkdirSync(dirname(file), { recursive: true });
+    if (!isInside(realpathSync(root), realpathSync(dirname(file)))) throw refuse();
+    let link = false;
+    try {
+      link = lstatSync(file).isSymbolicLink();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (link) throw refuse();
+    writeFileSync(file, bytes);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    throw writeRefusal(error, path, options.what) ?? error;
   }
-  if (link) throw refuse();
-  writeFileSync(file, bytes);
 }
 
 /** Directories never staged: version control and the toolkit's own project state. */

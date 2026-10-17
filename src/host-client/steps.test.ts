@@ -29,11 +29,11 @@ test("a step has the input of its MCP tool, with names and the defaults of the t
   ]);
   for (const [bad, why] of [
     [[], /at least one step/],
-    [[{ observe: "x" }], /exactly one of write, registers, joystick, type, press, frames, runUntil/],
-    [[{ runUntil: { at: "$c000" }, timeoutFrames: 10 }], /step 1 has the key timeoutFrames, which a runUntil step does not have/],
+    [[{ observe: "x" }], /must have exactly one of write, registers, joystick, type, frames, runUntil$/],
+    [[{ frames: 10, type: { mode: "text", text: "x" } }], /step 1 has 2 step kinds: frames, type\. Give each one its own step$/],
     [[{ runUntil: { target: { kind: "address", address: "12-3" } } }], /step 1: runUntil\.target\.address must be \$ and 1 to 4 hex digits/],
-    [[{ write: { at: "$c000", bytes: [1] } }], /step 1: write/],
-    [[{ type: " " }], /step 1: type/],
+    [[{ write: { at: "$c000", bytes: [1] } }], /step 1 has the 2\.0 form \(write\.at, write\.bytes\)/],
+    [[{ type: 7 }], /step 1: type must be an object/],
     [[{ type: { mode: "text", text: "{" } }], /There is no C64 key for "\{"\. Use mode petscii/],
     [[{ registers: { x: "table" } }], /step 1: registers\.x/],
     [[{ registers: { flags: {} } }], /name at least one register/],
@@ -44,6 +44,37 @@ test("a step has the input of its MCP tool, with names and the defaults of the t
     assert.throws(() => checkActionSteps(bad, refuse), why, JSON.stringify(bad));
   }
   assert.deepEqual(checkActionSteps([{ press: "A" }], refuse, { press: true }), [{ press: "A" }], "the replay core presses keys");
+  assert.throws(() => checkActionSteps([{ observe: "x" }], refuse, { press: true }), /exactly one of write, registers, joystick, type, press, frames, runUntil$/, "the replay core lists press");
+});
+
+test("a step in a form of the 2.0 files is refused with the field and the 2.1 step to write", () => {
+  const message = (steps: unknown[]) => {
+    try {
+      checkActionSteps(steps, refuse);
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return assert.fail(`${JSON.stringify(steps)} is not refused`);
+  };
+  for (const [old, expected] of [
+    [{ runUntil: { at: "cold_start" }, timeoutFrames: 900 }, 'step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "cold_start"}, "timeoutFrames": 900}}'],
+    [{ runUntil: { at: "$0400", timeoutFrames: 100 } }, 'step 1 has the 2.0 form (runUntil.at). Write {"runUntil": {"target": {"kind": "address", "address": "$0400"}, "timeoutFrames": 100}}'],
+    [{ runUntil: { target: { kind: "address", address: "$0400" } }, timeoutFrames: 100 }, 'step 1 has the 2.0 form (timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "$0400"}, "timeoutFrames": 100}}'],
+    [{ runUntil: { at: "main", raster: 100 }, timeoutFrames: 5 }, 'step 1 has the 2.0 form (runUntil.at, runUntil.raster, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "main", "condition": {"kind": "raster", "line": 100}}, "timeoutFrames": 5}}'],
+    [{ runUntil: { raster: 100 }, timeoutFrames: 5 }, 'step 1 has the 2.0 form (runUntil.raster, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "raster", "line": 100}, "timeoutFrames": 5}}'],
+    [{ runUntil: { memory: { at: "room", equals: 0 }, timeoutFrames: 20 } }, 'step 1 has the 2.0 form (runUntil.memory). Write {"runUntil": {"target": {"kind": "memory", "address": "room", "operator": "eq", "value": 0}, "timeoutFrames": 20}}'],
+    [{ type: " " }, 'step 1 has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes'],
+    [{ write: { at: "next_room", bytes: [1, 255] } }, 'step 1 has the 2.0 form (write.at, write.bytes). Write {"write": {"address": "next_room", "data": "01ff"}}'],
+    [{ registers: { pc: 0x0400, a: 16 } }, 'step 1 has the 2.0 form (registers.pc as a number). Write {"registers": {"pc": "$0400", "a": 16}}'],
+    [{ registers: { a: "$10" } }, 'step 1 has the 2.0 form (registers.a as text). Write {"registers": {"a": 16}}'],
+    [{ runUntil: { target: { kind: "memory", at: "room", operator: "eq", value: 0 } } }, /runUntil\.target has the field at, which it does not take\. at is a 2\.0 field\. Write address in place of at\./],
+    [{ runUntil: { target: { kind: "memory", address: "room", equals: 0 } } }, /has the field equals, which it does not take\. equals is a 2\.0 field\. Write "operator": "eq" and "value" in place of equals\./],
+  ] as const) {
+    if (typeof expected === "string") assert.equal(message([old]), expected);
+    else assert.match(message([old]), expected);
+  }
+  // The 2.1 step that the refusal gives is a step that checks.
+  assert.doesNotThrow(() => checkActionSteps([{ runUntil: { target: { kind: "address", address: "cold_start" }, timeoutFrames: 900 } }, { type: { mode: "text", text: " " } }, { write: { address: "next_room", data: "01ff" } }, { registers: { pc: "$0400", a: 16 } }], refuse));
 });
 
 test("a run target of a step gets its addresses from the resolver", () => {

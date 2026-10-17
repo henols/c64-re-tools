@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -113,4 +113,26 @@ test("a write through a folder link out of the project is refused before a folde
   assert.equal(existsSync(join(sandbox, "elsewhere", "new")), false);
   writeProjectFile("made/deep/page.md", Buffer.from("x"), { root: project });
   assert.equal(existsSync(join(project, "made", "deep", "page.md")), true);
+});
+
+test("a write to a folder, under a file or without permission is invalid-input with the path, not a fault of the toolkit", () => {
+  mkdirSync(join(project, "results"), { recursive: true });
+  writeFileSync(join(project, "plain.txt"), "x");
+  const refused = (path: string, message: string) =>
+    assert.throws(
+      () => writeProjectFile(path, Buffer.from([1]), { root: project, what: "--out" }),
+      (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message === message,
+      path,
+    );
+  refused("results", "--out: results is a folder. Give the path of a file.");
+  refused("plain.txt/inner.bin", "--out: plain.txt/inner.bin has a file where a folder must be. Give a path whose folders are folders.");
+  if (process.platform !== "win32" && process.getuid?.() !== 0) {
+    mkdirSync(join(project, "locked"));
+    chmodSync(join(project, "locked"), 0o500);
+    try {
+      refused("locked/out.bin", "--out: locked/out.bin cannot be written: there is no permission. Give a path that you can write.");
+    } finally {
+      chmodSync(join(project, "locked"), 0o700);
+    }
+  }
 });

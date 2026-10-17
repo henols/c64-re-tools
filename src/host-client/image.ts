@@ -21,6 +21,38 @@ export interface Image {
   stages?: Array<Record<string, unknown>>;
 }
 
+/** The kinds of media files that are no PRG, by extension. */
+const MEDIA_KINDS: Record<string, string> = {
+  d64: "a disk image",
+  d71: "a disk image",
+  d81: "a disk image",
+  g64: "a disk image",
+  x64: "a disk image",
+  t64: "a tape file",
+  tap: "a tape file",
+  crt: "a cartridge file",
+};
+
+/** The remedy for a disk, tape or cartridge file where a PRG must be: get the PRG out of it. */
+export const MEDIA_REMEDY = "Get the PRG out of it with disk.ts read (or disk.ts crt for a cartridge) of the c64-disk skill";
+
+/**
+ * Reads a PRG of the project: a 2-byte load address, and bytes that end at
+ * $ffff or before. Refuses a disk, tape or cartridge file and any other file
+ * that is no PRG with invalid-input; `remedy` tells what to do in its place.
+ */
+export function readPrg(path: string, remedy = MEDIA_REMEDY): { bytes: Buffer; start: number; end: number; body: Uint8Array } {
+  const { bytes, type } = readProjectFile(path);
+  const media = MEDIA_KINDS[type];
+  if (media !== undefined) throw new Refusal("invalid-input", `${path} is ${media} (.${type}), not a PRG. ${remedy}.`);
+  try {
+    return { bytes, ...prgRange(bytes) };
+  } catch (error) {
+    if (isRefusal(error)) throw new Refusal("invalid-input", `${path} is not a PRG: ${error.message} ${remedy}.`);
+    throw error;
+  }
+}
+
 /** Reads an image.json or a PRG, relative to the project folder. */
 export function readImage(path: string): Image {
   const { bytes } = readProjectFile(path);
