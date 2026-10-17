@@ -15,9 +15,9 @@ import { type AddressRange, c64AddressOf, formatC64Address, parseC64Address } fr
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
 import { readImage } from "#src/host-client/image.ts";
-import { checkActionSteps, type ActionStep } from "#src/host-client/steps.ts";
-import { MAX_EXECUTION_COUNT, WireFailure } from "#src/host-client/tools.ts";
-import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
+import { readActionSteps, type ActionStep } from "#src/host-client/steps.ts";
+import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
+import { writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { programCoverage, requireProgram } from "#src/knowledge/program.ts";
@@ -216,19 +216,7 @@ async function run(argv: string[]): Promise<unknown> {
     if (!/^\d{1,6}$/.test(values.run) || Number(values.run) < 1 || Number(values.run) > MAX_EXECUTION_COUNT) throw new UsageError(`--run needs a frame count from 1 to ${MAX_EXECUTION_COUNT}, not ${values.run}`);
     frames = Number(values.run);
   }
-  let steps: ActionStep[] = [];
-  if (values.steps !== undefined) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(readProjectFile(values.steps).bytes.toString("utf8"));
-    } catch (error) {
-      if (error instanceof WireFailure) throw error;
-      throw new UsageError(`the steps file ${values.steps} is not JSON: ${(error as Error).message}`);
-    }
-    steps = checkActionSteps(parsed, (message) => {
-      throw new UsageError(`steps file ${values.steps}: ${message}`);
-    });
-  }
+  const steps: ActionStep[] = values.steps === undefined ? [] : readActionSteps(values.steps, "--steps");
   const loaded = positionals.map((path, index) => readRelease(path, shifts.get(index + 1) ?? 0));
   const releases = loaded.map((item) => item.release);
   const comparison = compareReleases(releases, {

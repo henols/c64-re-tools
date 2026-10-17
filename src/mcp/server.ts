@@ -7,7 +7,8 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool as McpTool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { formatC64Address, parseC64Address } from "../c64.ts";
+import { formatC64Address } from "../c64.ts";
+import { Byte, TOOL_INPUTS } from "./inputs.ts";
 import { LostBeforeAnswer, type ViceSessionClient } from "../host-client/vice-session.ts";
 import { isRefusal } from "../errors.ts";
 import { shownMessage, WireFailure, type WireError } from "../protocol/messages.ts";
@@ -63,34 +64,13 @@ export type SessionSource = () => Promise<ViceSessionApi>;
 type JsonObject = Record<string, unknown>;
 
 // ---------------------------------------------------------------------------
-// Public schema primitives shared by the tool groups
-
-/** Input address: "$" and four hex digits, either case. Parses to a number. */
-export const AddressInput = z
-  .string()
-  .regex(/^\$[0-9a-fA-F]{4}$/, "must be $ followed by four hex digits, for example $c000")
-  .transform((value) => parseC64Address(value))
-  .describe("C64 address, $0000 to $ffff");
+// Public schema primitives shared by the tool groups. The inputs that change or
+// wait for the machine are in inputs.ts: the action steps take the same inputs.
 
 /** Output address: "$" and four lowercase hex digits. */
 export const AddressOutput = z.string().regex(/^\$[0-9a-f]{4}$/).describe("C64 address, $0000 to $ffff");
 
-export const Byte = z.number().int().min(0).max(255);
-
 export const HexData = z.string().regex(/^(?:[0-9a-f]{2})*$/).describe("bytes as lowercase hex, two digits per byte, no separators");
-
-/** Input bytes: hex in either case, two digits per byte, at least one byte. Parses to lowercase. */
-export const HexDataInput = z
-  .string()
-  .regex(/^(?:[0-9a-fA-F]{2})+$/, "must be hex bytes, two digits per byte, no separators, for example a9008d20d0")
-  .transform((value) => value.toLowerCase());
-
-export const SpaceInput = z.enum(SPACES).default("c64").describe("c64 is the computer. drive8 is the 1541 disk drive CPU");
-
-export const MemoryViewInput = z
-  .enum(MEMORY_VIEWS)
-  .default("cpu")
-  .describe("cpu reads what the CPU sees now (ROM and I/O where banked in). ram reads the RAM underneath (c64 only)");
 
 /** A name the agent gives to something the session keeps, such as a screen baseline or a snapshot. */
 export const TransientName = z
@@ -133,37 +113,6 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   run(input: z.output<I>, session: ViceSessionApi): Promise<z.input<O> | ToolOutput<z.input<O>>>;
 }
 
-/** A typed condition: register, memory or raster. No expression language. */
-export const ConditionInput = z
-  .discriminatedUnion("kind", [
-    z
-      .object({
-        kind: z.literal("register"),
-        register: z.enum(CONDITION_REGISTERS),
-        operator: z.enum(COMPARISONS),
-        value: Byte,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("memory"),
-        address: AddressInput,
-        operator: z.enum(COMPARISONS),
-        value: Byte,
-        space: SpaceInput,
-        view: MemoryViewInput,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal("raster"),
-        line: z.number().int().min(0).describe("raster line: PAL 0-311, NTSC 0-262"),
-        cycle: z.number().int().min(0).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64. True from this cycle on"),
-      })
-      .strict(),
-  ])
-  .describe("register: a CPU register compared to a byte. memory: a byte in memory compared to a byte. raster: the raster position");
-
 /** A condition as a result shows it: the input form, with the memory address as "$xxxx". */
 export const ConditionOutput = z
   .discriminatedUnion("kind", [
@@ -184,7 +133,7 @@ export function defined<T extends Record<string, unknown>>(value: T): T {
 }
 
 /** A parsed condition input as the protocol type. */
-export function toCondition(input: z.output<typeof ConditionInput>): Condition {
+export function toCondition(input: z.output<typeof TOOL_INPUTS.condition>): Condition {
   return defined(input) as Condition;
 }
 

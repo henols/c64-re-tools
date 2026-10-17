@@ -26,7 +26,7 @@ const valid = {
   symbols: "none",
   checkpoint: "$c015",
   state: ["$c100", { at: "$c101", size: 2 }],
-  steps: [{ frames: 10 }, { joystick: { port: 2, direction: "left" } }, { type: "RUN\n" }, { runUntil: { at: "$c015" }, timeoutFrames: 5 }],
+  steps: [{ frames: 10 }, { joystick: { port: 2, direction: "left" } }, { press: "RUN\n" }, { runUntil: { target: { kind: "address", address: "$c015" }, timeoutFrames: 5 } }],
 };
 
 function file(name: string, value: unknown): string {
@@ -49,9 +49,9 @@ test("a record file needs a program and steps the replay core can do; a checkpoi
     noState: { ...valid, state: [] },
     tooMuchState: { ...valid, state: Array.from({ length: 17 }, () => "$c100") },
     unknownKey: { ...valid, observe: true },
-    raster: { ...valid, steps: [{ runUntil: { raster: 100 }, timeoutFrames: 5 }] },
+    raster: { ...valid, steps: [{ runUntil: { target: { kind: "raster", line: 100 }, timeoutFrames: 5 } }] },
     observeStep: { ...valid, steps: [{ observe: "x" }] },
-    badKey: { ...valid, steps: [{ type: "£" }] },
+    badKey: { ...valid, steps: [{ press: "£" }] },
     badInput: { ...valid, inputs: ["$c000"] },
     badRange: { ...valid, inputs: ["$de00-$e000"] },
   })) {

@@ -2,9 +2,9 @@
 
 import { z } from "zod";
 
-import { textToPetscii } from "../../c64.ts";
-import { WireFailure } from "../../protocol/messages.ts";
 import { JOYSTICK_DIRECTIONS, MAX_KEYBOARD_BYTES } from "../../protocol/vice.ts";
+import { keyboardBytes } from "../../host-client/steps.ts";
+import { TOOL_INPUTS } from "../inputs.ts";
 import { defineTool } from "../server.ts";
 
 const EMULATOR_FLAW = z.string().optional().describe("a known flaw of the emulator version that affects input, and the version that fixes it");
@@ -19,31 +19,12 @@ export const c64Keyboard = defineTool({
     'Mode text types text, for example "RUN\\n". Letters of either case type the normal (unshifted) key. A line break types RETURN. ' +
     "Mode petscii types PETSCII codes 1 to 255 in bytes, for example [147] to clear the screen. " +
     "This does not change the run state of the machine. emulatorFlaw in the result names a known flaw of the emulator version that affects input, and the version that fixes it.",
-  inputSchema: z
-    .object({
-      mode: z.enum(["text", "petscii"]),
-      text: z.string().min(1).optional().describe("mode text: the text to type"),
-      bytes: z.array(z.number().int().min(1).max(255)).min(1).optional().describe("mode petscii: PETSCII codes to type"),
-    })
-    .strict(),
+  inputSchema: TOOL_INPUTS.keyboard,
   outputSchema: z.object({ queuedBytes: z.number().int().min(1).max(MAX_KEYBOARD_BYTES), emulatorFlaw: EMULATOR_FLAW }),
   readOnly: false,
   async run(input, session) {
-    let petscii: Uint8Array;
-    if (input.mode === "text") {
-      if (input.text === undefined || input.bytes !== undefined) throw new WireFailure("invalid-input", "Mode text takes text and no bytes.");
-      try {
-        petscii = textToPetscii(input.text);
-      } catch (error) {
-        throw new WireFailure("invalid-input", `${(error as Error).message}. Use mode petscii for other keys.`);
-      }
-    } else {
-      if (input.bytes === undefined || input.text !== undefined) throw new WireFailure("invalid-input", "Mode petscii takes bytes and no text.");
-      petscii = Uint8Array.from(input.bytes);
-    }
-    if (petscii.length > MAX_KEYBOARD_BYTES) {
-      throw new WireFailure("invalid-input", `The keyboard queue takes at most ${MAX_KEYBOARD_BYTES} keys at once. This input has ${petscii.length} keys.`);
-    }
+    // The schema checked the keys: keyboardBytes gives bytes here.
+    const petscii = keyboardBytes(input) as Uint8Array;
     return session.keyboard(petscii);
   },
 });
@@ -55,13 +36,7 @@ export const c64Joystick = defineTool({
     "Set the joystick in control port 1 or 2: a direction (or center) and the fire button. " +
     "The C64 sees this state until you change it. To release the joystick, set direction center and fire false. " +
     "Most games read port 2. This does not change the run state of the machine. emulatorFlaw in the result names a known flaw of the emulator version that affects input, and the version that fixes it.",
-  inputSchema: z
-    .object({
-      port: z.union([z.literal(1), z.literal(2)]).describe("control port 1 or 2"),
-      direction: z.enum(JOYSTICK_DIRECTIONS),
-      fire: z.boolean().default(false),
-    })
-    .strict(),
+  inputSchema: TOOL_INPUTS.joystick,
   outputSchema: z.object({ port: z.union([z.literal(1), z.literal(2)]), direction: z.enum(JOYSTICK_DIRECTIONS), fire: z.boolean(), emulatorFlaw: EMULATOR_FLAW }),
   readOnly: false,
   async run(input, session) {

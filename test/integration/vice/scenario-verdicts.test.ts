@@ -48,7 +48,7 @@ function setUpProject(): void {
       { frames: 150 },
       { load: true },
       { registers: { pc: "start" } },
-      { runUntil: { at: checkpoint }, timeoutFrames },
+      { runUntil: { target: { kind: "address", address: checkpoint }, timeoutFrames } },
       { frames: 2 },
       { observe: "counted", memory: ["counter"], registers: ["a"], screen: {}, vicii: true },
     ],

@@ -3,8 +3,9 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { COMPARISONS, EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_HISTORY, MAX_TIMEOUT_FRAMES, POINT_STOP_REASONS, RUN_STATES, SPACES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
-import { AddressInput, AddressOutput, Byte, ConditionInput, defineTool, MemoryViewInput, SpaceInput, toCondition, ToolOutput } from "../server.ts";
+import { EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_HISTORY, MAX_TIMEOUT_FRAMES, POINT_STOP_REASONS, RUN_STATES, SPACES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
+import { Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
+import { AddressOutput, defineTool, toCondition, ToolOutput } from "../server.ts";
 import { c64Observe } from "./video.ts";
 
 export const c64Execution = defineTool({
@@ -57,34 +58,6 @@ export const c64Execution = defineTool({
   },
 });
 
-const RunTargetInput = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("address"),
-      address: AddressInput,
-      space: SpaceInput,
-      condition: ConditionInput.optional().describe("stop at the address only when this is true"),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("memory"),
-      address: AddressInput,
-      operator: z.enum(COMPARISONS),
-      value: Byte,
-      space: SpaceInput,
-      view: MemoryViewInput,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("raster"),
-      line: z.number().int().min(0).describe("raster line: PAL 0-311, NTSC 0-262"),
-      cycle: z.number().int().min(0).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64. Default 0"),
-    })
-    .strict(),
-]);
-
 export const c64RunUntil = defineTool({
   name: "c64_run_until",
   title: "Run the C64 until a target",
@@ -103,8 +76,8 @@ export const c64RunUntil = defineTool({
     "The CPU is always stopped after this tool.",
   inputSchema: z
     .object({
-      target: RunTargetInput,
-      timeoutFrames: z.number().int().min(1).max(MAX_TIMEOUT_FRAMES).default(3000),
+      target: TOOL_INPUTS.runTarget,
+      timeoutFrames: TOOL_INPUTS.timeoutFrames,
       observe: c64Observe.inputSchema.optional().describe("what to read at the stop, as for c64_observe"),
       history: z.number().int().min(1).max(MAX_HISTORY).optional().describe("the number of instructions before the stop to give"),
     })

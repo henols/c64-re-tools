@@ -115,7 +115,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
         { frames: 150 },
         { load: true },
         { registers: { pc: "main" } },
-        { runUntil: { at: "done" }, timeoutFrames: 100 },
+        { runUntil: { target: { kind: "address", address: "done" }, timeoutFrames: 100 } },
         { frames: 2 },
         { observe: "counted", memory: ["counter"], screen: {}, vicii: true },
       ],

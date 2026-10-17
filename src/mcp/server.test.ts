@@ -400,18 +400,18 @@ test("invalid input is an invalid-input error result that names the field", asyn
     assert.equal(error.code, "invalid-input");
     assert.match(error.message, new RegExp(field));
   }
-  assert.equal(errorOf(await call(client, "c64_registers", { action: "set" })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "write" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_reboot")).code, "invalid-input");
   assert.deepEqual(session.reads, []);
   await client.close();
 });
 
-test("c64_registers get returns the frozen register shape", async () => {
+test("c64_registers read returns the frozen register shape", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
-  const result = await call(client, "c64_registers", { action: "get" });
+  const result = await call(client, "c64_registers", { action: "read" });
   assert.deepEqual(result.structuredContent, { ...REGISTERS, pc: "$e5cf" });
-  await call(client, "c64_registers", { action: "get", space: "drive8" });
+  await call(client, "c64_registers", { action: "read", space: "drive8" });
   assert.deepEqual(session.spaces, ["c64", "drive8"]);
   await client.close();
 });
@@ -425,7 +425,7 @@ test("host and session failures keep their code and message", async () => {
   const unavailable = await connect(async () => {
     throw new WireFailure("machine-unavailable", "The c64-re-tools host runtime is not running.");
   });
-  assert.equal(errorOf(await call(unavailable, "c64_registers", { action: "get" })).code, "machine-unavailable");
+  assert.equal(errorOf(await call(unavailable, "c64_registers", { action: "read" })).code, "machine-unavailable");
   await client.close();
   await unavailable.close();
 });
@@ -531,19 +531,19 @@ test("c64_memory_write takes hex in either case and reports bytes written", asyn
   await client.close();
 });
 
-test("c64_registers set writes only the named registers; get refuses values", async () => {
+test("c64_registers write writes only the named registers; read refuses values", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
-  const result = await call(client, "c64_registers", { action: "set", values: { pc: "$2100", a: 1, flags: { c: false } } });
+  const result = await call(client, "c64_registers", { action: "write", values: { pc: "$2100", a: 1, flags: { c: false } } });
   assert.equal((result.structuredContent as { pc: string }).pc, "$2100");
   assert.deepEqual(session.registerWrites, [{ space: "c64", values: { pc: 0x2100, a: 1, flags: { c: false } } }]);
-  assert.equal(errorOf(await call(client, "c64_registers", { action: "set" })).code, "invalid-input");
-  assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: {} })).code, "invalid-input");
-  assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { flags: {} } })).code, "invalid-input");
-  assert.equal(session.registerWrites.length, 1, "a set with no register value writes nothing");
-  assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { q: 1 } })).code, "invalid-input");
-  assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { a: 256 } })).code, "invalid-input");
-  assert.equal(errorOf(await call(client, "c64_registers", { action: "get", values: { a: 1 } })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "write" })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "write", values: {} })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "write", values: { flags: {} } })).code, "invalid-input");
+  assert.equal(session.registerWrites.length, 1, "a write with no register value writes nothing");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "write", values: { q: 1 } })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "write", values: { a: 256 } })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "read", values: { a: 1 } })).code, "invalid-input");
   await client.close();
 });
 

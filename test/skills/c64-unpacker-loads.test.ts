@@ -22,12 +22,14 @@ const steps = (value: unknown) => {
 };
 
 test("a steps file of loads has action steps and capture steps with new names", () => {
-  assert.equal(steps([{ runUntil: { at: "$c000" }, timeoutFrames: 100 }, { capture: "level1" }, { type: " " }, { capture: "level2" }])().length, 4);
+  assert.equal(steps([{ runUntil: { target: { kind: "address", address: "$c000" }, timeoutFrames: 100 } }, { capture: "level1" }, { type: { mode: "text", text: " " } }, { capture: "level2" }])().length, 4);
   assert.throws(steps([{ frames: 10 }]), /no capture step/);
   assert.throws(steps([{ capture: "a" }, { capture: "a" }]), /used before/);
   assert.throws(steps([{ capture: "a/b" }]), /capture needs a name/);
   assert.throws(steps([{ capture: "a", frames: 1 }]), /only capture/);
-  assert.throws(steps([{ runUntil: { at: "main" }, timeoutFrames: 1 }, { capture: "a" }]), /\$ followed by four hex digits/);
+  assert.throws(steps([{ runUntil: { target: { kind: "address", address: "12-3" }, timeoutFrames: 1 } }, { capture: "a" }]), /runUntil\.target\.address must be \$ and 1 to 4 hex digits/);
+  assert.equal(steps([{ runUntil: { target: { kind: "address", address: "main" }, timeoutFrames: 1 } }, { capture: "a" }])().length, 2, "a name is an address of the knowledge");
+  assert.throws(steps([{ press: "A" }, { capture: "a" }]), /step 1: press pushes keys of the keyboard matrix, and only the record and replay commands of c64-testing have them/);
 });
 
 test("a capture block is RAM from $0400 that changed and that the CPU wrote, joined across small gaps", () => {

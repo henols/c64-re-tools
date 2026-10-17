@@ -6,7 +6,7 @@
 import { c64AddressOf, formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
-import { ACTION_STEP_KEYS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type Location } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
 import { applyEntryState, parseEntryState } from "#src/host-client/entry-state.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -48,7 +48,7 @@ type StepBody =
   | { autostart: true }
   | { snapshot: string }
   | { normalize: true }
-  | ActionStep
+  | Exclude<ActionStep, { press: string }>
   | { observe: string; memory?: Array<Location | MemoryObservation>; registers?: ObservedRegister[]; screen?: ScreenPolicy; vicii?: boolean; sprites?: number[] };
 
 /** A step; with side, only that side does it. An observe step has no side: it compares both. */
@@ -90,11 +90,10 @@ export interface ScenarioResult {
   files?: string[];
 }
 
-const STEP_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", "write", "registers", "joystick", "type", "frames", "runUntil", "observe"];
+const STEP_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", ...ACTION_STEP_KINDS, "observe"];
 
 /** The keys each kind of step can have. */
 const STEP_KEYS: Record<string, readonly string[]> = {
-  ...ACTION_STEP_KEYS,
   observe: ["observe", "memory", "registers", "screen", "vicii", "sprites"],
 };
 
@@ -134,6 +133,11 @@ export function readScenario(path: string): Scenario {
     const allowed = [...(STEP_KEYS[kind] ?? [kind]), ...(kind === "observe" ? [] : ["side"])];
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
     if (step.side !== undefined && !(SIDES as unknown[]).includes(step.side)) fail(`${at}: side must be original or rebuild`);
+    if ((ACTION_STEP_KINDS as readonly string[]).includes(kind)) {
+      // The step with its defaults filled in, as the shared schema of the action steps gives it.
+      scenario.steps[index] = { ...checkActionStep(kind as ActionStepKind, { [kind]: step[kind] }, at, fail), ...(step.side === undefined ? {} : { side: step.side as Side }) } as Step;
+      return;
+    }
     checkStep(kind, step, at, fail, scenario.videoStandard ?? "pal");
     if (kind === "observe") {
       if (labels.has(step.observe as string)) fail(`${at} needs a new checkpoint name`);
@@ -162,13 +166,6 @@ function checkStep(kind: string, step: Record<string, unknown>, at: string, fail
     case "normalize":
       if (step.normalize !== true) fail(`${at}: normalize is true: it writes the entry state of the knowledge`);
       return;
-    case "write":
-    case "registers":
-    case "joystick":
-    case "type":
-    case "frames":
-    case "runUntil":
-      return checkActionStep(kind, step, at, fail);
     default:
       checkObserve(step, at, fail, videoStandard);
   }
@@ -402,7 +399,7 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
       const { side: _side, ...action } = step;
       const notReached = await runActionStep(client, action as ActionStep, at);
       if (notReached !== undefined && "runUntil" in step) {
-        throw new Inconclusive(`the ${side} side did not reach the checkpoint before ${step.timeoutFrames} frames (it stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)})`);
+        throw new Inconclusive(`the ${side} side did not reach the checkpoint before ${step.runUntil.timeoutFrames} frames (it stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)})`);
       }
     }
   }

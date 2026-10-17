@@ -12,7 +12,8 @@ import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, parseC64Address
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
-import { checkActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
+import { readActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
+import { knowledgeAt } from "#src/knowledge/names.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -77,26 +78,12 @@ const MAX_ADVANCE = 10_000;
 /** The most ranges one memory map read gives. */
 const MAX_RANGES = 1000;
 
-/** Reads and checks a steps file: action steps with $ addresses only. */
-function readSteps(path: string): ActionStep[] {
-  let value: unknown;
-  try {
-    value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
-  } catch (error) {
-    if (error instanceof WireFailure) throw error;
-    throw new UsageError(`--steps ${path} is not JSON: ${(error as Error).message}`);
-  }
-  return checkActionSteps(value, (message) => {
-    throw new UsageError(`--steps ${path}: ${message}`);
-  });
-}
-
 /** Runs the steps; the reason when a runUntil step did not reach its target. */
 async function runSteps(client: ViceSessionClient, steps: ActionStep[]): Promise<string | undefined> {
   for (const [index, step] of steps.entries()) {
-    const notReached = await runActionStep(client, step, parseC64Address);
+    const notReached = await runActionStep(client, step, knowledgeAt());
     if (notReached !== undefined && "runUntil" in step) {
-      return `Step ${index + 1} did not reach its target in ${step.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.`;
+      return `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.`;
     }
   }
   return undefined;
@@ -241,9 +228,11 @@ interface Followed {
   failed?: string;
 }
 
-/** A runUntil step to an address alone: a breakpoint stops it, so the stages are tracked while it runs. */
-function trackedRunUntil(step: ActionStep): step is { runUntil: { at: string }; timeoutFrames: number } {
-  return "runUntil" in step && "at" in step.runUntil && !("raster" in step.runUntil);
+type RunUntilStep = Extract<ActionStep, { runUntil: unknown }>;
+
+/** A runUntil step to an address with no condition: a breakpoint stops it, so the stages are tracked while it runs. */
+function trackedRunUntil(step: ActionStep): step is RunUntilStep & { runUntil: { target: { kind: "address" } } } {
+  return "runUntil" in step && step.runUntil.target.kind === "address" && step.runUntil.target.condition === undefined;
 }
 
 /**
@@ -449,11 +438,11 @@ async function follow(
   for (const [index, step] of options.steps.entries()) {
     if ("frames" in step) await track(step.frames);
     else if (trackedRunUntil(step)) {
-      if (!(await trackTo(parseC64Address(step.runUntil.at), step.timeoutFrames))) {
+      if (!(await trackTo(knowledgeAt()(step.runUntil.target.address), step.runUntil.timeoutFrames))) {
         const { pc } = await client.registersGet("c64");
-        return { stages: found, frames: total, reached: false, failed: `Step ${index + 1} did not reach its target in ${step.timeoutFrames} frames. It is at ${formatC64Address(pc)}.` };
+        return { stages: found, frames: total, reached: false, failed: `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It is at ${formatC64Address(pc)}.` };
       }
-    } else await runActionStep(client, step, parseC64Address);
+    } else await runActionStep(client, step, knowledgeAt());
   }
   const left = Math.max(0, options.frames - total);
   let reached = false;
@@ -625,7 +614,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     if (rest.length > 0) throw new UsageError("trace takes one program");
     const frames = values.frames === undefined ? 3000 : Number(values.frames);
     if (!Number.isInteger(frames) || frames < 1 || frames > 30_000) throw new UsageError("--frames must be from 1 to 30000");
-    const steps = values.steps === undefined ? [] : readSteps(values.steps);
+    const steps = values.steps === undefined ? [] : readActionSteps(values.steps, "--steps");
     return trace(program, { frames, steps, ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }) });
   }
   if (command === "stages") {
@@ -634,7 +623,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     if (!Number.isInteger(frames) || frames < 1 || frames > 30_000) throw new UsageError("--frames must be from 1 to 30000");
     const minStage = values["min-stage"] === undefined ? 64 : Number(values["min-stage"]);
     if (!Number.isInteger(minStage) || minStage < 1 || minStage > 0x10000) throw new UsageError("--min-stage must be from 1 to 65536");
-    const steps = values.steps === undefined ? [] : readSteps(values.steps);
+    const steps = values.steps === undefined ? [] : readActionSteps(values.steps, "--steps");
     // A runUntil step to a raster line or a memory value cannot be tracked in chunks of frames; capture takes it.
     if (steps.some((step) => "runUntil" in step && !trackedRunUntil(step))) throw new UsageError("stages takes a runUntil step only with at alone; use frames steps or runUntil at");
     return stages(program, { frames, steps, minStage, ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }) });
@@ -675,7 +664,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   }
   const timeoutFrames = values["timeout-frames"] === undefined ? 3000 : Number(values["timeout-frames"]);
   if (!Number.isInteger(timeoutFrames) || timeoutFrames < 1 || timeoutFrames > 30_000) throw new UsageError("--timeout-frames must be from 1 to 30000");
-  const steps = values.steps === undefined ? [] : readSteps(values.steps);
+  const steps = values.steps === undefined ? [] : readActionSteps(values.steps, "--steps");
   const minStage = values["min-stage"] === undefined ? 64 : Number(values["min-stage"]);
   if (!Number.isInteger(minStage) || minStage < 1 || minStage > 0x10000) throw new UsageError("--min-stage must be from 1 to 65536");
   return capture(program, {

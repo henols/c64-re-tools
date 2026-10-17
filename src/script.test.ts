@@ -123,7 +123,7 @@ test("a wrong command line is invalid-input with exit status 2", () => {
   assert.match(refused([], "invalid-input").message, /^give a command: echo, at, need/);
   assert.match(refused(["nothing"], "invalid-input").message, /^nothing is not a command of demo\.ts/);
   assert.match(refused(["echo"], "invalid-input").message, /^echo needs <word> <more>\.\.\./);
-  assert.match(refused(["at", "$c000", "$c001"], "invalid-input").message, /^at takes <address>; "\$c001" is one too many/);
+  assert.match(refused(["at", "$c000", "$c001"], "invalid-input").message, /^at takes <address>\. "\$c001" is one too many/);
   assert.match(refused(["echo", "a", "--bogus"], "invalid-input").message, /^Unknown option '--bogus'/);
   assert.match(refused(["need"], "invalid-input").message, /^need needs --out <path>/);
   assert.match(refused(["need", "--out", "x", "--frames", "0"], "invalid-input").message, /^--frames must be a whole number from 1 to 1000000, not "0"/);

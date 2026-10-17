@@ -7,7 +7,8 @@ import { formatC64Address, formatSprite, formatVicii } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, type ObserveParams } from "../../protocol/vice.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
-import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, requireFields, SpaceInput, ToolOutput, TransientName } from "../server.ts";
+import { AddressInput, Byte, MemoryViewInput, SpaceInput } from "../inputs.ts";
+import { AddressOutput, defineTool, HexData, requireFields, ToolOutput, TransientName } from "../server.ts";
 
 const Color = z.number().int().min(0).max(15);
 const NO_CHANGE = "This does not change the run state of the machine.";

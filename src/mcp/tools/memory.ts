@@ -7,7 +7,8 @@ import { formatC64Address } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { MAX_COMPARE_DIFFERENCES, MAX_COMPARE_SIZE, MAX_DISASSEMBLE, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_SEARCH_PATTERN, MAX_SEARCH_RESULTS, type RegisterValues } from "../../protocol/vice.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
-import { AddressInput, AddressOutput, Byte, defineTool, HexData, HexDataInput, MemoryViewInput, requireFields, SpaceInput } from "../server.ts";
+import { AddressInput, Byte, MemoryViewInput, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
+import { AddressOutput, defineTool, HexData, requireFields } from "../server.ts";
 
 /** With out, a read or a disassembly can be larger than one answer of the session: it is read in parts. */
 const MAX_MEMORY_READ_OUT = 0x10000;
@@ -61,14 +62,7 @@ export const c64MemoryWrite = defineTool({
     "The range must not go past $ffff. With view cpu, the write goes where the CPU writes now. " +
     "A write to a ROM address goes to the RAM under it, and a write to I/O goes to the chip. " +
     "With view ram, the write goes to RAM (c64 only).",
-  inputSchema: z
-    .object({
-      address: AddressInput,
-      data: HexDataInput.describe("bytes as hex, two digits per byte, no separators, for example a9008d20d0"),
-      space: SpaceInput,
-      view: MemoryViewInput,
-    })
-    .strict(),
+  inputSchema: TOOL_INPUTS.memoryWrite,
   outputSchema: z.object({ address: AddressOutput, bytesWritten: z.number().int().min(1).max(MAX_MEMORY_WRITE) }),
   readOnly: false,
   async run(input, session) {
@@ -77,47 +71,26 @@ export const c64MemoryWrite = defineTool({
   },
 });
 
-const Flags = z.object({
-  n: z.boolean(),
-  v: z.boolean(),
-  b: z.boolean(),
-  d: z.boolean(),
-  i: z.boolean(),
-  z: z.boolean(),
-  c: z.boolean(),
-});
-
-const RegisterValuesInput = z
-  .object({
-    pc: AddressInput.optional(),
-    a: Byte.optional(),
-    x: Byte.optional(),
-    y: Byte.optional(),
-    sp: Byte.optional(),
-    flags: Flags.partial().strict().optional().describe("any of n, v, b, d, i, z and c. Flags that you do not name keep their value"),
-  })
-  .strict();
-
 export const c64Registers = defineTool({
   name: "c64_registers",
   title: "C64 CPU registers",
   description:
-    "Get or set the CPU registers: pc, a, x, y, sp and the status flags n, v, b, d, i, z and c. " +
-    "Action get reads them. This does not change the run state of the machine. " +
-    "Action set writes the registers that values names and returns all registers. Stop the CPU before you use set. " +
+    "Read or write the CPU registers: pc, a, x, y, sp and the status flags n, v, b, d, i, z and c. " +
+    "Action read reads them. This does not change the run state of the machine. " +
+    "Action write writes the registers that values names and returns all registers. Stop the CPU before you use write. " +
     "Use space drive8 for the CPU of the 1541 disk drive.",
   inputSchema: z
     .object({
-      action: z.enum(["get", "set"]),
+      action: z.enum(["read", "write"]),
       space: SpaceInput,
-      values: RegisterValuesInput.optional().describe("set only: the registers to write"),
+      values: TOOL_INPUTS.registerValues.optional().describe("write only: the registers to write"),
     })
     .strict(),
-  outputSchema: z.object({ pc: AddressOutput, a: Byte, x: Byte, y: Byte, sp: Byte, flags: Flags }),
+  outputSchema: z.object({ pc: AddressOutput, a: Byte, x: Byte, y: Byte, sp: Byte, flags: TOOL_INPUTS.flags }),
   readOnly: false,
   async run(input, session) {
     let registers;
-    if (input.action === "get") {
+    if (input.action === "read") {
       requireFields(input.action, { values: input.values }, []);
       registers = await session.registersGet(input.space);
     } else {
@@ -130,7 +103,7 @@ export const c64Registers = defineTool({
       const flags = Object.fromEntries(Object.entries(input.values?.flags ?? {}).filter(([, value]) => value !== undefined));
       if (Object.keys(flags).length > 0) values.flags = flags;
       if (Object.keys(values).length === 0) {
-        throw new WireFailure("invalid-input", "values must name at least one register for action set.");
+        throw new WireFailure("invalid-input", "values must name at least one register for action write.");
       }
       registers = await session.registersSet(input.space, values);
     }

@@ -55,7 +55,7 @@ test("a symbol comes first, then an analyzer name that the analyzers give to one
   assert.equal(addressOfName(db, "l0900"), 0x0900);
   assert.equal(addressOfName(db, "shared"), 0x0a00, "two analyzers, one address");
   assert.equal(addressOfName(db, "drive_loop", "drive8"), 0x0300);
-  assert.throws(() => addressOfName(db, "split"), refused("invalid-input", /the analyzers give split to \$0b00 \(dxa\) and \$0c00 \(ghidra\); give the address/));
+  assert.throws(() => addressOfName(db, "split"), refused("invalid-input", /the analyzers give split to \$0b00 \(dxa\) and \$0c00 \(ghidra\)\. Give the address/));
   assert.throws(() => addressOfName(db, "nothing"), refused("not-found", /^no symbol or analyzer name is nothing$/));
   assert.throws(() => addressOfName(db, "main_loop", "drive8"), refused("not-found", /^no symbol or analyzer name in drive8 is main_loop$/));
   assert.throws(() => addressOfName(undefined, "main_loop"), refused("not-found", /main_loop/), "no knowledge: no names");

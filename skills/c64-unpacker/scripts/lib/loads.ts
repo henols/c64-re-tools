@@ -4,15 +4,17 @@
 // image with its entry state, and with --drive the drive RAM as a PRG for
 // knowledge space drive8. No tool guesses where a load ends: the steps decide.
 
-import { COVERAGE, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
-import { ACTION_STEP_KEYS, ACTION_STEP_KINDS, checkActionStep, isObject, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, isObject, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { knowledgeAt } from "#src/knowledge/names.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { UsageError } from "#src/script.ts";
 import { entryState, json, machineState, readRam, vectorsOf } from "./machine.ts";
+
 
 export type LoadStep = ActionStep | { capture: string };
 
@@ -53,10 +55,8 @@ export function readLoadSteps(path: string): LoadStep[] {
     }
     const kinds = Object.keys(step).filter((key) => (ACTION_STEP_KINDS as readonly string[]).includes(key));
     if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...ACTION_STEP_KINDS, "capture"].join(", ")}`);
-    const kind = kinds[0]!;
-    const allowed = ACTION_STEP_KEYS[kind] ?? [kind];
-    for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
-    checkActionStep(kind, step, at, fail, false);
+    // The step with its defaults filled in, as the shared schema of the action steps gives it.
+    (value as unknown[])[index] = checkActionStep(kinds[0] as ActionStepKind, step, at, fail);
   });
   if (names.size === 0) fail("the steps have no capture step");
   return value as LoadStep[];
@@ -134,9 +134,9 @@ export async function loads(program: string, options: { out: string; steps: Load
     const captures: Array<Record<string, unknown>> = [];
     for (const [index, step] of options.steps.entries()) {
       if (!("capture" in step)) {
-        const notReached = await runActionStep(client, step, parseC64Address);
+        const notReached = await runActionStep(client, step, knowledgeAt());
         if (notReached !== undefined && "runUntil" in step) {
-          const reason = `Step ${index + 1} did not reach its target in ${step.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.`;
+          const reason = `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.`;
           return { output: { loaded: false, reason, captures }, failed: true };
         }
         continue;

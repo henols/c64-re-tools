@@ -77,7 +77,7 @@ test("a run writes screens, a coverage map, a snapshot and observations; a later
 });
 
 test("a runUntil that does not reach its target ends the run with the reason", { skip: liveSkip, timeout: 180_000 }, async () => {
-  writeFileSync(join(project, "never.json"), JSON.stringify({ name: "never", start: { program: "counter.prg", load: true }, steps: [{ registers: { pc: "$c000" } }, { runUntil: { at: "$c0f0" }, timeoutFrames: 20 }, { screen: "never" }] }));
+  writeFileSync(join(project, "never.json"), JSON.stringify({ name: "never", start: { program: "counter.prg", load: true }, steps: [{ registers: { pc: "$c000" } }, { runUntil: { target: { kind: "address", address: "$c0f0" }, timeoutFrames: 20 } }, { screen: "never" }] }));
   const { status, json } = await runSteps("never.json", "--out", "runs/never");
   assert.equal(status, 1);
   assert.equal(json.completed, false);
@@ -96,7 +96,7 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
         { registers: { pc: "$c000" } },
         { frames: 5 },
         { save: "a" },
-        { write: { at: "$e000", bytes: [1, 2, 3, 4] } },
+        { write: { address: "$e000", data: "01020304" } },
         { save: "b" },
         { observe: "under", memory: [{ at: "$e000", size: 4, view: "ram" }] },
         { observe: "rom", memory: [{ at: "$e000", size: 4 }] },

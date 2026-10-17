@@ -8,7 +8,8 @@ import { WireFailure } from "../../protocol/messages.ts";
 import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
 import { readCoverage } from "../../host-client/coverage.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
-import { AddressInput, AddressOutput, Byte, ConditionInput, ConditionOutput, defineTool, HexData, requireFields, showCondition, SpaceInput, toCondition } from "../server.ts";
+import { AddressInput, Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
+import { AddressOutput, ConditionOutput, defineTool, HexData, requireFields, showCondition, toCondition } from "../server.ts";
 import { spaced } from "./memory.ts";
 
 /** No default here: a filled-in default would count as a field the other actions refuse. */
@@ -49,7 +50,7 @@ export const c64Breakpoint = defineTool({
       action: z.enum(CHECKPOINT_ACTIONS),
       address: AddressInput.optional().describe("add only"),
       space: OptionalSpace,
-      condition: ConditionInput.optional().describe("add only: stop only when this is true"),
+      condition: TOOL_INPUTS.condition.optional().describe("add only: stop only when this is true"),
       id: Id.optional().describe("remove, enable and disable only"),
     })
     .strict(),
@@ -94,7 +95,7 @@ export const c64Watchpoint = defineTool({
       size: z.number().int().min(1).max(MAX_WATCH_SIZE).optional().describe("add only. Default 1"),
       access: z.enum(WATCH_ACCESS).optional().describe("add only"),
       space: OptionalSpace,
-      condition: ConditionInput.optional().describe("add only: stop only when this is true"),
+      condition: TOOL_INPUTS.condition.optional().describe("add only: stop only when this is true"),
       id: Id.optional().describe("remove, enable and disable only"),
     })
     .strict(),

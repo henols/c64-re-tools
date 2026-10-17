@@ -5,7 +5,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { formatC64Address } from "../c64.ts";
+import { c64AddressOf, formatC64Address } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { openForRead } from "./database.ts";
 import { analyzerNamed, listAnalyzerNames, listSymbols, symbolNamed } from "./read.ts";
@@ -19,7 +19,7 @@ export function addressOfName(db: DatabaseSync | undefined, name: string, space:
   const addresses = [...new Set(rows.map((row) => row.address))];
   if (addresses.length === 1) return addresses[0]!;
   const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
-  if (addresses.length > 1) throw new Refusal("invalid-input", `the analyzers give ${name} to ${rows.map((row) => `${formatC64Address(row.address)} (${row.origin})`).join(" and ")}${where}; give the address`);
+  if (addresses.length > 1) throw new Refusal("invalid-input", `the analyzers give ${name} to ${rows.map((row) => `${formatC64Address(row.address)} (${row.origin})`).join(" and ")}${where}. Give the address`);
   throw new Refusal("not-found", `no symbol or analyzer name${where} is ${name}`);
 }
 
@@ -42,4 +42,9 @@ export function knowledgeNames(name: string, space: string): number {
   } finally {
     db?.close();
   }
+}
+
+/** An address of a step or a file: $ and 1 to 4 hex digits, else a name of the knowledge in the space. */
+export function knowledgeAt(space: Space = DEFAULT_SPACE): (location: string) => number {
+  return (location) => c64AddressOf(location) ?? knowledgeNames(location, space);
 }

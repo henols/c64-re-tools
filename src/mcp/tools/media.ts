@@ -8,7 +8,8 @@ import { formatC64Address } from "../../c64.ts";
 import { projectFolder, readProjectFile } from "../../host-client/transfer.ts";
 import { AUTOSTART_TYPES, DISK_TYPES, MAX_SNAPSHOTS, RUN_STATES } from "../../protocol/vice.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
-import { AddressInput, AddressOutput, defineTool, requireFields, TransientName } from "../server.ts";
+import { AddressInput } from "../inputs.ts";
+import { AddressOutput, defineTool, requireFields, TransientName } from "../server.ts";
 
 const ProjectPath = z.string().min(1).describe("path relative to the project folder, for example build/game.prg");
 

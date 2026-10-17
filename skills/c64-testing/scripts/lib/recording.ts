@@ -12,7 +12,8 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
-import { checkActionStep, isInteger, isObject, type ActionStep, type Location } from "#src/host-client/steps.ts";
+import { READY_FRAMES } from "#src/host-client/entry-state.ts";
+import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
@@ -32,9 +33,7 @@ export const DEFAULT_INPUTS = ["$dc00", "$dc01", "$d419", "$d41a", "$d41b", "$d4
 export function inputsArgument(inputs: string[]): string {
   return inputs.map((input) => input.replace(/\$/g, "")).join(",");
 }
-/** Frames from power-on to READY, before the program goes into memory. */
-export const BOOT_FRAMES = 150;
-/** Frames that a typed key is held, and then released. */
+/** Frames that a pressed key is held, and then released. */
 const KEY_FRAMES = 3;
 const MAX_STATE_ITEMS = 16;
 const MAX_STATE_BYTES = 4096;
@@ -109,13 +108,16 @@ export interface Recording {
 
 export const RECORDING_FILES = { recording: "recording.json", reads: "reads.txt", coverage: "coverage.bin" } as const;
 
-const STEP_KINDS = ["write", "registers", "joystick", "type", "frames", "runUntil"];
-/** Steps that are input or time: a replay does not do them again. */
-const INPUT_KINDS = new Set(["joystick", "type", "frames"]);
+/** Steps that are input or time: the replay gives the program the reads that they caused, and does not do them again. */
+const INPUT_KINDS = new Set(["joystick", "press", "frames"]);
+/** The KERNAL keyboard queue: $0277, its length in $c6, at most 10 keys. */
+const QUEUE = 0x0277;
+const QUEUE_LENGTH = 0x00c6;
+const QUEUE_SIZE = 10;
 
 const hex = (address: number) => address.toString(16).padStart(4, "0");
 
-/** The keys of the replay core for the characters that a type step can have. */
+/** The keys of the replay core for the characters that a press step can have. */
 const KEY_CODES = new Map<string, number>([
   ...[..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 +-.:@,*;=/!\"#$%&'()[]<>?"].map((character) => [character, character.charCodeAt(0)] as [string, number]),
   ["\n", 0x0d],
@@ -125,7 +127,7 @@ const KEY_CODES = new Map<string, number>([
 export function keyCodes(text: string): number[] {
   return [...text.replace(/\r\n?/g, "\n")].map((character) => {
     const code = KEY_CODES.get(character.toUpperCase());
-    if (code === undefined) throw new ScenarioError(`type cannot press ${JSON.stringify(character)} on the keyboard of the replay core`);
+    if (code === undefined) throw new ScenarioError(`press cannot press ${JSON.stringify(character)} on the keyboard of the replay core`);
     return code;
   });
 }
@@ -189,16 +191,11 @@ export function readRecordFile(path: string): RecordFile {
   const compare = value.checkpoint === undefined ? undefined : { checkpoint: value.checkpoint as string, state: checkState(value.state, fail), ...(pin === undefined ? {} : { pin }) };
   const inputs = checkInputs(value.inputs, fail);
   if (!Array.isArray(value.steps) || value.steps.length === 0) fail("steps must be a list with at least one step");
-  (value.steps as unknown[]).forEach((step, index) => {
+  const steps = (value.steps as unknown[]).map((raw, index) => {
     const at = `step ${index + 1}`;
-    if (!isObject(step)) return fail(`${at} must be an object`);
-    const kinds = Object.keys(step).filter((key) => STEP_KINDS.includes(key));
-    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${STEP_KINDS.join(", ")}`);
-    const kind = kinds[0]!;
-    for (const key of Object.keys(step)) if (key !== kind && !(kind === "runUntil" && key === "timeoutFrames")) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
-    checkActionStep(kind, step, at, fail);
-    if (kind === "runUntil" && "raster" in (step.runUntil as object)) fail(`${at}: the replay core has no runUntil raster; use at or memory`);
-    if (kind === "type") keyCodes(step.type as string);
+    const step = checkActionStep(stepKind(raw, ACTION_STEP_KINDS, at, fail), raw as Record<string, unknown>, at, fail, { press: true });
+    checkCoreStep(step, at, fail);
+    return step;
   });
   return {
     name: value.name as string,
@@ -207,8 +204,24 @@ export function readRecordFile(path: string): RecordFile {
     load: value.load === true,
     ...(compare === undefined ? {} : { compare }),
     inputs,
-    steps: value.steps as ActionStep[],
+    steps,
   };
+}
+
+/** What the replay core cannot do of a step that is right for VICE: it has the C64 alone, no raster wait and no conditions. */
+function checkCoreStep(step: ActionStep, at: string, fail: (message: string) => never): void {
+  if ("write" in step && step.write.space !== "c64") fail(`${at}: the replay core has the C64 alone, not ${step.write.space}`);
+  if ("press" in step) keyCodes(step.press);
+  if ("type" in step) {
+    const keys = keyboardBytes(step.type);
+    if (typeof keys !== "string" && keys.length > QUEUE_SIZE) fail(`${at}: the KERNAL keyboard queue holds ${QUEUE_SIZE} keys; give more type steps, or press for keys of the keyboard matrix`);
+  }
+  if ("runUntil" in step) {
+    const { target } = step.runUntil;
+    if (target.kind === "raster") fail(`${at}: the replay core has no raster target; use an address or a memory target`);
+    else if (target.space !== "c64") fail(`${at}: the replay core has the C64 alone, not ${target.space}`);
+    else if (target.kind === "address" && target.condition !== undefined) fail(`${at}: the replay core has no condition at an address target`);
+  }
 }
 
 /** Reads and checks recording.json of a recording folder. */
@@ -282,7 +295,7 @@ export function siteMap(sites: RecordedSite[], from: Map<string, number>, to: Ma
 /** Power-on and READY, then the program in memory as a LOAD leaves it, and RUN in the keyboard queue. */
 async function startProgram(core: C64RunSession, prg: Uint8Array, load: boolean): Promise<CoreStatus> {
   if (prg.length < 3) throw new ScenarioError("the program is not a PRG file");
-  await core.status(`run ${BOOT_FRAMES * PAL_FRAME_CYCLES}`);
+  await core.status(`run ${READY_FRAMES * PAL_FRAME_CYCLES}`);
   const start = prg[0]! | (prg[1]! << 8);
   const end = start + prg.length - 2;
   if (!load && start !== 0x0801) throw new ScenarioError(`the program loads at ${formatC64Address(start)}, not at $0801 with a BASIC start line: give load true and a registers step that starts it`);
@@ -324,33 +337,51 @@ async function runToKey(core: C64RunSession, key: RecordedEvent["key"], until: n
 }
 
 /** Does a step that is not input. Gives a reason when a runUntil does not reach its target. */
+/** The status flags in the order of the P register, bit 7 to bit 0; bit 5 is always 1. */
+const FLAG_BITS: Record<string, number> = { n: 0x80, v: 0x40, b: 0x10, d: 0x08, i: 0x04, z: 0x02, c: 0x01 };
+
+/** A memory comparison of a memory target. */
+const COMPARE: Record<string, (value: number, wanted: number) => boolean> = {
+  eq: (value, wanted) => value === wanted,
+  ne: (value, wanted) => value !== wanted,
+  lt: (value, wanted) => value < wanted,
+  lte: (value, wanted) => value <= wanted,
+  gt: (value, wanted) => value > wanted,
+  gte: (value, wanted) => value >= wanted,
+};
+
 async function doAction(core: C64RunSession, step: ActionStep, at: SideAddresses): Promise<string | undefined> {
   if ("write" in step) {
-    await core.write(at.data(step.write.at), Uint8Array.from(step.write.bytes));
+    await core.write(at.data(step.write.address), Buffer.from(step.write.data, "hex"));
+  } else if ("type" in step) {
+    // The KERNAL keyboard queue: the keys after the keys that wait there now.
+    const keys = keyboardBytes(step.type) as Uint8Array;
+    const waiting = (await core.peek(QUEUE_LENGTH, 1))[0]!;
+    if (waiting + keys.length > QUEUE_SIZE) return `the KERNAL keyboard queue holds ${waiting} keys, and ${keys.length} more do not fit in its ${QUEUE_SIZE}`;
+    await core.write(QUEUE + waiting, keys);
+    await core.write(QUEUE_LENGTH, Uint8Array.of(waiting + keys.length));
   } else if ("registers" in step) {
     const now = await core.status("run-sync");
-    const value = (name: "a" | "x" | "y" | "sp", current: number) => {
-      const given = step.registers[name];
-      return given === undefined ? current : typeof given === "number" ? given : at.data(given);
-    };
-    const values = [value("a", now.a), value("x", now.x), value("y", now.y), value("sp", now.s), now.p].map((n) => n.toString(16));
+    const { pc, flags } = step.registers;
+    let p = now.p;
+    for (const [name, set] of Object.entries(flags ?? {})) if (set !== undefined) p = set ? p | FLAG_BITS[name]! : p & ~FLAG_BITS[name]!;
+    const values = [step.registers.a ?? now.a, step.registers.x ?? now.x, step.registers.y ?? now.y, step.registers.sp ?? now.s, p].map((n) => n.toString(16));
     await core.status(`regs ${values.join(" ")}`);
-    const pc = step.registers.pc;
-    if (pc !== undefined) await core.status(`goto ${hex(typeof pc === "number" ? pc : at.code(pc))}`);
+    if (pc !== undefined) await core.status(`goto ${hex(at.code(pc))}`);
   } else if ("runUntil" in step) {
+    const { target, timeoutFrames } = step.runUntil;
     const start = (await core.status("status")).tick;
-    const until = start + step.timeoutFrames * PAL_FRAME_CYCLES;
-    if ("memory" in step.runUntil) {
-      const { at: where, equals } = step.runUntil.memory;
+    const until = start + timeoutFrames * PAL_FRAME_CYCLES;
+    if (target.kind === "memory") {
       for (let tick = start; ; tick += PAL_FRAME_CYCLES) {
-        if ((await core.peek(at.data(where), 1))[0] === equals) return undefined;
-        if (tick >= until) return `${where} did not become ${equals} within ${step.timeoutFrames} frames`;
+        if (COMPARE[target.operator]!((await core.peek(at.data(target.address), 1))[0]!, target.value)) return undefined;
+        if (tick >= until) return `${target.address} did not become ${target.operator} ${target.value} within ${timeoutFrames} frames`;
         await core.status(`run ${tick + PAL_FRAME_CYCLES}`);
       }
     }
-    const target = (step.runUntil as { at: Location }).at;
-    const reached = await core.status(`run-pc ${hex(at.code(target))} ${until}`);
-    if (reached.word !== "reached") return `the program did not reach ${target} within ${step.timeoutFrames} frames`;
+    if (target.kind !== "address") return "the replay core has no raster target";
+    const reached = await core.status(`run-pc ${hex(at.code(target.address))} ${until}`);
+    if (reached.word !== "reached") return `the program did not reach ${target.address} within ${timeoutFrames} frames`;
   }
   return undefined;
 }
@@ -392,14 +423,14 @@ export async function record(core: C64RunSession, file: RecordFile, workspace: W
   let afterEvent = false;
   for (const [index, step] of file.steps.entries()) {
     let tick = (await core.status("status")).tick;
-    const event = !INPUT_KINDS.has(Object.keys(step).find((key) => STEP_KINDS.includes(key))!);
+    const event = !INPUT_KINDS.has(Object.keys(step)[0]!);
     if ("frames" in step) {
       await core.status(`run ${tick + step.frames * PAL_FRAME_CYCLES}`);
     } else if ("joystick" in step) {
       masks[step.joystick.port - 1] = joystickMask(step.joystick.direction, step.joystick.fire ?? false);
       await core.command(`joy ${masks[0]!.toString(16)} ${masks[1]!.toString(16)}`);
-    } else if ("type" in step) {
-      for (const code of keyCodes(step.type)) {
+    } else if ("press" in step) {
+      for (const code of keyCodes(step.press)) {
         await core.command(`key ${code.toString(16)} down`);
         await core.status(`run ${(tick += KEY_FRAMES * PAL_FRAME_CYCLES)}`);
         await core.command(`key ${code.toString(16)} up`);

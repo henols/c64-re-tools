@@ -46,9 +46,9 @@ test("each capture step writes what the C64 changed since the capture before, an
   writeFileSync(
     join(project, "steps.json"),
     JSON.stringify([
-      { runUntil: { at: "$080d" }, timeoutFrames: 6000 },
+      { runUntil: { target: { kind: "address", address: "$080d" }, timeoutFrames: 6000 } },
       { capture: "main" },
-      { runUntil: { at: "$c005" }, timeoutFrames: 6000 },
+      { runUntil: { target: { kind: "address", address: "$c005" }, timeoutFrames: 6000 } },
       { capture: "part" },
     ]),
   );

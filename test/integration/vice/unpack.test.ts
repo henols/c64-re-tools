@@ -33,7 +33,7 @@ writeFileSync(join(project, "gated.prg"), gatedPackedPrg);
 writeFileSync(join(project, "staged.prg"), stagedPrg);
 writeFileSync(join(project, "self-overwriting.prg"), selfOverwritingPrg);
 writeFileSync(join(project, "generated-call.prg"), generatedCallPrg);
-writeFileSync(join(project, "press-key.json"), JSON.stringify([{ frames: 50 }, { type: " " }]));
+writeFileSync(join(project, "press-key.json"), JSON.stringify([{ frames: 50 }, { type: { mode: "text", text: " " } }]));
 let server: HostServer | undefined;
 after(async () => {
   await server?.close();
@@ -189,7 +189,7 @@ test("a capture keeps the program that a mover wrote back over the first stage, 
   assert.equal(first.status, 0, JSON.stringify(first.json));
   assert.deepEqual(first.json.segments, [{ start: "$0801", end: "$0900" }], "the stub at $080c ran before the mover wrote over it");
 
-  writeFileSync(join(project, "to-loop.json"), JSON.stringify([{ runUntil: { at: "$0850" }, timeoutFrames: 100 }]));
+  writeFileSync(join(project, "to-loop.json"), JSON.stringify([{ runUntil: { target: { kind: "address", address: "$0850" }, timeoutFrames: 100 } }]));
   const second = await unpack("capture", "self-overwriting.prg", "--steps", "to-loop.json", "--until", "$0801", "--out", "unpacked/second", "--timeout-frames", "200");
   assert.equal(second.status, 0, JSON.stringify(second.json));
   const image = JSON.parse(readFileSync(join(project, "unpacked", "second", "image.json"), "utf8")) as { segments: unknown; stages: Array<{ entry: string }> };

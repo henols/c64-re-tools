@@ -9,7 +9,7 @@ import { parseArgs } from "node:util";
 import { formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
-import { ACTION_STEP_KEYS, ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, WireFailure, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -73,9 +73,13 @@ function readRun(path: string): Run {
     const kinds = "observe" in step ? ["observe"] : "trace" in step ? ["trace"] : Object.keys(step).filter((key) => (ACTION_STEP_KINDS as readonly string[]).includes(key) || (OWN_KINDS as readonly string[]).includes(key));
     if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...ACTION_STEP_KINDS, ...OWN_KINDS].join(", ")}`);
     const kind = kinds[0]!;
-    const allowed = kind === "observe" ? OBSERVE_KEYS : kind === "trace" ? TRACE_KEYS : (ACTION_STEP_KEYS[kind] ?? [kind]);
+    const allowed = kind === "observe" ? OBSERVE_KEYS : kind === "trace" ? TRACE_KEYS : [kind];
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
-    if ((ACTION_STEP_KINDS as readonly string[]).includes(kind)) return checkActionStep(kind, step, at, fail);
+    if ((ACTION_STEP_KINDS as readonly string[]).includes(kind)) {
+      // The step with its defaults filled in, as the shared schema of the action steps gives it.
+      (value.steps as unknown[])[index] = checkActionStep(kind as ActionStepKind, step, at, fail);
+      return;
+    }
     const name = step[kind];
     if (kind === "snapshot") {
       if (typeof name !== "string" || name === "") fail(`${at}: snapshot needs a project file`);
@@ -207,7 +211,7 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
       } else {
         const notReached = await runActionStep(client, step, at);
         if (notReached !== undefined && "runUntil" in step) {
-          reason = `Step ${done + 1} did not reach its target in ${step.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.`;
+          reason = `Step ${done + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.`;
           break;
         }
       }

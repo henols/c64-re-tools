@@ -33,7 +33,7 @@ test("a type step right after autostart reaches the program", { skip: liveSkip, 
       name: "takes a key after autostart",
       original: { program: "game.prg", symbols: "symbols.json" },
       rebuild: { program: "game.prg", symbols: "symbols.json" },
-      steps: [{ autostart: true }, { type: "X" }, { runUntil: { memory: { at: "$c000", equals: 0x58 } }, timeoutFrames: 600 }, { observe: "key", memory: ["$c000"] }],
+      steps: [{ autostart: true }, { type: { mode: "text", text: "X" } }, { runUntil: { target: { kind: "memory", address: "$c000", operator: "eq", value: 0x58 }, timeoutFrames: 600 } }, { observe: "key", memory: ["$c000"] }],
     }),
   );
   const supervisor = new ProcessSupervisor();

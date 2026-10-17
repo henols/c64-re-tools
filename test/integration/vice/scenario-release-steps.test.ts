@@ -42,12 +42,12 @@ async function runTest(...args: string[]): Promise<{ status: number | null; json
 
 const steps = [
   { autostart: true, side: "original" },
-  { type: " ", side: "original" },
+  { type: { mode: "text", text: " " }, side: "original" },
   { frames: 150, side: "rebuild" },
   { load: true, side: "rebuild" },
   { registers: { pc: "$c000" }, side: "rebuild" },
-  { runUntil: { at: "$c014" }, timeoutFrames: 600 },
-  { runUntil: { raster: 100 }, timeoutFrames: 5 },
+  { runUntil: { target: { kind: "address", address: "$c014" }, timeoutFrames: 600 } },
+  { runUntil: { target: { kind: "raster", line: 100 }, timeoutFrames: 5 } },
   { normalize: true },
 ];
 const memory = [{ at: "$c100" }, { at: "$0002", size: 4, exclude: [{ at: "$0002", reason: "the test writes it after normalize on one side" }] }];
@@ -60,7 +60,7 @@ test("one-side steps, a raster sync, normalize and an exclude make two different
   importImage(project, new Uint8Array(0x10000), { segments: [{ start: 0xc000, end: 0xc000 }], entry: 0xc000, state: { cpuPort: { $00: 0x2f, $01: 0x37 }, pages: { $0000: page(0x11), $0100: page(0x22), $0200: page(0x33), $0300: page(0x44) } } });
   const subjects = { original: { program: "gated.prg", symbols: "none" }, rebuild: { program: "counter.prg", symbols: "none" } };
   // The exclude: after normalize the rebuild writes $0002 again, so only that byte differs.
-  const diverge = { write: { at: "$0002", bytes: [0x99] }, side: "rebuild" };
+  const diverge = { write: { address: "$0002", data: "99" }, side: "rebuild" };
   writeFileSync(join(project, "pass.json"), JSON.stringify({ name: "counts", ...subjects, steps: [...steps, diverge, { observe: "done", memory }] }));
   const pass = await runTest("pass.json");
   assert.equal(pass.json.result, "PASS", JSON.stringify(pass.json));

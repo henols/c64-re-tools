@@ -70,7 +70,7 @@ export const OPTIONS = {
   steps: { kind: "path", value: "<file>", help: "a JSON file of action steps that run after the start" },
   frames: { kind: "count", value: "<n>", help: "run for this number of video frames", min: 1, max: 1_000_000 },
   "timeout-frames": { kind: "count", value: "<n>", help: "stop a wait after this number of video frames", min: 1, max: 1_000_000 },
-  "max-listed": { kind: "count", value: "<n>", help: "list at most n items of each list (default 50); the counts are always given", min: 0, max: 100_000, default: 50 },
+  "max-listed": { kind: "count", value: "<n>", help: "list at most n items of each list (default 50). The counts are always given", min: 0, max: 100_000, default: 50 },
   symbols: { kind: "path", value: "<file>", help: "the symbols of a build: the c64-assembler output, or a JSON map of name to $ address" },
   origin: { kind: "text", value: "<origin>", help: "user, llm, dxa, ghidra, heuristic, semantic (user and llm) or analyzer (dxa, ghidra and heuristic), or a comma list" },
   reason: { kind: "text", value: "<text>", help: "why: kept with the revision" },
@@ -179,7 +179,7 @@ export class Call {
     const value = c64AddressOf(text);
     if (value !== undefined) return value;
     if (!SYMBOL_NAME.test(text)) throw new UsageError(`${what} must be ${ADDRESS_FORM}, not ${JSON.stringify(text)}`);
-    if (this.#names === undefined) throw new UsageError(`${what}: ${this.script}.ts ${this.command} takes no names; give $ and 1 to 4 hex digits, not ${text}`);
+    if (this.#names === undefined) throw new UsageError(`${what}: ${this.script}.ts ${this.command} takes no names. Give $ and 1 to 4 hex digits, not ${text}`);
     try {
       return this.#names(text, this.space);
     } catch (error) {
@@ -394,7 +394,7 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
   const most = last?.list ? Number.POSITIVE_INFINITY : specs.length;
   if (subjects.length < least || subjects.length > most) {
     const named = specs.length === 0 ? "no subjects" : specs.map((subject) => (subject.list ? `${subject.name}...` : subject.name)).join(" ");
-    throw new UsageError(subjects.length < least ? `${command.name} needs ${named}` : `${command.name} takes ${named}; ${JSON.stringify(subjects[most])} is one too many`);
+    throw new UsageError(subjects.length < least ? `${command.name} needs ${named}` : `${command.name} takes ${named}. ${JSON.stringify(subjects[most])} is one too many`);
   }
   for (const [name, spec] of Object.entries(options)) {
     const value = values[name];
@@ -519,7 +519,7 @@ export async function runScript(script: ScriptSpec): Promise<void> {
         throw new UsageError(`give a command: ${script.commands.map((command) => command.name).join(", ")}`);
       }
       const command = script.commands.find((item) => item.name === first);
-      if (command === undefined) throw new UsageError(`${first} is not a command of ${script.name}.ts; the commands are ${script.commands.map((item) => item.name).join(", ")}`);
+      if (command === undefined) throw new UsageError(`${first} is not a command of ${script.name}.ts. The commands are ${script.commands.map((item) => item.name).join(", ")}`);
       found(command.name);
       if (asksHelp(rest)) return { text: commandUsage(script, command) };
       return command.run(parseCall(script, command, rest));

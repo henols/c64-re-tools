@@ -9,6 +9,7 @@ import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { startAtEntry, type EntryState } from "#src/host-client/entry-state.ts";
 import { runActionStep, type ActionStep } from "#src/host-client/steps.ts";
+import { knowledgeAt } from "#src/knowledge/names.ts";
 import { MAX_MEMORY_READ } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -124,6 +125,7 @@ export async function watchRelease(
       if (left > 0 && !(await settle())) left--;
     }
   };
+  const at = knowledgeAt();
   for (const step of run.steps) {
     if ("frames" in step) {
       await runFrames(step.frames);
@@ -132,13 +134,13 @@ export async function watchRelease(
     if ("runUntil" in step) {
       // A stop at a point is not the target: settle and run to the target again.
       while (guard-- > 0) {
-        const reached = await runActionStep(client, step, (location) => Number.parseInt(location.slice(1), 16));
+        const reached = await runActionStep(client, step, at);
         if (reached === undefined || reached.stopReason !== "watchpoint" && reached.stopReason !== "breakpoint") break;
         await settle();
       }
       continue;
     }
-    await runActionStep(client, step, (location) => Number.parseInt(location.slice(1), 16));
+    await runActionStep(client, step, at);
   }
   await runFrames(run.frames);
   if (points.size > 0) await settle();
