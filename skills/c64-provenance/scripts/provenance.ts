@@ -36,7 +36,7 @@ import {
   symbolNamed,
   symbolSuppressed,
 } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, type Origin } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { runBody, UsageError } from "#src/script.ts";
@@ -475,7 +475,6 @@ function leftoversCommand(out: string | undefined, minText: string | undefined, 
   };
 }
 
-const SEMANTIC: readonly Origin[] = ["user", "llm"];
 
 const platform = () => new Map(platformNames().map((entry) => [entry.name, entry.address]));
 
@@ -508,7 +507,7 @@ function routineCommand(values: { library?: string; module?: string; start?: str
       if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Address(start)}-${formatC64Address(end)} is not inside one segment of the program.`);
     }
     const range = { start, end };
-    const name = values.name ?? listSymbols(db, { start, end: start }, undefined, SEMANTIC)[0]?.name;
+    const name = values.name ?? listSymbols(db, { start, end: start }, undefined, SEMANTIC_ORIGINS)[0]?.name;
     if (name === undefined) throw new UsageError(`The knowledge has no user or LLM name at ${formatC64Address(start)}: give --name.`);
     const { routine, leftOut } = routineFrom({
       name,
@@ -519,11 +518,11 @@ function routineCommand(values: { library?: string; module?: string; start?: str
       end,
       byteAt: image.byteAt,
       analyzed: listRegions(db, range),
-      symbols: listSymbols(db, range, undefined, SEMANTIC),
-      regions: listRegions(db, range, undefined, SEMANTIC),
-      comments: listComments(db, range, SEMANTIC),
-      references: listReferences(db, range, undefined, SEMANTIC),
-      operands: listOperands(db, range, SEMANTIC),
+      symbols: listSymbols(db, range, undefined, SEMANTIC_ORIGINS),
+      regions: listRegions(db, range, undefined, SEMANTIC_ORIGINS),
+      comments: listComments(db, range, SEMANTIC_ORIGINS),
+      references: listReferences(db, range, undefined, SEMANTIC_ORIGINS),
+      operands: listOperands(db, range, SEMANTIC_ORIGINS),
       platform: platform(),
     });
     const file = saveRoutine(libraryFolder(values.library, { create: true }), routine, values.replace === true);

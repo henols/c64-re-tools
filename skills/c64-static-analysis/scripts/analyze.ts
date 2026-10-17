@@ -17,9 +17,9 @@ import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS } from "#src/native/types.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { analyzedBytes, programCoverage, requireProgram } from "#src/knowledge/program.ts";
-import { importFindings, runProvenance, type Analyzer, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
+import { importFindings, runProvenance, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
+import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runBody, UsageError } from "#src/script.ts";
@@ -98,7 +98,7 @@ function macroCandidates(space: string, byteAt: ImageByte, batchPath: string | u
   const db = openForRead();
   try {
     const platform = space === DEFAULT_SPACE ? new Map(platformNames().map((entry) => [entry.address, entry.name])) : new Map<number, string>();
-    const semantic = new Map(listSymbols(db, undefined, undefined, ["user", "llm"], space).map((symbol) => [symbol.address, symbol.name]));
+    const semantic = new Map(listSymbols(db, undefined, undefined, [...SEMANTIC_ORIGINS], space).map((symbol) => [symbol.address, symbol.name]));
     const code = listRegions(db, undefined, "code", undefined, space);
     const found = findMacroUses(byteAt, code, (address) => semantic.get(address) ?? platform.get(address));
     const named = new Set([...listSymbols(db, undefined, undefined, undefined, space).map((symbol) => symbol.address), ...listReferences(db, undefined, undefined, undefined, space).map((reference) => reference.to)]);

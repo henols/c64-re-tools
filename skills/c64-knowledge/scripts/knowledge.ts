@@ -51,7 +51,7 @@ import {
   type SuppressionRow,
   type SymbolRow,
 } from "#src/knowledge/read.ts";
-import { COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type SymbolKind } from "#src/knowledge/schema.ts";
+import { ANALYZERS, COMMENT_PLACEMENTS, type CommentPlacement, DEFAULT_SPACE, EVIDENCE_KINDS, isSemantic, OPERAND_SELECTS, type OperandSelect, type Origin, ORIGINS, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SEMANTIC_ORIGINS, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
 import {
   addReference,
   applyBatch,
@@ -400,7 +400,7 @@ function run(argv: string[]): unknown {
     }
   }
 
-  const context: WriteContext = { origin: values.origin === undefined ? "llm" : oneOf(["user", "llm"] as const, values.origin, "--origin") };
+  const context: WriteContext = { origin: values.origin === undefined ? "llm" : oneOf(SEMANTIC_ORIGINS, values.origin, "--origin") };
   if (values.reason !== undefined) context.description = values.reason;
   if (values["expect-revision"] !== undefined) context.expectedRevision = values["expect-revision"];
   if (values.evidence !== undefined) context.evidence = values.evidence.map((value) => evidenceOf(value, space));
@@ -458,7 +458,7 @@ function listingSource(db: DatabaseSync | undefined, space: string): ListingSour
     // A user or LLM name, else the platform name; an analyzer name in symbols (knowledge from an older version) gives way to it.
     nameOf: (at) => {
       const own = symbolAt(db, at, space);
-      return own !== undefined && (own.origin === "user" || own.origin === "llm") ? own.name : (platform.get(at) ?? own?.name);
+      return own !== undefined && isSemantic(own.origin) ? own.name : (platform.get(at) ?? own?.name);
     },
     secondNames: (at) => analyzerNamesAt(db, at, space).map((row) => row.name),
     regions: listRegions(db, undefined, undefined, undefined, space),
@@ -616,8 +616,8 @@ function readAnswer(db: DatabaseSync | undefined, command: string, args: string[
 function originFilter(value: string): Origin[] {
   const origins = new Set<Origin>();
   for (const part of value.split(",")) {
-    if (part === "semantic") origins.add("user").add("llm");
-    else if (part === "analyzer") origins.add("dxa").add("ghidra").add("heuristic");
+    if (part === "semantic") for (const origin of SEMANTIC_ORIGINS) origins.add(origin);
+    else if (part === "analyzer") for (const origin of ANALYZERS) origins.add(origin);
     else origins.add(oneOf(ORIGINS, part, "--origin"));
   }
   return [...origins];

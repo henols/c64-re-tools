@@ -9,10 +9,9 @@ import { COVERAGE, coverageEntries, coverageSeedKinds, executedStarts } from "#s
 export { coverageEntries, coverageSeedKinds, executedStarts };
 import { FULL_COVERAGE } from "#src/host-client/coverage.ts";
 import { listRegions, type RegionRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, type Space } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, isAnalyzer, isSemantic, type Space } from "#src/knowledge/schema.ts";
 
 const FULL_MAP = FULL_COVERAGE;
-const ANALYZER_ORIGINS = new Set(["dxa", "ghidra", "heuristic"]);
 
 /** The byte at an address of the analyzed image, or undefined outside it. */
 export type ImageByte = (address: number) => number | undefined;
@@ -46,7 +45,7 @@ export function romOnlyRanges(map: Uint8Array, image: ImageByte): Array<{ start:
 /** Entry points from semantic knowledge beyond routines: the start of each code region, and each entry of a JMP table with its target. */
 export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, space: Space = DEFAULT_SPACE): number[] {
   const entries: number[] = [];
-  for (const region of listRegions(db, undefined, undefined, undefined, space).filter((row) => row.origin === "user" || row.origin === "llm")) {
+  for (const region of listRegions(db, undefined, undefined, undefined, space).filter((row) => isSemantic(row.origin))) {
     if (region.type === "code") entries.push(region.start);
     if (region.type !== "jumps") continue;
     for (let at = region.start; at + 2 <= region.end; at += 3) {
@@ -63,7 +62,7 @@ export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, spac
 export function coverageConflicts(db: DatabaseSync | undefined, map: Uint8Array): Array<{ region: RegionRow; executed: number }> {
   const conflicts: Array<{ region: RegionRow; executed: number }> = [];
   for (const region of listRegions(db)) {
-    if (!ANALYZER_ORIGINS.has(region.origin) || CODE_REGION_TYPES.includes(region.type) || region.type === "dual-use") continue;
+    if (!isAnalyzer(region.origin) || CODE_REGION_TYPES.includes(region.type) || region.type === "dual-use") continue;
     let executed = 0;
     for (let address = region.start; address <= region.end; address++) if ((map[address]! & COVERAGE.ramExecute) !== 0) executed++;
     if (executed > 0) conflicts.push({ region, executed });

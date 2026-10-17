@@ -30,12 +30,10 @@ import {
   type RegionRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
+import { ANALYZERS, CODE_REGION_TYPES, DEFAULT_SPACE, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Analyzer, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
 import { Change, checkAddress, checkSpace, subtract, SYMBOL_NAME, type Evidence } from "./write.ts";
 
 
-export const ANALYZERS = ["dxa", "ghidra", "heuristic"] as const satisfies readonly Origin[];
-export type Analyzer = (typeof ANALYZERS)[number];
 
 export interface NormalizedFindings {
   analyzer: Analyzer;

@@ -10,6 +10,13 @@ import { OPERAND_SELECTS } from "./expression.ts";
 /** heuristic: 6502 idioms that the static analysis finds by pattern; an analyzer origin. */
 export const ORIGINS = ["user", "llm", "dxa", "ghidra", "heuristic"] as const;
 export type Origin = (typeof ORIGINS)[number];
+/** The origins of semantic knowledge: what the user or the LLM decided. It wins over analyzer facts. */
+export const SEMANTIC_ORIGINS = ["user", "llm"] as const satisfies readonly Origin[];
+/** The analyzers: their facts and names give way to semantic knowledge. */
+export const ANALYZERS = ["dxa", "ghidra", "heuristic"] as const satisfies readonly Origin[];
+export type Analyzer = (typeof ANALYZERS)[number];
+export const isSemantic = (origin: string | undefined): boolean => (SEMANTIC_ORIGINS as readonly (string | undefined)[]).includes(origin);
+export const isAnalyzer = (origin: string | undefined): boolean => (ANALYZERS as readonly (string | undefined)[]).includes(origin);
 export const SYMBOL_KINDS = ["label", "routine", "variable", "data", "vector"] as const;
 export type SymbolKind = (typeof SYMBOL_KINDS)[number];
 export const REGION_TYPES = [

@@ -7,7 +7,8 @@ import { after, before, test } from "node:test";
 
 import { Refusal } from "../errors.ts";
 import { openForWrite } from "./database.ts";
-import { importFindings, type Analyzer } from "./import.ts";
+import { importFindings } from "./import.ts";
+import type { Analyzer } from "./schema.ts";
 import { addressOfName, nameTable } from "./names.ts";
 import { renameSymbol } from "./write.ts";
 

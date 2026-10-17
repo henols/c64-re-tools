@@ -11,7 +11,7 @@ import { Refusal } from "#src/errors.ts";
 import { formatC64Address, instructionLength } from "#src/c64.ts";
 import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
-import { COMMENT_PLACEMENTS, OPERAND_SELECTS, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type OperandSelect, type ReferenceKind, type RegionType, type SymbolKind } from "#src/knowledge/schema.ts";
+import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, OPERAND_SELECTS, type OperandSelect, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
 import { PROJECT_DIRECTORY } from "#src/project.ts";
 
 /** A routine shorter than this is not saved and not searched: its bytes occur by chance. */
@@ -450,7 +450,7 @@ export interface Suggestions {
   leftOut: Skipped[];
 }
 
-const semantic = (row: { origin: string }) => row.origin === "user" || row.origin === "llm";
+const semantic = (row: { origin: string }) => isSemantic(row.origin);
 
 /**
  * The names, regions, comments, references and operand expressions of each

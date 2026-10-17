@@ -5,12 +5,12 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
 import { listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, type Space } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, type Space } from "#src/knowledge/schema.ts";
 import type { DxaResult, GhidraParams, GhidraResult } from "#src/native/types.ts";
 
 export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
 
-const semantic = (row: { origin: string }) => row.origin === "user" || row.origin === "llm";
+const semantic = (row: { origin: string }) => isSemantic(row.origin);
 
 /**
  * Seeds from current semantic knowledge: routines from the user or
