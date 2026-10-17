@@ -35,6 +35,9 @@ apt-get install -y --no-install-recommends acme unzip curl ca-certificates
 # dxa has no package: the same script as the install page builds it.
 bash "$(dirname "$0")/install-dxa.sh"
 
+# The replay core: the chips C64 emulator with a line-command harness.
+bash "$(dirname "$0")/install-chips.sh"
+
 curl -fsSL --retry 3 -o "/tmp/${GHIDRA_ZIP}" "${GHIDRA_URL}"
 echo "${GHIDRA_SHA256}  /tmp/${GHIDRA_ZIP}" | sha256sum -c -
 unzip -q "/tmp/${GHIDRA_ZIP}" -d /opt

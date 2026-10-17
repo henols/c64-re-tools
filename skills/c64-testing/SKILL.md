@@ -1,6 +1,6 @@
 ---
 name: c64-testing
-description: Use this skill to test if a rebuilt or changed C64 program behaves as the original. It runs one scenario on the original and then on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. It also makes a checklist for a human playtest. Use its run command to explore a program with many steps, for example to visit each room or level. A run keeps screens, coverage maps and snapshots as files. Do not use it to find the cause of a difference.
+description: Use this skill to test if a rebuilt or changed C64 program behaves as the original. It runs one scenario on the original and then on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. It also makes a checklist for a human playtest. Use its run command to explore a program with many steps, for example to visit each room or level. A run keeps screens, coverage maps and snapshots as files. Use its record and replay commands to keep a long play session of the original and replay it on each rebuild. Do not use it to find the cause of a difference.
 ---
 
 # c64-testing
@@ -54,6 +54,53 @@ A memory item can have `"view": "ram"`. Then it reads the RAM under the ROMs and
 
 See [references/scenario-format.md](references/scenario-format.md), section Runs. The script prints one JSON object. The exit status is 0 when all steps ran, 1 when a step did not reach its target, and 2 for a bad call. A long run can need more time than one shell call. Then run it in the background.
 
+### Recordings
+
+A recording keeps a session of the original program, for example a play through some rooms of a game. A replay gives the same input to a rebuild and compares the game state. Make the recordings early, before you change the program. A recording needs no names. Its coverage also helps the static analysis.
+
+The record and replay scripts run the replay core `c64run` on this machine, not the emulator of the host runtime. The replay core has no disk drive. The program must be a PRG file.
+
+Ask the user to play first. Tell the user which parts of the program the recordings must have, for example each room, a fight and a lost life. Make a scripted recording only for a part that the sessions of the user do not have, or when the user cannot play.
+
+```
+node <skill>/scripts/record.ts tests/record/start.json --out tests/recordings/play1 --play --joystick 1
+```
+
+- With `--play`, a person plays the program after the steps of the record file. The steps can start the program, for example a key for an intro.
+- The script writes the address of a page to stderr. Give the address to the user. In a dev container, the port of the page (default 6465) must be forwarded.
+- On the page, the arrow keys, space and a gamepad move the joystick of `--joystick` (default 2). The other keys go to the C64 keyboard.
+- The script runs until the user clicks Stop on the page. Run it in the background. Then it writes the recording folder.
+
+A scripted recording has only steps. See [references/recording-format.md](references/recording-format.md). The steps are `frames`, `joystick`, `type`, `write`, `registers` and `runUntil` with `at` or `memory`.
+
+```
+node <skill>/scripts/record.ts tests/record/rooms.json --out tests/recordings/rooms
+node <skill>/scripts/replay.ts tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/game.prg --symbols build/game.json
+```
+
+- The record script writes the recording folder. The exit status is 0 when it recorded the session, 1 when the session did not complete, and 2 for a bad call. `executed` gives the instructions in the coverage map.
+- The replay script first replays the recording on the original. The original must end the session with the recorded state. Then the script replays the recording on the rebuild and compares the state at each checkpoint.
+- `--checkpoint` gives a routine, and `--state` gives each memory item to compare. Use the names that the knowledge has at the time of the replay. A `$` address is an address of the original. On the rebuild, it moves with the name before it.
+- The replay script gives PASS, FAIL or INCONCLUSIVE, with the exit status 0, 1 or 3. A FAIL gives the first checkpoint that is different and the state items that are different.
+- With `--out`, a FAIL writes the RAM of the two sides at that checkpoint. Compare the two files with `diff.ts`.
+- Without `--rebuild`, the replay script only replays the recording on the original.
+
+A checkpoint is one entry of a routine. Use a routine that the program executes one time in each pass of its game logic, for example the main loop. Do not use an interrupt handler.
+
+The input is the reads of the joystick ports and the keyboard matrix. It is also the reads of the four SID registers that a program can read: the paddles, the noise of voice 3 and its envelope. It is also the reads of `$DE00`-`$DFFF`, where a C64 without a cartridge gives the last byte on the bus. On a replay, the n-th read of each instruction gets the value of the n-th read in the recording. Thus a rebuild with different timing gets the same input and the same SID random numbers. A `write`, `registers` or `runUntil` step is not input. The replay does the step again at the same read of the program.
+
+A replay is deterministic. The replay core has no random source and no clock: the same recording gives the same session, to the cycle. Sometimes the recording has no value for a read of an input. Then the read gets a fixed value: `$FF` for the joystick, keyboard and paddle registers, `$00` for the others. `idleReads` in the result counts these reads on the rebuild. On the original, such a read makes the result INCONCLUSIVE.
+
+Control each source of random numbers:
+
+- A program that reads a seed from the SID gets the recorded value. You do not need to do more.
+- A program that reads a seed from the raster line or a CIA timer: add the address to `inputs` of the record file. Do this only when the program does not wait in a loop on that address.
+- A program that keeps its random state in RAM: give that state with `--pin`. An example is a pointer into a random table that moves each frame. At each checkpoint, the rebuild gets the values of the original there. A FAIL where an enemy or an event is different, but the input is the same, often shows that a pin is missing.
+
+Put a `runUntil` step with the checkpoint routine before a `registers` step. A `registers` step that sets the pc during an interrupt stops the program.
+
+Commit the recording folder with the scenarios. A recording is not knowledge.
+
 ### Differences
 
 ```
@@ -100,10 +147,15 @@ Read:
 Automatic write:
 - none.
 
+Write with c64-knowledge:
+- the coverage of a recording: `knowledge.ts coverage tests/recordings/<name>/coverage.bin`.
+- a finding that a recording shows, with `--evidence test:tests/recordings/<name>/recording.json`.
+
 Do not store:
 - test results
 - screenshots
-- playtest results.
+- playtest results
+- recordings.
 
 ## Result
 
@@ -120,6 +172,13 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 - A program that uses random numbers: set the random seed with a `write` step on both sides. If that is not possible, observe only values that do not depend on the random numbers.
 - The two sides start differently, for example the original after a cracked intro. Give the steps that only one side needs a `side`. Then make the memory the same with a `normalize` step. It writes the entry state of the capture in the knowledge.
 - Frame counts drift by one frame between the sides: the sides got to the same address at different raster positions. Do not sync on an IRQ handler. Sync on a value that the IRQ changes, with `runUntil` `memory`, or on an address and a raster line together.
+- INCONCLUSIVE, "does not reproduce": the original does not end the session with the recorded state. Record the session again with this `c64run`.
+- INCONCLUSIVE, "never came to the checkpoint": the original did not execute the checkpoint routine in the session. Give another routine.
+- INCONCLUSIVE, "is not the program of the recording": the program file changed after the recording. Record the session again.
+- A record result with `recorded` false: a step did not reach its target. Change the step.
+- A record result with `executed` 0: the program never read its input from RAM, so the coverage map is empty. The recording can still replay.
+- A FAIL from a replay: compare the two RAM files of `--out` with `diff.ts`. Then examine the first different state item with the c64-emulator skill.
+- A program that loads more files from a disk: the replay core has no disk drive. Use a test scenario in the emulator.
 - A byte that cannot be the same on both sides, for example a read-only collision register: use `exclude` with the reason. Do not use `exclude` to hide a real difference.
 
 Do not add a mask or a tolerance only to make a test pass. A tolerance must have a reason in the behavior of the program.

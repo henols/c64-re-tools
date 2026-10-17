@@ -8,7 +8,7 @@ import { stripVTControlCharacters } from "node:util";
 
 import { WireFailure } from "../protocol/messages.ts";
 import { type ToolStatus } from "../protocol/tools.ts";
-import { ACME, DXA, findTool } from "./discover.ts";
+import { ACME, C64RUN, DXA, findTool, INSTALL_STEPS } from "./discover.ts";
 import { findGhidra, ghidraVersion, NO_USABLE_JDK, noJdk } from "./ghidra/index.ts";
 import { runTool, type ToolContext } from "./run.ts";
 import { Workspace } from "./staging.ts";
@@ -101,6 +101,27 @@ export async function probeGhidra(context: ToolContext): Promise<ToolStatus> {
   }
 }
 
+/** c64run: --version prints its version and whether its ROM folder has the three C64 ROMs. */
+export async function probeC64run(context: ToolContext): Promise<ToolStatus> {
+  const env = context.env ?? process.env;
+  try {
+    const path = findTool(C64RUN, env);
+    return await run(
+      "c64run",
+      path,
+      ["--version"],
+      (output) => (/^roms=ok /m.test(output) ? versionLine(output, /^c64run protocol=/) : undefined),
+      context,
+      (output) => {
+        const missing = /^roms=missing (.*)$/m.exec(output)?.[1];
+        return missing === undefined ? undefined : `It has no C64 ROMs: ${missing}. Set C64RT_C64_ROMS to a folder with kernal-901227-03.bin, basic-901226-01.bin and chargen-901225-01.bin (the C64 folder of VICE has them). ${INSTALL_STEPS}`;
+      },
+    );
+  } catch (error) {
+    return missing("c64run", error);
+  }
+}
+
 /** The tools that skill scripts run themselves, on this machine. */
 export async function localToolStatus(context: ToolContext): Promise<ToolStatus[]> {
   const probes: Probe[] = [
@@ -109,5 +130,5 @@ export async function localToolStatus(context: ToolContext): Promise<ToolStatus[
     // directory only where that uses "/": on Windows the line starts with the full path.
     { name: "dxa", find: (env) => findTool(DXA, env), args: ["-V"], pattern: DXA_VERSION },
   ];
-  return [...(await probeTools(probes, context)), await probeGhidra(context)];
+  return [...(await probeTools(probes, context)), await probeGhidra(context), await probeC64run(context)];
 }

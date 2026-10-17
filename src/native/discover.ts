@@ -55,6 +55,14 @@ export const DXA: ToolSpec = {
   remedy: `Install dxa 0.1.5 on the machine that runs the skill scripts so that dxa is on PATH, or set C64RT_DXA to its full path. ${INSTALL_STEPS}`,
 };
 
+export const C64RUN: ToolSpec = {
+  name: "c64run",
+  envVar: "C64RT_C64RUN",
+  binaries: ["c64run"],
+  where: "on this machine",
+  remedy: `Install c64run (the replay core of c64-testing, with its C64 ROMs) on the machine that runs the skill scripts so that c64run is on PATH, or set C64RT_C64RUN to its full path. The dev container has it. ${INSTALL_STEPS}`,
+};
+
 export const VICE: ToolSpec = {
   name: "VICE (x64sc)",
   envVar: "C64RT_VICE",

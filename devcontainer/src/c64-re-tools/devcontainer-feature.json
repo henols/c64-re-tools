@@ -2,7 +2,7 @@
   "id": "c64-re-tools",
   "version": "0.0.0-development",
   "name": "c64-re-tools",
-  "description": "ACME, dxa, Ghidra and Java 21 for the c64-re-tools skills, and the toolkit installed into the project. The Host Runtime with VICE runs on the graphical host.",
+  "description": "ACME, dxa, Ghidra, Java 21 and c64run (the replay core, with the C64 ROMs) for the c64-re-tools skills, and the toolkit installed into the project. The Host Runtime with VICE runs on the graphical host.",
   "documentationURL": "https://github.com/henols/c64-re-tools#dev-container",
   "licenseURL": "https://github.com/henols/c64-re-tools/blob/main/LICENSE",
   "options": {

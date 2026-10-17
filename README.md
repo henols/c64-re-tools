@@ -54,7 +54,7 @@ npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host
 
 ### Dev container
 
-This is the preferred way. The container gets Node.js 24, ACME, dxa, Java 21 and Ghidra,
+This is the preferred way. The container gets Node.js 24, ACME, dxa, Java 21, Ghidra and c64run,
 installs the toolkit into the project when it is created, and updates it at
 each start. Add to `.devcontainer/devcontainer.json`:
 
@@ -70,7 +70,7 @@ needs a Debian or Ubuntu image. `runArgs` is for Docker on Linux.
 
 ### Without a container
 
-Install ACME, dxa and Ghidra as in [docs/install-tools.md](docs/install-tools.md).
+Install ACME, dxa, Ghidra and c64run as in [docs/install-tools.md](docs/install-tools.md).
 Then, in your project:
 
 ```
@@ -132,7 +132,8 @@ program its own folder. A folder with `.c64-re-tools/` is a project.
 | Variable | Meaning |
 | --- | --- |
 | `C64RT_VICE`, `C64RT_C1541`, `C64RT_PETCAT` | Full path of the VICE tool, when it is not on `PATH` (host). |
-| `C64RT_ACME`, `C64RT_DXA` | Full path of the tool, when it is not on `PATH`. |
+| `C64RT_ACME`, `C64RT_DXA`, `C64RT_C64RUN` | Full path of the tool, when it is not on `PATH`. |
+| `C64RT_C64_ROMS` | The C64 ROM folder of c64run, when it is not `share/c64-re-tools/roms` next to its `bin`. |
 | `C64RT_GHIDRA` | The Ghidra installation directory, when `analyzeHeadless` is not on `PATH`. |
 | `C64RT_HOST` | `host:port` of the Host Runtime, when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at port 6464. |
 | `C64RT_VIDEO` | `pal` (default) or `ntsc`. |

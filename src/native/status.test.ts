@@ -40,6 +40,7 @@ test("the local tools are reported as running, missing, or found but not running
       // dxa -V exits 1 after its version: that still counts as running.
       C64RT_DXA: standIn(scratch, "dxa", ["dxa v0.1.5 -- symbolic 65xx disassembler"], 1),
       C64RT_GHIDRA: ghidra,
+      C64RT_C64RUN: standIn(scratch, "c64run", ["c64run protocol=1 chips=9e88298ce563", "roms=ok /usr/local/share/c64-re-tools/roms"]),
     }),
   );
   assert.deepEqual(
@@ -48,16 +49,25 @@ test("the local tools are reported as running, missing, or found but not running
       ["ACME", true, "This is ACME, release 0.97"],
       ["dxa", true, "dxa v0.1.5 -- symbolic 65xx disassembler"],
       ["Ghidra", true, "Ghidra 12.1.3"],
+      ["c64run", true, "c64run protocol=1 chips=9e88298ce563"],
     ],
   );
 
-  const broken = await localToolStatus(context({ C64RT_ACME: standIn(scratch, "bad-acme", ["something went wrong"], 3), C64RT_DXA: join(scratch, "no-dxa") }));
-  const [acme, dxa, ghidraStatus] = broken;
+  const broken = await localToolStatus(
+    context({
+      C64RT_ACME: standIn(scratch, "bad-acme", ["something went wrong"], 3),
+      C64RT_DXA: join(scratch, "no-dxa"),
+      C64RT_C64RUN: standIn(scratch, "c64run-no-roms", ["c64run protocol=1 chips=9e88298ce563", "roms=missing /opt/roms has no kernal-901227-03.bin"]),
+    }),
+  );
+  const [acme, dxa, ghidraStatus, c64run] = broken;
   assert.deepEqual([acme?.found, acme?.runs], [true, false]);
   assert.match(acme!.problem!, /exit 3/);
   assert.deepEqual([dxa?.found, dxa?.runs], [false, false]);
   assert.match(dxa!.problem!, /C64RT_DXA/);
   assert.equal(ghidraStatus?.found, false);
+  assert.deepEqual([c64run?.found, c64run?.runs], [true, false]);
+  assert.match(c64run!.problem!, /^It has no C64 ROMs: \/opt\/roms has no kernal-901227-03\.bin\. Set C64RT_C64_ROMS/);
 });
 
 test("a Ghidra without a usable JDK is reported with the Java it needs", { skip, timeout: 30_000 }, async () => {

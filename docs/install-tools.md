@@ -2,7 +2,7 @@
 
 <img src="../assets/branding/c64-re-tools-transparent.svg" alt="C64 RE Tools" width="300">
 
-The skill scripts run ACME, dxa and Ghidra on the machine of the agent: in a dev container, inside the container. Check what is missing:
+The skill scripts run ACME, dxa, Ghidra and c64run on the machine of the agent: in a dev container, inside the container. c64run is the replay core of c64-testing: a C64 emulator ([floooh/chips](https://github.com/floooh/chips)) with the C64 ROMs from [zimmers.net](https://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/). Check what is missing:
 
 ```
 npx -y @henols/c64-re-tools@latest status
@@ -24,7 +24,15 @@ unzip -q ghidra_12.1.3_PUBLIC_20260817.zip -d ~/.local/share
 echo 'export C64RT_GHIDRA="$HOME/.local/share/ghidra_12.1.3_PUBLIC"' >> ~/.profile
 ```
 
-`install-dxa.sh` builds dxa 0.1.5 from its source and checks the archive. dxa is not in the `xa65` package.
+c64run:
+
+```
+base=https://raw.githubusercontent.com/henols/c64-re-tools/main/devcontainer/src/c64-re-tools
+curl -fsSLO $base/install-chips.sh && curl -fsSLO $base/c64run.c
+bash install-chips.sh
+```
+
+`install-dxa.sh` builds dxa 0.1.5 from its source and checks the archive. dxa is not in the `xa65` package. `install-chips.sh` builds c64run from a pinned chips commit and installs it with its ROMs in `/usr/local`; it checks each download.
 
 ## macOS (Homebrew)
 
@@ -44,17 +52,27 @@ unzip -q ghidra_12.1.3_PUBLIC_20260817.zip -d ~
 
 Then set `C64RT_GHIDRA=$HOME/ghidra_12.1.3_PUBLIC` and `JAVA_HOME` (the line above) in your shell profile. Ghidra ships no decompiler for macOS: `buildNatives` builds it.
 
+c64run, into the Homebrew prefix:
+
+```
+base=https://raw.githubusercontent.com/henols/c64-re-tools/main/devcontainer/src/c64-re-tools
+curl -fsSLO $base/install-chips.sh && curl -fsSLO $base/c64run.c
+PREFIX="$(brew --prefix)" bash install-chips.sh
+```
+
 ## Windows
 
 1. Java 21: `winget install EclipseAdoptium.Temurin.21.JDK`
 2. ACME: unzip [acme0.97win.zip](https://sourceforge.net/projects/acme-crossass/files/win32/) and put `acme.exe` on `PATH`, or set `C64RT_ACME` to its full path.
 3. dxa has no Windows release. Build [dxa-0.1.5.tar.gz](https://sources.voidlinux.org/dxa-0.1.5/dxa-0.1.5.tar.gz) with MinGW-w64: `make CC=gcc LDFLAGS=-static`. Put `dxa.exe` on `PATH`, or set `C64RT_DXA`.
 4. Ghidra: unzip [ghidra_12.1.3_PUBLIC_20260817.zip](https://github.com/NationalSecurityAgency/ghidra/releases/tag/Ghidra_12.1.3_build) (SHA-256 `93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54`), then `setx C64RT_GHIDRA C:\path\to\ghidra_12.1.3_PUBLIC`.
+5. c64run: unpack [chips at 9e88298](https://codeload.github.com/floooh/chips/tar.gz/9e88298ce56319953ac7a43213a1120359f7a3a6) next to [c64run.c](https://raw.githubusercontent.com/henols/c64-re-tools/main/devcontainer/src/c64-re-tools/c64run.c) and build it with MinGW-w64: `gcc -O2 -I chips-9e88298ce56319953ac7a43213a1120359f7a3a6 -o c64run.exe c64run.c`. Put `c64run.exe` on `PATH`, or set `C64RT_C64RUN`. Set `C64RT_C64_ROMS` to the `C64` folder of VICE, or to a folder with the [zimmers.net](https://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/) ROMs renamed to `kernal-901227-03.bin`, `basic-901226-01.bin` and `chargen-901225-01.bin`.
 
 ## Settings
 
 | Variable | Meaning |
 | --- | --- |
-| `C64RT_ACME`, `C64RT_DXA` | Full path of the tool when it is not on `PATH`. |
+| `C64RT_ACME`, `C64RT_DXA`, `C64RT_C64RUN` | Full path of the tool when it is not on `PATH`. |
+| `C64RT_C64_ROMS` | The folder with the C64 ROMs of c64run, when it is not `share/c64-re-tools/roms` next to its `bin`. |
 | `C64RT_GHIDRA` | The Ghidra installation directory (the one with `support/`). |
 | `JAVA_HOME` | The JDK that Ghidra uses, when `java` on `PATH` is another version. |

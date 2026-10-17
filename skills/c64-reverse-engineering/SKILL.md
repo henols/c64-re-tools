@@ -79,19 +79,19 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 
 | Stage | Work | Exit check |
 |---|---|---|
-| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these: identical source, a verified loader, passed c64-testing scenarios, and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. | The user gave the criteria. |
+| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these: identical source, a verified loader, passed c64-testing scenarios, passed replays of the recordings, and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. | The user gave the criteria. |
 | 2. Get | c64-disk: list the disk. Extract the start file into `original/`. | The start file is in the project. |
 | 3. Start | c64-basic: find the SYS address of the BASIC start. | You have the entry address. |
 | 4. Unpack | c64-unpacker: examine the program. Capture a packed program into `.c64-re-tools/local/`. Then c64-knowledge: put the capture, or the PRG of a program without a packer, into the knowledge with `image`. | `program` of c64-knowledge shows the segments and the entry. |
-| 5. Run | c64-emulator and the run of c64-testing: run each part that the scope names. Write a coverage map for each part into `.c64-re-tools/local/`. Then c64-knowledge: add the maps with `coverage`. | `program` of c64-knowledge lists a coverage map for each part that the scope names. |
+| 5. Run | First record: ask the user to play each part that the scope names, with `record.ts --play` of c64-testing. Tell the user which parts. Record a part yourself only when the sessions of the user do not have it. Put the recordings in `tests/recordings/`. Then c64-emulator and the run of c64-testing for the parts that a recording cannot have. Write a coverage map for each part into `.c64-re-tools/local/`. Then c64-knowledge: add the maps and the `coverage.bin` of each recording with `coverage`. | `program` of c64-knowledge lists a coverage map for each part that the scope names. |
 | 6. Analyze | c64-static-analysis. It reads the program and the coverage from the knowledge. | No coverage conflict is open. |
 | 7. Name | c64-provenance: if the workspace has a library, find its routines with `match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
 | 8. Generate | c64-source into `src/`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
-| 9. Build and test | c64-assembler with `--compare` into `build/`. c64-testing scenarios in `tests/`. | The criteria of stage 1 are true. |
+| 9. Build and test | c64-assembler with `--compare` into `build/`. c64-testing scenarios in `tests/`. Replay each recording on the rebuild with `replay.ts`: give the checkpoint routine, the state and the random state (`--pin`) with the names of stage 7. | The criteria of stage 1 are true. |
 | 10. Document | When the criteria ask for documentation: c64-docs into `README.md` and `docs/`. | `link.ts --check` of c64-docs gives no problem. |
 | 11. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
 
-In stage 5, if you cannot get to a part of the program, ask the user how to get to it. Do stages 7 and 8 again until the source is clear. Each run of c64-source writes the source again.
+In stage 5, make the recordings before you change the program. A recording needs no names, and its coverage gives the analysis of stage 6 more code. If you cannot get to a part of the program, ask the user how to get to it. Do stages 7 and 8 again until the source is clear. Each run of c64-source writes the source again.
 
 After stage 7, save each routine that other programs can have to the library with c64-provenance `routine`. Examples are a music driver, a decruncher and a loader. Ask the user before you make a library.
 
