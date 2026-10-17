@@ -47,7 +47,7 @@ async function scenario(client: Client) {
   assert.deepEqual(reached, { reached: true, stopReason: "target", state: "stopped", pc: hex(LEFT_SEEN), space: "c64" });
 
   const advanced = (await tool(client, "c64_execution", { action: "advance-frames", count: 20 })).result;
-  assert.deepEqual(advanced, { state: "stopped", pc: hex(LEFT_SEEN), advancedFrames: 20, stopReason: "frames" });
+  assert.deepEqual(advanced, { state: "stopped", pc: hex(LEFT_SEEN), space: "c64", advancedFrames: 20, stopReason: "frames" });
 
   const counters = (await tool(client, "c64_memory_read", { address: hex(FRAMES_SEEN), size: 2 })).result;
   // One frame to reach the target, then 20 more; left was held for the 20.

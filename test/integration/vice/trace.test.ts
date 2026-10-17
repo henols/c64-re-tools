@@ -25,7 +25,8 @@ test("a trace records the writes to a register with the instruction and the rast
     // To READY, then $c000 LDA $d011 / AND #$ef / STA $d011 / LDX #$40 / DEX / BNE $c00a / JMP $c000.
     await client.execution({ action: "advance-frames", count: 150, space: "c64" });
     await client.memoryWrite({ address: 0xc000, data: "ad11d029ef8d11d0a240cad0fd4c00c0", space: "c64", view: "ram" });
-    await client.registersSet("c64", { pc: 0xc000 });
+    // The frames can end inside the KERNAL IRQ handler, with I set: clear it, or no IRQ comes.
+    await client.registersSet("c64", { pc: 0xc000, flags: { i: false } });
 
     const writes = await client.trace({ points: [{ kind: "write", start: 0xd011, end: 0xd011 }], frames: 3, maxHits: 5 });
     assert.equal(writes.end, "hits", JSON.stringify(writes));
