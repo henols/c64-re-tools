@@ -25,7 +25,7 @@ function run(root: string, script: string, ...args: string[]): { status: number 
 const knowledge = (root: string, ...args: string[]) => run(root, "c64-knowledge/scripts/knowledge.ts", ...args);
 const generate = (root: string, ...args: string[]) => run(root, "c64-docs/scripts/docs.ts", "generate", ...args);
 const link = (root: string, ...args: string[]) => run(root, "c64-docs/scripts/docs.ts", "link", ...args);
-const revisionOf = (root: string) => (knowledge(root, "revisions", "--limit", "1").json.revisions as Array<{ id: string }>)[0]!.id;
+const revisionOf = (root: string) => (knowledge(root, "revisions", "--max-listed", "1").json.revisions as { listed: Array<{ id: string }> }).listed[0]!.id;
 
 /** Writes the source files and a source map in the form of c64-source: each label and item on its line, after the mark line. */
 function writeSource(root: string, revision: string, files: Record<string, Array<string | { label: string; address: number } | { item: string; start: number; end: number }>>): void {
@@ -163,6 +163,7 @@ test("docs.ts generate writes the reference: module pages with anchors and links
   // Two characters side by side, 2x2 per pixel and no gap: 2 x 8 x 2 wide, 8 x 2 high.
   assert.deepEqual([font.width, font.height], [32, 16]);
   assert.deepEqual([font.pixels[0], font.pixels[33], font.pixels[2], font.pixels[15 * 32 + 31], font.pixels[15 * 32 + 29]], [1, 1, 0, 1, 0]);
+  assert.match(read("index.md").split("\n")[0]!, /Do not edit: change the knowledge, generate the source again, then run docs\.ts generate\. -->$/);
   assert.match(read("index.md"), /\| \[main_code\.asm\]\(modules\/main_code\.md\) \| `\$1000-\$1028` \| Main code \| 4 \| 4 \|/);
 });
 

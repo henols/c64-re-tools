@@ -31,7 +31,7 @@ node <skill>/scripts/memory-map.ts export --out src/hw.asm
 |---|---|
 | `at <address> ...` | For each address: `kind` (`platform` or `application`), the area, the name and the meaning. |
 | `decode <register> <value>` | The meaning of the value. Use `--bank` with the value of `$DD00` to get the addresses for `$D018`. The decoders are for `$01`, `$D010`, `$D011`, `$D015` to `$D01F`, `$D016`, `$D018`, `$DC0D`, `$DD00` and `$DD0D`. |
-| `list <vic\|sid\|cia1\|cia2\|kernal\|system>` | All entries of that group. |
+| `list <vic\|sid\|cia1\|cia2\|kernal\|system>` | The entries of that group as a list: `count` and `listed`. `--max-listed` limits `listed`. The default is 50. |
 | `export --out <file>` | Writes all platform names to a project file as an ACME include: one line for each name, with its meaning as a comment. A zero-page name is `NAME = $xx`. Other names are `NAME = $xxxx`. |
 
 Write a value for `decode` and `--bank` as `$` and hex digits, as a decimal number, or as `%` and binary digits. Put a `$` value in single quotes in a shell.

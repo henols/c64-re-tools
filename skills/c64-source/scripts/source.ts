@@ -40,6 +40,9 @@ const MAX_DIAGNOSTICS = 20;
 const ROUNDS = 6;
 const PROBE_BASE = 0x1000;
 const PROBE_SLOT = 4;
+/** Why a source has no instructions when the knowledge has no code. */
+const DATA_ONLY = "The knowledge has no entry, routine, code region or executed address in this space. Thus the source has only data. For instructions, give --entry, or classify the code with knowledge.ts classify, then generate again.";
+
 /** The copies of a full 64 KiB take about 140 frames. */
 const LOADER_FRAMES = 1500;
 
@@ -99,9 +102,10 @@ function withAnalyzerNames(symbols: SymbolRow[], second: SymbolRow[]): SymbolRow
  * Ghidra's instruction starts and lengths inside the image, seeded from the
  * entry, from knowledge of any origin, and from the coverage: a run's flow
  * starts, also after a JSR, so code that an analyzer does not reach by itself
- * is in the source.
+ * is in the source. A program without a seed has no known code: it is data
+ * only, and Ghidra does not run.
  */
-async function decode(image: ProgramImage, knowledge: ReturnType<typeof readKnowledge>, entries: number[], coverage: Uint8Array | undefined): Promise<Map<number, number>> {
+async function decode(image: ProgramImage, knowledge: ReturnType<typeof readKnowledge>, entries: number[], coverage: Uint8Array | undefined): Promise<{ instructions: Map<number, number>; dataOnly: boolean }> {
   const inImage = (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end);
   const seeds = new Set<number>([...(image.entry === undefined ? [] : [image.entry]), ...entries]);
   for (const address of knowledge.routines) seeds.add(address);
@@ -114,8 +118,7 @@ async function decode(image: ProgramImage, knowledge: ReturnType<typeof readKnow
   const entryPoints = [...seeds].filter(inImage).sort((a, b) => a - b);
   if (entryPoints.length === 0) {
     // An entry in no segment is a capture fault: the image is data only, and the result says entryOutside.
-    if (image.entry !== undefined && !inImage(image.entry)) return new Map();
-    throw new UsageError("Ghidra needs an entry point: give --entry, or record a routine or a code region in knowledge with the c64-knowledge skill");
+    return { instructions: new Map(), dataOnly: image.entry === undefined || inImage(image.entry) };
   }
   const dataRanges = knowledge.regions
     .filter((region) => !CODE_REGION_TYPES.includes(region.type) && region.type !== "dual-use")
@@ -138,7 +141,7 @@ async function decode(image: ProgramImage, knowledge: ReturnType<typeof readKnow
     const inside = Array.from({ length: bytes.length }, (_, offset) => instruction.address + offset).every((address, offset) => inImage(address) && image.byteAt(address) === bytes[offset]);
     if (inside) instructions.set(instruction.address, bytes.length);
   }
-  return instructions;
+  return { instructions, dataOnly: false };
 }
 
 /** Assembles files given as text with ACME; the program or the diagnostics. */
@@ -547,7 +550,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   // Read the entry state before the long steps, so a bad state stops the run at once.
   const state = loaderWanted ? loaderState(image.state, "the entry state of the knowledge") : undefined;
   const romUse = romsInUse(image, coverage);
-  const instructions = await decode(image, knowledge, entries, coverage);
+  const { instructions, dataOnly } = await decode(image, knowledge, entries, coverage);
   const laid = layout({
     segments: image.segments,
     byteAt: image.byteAt,
@@ -634,6 +637,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     // The ROM names that the source leaves out, and the evidence.
     ...(space !== DEFAULT_SPACE || (romUse.basic && romUse.kernal) ? {} : { romNamesLeftOut: { roms: [...(romUse.basic ? [] : ["BASIC"]), ...(romUse.kernal ? [] : ["KERNAL"])], ...(romUse.basic || romUse.kernal ? {} : { systemArea: true }), from: romUse.from } }),
     ...(missingEntry === undefined ? {} : { entryOutside: { entry: formatC64Address(image.entry!), reason: missingEntry } }),
+    ...(dataOnly ? { dataOnly: DATA_ONLY } : {}),
     labels: { named: laid.namedLabels, generated: laid.generatedLabels },
     // An --entry in a data region decodes nothing: the result says so, and a code region in the knowledge changes it.
     ...(inData.length === 0

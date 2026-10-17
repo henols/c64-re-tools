@@ -113,7 +113,8 @@ function createSchema(db: DatabaseSync): void {
         operation    TEXT NOT NULL,
         input_hash   TEXT,
         tool_version TEXT,
-        description  TEXT
+        description  TEXT,
+        restored_revision TEXT
       );
       CREATE TABLE symbols (
         id                  TEXT PRIMARY KEY,
@@ -316,7 +317,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 6;
+export const INDEX_VERSION = 7;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

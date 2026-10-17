@@ -103,3 +103,9 @@ test("revisions list newest first and one revision shows what it changed", () =>
   assert.throws(() => revision(db, "2"), /start of more than one revision/);
   assert.throws(() => revision(db, "99;"), /is not a revision id/);
 });
+
+test("revision 0 is the knowledge before every revision: it added and closed nothing", () => {
+  const initial = revision(db, "0");
+  assert.deepEqual([initial.revision.id, initial.revision.operation, initial.added, initial.closed], ["0", "none", [], []]);
+  assert.equal(revision(undefined, "0").revision.id, "0", "also without a knowledge folder");
+});

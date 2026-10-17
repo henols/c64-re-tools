@@ -10,6 +10,7 @@ import { Refusal } from "../errors.ts";
 import { type AddressRange, COVERAGE, formatC64Address } from "../c64.ts";
 
 import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
+import { coverageRuns } from "./read.ts";
 import { checkSpace, write, type Evidence, type WriteContext } from "./write.ts";
 
 /** The 64 KiB of one space: offset n is address n. */
@@ -145,22 +146,6 @@ function currentCoverage(db: DatabaseSync, space: Space): Map<CoverageKind, Uint
     maps.get(row.kind)!.fill(1, row.start_address, row.end_address + 1);
   }
   return maps;
-}
-
-/** One import of a coverage map: its project path, its SHA-256, the space it went into and the revision. */
-export interface CoverageRun {
-  name: string;
-  sha256: string;
-  space: Space;
-  revision: string;
-}
-
-/** The imports of coverage maps, by name and then oldest first: the last import of a name is the latest. */
-export function coverageRuns(db: DatabaseSync | undefined): CoverageRun[] {
-  if (db === undefined) return [];
-  return db
-    .prepare(`SELECT DISTINCT e.ref AS name, e.sha256 AS sha256, coalesce(e.space, '${DEFAULT_SPACE}') AS space, e.revision AS revision FROM evidence e JOIN revisions r ON r.id = e.revision WHERE r.operation = 'coverage' AND e.kind = 'coverage' ORDER BY e.ref, e.revision`)
-    .all() as unknown as CoverageRun[];
 }
 
 /**

@@ -6,7 +6,7 @@ import { formatC64Address, formatC64Byte } from "#src/c64.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { decode, IO, lookup, platformNames, ROM, SYSTEM, type Entry } from "#src/platform.ts";
-import { OPTIONS, runScript, UsageError } from "#src/script.ts";
+import { listed, OPTIONS, runScript, UsageError } from "#src/script.ts";
 
 const show = (entry: Entry) => ({ start: formatC64Address(entry.start), ...(entry.end !== entry.start ? { end: formatC64Address(entry.end) } : {}), name: entry.name, meaning: entry.meaning });
 
@@ -61,10 +61,11 @@ await runScript({
       name: "list",
       summary: "The registers of a chip, the KERNAL jump table, or the system areas.",
       subjects: [{ name: "<list>", help: `one of ${Object.keys(LISTS).join(", ")}` }],
+      options: { "max-listed": OPTIONS["max-listed"] },
       run: (call) => {
         const list = LISTS[call.subject(0)];
         if (list === undefined) throw new UsageError(`<list> must be one of ${Object.keys(LISTS).join(", ")}, not ${call.subject(0)}`);
-        return { entries: list().map(show) };
+        return { entries: listed(list(), call.count("max-listed")!, show, "a larger --max-listed, or memory-map.ts export --out <file> for every platform name") };
       },
     },
     {

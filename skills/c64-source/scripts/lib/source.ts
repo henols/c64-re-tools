@@ -384,7 +384,7 @@ export function layout(input: SourceInput): Layout {
     }
     const missing = [...new Set(use.args.flatMap((arg) => identifiers(arg)))].filter((name) => !byName.has(name));
     if (missing.length > 0) {
-      fallBack(`No symbol and no platform name is ${missing.join(", ")}.`);
+      fallBack(`${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not a symbol of the knowledge or a platform name. Name the address with knowledge.ts rename, or give other args with knowledge.ts use.`);
       continue;
     }
     candidates.push({ use, items: run as InstructionItem[] });
@@ -403,7 +403,7 @@ export function layout(input: SourceInput): Layout {
     }
     const missing = identifiers(expression).filter((name) => !byName.has(name));
     if (missing.length > 0) {
-      operandsAsNumbers.push({ address: operand.address, expression, reason: `No symbol and no platform name is ${missing.join(", ")}.` });
+      operandsAsNumbers.push({ address: operand.address, expression, reason: `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not a symbol of the knowledge or a platform name. Name the address with knowledge.ts rename, or write the operand again with knowledge.ts operand.` });
       continue;
     }
     // An immediate operand builds the address of a name; any other operand uses the address as the instruction does.

@@ -37,7 +37,7 @@ test("priorities and number forms are ACME's, as measured with ACME 0.97", () =>
 
 test("a bad expression is refused with the reason", () => {
   for (const text of ["", "a +", "(a", "a)", "a ? 1", "a b", "#<a", "$"]) assert.throws(() => checkExpression(text), Refusal, text);
-  assert.throws(() => at("unknown_name + 1"), /"unknown_name" is no symbol/);
+  assert.throws(() => at("unknown_name + 1"), /^Refusal: unknown_name is not a symbol of the knowledge or a platform name. Give a number/);
   assert.throws(() => at("a / 0"), /divides by zero/);
 });
 

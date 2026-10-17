@@ -383,7 +383,7 @@ test("operand expressions are written in place of numbers, with the names of the
     rendered.operandsAsNumbers.map((row) => [row.address, row.expression]),
     [[0x1001, "<table"], [0x100f, "1"], [0x1010, "nowhere + 5"]],
   );
-  assert.match(rendered.operandsAsNumbers[2]!.reason, /No symbol and no platform name is nowhere/);
+  assert.match(rendered.operandsAsNumbers[2]!.reason, /^nowhere is not a symbol of the knowledge or a platform name\. Name the address with knowledge\.ts rename, or write the operand again with knowledge\.ts operand\.$/);
   assert.deepEqual(rendered.expressions.map((row) => [row.address, row.line]), [[0x1000, 4], [0x1002, 5], [0x1004, 6], [0x1007, 7], [0x1009, 8], [0x100c, 9]]);
   const demoted = render(layout(operandInput({ operands: OPERANDS })), new Set(), [], new Map([[0x1000, "a reason"]]));
   assert.ok(textOf(demoted, "segment_1000.asm").includes("        lda #$20                        ; = <table\n"));
@@ -490,6 +490,8 @@ test("with real Ghidra and ACME, an operand expression that ACME assembles to ot
   write("image", "test.prg");
   write("rename", "$1000", "start", "--kind", "routine");
   write("rename", "$100b", "handler", "--kind", "routine");
+  // An operand expression is for an instruction of a code region.
+  write("classify", "$1000-$100b", "code");
   write("operand", "$1000", "--lo", "handler");
   write("operand", "$1002", "--value", "CINV");
   write("image", "old.prg");
@@ -589,6 +591,26 @@ test("with real Ghidra and ACME, an image whose entry is in no segment gives the
   assert.equal(data.instructions, 0);
   assert.match(data.entryOutside.reason, reason);
   assert.equal(data.loader.verified, false);
+});
+
+test("with real ACME, a space with no known code gives a source of data only, without an entry and without Ghidra", { skip: acmeSkip, timeout: 120_000 }, () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
+  projects.push(project);
+  // A key page in a cartridge bank: 256 bytes of data, no entry, no routine and no code region.
+  writeFileSync(join(project, "keys.prg"), Buffer.from([0x00, 0xcf, ...Array.from({ length: 256 }, (_, index) => (index * 7) & 0xff)]));
+  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
+  for (const args of [["image", "keys.prg", "--space", "bank3"], ["classify", "$cf00-$cf7f", "bytes", "--space", "bank3"]]) {
+    assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, ...args], { cwd: project }).status, 0, args.join(" "));
+  }
+  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--space", "bank3", "--out", "src"], {
+    cwd: project,
+    env: { ...process.env, C64RT_HOST: "127.0.0.1:1", C64RT_GHIDRA: join(project, "no-ghidra") },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const json = JSON.parse(run.stdout) as { result: string; instructions: number; dataBytes: number; dataOnly: string; check: { identical: boolean } };
+  assert.deepEqual([json.result, json.instructions, json.dataBytes, json.check.identical], ["PASS", 0, 256, true]);
+  assert.match(json.dataOnly, /^The knowledge has no entry, routine, code region or executed address in this space\. Thus the source has only data\./);
 });
 
 test("with coverage, each run of instructions that no run executed is marked and listed", () => {

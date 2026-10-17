@@ -150,6 +150,7 @@ Do not store:
 - `operandsAsNumbers`: the operand expressions that the source has as a number with a side comment, each with its `address`, `expression` and `reason`. An expression becomes a number when no instruction with an operand value is at the address, or when a name has no address. An expression that ACME refuses or does not assemble to the program also becomes a number. Then the script assembles the source again, at most six times.
 - `unusedModules`: modules in the knowledge whose start is in no segment of the program. Often this tells that the program does not hold code that the knowledge describes.
 - `entryOutside`: the entry is in no segment of the program in the knowledge, with a `reason`. The capture does not hold the program.
+- `dataOnly`: the knowledge has no entry, no routine, no code region and no executed address in the space. Thus the source has only data, and Ghidra does not run. A table or a key page in a cartridge bank is an example.
 - `notExecuted`: when the knowledge has coverage, the count of instructions that no run executed, the count of their ranges, and the first ranges. `rest` names the file `not_executed.json` in `--out` when the list is not complete. This file has all of the ranges. Each range has its source `file` and the `routine` before it. `files` counts the ranges in each file.
 - `macroUses`: the count of macro uses that the source has.
 - `macrosAsInstructions`: the macro uses that the source has as instructions, each with its `start`, `end`, `macro` and `reason`.
@@ -171,6 +172,7 @@ Do not store:
 - `patchesNotWritten`: read each `reason`. Move the start or the end of the patch to an instruction, or give the switch another name.
 - `macrosAsInstructions`: read each `reason`. Correct the macro or the args, or remove the use with `unuse`. The source stays identical, so this is not a failure.
 - `entryOutside`: the run fails, but the script still writes and checks the source. With `--loader`, `loader.verified` is `false` with the same `reason`. Capture the program again with c64-unpacker `loads` or `capture`. Make sure that a segment holds the entry. Then put it into the knowledge again with `image`.
+- `dataOnly`: this is not a failure. If the space has code, give `--entry` or classify the code with the c64-knowledge skill. Then generate again.
 - `entriesInData`: an analyzer region of data hides the code at the entry. If the entry is code, record a code region at the entry with the c64-knowledge skill, for example `classify '$0500-$05ff' code`. A region of the user or the LLM replaces the analyzer region. Then generate again.
 - `loader.verified: false` with a `reason`: the script did not make the loader. The script still writes and checks the source. When no copy order or no free pages exist, or the loader needs too many copies, the reason gives the ranges. Capture the program again with fewer segments, or write the loader by hand.
 - `loader.verified: false` with `differences`: the loader ran, and `differences` gives the bytes and registers that are not equal.

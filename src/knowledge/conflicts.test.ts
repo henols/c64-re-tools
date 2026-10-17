@@ -119,7 +119,12 @@ test("overlapping regions are a conflict, and merge keeps the newer region and t
 test("comments, references, operands, modules and region suppressions have their conflicts too", () => {
   const image: OperandImage = { byteAt: (address) => new Map([[0x8079, 0xa9], [0x807a, 0xc0]]).get(address), platform: new Map() };
   const root = computers(
-    (base) => withWrite((db) => renameSymbol(db, llm, { address: 0x80c0, name: "irq_handler" }), base),
+    (base) =>
+      withWrite((db) => {
+        // An operand expression is for an instruction of a code region.
+        classifyRegion(db, llm, { start: 0x8079, end: 0x807a, type: "code" });
+        return renameSymbol(db, llm, { address: 0x80c0, name: "irq_handler" });
+      }, base),
     (a) =>
       withWrite((db) => {
         setComment(db, llm, { address: 0x2100, placement: "line", text: "Reads the joystick." });

@@ -17,11 +17,12 @@ import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { addCoverage, coverageRuns, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
+import { addCoverage, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
 import {
   analyzerNamesAt,
   at,
   commentsAt,
+  coverageRuns,
   currentRevision,
   listAnalyzerNames,
   listComments,
@@ -83,7 +84,7 @@ import {
 } from "#src/knowledge/write.ts";
 import { platformNames } from "#src/platform.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
-import { OPTIONS, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
+import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
 
 function oneOf<T extends string>(values: readonly T[], value: string | undefined, what: string): T {
@@ -226,13 +227,17 @@ function listingSource(db: DatabaseSync | undefined, space: string): ListingSour
   };
 }
 
-/** --origin for reads: one origin, semantic (user and llm), analyzer (dxa and ghidra), or a comma list. */
+/** Every value of --origin, for the message of a wrong one. */
+const ORIGIN_VALUES = `one of ${ORIGINS.join(", ")}, semantic or analyzer, or a comma list of them. semantic is ${SEMANTIC_ORIGINS.join(" and ")}. analyzer is ${ANALYZERS.slice(0, -1).join(", ")} and ${ANALYZERS.at(-1)}`;
+
+/** --origin for reads: one origin, semantic (user and llm), analyzer (dxa, ghidra and heuristic), or a comma list. */
 function originFilter(value: string): Origin[] {
   const origins = new Set<Origin>();
   for (const part of value.split(",")) {
     if (part === "semantic") for (const origin of SEMANTIC_ORIGINS) origins.add(origin);
     else if (part === "analyzer") for (const origin of ANALYZERS) origins.add(origin);
-    else origins.add(oneOf(ORIGINS, part, "--origin"));
+    else if ((ORIGINS as readonly string[]).includes(part)) origins.add(part as Origin);
+    else throw new UsageError(`--origin cannot be ${JSON.stringify(part)}. Give ${ORIGIN_VALUES}`);
   }
   return [...origins];
 }
@@ -371,6 +376,20 @@ const WRITE: Record<string, OptionSpec> = {
   "expect-revision": OPTIONS["expect-revision"],
 };
 
+/** A list command: --max-listed limits each list of its result. */
+const LIST = { "max-listed": OPTIONS["max-listed"] };
+/** Where to get the rest of a list that a --range limits. */
+const RANGE_REST = "a larger --max-listed, a smaller --range, or knowledge.ts export --out <file> for all current knowledge";
+const MORE = "a larger --max-listed";
+
+/** A list in a result: its count and its first --max-listed items, with rest when it is cut. */
+function list<T, U>(call: Call, items: readonly T[], show: (item: T) => U, rest: string) {
+  return listed(items, call.count("max-listed")!, show, rest);
+}
+
+/** All rows: the lists count every row, and --max-listed limits only what the result shows. */
+const ALL = Number.MAX_SAFE_INTEGER;
+
 /** The rows from --range, or every address. */
 const rangeOf = (call: Call) => call.range("range") ?? { start: 0x0000, end: 0xffff };
 const originsOf = (call: Call) => {
@@ -459,50 +478,50 @@ const READ_COMMANDS: CommandSpec[] = [
       name: "search",
       summary: "Symbol names, analyzer names and comment texts that hold the text.",
       subjects: [{ name: "<text>", help: "the text to find" }],
-      options: { origin: OPTIONS.origin, limit: { kind: "count", value: "<n>", min: 1, max: 10_000, default: 50, help: "at most n rows of each kind (default 50)" } },
+      options: { origin: OPTIONS.origin, ...LIST },
     },
     (db, call) => {
-      const found = search(db, call.subject(0), call.count("limit")!, originsOf(call), call.space);
-      return { symbols: found.symbols.map(symbol), analyzerNames: found.analyzerNames.map(symbol), comments: found.comments.map(comment) };
+      const found = search(db, call.subject(0), ALL, originsOf(call), call.space);
+      const rest = "a larger --max-listed, or a longer <text>";
+      return { symbols: list(call, found.symbols, symbol, rest), analyzerNames: list(call, found.analyzerNames, symbol, rest), comments: list(call, found.comments, comment, rest) };
     },
   ),
   readCommand(
-    { name: "symbols", summary: "The symbols, or with --analyzer the second names that DXA, Ghidra and the idioms gave.", options: { ...FILTER, kind: SYMBOL_KIND, analyzer: { kind: "flag", help: "the analyzer names in place of the symbols" } } },
+    { name: "symbols", summary: "The symbols, or with --analyzer the second names that DXA, Ghidra and the idioms gave.", options: { ...FILTER, kind: SYMBOL_KIND, analyzer: { kind: "flag", help: "the analyzer names in place of the symbols" }, ...LIST } },
     (db, call) => {
       const kind = call.string("kind") as (typeof SYMBOL_KINDS)[number] | undefined;
-      if (call.flag("analyzer")) return { analyzerNames: listAnalyzerNames(db, rangeOf(call), kind, originsOf(call), call.space).map(symbol) };
-      return { symbols: listSymbols(db, rangeOf(call), kind, originsOf(call), call.space).map(symbol) };
+      if (call.flag("analyzer")) return { analyzerNames: list(call, listAnalyzerNames(db, rangeOf(call), kind, originsOf(call), call.space), symbol, RANGE_REST) };
+      return { symbols: list(call, listSymbols(db, rangeOf(call), kind, originsOf(call), call.space), symbol, RANGE_REST) };
     },
   ),
-  readCommand({ name: "regions", summary: "The regions: code, data, tables and the other types.", options: { ...FILTER, type: { kind: "choice", value: "<type>", choices: REGION_TYPES, help: `one of ${REGION_TYPES.join(", ")}` } } }, (db, call) => ({
-    regions: listRegions(db, rangeOf(call), call.string("type") as (typeof REGION_TYPES)[number] | undefined, originsOf(call), call.space).map(region),
+  readCommand({ name: "regions", summary: "The regions: code, data, tables and the other types.", options: { ...FILTER, type: { kind: "choice", value: "<type>", choices: REGION_TYPES, help: `one of ${REGION_TYPES.join(", ")}` }, ...LIST } }, (db, call) => ({
+    regions: list(call, listRegions(db, rangeOf(call), call.string("type") as (typeof REGION_TYPES)[number] | undefined, originsOf(call), call.space), region, RANGE_REST),
   })),
-  readCommand({ name: "comments", summary: "The comments.", options: FILTER }, (db, call) => ({ comments: listComments(db, rangeOf(call), originsOf(call), call.space).map(comment) })),
-  readCommand({ name: "references", summary: "The references: calls, jumps, reads, writes and pointers.", options: { ...FILTER, kind: REFERENCE_KIND } }, (db, call) => ({
-    references: listReferences(db, rangeOf(call), call.string("kind") as (typeof REFERENCE_KINDS)[number] | undefined, originsOf(call), call.space).map(reference),
+  readCommand({ name: "comments", summary: "The comments.", options: { ...FILTER, ...LIST } }, (db, call) => ({ comments: list(call, listComments(db, rangeOf(call), originsOf(call), call.space), comment, RANGE_REST) })),
+  readCommand({ name: "references", summary: "The references: calls, jumps, reads, writes and pointers.", options: { ...FILTER, kind: REFERENCE_KIND, ...LIST } }, (db, call) => ({
+    references: list(call, listReferences(db, rangeOf(call), call.string("kind") as (typeof REFERENCE_KINDS)[number] | undefined, originsOf(call), call.space), reference, RANGE_REST),
   })),
-  readCommand({ name: "suppressions", summary: "The places that removals keep free of analyzer facts, with the reason of each.", options: { range: OPTIONS.range } }, (db, call) => {
+  readCommand({ name: "suppressions", summary: "The places that removals keep free of analyzer facts, with the reason of each.", options: { range: OPTIONS.range, ...LIST } }, (db, call) => {
     const rows = listSuppressions(db, rangeOf(call), call.space);
-    const reasons = reasonsOf(db, rows);
-    return { suppressions: rows.map((row) => ({ ...suppression(row), ...(reasons.has(row.revision) ? { reason: reasons.get(row.revision) } : {}) })) };
+    const reasons = reasonsOf(db, rows.slice(0, call.count("max-listed")!));
+    return { suppressions: list(call, rows, (row) => ({ ...suppression(row), ...(reasons.has(row.revision) ? { reason: reasons.get(row.revision) } : {}) }), RANGE_REST) };
   }),
-  readCommand({ name: "modules", summary: "Where the files of the generated source start.", options: FILTER }, (db, call) => ({ modules: listModules(db, rangeOf(call), originsOf(call), call.space).map(module) })),
-  readCommand({ name: "operands", summary: "The operand expressions of instructions.", options: FILTER }, (db, call) => ({ operands: listOperands(db, rangeOf(call), originsOf(call), call.space).map(operand) })),
-  readCommand({ name: "patches", summary: "The code that a switch puts in.", options: { ...FILTER, switch: { kind: "text", value: "<switch>", help: "only the patches of this switch" } } }, (db, call) => ({
-    patches: listPatches(db, rangeOf(call), call.string("switch"), originsOf(call), call.space).map(patch),
+  readCommand({ name: "modules", summary: "Where the files of the generated source start.", options: { ...FILTER, ...LIST } }, (db, call) => ({ modules: list(call, listModules(db, rangeOf(call), originsOf(call), call.space), module, RANGE_REST) })),
+  readCommand({ name: "operands", summary: "The operand expressions of instructions.", options: { ...FILTER, ...LIST } }, (db, call) => ({ operands: list(call, listOperands(db, rangeOf(call), originsOf(call), call.space), operand, RANGE_REST) })),
+  readCommand({ name: "patches", summary: "The code that a switch puts in.", options: { ...FILTER, switch: { kind: "text", value: "<switch>", help: "only the patches of this switch" }, ...LIST } }, (db, call) => ({
+    patches: list(call, listPatches(db, rangeOf(call), call.string("switch"), originsOf(call), call.space), patch, RANGE_REST),
   })),
-  readCommand({ name: "switches", summary: "Each switch with the ranges of its patches." }, (db, call) => {
+  readCommand({ name: "switches", summary: "Each switch with the ranges of its patches.", options: LIST }, (db, call) => {
     const switches = new Map<string, PatchRow[]>();
     for (const row of listPatches(db, undefined, undefined, undefined, call.space)) switches.set(row.switch, [...(switches.get(row.switch) ?? []), row]);
-    return {
-      switches: [...switches].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, rows]) => ({ name, define: `--define ${name}=1`, patches: rows.map((row) => ({ start: formatC64Address(row.start), end: formatC64Address(row.end) })) })),
-    };
+    const show = ([name, rows]: [string, PatchRow[]]) => ({ name, define: `--define ${name}=1`, patches: rows.map((row) => ({ start: formatC64Address(row.start), end: formatC64Address(row.end) })) });
+    return { switches: list(call, [...switches].sort(([a], [b]) => (a < b ? -1 : 1)), show, MORE) };
   }),
-  readCommand({ name: "macros", summary: "The macros of the generated source.", options: { origin: OPTIONS.origin } }, (db, call) => ({ macros: listMacros(db, originsOf(call), call.space).map(macro) })),
-  readCommand({ name: "uses", summary: "The instructions written as a macro.", options: { ...FILTER, macro: { kind: "text", value: "<name>", help: "only the uses of this macro" } } }, (db, call) => ({
-    uses: listMacroUses(db, rangeOf(call), call.string("macro"), originsOf(call), call.space).map(macroUse),
+  readCommand({ name: "macros", summary: "The macros of the generated source.", options: { origin: OPTIONS.origin, ...LIST } }, (db, call) => ({ macros: list(call, listMacros(db, originsOf(call), call.space), macro, MORE) })),
+  readCommand({ name: "uses", summary: "The instructions written as a macro.", options: { ...FILTER, macro: { kind: "text", value: "<name>", help: "only the uses of this macro" }, ...LIST } }, (db, call) => ({
+    uses: list(call, listMacroUses(db, rangeOf(call), call.string("macro"), originsOf(call), call.space), macroUse, RANGE_REST),
   })),
-  readCommand({ name: "spaces", summary: "The address spaces that hold knowledge." }, (db) => ({ spaces: listSpaces(db) })),
+  readCommand({ name: "spaces", summary: "The address spaces that hold knowledge.", options: LIST }, (db, call) => ({ spaces: list(call, listSpaces(db), (space) => space, MORE) })),
   readCommand({ name: "program", summary: "The program in the knowledge: its segments and entry, and the coverage maps that coverage imported, with the ranges." }, (db, call) => {
     const image = programImage(db, call.space);
     const ranges = db === undefined ? [] : (db.prepare("SELECT kind, count(*) AS count FROM current_coverage WHERE space = ? GROUP BY kind ORDER BY kind").all(call.space) as Array<{ kind: string; count: number }>);
@@ -526,7 +545,7 @@ const READ_COMMANDS: CommandSpec[] = [
       name: "history",
       summary: "The rows at an address, of a name or of a macro, through all revisions, each with the reason and the evidence of its revision.",
       subjects: [{ ...ADDRESS, optional: true }],
-      options: { name: { kind: "text", value: "<name>", help: "the history of a name in place of an address" }, macro: { kind: "text", value: "<name>", help: "the history of a macro in place of an address" } },
+      options: { name: { kind: "text", value: "<name>", help: "the history of a name in place of an address" }, macro: { kind: "text", value: "<name>", help: "the history of a macro in place of an address" }, ...LIST },
       notes: "Give exactly one of <address>, --name and --macro.",
     },
     (db, call) => {
@@ -534,23 +553,20 @@ const READ_COMMANDS: CommandSpec[] = [
       const macroName = call.string("macro");
       if ([call.subjects.length > 0, name !== undefined, macroName !== undefined].filter(Boolean).length !== 1) throw new UsageError("history needs exactly one of <address>, --name and --macro");
       const entries = macroName !== undefined ? historyOfMacro(db, macroName, call.space) : name !== undefined ? historyNamed(db, name, call.space) : historyAt(db, call.parseAddress(call.subject(0), "<address>"), call.space);
-      return { history: entries.map((entry) => ({ ...historyEntry(entry), ...revisionNote(db, entry.from) })) };
+      return { history: list(call, entries, (entry) => ({ ...historyEntry(entry), ...revisionNote(db, entry.from) }), MORE) };
     },
   ),
   readCommand(
-    { name: "revisions", summary: "The revisions, newest first.", options: { limit: { kind: "count", value: "<n>", min: 1, max: 100_000, help: "at most n revisions" }, before: { kind: "text", value: "<revision>", help: "only the revisions before this one" } } },
+    { name: "revisions", summary: "The revisions, newest first.", options: { before: { kind: "text", value: "<revision>", help: "only the revisions before this one" }, ...LIST } },
     (db, call) => {
-      const options: { limit?: number; before?: string } = {};
-      const limit = call.count("limit");
-      if (limit !== undefined) options.limit = limit;
       const before = call.string("before");
-      if (before !== undefined) options.before = before;
-      return { revisions: revisions(db, options) };
+      const rows = revisions(db, before === undefined ? { limit: ALL } : { limit: ALL, before });
+      return { revisions: list(call, rows, (row) => row, "a larger --max-listed, or --before <revision> with the oldest revision in listed") };
     },
   ),
-  readCommand({ name: "revision", summary: "The rows that one revision added and closed.", subjects: [REVISION] }, (db, call) => {
+  readCommand({ name: "revision", summary: "The rows that one revision added and closed.", subjects: [REVISION], options: LIST }, (db, call) => {
     const changes = revision(db, call.subject(0));
-    return { revision: changes.revision, added: changes.added.map(historyEntry), closed: changes.closed.map(historyEntry) };
+    return { revision: changes.revision, added: list(call, changes.added, historyEntry, MORE), closed: list(call, changes.closed, historyEntry, MORE) };
   }),
   readCommand({ name: "export", summary: "All current knowledge to a project file as JSON.", options: { ...FILTER, out: { ...OPTIONS.out, value: "<file>", help: "the JSON file, relative to the project folder", required: true } } }, (db, call) => {
     const range = rangeOf(call);
@@ -579,14 +595,14 @@ const READ_COMMANDS: CommandSpec[] = [
       name: "listing",
       summary: "The program as ACME lines with names, operand expressions, comments, the access of each line in the coverage (x executed, r read, w written) and the references in and out.",
       subjects: [RANGE],
-      options: { out: { ...OPTIONS.out, value: "<file>", help: "write the listing as text to this file in place of the lines in the result" } },
+      options: { out: { ...OPTIONS.out, value: "<file>", help: "write the listing as text to this file in place of the lines in the result" }, ...LIST },
     },
     (db, call) => {
       const { start, end } = call.parseRange(call.subject(0), "<range>");
       const lines = listing(listingSource(db, call.space), start, end);
       const out = call.string("out");
       if (out !== undefined) return { lines: lines.length, ...writeReported(out, listingText(lines), { what: "--out" }) };
-      return { lines: lines.map((row) => ({ ...row, address: formatC64Address(row.address) })) };
+      return { lines: list(call, lines, (row) => ({ ...row, address: formatC64Address(row.address) }), "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
     },
   ),
 ];
@@ -821,7 +837,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
     },
   ),
-  writeCommand({ name: "revert", summary: "Undoes one revision with a new revision.", subjects: [REVISION] }, (call) => {
+  writeCommand({ name: "revert", summary: "Makes the knowledge the same as at one revision. The revert is a new revision: the history stays complete.", subjects: [REVISION] }, (call) => {
     const context = contextOf(call);
     const request = { revision: call.subject(0) };
     return (db) => ({ revision: revert(db, context, request).revision });

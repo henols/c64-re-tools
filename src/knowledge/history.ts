@@ -38,7 +38,7 @@ import {
   type SymbolRow,
 } from "./read.ts";
 import { DEFAULT_SPACE, type EvidenceKind, type Origin, type Space } from "./schema.ts";
-import { compareText } from "./text.ts";
+import { compareText, NO_REVISION } from "./text.ts";
 import type { Evidence } from "./write.ts";
 
 export interface Revision {
@@ -49,6 +49,8 @@ export interface Revision {
   description?: string;
   inputHash?: string;
   toolVersion?: string;
+  /** A revert: the revision whose knowledge it restored. */
+  restores?: string;
   /** What the change rests on. */
   evidence?: Evidence[];
 }
@@ -79,6 +81,7 @@ function toRevision(row: Raw): Revision {
   if (row.description !== null) revision.description = row.description as string;
   if (row.input_hash !== null) revision.inputHash = row.input_hash as string;
   if (row.tool_version !== null) revision.toolVersion = row.tool_version as string;
+  if (row.restored_revision !== null) revision.restores = row.restored_revision as string;
   return revision;
 }
 
@@ -170,8 +173,21 @@ export function revisions(db: DatabaseSync | undefined, options: { limit?: numbe
   return (rows as Raw[]).map((row) => withEvidence(db, toRevision(row)));
 }
 
+/** Revision 0: the knowledge before every revision. It is empty, and no write made it, so it has no time, origin or evidence. */
+export interface InitialRevision {
+  id: typeof NO_REVISION;
+  operation: "none";
+  description: string;
+  createdAt?: undefined;
+  origin?: undefined;
+  inputHash?: undefined;
+  toolVersion?: undefined;
+  restores?: undefined;
+  evidence?: undefined;
+}
+
 export interface RevisionChanges {
-  revision: Revision;
+  revision: Revision | InitialRevision;
   /** Rows this revision made current. */
   added: HistoryEntry[];
   /** Rows this revision closed. */
@@ -181,6 +197,7 @@ export interface RevisionChanges {
 /** One revision and exactly what it changed. */
 export function revision(db: DatabaseSync | undefined, text: string): RevisionChanges {
   const id = resolveRevision(db, text);
+  if (id === NO_REVISION) return { revision: { id: NO_REVISION, operation: "none", description: "The knowledge before every revision. It is empty." }, added: [], closed: [] };
   const raw = db?.prepare("SELECT * FROM revisions WHERE id = ?").get(id) as Raw | undefined;
   if (db === undefined || raw === undefined) throw new Refusal("not-found", `There is no revision ${id}.`);
   const tables = [

@@ -139,6 +139,7 @@ The knowledge holds the program, so a project needs no image or coverage files. 
 - `image` writes only the bytes that changed. The same image again writes nothing. A new image replaces the program of the space. The history keeps the old bytes.
 - `coverage` joins the maps. It keeps each address that a run executed, read or wrote. It also keeps each address that one run wrote and executed: self-modified code. `coverage` puts each map into the space of `--space`. You can add the same map to each space. A map that the space has is not added again.
 - The capture and the maps are not necessary after the import. Keep them in `.c64-re-tools/local/`.
+- A `revert` also gives back the coverage maps of that revision. A `revert` to a revision before an import removes the map and its ranges. Then you can import the map again, and `--evidence coverage:<map>` refuses it until you do.
 
 For more than a few writes, use `apply -` and give the writes on standard input as one JSON list. Each write has `op` and the arguments of the command with the same name, for example:
 
@@ -213,6 +214,7 @@ Give one selector:
 | `--value <symbol>` | The symbol plus the offset | `lda bar_colours-1,x` |
 | `--expr <text>` | ACME expression text with names and numbers | `lda #(sprite_bank + 5*64) / 64` |
 
+- The address is the start of an instruction in a code region. The script decodes the instructions from the start of the region, as `listing` does. It refuses an address in no code region and an operand byte of an instruction. Classify the code first.
 - `--offset` adds a whole number to the symbol. Write a negative offset as `--offset=-1`.
 - A name is a symbol of the knowledge or a platform name of the c64-memory-map skill.
 - `--expr` takes `$`, `%` and decimal numbers, names, brackets, the operators `+ - * / % << >> >>> & | XOR`, and `<`, `>`, `-` and `!` before an operand.
@@ -277,7 +279,7 @@ The script records the origin `llm`. Use `--by user` only when the user decides 
 
 ## Result
 
-For a read: the current or historical knowledge in compact JSON.
+For a read: the current or historical knowledge in compact JSON. Each list of a list command has `count` and `listed`. `--max-listed` limits `listed`. The default is 50. When the list is longer, `rest` tells how to get the other items. For `revisions`, give `--before` with the oldest revision in `listed`.
 
 For a write: the new revision and the current value after the write. If the write replaces a symbol, a region or an operand expression of a different origin, `previous` gives that row as it was before the write. For example, an `llm` write over a `user` name gives `previous`. Read `previous` and tell the user about the change. For `apply`, `replaced` lists each write that replaced a row. Each item has the number of the write, its `op` and its `previous`.
 

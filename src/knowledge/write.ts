@@ -32,6 +32,7 @@ import {
   referencesFrom,
   REGION_COLUMNS,
   regionsOverlapping,
+  coverageRuns,
   resolveRevision,
   SUPPRESSION_COLUMNS,
   suppressionsOverlapping,
@@ -49,6 +50,7 @@ import {
   toSuppression,
   toSymbol,
   type CommentRow,
+  type CoverageRun,
   type MacroRow,
   type MacroUseRow,
   type ModuleRow,
@@ -59,7 +61,7 @@ import {
   type SuppressionRow,
   type SymbolRow,
 } from "./read.ts";
-import { COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, MACRO_NAME, MACRO_PARAM, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, MACRO_NAME, MACRO_PARAM, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName } from "./text.ts";
 
 /** What a change rests on: a coverage run, a test or another project file with its SHA-256, or a note. */
@@ -136,6 +138,8 @@ export interface ChangeContext {
   inputHash?: string;
   toolVersion?: string;
   evidence?: Evidence[];
+  /** A revert: the revision whose knowledge it restores. */
+  restores?: string;
 }
 
 /**
@@ -177,8 +181,8 @@ export class Change {
     const now = new Date();
     const id = newRevisionId(currentRevision(this.#db), now);
     this.#db
-      .prepare("INSERT INTO revisions (id, created_at, origin, operation, input_hash, tool_version, description) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(id, isoCet(now), this.#context.origin, this.#operation, this.#context.inputHash ?? null, this.#context.toolVersion ?? null, this.#context.description ?? null);
+      .prepare("INSERT INTO revisions (id, created_at, origin, operation, input_hash, tool_version, description, restored_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(id, isoCet(now), this.#context.origin, this.#operation, this.#context.inputHash ?? null, this.#context.toolVersion ?? null, this.#context.description ?? null, this.#context.restores ?? null);
     this.revision = id;
     const evidence = this.#db.prepare("INSERT INTO evidence (revision, kind, ref, sha256, space) VALUES (?, ?, ?, ?, ?)");
     for (const item of this.#context.evidence ?? []) evidence.run(id, item.kind, item.ref, item.sha256 ?? null, item.space ?? null);
@@ -321,7 +325,7 @@ function checkEvidence(evidence: Evidence[] | undefined): void {
 }
 
 /** Runs semantic writes in one transaction, as one revision. */
-export function write<T>(db: DatabaseSync, context: WriteContext, operation: string, work: (change: Change) => T): { revision: string | null; current: T } {
+export function write<T>(db: DatabaseSync, context: WriteContext & Pick<ChangeContext, "restores">, operation: string, work: (change: Change) => T): { revision: string | null; current: T } {
   if (context.origin !== "user" && context.origin !== "llm") {
     throw new Refusal("invalid-input", "A semantic write comes from the user or the LLM.");
   }
@@ -573,6 +577,32 @@ function checkOperand(request: OperandRequest): void {
 const shown = (value: number, size: number) => (value < 0 ? String(value) : `$${value.toString(16).padStart(size === 0x100 ? 2 : 4, "0")}`);
 
 /**
+ * Refuses an address that is not the start of an instruction. The code
+ * regions of the knowledge give the instructions: they are decoded from the
+ * start of the region, as the listing and the source decode them.
+ */
+function checkInstructionStart(db: DatabaseSync, space: Space, image: OperandImage, address: number): void {
+  const where = formatC64Address(address);
+  const code = regionsOverlapping(db, address, address, space).find((region) => CODE_REGION_TYPES.includes(region.type));
+  if (code === undefined) {
+    throw new Refusal("invalid-input", `${where} is in no code region, so the knowledge does not know an instruction that starts there. Classify the code that holds the instruction first (classify <range> code), then write the operand.`);
+  }
+  let start = code.start;
+  let next = code.start;
+  while (next < address) {
+    const opcode = image.byteAt(next);
+    if (opcode === undefined) {
+      throw new Refusal("invalid-input", `The code region ${formatC64Address(code.start)}-${formatC64Address(code.end)} has no program byte at ${formatC64Address(next)}, so its instructions up to ${where} are not known. Correct the region (classify), then write the operand.`);
+    }
+    start = next;
+    next += instructionLength(opcode);
+  }
+  if (next !== address) {
+    throw new Refusal("invalid-input", `${where} is not the start of an instruction. It is an operand byte of the instruction at ${formatC64Address(start)}, decoded from the start of the code region at ${formatC64Address(code.start)}. Give ${formatC64Address(start)}.`);
+  }
+}
+
+/**
  * Refuses an expression whose value is not the operand in the image, and
  * returns the addresses of its names. Symbols of the knowledge come first, then
  * the platform names of the C64 space.
@@ -581,6 +611,7 @@ function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, 
   const where = formatC64Address(request.address);
   const opcode = image.byteAt(request.address);
   if (opcode === undefined) throw new Refusal("invalid-input", `${where} is outside the image.`);
+  checkInstructionStart(db, space, image, request.address);
   const length = instructionLength(opcode);
   if (length === 1) throw new Refusal("invalid-input", `The instruction at ${where} (opcode ${shown(opcode, 0x100)}) has no operand.`);
   if ((opcode & 0x1f) === 0x10) throw new Refusal("invalid-input", `The instruction at ${where} is a branch: its operand is a distance, not a value.`);
@@ -1171,8 +1202,11 @@ const KEYS = {
  * revision. History is never erased; restored rows keep their origin.
  */
 export function revert(db: DatabaseSync, context: WriteContext, request: { revision: string }): WriteResult<{ restoredRevision: string }> {
-  return write(db, context, "revert", (change) => {
-    const restored = resolveRevision(db, request.revision);
+  const restored = resolveRevision(db, request.revision);
+  return write(db, { ...context, restores: restored }, "revert", (change) => {
+    // The coverage maps that the knowledge has follow the revert, also when no coverage range changes.
+    const maps = (runs: CoverageRun[]) => JSON.stringify(runs.map((run) => [run.name, run.sha256, run.space, run.revision]));
+    if (maps(coverageRuns(db, restored)) !== maps(coverageRuns(db))) change.id();
     const at = "valid_from_revision <= ? AND (valid_to_revision IS NULL OR valid_to_revision > ?)";
     for (const [table, spec] of Object.entries(KEYS)) {
       const name = table === "references" ? '"references"' : table;

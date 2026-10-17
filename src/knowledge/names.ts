@@ -20,7 +20,8 @@ export function addressOfName(db: DatabaseSync | undefined, name: string, space:
   if (addresses.length === 1) return addresses[0]!;
   const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
   if (addresses.length > 1) throw new Refusal("invalid-input", `the analyzers give ${name} to ${rows.map((row) => `${formatC64Address(row.address)} (${row.origin})`).join(" and ")}${where}. Give the address`);
-  throw new Refusal("not-found", `no symbol or analyzer name${where} is ${name}`);
+  const option = space === DEFAULT_SPACE ? "" : ` --space ${space}`;
+  throw new Refusal("not-found", `${name} is not a name in the knowledge${where}. Give a $ address, or a name that knowledge.ts symbols${option} lists, with or without --analyzer.`);
 }
 
 /** Every name of a space with its address: the symbols, and each analyzer name that addressOfName accepts. With kinds, only names of those kinds. */

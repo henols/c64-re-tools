@@ -177,7 +177,7 @@ test("checkImport accepts every allowed direction", () => {
   const accepted: Array<[string, string]> = [
     ["src/mcp/server.ts", "../host-client/vice-session.ts"],
     ["src/host/vice/session.ts", "../../graphics.ts"],
-    ["skills/c64-docs/scripts/generate.ts", "#src/graphics.ts"],
+    ["skills/c64-docs/scripts/docs.ts", "#src/graphics.ts"],
     ["src/mcp/tools/memory.ts", "../../c64.ts"],
     ["src/host-client/connect.ts", "../protocol/messages.ts"],
     ["src/host-client/transfer.ts", "../project.ts"],

@@ -20,7 +20,7 @@ import { WireFailure } from ${url("protocol/messages.ts")};
 import { projectRoot } from ${url("project.ts")};
 const names = (name, space) => {
   if (name === "main_loop") return space === "drive8" ? 0x300 : 0x810;
-  throw new Refusal("not-found", "no symbol or analyzer name is " + name);
+  throw new Refusal("not-found", name + " is not a name in the knowledge. Give a $ address, or a name that knowledge.ts symbols lists, with or without --analyzer.");
 };
 class Coded extends Error { code = "conflict"; }
 await runScript({
@@ -137,7 +137,7 @@ test("an address is $ and 1 to 4 hex digits, or a name in the space of the comma
   assert.deepEqual(run(["at", "$C000", "--entry", "main_loop"]).json, { address: 0xc000, entry: 0x810, range: null });
   assert.deepEqual(run(["at", "main_loop", "--space", "drive8"]).json, { address: 0x300, entry: null, range: null });
   assert.match(refused(["at", "$12345"], "invalid-input").message, /^<address> must be \$ and 1 to 4 hex digits/);
-  assert.match(refused(["at", "c000"], "invalid-input").message, /^<address>: no symbol or analyzer name is c000/);
+  assert.match(refused(["at", "c000"], "invalid-input").message, /^<address>: c000 is not a name in the knowledge\. Give a \$ address/);
   assert.match(refused(["at", "$c000", "--entry", "12-3"], "invalid-input").message, /^--entry must be \$ and 1 to 4 hex digits/);
   assert.match(refused(["at", "$c000", "--space", "drive9"], "invalid-input").message, /^--space must be c64, drive8, or bank0 to bank255/);
 });

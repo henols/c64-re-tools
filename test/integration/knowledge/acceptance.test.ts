@@ -47,11 +47,11 @@ test("from a clean project: a read, the first write, several changes, the curren
   assert.equal(current.referencesFrom.length, 1);
   assert.equal(current.revision, nthIn(root, 7));
   assert.deepEqual(
-    (knowledge("regions") as { regions: Array<{ start: string; end: string; type: string }> }).regions.map((region) => `${region.start}-${region.end} ${region.type}`),
+    (knowledge("regions") as { regions: { listed: Array<{ start: string; end: string; type: string }> } }).regions.listed.map((region) => `${region.start}-${region.end} ${region.type}`),
     ["$2000-$27ff code", "$2800-$283f sprite", "$2840-$2fff code"],
   );
 
-  const history = (knowledge("history", "$2100") as { history: Array<{ entity: string; name?: string; fromRevision: string; toRevision?: string }> }).history;
+  const history = (knowledge("history", "$2100") as { history: { listed: Array<{ entity: string; name?: string; fromRevision: string; toRevision?: string }> } }).history.listed;
   assert.deepEqual(
     history.filter((entry) => entry.entity === "symbol").map((entry) => [entry.name, entry.fromRevision, entry.toRevision]),
     [
@@ -59,14 +59,14 @@ test("from a clean project: a read, the first write, several changes, the curren
       ["update_player", nthIn(root, 4), undefined],
     ],
   );
-  const revisions = (knowledge("revisions") as { revisions: Array<{ id: string; operation: string }> }).revisions;
+  const revisions = (knowledge("revisions") as { revisions: { listed: Array<{ id: string; operation: string }> } }).revisions.listed;
   assert.deepEqual(revisions.map((revision) => revision.id), [7, 6, 5, 4, 3, 2, 1].map((n) => nthIn(root, n)));
 
   // A revert restores revision 3 as revision 8, and every revision stays reviewable.
   knowledge("revert", nthIn(root, 3), "--reason", "re-examine the routine");
   assert.equal((knowledge("at", "$2100") as { symbol: { name: string } }).symbol.name, "FUN_2100");
-  assert.equal((knowledge("revisions", "--limit", "100") as { revisions: unknown[] }).revisions.length, 8);
-  assert.equal(((knowledge("revision", nthIn(root, 4)) as { added: unknown[] }).added).length, 1);
+  assert.equal((knowledge("revisions") as { revisions: { count: number } }).revisions.count, 8);
+  assert.equal((knowledge("revision", nthIn(root, 4)) as { added: { count: number } }).added.count, 1);
 
   // Text files, ready for version control; the index stays in local/.
   assert.deepEqual(readdirSync(join(root, ".c64-re-tools", "knowledge")).sort(), [".gitattributes", "comments.jsonl", "references.jsonl", "regions.jsonl", "revisions.jsonl", "symbols.jsonl"]);

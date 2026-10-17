@@ -128,7 +128,7 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
   );
   assert.equal(knowledge(second, "at", "$1002").json.conflicts, undefined);
   assert.deepEqual(
-    (knowledge(second, "regions").json.regions as Array<Record<string, unknown>>).map((region) => [region.start, region.end, region.type, region.element]),
+    (knowledge(second, "regions").json.regions as { listed: Array<Record<string, unknown>> }).listed.map((region) => [region.start, region.end, region.type, region.element]),
     [
       ["$1008", "$1017", "code", undefined],
       ["$1018", "$101f", "bytes", 4],

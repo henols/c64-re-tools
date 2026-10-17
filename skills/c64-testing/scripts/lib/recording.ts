@@ -46,7 +46,7 @@ export interface StateItem {
   size: number;
 }
 
-/** The input of record.ts. */
+/** The input of testing.ts record. */
 export interface RecordFile {
   name: string;
   program: string;

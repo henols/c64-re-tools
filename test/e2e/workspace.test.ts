@@ -58,10 +58,14 @@ test("without --project, the root refuses and lists the projects, and a folder i
   mkdirSync(inside, { recursive: true });
   const found = knowledge(["symbols"], { cwd: inside });
   assert.equal(found.status, 0);
-  assert.deepEqual((found.json.symbols as Array<{ name: string }>).map((symbol) => symbol.name), ["start"]);
+  assert.deepEqual((found.json.symbols as { listed: Array<{ name: string }> }).listed.map((symbol) => symbol.name), ["start"]);
 
   const nested = knowledge(["symbols", "--project", join("hover-bovver", "src")]);
   assert.equal(nested.status, 2);
   assert.match((nested.json.error as { message: string }).message, /inside the project hover-bovver\. Give that project folder\./);
+  // From the project folder itself, the message names the folder by its path, not as ".".
+  const fromProject = knowledge(["symbols", "--project", "src"], { cwd: join(workspace, "hover-bovver") });
+  assert.equal(fromProject.status, 2);
+  assert.ok((fromProject.json.error as { message: string }).message.startsWith(`src is inside the project ${join(workspace, "hover-bovver")}. Give that project folder.`), JSON.stringify(fromProject.json));
   assert.ok(!existsSync(join(workspace, "hover-bovver", "src", ".c64-re-tools")));
 });

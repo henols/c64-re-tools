@@ -382,7 +382,8 @@ test("each space has its own rows and names", () => {
 
 /**
  * $8079 LDA #$c0, $807b STA $0314, $807e LDA #$80, $8a85 LDA $8a97,X,
- * $82aa LDA #$18, $8000 BNE, $8005 NOP. VICSCN is a platform name.
+ * $82aa LDA #$18, $8000 BNE, $8005 NOP, and $9100 LDA #$00 outside the code.
+ * VICSCN is a platform name.
  */
 function operandImage(): OperandImage {
   const bytes = new Map<number, number>();
@@ -392,7 +393,14 @@ function operandImage(): OperandImage {
   put(0x82aa, 0xa9, 0x18);
   put(0x8000, 0xd0, 0x05);
   put(0x8005, 0xea);
+  put(0x9100, 0xa9, 0x00);
   return { byteAt: (address) => bytes.get(address), platform: new Map([["VICSCN", 0x0400], ["CINV", 0x0314]]) };
+}
+
+/** The code regions of the operand image, as one revision: an operand expression is for an instruction of a code region. */
+function classifyCode(db: DatabaseSync): void {
+  const code = (start: number, end: number) => ({ op: "classify" as const, start, end, type: "code" as const });
+  applyBatch(db, llm, [code(0x8000, 0x8001), code(0x8005, 0x8005), code(0x8079, 0x807f), code(0x82aa, 0x82ab), code(0x8a85, 0x8a87)]);
 }
 
 function operands(): { db: DatabaseSync; context: WriteContext } {
@@ -400,13 +408,14 @@ function operands(): { db: DatabaseSync; context: WriteContext } {
   renameSymbol(db, llm, { address: 0x80c0, name: "irq_handler" });
   renameSymbol(db, llm, { address: 0x8a98, name: "bar_colours" });
   renameSymbol(db, llm, { address: 0x2000, name: "charset" });
+  classifyCode(db);
   return { db, context: { origin: "llm", image: operandImage() } };
 }
 
 test("an operand expression is checked against the image and writes pointer references", () => {
   const { db, context } = operands();
   const lo = setOperand(db, context, { address: 0x8079, select: "lo", symbol: "irq_handler" });
-  assert.deepEqual(lo.current, { space: "c64", address: 0x8079, select: "lo", symbol: "irq_handler", offset: 0, origin: "llm", revision: nth(db, 4) });
+  assert.deepEqual(lo.current, { space: "c64", address: 0x8079, select: "lo", symbol: "irq_handler", offset: 0, origin: "llm", revision: nth(db, 5) });
   setOperand(db, context, { address: 0x807e, select: "hi", symbol: "irq_handler" });
   setOperand(db, context, { address: 0x8a85, select: "value", symbol: "bar_colours", offset: -1 });
   setOperand(db, context, { address: 0x807b, select: "value", symbol: "CINV" });
@@ -416,14 +425,14 @@ test("an operand expression is checked against the image and writes pointer refe
   assert.deepEqual(referencesFrom(db, 0x82aa).map((row) => [row.to, row.kind]), [[0x0400, "pointer"], [0x2000, "pointer"]]);
   assert.equal(at(db, 0x8a85).operand?.offset, -1);
   assert.equal(setOperand(db, context, { address: 0x8079, select: "lo", symbol: "irq_handler" }).revision, null, "no change, no revision");
-  assert.deepEqual(historyAt(db, 0x8079).map((entry) => entry.entity), ["reference", "operand"]);
+  assert.deepEqual(historyAt(db, 0x8079).map((entry) => entry.entity), ["region", "reference", "operand"]);
 });
 
 test("an operand expression that does not give the operand in the image is refused with both values", () => {
   const { db, context } = operands();
   assert.throws(() => setOperand(db, context, { address: 0x8079, select: "hi", symbol: "irq_handler" }), /At \$8079, >irq_handler gives \$80, but the operand in the image is \$c0\./);
   assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "value", symbol: "bar_colours" }), /gives \$8a98, but the operand in the image is \$8a97/);
-  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo", symbol: "nowhere" }), /"nowhere" is no symbol of the knowledge and no platform name/);
+  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo", symbol: "nowhere" }), /nowhere is not a symbol of the knowledge or a platform name. Give a number, a symbol that knowledge\.ts symbols lists, or a platform name that memory-map\.ts at gives\./);
   assert.throws(() => setOperand(db, context, { address: 0x8000, select: "expr", expression: "5" }), /is a branch/);
   assert.throws(() => setOperand(db, context, { address: 0x8005, select: "expr", expression: "5" }), /has no operand/);
   assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "lo", symbol: "bar_colours" }), /lo and hi give one byte/);
@@ -433,7 +442,19 @@ test("an operand expression that does not give the operand in the image is refus
   assert.throws(() => setOperand(db, context, { address: 0x8079, select: "expr", expression: "<irq_handler +" }), failsWith("invalid-input"));
   assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo" }), failsWith("invalid-input"));
   assert.throws(() => addReference(db, llm, { from: 0x8079, to: 0x80c0, kind: "pointer" }), /Only an operand expression writes a pointer reference/);
-  assert.equal(currentRevision(db), nth(db, 3), "a refused write leaves no revision");
+  assert.equal(currentRevision(db), nth(db, 4), "a refused write leaves no revision");
+});
+
+test("an operand expression is refused at an address that is not the start of an instruction of a code region", () => {
+  const { db, context } = operands();
+  // $807a is the operand byte of LDA #$c0 at $8079: its value is $c0 too.
+  assert.throws(
+    () => setOperand(db, context, { address: 0x807a, select: "expr", expression: "$c0" }),
+    (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /^\$807a is not the start of an instruction. It is an operand byte of the instruction at \$8079, decoded from the start of the code region at \$8079\. Give \$8079\.$/.test(error.message),
+  );
+  assert.throws(() => setOperand(db, context, { address: 0x9100, select: "expr", expression: "0" }), /^Refusal: \$9100 is in no code region, so the knowledge does not know an instruction that starts there\. Classify the code/);
+  assert.throws(() => applyBatch(db, context, [{ op: "operand", address: 0x807f, select: "expr", expression: "$80" }]), /\$807f is not the start of an instruction. It is an operand byte of the instruction at \$807e/);
+  assert.equal(currentRevision(db), nth(db, 4), "a refused write leaves no revision");
 });
 
 test("a rename of a symbol follows into operand expressions, and a removal is refused while one uses it", () => {
@@ -454,17 +475,18 @@ test("a rename of a symbol follows into operand expressions, and a removal is re
 
 test("a batch writes symbols and the operands that use them, and a revert restores operands", () => {
   const db = fresh();
+  classifyCode(db);
   const context: WriteContext = { origin: "llm", image: operandImage() };
   const applied = applyBatch(db, context, [
     { op: "rename", address: 0x80c0, name: "irq_handler" },
     { op: "operand", address: 0x8079, select: "lo", symbol: "irq_handler" },
     { op: "operand", address: 0x807e, select: "hi", symbol: "irq_handler" },
   ]);
-  assert.equal(applied.revision, nth(db, 1));
-  assert.deepEqual(revisionChanges(db, nth(db, 1)).added.map((entry) => entry.entity), ["symbol", "reference", "reference", "operand", "operand"]);
+  assert.equal(applied.revision, nth(db, 2));
+  assert.deepEqual(revisionChanges(db, nth(db, 2)).added.map((entry) => entry.entity), ["symbol", "reference", "reference", "operand", "operand"]);
   applyBatch(db, context, [{ op: "unoperand", address: 0x807e }]);
   assert.equal(operandAt(db, 0x807e), undefined);
-  revert(db, llm, { revision: nth(db, 1) });
+  revert(db, llm, { revision: nth(db, 2) });
   assert.equal(operandAt(db, 0x807e)?.select, "hi");
   assert.deepEqual(referencesFrom(db, 0x807e).map((row) => row.kind), ["pointer"]);
   assert.throws(() => applyBatch(db, llm, [{ op: "operand", address: 0x8079, select: "hi", symbol: "irq_handler" }]), /Write 1: An operand expression is checked against the image/);
@@ -525,7 +547,7 @@ test("a macro and its uses: the use is whole instructions, its args are known na
 
   assert.throws(() => setMacroUse(db, context, { start: 0x8100, end: 0x8104, macro: "inc16", args: ["ptr"] }), /end at \$8105, not at \$8104/);
   assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "inc16", args: [] }), /has 1 params \(dst\), and the use gives 0 args/);
-  assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "inc16", args: ["nowhere"] }), /"nowhere" is no symbol of the knowledge/);
+  assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "inc16", args: ["nowhere"] }), /nowhere is not a symbol of the knowledge or a platform name/);
   assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "add16", args: [] }), failsWith("not-found"));
   assert.throws(() => setMacroUse(db, context, { start: 0x8104, end: 0x8109, macro: "inc16", args: ["ptr"] }), /overlaps the use of inc16 at \$8100-\$8105/);
   setPatch(db, context, { start: 0x8110, end: 0x8112, switch: "DEBUG", code: "" });

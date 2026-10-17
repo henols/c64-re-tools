@@ -109,6 +109,12 @@ test("the script answers in JSON and refuses bad input", () => {
     assert.equal(refused.status, 2, address);
     assert.equal((JSON.parse(refused.stdout) as { error: { code: string } }).error.code, "invalid-input", address);
   }
+  const unknown = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "at", "d020"], { encoding: "utf8" }).stdout) as { error: { message: string } };
+  assert.match(unknown.error.message, /^<address>: d020 is not a name in the knowledge\. Give a \$ address, or a name that knowledge\.ts symbols lists, with or without --analyzer\./);
+  const vic = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "list", "vic"], { encoding: "utf8" }).stdout) as { entries: { count: number; listed: Array<{ name: string }>; rest?: string } };
+  assert.deepEqual([vic.entries.count, vic.entries.listed.length, vic.entries.listed[0]!.name, vic.entries.rest], [47, 47, "SP0X", undefined]);
+  const system = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "list", "system", "--max-listed", "2"], { encoding: "utf8" }).stdout) as { entries: { count: number; listed: unknown[]; rest: string } };
+  assert.deepEqual([system.entries.count, system.entries.listed.length, system.entries.rest], [108, 2, "a larger --max-listed, or memory-map.ts export --out <file> for every platform name"]);
   const value = spawnSync(process.execPath, [...process.execArgv, script, "decode", "$1", "%00110111"], { encoding: "utf8" });
   assert.equal((JSON.parse(value.stdout) as { value: string }).value, "$37", "a value takes $ and hex, decimal, or % and binary");
   const bad = spawnSync(process.execPath, [...process.execArgv, script, "decode", "$d020", "1"], { encoding: "utf8" });

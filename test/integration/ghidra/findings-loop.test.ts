@@ -71,16 +71,16 @@ test("Ghidra findings, a semantic rename and a seeded re-run go through one impo
   const at = await skill("c64-knowledge", "knowledge.ts", "at", "$0818");
   assert.deepEqual(at.symbol, { address: "$0818", name: "init_result", kind: "routine", origin: "llm", revision: nthIn(project, 3) });
   assert.deepEqual((at.analyzerNames as Array<{ name: string }>).map((row) => row.name), ["FUN_0818"], "Ghidra's own name stays a second name");
-  const history = (await skill("c64-knowledge", "knowledge.ts", "history", "$0818")) as { history: Array<{ entity: string; name?: string; origin: string }> };
+  const history = (await skill("c64-knowledge", "knowledge.ts", "history", "$0818")) as { history: { listed: Array<{ entity: string; name?: string; origin: string }> } };
   assert.deepEqual(
-    history.history.filter((entry) => entry.entity === "symbol" || entry.entity === "analyzer-name").map((entry) => [entry.entity, entry.name, entry.origin]),
+    history.history.listed.filter((entry) => entry.entity === "symbol" || entry.entity === "analyzer-name").map((entry) => [entry.entity, entry.name, entry.origin]),
     [
       ["analyzer-name", "FUN_0818", "ghidra"],
       ["symbol", "init_result", "llm"],
     ],
   );
-  const revisions = (await skill("c64-knowledge", "knowledge.ts", "revisions")) as { revisions: Array<{ id: string; origin: string }> };
-  assert.deepEqual(revisions.revisions.map((entry) => [entry.id, entry.origin]).reverse(), [
+  const revisions = (await skill("c64-knowledge", "knowledge.ts", "revisions")) as { revisions: { listed: Array<{ id: string; origin: string }> } };
+  assert.deepEqual(revisions.revisions.listed.map((entry) => [entry.id, entry.origin]).reverse(), [
     [nthIn(project, 1), "user"],
     [nthIn(project, 2), "ghidra"],
     [nthIn(project, 3), "llm"],

@@ -7,8 +7,8 @@ import { after, test } from "node:test";
 import { Refusal } from "../errors.ts";
 import { COVERAGE } from "../c64.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
-import { listSpaces } from "./read.ts";
-import { addCoverage, analyzedBytes, coverageRuns, programCoverage, programImage, setImage, type ImageRequest } from "./program.ts";
+import { coverageRuns, listSpaces } from "./read.ts";
+import { addCoverage, analyzedBytes, programCoverage, programImage, setImage, type ImageRequest } from "./program.ts";
 import { revert } from "./write.ts";
 
 const projects: string[] = [];
@@ -169,6 +169,42 @@ test("revert takes the image and the coverage back too", () => {
   assert.equal(read.image!.byteAt(0x1000), 0x00);
   assert.equal(read.image!.entry, undefined);
   assert.equal(read.coverage, undefined);
+});
+
+test("the coverage maps that the knowledge has follow a revert, so a reverted map can be imported again", () => {
+  const root = project();
+  const first = withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x103f }])), root);
+  const bytes = map([0x1000, 0x1002, COVERAGE.ramExecute]);
+  const imported = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
+  withWrite((db) => addCoverage(db, llm, { maps: [{ name: "b.bin", bytes }] }), root);
+  const names = () => {
+    const db = openForRead(root)!;
+    try {
+      return coverageRuns(db).map((run) => run.name);
+    } finally {
+      db.close();
+    }
+  };
+  assert.deepEqual(names(), ["a.bin", "b.bin"]);
+  // b.bin added no range: the revert to a.bin changes only the maps, and that is still a revision.
+  const back = withWrite((db) => revert(db, llm, { revision: imported.revision! }), root);
+  assert.notEqual(back.revision, null);
+  assert.deepEqual(names(), ["a.bin"]);
+  withWrite((db) => revert(db, llm, { revision: first.revision! }), root);
+  assert.deepEqual(names(), []);
+  assert.equal(fromText(root).coverage, undefined);
+  const again = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
+  assert.deepEqual([again.current.imported, again.current.ranges], [["a.bin"], 1]);
+  // A revert to an earlier revert gives the maps of that revert.
+  withWrite((db) => revert(db, llm, { revision: back.revision! }), root);
+  assert.deepEqual(names(), ["a.bin"]);
+  const db = openForRead(root)!;
+  try {
+    assert.deepEqual(coverageRuns(db, imported.revision!).map((run) => run.name), ["a.bin"], "the maps at a revision");
+    assert.deepEqual(coverageRuns(db, "0"), []);
+  } finally {
+    db.close();
+  }
 });
 
 test("a coverage map is known only in the space that it went into, and the runs of a name are oldest first", () => {

@@ -2,8 +2,8 @@
 // its line in the source; the address after it links to the entry of the name
 // in the reference, or, for an address inside the routine or the data of the
 // name ("draw_room $0AAF", a place in draw_room), to the line of that address. A link that points into the source or the reference is
-// managed: link.ts writes it again when a line moves. Other links stay as the
-// person wrote them; link.ts only checks that their targets exist.
+// managed: docs.ts link writes it again when a line moves. Other links stay as the
+// person wrote them; docs.ts link only checks that their targets exist.
 
 import { posix } from "node:path";
 
@@ -24,7 +24,7 @@ export interface LinkContext {
   lineOf: (address: number) => string | undefined;
   /** The name of the routine or data that holds an address, for a message. */
   placeOf: (address: number) => string | undefined;
-  /** True for a project path that link.ts manages: a file of the source or a page of the reference. */
+  /** True for a project path that docs.ts link manages: a file of the source or a page of the reference. */
   managed: (path: string) => boolean;
 }
 

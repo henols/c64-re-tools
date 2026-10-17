@@ -39,8 +39,9 @@ function allText(db: DatabaseSync): Map<string, { text: string }> {
   return files;
 }
 
-/** $8079 LDA #$c0; $8100 INC $fb, BNE +2, INC $fc. */
-const image = { byteAt: (address: number) => new Map([[0x8079, 0xa9], [0x807a, 0xc0], [0x8100, 0xe6], [0x8101, 0xfb], [0x8102, 0xd0], [0x8103, 0x02], [0x8104, 0xe6], [0x8105, 0xfc]]).get(address), platform: new Map<string, number>() };
+/** NOP from $8000, so the code region decodes to $8079 LDA #$c0; $8100 INC $fb, BNE +2, INC $fc. */
+const bytes = new Map([[0x8079, 0xa9], [0x807a, 0xc0], [0x8100, 0xe6], [0x8101, 0xfb], [0x8102, 0xd0], [0x8103, 0x02], [0x8104, 0xe6], [0x8105, 0xfc]]);
+const image = { byteAt: (address: number) => bytes.get(address) ?? (address >= 0x8000 && address < 0x8079 ? 0xea : undefined), platform: new Map<string, number>() };
 
 /** A project with a row in every table and a revision with evidence. */
 function fullProject(): { folder: string; db: DatabaseSync } {
