@@ -22,6 +22,11 @@ export const WrittenOutput = {
   sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
 };
 
+/** Lines as file text: each line ends with a newline, and no lines give an empty file. */
+export function linesText(lines: readonly string[]): string {
+  return lines.map((line) => `${line}\n`).join("");
+}
+
 /** Writes `data` to the file `path` of the project that `project` names (or the project lookup finds), and gives what the result shows in its place. */
 export function writeOut(path: string, data: Uint8Array | string, project: string | undefined): Written {
   return writeReported(path, data, { what: "out", root: projectFolder(project) });

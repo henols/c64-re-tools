@@ -91,6 +91,17 @@ export function requireFields(action: string, given: Record<string, unknown>, al
   }
 }
 
+/**
+ * Checks the fields that go with out: project only with out, and the
+ * fields of `notWithOut` only without it.
+ */
+export function requireOut(given: { out?: unknown; project?: unknown } & Record<string, unknown>, notWithOut: readonly string[] = []): void {
+  if (given.out === undefined && given.project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
+  for (const field of notWithOut) {
+    if (given.out !== undefined && given[field] !== undefined) throw new WireFailure("invalid-input", `${field} is not used with out.`);
+  }
+}
+
 /** A tool result that carries content blocks (for example an image) beside its structured result. */
 export class ToolOutput<T> {
   readonly structured: T;
@@ -163,12 +174,16 @@ function errorResult(error: WireError): CallToolResult {
   return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: { code: error.code, message: shownMessage(error) } }) }] };
 }
 
-/** "address: Invalid string: must match ..." style messages, one sentence per problem. */
-function describeIssues(error: z.ZodError): string {
+/**
+ * "address: Invalid string: must match ..." style messages, one sentence per problem.
+ * An unknown field of the tool input also gets the fields that the tool takes.
+ */
+function describeIssues(error: z.ZodError, input?: z.ZodObject): string {
   return error.issues
     .map((issue) => {
       const where = issue.path.length === 0 ? "input" : issue.path.join(".");
-      return `${where}: ${issue.message}`;
+      const fields = issue.code === "unrecognized_keys" && issue.path.length === 0 && input !== undefined ? `. The fields are ${Object.keys(input.shape).join(", ")}` : "";
+      return `${where}: ${issue.message}${fields}`;
     })
     .join(". ");
 }
@@ -211,7 +226,7 @@ async function runCall(
   const tool = tools.get(name);
   if (tool === undefined) return errorResult({ code: "invalid-input", message: `There is no tool named ${name}.` });
   const parsed = tool.inputSchema.safeParse(args ?? {});
-  if (!parsed.success) return errorResult({ code: "invalid-input", message: describeIssues(parsed.error) });
+  if (!parsed.success) return errorResult({ code: "invalid-input", message: describeIssues(parsed.error, tool.inputSchema) });
   try {
     let output: unknown;
     try {

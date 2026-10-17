@@ -8,7 +8,7 @@ import { WireFailure } from "../../protocol/messages.ts";
 import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, type ObserveParams } from "../../protocol/vice.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, MemoryViewInput, SpaceInput } from "../inputs.ts";
-import { AddressOutput, defineTool, HexData, requireFields, ToolOutput, TransientName } from "../server.ts";
+import { AddressOutput, defineTool, HexData, requireFields, requireOut, ToolOutput, TransientName } from "../server.ts";
 
 const Color = z.number().int().min(0).max(15);
 const NO_CHANGE = "This does not change the run state of the machine.";
@@ -170,14 +170,16 @@ export const c64Screen = defineTool({
   async run(input, session) {
     const { action, ...fields } = input;
     if (action === "capture") {
-      requireFields(action, fields, fields.out === undefined ? ["baseline"] : ["baseline", "out", "project"]);
+      requireOut(fields);
+      requireFields(action, fields, ["baseline", "out", "project"]);
       const shot = await session.screenCapture(fields.baseline);
       const result = { width: shot.width, height: shot.height, ...(shot.baseline === undefined ? {} : { baseline: shot.baseline }) };
       if (fields.out !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(shot.png, "base64"), fields.project) };
       return new ToolOutput(result, [{ type: "image", data: shot.png, mimeType: "image/png" }]);
     }
     if (action === "compare") {
-      requireFields(action, fields, ["baseline", "maxMismatchRatio", "mask", "includeDiff", ...(fields.out === undefined ? [] : ["out", "project"])], ["baseline"]);
+      requireOut(fields);
+      requireFields(action, fields, ["baseline", "maxMismatchRatio", "mask", "includeDiff", "out", "project"], ["baseline"]);
       const { diffPng, ...result } = await session.screenCompare({
         baseline: fields.baseline!,
         maxMismatchRatio: fields.maxMismatchRatio ?? 0,

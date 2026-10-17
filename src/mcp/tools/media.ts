@@ -2,14 +2,17 @@
 // c64_snapshot. Paths are relative to the project folder; the host-client
 // reads the file and the Host Runtime receives only its bytes.
 
+import { extname } from "node:path";
+
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
 import { projectFolder, readProjectFile } from "../../host-client/transfer.ts";
+import { WireFailure } from "../../protocol/messages.ts";
 import { AUTOSTART_TYPES, DISK_TYPES, MAX_SNAPSHOTS, RUN_STATES } from "../../protocol/vice.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput } from "../inputs.ts";
-import { AddressOutput, defineTool, requireFields, TransientName } from "../server.ts";
+import { AddressOutput, defineTool, requireFields, requireOut, TransientName } from "../server.ts";
 
 const ProjectPath = z.string().min(1).describe("path relative to the project folder, for example build/game.prg");
 
@@ -63,6 +66,10 @@ export const c64ProgramLoad = defineTool({
   outputSchema: z.object({ state: z.enum(RUN_STATES), loadAddress: AddressOutput, size: z.number().int().min(1).max(0x10000) }),
   readOnly: false,
   async run(input, session) {
+    const type = extname(input.path).slice(1).toLowerCase();
+    if (type !== "prg" && (AUTOSTART_TYPES as readonly string[]).includes(type)) {
+      throw new WireFailure("invalid-input", `${input.path} is a .${type} image, not a PRG. Use c64_autostart, or c64_disk_attach for a disk image.`);
+    }
     const root = projectFolder(input.project);
     const result = await session.programLoad(input.address === undefined ? { path: input.path, root } : { path: input.path, address: input.address, root });
     return { state: result.state, loadAddress: formatC64Address(result.loadAddress), size: result.size };
@@ -118,12 +125,17 @@ export const c64Snapshot = defineTool({
       requireFields(action, fields, []);
       return session.snapshot({ action });
     }
+    if (action === "restore") {
+      if (fields.name !== undefined && fields.file !== undefined) throw new WireFailure("invalid-input", "Action restore takes name or file, not both.");
+      if (fields.name === undefined && fields.file === undefined) throw new WireFailure("invalid-input", "Action restore needs name (a snapshot of this session) or file (a .vsf in the project).");
+    }
     if (action === "restore" && fields.file !== undefined) {
       requireFields(action, fields, ["file", "project"], ["file"]);
       return session.snapshotRestore(readProjectFile(fields.file, { root: projectFolder(fields.project) }).bytes);
     }
     if (action === "save") {
-      requireFields(action, fields, fields.out === undefined ? ["name"] : ["name", "out", "project"], ["name"]);
+      requireOut(fields);
+      requireFields(action, fields, ["name", "out", "project"], ["name"]);
       const saved = await session.snapshot({ action, name: fields.name! });
       return fields.out === undefined ? saved : { ...saved, ...writeOut(fields.out, await session.snapshotExport(fields.name!), fields.project) };
     }

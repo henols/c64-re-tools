@@ -7,9 +7,9 @@ import { COVERAGE, executedRamCode, EXECUTE, formatC64Address, READ, WRITE, type
 import { WireFailure } from "../../protocol/messages.ts";
 import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
 import { readCoverage } from "../../host-client/coverage.ts";
-import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
+import { linesText, OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
-import { AddressOutput, ConditionOutput, defineTool, HexData, requireFields, showCondition, toCondition } from "../server.ts";
+import { AddressOutput, ConditionOutput, defineTool, HexData, requireFields, requireOut, showCondition, toCondition } from "../server.ts";
 import { spaced } from "./memory.ts";
 
 /** No default here: a filled-in default would count as a field the other actions refuse. */
@@ -169,7 +169,7 @@ export const c64CpuHistory = defineTool({
       const raster = entry.rasterLine === undefined ? "" : `  line ${entry.rasterLine} cycle ${entry.rasterCycle ?? 0}`;
       return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${byte(entry.a)} x=${byte(entry.x)} y=${byte(entry.y)} sp=${byte(entry.sp)}${raster}`;
     });
-    return { count: entries.length, ...writeOut(out, `${lines.join("\n")}\n`, project) };
+    return { count: entries.length, ...writeOut(out, linesText(lines), project) };
   },
 });
 
@@ -184,6 +184,7 @@ export const c64Trace = defineTool({
     "A point is exec (an instruction at an address from start to end), read or write (an access from start to end). " +
     `Give 1 to ${MAX_TRACE_POINTS} points. ` +
     "Each hit gives the instruction (pc, bytes, text) and the registers a, x, y and sp before it. " +
+    "point in a hit is the number of its point in points, 0 for the first. " +
     "It also gives the frame from 0, and the raster line and cycle where the instruction started. " +
     "A read or write hit also gives the address that the instruction used, and the byte there after the access. " +
     `The trace ends after frames frames (1 to ${MAX_TRACE_FRAMES}), at maxHits hits (at most ${MAX_TRACE_HITS}), or at a breakpoint, a watchpoint or a JAM. ` +
@@ -233,7 +234,7 @@ export const c64Trace = defineTool({
     const shown = traced.hits.map(({ address, ...hit }) => ({ ...hit, pc: formatC64Address(hit.pc), ...(address === undefined ? {} : { address: formatC64Address(address) }) }));
     const summary = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length, hits: shown.slice(0, TRACE_LISTED) };
     if (out === undefined) return summary;
-    return { ...summary, ...writeOut(out, `${shown.map((hit) => JSON.stringify(hit)).join("\n")}\n`, project) };
+    return { ...summary, ...writeOut(out, linesText(shown.map((hit) => JSON.stringify(hit))), project) };
   },
 });
 
@@ -392,11 +393,11 @@ export const c64Memmap = defineTool({
         ...(written.length > MAX_SUMMARY_RANGES ? { writtenAndExecutedTruncated: true } : {}),
       };
     }
+    requireOut(fields, ["maxRanges"]);
+    requireFields("read", fields, ["start", "end", "maxRanges", "out", "project"]);
     if (fields.out !== undefined) {
-      requireFields("read", fields, ["start", "end", "out", "project"]);
       return writeOut(fields.out, await readCoverage(session, start, end), fields.project);
     }
-    requireFields("read", fields, ["start", "end", "maxRanges"]);
     const result = await session.memmap({ action: "read", start, end, maxRanges: fields.maxRanges ?? 256 });
     const ranges = result.ranges.map((range) => ({
       start: formatC64Address(range.start),

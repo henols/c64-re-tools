@@ -6,7 +6,7 @@ import { z } from "zod";
 import { formatC64Address } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { MAX_COMPARE_DIFFERENCES, MAX_COMPARE_SIZE, MAX_DISASSEMBLE, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_SEARCH_PATTERN, MAX_SEARCH_RESULTS, type RegisterValues } from "../../protocol/vice.ts";
-import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
+import { linesText, OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, MemoryViewInput, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
 import { AddressOutput, defineTool, HexData, requireFields } from "../server.ts";
 
@@ -142,7 +142,11 @@ export const c64MemorySearch = defineTool({
       throw new WireFailure("invalid-input", `pattern has ${input.pattern.length} bytes. The limit is ${MAX_SEARCH_PATTERN}.`);
     }
     if (input.pattern.every((token) => token === null)) throw new WireFailure("invalid-input", "pattern needs at least one byte that is not ??.");
-    const result = await session.memorySearch({ ...input, end: input.end ?? 0xffff });
+    const end = input.end ?? 0xffff;
+    if (end < input.start) throw new WireFailure("invalid-input", "end is lower than start.");
+    // VICE refuses a range shorter than the pattern. Such a range has no match.
+    if (end - input.start + 1 < input.pattern.length) return { matches: [] };
+    const result = await session.memorySearch({ ...input, end });
     return { matches: result.matches.map(formatC64Address) };
   },
 });
@@ -220,7 +224,7 @@ export const c64Disassemble = defineTool({
         address = instruction.address + instruction.bytes.length / 2;
       }
     }
-    return { count: lines.length, ...writeOut(out, `${lines.join("\n")}\n`, project) };
+    return { count: lines.length, ...writeOut(out, linesText(lines), project) };
   },
 });
 

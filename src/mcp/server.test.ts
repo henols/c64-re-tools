@@ -11,6 +11,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { STOP_AND_ASK, WireFailure } from "../protocol/messages.ts";
 import { MAX_SEARCH_PATTERN, type Breakpoint, type BreakpointParams, type ExecutionParams, type JoystickState, type MemmapRange, type MemoryReadParams, type PointRemoved, type ProfileEntry, type MemoryWriteParams, type ObserveParams, type ObserveResult, type RegisterValues, type Registers, type RunTarget, type ViceOperations, type Watchpoint, type WatchpointParams } from "../protocol/vice.ts";
 import { startTrace, TRACE_VARIABLE } from "../trace.ts";
+import { linesText } from "./output.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
 import { debugTools } from "./tools/debug.ts";
 import { executionTools } from "./tools/execution.ts";
@@ -738,6 +739,34 @@ test("memory search parses the pattern and fills end and maxResults", async () =
     assert.equal(errorOf(await call(client, "c64_memory_search", { start: "$0800", pattern })).code, "invalid-input", pattern);
   }
   await client.close();
+});
+
+test("a range shorter than the pattern has no match, and end must not be lower than start", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  assert.deepEqual((await call(client, "c64_memory_search", { start: "$fffe", pattern: "00 00 00" })).structuredContent, { matches: [] });
+  assert.deepEqual((await call(client, "c64_memory_search", { start: "$1000", end: "$1001", pattern: "00 00 00" })).structuredContent, { matches: [] });
+  assert.equal(session.searches.length, 0, "VICE gets no search that it refuses");
+  assert.match(errorOf(await call(client, "c64_memory_search", { start: "$1000", end: "$0fff", pattern: "00" })).message, /end is lower than start/);
+  await client.close();
+});
+
+test("refusals name the rule that the call broke", async () => {
+  const client = await connect(async () => new FakeSession());
+  const message = async (name: string, args: Record<string, unknown>) => errorOf(await call(client, name, args)).message;
+  assert.match(await message("c64_watchpoint", { action: "add", address: "$d016", access: "write" }), /Unrecognized key.*The fields are action, .*start, end/);
+  assert.equal(await message("c64_memmap", { action: "read", out: "x.bin", maxRanges: 3 }), "maxRanges is not used with out.");
+  assert.equal(await message("c64_screen", { action: "capture", project: "." }), "project is used only with out.");
+  assert.equal(await message("c64_snapshot", { action: "save", name: "a", project: "." }), "project is used only with out.");
+  assert.equal(await message("c64_snapshot", { action: "restore", name: "a", file: "a.vsf" }), "Action restore takes name or file, not both.");
+  assert.match(await message("c64_snapshot", { action: "restore" }), /needs name .* or file/);
+  assert.match(await message("c64_program_load", { path: "original/game.d64" }), /is a \.d64 image, not a PRG\. Use c64_autostart/);
+  await client.close();
+});
+
+test("a line file of no lines is empty", () => {
+  assert.equal(linesText([]), "");
+  assert.equal(linesText(["a", "b"]), "a\nb\n");
 });
 
 test("memory compare and disassemble shape their results", async () => {
