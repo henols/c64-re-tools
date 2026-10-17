@@ -112,8 +112,8 @@ test("an analysis writes the idioms as heuristic knowledge and DXA finds the cod
   at(0x0828, [0x1f]);
   at(0x0830, [0x08]);
   importPrg(project, prg);
-  const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "--analyzer", "dxa"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--analyzer", "dxa"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   const json = JSON.parse(run.stdout) as { idioms: { rtsTables: number; revision: number | null } };
   assert.equal(json.idioms.rtsTables, 1, run.stdout);
   const db = openForRead(project);

@@ -21,20 +21,20 @@ Find the static structure of a C64 program. Record the structure in the project 
 The script reads the program, the coverage and the current knowledge, and runs DXA or Ghidra on this machine. The host runtime is not necessary. The script records the result in the project knowledge, `.c64-re-tools/knowledge/`.
 
 ```
-node <skill>/scripts/analyze.ts --analyzer dxa --listing .c64-re-tools/local/game.lst
-node <skill>/scripts/analyze.ts --entry '$080d' --decompile '$080d'
+node <skill>/scripts/static-analysis.ts analyze --analyzer dxa --out-listing .c64-re-tools/local/game.lst
+node <skill>/scripts/static-analysis.ts analyze --entry '$080d' --decompile '$080d'
 ```
 
 | Option | Meaning |
 |---|---|
 | `--analyzer dxa` | Use DXA: a fast first pass. Without this option, the script uses Ghidra. |
 | `--entry '$080d'` | An address where code starts. Use it again for more addresses. |
-| `--listing .c64-re-tools/local/game.lst` | DXA only: write the disassembly listing to this project file. |
+| `--out-listing .c64-re-tools/local/game.lst` | DXA only: write the disassembly listing to this project file. |
 | `--decompile '$0818'` | Ghidra only: decompile the routine at this address. Use it again for more routines, at most 32. |
 | `--max-listed 20` | List at most this number of labels, functions or candidates. The default is 50. Use 0 to list none. |
-| `--instructions .c64-re-tools/local/instructions.json` | Ghidra only: write every instruction to this project file as JSON. Each has `address`, `bytes`, `mnemonic`, `mode` and `operand` in 6502 syntax. A branch, jump or call also has its `target`. When the knowledge has coverage, `executed` tells if it ran. |
+| `--out-instructions .c64-re-tools/local/instructions.json` | Ghidra only: write every instruction to this project file as JSON. Each has `address`, `bytes`, `mnemonic`, `mode` and `operand` in 6502 syntax. A branch, jump or call also has its `target`. When the knowledge has coverage, `executed` tells if it ran. |
 | `--space drive8` | The knowledge space of the program: `drive8` for code from the 1541 drive, or `bank0` to `bank255` for a cartridge bank. The default is `c64`. The seeds come from that space, and the findings go into it. |
-| `--macro-batch .c64-re-tools/local/macros.json` | Write the macro candidates to this project file as a batch for `apply` of the c64-knowledge skill. |
+| `--out-macro-batch .c64-re-tools/local/macros.json` | Write the macro candidates to this project file as a batch for `apply` of the c64-knowledge skill. |
 
 The script prints one JSON object. Addresses are `$` and four hex digits.
 

@@ -105,7 +105,7 @@ test("switches and macros: the source stays identical, each switch fits, and CRA
   assert.equal(off.json.compare.identical, true, "without a define, every switch is off");
 
   // The analyzer finds the set16 at $1017 and knows the two uses of inc16 in the knowledge.
-  const analyzed = ok("c64-static-analysis", "analyze.ts", ["--entry", "$1000", "--macro-batch", ".c64-re-tools/local/macros.json"]);
+  const analyzed = ok("c64-static-analysis", "static-analysis.ts", ["analyze", "--entry", "$1000", "--out-macro-batch", ".c64-re-tools/local/macros.json"]);
   const macros = analyzed.idioms.candidates.macros;
   assert.deepEqual(macros.listed, [{ macro: "set16", start: "$1017", end: "$101e", args: ["ptr", "start"], text: "+set16 ptr, start" }]);
   assert.deepEqual([macros.known, macros.leftOut, macros.batch.writes], [2, undefined, 2], "the set16 macro and its use");

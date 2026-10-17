@@ -31,14 +31,14 @@ try {
   dxaSkip = "dxa is not installed: install dxa or set C64RT_DXA to run these tests";
 }
 
-const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
+const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-"));
 // The program is the first revision of the knowledge.
 importPrg(project, analysisSubjectPrg);
 after(() => rmSync(project, { recursive: true, force: true }));
 
 async function analyze(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [...process.execArgv, script, "analyze", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
@@ -78,10 +78,10 @@ test("an analysis imports Ghidra's structure into knowledge and reports it", { s
 });
 
 test("a DXA pass imports its regions and labels and writes the listing", { skip: dxaSkip, timeout: 120_000 }, async () => {
-  const { status, json } = await analyze("--analyzer", "dxa", "--listing", "analysis/game.lst");
+  const { status, json } = await analyze("--analyzer", "dxa", "--out-listing", "analysis/game.lst");
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.analyzer, "dxa");
-  assert.equal(json.listing, "analysis/game.lst");
+  assert.equal((json.listing as { out: string }).out, "analysis/game.lst");
   assert.deepEqual(json.regions, [
     { start: "$0801", end: "$080c", classification: "data" },
     { start: "$080d", end: "$0815", classification: "code" },
@@ -111,7 +111,7 @@ test("bad calls are refused before anything is sent", { skip }, async () => {
     ["--processor", "6502"],
     ["--analyzer", "ida"],
     ["--analyzer", "dxa", "--decompile", "$0818"],
-    ["--listing", "x.lst"],
+    ["--out-listing", "x.lst"],
     ["--max-listed", "-1"],
     ["--max-listed", "many"],
   ]) {

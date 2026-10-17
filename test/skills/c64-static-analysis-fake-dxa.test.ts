@@ -16,7 +16,7 @@ import { classifyRegion } from "../../src/knowledge/write.ts";
 import { setImage } from "../../src/knowledge/program.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 
-const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
+const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-fake-dxa-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -47,7 +47,7 @@ function project(name: string, space = "c64"): string {
 }
 
 async function analyze(root: string, dxa: string, ...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [...process.execArgv, script, "--analyzer", "dxa", ...args], {
+  const child = spawn(process.execPath, [...process.execArgv, script, "analyze", "--analyzer", "dxa", ...args], {
     cwd: root,
     env: { ...process.env, C64RT_DXA: dxa, C64RT_HOST: "127.0.0.1:1" },
     stdio: ["ignore", "pipe", "pipe"],
@@ -76,7 +76,7 @@ test("a DXA conflict names what DXA found under the key dxa", { timeout: 60_000 
 test("a refused DXA import writes no revision and no listing", { timeout: 60_000 }, async () => {
   const root = project("refused");
   const twoNames = ["1000 start:", "1000 a9 00 \tlda #$00", "1002 start:", "1002 60 \trts", "1003 01 02 \t.byt $01,$02", ""];
-  const { status, json } = await analyze(root, fakeDxa("dxa-two-names", twoNames), "--listing", "analysis/game.lst");
+  const { status, json } = await analyze(root, fakeDxa("dxa-two-names", twoNames), "--out-listing", "analysis/game.lst");
   assert.equal(status, 2, JSON.stringify(json));
   assert.equal((json.error as { code: string }).code, "invalid-input");
   assert.equal(readFileSync(join(root, ".c64-re-tools", "knowledge", "revisions.jsonl"), "utf8").trim().split("\n").length, 1, "only the image");
@@ -85,10 +85,10 @@ test("a refused DXA import writes no revision and no listing", { timeout: 60_000
 
 test("an accepted DXA import records the findings and writes the listing", { timeout: 60_000 }, async () => {
   const root = project("accepted");
-  const { status, json } = await analyze(root, fakeDxa("dxa-accepted", LISTING), "--listing", "analysis/game.lst");
+  const { status, json } = await analyze(root, fakeDxa("dxa-accepted", LISTING), "--out-listing", "analysis/game.lst");
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.revision, nthIn(root, 2));
-  assert.equal(json.listing, "analysis/game.lst");
+  assert.equal((json.listing as { out: string }).out, "analysis/game.lst");
   assert.equal(existsSync(join(root, "analysis", "game.lst")), true);
 });
 

@@ -43,7 +43,7 @@ async function skill(name: string, file: string, ...args: string[]): Promise<Rec
 test("Ghidra findings, a semantic rename and a seeded re-run go through one importer", { skip, timeout: 900_000 }, async () => {
   // 1. The program goes into the knowledge; the first Ghidra pass makes generated names, regions and references Ghidra knowledge.
   assert.equal((await skill("c64-knowledge", "knowledge.ts", "image", "game.prg", "--by", "user")).revision, nthIn(project, 1));
-  const first = await skill("c64-static-analysis", "analyze.ts", "--entry", "$080d");
+  const first = await skill("c64-static-analysis", "static-analysis.ts", "analyze", "--entry", "$080d");
   assert.equal(first.revision, nthIn(project, 2), JSON.stringify(first));
   assert.deepEqual((await skill("c64-knowledge", "knowledge.ts", "at", "$0818")).analyzerNames, [{ address: "$0818", name: "FUN_0818", kind: "routine", origin: "ghidra", revision: nthIn(project, 2) }]);
 
@@ -54,7 +54,7 @@ test("Ghidra findings, a semantic rename and a seeded re-run go through one impo
   assert.equal(marked.revision, nthIn(project, 4), JSON.stringify(marked));
 
   // 3. Seeded re-run: Ghidra gets the semantic names; nothing changes owner, the contradiction is reported.
-  const second = await skill("c64-static-analysis", "analyze.ts", "--entry", "$080d", "--decompile", "$080d");
+  const second = await skill("c64-static-analysis", "static-analysis.ts", "analyze", "--entry", "$080d", "--decompile", "$080d");
   assert.equal(second.revision, null, JSON.stringify(second));
   assert.deepEqual(second.conflicts, [
     {

@@ -55,10 +55,10 @@ test("the list writes operands in 6502 syntax, the flow target, and executed fro
   ]);
 });
 
-test("analyze --instructions writes Ghidra's instructions to a project file", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
+test("analyze --out-instructions writes Ghidra's instructions to a project file", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
   importPrg(project, vectoredPrg);
-  const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "--entry", "$080d", "--instructions", "analysis/instructions.json"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--entry", "$080d", "--out-instructions", "analysis/instructions.json"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   const json = JSON.parse(run.stdout) as { instructions: { out: string; count: number } };
   assert.equal(json.instructions.out, "analysis/instructions.json", run.stdout);
   const list = JSON.parse(readFileSync(join(project, "analysis", "instructions.json"), "utf8")) as Array<{ address: string; mnemonic: string; mode: string; operand: string }>;

@@ -3,14 +3,11 @@
 // from current knowledge and the coverage of the knowledge, and imports the
 // structural findings into .c64-re-tools/knowledge/.
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { parseArgs } from "node:util";
-
+import { COVERAGE, formatC64Address, prgRange } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
-import { COVERAGE, formatC64Address, parseC64Address, prgRange, SPACE_PATTERN } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
-import { writeProjectFile } from "#src/host-client/transfer.ts";
+import { writeReported } from "#src/host-client/transfer.ts";
+import { knowledgeNames } from "#src/knowledge/names.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
@@ -21,8 +18,7 @@ import { importFindings, runProvenance, type ImportConflict, type ImportContext,
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
-import { resolveProjectPath } from "#src/project.ts";
-import { runBody, UsageError } from "#src/script.ts";
+import { listed, OPTIONS, runScript, UsageError, type Call } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
@@ -30,37 +26,6 @@ import { instructionList } from "./lib/instructions.ts";
 import { CATALOGUE, findMacroUses, type MacroCandidate } from "./lib/macros.ts";
 import { findPitfalls, type Pitfall } from "./lib/pitfalls.ts";
 import { findPointers, type PointerCandidate } from "./lib/pointers.ts";
-
-const USAGE = `analyze.ts [options]
-
-The program and the coverage come from the knowledge: put them in with
-knowledge.ts image and coverage of the c64-knowledge skill. The executed code of
-the coverage is seeded, and analyzer data over it is reported.
-
-  --analyzer <name>       dxa (fast first pass) or ghidra (deeper, the default)
-  --entry <address>       an entry point, for example '$080d' (repeatable)
-  --decompile <address>   ghidra: a routine to decompile, at most 32 (repeatable)
-  --listing <file>        dxa: write the disassembly listing to this project file
-  --instructions <file>   ghidra: write every instruction (address, bytes, mnemonic,
-                          mode, operand, target, executed) to this project file as JSON
-  --max-listed <n>        list at most n labels, functions or candidates (default 50,
-                          0 for none); the counts are always given, and knowledge has
-                          all labels and functions
-  --space <space>         the knowledge space of the program: c64 (the default), drive8
-                          for 1541 drive code, or bank0 to bank255 for a cartridge bank
-  --macro-batch <file>    write the macro candidates as an apply batch of c64-knowledge
-                          (the macros and their uses) to this project file
-
-Routine symbols in knowledge are entry points too. Ghidra needs at least one
-entry point; dxa finds the SYS of a BASIC start by itself. The result is one
-JSON object. Addresses are $ and four hex digits.`;
-
-const DEFAULT_MAX_LISTED = 50;
-
-/** The first `max` items, the count, and where to read the rest when the list is cut. */
-function listed<T, U>(items: T[], max: number, show: (item: T) => U, all: string) {
-  return { count: items.length, listed: items.slice(0, max).map(show), ...(items.length > max ? { rest: all } : {}) };
-}
 
 /** A pitfall with $ addresses and what goes wrong. */
 function showPitfall(pitfall: Pitfall) {
@@ -130,13 +95,13 @@ function macroCandidates(space: string, byteAt: ImageByte, batchPath: string | u
       batched.push(candidate);
       batch.push({ op: "use", start: formatC64Address(candidate.start), end: formatC64Address(candidate.end), macro: candidate.macro, args: candidate.args, ...(space === DEFAULT_SPACE ? {} : { space }) });
     }
-    if (batch.length > 0) writeProjectFile(batchPath, Buffer.from(`${JSON.stringify(batch, null, 1)}\n`), { what: "--macro-batch" });
+    const written = batch.length > 0 ? writeReported(batchPath, `${JSON.stringify(batch, null, 1)}\n`, { what: "--out-macro-batch" }) : { out: batchPath };
     return {
       candidates,
       known,
       leftOut,
       batch: {
-        out: batchPath,
+        ...written,
         writes: batch.length,
         ...(other.size === 0 ? {} : { otherMacros: [...other].map((name) => `The knowledge has another macro ${name}: its candidates are not in the batch.`) }),
         ...(batch.length === 0 ? {} : { apply: `knowledge.ts apply ${batchPath} --reason "macro uses of 6502 idioms"` }),
@@ -152,16 +117,6 @@ function withRemedy(reason: string): string {
   return reason.startsWith("the Ghidra decompiler did not start")
     ? `${reason} On macOS, build the native decompiler once: in <Ghidra>/support/gradle run ./gradlew buildNatives.`
     : reason;
-}
-
-function addresses(values: string[] | undefined, option: string): number[] {
-  return (values ?? []).map((value) => {
-    try {
-      return parseC64Address(value);
-    } catch {
-      throw new UsageError(`${option} must be $ followed by four hex digits, not ${value}`);
-    }
-  });
 }
 
 /** One conflict: what the knowledge has, and what the analyzer found, under the analyzer's name. */
@@ -204,55 +159,19 @@ function record(findings: NormalizedFindings, revision: string, description: str
   };
 }
 
-async function run(argv: string[]): Promise<unknown> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    strict: true,
-    allowPositionals: true,
-    options: {
-      analyzer: { type: "string" },
-      entry: { type: "string", multiple: true },
-      decompile: { type: "string", multiple: true },
-      listing: { type: "string" },
-      "max-listed": { type: "string" },
-      instructions: { type: "string" },
-      space: { type: "string" },
-      "macro-batch": { type: "string" },
-      help: { type: "boolean" },
-    },
-  });
-  if (values.help) throw new UsageError("");
-  if (positionals.length !== 0) throw new UsageError("analyze takes no image: it reads the program from the knowledge (knowledge.ts image of the c64-knowledge skill puts it in)");
-  const entries = addresses(values.entry, "--entry");
-  const decompile = addresses(values.decompile, "--decompile");
+async function analyze(call: Call): Promise<unknown> {
+  const entries = call.addresses("entry");
+  const decompile = call.addresses("decompile");
   if (decompile.length > 32) throw new UsageError("--decompile takes at most 32 routines");
-  const maxListed = values["max-listed"] ?? String(DEFAULT_MAX_LISTED);
-  if (!/^\d{1,5}$/.test(maxListed)) throw new UsageError(`--max-listed must be a whole number, not ${maxListed}`);
-  const max = Number(maxListed);
-  const analyzer = values.analyzer ?? "ghidra";
-  if (analyzer !== "dxa" && analyzer !== "ghidra") throw new UsageError(`--analyzer must be dxa or ghidra, not ${analyzer}`);
+  const max = call.count("max-listed")!;
+  const analyzer = call.string("analyzer") as "dxa" | "ghidra";
+  const listingPath = call.string("out-listing");
+  const instructionsPath = call.string("out-instructions");
+  const batchPath = call.string("out-macro-batch");
   if (analyzer === "dxa" && decompile.length > 0) throw new UsageError("--decompile works only with --analyzer ghidra");
-  if (analyzer === "ghidra" && values.listing !== undefined) throw new UsageError("--listing works only with --analyzer dxa");
-  if (analyzer === "dxa" && values.instructions !== undefined) throw new UsageError("--instructions works only with --analyzer ghidra");
-  let listingPath: string | undefined;
-  if (values.listing !== undefined) {
-    try {
-      listingPath = resolveProjectPath(values.listing);
-    } catch {
-      throw new UsageError(`--listing must be a path relative to the project folder that stays inside it, not ${values.listing}`);
-    }
-  }
-
-  if (values["macro-batch"] !== undefined) {
-    try {
-      resolveProjectPath(values["macro-batch"]);
-    } catch {
-      throw new UsageError(`--macro-batch must be a path relative to the project folder that stays inside it, not ${values["macro-batch"]}`);
-    }
-  }
-
-  const space = values.space ?? DEFAULT_SPACE;
-  if (!SPACE_PATTERN.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
+  if (analyzer === "ghidra" && listingPath !== undefined) throw new UsageError("--out-listing works only with --analyzer dxa");
+  if (analyzer === "dxa" && instructionsPath !== undefined) throw new UsageError("--out-instructions works only with --analyzer ghidra");
+  const space = call.space;
   const reader = openForRead();
   const program = requireProgram(reader, space);
   // A coverage map is of the C64 CPU: VICE keeps none for the drive.
@@ -296,7 +215,7 @@ async function run(argv: string[]): Promise<unknown> {
   const idiomsResult = () => {
     const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: "Idioms in the program" }));
     // The macro candidates read the code regions after both imports.
-    const macros = macroCandidates(space, byteAt, values["macro-batch"]);
+    const macros = macroCandidates(space, byteAt, batchPath);
     // Platform pitfalls are C64 facts: drive code and banks get none.
     const pitfallDb = openForRead();
     const pitfalls = space === DEFAULT_SPACE ? findPitfalls(byteAt, listRegions(pitfallDb, undefined, "code", undefined, space)) : [];
@@ -344,13 +263,13 @@ async function run(argv: string[]): Promise<unknown> {
     const listing = attachments[0]!.toString("utf8");
     // The listing is written only after the import: a refused import leaves no new file.
     const imported = record({ ...dxaFindings(result), space, ...executed }, revision, "DXA analysis of the program", runProvenance(bytes, result.toolVersion));
+    let written: ReturnType<typeof writeReported> | undefined;
     if (listingPath !== undefined) {
       try {
-        mkdirSync(dirname(listingPath), { recursive: true });
-        writeFileSync(listingPath, listing);
+        written = writeReported(listingPath, listing, { what: "--out-listing" });
       } catch (error) {
         const recorded = imported.revision === null ? "The knowledge did not change." : `The knowledge has the findings as revision ${imported.revision}.`;
-        throw new WireFailure("operation-failed", `The script did not write the listing to ${values.listing}: ${(error as Error).message}. ${recorded}`);
+        throw new WireFailure("operation-failed", `The script did not write the listing to ${listingPath}: ${(error as Error).message}. ${recorded}`);
       }
     }
     const found = idiomsResult();
@@ -363,7 +282,7 @@ async function run(argv: string[]): Promise<unknown> {
       ...imported,
       regions: result.regions.map((region) => ({ start: formatC64Address(region.start), end: formatC64Address(region.end), classification: region.classification })),
       labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), "c64-knowledge: knowledge.ts symbols"),
-      ...(listingPath === undefined ? {} : { listing: values.listing }),
+      ...(written === undefined ? {} : { listing: written }),
     };
   }
 
@@ -378,11 +297,10 @@ async function run(argv: string[]): Promise<unknown> {
   const overlaps = listRegions(overlapDb, undefined, "dual-use", undefined, space);
   overlapDb?.close();
   const gaps = coverage === undefined ? [] : executedStarts(coverage, inProgram).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address) && !overlaps.some((region) => address >= region.start && address <= region.end));
-  let instructions: { out: string; count: number } | undefined;
-  if (values.instructions !== undefined) {
+  let instructions: Record<string, unknown> | undefined;
+  if (instructionsPath !== undefined) {
     const list = instructionList(result.instructions, coverage);
-    writeProjectFile(values.instructions, Buffer.from(`${JSON.stringify(list, null, 1)}\n`), { what: "--instructions" });
-    instructions = { out: values.instructions, count: list.length };
+    instructions = { count: list.length, ...writeReported(instructionsPath, `${JSON.stringify(list, null, 1)}\n`, { what: "--out-instructions" }) };
   }
   return {
     analyzer: "ghidra",
@@ -401,4 +319,26 @@ async function run(argv: string[]): Promise<unknown> {
   };
 }
 
-await runBody((argv) => run(argv), { usage: USAGE });
+await runScript({
+  name: "static-analysis",
+  summary: "Analyzes the program in the knowledge with DXA or Ghidra, seeded from the knowledge and its coverage, and imports the structural findings into the knowledge.",
+  names: knowledgeNames,
+  commands: [
+    {
+      name: "analyze",
+      summary: "Runs the analyzer over the program in the knowledge and imports what it finds as one revision, then the 6502 idioms as a second one.",
+      options: {
+        analyzer: { kind: "choice", value: "<dxa|ghidra>", choices: ["dxa", "ghidra"], default: "ghidra", help: "dxa (a fast first pass) or ghidra (deeper, the default)" },
+        entry: { ...OPTIONS.entry, multiple: true, help: "an entry point of the program" },
+        decompile: { kind: "address", value: "<address>", multiple: true, help: "ghidra: a routine to decompile, at most 32" },
+        space: OPTIONS.space,
+        "max-listed": { ...OPTIONS["max-listed"], help: "list at most n labels, functions or candidates (default 50, 0 for none). The counts are always given, and the knowledge has all labels and functions" },
+        "out-listing": { kind: "path", value: "<file>", help: "dxa: write the disassembly listing to this project file" },
+        "out-instructions": { kind: "path", value: "<file>", help: "ghidra: write every instruction (address, bytes, mnemonic, mode, operand, target, executed) to this project file as JSON" },
+        "out-macro-batch": { kind: "path", value: "<file>", help: "write the macro candidates as an apply batch of c64-knowledge (the macros and their uses) to this project file" },
+      },
+      notes: "The program and the coverage come from the knowledge: put them in with knowledge.ts image and coverage of the c64-knowledge skill. The executed code of the coverage is seeded. Routine symbols in the knowledge are entry points too. Ghidra needs at least one entry point. DXA finds the SYS of a BASIC start by itself.",
+      run: analyze,
+    },
+  ],
+});

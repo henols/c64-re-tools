@@ -52,7 +52,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
 
   // 1. The program goes into the knowledge; the first DXA pass makes its regions and labels DXA knowledge.
   assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "image", "game.prg")).json.revision, nthIn(project, 1));
-  const first = await skill(env, "c64-static-analysis", "analyze.ts", "--analyzer", "dxa");
+  const first = await skill(env, "c64-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa");
   assert.equal(first.status, 0, JSON.stringify(first.json));
   assert.equal(first.json.revision, nthIn(project, 2));
   assert.deepEqual(regions(), [
@@ -73,7 +73,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   changed.set([0xea, 0xea, 0xea, 0xea, 0xea], 0x0813 - 0x0801 + 2);
   writeFileSync(join(project, "game-v2.prg"), changed);
   assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "image", "game-v2.prg")).json.revision, nthIn(project, 5));
-  const second = await skill(env, "c64-static-analysis", "analyze.ts", "--analyzer", "dxa");
+  const second = await skill(env, "c64-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa");
   assert.equal(second.status, 0, JSON.stringify(second.json));
   assert.equal(second.json.revision, nthIn(project, 6));
   assert.deepEqual(second.json.conflicts, [], "a finer data type from the user is no conflict");
@@ -105,7 +105,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   // Windows starts no script by its shebang: a .cmd file runs it through Node (the supervisor starts .cmd through cmd.exe).
   const program = process.platform === "win32" ? join(project, "fake-dxa.cmd") : fake;
   if (program !== fake) writeFileSync(program, `@"${process.execPath}" "${fake}" %*\r\n`);
-  const broken = await skill({ ...process.env, C64RT_DXA: program }, "c64-static-analysis", "analyze.ts", "--analyzer", "dxa");
+  const broken = await skill({ ...process.env, C64RT_DXA: program }, "c64-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa");
   assert.equal(broken.status, 2);
   assert.match((broken.json.error as { message: string }).message, /incomplete or inconsistent listing\. Nothing was imported/);
   const after = openForRead(project);

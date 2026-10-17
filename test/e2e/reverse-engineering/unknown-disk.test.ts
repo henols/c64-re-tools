@@ -75,7 +75,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
 
   // 4. The program goes into the knowledge, and a fast DXA first pass finds the BASIC start by itself.
   assert.equal((await run("c64-knowledge", "knowledge.ts", "image", "extracted/game.prg")).status, 0);
-  const first = await run("c64-static-analysis", "analyze.ts", "--analyzer", "dxa", "--listing", "analysis/game.lst");
+  const first = await run("c64-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa", "--out-listing", "analysis/game.lst");
   assert.equal(first.status, 0, first.stdout);
   assert.deepEqual(first.json.regions, [
     { start: "$0801", end: "$080c", classification: "data" },
@@ -93,7 +93,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   }
 
   // 6. Deeper analysis seeded with the names.
-  const second = await run("c64-static-analysis", "analyze.ts", "--entry", "$080d", "--decompile", "$080d");
+  const second = await run("c64-static-analysis", "static-analysis.ts", "analyze", "--entry", "$080d", "--decompile", "$080d");
   assert.deepEqual(second.json.conflicts, []);
   assert.match((second.json.decompilations as Array<{ text: string }>)[0]!.text, /void main\(void\)/);
 

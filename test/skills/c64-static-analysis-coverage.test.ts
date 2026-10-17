@@ -43,8 +43,8 @@ function fresh(): string {
   return root;
 }
 
-const analyzeScript = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
-const analyzeIn = (root: string, ...args: string[]) => spawnSync(process.execPath, [...process.execArgv, analyzeScript, ...args], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+const analyzeScript = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
+const analyzeIn = (root: string, ...args: string[]) => spawnSync(process.execPath, [...process.execArgv, analyzeScript, "analyze", ...args], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
 
 function mapWith(starts: number[]): Uint8Array {
   const map = new Uint8Array(0x10000);
