@@ -68,10 +68,12 @@ node <skill>/scripts/testing.ts record tests/record/start.json --out tests/recor
 
 - With `--play`, a person plays the program after the steps of the record file. The steps can start the program, for example a key for an intro.
 - The script writes the address of a page to stderr. Give the address to the user. In a dev container, the port of the page (default 6465) must be forwarded.
-- The page shows the screen after the steps. The C64 is frozen until the user clicks Start. Tell the user to read the screen first and then to click Start.
-- On the page, the arrow keys, space and a gamepad move the joystick of `--joystick` (default 2). The other keys go to the C64 keyboard.
-- End stops the C64 and freezes the screen. Then the script writes the recording folder. Run the script in the background.
-- Cancel stops the session. The script writes no folder and gives `recorded: false` with the reason. Then ask the user what to do. Do not make a scripted recording in its place.
+- The page shows the screen after the steps. The C64 is frozen until the user presses Enter or clicks Start. Tell the user to read the screen first.
+- Give `--joystick` the port that the program reads: port 2 is `$DC00`, and port 1 is `$DC01`. Find the port in the code or in the knowledge. If you do not know the port, use 2. Tell the user that F9 changes the port.
+- The page has the full C64 keyboard and the joystick. F10 changes the arrow keys and space between the joystick and the C64 keys. A gamepad is always the joystick. See the key maps in [references/recording-format.md](references/recording-format.md).
+- RESTORE (Page Up) is not a read. The recording keeps it as an event, and the replay presses it again at the same read.
+- End (F12) stops the C64 and freezes the screen. Then the script writes the recording folder. Run the script in the background.
+- Cancel (F11) stops the session. The script writes no folder and gives `recorded: false` with the reason. Then ask the user what to do. Do not make a scripted recording in its place.
 
 A scripted recording has only steps. See [references/recording-format.md](references/recording-format.md). The steps are `frames`, `joystick`, `type`, `write`, `registers` and `runUntil` with `at` or `memory`.
 

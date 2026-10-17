@@ -61,9 +61,10 @@ async function recordCommand(call: Call): Promise<Record<string, unknown>> {
   const workspace = Workspace.create(context.supervisor, "c64-re-tools-record-");
   try {
     const person = playing
-      ? async (session: C64RunSession) => {
-          const ready = (url: string) => process.stderr.write("Open " + url + ". The start screen is frozen. Press Start on the page to play, End to save the recording, or Cancel.\n");
-          return (await play(session, { httpPort, joystick, ready })) === "cancelled" ? "the user cancelled the session on the page" : undefined;
+      ? (session: C64RunSession, restore: () => Promise<string | undefined>) => {
+          const ready = (url: string) =>
+            process.stderr.write("Open " + url + ". The start screen is frozen. Enter or Start begins the play, F12 or End saves the recording, F11 or Cancel ends without one. F9 changes the joystick port.\n");
+          return play(session, { httpPort, joystick, ready, restore });
         }
       : undefined;
     const outcome = await record(core, file, workspace, person);
@@ -128,8 +129,8 @@ const COMMANDS: CommandSpec[] = [
     subjects: [{ name: "<record.json>", help: "a record file, relative to the project folder. See references/recording-format.md" }],
     options: {
       out: { ...OPTIONS.out, value: "<dir>", required: true, help: "the recording folder, for example tests/recordings/<name>" },
-      play: { kind: "flag", help: "a person plays after the steps: the script prints the address of a page on stderr. The page shows the start screen frozen until Start. End saves the recording, Cancel ends without one" },
-      joystick: { kind: "count", value: "<1|2>", min: 1, max: 2, help: "with --play: the port of the arrow keys, space and the gamepad (default 2)" },
+      play: { kind: "flag", help: "a person plays after the steps: the script prints the address of a page on stderr. The page shows the start screen frozen until Start (Enter). End (F12) saves the recording, Cancel (F11) ends without one" },
+      joystick: { kind: "count", value: "<1|2>", min: 1, max: 2, help: "with --play: the joystick port that the program reads, at the start (default 2). F9 on the page changes it" },
       "http-port": { kind: "count", value: "<n>", min: 0, max: 65535, help: `with --play: the port of the page (default ${DEFAULT_HTTP_PORT})` },
     },
     run: recordCommand,

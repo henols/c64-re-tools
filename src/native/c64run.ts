@@ -12,7 +12,7 @@ import type { SupervisedProcess } from "./processes.ts";
 import type { ToolContext } from "./run.ts";
 
 /** The command protocol that this module speaks; c64run --version and version name it. */
-export const C64RUN_PROTOCOL = 1;
+export const C64RUN_PROTOCOL = 2;
 
 /** CPU cycles in one PAL frame: 312 lines of 63 cycles. */
 export const PAL_FRAME_CYCLES = 19_656;

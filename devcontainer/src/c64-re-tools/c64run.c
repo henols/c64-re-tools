@@ -27,7 +27,11 @@
 #include "systems/c1541.h"
 #include "systems/c64.h"
 
-#define C64RUN_PROTOCOL 1
+#define C64RUN_PROTOCOL 2
+// Keys that chips has no code for: each SHIFT alone, and the up arrow.
+#define C64RUN_KEY_LSHIFT 0x11
+#define C64RUN_KEY_RSHIFT 0x12
+#define C64RUN_KEY_UPARROW 0x5E
 #ifndef CHIPS_COMMIT
 #define CHIPS_COMMIT "unknown"
 #endif
@@ -311,6 +315,10 @@ static const char* init(const char* romdir) {
             .chars = { .ptr = rom[2], .size = 0x1000 },
         },
     });
+    // The matrix positions (column, line) of the keys that chips has no code for.
+    kbd_register_key(&sys.kbd, C64RUN_KEY_LSHIFT, 7, 1, 0);
+    kbd_register_key(&sys.kbd, C64RUN_KEY_RSHIFT, 4, 6, 0);
+    kbd_register_key(&sys.kbd, C64RUN_KEY_UPARROW, 6, 6, 0);
     const uint16_t vector = rom[0][0x1FFC] | (rom[0][0x1FFD] << 8);
     for (int i = 0; i < 3; i++) free(rom[i]);
     pins = sys.pins;
@@ -507,7 +515,8 @@ int main(int argc, char** argv) {
             printf("ok\n");
         } else if (!strcmp(cmd, "key")) {
             // key <code hex> down|up: a key of the keyboard matrix; the code is ASCII as
-            // chips maps it (A-Z, 0-9, space 20, return 0d, ...); shifted keys press SHIFT
+            // chips maps it (A-Z, 0-9, space 20, return 0d, ...); shifted keys press SHIFT.
+            // 11 and 12 are the left and right SHIFT alone, 5e the up arrow, ff RESTORE (NMI).
             unsigned code;
             if (sscanf(a1, "%x", &code) != 1 || (strcmp(a2, "down") && strcmp(a2, "up"))) { printf("err key: give a code and down or up\n"); continue; }
             if (!strcmp(a2, "down")) c64_key_down(&sys, (int)code);

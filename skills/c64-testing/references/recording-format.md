@@ -52,19 +52,34 @@ A `type` step can press A to Z, 0 to 9, space, return (`\n`) and `+-.:@,*;=/!"#$
 
 With `--play`, `testing.ts record` does the steps, then a person plays. The page on `http://localhost:<port>/` (`--http-port`, default 6465) shows the screen at 50 frames each second. It has no sound.
 
-| Button | Effect |
-|---|---|
-| Start | The C64 runs. Before Start, the page shows the screen after the steps, and the C64 is frozen. The time before Start is not in the recording. |
-| End and save the recording | The C64 stops at the frame on the page, and the screen stays frozen. The script writes the recording folder. |
-| Cancel | The session stops before or during the play. The script writes no folder and gives `recorded: false`. |
+| Button | Key | Effect |
+|---|---|---|
+| Start | Enter, on the start screen | The C64 runs. Before Start, the page shows the screen after the steps, and the C64 is frozen. The time before Start is not in the recording. |
+| End and save the recording | F12 | The C64 stops at the frame on the page, and the screen stays frozen. The script writes the recording folder. |
+| Cancel | F11 | The session stops before or during the play. The script writes no folder and gives `recorded: false`. |
+| Joystick port | F9 | The joystick goes to the other port. `--joystick` gives the first port (default 2). |
+| Arrow keys and space | F10 | The arrow keys and space change between the joystick and the C64 keys. At the start, they are the joystick. |
+| Key map | | The keyboard changes between the symbolic map (the default) and the positional map. |
 
 | Page input | C64 input |
 |---|---|
-| Arrow keys, space | The joystick of `--joystick` (default 2): directions and fire. |
-| A gamepad | The same joystick: the left stick or the cross for directions, button 1 or 2 for fire. |
-| A-Z, 0-9, the symbols of a `type` step, Return, Backspace (DEL), Escape (RUN/STOP), F1-F8 | The C64 keyboard. |
+| Arrow keys and space, when they are the joystick | The joystick: directions and fire. |
+| A gamepad | The joystick: the left stick or the cross for directions, button 1 or 2 for fire. |
+| Arrow keys and space, when they are C64 keys | CRSR up, down, left and right, and SPACE. |
+| Escape, Shift+Escape | RUN/STOP, RUN |
+| Page Up | RESTORE |
+| Tab, left Alt | CTRL, C= |
+| Home, Shift+Home | CLR/HOME, CLR |
+| Backspace, Shift+Backspace | INST/DEL, INST |
+| F1-F8 | F1-F8 |
 
-The page sends input only between Start and End. The input of the page goes into the reads, as the input of the steps does.
+In the symbolic map, a key gives the character on the PC key. a-z give the C64 letters, and A-Z give the letters with SHIFT. The digits and the symbols give the same characters. `£` gives the pound key, `^` gives the up arrow, and the backquote gives the left arrow.
+
+In the positional map, a key gives the C64 key at the same place on the keyboard. Each SHIFT key is a C64 SHIFT key, also alone. The C64 keys `+ - @ * : ; =` are on the PC keys `- = [ ] ; ' \`. Insert gives the pound key, Delete gives the up arrow, and the backquote gives the left arrow. Use the positional map when the program reads SHIFT alone or a key with SHIFT.
+
+Ctrl and Cmd are not C64 keys. They keep their function in the browser.
+
+The page sends input only between Start and End. The input of the page goes into the reads, as the input of the steps does. RESTORE starts an NMI and is not a read. The recording keeps each RESTORE as an event without a step number. The replay presses RESTORE again at the same read of the program.
 
 ## Recording folder
 

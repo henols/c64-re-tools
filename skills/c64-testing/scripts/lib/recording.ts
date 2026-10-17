@@ -71,10 +71,16 @@ export interface Comparison {
   pin?: StateItem[];
 }
 
-/** A step that is not input: it runs at the same point of the program on each replay. */
+/** RESTORE: it starts an NMI and is no read, so the recording keeps it as an event. */
+export interface RestoreAction {
+  restore: true;
+}
+
+/** A step that is not input, or a RESTORE of the play: it runs at the same point of the program on each replay. */
 export interface RecordedEvent {
-  step: number;
-  action: ActionStep;
+  /** The step of the record file; none for a RESTORE of the play. */
+  step?: number;
+  action: ActionStep | RestoreAction;
   /**
    * The point: the n-th read at the busiest program site, or a tick when no
    * program site has read yet. An event that follows another event directly
@@ -353,8 +359,14 @@ const COMPARE: Record<string, (value: number, wanted: number) => boolean> = {
   gte: (value, wanted) => value >= wanted,
 };
 
-async function doAction(core: C64RunSession, step: ActionStep, at: SideAddresses): Promise<string | undefined> {
-  if ("write" in step) {
+async function doAction(core: C64RunSession, step: ActionStep | RestoreAction, at: SideAddresses): Promise<string | undefined> {
+  if ("restore" in step) {
+    // The NMI line is low while RESTORE is down: hold it as a press step holds a key.
+    const tick = (await core.status("status")).tick;
+    await core.command("key ff down");
+    await core.status("run " + (tick + KEY_FRAMES * PAL_FRAME_CYCLES));
+    await core.command("key ff up");
+  } else if ("write" in step) {
     await core.write(at.data(step.write.address), Buffer.from(step.write.data, "hex"));
   } else if ("type" in step) {
     // The KERNAL keyboard queue: the keys after the keys that wait there now.
@@ -403,9 +415,15 @@ export interface RecordOutcome {
 
 /**
  * Plays the steps of a record file in the replay core and records the session.
- * `input` runs after the steps; a reason that it gives means no recording.
+ * `input` runs after the steps, with `restore` for a RESTORE press of the play;
+ * a reason that it gives means no recording.
  */
-export async function record(core: C64RunSession, file: RecordFile, workspace: Workspace, input?: (core: C64RunSession) => Promise<string | undefined>): Promise<RecordOutcome> {
+export async function record(
+  core: C64RunSession,
+  file: RecordFile,
+  workspace: Workspace,
+  input?: (core: C64RunSession, restore: () => Promise<string | undefined>) => Promise<string | undefined>,
+): Promise<RecordOutcome> {
   const prg = readProjectFile(file.program).bytes;
   const same = (address: number) => address;
   const at = sideAddresses(namesOf(file.symbols), "original", { code: same, data: same });
@@ -427,6 +445,20 @@ export async function record(core: C64RunSession, file: RecordFile, workspace: W
   const masks = [0, 0];
   let reason: string | undefined;
   let afterEvent = false;
+  // An event runs after the next read at the busiest program site, here and on each
+  // replay. An event right after another event runs where that one ended.
+  const runEvent = async (action: ActionStep | RestoreAction, step?: number): Promise<string | undefined> => {
+    const tick = (await core.status("status")).tick;
+    const busiest = afterEvent ? undefined : busiestSite(await core.command("sites"));
+    const key: RecordedEvent["key"] = afterEvent
+      ? { previous: true }
+      : busiest === undefined
+        ? { tick: tick + 1 }
+        : { site: formatC64Address(busiest.site), addr: formatC64Address(busiest.addr), count: busiest.count + 1 };
+    if ((await runToKey(core, key, tick + 600 * PAL_FRAME_CYCLES, new Map())) !== "reached") return "the program did not read its input again within 600 frames";
+    events.push({ ...(step === undefined ? {} : { step }), action, key });
+    return doAction(core, action, at);
+  };
   for (const [index, step] of file.steps.entries()) {
     let tick = (await core.status("status")).tick;
     const event = !INPUT_KINDS.has(Object.keys(step)[0]!);
@@ -443,20 +475,7 @@ export async function record(core: C64RunSession, file: RecordFile, workspace: W
         await core.status(`run ${(tick += KEY_FRAMES * PAL_FRAME_CYCLES)}`);
       }
     } else {
-      // Not input: it runs after the next read at the busiest program site, here and on each
-      // replay. An event right after another event runs where that one ended.
-      const busiest = afterEvent ? undefined : busiestSite(await core.command("sites"));
-      const key: RecordedEvent["key"] = afterEvent
-        ? { previous: true }
-        : busiest === undefined
-          ? { tick: tick + 1 }
-          : { site: formatC64Address(busiest.site), addr: formatC64Address(busiest.addr), count: busiest.count + 1 };
-      if ((await runToKey(core, key, tick + 600 * PAL_FRAME_CYCLES, new Map())) !== "reached") {
-        reason = `step ${index + 1}: the program did not read its input again within 600 frames`;
-        break;
-      }
-      events.push({ step: index + 1, action: step, key });
-      reason = await doAction(core, step, at);
+      reason = await runEvent(step, index + 1);
       if (reason !== undefined) {
         reason = `step ${index + 1}: ${reason}`;
         break;
@@ -464,7 +483,13 @@ export async function record(core: C64RunSession, file: RecordFile, workspace: W
     }
     afterEvent = event;
   }
-  if (input !== undefined && reason === undefined) reason = await input(core);
+  // The play runs frames before each RESTORE: a RESTORE never runs where an event of the steps ended.
+  const restore = async () => {
+    afterEvent = false;
+    const failed = await runEvent({ restore: true });
+    return failed === undefined ? undefined : "RESTORE: " + failed;
+  };
+  if (input !== undefined && reason === undefined) reason = await input(core, restore);
   const end = await core.status("status");
   const sites = (await core.command("sites")).split(" ").slice(2).map((entry): RecordedSite => {
     const [where, reads, kind] = entry.split(":");
@@ -562,15 +587,16 @@ export async function replaySide(
   const limit = original ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
   let problem: string | undefined;
   for (const event of recording.events) {
+    const what = event.step === undefined ? "the RESTORE of the play" : "step " + event.step;
     const point = await runToKey(core, event.key, limit, map);
     if (point === "halted") break;
     if (point === "not-reached") {
-      problem = `the program did not come to the point of step ${event.step}`;
+      problem = "the program did not come to the point of " + what;
       break;
     }
     problem = await doAction(core, event.action, at);
     if (problem !== undefined) {
-      problem = `step ${event.step}: ${problem}`;
+      problem = what + ": " + problem;
       break;
     }
   }

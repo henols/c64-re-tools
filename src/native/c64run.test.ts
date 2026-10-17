@@ -24,7 +24,7 @@ function standInCore(name: string, options: { protocol?: number; roms?: boolean 
       "#!/bin/sh",
       "while read cmd rest; do",
       '  case "$cmd" in',
-      `    version) echo "ok c64run protocol=${options.protocol ?? 1} chips=test" ;;`,
+      `    version) echo "ok c64run protocol=${options.protocol ?? 2} chips=test" ;;`,
       `    init) ${init} ;;`,
       '    peek) echo "ok 0102" ;;',
       "    quit) exit 0 ;;",
@@ -65,7 +65,7 @@ test("a missing c64run, another protocol or missing ROMs refuse with installatio
   const refused = (pattern: RegExp) => (error: unknown) => error instanceof WireFailure && error.code === "installation-incomplete" && pattern.test(error.message);
   await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: join(scratch, "no-c64run") })), refused(/C64RT_C64RUN/));
   await assert.rejects(C64RunSession.open(context({})), refused(/c64run is not installed on this machine/));
-  await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-2", { protocol: 2 }) })), refused(/protocol 2; c64-re-tools needs protocol 1/));
+  await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-1", { protocol: 1 }) })), refused(/protocol 1; c64-re-tools needs protocol 2/));
   const session = await C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-no-roms", { roms: false }) }));
   try {
     await assert.rejects(session.init(), refused(/no ROM .*C64RT_C64_ROMS/));
