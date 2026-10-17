@@ -34,12 +34,14 @@ class FakeCore implements Pick<C64RunSession, "command" | "status"> {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function until(check: () => boolean, what: string): Promise<void> {
-  for (let at = 0; at < 200; at++) {
+/** Waits for a check; a full suite under load can be slow, so the limit is 10 s. `seen` tells what came instead. */
+async function until(check: () => boolean, what: string, seen?: () => string): Promise<void> {
+  const limit = Date.now() + 10_000;
+  while (Date.now() < limit) {
     if (check()) return;
     await sleep(10);
   }
-  assert.fail("timed out: " + what);
+  assert.fail("timed out: " + what + (seen === undefined ? "" : "; the event stream ends with " + JSON.stringify(seen().slice(-400))));
 }
 
 /** The sessions that a failed test left open: Cancel closes their servers, so that the run ends. */
@@ -76,7 +78,7 @@ test("the page has Start, End and Cancel, and shows the start screen frozen unti
   const html = await (await fetch(page.url)).text();
   for (const id of ["start", "end", "cancel", "port", "arrows", "map"]) assert.match(html, new RegExp('<button id="' + id + '"'));
   assert.doesNotMatch(html, /__KEYS__/, "the page has the key maps");
-  await until(() => page.events().includes("data: 2 1 AAE="), "the start frame");
+  await until(() => page.events().includes("data: 2 1 AAE="), "the start frame", page.events);
   assert.match(page.events(), /event: palette\ndata: 000000 ffffff\n\n/);
   assert.match(page.events(), /event: state\ndata: waiting\n\nevent: port\ndata: 2\n\n/);
 
@@ -97,7 +99,7 @@ test("the page has Start, End and Cancel, and shows the start screen frozen unti
 test("Start runs a frame at a time with the page input, and End freezes the machine at once", async () => {
   const core = new FakeCore();
   const page = await open(core);
-  await until(() => page.events().includes("data: waiting"), "the waiting state");
+  await until(() => page.events().includes("data: waiting"), "the waiting state", page.events);
 
   assert.equal(await page.post("start"), 204);
   assert.equal(await page.post("start"), 409, "one session for each run");
@@ -120,7 +122,7 @@ test("Start runs a frame at a time with the page input, and End freezes the mach
   assert.equal(await page.session, undefined, "End: the recording is complete");
   assert.equal(core.runs().length, frozen, "no frame runs after End");
   assert.equal(core.log.at(-1), "joy 0 0");
-  await until(() => page.events().includes("event: state\ndata: ended\n\n"), "the ended state on the page");
+  await until(() => page.events().includes("event: state\ndata: ended\n\n"), "the ended state on the page", page.events);
   assert.equal(await page.post("cancel").catch(() => "closed"), "closed", "the server is closed");
 });
 
@@ -133,15 +135,15 @@ test("Cancel during play ends the session without another frame", async () => {
   const frozen = core.runs().length;
   assert.equal(await page.session, CANCELLED);
   assert.equal(core.runs().length, frozen);
-  await until(() => page.events().includes("event: state\ndata: cancelled\n\n"), "the cancelled state on the page");
+  await until(() => page.events().includes("event: state\ndata: cancelled\n\n"), "the cancelled state on the page", page.events);
 });
 
 test("the joystick starts on the given port, and F9 moves it to the other port", async () => {
   const core = new FakeCore();
   const page = await open(core, { joystick: 1 });
-  await until(() => page.events().includes("data: waiting\n\nevent: port\ndata: 1"), "port 1 at the start");
+  await until(() => page.events().includes("data: waiting\n\nevent: port\ndata: 1"), "port 1 at the start", page.events);
   assert.equal(await page.post("port"), 204, "the port changes on the start screen too");
-  await until(() => page.events().includes("event: port\ndata: 2"), "port 2");
+  await until(() => page.events().includes("event: port\ndata: 2"), "port 2", page.events);
   assert.equal(await page.post("port"), 204);
   assert.equal(await page.post("start"), 204);
   assert.equal(await page.post("joystick?mask=16"), 204);
@@ -179,7 +181,7 @@ test("a RESTORE that fails stops the session with its reason", async () => {
   assert.equal(await page.post("start"), 204);
   assert.equal(await page.post("restore"), 204);
   assert.equal(await page.session, "RESTORE: the program did not read its input again within 600 frames");
-  await until(() => page.events().includes("event: state\ndata: failed\n\n"), "the failed state on the page");
+  await until(() => page.events().includes("event: state\ndata: failed\n\n"), "the failed state on the page", page.events);
 });
 
 test("the key maps send C64 keys: SHIFT alone only in the positional map, shifted letters in the symbolic map", () => {
