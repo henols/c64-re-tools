@@ -398,8 +398,11 @@ export interface RecordOutcome {
   reason?: string;
 }
 
-/** Plays the steps of a record file in the replay core and records the session. */
-export async function record(core: C64RunSession, file: RecordFile, workspace: Workspace, input?: (core: C64RunSession) => Promise<void>): Promise<RecordOutcome> {
+/**
+ * Plays the steps of a record file in the replay core and records the session.
+ * `input` runs after the steps; a reason that it gives means no recording.
+ */
+export async function record(core: C64RunSession, file: RecordFile, workspace: Workspace, input?: (core: C64RunSession) => Promise<string | undefined>): Promise<RecordOutcome> {
   const prg = readProjectFile(file.program).bytes;
   const same = (address: number) => address;
   const at = sideAddresses(namesOf(file.symbols), "original", { code: same, data: same });
@@ -458,7 +461,7 @@ export async function record(core: C64RunSession, file: RecordFile, workspace: W
     }
     afterEvent = event;
   }
-  if (input !== undefined && reason === undefined) await input(core);
+  if (input !== undefined && reason === undefined) reason = await input(core);
   const end = await core.status("status");
   const sites = (await core.command("sites")).split(" ").slice(2).map((entry): RecordedSite => {
     const [where, reads, kind] = entry.split(":");

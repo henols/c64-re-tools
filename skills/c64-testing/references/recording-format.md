@@ -52,13 +52,19 @@ A `type` step can press A to Z, 0 to 9, space, return (`\n`) and `+-.:@,*;=/!"#$
 
 With `--play`, `record.ts` does the steps, then a person plays. The page on `http://localhost:<port>/` (`--http-port`, default 6465) shows the screen at 50 frames each second. It has no sound.
 
+| Button | Effect |
+|---|---|
+| Start | The C64 runs. Before Start, the page shows the screen after the steps, and the C64 is frozen. The time before Start is not in the recording. |
+| End and save the recording | The C64 stops at the frame on the page, and the screen stays frozen. The script writes the recording folder. |
+| Cancel | The session stops before or during the play. The script writes no folder and gives `recorded: false`. |
+
 | Page input | C64 input |
 |---|---|
 | Arrow keys, space | The joystick of `--joystick` (default 2): directions and fire. |
 | A gamepad | The same joystick: the left stick or the cross for directions, button 1 or 2 for fire. |
 | A-Z, 0-9, the symbols of a `type` step, Return, Backspace (DEL), Escape (RUN/STOP), F1-F8 | The C64 keyboard. |
 
-Stop on the page ends the session, and the script writes the recording folder. The input of the page goes into the reads, as the input of the steps does.
+The page sends input only between Start and End. The input of the page goes into the reads, as the input of the steps does.
 
 ## Recording folder
 

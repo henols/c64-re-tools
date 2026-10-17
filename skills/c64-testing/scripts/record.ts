@@ -21,7 +21,8 @@ const USAGE = `record.ts <record.json> --out <folder> [--play [--joystick 1|2] [
 <record.json> is a record file relative to the project folder. See
 references/recording-format.md. --out is the recording folder, for example
 tests/recordings/<name>. With --play, a person plays after the steps: the
-script prints the address of a page on stderr and runs until Stop on the page.
+script prints the address of a page on stderr. The page shows the start screen
+frozen until Start; End saves the recording, Cancel ends without one.
 --joystick is the port of the arrow keys, space and the gamepad (default 2).
 --http-port is the port of the page (default 6465). The result is one JSON object.`;
 
@@ -62,8 +63,10 @@ async function run(argv: string[]): Promise<Record<string, unknown>> {
     let outcome;
     try {
       const person = values.play
-        ? (session: C64RunSession) =>
-            play(session, { httpPort, joystick, ready: (url) => process.stderr.write(`Play at ${url} and press Stop on the page to save the recording.\n`) })
+        ? async (session: C64RunSession) => {
+            const ready = (url: string) => process.stderr.write("Open " + url + ". The start screen is frozen. Press Start on the page to play, End to save the recording, or Cancel.\n");
+            return (await play(session, { httpPort, joystick, ready })) === "cancelled" ? "the user cancelled the session on the page" : undefined;
+          }
         : undefined;
       outcome = await record(core, file, workspace, person);
     } catch (error) {

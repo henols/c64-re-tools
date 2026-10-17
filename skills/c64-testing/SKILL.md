@@ -68,8 +68,10 @@ node <skill>/scripts/record.ts tests/record/start.json --out tests/recordings/pl
 
 - With `--play`, a person plays the program after the steps of the record file. The steps can start the program, for example a key for an intro.
 - The script writes the address of a page to stderr. Give the address to the user. In a dev container, the port of the page (default 6465) must be forwarded.
+- The page shows the screen after the steps. The C64 is frozen until the user clicks Start. Tell the user to read the screen first and then to click Start.
 - On the page, the arrow keys, space and a gamepad move the joystick of `--joystick` (default 2). The other keys go to the C64 keyboard.
-- The script runs until the user clicks Stop on the page. Run it in the background. Then it writes the recording folder.
+- End stops the C64 and freezes the screen. Then the script writes the recording folder. Run the script in the background.
+- Cancel stops the session. The script writes no folder and gives `recorded: false` with the reason. Then ask the user what to do. Do not make a scripted recording in its place.
 
 A scripted recording has only steps. See [references/recording-format.md](references/recording-format.md). The steps are `frames`, `joystick`, `type`, `write`, `registers` and `runUntil` with `at` or `memory`.
 
