@@ -250,7 +250,8 @@ function packageVersion(): string {
 
 const INSTRUCTIONS =
   "These tools control one live Commodore 64 emulator that belongs to this session. " +
-  "Addresses are four hex digits after a dollar sign, for example $c000. " +
+  "An address is a dollar sign and 1 to 4 hex digits, for example $c000 or $fb. A result gives four hex digits. " +
+  "An error is {\"error\": {\"code\", \"message\"}}. " +
   "Memory data is lowercase hex without separators. " +
   "Other register values and chip values are decimal numbers. " +
   "A read does not change the run state of the machine.";

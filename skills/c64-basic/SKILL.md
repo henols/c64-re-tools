@@ -20,23 +20,33 @@ This skill does not run the program and does not change project knowledge.
 The script sends the program to the host runtime. The host decodes it with petcat and finds the handoffs.
 
 ```
-node <skill>/scripts/basic.ts extracted/game.prg
+node <skill>/scripts/basic.ts list extracted/game.prg
 ```
 
-The script prints one JSON object. Addresses are `$` and four hex digits.
+### Calling the script
+
+- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
+- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+- A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
+- Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
+- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
+- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
 
 ### Project folder
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
+- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Workflow
 
-1. Run the script on the program.
+1. Run `list` on the program.
 2. Read `listing`. Each line starts with its BASIC line number. Keywords show in lower case. Control characters in strings show in braces, for example `{clr}`.
 3. Read `handoffs`. Each handoff has a `kind` (`sys` or `usr`) and the BASIC `line`.
    - A `sys` handoff with an `address`: BASIC calls the machine code at that address. The script calculates a SYS argument with numbers, π, `+`, `-`, `*`, `/` and brackets. For example, `SYS π*656` calls `$080c`.
@@ -57,16 +67,14 @@ The entry point of the machine code can be durable knowledge. The c64-reverse-en
 
 ## Result
 
-The listing and the handoff addresses. Or `decoded: false` with a reason when the file is not a BASIC program.
-
-The exit status is 0 for a listing. The exit status is 1 for `decoded: false` and for an error. The exit status is 2 for a wrong argument.
+The listing and the handoff addresses.
 
 ## Failure and conflicts
 
-- `decoded: false`: the file is not a BASIC program. This is a normal result. Usually the file is machine code. Give it to the c64-static-analysis skill. A memory dump also gives `decoded: false`: its first two bytes are not a load address, and its bytes go past `$ffff`.
+- `invalid-input` with "is no BASIC program": the file is not a BASIC program. Usually the file is machine code. Give it to the c64-static-analysis skill. A memory dump also gives this error: its first two bytes are not a load address, and its bytes go past `$ffff`.
 - An empty `handoffs` list: the BASIC does not start machine code with SYS or USR. Do not make up a handoff. Look for a POKE into a vector or a LOAD of another file in the listing.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
-- `not-found` or `invalid-input`: the path or an argument is wrong. Read the message and correct the call.
+- `not-found` or another `invalid-input`: the path or an argument is wrong. Read the message and correct the call.
 
 ## Handoffs
 

@@ -7,6 +7,7 @@
 
 import { writeFileSync } from "node:fs";
 
+import { Refusal } from "../errors.ts";
 import { SYMBOL_NAME } from "../c64.ts";
 import { describeError, WireFailure } from "../protocol/messages.ts";
 import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaParams, type DxaResult } from "./types.ts";
@@ -61,7 +62,7 @@ export function parseListing(listing: string, start: number, end: number): Pick<
     const label = /^([0-9a-f]{4})\s+(\.?[A-Za-z_]\w*):\s*$/.exec(line);
     if (label !== null) {
       const address = Number.parseInt(label[1]!, 16);
-      if (address < start || address > end || !SYMBOL_NAME.test(label[2]!)) throw new Error(`label ${label[2]} at $${label[1]} is not usable`);
+      if (address < start || address > end || !SYMBOL_NAME.test(label[2]!)) throw new Refusal("operation-failed", `label ${label[2]} at $${label[1]} is not usable`);
       labels.push({ address, name: label[2]! });
       continue;
     }
@@ -72,17 +73,17 @@ export function parseListing(listing: string, start: number, end: number): Pick<
   }
   const first = statements[0];
   const last = statements.at(-1);
-  if (first === undefined || last === undefined) throw new Error("the listing has no statements");
-  if (first.address !== start) throw new Error(`the listing starts at $${hex(first.address)}, not at $${hex(start)}`);
-  if (last.address > end) throw new Error("the listing runs past the end of the program");
+  if (first === undefined || last === undefined) throw new Refusal("operation-failed", "the listing has no statements");
+  if (first.address !== start) throw new Refusal("operation-failed", `the listing starts at $${hex(first.address)}, not at $${hex(start)}`);
+  if (last.address > end) throw new Refusal("operation-failed", "the listing runs past the end of the program");
   const regions: DxaResult["regions"] = [];
   statements.forEach((statement, index) => {
     const next = statements[index + 1]?.address ?? end + 1;
     const size = next - statement.address;
-    if (size <= 0) throw new Error(`the listing goes back at $${hex(next)}`);
+    if (size <= 0) throw new Refusal("operation-failed", `the listing goes back at $${hex(next)}`);
     // Data lines count their items; an instruction line dumps exactly its bytes.
     const expected = statement.data ?? statement.dumped;
-    if (expected !== size) throw new Error(`the line at $${hex(statement.address)} holds ${expected} bytes, but the next line is ${size} bytes later`);
+    if (expected !== size) throw new Refusal("operation-failed", `the line at $${hex(statement.address)} holds ${expected} bytes, but the next line is ${size} bytes later`);
     const classification = statement.data === undefined ? "code" : "data";
     const last = regions.at(-1);
     if (last?.classification === classification) last.end = next - 1;

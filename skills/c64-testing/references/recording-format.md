@@ -22,31 +22,37 @@ A record file (for `testing.ts record`) is one JSON object in a project file.
 - `program`: a PRG file, relative to the project folder.
 - `symbols`: optional. `knowledge` (default), `none`, or a JSON file: the output of the c64-assembler skill, or an object of names and `$` addresses. The steps use these names.
 - `load`: optional. With `false` (default), the program must load at `$0801` with a BASIC start line, and the C64 types `RUN`. With `true`, the program goes into memory and the C64 stays at READY. Then a `registers` step with `pc` starts the program.
-- `checkpoint`, `state` and `pin`: optional. The comparison that a replay uses when the replay gives none. `checkpoint` is the name or `$` address of a routine. Each entry of the routine is a checkpoint. `state` is 1 to 16 memory items that the checkpoints compare. `pin` is the random state in RAM. An item is a name, a `$` address, or `{ "at", "size" }` with a size from 1 to 4096. Give `checkpoint` and `state` together.
+- `checkpoint`, `state` and `pin`: optional. The comparison that a replay uses when the replay gives none. `checkpoint` is the name or `$` address of a routine. Each entry of the routine is a checkpoint. `state` is 1 to 16 memory items that the checkpoints compare. `pin` is the random state in RAM. An item is a name, a `$` address, or `{ "address", "size" }` with a size from 1 to 4096. Give `checkpoint` and `state` together.
 - `inputs`: optional. The I/O addresses (or ranges such as `$de00-$dfff`) whose reads are input. The default is `$dc00` and `$dc01`: the joystick ports and the keyboard matrix. It also has `$d419` to `$d41c` (the paddles, and the noise and envelope of SID voice 3), and `$de00-$dfff` (no device: the last byte on the bus). Add `$d012` or a CIA timer only for a program that reads a seed there and does not wait in a loop on it.
 - `steps`: the steps.
 
 ## Steps
 
-The steps have the form of the steps of a scenario.
+The steps have the form of the steps of a scenario. Two steps behave differently:
+
+- `type` puts at most 10 keys into the keyboard queue of the KERNAL. It is an event: a replay does it again.
+- `press` pushes keys of the keyboard matrix. It is input. A scenario has no `press` step.
+
+A record file has no `raster` target and no `condition`. `write` and `runUntil` have only the space `c64`.
 
 | Step | Effect |
 |---|---|
 | `{ "frames": 300 }` | Run 300 frames (19656 cycles each). |
 | `{ "joystick": { "port": 2, "direction": "left", "fire": true } }` | Set a joystick. It stays in this state until the next joystick step. |
-| `{ "type": "RUN\n" }` | Press each key of the text on the keyboard matrix, for 3 frames, then release it for 3 frames. |
-| `{ "write": { "at": "next_room", "bytes": [1] } }` | Write bytes into RAM. |
+| `{ "press": "RUN\n" }` | Press each key of the text on the keyboard matrix for 3 frames, then release it for 3 frames. |
+| `{ "type": { "mode": "text", "text": "RUN\n" } }` | Put at most 10 keys into the keyboard queue of the KERNAL, after the keys that wait there. |
+| `{ "write": { "address": "next_room", "data": "01" } }` | Write bytes into RAM. |
 | `{ "registers": { "pc": "change_room", "a": 16 } }` | Set registers at the next instruction. `pc` continues the program at that address. |
-| `{ "runUntil": { "at": "main_loop" }, "timeoutFrames": 300 }` | Run until the CPU gets to an address. |
-| `{ "runUntil": { "memory": { "at": "room", "equals": 2 } }, "timeoutFrames": 600 }` | Run until a byte has a value. The script reads the byte at the end of each frame. |
+| `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 300 } }` | Run until the CPU gets to an address. |
+| `{ "runUntil": { "target": { "kind": "memory", "address": "room", "operator": "eq", "value": 2 }, "timeoutFrames": 600 } }` | Run until a byte compares true with `value`. The script reads the byte at the end of each frame. |
 
-The replay core has no `runUntil` with `raster`.
+A `press` step can press A to Z, 0 to 9, space, return (`\n`) and `+-.:@,*;=/!"#$%&'()[]<>?`. It presses a to z as A to Z.
 
-A `type` step can press A to Z, 0 to 9, space, return (`\n`) and `+-.:@,*;=/!"#$%&'()[]<>?`. It types a to z as A to Z.
+The keyboard queue of the KERNAL holds 10 keys. If the keys of a `type` step and the keys that wait in the queue do not fit, the session stops. A program that reads the keyboard hardware does not see the keys of a `type` step. Use `press` for that program.
 
-`joystick`, `type` and `frames` steps are input and time. The recording keeps their effect in the reads, so a replay does not do these steps again.
+`joystick`, `press` and `frames` steps are input and time. The recording keeps their effect in the reads, so a replay does not do these steps again.
 
-`write`, `registers` and `runUntil` steps are events. The recording keeps a point in the program for each event. The point is the next read at the input site with the most reads. That site is not in ROM. A replay does the event at the same read. An event that comes directly after another event runs at once after that event.
+`type`, `write`, `registers` and `runUntil` steps are events. The recording keeps a point in the program for each event. The point is the next read at the input site with the most reads. That site is not in ROM. A replay does the event again at the same read. An event that comes directly after another event runs at once after that event.
 
 ## Play
 
@@ -110,7 +116,7 @@ The result is one JSON object:
 - `side`: `original` for the check of the original only, `rebuild` with `--rebuild`.
 - `checkpoint`: the routine of the comparison.
 - `checkpoints` and `compared`: the checkpoints of the original, and the checkpoints of the rebuild that were the same.
-- `firstDifference`: on a FAIL, the checkpoint (1 is the first), the cycle on each side, and each state item that is different, as hex.
+- `firstDifference`: on a FAIL, the checkpoint (1 is the first), the cycle on each side, and each state item that is different. An item has `address`, and the `original` and `rebuild` values as hex.
 - `reason`: why the result is FAIL or INCONCLUSIVE.
 - `movedSites`: the number of sites at a different address in the rebuild.
 - `idleReads`: the input reads of the rebuild that the recording had no value for. Such a read is at a site that the recording does not have, or after its end. Each got the fixed value `$FF` (joystick, keyboard, paddles) or `$00`. An input site that the site map did not find shows here.

@@ -23,7 +23,7 @@ This skill does not change the disk image and does not change project knowledge.
 The script sends a disk image to the host runtime. The host runs c1541 and sends the result back. The script writes an extracted file into the project. It reads T64 and CRT files itself.
 
 ```
-node <skill>/scripts/disk.ts <action> <image> [name] [--out <file>]
+node <skill>/scripts/disk.ts <command> <image> [name] [--out <file>]
 ```
 
 | Need | Command |
@@ -38,16 +38,26 @@ node <skill>/scripts/disk.ts <action> <image> [name] [--out <file>]
 | The banks of a cartridge | `directory original/game.crt` |
 | Write each bank of a cartridge as a PRG | `crt original/game.crt --out cart` |
 
-The script prints one JSON object.
-
 File names show the characters that the C64 shows in a directory list. A byte that has no character shows as `{$xx}`, for example `{$c1}`. Write the name in the same form. The letter case of a name is not important. Put the name in single quotes in a shell, for example `'GAME {$c1}'`. A name that starts with `-` needs `--` before it, after all options, for example `read d.d64 --out x.prg -- '-----'`.
+
+### Calling the script
+
+- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
+- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+- A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
+- Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
+- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
+- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
 
 ### Project folder
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
+- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
@@ -80,13 +90,13 @@ The script reads T64 and CRT files itself. The host runtime is not necessary for
 
 ## Result
 
-The directory, the BAM, an entry or a sector chain as JSON. Or the extracted file in the project at the output path.
+The directory, the BAM, an entry or a sector chain as JSON.
 
-The exit status is 0 for a result with the file. The exit status is 1 for `found: false` and for an error. The exit status is 2 for a wrong argument.
+`read` writes the file at the output path. Its result gives the `name` and the file as `{out, bytes, sha256}`. `crt` gives the header, `chips` and `files`: one item for each PRG and one for `crt.json`.
 
 ## Failure and conflicts
 
-- `found: false`: the image has no file with that name. This is a normal result. Read the directory again and compare the names.
+- `not-found`: the image file is missing, or the image has no file with that name. Read the directory again and compare the names.
 - `media-error`: the image has a defect or is not a disk image. The message tells the problem, for example a sector chain that loops. Tell the user. Do not change the image.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 - `invalid-input`: an argument or a path is wrong. Read the message and correct the call.

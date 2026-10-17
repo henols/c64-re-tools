@@ -233,7 +233,7 @@ async function analyze(call: Call): Promise<unknown> {
           pointers: listed(pointers, max, showPointer, "a larger --max-listed"),
           pitfalls: listed(pitfalls, max, showPitfall, "a larger --max-listed"),
           macros: {
-            ...listed(macros.candidates, max, showMacro, "a larger --max-listed, or --macro-batch <file>"),
+            ...listed(macros.candidates, max, showMacro, "a larger --max-listed, or --out-macro-batch <file>"),
             ...(macros.known === 0 ? {} : { known: macros.known }),
             ...(macros.leftOut === 0 ? {} : { leftOut: macros.leftOut }),
             ...(macros.batch === undefined ? {} : { batch: macros.batch }),

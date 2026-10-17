@@ -17,7 +17,7 @@ This skill does not change project knowledge.
 
 ## Inputs
 
-- Two or more releases, relative to the project folder. A release is a PRG file or an `image.json` from c64-unpacker capture. Extract releases from disk images with the c64-disk skill. Unpack packed releases with the c64-unpacker skill first.
+- Two or more releases, relative to the project folder. A release is `knowledge` (the program in the knowledge), a PRG file, or an `image.json` from c64-unpacker capture with its `entry_state.json` beside it. Extract releases from disk images with the c64-disk skill. Unpack packed releases with the c64-unpacker skill first.
 - Optional: an address range to compare.
 - Optional: a shift for a release that loads at a different address.
 - Optional: a number of frames to run each release, and a steps file.
@@ -26,7 +26,7 @@ This skill does not change project knowledge.
 
 ## Tools / execution path
 
-The script compares the files locally. Only `--run` uses the host runtime: each release runs in its own emulator.
+The script compares the releases locally. Only `--frames` uses the host runtime: each release runs in its own emulator.
 
 ```
 node <skill>/scripts/provenance.ts compare releases/a.prg releases/b.prg releases/c.prg
@@ -39,23 +39,34 @@ node <skill>/scripts/provenance.ts leftovers --out .c64-re-tools/local/leftovers
 | Option | Meaning |
 |---|---|
 | `--shift 2:-256` | Move release 2 (the first release is 1) by -256 bytes. Use it again for more releases. |
-| `--from '$0900'` | Compare from this address. |
-| `--to '$09ff'` | Compare up to this address. |
-| `--run 600` | Run each release for this many frames, and give each listed difference its runtime evidence. |
-| `--steps steps/start-game.json` | With `--run`: the action steps of the c64-unpacker steps file to run before the frames, for example a key to start the game. |
+| `--range '$0900-$09ff'` | Compare only the addresses in this range. |
+| `--frames 600` | Run each release for this many frames, and give each listed difference its runtime evidence. |
+| `--steps .c64-re-tools/local/start-game.json` | With `--frames`: a JSON list of action steps to run before the frames, for example a key to start the game. The steps are the steps of a c64-unpacker steps file. |
 
-The script puts each PRG at its load address. An image has bytes only in its segments. The script compares the addresses where all releases have bytes. It prints one JSON object.
+The script puts each PRG at its load address. An image has bytes only in its segments. The script compares the addresses where all releases have bytes.
 
 With `--shift`, the addresses of `segments`, `common` and `differences` are the release addresses plus the `shift` of the release. The `start` and `end` of `runtime` are the addresses in the release itself, without the shift.
 
-With `--run`, a PRG starts with autostart and RUN. An image starts from its bytes: the script writes the segments and the entry state from `entry_state.json` into the emulator, and starts at the entry. Watchpoints on each difference stop the run at its first access.
+With `--frames`, a PRG starts with autostart and RUN. An image starts from its bytes: the script writes the segments and the entry state from `entry_state.json` into the emulator, and starts at the entry. Watchpoints on each difference stop the run at its first access.
+
+### Calling the script
+
+- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
+- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+- A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
+- Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
+- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
+- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
 
 ### Project folder
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
+- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
@@ -66,7 +77,7 @@ With `--run`, a PRG starts with autostart and RUN. An image starts from its byte
 
    `suggestedShifts` has at most 3 shifts for each release. The shift with the most `matchingSequences` is first. Data that did not move and code that moved give different shifts. Try each shift. `current: true` marks the shift of this run.
 3. Read `differences`. Each one has an address range, the bytes of each release, and `groups`: the releases that have the same bytes there.
-4. To know how the program uses the differences, run the script again with `--run` and the frames that get the program to the part you examine. Read `runtime` of each difference:
+4. To know how the program uses the differences, run the script again with `--frames` and the frames that get the program to the part you examine. Read `runtime` of each difference:
    - `first`: the first access in that release: `read`, `write`, `execute` or `none`. An instruction that reads and then writes the same byte, for example INC, counts as `read`. The operand bytes of an executed instruction count as `execute`, for example the value of `LDA #$03`.
    - `changed`: `true` when the bytes at the end of the run are not the bytes of the release.
    - A range that each release writes before it reads is probably runtime state, not a difference of the releases.
@@ -88,7 +99,7 @@ Use `separate` when you have only one release. It reads the program, its stages 
 - `codeRegions.unreachable`: code regions of the knowledge that no chain of call and jump references reaches from the entry. Run c64-static-analysis first, so that the knowledge has the code regions and the references.
 - `outside`: RAM outside the program that the program `read` or `executed` but did not write, and code it `generated`. A loader or an earlier stage put the bytes that the program did not write. A `generated` range can have gaps of two bytes or less: these are operand bytes.
 
-Each list has `count` and `listed`. `listed` has the first ranges, at most `--max-listed`. `--out` writes all of them. Run more coverage runs for parts that are `untouched`, and add them with `coverage` of the c64-knowledge skill, before you decide.
+Each list has `count` and `listed`. `listed` has the first ranges, at most `--max-listed` (default 50). `--out` writes all of them and the result shows the file as `{out, bytes, sha256}`. Run more coverage runs for parts that are `untouched`, and add them with `coverage` of the c64-knowledge skill, before you decide.
 
 ## Leftovers
 
@@ -136,7 +147,7 @@ Read the findings with care:
 
 A library is a folder of routine files. Each file holds one routine: its bytes and its knowledge. Keep one library beside the project folders, for example `library/` at the root of the workspace. A library is not a project folder. Commit it with the projects.
 
-`--library` is relative to the working directory, as `--project`. All other paths are relative to the project folder.
+`--library` is relative to the project folder, as all other paths. For example, `../library` is the folder `library/` beside the project.
 
 ```
 node <skill>/scripts/provenance.ts routine '$1000' --library ../library --project game-a
@@ -147,7 +158,7 @@ node <skill>/scripts/provenance.ts match --library ../library --out .c64-re-tool
 To save a routine:
 
 1. Put the program into the knowledge, and name the routine there first. The file keeps the user and LLM names, comments, regions, references and operand expressions in the range. It also keeps the code regions of each origin.
-2. Run `routine` with the start of a module (`--module`), or with `--start` and `--end`. A module ends at the next module or at the end of its segment.
+2. Run `routine` with the start address of a module, or with a range `<start>-<end>`. A module ends at the next module or at the end of its segment.
    - `--name` is the name of the routine and of its file. When you do not give it, the script uses the user or LLM name at the start.
    - `--title` is the title of the routine. When you do not give it, the script uses the module title.
    - A routine has at least 16 bytes. Its last instruction must end in the range.
@@ -159,7 +170,7 @@ To find the routines in a program:
    - The opcodes and the other bytes must be equal.
    - An address into the routine must point into the routine at its new address. `shift` is the address in the program minus the address in the library.
    - An operand that addresses something outside the routine can be different. `differing` lists each one with its value in the library and in the program. Examine them. For example, the program can use other variables or another SID voice.
-2. Give `--out` to get a batch for `knowledge.ts apply`. The batch has the names, regions, comments, references and operand expressions of each routine at its addresses in the program. `match` does not change the knowledge.
+2. Give `--out` to get a batch for `knowledge.ts apply`. `batch` shows the file as `{out, bytes, sha256}`. The batch has the names, regions, comments, references and operand expressions of each routine at its addresses in the program. `match` does not change the knowledge.
 3. Read `batch.leftOut` before you apply the batch. The script leaves out a write in these conditions:
    - The program has a user or LLM row at that place.
    - The program uses the name at another address.
@@ -179,13 +190,11 @@ Record a confirmed conclusion as a normal comment, region or symbol with the c64
 
 ## Result
 
-The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes. `common` gives the ranges where all releases have bytes. `releases` gives the segments and the `shift` of each release. With `--run`, each difference also has `runtime`, and `run` tells if each release started, or why not.
+The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes. `common` gives the ranges where all releases have bytes. `releases` gives the segments and the `shift` of each release. With `--frames`, each difference also has `runtime`, and `run` tells if each release started, or why not.
 
 For `leftovers`: the lists of findings, with `entry` and the number of `stages`. `noEntry`, `noStages` and `noCoverage` tell which knowledge is missing.
 
 The runtime evidence and the leftovers are evidence only. The script does not decide which bytes are original.
-
-The exit status is 0 for a result. The exit status is 1 for an error. The exit status is 2 for a wrong argument.
 
 ## Failure and conflicts
 
@@ -194,7 +203,7 @@ The exit status is 0 for a result. The exit status is 1 for an error. The exit s
 - `common` is empty: the releases do not cover the same addresses. Use `--shift`, or compare a range that all releases cover.
 - `run.releases` shows `started: false`: a PRG without a BASIC start, or an image without `entry_state.json`. The reason tells which. The other releases still give evidence.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own emulator script.
-- `moreDifferences: true`: the script shows only the first differences. Use `--from` and `--to` to see the others.
+- `moreDifferences: true`: the script shows only the first differences. Use `--range` to see the others.
 - `not-found`: the project has no file at that path.
 - `not-found` from `match`: the library folder does not exist, or it has no routine files. Save a routine with `routine` first.
 - `conflict` from `routine`: the library has a routine with that name. Give another `--name`, or give `--replace` to save over it.

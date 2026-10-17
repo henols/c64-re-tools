@@ -36,8 +36,6 @@ node <skill>/scripts/static-analysis.ts analyze --entry '$080d' --decompile '$08
 | `--space drive8` | The knowledge space of the program: `drive8` for code from the 1541 drive, or `bank0` to `bank255` for a cartridge bank. The default is `c64`. The seeds come from that space, and the findings go into it. |
 | `--out-macro-batch .c64-re-tools/local/macros.json` | Write the macro candidates to this project file as a batch for `apply` of the c64-knowledge skill. |
 
-The script prints one JSON object. Addresses are `$` and four hex digits.
-
 Both analyzers use the knowledge from the user and the LLM as seeds:
 
 - Each routine is an entry point.
@@ -51,17 +49,29 @@ More seeds come from evidence:
 - The start of each `code` region and each entry of a `jumps` table from the user or the LLM is an entry point.
 - When the knowledge has coverage, each executed instruction of the program that starts a flow is an entry point. A flow starts after a gap, or after RTS, RTI, JMP, BRK or JSR. Then the analyzers find code that only a vector, an RTS table or an interrupt reaches. They also find the code after a JSR to a routine that an analyzer thinks does not return.
 - For Ghidra, a flow start is a routine only when no executed branch or JMP from another flow gets to it. Also, no JSR can be immediately before it. Another flow start is code in a routine, and Ghidra does not make a function of it.
-- When the knowledge has coverage, Ghidra gives `coverageGaps`: the executed instruction starts in the program that are not in its instructions. Normally the count is 0. Each start in the list is missing from `--instructions` and from the source of c64-source. Examine the code at the start. Overlapped instructions and self-modified code can cause a gap. A start in a `dual-use` region is a known overlap, for example a BIT skip, and is not in the list.
+- When the knowledge has coverage, Ghidra gives `coverageGaps`: the executed instruction starts in the program that are not in its instructions. Normally the count is 0. Each start in the list is missing from `--out-instructions` and from the source of c64-source. Examine the code at the start. Overlapped instructions and self-modified code can cause a gap. A start in a `dual-use` region is a known overlap, for example a BIT skip, and is not in the list.
 - When the knowledge has coverage, some RAM under a ROM is data for the analysis. At these addresses, the runs used the ROM and did not read or execute the RAM. Then a call into the KERNAL does not decode the RAM bytes under it as code. A knowledge routine or an `--entry` in such a range keeps its code. Ghidra does not follow BRK, because the vector at `$fffe` is in ROM unless the program removes the KERNAL.
 
 The analyzers take at most 1024 entry points. Knowledge routines and `--entry` come first, then code regions and tables, then coverage. Ghidra also takes at most 8192 flow starts that are code in a routine. `coverageSeeds` gives how many entry points the coverage gave and how many the analysis used. `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
+
+### Calling the script
+
+- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
+- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+- A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
+- Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
+- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
+- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
 
 ### Project folder
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
+- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
@@ -80,7 +90,7 @@ The analyzers take at most 1024 entry points. Knowledge routines and `--entry` c
    - `idioms` tells what the script found by pattern: RTS dispatch tables (`rtsTables`), JMP tables (`jumpTables`) and BIT skips (`bitSkips`). It also finds the `CBM80` header of a cartridge bank at `$8000` (`cartridgeHeaders`). The two start vectors of the header become entry points. The script writes them as knowledge with the origin `heuristic`, and seeds their targets into the same analysis. `candidates` gives DOP padding (`dop`) and opcodes that the program wrote and executed (`selfModified`). For `selfModified`, the write and the execution must be in one coverage file. A coverage file does not record the order. Thus a candidate can also be code that ran first, and that the program then wrote over. To prevent this, save one coverage file for each part of the program, for example the intro and the game. A loader that copies relocated code is also such a part. Clear the memory map between the parts. Each list has a `count`. The script does not write the candidates. Look at them and decide.
    - `candidates.pointers` gives code that makes an address from immediates. A `vector` or a `zero-page pointer` candidate stores a low byte (`low`) and a high byte (`high`) to a vector or to a zero-page pair that `(zp),y` uses. Its `target` is in the program or has a platform name. A `sprite pointer` candidate stores an immediate (`at`) to a sprite pointer of the screen at $0400 in VIC bank 0. Its `target` (the value × 64) is in a `sprite` region. For each candidate that you confirm, write operand expressions with `operand` of the c64-knowledge skill, for example `operand '<low>' --lo <target name>` and `operand '<high>' --hi <target name>`. Then a rebuild can move the target.
    - `candidates.pitfalls` gives code that a C64 runs in a different way than it reads. `raster-bit-8`: the instruction at `at` reads $D011, and the instruction at `store` writes the value back. A read of $D011 gives bit 8 of the raster line in bit 7. Thus the write can move the raster interrupt to line 256 or later, and on PAL past line 311 the interrupt never comes. Examine each candidate. Where the code must not keep bit 7, add a comment and test the program.
-   - `candidates.macros` gives runs of instructions that a macro writes as one line, for example `+inc16 ptr`. The script knows these 6502 idioms: `inc16`, `dec16`, `add16_8`, `add16`, `sub16`, `set16`, `mov16` and `wait_line`. It reads the code regions after the analysis. An arg has the name of a `user` or `llm` symbol or a platform name. Each candidate has `macro`, `start`, `end`, `args` and `text`. `known` counts the uses that the knowledge has. `leftOut` counts the candidates with a label inside, or with a patch or a use over them. The c64-source skill writes such a candidate as instructions. With `--macro-batch`, `batch` gives the file, the count of writes and the `apply` command. The batch holds the macros that the knowledge does not have, and the uses. When the knowledge has a macro with the same name and another body, `otherMacros` tells that the batch does not have its uses. The script does not write the candidates. Apply the batch, then generate the source again.
+   - `candidates.macros` gives runs of instructions that a macro writes as one line, for example `+inc16 ptr`. The script knows these 6502 idioms: `inc16`, `dec16`, `add16_8`, `add16`, `sub16`, `set16`, `mov16` and `wait_line`. It reads the code regions after the analysis. An arg has the name of a `user` or `llm` symbol or a platform name. Each candidate has `macro`, `start`, `end`, `args` and `text`. `known` counts the uses that the knowledge has. `leftOut` counts the candidates with a label inside, or with a patch or a use over them. The c64-source skill writes such a candidate as instructions. With `--out-macro-batch`, `batch` gives the file, the count of writes (`writes`) and the `apply` command. The batch holds the macros that the knowledge does not have, and the uses. When the knowledge has a macro with the same name and another body, `otherMacros` tells that the batch does not have its uses. The script does not write the candidates. Apply the batch, then generate the source again.
    - When the knowledge has coverage, a code finding replaces the DXA or Ghidra data where a run executed an instruction start. `coverageConflicts` lists the analyzer data regions where the coverage still shows executed code. Classify them as code with the c64-knowledge skill, or as `dual-use` when the bytes are also data. For many conflicts, write all classifications in one `apply` batch of the c64-knowledge skill.
 6. Give each important routine a name with the c64-knowledge skill. Then run the analysis again. The analyzers use the new names.
 
@@ -109,9 +119,9 @@ Do not store:
 
 ## Result
 
-The changes to the knowledge and the conflicts. For DXA, also the regions, the labels and the path of the listing. For Ghidra, also the routines and the decompiled code.
+The changes to the knowledge and the conflicts. For DXA, also the regions, the labels and the file of the listing (`listing`). For Ghidra, also the routines, the decompiled code and the file of the instructions (`instructions`).
 
-The exit status is 0 for a result, also with conflicts. The exit status is 1 for an error. The exit status is 2 for a wrong argument.
+The exit status is 0, also with conflicts.
 
 ## Failure and conflicts
 
@@ -133,4 +143,5 @@ The exit status is 0 for a result, also with conflicts. The exit status is 1 for
 - Runtime behavior → c64-emulator
 - Names and classifications → c64-knowledge
 - The meaning of a C64 hardware address → c64-memory-map
-- Source code for a rebuild → c64-assembler
+- Source code from the knowledge → c64-source
+- Build the source → c64-assembler

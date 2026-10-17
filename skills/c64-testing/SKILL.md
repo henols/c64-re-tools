@@ -26,9 +26,9 @@ node <skill>/scripts/testing.ts test tests/moves-left.json --out .c64-re-tools/l
 node <skill>/scripts/testing.ts checklist tests/moves-left.json --item 'FIRE starts the game.'
 ```
 
-The test script prints one JSON object. The exit status is 0 for PASS, 1 for FAIL, 3 for INCONCLUSIVE and 2 for a bad call. With `--out`, a FAIL writes files into that directory: both screens and the difference image for each screen difference, and `memory.json` with each byte that differs. `files` in the result names them. A PASS writes no files. To keep the screens of a PASS, use a run (below).
+`testing.ts test` gives `result`: PASS, FAIL or INCONCLUSIVE. With `--out`, a FAIL writes files into that directory: both screens and the difference image for each screen difference, and `memory.json` with each byte that differs. `files` in the result names them. A PASS writes no files. To keep the screens of a PASS, use a run (below).
 
-The checklist script prints a Markdown checklist for a human tester.
+`testing.ts checklist` gives a Markdown checklist for a human tester in `text`.
 
 ### Runs
 
@@ -38,7 +38,7 @@ A run does steps on one program, with no comparison, and keeps the results as fi
 node <skill>/scripts/testing.ts run .c64-re-tools/local/runs/rooms/run.json --out .c64-re-tools/local/runs/rooms
 ```
 
-The run file gives where to start (a program, or a snapshot file), the steps, and optional symbols. To go on from the live emulator, save its state with `c64_snapshot` action `save` and `out`, and start the run from that file. Besides the steps of a scenario, a run has these steps:
+The run file gives where to start (a program, or a snapshot file), the steps, and optional symbols. To go on from the live emulator, save its state with `c64_snapshot` action `save` and `out`, and start the run from that file. A run has the action steps of a scenario: `write`, `registers`, `joystick`, `type`, `frames` and `runUntil`. It also has these steps:
 
 | Step | Effect |
 |---|---|
@@ -47,18 +47,18 @@ The run file gives where to start (a program, or a snapshot file), the steps, an
 | `{ "screen": "room3" }` | Write the screen to `room3.png`. |
 | `{ "coverage": "room3" }` | Write the coverage map since the start or the last coverage step to `room3.bin`, then clear the map. Add the map to the knowledge with `coverage` of the c64-knowledge skill. |
 | `{ "observe": "room3", "memory": ["$c100"], "registers": true }` | Record memory, registers, `vicii` or `sprites` in `results.json`. |
-| `{ "trace": "d011", "points": [{ "kind": "write", "at": "$d011" }], "frames": 100 }` | Record each hit of the points for 100 frames in `d011.json`: the instruction, its registers and the raster line and cycle. A point is `exec`, `read` or `write`, at an address or a name, with an optional `end`. `maxHits` limits the hits. |
+| `{ "trace": "d011", "points": [{ "kind": "write", "start": "$d011" }], "frames": 100 }` | Record each hit of the points for 100 frames in `d011.json`: the instruction, its registers and the raster line and cycle. A point has the `kind` `exec`, `read` or `write`, a `start` and an optional `end`. `maxHits` limits the hits. |
 | `{ "observe": "all3", "memory": "all" }` | Write all 64 KiB of RAM to `all3.bin`, also the RAM under the ROMs and the I/O area. |
 
 A memory item can have `"view": "ram"`. Then it reads the RAM under the ROMs and the I/O area, for example code at `$e000` under the KERNAL. The default view `cpu` reads as the CPU sees memory. An item larger than 4096 bytes goes into its own `.bin` file, and `results.json` gives the file name.
 
-See [references/scenario-format.md](references/scenario-format.md), section Runs. The script prints one JSON object. The exit status is 0 when all steps ran, 1 when a step did not reach its target, and 2 for a bad call. A long run can need more time than one shell call. Then run it in the background.
+See [references/scenario-format.md](references/scenario-format.md), section Runs. `result` is PASS when all steps ran, and FAIL when a step did not run. `reason` tells why. A long run can need more time than one shell call. Then run it in the background.
 
 ### Recordings
 
 A recording keeps a session of the original program, for example a play through some rooms of a game. A replay gives the same input to a rebuild and compares the game state. Make the recordings early, before you change the program. A recording needs no names. Its coverage also helps the static analysis.
 
-The record and replay scripts run the replay core `c64run` on this machine, not the emulator of the host runtime. The replay core has no disk drive. The program must be a PRG file.
+`testing.ts record` and `testing.ts replay` run the replay core `c64run` on this machine, not the emulator of the host runtime. The replay core has no disk drive. The program must be a PRG file.
 
 Ask the user to play first. Tell the user which parts of the program the recordings must have, for example each room, a fight and a lost life. Make a scripted recording only for a part that the sessions of the user do not have, or when the user cannot play.
 
@@ -75,23 +75,23 @@ node <skill>/scripts/testing.ts record tests/record/start.json --out tests/recor
 - End (F12) stops the C64 and freezes the screen. Then the script writes the recording folder. Run the script in the background.
 - Cancel (F11) stops the session. The script writes no folder and gives `recorded: false` with the reason. Then ask the user what to do. Do not make a scripted recording in its place.
 
-A scripted recording has only steps. See [references/recording-format.md](references/recording-format.md). The steps are `frames`, `joystick`, `type`, `write`, `registers` and `runUntil` with `at` or `memory`.
+A scripted recording has only steps. See [references/recording-format.md](references/recording-format.md). The steps are `frames`, `joystick`, `press`, `type`, `write`, `registers` and `runUntil` with an `address` or `memory` target. `press` pushes keys of the keyboard matrix. `type` puts at most 10 keys into the keyboard queue of the KERNAL.
 
 ```
 node <skill>/scripts/testing.ts record tests/record/rooms.json --out tests/recordings/rooms
 node <skill>/scripts/testing.ts replay tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/game.prg --symbols build/game.json
 ```
 
-- The record script writes the recording folder. The exit status is 0 when it recorded the session, 1 when the session did not complete, and 2 for a bad call. `executed` gives the instructions in the coverage map.
-- The replay script first replays the recording on the original. The original must end the session with the recorded state. Then the script replays the recording on the rebuild and compares the state at each checkpoint.
+- `testing.ts record` writes the recording folder. `result` is PASS when it recorded the session, and FAIL when the session did not complete. `executed` gives the instructions in the coverage map.
+- `testing.ts replay` first replays the recording on the original. The original must end the session with the recorded state. Then the script replays the recording on the rebuild and compares the state at each checkpoint.
 - `--checkpoint` gives a routine, and `--state` gives each memory item to compare. Use the names that the knowledge has at the time of the replay. A `$` address is an address of the original. On the rebuild, it moves with the name before it.
-- The replay script gives PASS, FAIL or INCONCLUSIVE, with the exit status 0, 1 or 3. A FAIL gives the first checkpoint that is different and the state items that are different.
+- `result` of the replay is PASS, FAIL or INCONCLUSIVE. A FAIL gives the first checkpoint that is different and the state items that are different.
 - With `--out`, a FAIL writes the RAM of the two sides at that checkpoint. Compare the two files with `testing.ts diff`.
-- Without `--rebuild`, the replay script only replays the recording on the original.
+- Without `--rebuild`, `testing.ts replay` only replays the recording on the original.
 
 A checkpoint is one entry of a routine. Use a routine that the program executes one time in each pass of its game logic, for example the main loop. Do not use an interrupt handler.
 
-The input is the reads of the joystick ports and the keyboard matrix. It is also the reads of the four SID registers that a program can read: the paddles, the noise of voice 3 and its envelope. It is also the reads of `$DE00`-`$DFFF`, where a C64 without a cartridge gives the last byte on the bus. On a replay, the n-th read of each instruction gets the value of the n-th read in the recording. Thus a rebuild with different timing gets the same input and the same SID random numbers. A `write`, `registers` or `runUntil` step is not input. The replay does the step again at the same read of the program.
+The input is the reads of the joystick ports and the keyboard matrix. It is also the reads of the four SID registers that a program can read: the paddles, the noise of voice 3 and its envelope. It is also the reads of `$DE00`-`$DFFF`, where a C64 without a cartridge gives the last byte on the bus. On a replay, the n-th read of each instruction gets the value of the n-th read in the recording. Thus a rebuild with different timing gets the same input and the same SID random numbers. A `press`, `joystick` or `frames` step is input. A `type`, `write`, `registers` or `runUntil` step is not input. The replay does that step again at the same read of the program.
 
 A replay is deterministic. The replay core has no random source and no clock: the same recording gives the same session, to the cycle. Sometimes the recording has no value for a read of an input. Then the read gets a fixed value: `$FF` for the joystick, keyboard and paddle registers, `$00` for the others. `idleReads` in the result counts these reads on the rebuild. On the original, such a read makes the result INCONCLUSIVE.
 
@@ -120,12 +120,24 @@ node <skill>/scripts/testing.ts diff .c64-re-tools/local/runs/rooms/results.json
 
 `--gap N` joins ranges across N equal bytes. `--out` writes all ranges to a project file.
 
+### Calling the script
+
+- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
+- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+- A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
+- Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
+- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
+- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
+
 ### Project folder
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
+- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
@@ -133,9 +145,9 @@ node <skill>/scripts/testing.ts diff .c64-re-tools/local/runs/rooms/results.json
 
 1. Write the scenario file. Start the steps with a frame count, for example `{ "frames": 150 }`. Each side starts at the reset vector, and the C64 needs these frames to start.
 2. Use symbol names, for example `player_x`, not fixed addresses. Each side finds the name in its own symbols. Use a `$` address only when both programs use the same address.
-3. Make each checkpoint a condition, for example `runUntil` at a routine. Do not wait for a time.
-4. Save the c64-assembler output of the rebuild to the symbol file, for example `build/game.json` in the project folder. Give `--all-symbols`, so that the file also has the constants that the source does not use. From the folder above the project, write `assembler.ts --project <folder> ... > <folder>/build/game.json`.
-5. Run the test script.
+3. Make each checkpoint a condition, for example a `runUntil` step with an `address` target at a routine. Do not wait for a time.
+4. Save the c64-assembler output of the rebuild to the symbol file, for example `build/game.json` in the project folder. Give `--all-symbols`, so that the file also has the constants that the source does not use. From the folder above the project, write `assembler.ts build --project <folder> ... > <folder>/build/game.json`.
+5. Run `testing.ts test`.
 6. Read the result:
    - `PASS`: all observations are equal, or the differences are in the allowed tolerance.
    - `FAIL`: `differences` lists each difference with the checkpoint, the item, the original value and the rebuild value.
@@ -175,11 +187,11 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 - A FAIL with only a `screen` difference: add `vicii` or `sprites` to the observation to find which chip state is different.
 - A program that uses random numbers: set the random seed with a `write` step on both sides. If that is not possible, observe only values that do not depend on the random numbers.
 - The two sides start differently, for example the original after a cracked intro. Give the steps that only one side needs a `side`. Then make the memory the same with a `normalize` step. It writes the entry state of the capture in the knowledge.
-- Frame counts drift by one frame between the sides: the sides got to the same address at different raster positions. Do not sync on an IRQ handler. Sync on a value that the IRQ changes, with `runUntil` `memory`, or on an address and a raster line together.
+- Frame counts drift by one frame between the sides: the sides got to the same address at different raster positions. Do not sync on an IRQ handler. Sync on a value that the IRQ changes, with a `runUntil` `memory` target. Or sync on an `address` target with a `raster` condition.
 - INCONCLUSIVE, "does not reproduce": the original does not end the session with the recorded state. Record the session again with this `c64run`.
 - INCONCLUSIVE, "never came to the checkpoint": the original did not execute the checkpoint routine in the session. Give another routine.
 - INCONCLUSIVE, "is not the program of the recording": the program file changed after the recording. Record the session again.
-- A record result with `recorded` false: a step did not reach its target. Change the step.
+- A record result FAIL with `recorded` false: `reason` names the step that did not complete. Examples are a `runUntil` that did not reach its target, and a `type` step with too many keys. Change the step.
 - A record result with `executed` 0: the program never read its input from RAM, so the coverage map is empty. The recording can still replay.
 - A FAIL from a replay: compare the two RAM files of `--out` with `testing.ts diff`. Then examine the first different state item with the c64-emulator skill.
 - A program that loads more files from a disk: the replay core has no disk drive. Use a test scenario in the emulator.

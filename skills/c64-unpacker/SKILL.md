@@ -21,45 +21,62 @@ This skill does not change project knowledge.
 ```
 node <skill>/scripts/unpacker.ts inspect original/game.prg
 node <skill>/scripts/unpacker.ts trace original/game.prg
-node <skill>/scripts/unpacker.ts capture original/game.prg --until '$c000' --out .c64-re-tools/local/capture
 node <skill>/scripts/unpacker.ts stages original/game.prg --steps .c64-re-tools/local/input.json
+node <skill>/scripts/unpacker.ts capture original/game.prg --until '$c000' --out .c64-re-tools/local/capture
 node <skill>/scripts/unpacker.ts loads original/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts --drive
 ```
 
-`inspect` examines the file locally. `trace` and `capture` start their own emulator through the host runtime and start the program. `trace` runs the program and finds the memory that the program wrote and then executed. `capture` stops the program when the CPU gets to the `--until` address. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). In `stages` and `capture`, a `frames` step and a `runUntil` step with only `at` count as run time. `stages` refuses a `runUntil` step with `raster` or `memory`.
+`inspect` examines the file locally. `trace`, `stages`, `capture` and `loads` start their own emulator through the host runtime and start the program. `trace` runs the program and finds the memory that the program wrote and then executed. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). `capture` stops the program when the CPU gets to the `--until` address. In `stages` and `capture`, a `frames` step and a `runUntil` step to an address without a condition count as run time. `stages` refuses a different `runUntil` step.
 
 | Option | Meaning |
 |---|---|
-| `--until '$c000'` | The address where the unpacked program starts. The capture stops there after the steps. To capture a later arrival at the address, add a `runUntil` step to an address after the first arrival. |
-| `--out .c64-re-tools/local/capture` | Where to write the result, relative to the project folder. |
-| `--range '$c000-$cfff'` | Write this range as a PRG. Without it, the script writes all 64 KiB of RAM as a flat file. |
+| `--until '$c000'` | `capture`: the address where the unpacked program starts. The capture stops there after the steps. To capture a later arrival at the address, add a `runUntil` step to an address after the first arrival. |
+| `--out .c64-re-tools/local/capture` | `capture` and `loads`: the folder for the result, relative to the project folder. |
+| `--range '$c000-$cfff'` | `capture` only: write this range as the one segment. Without it, the segments are the blocks that the stages wrote. |
 | `--exclude '$a000-$a9ff'` | `capture` only: remove this range from the segments. You can give it more than once. `image.json` lists the ranges in `excluded`. The entry must not be in the range. |
-| `--timeout-frames 3000` | How many frames the program can run before the capture stops (default 3000). |
-| `--frames 3000` | `trace` only: how many frames the program runs (default 3000). |
+| `--timeout-frames 3000` | `capture` only: how many frames the program can run before the capture stops (default 3000). |
+| `--frames 3000` | `trace` and `stages`: how many frames the program runs (default 3000). |
 | `--entry '$c000'` | `trace`, `stages` and `capture`: start the program at this address. Without it, the script types RUN. A file that is not a BASIC program at `$0801` needs it. |
-| `--steps input.json` | Input for the program, right after it starts: a JSON list of steps. Use it when an intro waits for a key or a menu waits for a choice. The scripts start the program as a c64-testing scenario does. Thus the same steps in a scenario get the program to the entry at the same time. |
+| `--steps input.json` | Input for the program, right after it starts: a JSON list of steps. Use it when an intro waits for a key or a menu waits for a choice. |
 | `--drive` | `loads` only: each capture also writes the 2 KiB RAM of the 1541 drive as `drive8.prg`. |
 | `--min-block 64` | `loads` only: the smallest block of changed memory that becomes a segment (default 64). The result counts smaller changes as `smallChanges`. |
 | `--min-stage 64` | `stages` and `capture`: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). |
 
-The capture reads RAM, also the RAM under the ROMs and the I/O area. The script prints one JSON object. The script refuses an option that the command does not use.
+The capture reads RAM, also the RAM under the ROMs and the I/O area. The script refuses an option that the command does not use.
 
-A steps file has the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of the c64-testing skill. Addresses are `$` and four hex digits. For example, wait 50 frames and press the space bar:
+A steps file is a JSON list of steps. Each step has the input of the MCP tool of the same action. An address in a step can be a name. For example, wait 50 frames and type a space:
 
 ```json
-[{ "frames": 50 }, { "type": " " }]
+[{ "frames": 50 }, { "type": { "mode": "text", "text": " " } }]
 ```
 
-A `frames` step runs 1 to 30000 frames. A `runUntil` step has `timeoutFrames` from 1 to 30000.
+- `{ "write": { "address": "$c000", "data": "0102" } }` writes bytes.
+- `{ "registers": { "pc": "start", "a": 1 } }` sets registers. Only `pc` takes a name.
+- `{ "joystick": { "port": 2, "direction": "up", "fire": false } }` sets a joystick.
+- `{ "type": { "mode": "text", "text": "RUN\n" } }` or `{ "type": { "mode": "petscii", "bytes": [147] } }` puts keys in the keyboard queue of the KERNAL.
+- `{ "frames": 50 }` runs 1 to 30000 frames.
+- `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 300 } }` runs until the target. The target kinds are `address`, `memory` and `raster`. `timeoutFrames` is 1 to 30000 (default 3000).
 
-A `type` step puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard hardware does not see them. A step cannot press one specific key of the keyboard matrix. A wait for any key that reads all keyboard columns can end without a key.
+A program that reads the keyboard matrix does not see the keys of a `type` step. These scripts refuse a `press` step. A wait for any key that reads all keyboard columns can end without a key.
+
+### Calling the script
+
+- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
+- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+- A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
+- Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
+- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
+- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
 
 ### Project folder
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
+- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
@@ -102,10 +119,10 @@ A multi-load program loads more parts from the disk while it runs, for example o
 
 ```json
 [
-  { "runUntil": { "at": "$080d" }, "timeoutFrames": 6000 },
+  { "runUntil": { "target": { "kind": "address", "address": "$080d" }, "timeoutFrames": 6000 } },
   { "capture": "main" },
-  { "type": " " },
-  { "runUntil": { "at": "$c000" }, "timeoutFrames": 6000 },
+  { "type": { "mode": "text", "text": " " } },
+  { "runUntil": { "target": { "kind": "address", "address": "$c000" }, "timeoutFrames": 6000 } },
   { "capture": "level1" }
 ]
 ```
@@ -128,14 +145,14 @@ Do not record the unpacker in the project knowledge, unless the user asks to exa
 
 The packing evidence, the stages, or the unpacked program with its image, segments and entry state in a directory of the project.
 
-For `loads`: `captures`, with the name, the PC, the segments and the drive file of each capture. `keyWait: true` tells that the CPU was in the KERNAL wait for a key.
+`trace`, `stages`, `capture` and `loads` give `result: "PASS"` or `result: "FAIL"`. A FAIL has `reason`. `capture` gives the written files in `files`, each as `{out, bytes, sha256}`.
 
-The exit status is 0 for a result. The exit status is 1 for `traced: false`, for `captured: false`, for `loaded: false` and for an error. The exit status is 2 for a wrong argument.
+For `loads`: `captures`, with the name, the PC, the segments, the files and the drive file of each capture. `keyWait: true` tells that the CPU was in the KERNAL wait for a key.
 
 ## Failure and conflicts
 
-- `traced: false`: the emulator did not load the program into memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
-- `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the c64-emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a key.
+- `traced: false` or `followed: false`: the emulator did not load the program into memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
+- `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the c64-emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step.
 - A step did not reach its target: the reason names the step. Change the step or give it more frames.
 - `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited at READY. or at an INPUT statement. For a tape image, read `emulatorFlaw`. A known VICE flaw can stop a tape load. Tell the user to install the latest VICE.
 - Do not name a packer from weak evidence. The script never names one.

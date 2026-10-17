@@ -3,6 +3,8 @@
 // from snapshots that VICE restores, from memory files, or from the
 // observations of runs; this file only compares.
 
+import { Refusal } from "#src/errors.ts";
+
 export interface MachineState {
   /** Bytes from `base`: all 64 KiB of RAM, or the bytes of one memory file. */
   memory?: { base: number; bytes: Uint8Array };
@@ -52,7 +54,7 @@ export function changedRanges(a: Uint8Array, b: Uint8Array, base: number, gap = 
 export function diffStates(a: MachineState, b: MachineState, gap = 0): StateDiff {
   const result: StateDiff = {};
   if (a.memory !== undefined && b.memory !== undefined) {
-    if (a.memory.base !== b.memory.base || a.memory.bytes.length !== b.memory.bytes.length) throw new Error("the two memory parts do not cover the same addresses");
+    if (a.memory.base !== b.memory.base || a.memory.bytes.length !== b.memory.bytes.length) throw new Refusal("operation-failed", "the two memory parts do not cover the same addresses");
     result.memory = changedRanges(a.memory.bytes, b.memory.bytes, a.memory.base, gap);
   }
   if (a.colorRam !== undefined && b.colorRam !== undefined) result.colorRam = changedRanges(a.colorRam, b.colorRam, 0xd800, gap);

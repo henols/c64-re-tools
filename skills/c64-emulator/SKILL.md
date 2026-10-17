@@ -17,7 +17,7 @@ This skill does not analyse code statically. It does not write project knowledge
 - The target address, state or condition, when the question needs one.
 - The project path of the program or disk to load, when the question needs one.
 
-Addresses are four hex digits after a dollar sign, for example `$c000`. Resolve a symbol name to its address before you use a tool. The c64-knowledge skill gives the address of a known symbol.
+An address is `$` and 1 to 4 hex digits, for example `$c000` or `$fb`. A tool takes no names. Get the address of a name with `knowledge.ts at <name>` of the c64-knowledge skill.
 
 ## Tools / execution path
 
@@ -34,20 +34,20 @@ Use only the MCP tools. Each MCP session has its own C64. Nothing else can chang
 | Run to a place and read the machine there in one call | `c64_run_until` with `observe` and `history` |
 | Each write, read or routine entry over many frames, with the instruction and the raster line | `c64_trace` |
 | Stop on an instruction address | `c64_breakpoint` |
-| Stop on a memory read or write | `c64_watchpoint` |
+| Stop on a memory read or write from `start` to `end` | `c64_watchpoint` |
 | Memory | `c64_memory_read`, `c64_memory_write`, `c64_memory_search`, `c64_memory_compare` |
-| CPU registers | `c64_registers` |
+| CPU registers | `c64_registers` (action `read` or `write`) |
 | Code as it is in memory now | `c64_disassemble` |
 | Executed instructions, call chain | `c64_cpu_history`, `c64_backtrace` |
 | Which instruction reads or writes an address | `c64_trace` with a `read` or `write` point |
 | Where the CPU spends cycles, which memory it uses | `c64_profile`, `c64_memmap` |
 | Cycle count between two points | `c64_timing` |
 | Video chip, sprites, CIAs, sound chip | `c64_vicii`, `c64_sprite`, `c64_cia`, `c64_sid` |
-| Screen image, screen compare | `c64_screen` |
+| Screen image, screen compare, remove a baseline | `c64_screen` |
 | Several of these from one moment | `c64_observe` |
 | Keys, joystick | `c64_keyboard`, `c64_joystick` |
 | Program and disk media | `c64_autostart`, `c64_program_load`, `c64_disk_attach` |
-| Machine state to go back to, also in a later session | `c64_snapshot` (with `out` and `file`) |
+| Machine state to go back to, also in a later session, remove a snapshot | `c64_snapshot` (with `out` and `file`) |
 
 Each memory and register tool has a `space`. Use `c64` for the computer. Use `drive8` for the CPU of the 1541 disk drive. The memory `view` is `cpu` or `ram`. With `cpu`, you see what the CPU sees now, with ROM and I/O where the memory configuration puts them. With `ram`, you see the RAM under them.
 
@@ -82,10 +82,12 @@ A cartridge from `c64_autostart` stays in the C64 through every reset, as on a r
 
 Step, next and until-return work only in space `c64`. The emulator cannot stop the disk drive CPU after one instruction. To find when the drive executes an address, use `c64_run_until` with an address target in space `drive8`, or a breakpoint in space `drive8`. The drive can execute a few more instructions before it stops. The computer completes its current instruction. The `pc` in the result is the drive address where it stopped.
 
-`c64_keyboard` puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard hardware directly does not see them. Many games do this. The emulator has no command that presses one key of the keyboard matrix. For such a program:
+`c64_keyboard` puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard matrix directly does not see them. Many games do this. No MCP tool presses a key of the keyboard matrix. For such a program:
 
 - VICE 3.10 and older have a known flaw: bits 5-7 of `$DC00` and `$DC01` are always 0. Then `emulatorFlaw` in the result of `c64_keyboard` and `c64_joystick` gives the flaw. With this flaw, a wait for any key that reads all keyboard columns at one time ends without a key. A wait for one specific key, or a compare of the full byte of a joystick port, never ends. Tell the user about the flaw. The next VICE release and the VICE nightly builds do not have it. Joystick port 1 uses the same lines as the keyboard.
-- For one specific key, for example F1 or RUN/STOP, open the window and ask the user to press the key.
+- For one specific key, for example F1 or RUN/STOP, use one of these two ways:
+  - Open the window and ask the user to press the key.
+  - Record a session with a `press` step. Use `testing.ts record` of the c64-testing skill.
 - Do not change the program to make it accept a key.
 
 Before a risky experiment, save the state with `c64_snapshot`. Restore it to try again from the same point.
@@ -125,6 +127,8 @@ The result is the runtime state or evidence that the question asks for.
 If you cannot get the machine into the necessary state, say which state you could not get. Say what you tried.
 
 ## Failure and conflicts
+
+An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
 
 - `machine-state-lost` and the message says that the VICE window closed: the window closed before `c64_window` action `close`. The emulator has no window again. The machine state is the same as at the time when the window opened. The breakpoints and the watchpoints stay. Do not use results from the window time. Read the machine state again, then continue.
 - `machine-unavailable` and the message says that the VICE window closed: the session starts the emulator again. Wait a few seconds. Then do the operation again.

@@ -5,6 +5,8 @@
 
 import { crc32, deflateSync } from "node:zlib";
 
+import { Refusal } from "./errors.ts";
+
 export interface IndexedFrame {
   width: number;
   height: number;
@@ -26,7 +28,7 @@ function chunk(type: string, data: Uint8Array): Buffer {
 /** Encodes an indexed frame as an 8-bit palette PNG. */
 export function encodePng(frame: IndexedFrame, palette: ReadonlyArray<Rgb>): Buffer {
   for (const index of frame.pixels) {
-    if (index >= palette.length) throw new Error(`pixel colour ${index} is not in the ${palette.length}-colour palette`);
+    if (index >= palette.length) throw new Refusal("operation-failed", `pixel colour ${index} is not in the ${palette.length}-colour palette`);
   }
   const header = Buffer.alloc(13);
   header.writeUInt32BE(frame.width, 0);

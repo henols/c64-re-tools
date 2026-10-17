@@ -284,7 +284,7 @@ export function resolve(location: Location, symbols: Map<string, number>, side: 
     try {
       return parseC64Address(location);
     } catch {
-      throw new Refusal("invalid-input", `${location} is not $ followed by four hex digits`);
+      throw new Refusal("invalid-input", `${location} is not $ and 1 to 4 hex digits`);
     }
   }
   const address = symbols.get(location);

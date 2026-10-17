@@ -86,7 +86,7 @@ export interface ListedInstruction {
   executed?: boolean;
 }
 
-/** Ghidra's instructions as the list that --instructions writes. */
+/** Ghidra's instructions as the list that --out-instructions writes. */
 export function instructionList(instructions: GhidraInstruction[], coverage?: Uint8Array): ListedInstruction[] {
   return instructions.map((instruction) => {
     const bytes = Buffer.from(instruction.bytes, "hex");

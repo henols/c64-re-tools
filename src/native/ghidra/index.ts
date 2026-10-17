@@ -9,6 +9,7 @@ import { userInfo } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { Refusal } from "../../errors.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { findOnPath, INSTALL_STEPS, isExecutableFile } from "../discover.ts";
 import type { ProcessSupervisor } from "../processes.ts";
@@ -42,7 +43,7 @@ function installationAt(root: string, source: string): GhidraInstallation {
   const analyzeHeadless = join(root, "support", `analyzeHeadless${LAUNCHER_SUFFIX}`);
   let properties: string;
   try {
-    if (!isExecutableFile(analyzeHeadless)) throw new Error("no analyzeHeadless");
+    if (!isExecutableFile(analyzeHeadless)) throw new Refusal("operation-failed", "no analyzeHeadless");
     properties = readFileSync(join(root, "Ghidra", "application.properties"), "utf8");
   } catch {
     throw new WireFailure("installation-incomplete", `${source} does not point to a Ghidra installation. ${REMEDY}`);

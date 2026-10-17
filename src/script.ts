@@ -74,7 +74,7 @@ export const OPTIONS = {
   symbols: { kind: "path", value: "<file>", help: "the symbols of a build: the c64-assembler output, or a JSON map of name to $ address" },
   origin: { kind: "text", value: "<origin>", help: "user, llm, dxa, ghidra, heuristic, semantic (user and llm) or analyzer (dxa, ghidra and heuristic), or a comma list" },
   reason: { kind: "text", value: "<text>", help: "why: kept with the revision" },
-  evidence: { kind: "text", value: "<kind:ref>", help: "what the change rests on: coverage:<import>, test:<file>, file:<file> or note:<text>", multiple: true },
+  evidence: { kind: "text", value: "<kind:ref>", help: "what the change rests on: coverage:<map>, test:<file>, file:<file> or note:<text>", multiple: true },
   "expect-revision": { kind: "text", value: "<revision>", help: "refuse the write when the knowledge changed after this revision" },
 } as const satisfies Record<string, OptionSpec>;
 

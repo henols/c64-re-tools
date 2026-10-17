@@ -4,6 +4,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
+import { Refusal } from "../../errors.ts";
 import { describeError, isObject, WireFailure } from "../../protocol/messages.ts";
 import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, seedsInside, type GhidraParams, type GhidraResult } from "../types.ts";
 import { outputTail, type ToolContext } from "../run.ts";
@@ -74,7 +75,7 @@ export async function analyze(
       // The version comes from the installation's application.properties, which findGhidra read.
       result = checkGhidraResult(isObject(exported) ? { ...exported, toolVersion: ghidraVersion(ghidra) } : exported);
       const [range] = result.coverage;
-      if (result.coverage.length !== 1 || range === undefined || range.start !== start || range.end !== end) throw new Error("the coverage is not the loaded program");
+      if (result.coverage.length !== 1 || range === undefined || range.start !== start || range.end !== end) throw new Refusal("operation-failed", "the coverage is not the loaded program");
     } catch (error) {
       context.log?.(`Ghidra result rejected: ${describeError(error)}`);
       throw new WireFailure("operation-failed", `Ghidra returned an incomplete or inconsistent result. Nothing was imported. The check found: ${describeError(error)}.`);

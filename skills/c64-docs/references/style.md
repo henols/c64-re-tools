@@ -1,14 +1,14 @@
 # Style of the pages
 
-These rules apply to each page that you write. `link.ts` checks the rules that a script can check.
+These rules apply to each page that you write. `docs.ts link` checks the rules that a script can check.
 
 ## Names and addresses
 
-- Write each routine, table and variable with its name and its address: `` `draw_room` `$09BC` ``. `link.ts` gives the name a link to its line, and the address a link to its entry in the reference.
+- Write each routine, table and variable with its name and its address: `` `draw_room` `$09BC` ``. `docs.ts link` gives the name a link to its line, and the address a link to its entry in the reference.
 - Use the name of the knowledge. Do not make a name that is only in the page. When a part has no good name, record a name with c64-knowledge first.
 - For a place inside a routine, write the name of the routine and the address of the place: `` `draw_room` `$0A04` ``. The address gets a link to its line.
 - For a byte inside a table or a variable, write the name with an offset: `` `room_script_vars+3` `$4E9A` ``.
-- For a value, write an equals sign: `` `scroll_moves` = `$10` ``. Without the sign, `link.ts` reads `$10` as an address.
+- For a value, write an equals sign: `` `scroll_moves` = `$10` ``. Without the sign, `docs.ts link` reads `$10` as an address.
 - Write addresses with `$` and hex digits in upper case: `$09BC`. Write values in hex with `$`, or in decimal without `$`.
 - Write a range with a hyphen: `` `$4E97-$4E9B` ``.
 - Write the name and the address in backticks. A name without backticks gets no link.
@@ -27,7 +27,7 @@ These rules apply to each page that you write. `link.ts` checks the rules that a
 - Use mermaid for the diagrams: `flowchart` for calls and data flow, `stateDiagram-v2` for state machines. Write the name and the address in each node: `"draw_room $09BC"`.
 - A diagram gets no links. Give the links in a table or a list under the diagram.
 - Keep a diagram small: at most about 20 nodes. Make two diagrams before one diagram that a reader cannot read.
-- Embed an image only from the project. It can be an image of the reference (`reference/images/`) or a PNG that a skill made. It can also be an asset that a script of the project made from a format of the program, for example `../assets/rooms/room00.png`. `link.ts` checks that each image exists.
+- Embed an image only from the project. It can be an image of the reference (`reference/images/`) or a PNG that a skill made. It can also be an asset that a script of the project made from a format of the program, for example `../assets/rooms/room00.png`. `docs.ts link` checks that each image exists.
 - Give each image one line of text that tells what it shows.
 
 ## Text
@@ -39,5 +39,5 @@ These rules apply to each page that you write. `link.ts` checks the rules that a
 
 ## Generated pages
 
-- Do not edit a page in the reference. Change the knowledge, generate the source, and run `generate.ts` again.
-- Do not put a page that you write in the reference directory. `generate.ts` refuses to write when one is there.
+- Do not edit a page in the reference. Change the knowledge, generate the source, and run `docs.ts generate` again.
+- Do not put a page that you write in the reference directory. `docs.ts generate` refuses to write when one is there.

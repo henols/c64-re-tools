@@ -24,10 +24,8 @@ One of these:
 ## Tools / execution path
 
 ```
-node <skill>/scripts/knowledge.ts <command> [arguments] [options]
+node <skill>/scripts/knowledge.ts <command> [subjects] [options]
 ```
-
-The script prints one JSON object. An error prints `{"error": {"code": ..., "message": ...}}`. Addresses are `$` and four hex digits. Quote them in a shell, for example `'$2100'`. A name also gives an address, for example `at update_player`. The script tries the symbols first and then the analyzer names.
 
 A symbol is the name of an address from the user or the LLM. An analyzer name is a second name from DXA, Ghidra or an idiom, for example `FUN_17e2`. Each analyzer keeps its own name at an address. `at`, `search` and `export` show the analyzer names. The generated source uses only the symbols, unless c64-source gets `--analyzer-names`. To use an analyzer name in the source, `rename` the address with it.
 
@@ -35,32 +33,32 @@ A symbol is the name of an address from the user or the LLM. An analyzer name is
 |---|---|
 | Everything known at one address | `at '$2100'` |
 | Find names and comment text | `search player` |
-| Lists in a range | `symbols`, `regions`, `comments`, `references` with `--start` and `--end` |
+| Lists in a range | `symbols`, `regions`, `comments`, `references` with `--range '$2000-$2fff'` |
 | The names that DXA, Ghidra and the idioms gave | `symbols --analyzer` |
 | Only some origins | add `--origin semantic`, `--origin analyzer` (dxa, ghidra and heuristic), or `--origin user,llm` |
 | All knowledge in one file | `export --out .c64-re-tools/local/knowledge.json` |
 | Put the program into the knowledge | `image .c64-re-tools/local/capture/image.json` or `image original/game.prg` |
 | Add the coverage of runs | `coverage .c64-re-tools/local/runs/rooms/room0.bin ...` |
 | What the knowledge holds of the program | `program` |
-| The code of a range with names, comments, access and references | `listing '$0400' '$04ff'` |
+| The code of a range with names, comments, access and references | `listing '$0400-$04ff'` |
 | Name the symbol at an address | `rename '$2100' update_player --kind routine` |
 | Remove a symbol | `remove-symbol '$2100'` |
-| Classify memory | `classify '$3000' '$303f' sprite` |
-| Classify a table of records | `classify '$3000' '$303b' bytes --element 6` |
+| Classify memory | `classify '$3000-$303f' sprite` |
+| Classify a table of records | `classify '$3000-$303b' bytes --element 6` |
 | Many writes as one revision | `apply -` with the JSON on standard input, or `apply <file>` |
 | One batch from the batches of parallel agents | `join a.json b.json --out .c64-re-tools/local/joined.json` |
-| Make memory unknown, and keep the analyzers out of it | `unclassify '$3000' '$303f'` |
+| Make memory unknown, and keep the analyzers out of it | `unclassify '$3000-$303f'` |
 | Set or remove a comment | `comment '$2100' line Reads joystick 2.` / `uncomment '$2100' line` |
 | Add or remove a reference | `reference '$2000' '$2100' call` / `unreference ...` |
-| Places that a removal blocks | `suppressions` with `--start` and `--end` |
+| Places that a removal blocks | `suppressions` with `--range` |
 | Start a file of generated source | `module '$2000' player.asm --title 'Player movement'` / `unmodule '$2000'` |
 | Write the operand of an instruction as an expression | `operand '$8079' --lo irq_handler` / `unoperand '$8079'` |
-| Operand expressions | `operands` with `--start` and `--end` |
-| Replace a range with code when a switch is on | `patch '$100e' '$1010' CRACK --code-file crack.asm` / `unpatch '$100e'` |
+| Operand expressions | `operands` with `--range` |
+| Replace a range with code when a switch is on | `patch '$100e-$1010' CRACK --code-file crack.asm` / `unpatch '$100e'` |
 | Patches and switches | `patches` with `--switch`, and `switches` |
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` / `unmacro inc16` |
-| Write instructions as one use of a macro | `use '$1005' '$100a' inc16 --args ptr` / `unuse '$1005'` |
-| Macros and their uses | `macros`, and `uses` with `--start`, `--end` and `--macro` |
+| Write instructions as one use of a macro | `use '$1005-$100a' inc16 --args ptr` / `unuse '$1005'` |
+| Macros and their uses | `macros`, and `uses` with `--range` and `--macro` |
 | Files of generated source | `modules` |
 | The address spaces that hold knowledge | `spaces` |
 | History | `history '$2100'`, `history --name update_player`, `history --macro inc16`, `revisions`, `revision 20261015T2145` |
@@ -89,12 +87,24 @@ Region types:
 
 `--element` gives the bytes of one element of a table. The length of the region must be a multiple of it. The result shows `element` and `count`.
 
+### Calling the script
+
+- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
+- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+- A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
+- Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
+- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
+- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
+
 ### Project folder
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
+- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
@@ -109,7 +119,10 @@ Write:
 
 1. Read the current value with `at`. Note the `revision` in the result.
 2. Decide the change. Keep observed facts apart from your conclusions.
-3. Write it with `--reason` and `--expect-revision` set to the revision you read. Add `--evidence` for each thing that the change rests on: `coverage:<map>`, `test:<file>`, `file:<file>` or `note:<text>`. `<map>` is a coverage map that `coverage` put into the knowledge, by its path at that time. The script uses the last import of the map into the space of the write. The script keeps the SHA-256 of each file and map.
+3. Write it with `--reason` and `--expect-revision` set to the revision you read. Add `--evidence` for each thing that the change rests on: `coverage:<map>`, `test:<file>`, `file:<file>` or `note:<text>`.
+   - `coverage:<map>` names a map by its path at the import. The script uses the last import of that map into the space of the write.
+   - `test:<file>` and `file:<file>` name a file outside `.c64-re-tools/local/`. Move the file before the write.
+   - The script keeps the SHA-256 of each file and map.
 4. Read the result. A `revision` of `null` means that nothing changed.
 
 Each write is one revision. A classification inside a region splits that region, so regions never overlap.
@@ -170,7 +183,7 @@ The c64-provenance skill writes a batch with `match --out`. The batch holds the 
 
 ## Batches of parallel agents
 
-When more agents name the program at the same time, give each agent one range of addresses. Each agent writes one batch file and does not apply it. A batch of an agent has the form `{"owner": "$1000-$1fff", "ops": [...]}`. `ops` holds the writes, as for `apply`. The owner ranges must not overlap.
+When more agents name the program at the same time, give each agent one range of addresses. Each agent writes one batch file and does not apply it. A batch of an agent has the form `{"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}`. `ops` holds the writes, as for `apply`. The owner ranges must not overlap.
 
 `join` makes one batch from the batch files. It writes no knowledge.
 
@@ -179,7 +192,7 @@ When more agents name the program at the same time, give each agent one range of
 - The regions of the owner come after the regions of the other batches. Thus the regions of the owner stay where they overlap.
 - A name from a batch stays when another batch removes the symbol at that address.
 - `choices` lists each place where the batches gave different values, with the value that stays.
-- When one name or one module file is at two addresses, `join` writes nothing. `clashes` lists the addresses and the batches. Correct the batches, then do `join` again.
+- When one name or one module file is at two addresses, `join` writes nothing and gives the error `conflict`. The message names the addresses and the batches. Correct the batches, then do `join` again.
 
 Then apply the joined batch with the command in `apply`.
 
@@ -235,7 +248,7 @@ A macro writes a run of instructions as one line of the source, for example `+in
 - The knowledge refuses `unmacro` while the macro has uses. It also refuses a change of the number of params while the macro has uses.
 - A use cannot overlap a patch or another use.
 
-The c64-source skill writes a use only when the use gives the bytes of the program. If not, it writes the instructions and gives the reason. The c64-static-analysis skill finds uses of known 6502 idioms and writes them to a batch with `--macro-batch`.
+The c64-source skill writes a use only when the use gives the bytes of the program. If not, it writes the instructions and gives the reason. The c64-static-analysis skill finds uses of known 6502 idioms and writes them to a batch with `--out-macro-batch`.
 
 ## Removals
 
@@ -260,7 +273,7 @@ Do not store:
 - a guess, only because a routine needs a temporary name
 - confidence or status words in comment text.
 
-The script records the origin `llm`. Use `--origin user` only when the user decides the change.
+The script records the origin `llm`. Use `--by user` only when the user decides the change.
 
 ## Result
 
@@ -268,13 +281,13 @@ For a read: the current or historical knowledge in compact JSON.
 
 For a write: the new revision and the current value after the write. If the write replaces a symbol, a region or an operand expression of a different origin, `previous` gives that row as it was before the write. For example, an `llm` write over a `user` name gives `previous`. Read `previous` and tell the user about the change. For `apply`, `replaced` lists each write that replaced a row. Each item has the number of the write, its `op` and its `previous`.
 
-The exit status is 0 for a result. The exit status is 1 for an error from the knowledge, for example `conflict`. The exit status is 2 for a wrong argument.
+For `export`, `listing --out` and `join`: the written file as `{out, bytes, sha256}`.
 
 ## Failure and conflicts
 
 - `conflict`: the change contradicts current knowledge. For example, the name belongs to another address. Read that address and its history, then decide.
 - `stale-revision`: the knowledge changed after you read it. Read it again, then decide again.
-- `not-found`: there is nothing to remove or no such revision.
+- `not-found`: there is nothing to remove, no such revision or no such file.
 - `conflict` with "from a git merge": git joined the knowledge of two computers, and two rows are current where the knowledge permits one row. For example, two names are at one address. Every read shows these rows in `conflicts`. Writes stop until you run `merge`. The `merge` command keeps the newest row of each conflict and closes the other rows, in one revision. Its result lists each choice. Tell the user the choices.
 - `invalid-database` or `unsupported-schema`: tell the user the message. Do not edit the knowledge files.
 

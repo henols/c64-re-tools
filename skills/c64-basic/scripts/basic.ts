@@ -11,7 +11,7 @@ import { runScript } from "#src/script.ts";
 
 await runScript({
   name: "basic",
-  summary: "Decodes a C64 BASIC V2 program with petcat and reports its machine-code handoffs: SYS, USR and the vectors that the BASIC lines set.",
+  summary: "Decodes a C64 BASIC V2 program with petcat and reports its machine-code handoffs: SYS and USR.",
   commands: [
     {
       name: "list",

@@ -1,6 +1,6 @@
 ---
 name: c64-docs
-description: Use this skill to write the documentation of a C64 program. The documentation explains the flows, state machines, tables, data formats and graphics, with links to the source lines and to the assets. A script generates the reference pages from the knowledge and the source. You write the other pages by the method of this skill. A second script adds the links to each name and address and checks every link. Use it after the source is identical, or to keep the documentation correct after a change to the knowledge.
+description: Use this skill to write the documentation of a C64 program. The documentation explains the flows, state machines, tables, data formats and graphics, with links to the source lines and to the assets. The script generates the reference pages from the knowledge and the source. You write the other pages by the method of this skill. A second command of the script adds the links to each name and address and checks every link. Use it after the source is identical, or to keep the documentation correct after a change to the knowledge.
 ---
 
 # c64-docs
@@ -24,7 +24,7 @@ This skill does not change the knowledge.
 
 ## Tools / execution path
 
-The scripts run on this machine. They do not use the emulator or the host runtime.
+The script runs on this machine. It does not use the emulator or the host runtime.
 
 ```
 node <skill>/scripts/docs.ts generate src --out docs/reference
@@ -34,16 +34,34 @@ node <skill>/scripts/docs.ts link README.md docs --source src --check
 
 | Option | Meaning |
 |---|---|
-| `--source src` | The source directory of c64-source. Both scripts read `src/source-map.json`. |
+| `src` | `docs.ts generate`: the source directory of c64-source. The command reads `src/source-map.json`. |
+| `--source src` | `docs.ts link`: the source directory of c64-source. The command reads `src/source-map.json`. |
 | `--out docs/reference` | The directory of the reference. `docs.ts generate` writes only there. It refuses to start when the directory holds a page that it did not write. |
 | `README.md docs` | The pages of the documentation: `.md` files and directories. `docs.ts link` reads each file and every `.md` file below each directory. It changes only the pages that you wrote. It checks the pages of the reference. |
 | `--reference <dir>` | The directory of the reference for `docs.ts link`. The default is the `reference` directory of the first directory that has one, for example `docs/reference`. |
-| `--check` | `docs.ts link` writes nothing. It fails when a link is not up to date or a page has a problem. |
+| `--check` | `docs.ts link` writes nothing. `result` is `FAIL` when a link is not up to date or a page has a problem. |
+| `--max-listed 20` | List at most this number of items in each list. The default is 50. |
+
+### Calling the script
+
+- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
+- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+- A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
+- Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
+- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
+- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
 
 ### Project folder
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
-- Give `--project <folder>` to each script when the working directory is not in the project.
+- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
+- Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
+- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
+- Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
+- A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Workflow
 
@@ -53,7 +71,7 @@ node <skill>/scripts/docs.ts link README.md docs --source src --check
 4. Make the plan of the pages. Start from the modules and the call graphs. Find the main loop, the interrupt chain, the dispatch tables, the state machines and the data formats. Each subsystem gets one page in `docs/`. The entry page `README.md` in the project folder lists the pages. Use the page types in `references/page-types.md`.
 5. Write each page. Read the code and the knowledge for each fact. Run the program with c64-testing or c64-emulator when a fact needs a run. Write each name with its address, for example `` `draw_room` `$09BC` ``. Mark each fact with its evidence. Several subagents can write the pages at the same time, one page each. Give each subagent `references/page-types.md` and `references/style.md`.
 6. Record each new fact in the knowledge first: a name, a comment, a region or a module. Then the source and the reference show it too. A fact only in a page is lost at the next change of the knowledge.
-7. Run `docs.ts link`. Read `problems` and correct each one. Then run `link.ts --check`. Make sure that `problems.count` is 0 and that `notUpToDate.links` is 0.
+7. Run `docs.ts link`. Read `problems` and correct each one. Then run `docs.ts link --check`. Make sure that `result` is `PASS`.
 8. When the project folder is in a workspace with other projects, find `README.md` at the root of the workspace. This page lists each program of the workspace. Add one row for the program, with a link to `<project>/README.md` and one sentence. If the page does not exist, make it. Use the workspace index in `references/page-types.md`. `docs.ts link` does not read this page, because the page is not in the project folder.
 9. After each change to the knowledge, do steps 2, 3 and 7 again. The links then go to the new lines.
 
@@ -105,19 +123,20 @@ Do not store:
 
 ## Result
 
-`docs.ts generate` gives one JSON object:
+`docs.ts generate`:
 
 - `out`, `index` and `revision`.
 - `pages`, `entries`, `tables`, `images` and `edges`: the counts of the reference.
+- `files`: the pages that it wrote, each with `out`, `bytes` and `sha256`.
 - `program`: `the knowledge`, or a note when the knowledge has no program. Without the program, the tables are not decoded and the graphics page has no images.
 
-`docs.ts link` gives one JSON object:
+`docs.ts link`:
 
+- `result`: `PASS` when no page has a problem. `FAIL` when a page has a problem, or with `--check` when a link is not up to date.
 - `pages`: the count of the pages that it read.
-- `linked`: the count of the links that it wrote, and the pages that it changed. With `--check`, `notUpToDate` gives the links that are not up to date.
-- `problems`: `count`, `byKind` and the first 50 problems. Each problem has `at` (the page and the line), `kind` and `message`.
-
-The exit status is 0 when there is no problem. The exit status is 1 when there is a problem, or with `--check` when a link is not up to date. The exit status is 2 for a wrong argument.
+- `reference`: the directory of the reference, or a note when there is no reference.
+- `linked`: the count of the links that it wrote (`links`), and the pages that it changed. With `--check`, `notUpToDate` gives the links that are not up to date.
+- `problems`: `byKind` and the list of problems. Each problem has `at` (the page and the line), `kind` and `message`.
 
 ## Failure and conflicts
 

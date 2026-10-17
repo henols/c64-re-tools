@@ -11,10 +11,10 @@ A scenario is one JSON object in a project file.
     { "frames": 150 },
     { "load": true },
     { "registers": { "pc": "start" } },
-    { "runUntil": { "at": "main_loop" }, "timeoutFrames": 600 },
+    { "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 600 } },
     { "joystick": { "port": 2, "direction": "left" } },
     { "frames": 10 },
-    { "observe": "moved", "memory": ["player_x", { "at": "$0400", "size": 40 }], "screen": {} }
+    { "observe": "moved", "memory": ["player_x", { "address": "$0400", "size": 40 }], "screen": {} }
   ]
 }
 ```
@@ -41,25 +41,30 @@ Before the first step of each side, the script does a hard reset. The CPU stops 
 | `{ "frames": 150 }` | Run for an exact number of frames, from 1 to 30000. A breakpoint or a watchpoint stops it before that. Use it after a reset to start the C64. |
 | `{ "load": true }` | Load the program of the side into memory. The CPU stays stopped. |
 | `{ "autostart": true }` | Load the program of the side, type `RUN` and wait until the program runs. The program must have a BASIC start line. The keys of a later `type` step go to the program. |
-| `{ "write": { "at": "seed", "bytes": [1, 2] } }` | Write bytes into memory: 1 to 4096 numbers from 0 to 255. |
-| `{ "registers": { "pc": "start", "a": 0 } }` | Set registers: `pc`, `a`, `x`, `y` or `sp`. A value is a number or a name. |
-| `{ "joystick": { "port": 2, "direction": "left", "fire": true } }` | Set a joystick. The joystick stays in this state until the next joystick step. |
-| `{ "type": "RUN\n" }` | Type text on the keyboard, at most 1024 keys. The keys go into the keyboard queue of the KERNAL. A program that reads the keyboard hardware does not see them. A step cannot press one specific key of the keyboard matrix. |
-| `{ "runUntil": { "at": "main_loop" }, "timeoutFrames": 600 }` | Run until the CPU gets to an address. |
-| `{ "runUntil": { "memory": { "at": "game_state", "equals": 2 } }, "timeoutFrames": 600 }` | Run until a byte in memory has a value. |
-| `{ "runUntil": { "raster": 250 }, "timeoutFrames": 5 }` | Run until the raster beam gets to a line (0 to 311 for PAL, 0 to 262 for NTSC). |
-| `{ "runUntil": { "at": "irq_tick", "raster": 250 }, "timeoutFrames": 600 }` | Run until the CPU gets to an address while the beam is on that line. |
+| `{ "write": { "address": "seed", "data": "0102" } }` | Write 1 to 4096 bytes into memory. Optional: `space` (`c64` or `drive8`, default `c64`) and `view` (`cpu` or `ram`, default `cpu`). |
+| `{ "registers": { "pc": "start", "a": 0, "flags": { "i": true } } }` | Set registers: `pc`, `a`, `x`, `y`, `sp` and `flags` (`n`, `v`, `b`, `d`, `i`, `z`, `c`). Only `pc` can be a name. |
+| `{ "joystick": { "port": 2, "direction": "left", "fire": true } }` | Set a joystick. `fire` is `false` by default. The joystick stays in this state until the next joystick step. |
+| `{ "type": { "mode": "text", "text": "RUN\n" } }` | Put at most 1024 keys into the keyboard queue of the KERNAL. A program that reads the keyboard hardware does not see them. |
+| `{ "type": { "mode": "petscii", "bytes": [147] } }` | Put PETSCII codes from 1 to 255 into the keyboard queue of the KERNAL. Use it for keys that mode `text` does not have. |
+| `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 600 } }` | Run until the CPU gets to an address. |
+| `{ "runUntil": { "target": { "kind": "memory", "address": "game_state", "operator": "eq", "value": 2 }, "timeoutFrames": 600 } }` | Run until a byte in memory compares true with `value`. `operator` is `eq`, `ne`, `lt`, `lte`, `gt` or `gte`. |
+| `{ "runUntil": { "target": { "kind": "raster", "line": 250 }, "timeoutFrames": 5 } }` | Run until the raster beam gets to a line (0 to 311 for PAL, 0 to 262 for NTSC). Optional: `cycle` from 0 to 64. |
+| `{ "runUntil": { "target": { "kind": "address", "address": "irq_tick", "condition": { "kind": "raster", "line": 250 } }, "timeoutFrames": 600 } }` | Run until the CPU gets to an address while the condition is true. |
 | `{ "snapshot": "snapshots/start.vsf" }` | Restore a snapshot file. Usually with `side`: the snapshot of one program is not a state of the other. |
 | `{ "normalize": true }` | Write pages 0 to 3 and `$00`/`$01` from the entry state in the knowledge. The entry state comes from a capture of the c64-unpacker skill, which `image` of the c64-knowledge skill put in. Then both sides have the same zero page, stack and KERNAL work area. |
 | `{ "observe": "moved", ... }` | Record a checkpoint. |
 
 The `port` of a joystick is 1 or 2. The `direction` is `center`, `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left` or `down-right`.
 
-`timeoutFrames` is from 1 to 30000. A `runUntil` that does not get to its target in `timeoutFrames` frames makes the result INCONCLUSIVE.
+A `condition` has the `kind` `register`, `memory` or `raster`. A `register` condition has `register` (`a`, `x`, `y` or `sp`), `operator` and `value`. A `memory` condition has `address`, `operator` and `value`. A `raster` condition has `line` and an optional `cycle`.
+
+`timeoutFrames` is from 1 to 30000, and 3000 by default. A `runUntil` that does not get to its target in `timeoutFrames` frames makes the result INCONCLUSIVE.
+
+A scenario has no `press` step. Only a record file has `press` for keys of the keyboard matrix.
 
 Each step except `observe` can have `"side": "original"` or `"side": "rebuild"`. Then only that side does the step. Use it when only one side needs a step, for example a key for the intro of the original. An `observe` step has no `side`, because it compares both sides.
 
-An address is `$` and four hex digits, or a symbol name. Each side finds a name in its own symbols.
+Each side finds a name in its own symbols.
 
 ## Observations
 
@@ -67,7 +72,7 @@ An `observe` step has a checkpoint name. A scenario can have each name only one 
 
 | Key | What the script compares |
 |---|---|
-| `memory` | A list of names, `$` addresses, or objects. An object has `at`, `size` (1 to 65536, default 1), `view` (`cpu` or `ram`, default `cpu`), `tolerance` (0 to 255, default 0) and `exclude`. The view `ram` reads the RAM under the ROMs and the I/O area. |
+| `memory` | A list of names, `$` addresses, or objects. An object has `address`, `size` (1 to 65536, default 1), `view` (`cpu` or `ram`, default `cpu`), `tolerance` (0 to 255, default 0) and `exclude`. The view `ram` reads the RAM under the ROMs and the I/O area. |
 | `registers` | A list of register names: `pc`, `a`, `x`, `y`, `sp`, `flags`. |
 | `screen` | The screen of the rebuild against the screen of the original. `maxMismatchRatio` (default 0) is the largest permitted part of different pixels. `mask` is a list of rectangles (`x`, `y`, `width`, `height`) that the comparison does not include. |
 | `vicii` | The VIC-II state: mode, screen address, scroll and colors. |
@@ -75,7 +80,7 @@ An `observe` step has a checkpoint name. A scenario can have each name only one 
 
 A `tolerance` is the largest permitted difference for each byte. A `mask` has at most 64 rectangles. A `mask` must not cover all of the screen: PAL is 384×272 pixels and NTSC is 384×247 pixels. A scenario can observe the screen at most at 64 checkpoints.
 
-`exclude` is a list of bytes in the observed range that the comparison does not include. Each has `at` and a `reason`, for example `{ "at": "$d01e", "reason": "latched sprite collision, not writable" }`. The result lists each excluded byte with its reason.
+`exclude` is a list of bytes in the observed range that the comparison does not include. Each has `address` and a `reason`, for example `{ "address": "$d01e", "reason": "latched sprite collision, not writable" }`. The result lists each excluded byte with its `address` and `reason`.
 
 A `pc` value is an address. Compare `pc` only when both programs have the code at the same address.
 
@@ -89,9 +94,9 @@ A run file (for `testing.ts run`) has:
 - `videoStandard`: optional, `pal` (default) or `ntsc`.
 - `steps`: the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage`, `trace` and `observe`.
 
-A `trace` step has a name, `points` (1 to 8), `frames` (1 to 3000) and an optional `maxHits` (at most 20000). A point has `kind` (`exec`, `read` or `write`), `at` and an optional `end`. The step writes `<name>.json` with each hit. `results.json` gives the file, the count of hits, the frames and why the trace ended. A trace that a breakpoint, a watchpoint or a JAM ends also ends the run.
+A `trace` step has a name, `points` (1 to 8), `frames` (1 to 3000) and an optional `maxHits` (at most 20000). A point has `kind` (`exec`, `read` or `write`), `start` and an optional `end`. The step writes `<name>.json` with each hit. `results.json` gives the file, the count of hits, the frames and why the trace ended. A trace that a breakpoint, a watchpoint or a JAM ends also ends the run.
 
-In a run, a memory item has `at`, `size` (1 to 65536) and `view`. An item larger than 4096 bytes goes into the file `<observe>-<at>.bin`. `"memory": "all"` writes all 64 KiB of RAM to `<observe>.bin`.
+In a run, a memory item has `address`, `size` (1 to 65536) and `view`. An item larger than 4096 bytes goes into the file `<observe>-<address>.bin`, without the `$`. `"memory": "all"` writes all 64 KiB of RAM to `<observe>.bin`.
 
 A name in `save`, `screen`, `coverage` and `observe` has 1 to 64 letters, digits, dots, underscores or hyphens. The files go into the `--out` directory, with `results.json`. It has the observations, the files and the steps done. If a `runUntil` step did not reach its target, it also tells why the run stopped.
 
@@ -102,12 +107,12 @@ Example: visit two rooms from the same start.
   "name": "rooms",
   "start": { "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" },
   "steps": [
-    { "write": { "at": "$0350", "bytes": [1] } },
+    { "write": { "address": "$0350", "data": "01" } },
     { "frames": 50 },
     { "screen": "room1" },
     { "coverage": "room1" },
     { "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" },
-    { "write": { "at": "$0350", "bytes": [2] } },
+    { "write": { "address": "$0350", "data": "02" } },
     { "frames": 50 },
     { "screen": "room2" },
     { "coverage": "room2" }

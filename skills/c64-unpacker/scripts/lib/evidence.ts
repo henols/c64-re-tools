@@ -174,7 +174,7 @@ export async function readMemoryMap(read: (start: number) => Promise<{ ranges: A
   for (let start: number | undefined = 0; start !== undefined; ) {
     const found: { ranges: AccessRange[]; next?: number } = await read(start);
     ranges.push(...found.ranges);
-    if (found.next !== undefined && found.next <= start) throw new Error(`the memory map did not move on from ${start}`);
+    if (found.next !== undefined && found.next <= start) throw new Refusal("operation-failed", `the memory map did not move on from ${start}`);
     start = found.next;
   }
   return ranges;

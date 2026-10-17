@@ -3,6 +3,7 @@
 // these tools itself: nothing here crosses the Host Runtime wire. Bytes
 // (a program, an image, a listing) go next to these values as attachments.
 
+import { Refusal } from "../errors.ts";
 import { prgRange, REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
 import { isInteger, isObject, isOneOf, WireFailure } from "../protocol/messages.ts";
 import { type SourceTree } from "../protocol/tools.ts";
@@ -118,7 +119,7 @@ const isToolVersion = (value: unknown) => value === undefined || (typeof value =
 
 /** Ends a result check with the Error that names its first problem. */
 function fail(message: string): never {
-  throw new Error(message);
+  throw new Refusal("operation-failed", message);
 }
 
 /** Narrows to a list whose items are still unchecked. */

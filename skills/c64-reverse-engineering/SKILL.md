@@ -33,11 +33,12 @@ One repository can hold several programs, with one project folder for each progr
 - From the root of the repository, give `--project <folder>` to each skill script, and `project` to each emulator tool with a path.
 - Write all files in the project folder. Do not write files at the root of the repository.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
+- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A subagent can have no emulator tools. Give it its experiments as run files of the c64-testing skill. Each run starts its own emulator, so many runs can go at the same time. The emulator of the emulator tools is one machine, for the main session.
-- To name a large program with more agents at the same time, give each agent one range of addresses. Each agent writes a batch with its owner range. Then join the batches with `join` of the c64-knowledge skill, and apply the result one time.
-- Do not write a build script or a merge script. c64-source writes and assembles the loader with `--loader`, and `join` of c64-knowledge joins the batches.
+- To name a large program with more agents at the same time, give each agent one range of addresses. Each agent writes a batch with its owner range. Then join the batches with `knowledge.ts join` of the c64-knowledge skill, and apply the result one time.
+- Do not write a build script or a merge script. `source.ts generate --loader` of c64-source writes and assembles the loader, and `knowledge.ts join` of c64-knowledge joins the batches.
 - Do not write a script that makes a deliverable again, for example a capture, copy or replay script. Commit the deliverable.
 - Write the knowledge only with the c64-knowledge script. Do not write or edit the files in `.c64-re-tools/knowledge/` yourself.
 
@@ -62,7 +63,7 @@ Select the path for the scope:
 | What the program does at run time: values, input, timing, screen | c64-emulator |
 | The routines, code, data and references of the program | c64-static-analysis |
 | The platform meaning of an address or a register | c64-memory-map |
-| Differences between releases of the program | c64-provenance |
+| Differences between releases of the program | c64-provenance `compare` |
 | Leftovers of the development, a crack or a recrack: texts, old copies, unused bytes, dead code | c64-provenance `leftovers` |
 | A routine that another program of the workspace has, for example a music driver | c64-provenance, with the library |
 | Source code from the knowledge | c64-source |
@@ -82,18 +83,18 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these: identical source, a verified loader, passed c64-testing scenarios, passed replays of the recordings, and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. | The user gave the criteria. |
 | 2. Get | c64-disk: list the disk. Extract the start file into `original/`. | The start file is in the project. |
 | 3. Start | c64-basic: find the SYS address of the BASIC start. | You have the entry address. |
-| 4. Unpack | c64-unpacker: examine the program. Capture a packed program into `.c64-re-tools/local/`. Then c64-knowledge: put the capture, or the PRG of a program without a packer, into the knowledge with `image`. | `program` of c64-knowledge shows the segments and the entry. |
-| 5. Run | First record: ask the user to play each part that the scope names, with `testing.ts record --play` of c64-testing. Tell the user which parts. Record a part yourself only when the sessions of the user do not have it. Put the recordings in `tests/recordings/`. Then c64-emulator and the run of c64-testing for the parts that a recording cannot have. Write a coverage map for each part into `.c64-re-tools/local/`. Then c64-knowledge: add the maps and the `coverage.bin` of each recording with `coverage`. | `program` of c64-knowledge lists a coverage map for each part that the scope names. |
-| 6. Analyze | c64-static-analysis. It reads the program and the coverage from the knowledge. | No coverage conflict is open. |
-| 7. Name | c64-provenance: if the workspace has a library, find its routines with `match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
-| 8. Generate | c64-source into `src/`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
-| 9. Build and test | c64-assembler with `--compare` into `build/`. c64-testing scenarios in `tests/`. Replay each recording on the rebuild with `testing.ts replay`: give the checkpoint routine, the state and the random state (`--pin`) with the names of stage 7. | The criteria of stage 1 are true. |
-| 10. Document | When the criteria ask for documentation: c64-docs into `README.md` and `docs/`. | `docs.ts link --check` of c64-docs gives no problem. |
+| 4. Unpack | c64-unpacker: examine the program with `unpacker.ts inspect`, `trace` and `stages`. Capture a packed program with `unpacker.ts capture` into `.c64-re-tools/local/`. Then c64-knowledge: put the capture, or the PRG of a program without a packer, into the knowledge with `knowledge.ts image`. | `program` of c64-knowledge shows the segments and the entry. |
+| 5. Run | First record: ask the user to play each part that the scope names, with `testing.ts record --play` of c64-testing. Tell the user which parts. Record a part yourself only when the sessions of the user do not have it. Put the recordings in `tests/recordings/`. Then use c64-emulator and `testing.ts run` of c64-testing for the parts that a recording cannot have. Write a coverage map for each part into `.c64-re-tools/local/`. Then c64-knowledge: add the maps and the `coverage.bin` of each recording with `knowledge.ts coverage`. | `program` of c64-knowledge lists a coverage map for each part that the scope names. |
+| 6. Analyze | c64-static-analysis: `static-analysis.ts analyze`. It reads the program and the coverage from the knowledge. | No coverage conflict is open. |
+| 7. Name | c64-provenance: if the workspace has a library, find its routines with `provenance.ts match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
+| 8. Generate | c64-source: `source.ts generate --out src`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
+| 9. Build and test | c64-assembler: `assembler.ts build` with `--compare` into `build/`. c64-testing: `testing.ts test` with the scenarios in `tests/`. Replay each recording on the rebuild with `testing.ts replay`: give the checkpoint routine, the state and the random state (`--pin`) with the names of stage 7. | The criteria of stage 1 are true. |
+| 10. Document | When the criteria ask for documentation: c64-docs into `README.md` and `docs/`, with `docs.ts generate` and `docs.ts link`. | `docs.ts link --check` of c64-docs gives `result: "PASS"`. |
 | 11. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
 
 In stage 5, make the recordings before you change the program. A recording needs no names, and its coverage gives the analysis of stage 6 more code. If you cannot get to a part of the program, ask the user how to get to it. Do stages 7 and 8 again until the source is clear. Each run of c64-source writes the source again.
 
-After stage 7, save each routine that other programs can have to the library with c64-provenance `routine`. Examples are a music driver, a decruncher and a loader. Ask the user before you make a library.
+After stage 7, save each routine that other programs can have to the library with `provenance.ts routine` of c64-provenance. Examples are a music driver, a decruncher and a loader. Ask the user before you make a library.
 
 ### Deliverables of a full rebuild
 

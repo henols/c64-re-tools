@@ -37,14 +37,26 @@ node <skill>/scripts/assembler.ts build src main.a --out build/game.prg
 
 The script copies the full source root. Put all files that the program includes under it. Version control directories stay out.
 
-The script prints one JSON object. The target CPU is the 6510. The output is a C64 PRG, or the bytes only with `--plain`.
+The target CPU is the 6510. The output is a C64 PRG, or the bytes only with `--plain`.
+
+### Calling the script
+
+- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
+- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+- A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
+- Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
+- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
+- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
 
 ### Project folder
 
 - Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence` of c64-knowledge. `--evidence` refuses a file in `.c64-re-tools/local/`.
+- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
+- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
@@ -52,11 +64,11 @@ The script prints one JSON object. The target CPU is the 6510. The output is a C
 
 1. Find the source root and the entry source. The entry source sets its own start address with `* = $0801` or similar.
 2. Run the script.
-3. If `assembled` is `true`, the PRG is at `output`. `loadRange` tells where it loads. `symbols` gives each symbol:
+3. If `result` is `PASS`, the PRG is at `out`. `loadRange` tells where it loads. `symbols` gives each symbol:
    - Kind `address` has a value in `loadRange`. It gives the `address`.
    - Kind `constant` has a value outside `loadRange`. It gives the `value` as `$` and four or more hex digits. A label in a `!pseudopc` block can be a constant, because its value is the run address, not the load address.
    - `used` is `false` when the source does not use the symbol.
-4. If `assembled` is `false`, read `diagnostics`. Each one has a severity, a file, a line and a message. Correct the source and run the script again.
+4. If `result` is `FAIL` and `assembled` is `false`, read `diagnostics`. Each one has a severity, a file, a line and a message. Correct the source and run the script again.
 5. To run the program, give the PRG path to the c64-emulator skill.
 
 The source of the c64-source skill has switches. Each switch is 0 when the build does not define it. `--define CRACK=1` puts in the patches of the switch `CRACK`. With `--compare`, only the bytes of those patches are different.
@@ -74,15 +86,18 @@ A symbol from the rebuilt source can give the address of a routine in the rebuil
 
 ## Result
 
-The PRG in the project at the output path, with its load range and symbols. Or the source diagnostics when the assembly failed.
+`result` is `PASS` or `FAIL`.
 
-With `--compare`, `compare` gives `identical` and one check for each segment of the program in the knowledge. A check is `identical`, `different` with the first different address, or `not covered` when the program does not hold the segment.
+- `PASS`: the PRG is in the project at `out`, with its load range and symbols.
+- `FAIL` with `assembled: false`: the source has errors. `diagnostics` gives them.
+- `FAIL` with `assembled: true`: `--compare` found differences. The PRG is at `out`.
 
-The exit status is 0 for a PRG. The exit status is 1 for `assembled: false`, for a `--compare` that is not identical, and for an error. The exit status is 2 for a wrong argument.
+With `--compare`, `compare` gives `identical` and `segments`: one check for each segment of the program in the knowledge. The `result` of a check is `identical`, `different` with `firstDifference`, or `not covered` when the build does not hold the segment.
 
 ## Failure and conflicts
 
-- `assembled: false`: the source has errors. This is a normal result. Correct the source.
+- `FAIL` with `assembled: false`: the source has errors. Correct the source.
+- `FAIL` with `assembled: true`: the build is not identical to the program in the knowledge. Read `compare.segments`.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 - `invalid-input`: an option or a path is wrong. Read the message and correct the call.
 

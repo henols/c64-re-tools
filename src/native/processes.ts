@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
+import { Refusal } from "../errors.ts";
 import { WireFailure } from "../protocol/messages.ts";
 
 /** How long a process group gets between SIGTERM and SIGKILL. */
@@ -189,7 +190,7 @@ export class ProcessSupervisor {
   /** Starts argv[0] with argv[1..] as the leader of a new process group. */
   spawn(argv: readonly string[], options: SpawnOptions = {}): SupervisedProcess {
     const program = argv[0];
-    if (program === undefined) throw new TypeError("argv must name a command");
+    if (program === undefined) throw new Refusal("operation-failed", "argv must name a command");
     const batch = process.platform === "win32" ? batchInvocation(argv, process.env.ComSpec) : undefined;
     const { command, args } = batch ?? { command: program, args: argv.slice(1) };
     let child: ChildProcess;
@@ -333,14 +334,14 @@ export class ProcessSupervisor {
         // The leader has ended already.
       }
       await Promise.race([exited, sleep(this.#graceMs)]);
-      if (!hasExited(child)) throw new Error(`process ${pid} did not end${failure === undefined ? "" : `: ${failure}`}`);
+      if (!hasExited(child)) throw new Refusal("operation-failed", `process ${pid} did not end${failure === undefined ? "" : `: ${failure}`}`);
       return;
     }
     // The group outlives its leader when descendants remain, so wait on the group, not the leader.
     if (signalGroup(pid, "SIGTERM") && !(await waitForGroupGone(pid, this.#graceMs))) {
       signalGroup(pid, "SIGKILL");
       if (!(await waitForGroupGone(pid, KILL_WAIT_MS))) {
-        throw new Error(`process group ${pid} survived SIGKILL`);
+        throw new Refusal("operation-failed", `process group ${pid} survived SIGKILL`);
       }
     }
     // A group of zombies counts as gone before Node reaps the leader and reports its exit;

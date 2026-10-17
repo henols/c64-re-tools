@@ -84,7 +84,7 @@ export async function diffFiles(first: string, second: string, options: { gap: n
     const read = (path: string) => readProjectFile(path).bytes;
     const [left, right] = [read(first), read(second)];
     if (left.length !== right.length) throw new UsageError(`the memory files have ${left.length} and ${right.length} bytes; give two of one size`);
-    if (base + left.length > 0x10000) throw new UsageError("the memory file goes past $ffff from --at");
+    if (base + left.length > 0x10000) throw new UsageError("the memory file goes past $ffff from --address");
     a = { memory: { base, bytes: left } };
     b = { memory: { base, bytes: right } };
   } else {
