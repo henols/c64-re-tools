@@ -9,10 +9,10 @@ description: Use this skill to write the documentation of a C64 program. The doc
 
 Write documentation that tells how a program works, and that points to the code. The documentation is Markdown in the project. The entry page is `README.md` in the project folder. The other pages and the reference are in `docs/`. The documentation has two parts:
 
-- **The reference.** `generate.ts` generates it from the knowledge, the source map of c64-source and the image. It has a page for each module. The page gives the routines, their callers and callees, the data and a call graph. It also has pages for the names, the variables, the tables, the memory map and the graphics. Do not edit these pages. The next run writes over them.
+- **The reference.** `docs.ts generate` generates it from the knowledge, the source map of c64-source and the image. It has a page for each module. The page gives the routines, their callers and callees, the data and a call graph. It also has pages for the names, the variables, the tables, the memory map and the graphics. Do not edit these pages. The next run writes over them.
 - **The pages that you write.** They tell how the program works. They give the flows, the state machines, the data formats and the task of each part. Use the page types in `references/page-types.md` and the rules in `references/style.md`.
 
-`link.ts` connects the two parts. In each page that you write, a name in backticks gets a link to its line in the source. The address after the name gets a link to the entry of the name in the reference. When the source changes, `link.ts` moves the links to the new lines.
+`docs.ts link` connects the two parts. In each page that you write, a name in backticks gets a link to its line in the source. The address after the name gets a link to the entry of the name in the reference. When the source changes, `docs.ts link` moves the links to the new lines.
 
 This skill does not change the knowledge.
 
@@ -27,18 +27,18 @@ This skill does not change the knowledge.
 The scripts run on this machine. They do not use the emulator or the host runtime.
 
 ```
-node <skill>/scripts/generate.ts --source src --out docs/reference
-node <skill>/scripts/link.ts README.md docs --source src
-node <skill>/scripts/link.ts README.md docs --source src --check
+node <skill>/scripts/docs.ts generate src --out docs/reference
+node <skill>/scripts/docs.ts link README.md docs --source src
+node <skill>/scripts/docs.ts link README.md docs --source src --check
 ```
 
 | Option | Meaning |
 |---|---|
 | `--source src` | The source directory of c64-source. Both scripts read `src/source-map.json`. |
-| `--out docs/reference` | The directory of the reference. `generate.ts` writes only there. It refuses to start when the directory holds a page that it did not write. |
-| `README.md docs` | The pages of the documentation: `.md` files and directories. `link.ts` reads each file and every `.md` file below each directory. It changes only the pages that you wrote. It checks the pages of the reference. |
-| `--reference <dir>` | The directory of the reference for `link.ts`. The default is the `reference` directory of the first directory that has one, for example `docs/reference`. |
-| `--check` | `link.ts` writes nothing. It fails when a link is not up to date or a page has a problem. |
+| `--out docs/reference` | The directory of the reference. `docs.ts generate` writes only there. It refuses to start when the directory holds a page that it did not write. |
+| `README.md docs` | The pages of the documentation: `.md` files and directories. `docs.ts link` reads each file and every `.md` file below each directory. It changes only the pages that you wrote. It checks the pages of the reference. |
+| `--reference <dir>` | The directory of the reference for `docs.ts link`. The default is the `reference` directory of the first directory that has one, for example `docs/reference`. |
+| `--check` | `docs.ts link` writes nothing. It fails when a link is not up to date or a page has a problem. |
 
 ### Project folder
 
@@ -49,19 +49,19 @@ node <skill>/scripts/link.ts README.md docs --source src --check
 
 1. Read the knowledge with the c64-knowledge skill. The documentation can only be as good as the knowledge. Each routine needs a name and a comment. Each table needs a region and a name. Each file of the source needs a module with a title. Record what is missing with c64-knowledge.
 2. Generate the source with c64-source. Make sure that `check.identical` is `true`. The script also writes `source-map.json`.
-3. Run `generate.ts`. Read `index.md` of the reference. A module with no routines, or a routine with no comment, shows what the knowledge does not have yet.
+3. Run `docs.ts generate`. Read `index.md` of the reference. A module with no routines, or a routine with no comment, shows what the knowledge does not have yet.
 4. Make the plan of the pages. Start from the modules and the call graphs. Find the main loop, the interrupt chain, the dispatch tables, the state machines and the data formats. Each subsystem gets one page in `docs/`. The entry page `README.md` in the project folder lists the pages. Use the page types in `references/page-types.md`.
 5. Write each page. Read the code and the knowledge for each fact. Run the program with c64-testing or c64-emulator when a fact needs a run. Write each name with its address, for example `` `draw_room` `$09BC` ``. Mark each fact with its evidence. Several subagents can write the pages at the same time, one page each. Give each subagent `references/page-types.md` and `references/style.md`.
 6. Record each new fact in the knowledge first: a name, a comment, a region or a module. Then the source and the reference show it too. A fact only in a page is lost at the next change of the knowledge.
-7. Run `link.ts`. Read `problems` and correct each one. Then run `link.ts --check`. Make sure that `problems.count` is 0 and that `notUpToDate.links` is 0.
-8. When the project folder is in a workspace with other projects, find `README.md` at the root of the workspace. This page lists each program of the workspace. Add one row for the program, with a link to `<project>/README.md` and one sentence. If the page does not exist, make it. Use the workspace index in `references/page-types.md`. `link.ts` does not read this page, because the page is not in the project folder.
+7. Run `docs.ts link`. Read `problems` and correct each one. Then run `link.ts --check`. Make sure that `problems.count` is 0 and that `notUpToDate.links` is 0.
+8. When the project folder is in a workspace with other projects, find `README.md` at the root of the workspace. This page lists each program of the workspace. Add one row for the program, with a link to `<project>/README.md` and one sentence. If the page does not exist, make it. Use the workspace index in `references/page-types.md`. `docs.ts link` does not read this page, because the page is not in the project folder.
 9. After each change to the knowledge, do steps 2, 3 and 7 again. The links then go to the new lines.
 
 ## The links
 
-`link.ts` changes these forms in the pages that you write. It does not change a code block, a mermaid diagram or an HTML comment. The examples are for a page in `docs/`. In `README.md`, the links start with `src/` and `docs/reference/`.
+`docs.ts link` changes these forms in the pages that you write. It does not change a code block, a mermaid diagram or an HTML comment. The examples are for a page in `docs/`. In `README.md`, the links start with `src/` and `docs/reference/`.
 
-| You write | `link.ts` writes |
+| You write | `docs.ts link` writes |
 |---|---|
 | `` `draw_room` `$09BC` `` | `` [`draw_room`](../src/room_draw.asm#L6) [`$09BC`](reference/modules/room_draw.md#draw_room) `` |
 | `` `draw_room` (`$09BC`) `` | the same links, in the brackets |
@@ -71,8 +71,8 @@ node <skill>/scripts/link.ts README.md docs --source src --check
 
 - A name is a name of the knowledge or of the source. A word in backticks that is no name stays as it is.
 - In a list such as `` `a`/`b` `$1000`/`$1010` ``, each name gets its link. The addresses stay as they are.
-- `link.ts` writes a link again when its line moves. A link that you made to another target stays as you wrote it.
-- `link.ts` checks every link and image: the file must exist, a `#anchor` must exist in the page, and a `#L` line must exist in the file.
+- `docs.ts link` writes a link again when its line moves. A link that you made to another target stays as you wrote it.
+- `docs.ts link` checks every link and image: the file must exist, a `#anchor` must exist in the page, and a `#L` line must exist in the file.
 
 ## The reference
 
@@ -105,13 +105,13 @@ Do not store:
 
 ## Result
 
-`generate.ts` gives one JSON object:
+`docs.ts generate` gives one JSON object:
 
 - `out`, `index` and `revision`.
 - `pages`, `entries`, `tables`, `images` and `edges`: the counts of the reference.
 - `program`: `the knowledge`, or a note when the knowledge has no program. Without the program, the tables are not decoded and the graphics page has no images.
 
-`link.ts` gives one JSON object:
+`docs.ts link` gives one JSON object:
 
 - `pages`: the count of the pages that it read.
 - `linked`: the count of the links that it wrote, and the pages that it changed. With `--check`, `notUpToDate` gives the links that are not up to date.
@@ -122,8 +122,8 @@ The exit status is 0 when there is no problem. The exit status is 1 when there i
 ## Failure and conflicts
 
 - `not-found` for `source-map.json`: generate the source with c64-source. Then run the script again.
-- `invalid-input` that names an old revision: the knowledge changed after the source. Generate the source again, then run `generate.ts`.
-- `invalid-input` that names a page in the reference directory: the page is not a page of `generate.ts`. Move the page out of the directory. Do not give `--out` a directory with pages that you wrote.
+- `invalid-input` that names an old revision: the knowledge changed after the source. Generate the source again, then run `docs.ts generate`.
+- `invalid-input` that names a page in the reference directory: the page is not a page of `docs.ts generate`. Move the page out of the directory. Do not give `--out` a directory with pages that you wrote.
 - `unknown-name`: the page uses a name that is not in the knowledge. Record the name with c64-knowledge, or correct the page.
 - `wrong-address`: the address after the name is not the address of the name, and it is not a place inside it. The message gives the routine that holds the address. Correct the name or the address. For a value, write `` `scroll_moves` = `$10` ``.
 - `missing-file`, `missing-anchor` or `missing-line`: a link goes to nothing. Correct the link. An image of an asset must exist in the project.
