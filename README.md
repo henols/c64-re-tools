@@ -1,51 +1,59 @@
 # c64-re-tools
 
-An agent-friendly Commodore 64 engineering toolkit for reverse engineering
-unknown applications and for developing, debugging, building and testing new
-C64 applications.
+Let an AI agent work on Commodore 64 programs. The agent drives a real VICE
+emulator and runs ACME, DXA and Ghidra. Use it to build new C64 apps and games,
+and to reverse engineer old ones.
 
-An agent drives a real VICE emulator through an MCP server, and uses skills
-for the rest: disk images, BASIC, static analysis with DXA and Ghidra, a project
-knowledge database, the ACME assembler, unpacking, release comparison and
-functional-equivalence tests.
+It works with Claude Code, Codex, pi, opencode, Gemini, Copilot, Cursor and
+Windsurf.
 
-Architecture in one line: one MCP process owns one VICE instance and is
-VICE-only; a Host Runtime on the graphical host owns VICE and the tools that
-come with it (c1541, petcat); skill scripts call the Host Runtime for those,
-run ACME, DXA and Ghidra themselves, and keep project knowledge local as
-text in `.c64-re-tools/knowledge/`.
-The design is in [`docs/redesign/`](docs/redesign/README.md), and
-[`docs/plan.md`](docs/plan.md) tracks the implementation.
+## What it can do
+
+**Build new apps and games**
+
+- Assemble 6510 source with ACME, with errors by file and line, and symbols.
+- Load and run the program in VICE. Set breakpoints and watchpoints, step, and read the CPU history and the call stack.
+- Read, write, search and compare memory, and disassemble it.
+- Show the VIC-II, sprite, SID and CIA state, and capture the screen.
+- Type on the keyboard and move the joystick.
+- Count cycles, profile the code, and wait for a raster line.
+- Run many steps in one go and keep screens, snapshots and coverage as files.
+- Tell what any address or register value means on the C64.
+
+**Reverse engineer existing programs**
+
+- Read D64, D71, D81, G64, T64 and CRT images, list BASIC and find the SYS address.
+- Find packers and capture the unpacked program from the emulator.
+- Analyse the code with DXA and Ghidra. The toolkit brings its own NMOS 6510 language for Ghidra, with all 256 opcodes.
+- Keep names, regions and comments as text in the project, ready for git.
+- Compare releases, and find routines that several programs share.
+- Generate ACME source that rebuilds the program byte for byte, and its documentation.
+- Test that a rebuild behaves as the original: PASS, FAIL or INCONCLUSIVE.
+
+## How it works
+
+VICE and the Host Runtime run on your computer, where VICE can open a window.
+The agent runs in your project, preferably in a dev container. It reaches VICE
+through an MCP server, and it runs ACME, DXA and Ghidra through its skills.
 
 ## Install
 
-You need Node.js 24 or newer, and VICE 3.9 or later (`x64sc`, `c1541`, `petcat`) with its ROM files; use the latest VICE release. `status` and the host name the known flaws of an older VICE. ACME, DXA and Ghidra are needed only for the skills that use them: [docs/install-tools.md](docs/install-tools.md) has the steps for each system.
+You need Node.js 24 or newer and VICE 3.9 or later (`x64sc`, `c1541`, `petcat`)
+with its ROM files on the host. Use the latest VICE release.
 
-Start the Host Runtime and leave it running:
+Start the Host Runtime on the host, and leave it running:
 
 ```
 npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host
 ```
 
-The host logs each call from a skill script. Add `--log-console` to print also each MCP call and each c1541 or petcat run, or `--log-dir <directory>` to write them to a file. Both are off by default.
-
-Install into your project and start the agent:
-
-```
-cd my-c64-project
-npx -y @henols/c64-re-tools@latest install --target claude
-claude
-```
-
-Several programs in one repository: install once at the root, give each program its own folder, and start the agent at the root. A folder with `.c64-re-tools/` is a project; the agent names one with `--project <folder>`.
-
-`npx -y @henols/c64-re-tools@latest status` shows what works.
-
-Until 2.0.0 is released, `@latest` is the old 1.1.0. Use the prerelease instead. For the prerelease, a dev container and debugging, see [docs/debug-install.md](docs/debug-install.md).
+`--log-console` prints each call, and `--log-dir <directory>` writes them to a file.
 
 ### Dev container
 
-The agent runs in the container, VICE and the Host Runtime on the host. In `.devcontainer/devcontainer.json`:
+This is the preferred way. The container gets ACME, dxa, Java 21 and Ghidra,
+installs the toolkit into the project when it is created, and updates it at
+each start. Add to `.devcontainer/devcontainer.json`:
 
 ```json
 "features": {
@@ -54,127 +62,98 @@ The agent runs in the container, VICE and the Host Runtime on the host. In `.dev
 "runArgs": ["--add-host=host.docker.internal:host-gateway"]
 ```
 
-Until 2.0.0 is released, the `latest` URL has no Feature. Use the prerelease: `https://github.com/henols/c64-re-tools/releases/download/v2.0.0-rc.4/devcontainer-feature-c64-re-tools.tgz` with `{ "target": "claude", "channel": "next" }`.
+`target` is the harness, or a comma list such as `claude,codex`. The Feature
+needs a Debian or Ubuntu image. `runArgs` is for Docker on Linux.
 
-The Feature installs ACME, dxa, Java 21 and Ghidra, puts the toolkit into the project when the container is created, and updates it at each start. `target` is a harness or a comma list. `channel` is `latest` (default) or `next`. Debian and Ubuntu images only. `runArgs` is for Docker on Linux. Start the Host Runtime on the host as above.
+### Without a container
 
-### Settings
-
-| Variable | Read by | Meaning |
-| --- | --- | --- |
-| `C64RT_VICE` | host | Full path of `x64sc` when it is not on `PATH`. |
-| `C64RT_C1541`, `C64RT_PETCAT` | host | Full path of the tool when it is not on `PATH`. |
-| `C64RT_ACME`, `C64RT_DXA` | skills, CLI | Full path of the tool when it is not on `PATH`. |
-| `C64RT_GHIDRA` | skills, CLI | The Ghidra installation directory, when `analyzeHeadless` is not on `PATH`. |
-| `C64RT_HOST` | MCP, skills, CLI | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
-| `C64RT_VIDEO` | MCP | `pal` (default) or `ntsc`, fixed for the life of the MCP process. |
-| `C64RT_TRACE` | MCP, skills, CLI | A directory for a trace of what the programs do, for a person who debugs a run. See [docs/debug-install.md](docs/debug-install.md). Nothing of the trace reaches the agent. The host uses `--log-dir` instead. |
-
-Ghidra runs with its own settings directory for each request. The toolkit
-brings its own NMOS 6510 language (all 256 opcodes); your Ghidra installation
-and settings stay unchanged.
-
-## Use it with an agent
-
-1. Install for your harness: `--target claude`, `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor` or `windsurf`. Without `--target`, `install` installs for all of them.
-2. Start the Host Runtime and leave it running.
-3. Start the harness in the project (or at the root of a repository with several projects), for example `claude` or `codex`, or open the project in Cursor or Windsurf. The harness starts the MCP server and finds the skills by itself.
-4. Ask for the result you want, in plain words. The agent picks the skills and the `c64_*` tools.
-
-Examples:
+Install ACME, dxa and Ghidra as in [docs/install-tools.md](docs/install-tools.md).
+Then, in your project:
 
 ```
-Reverse engineer original/game.d64. Find how it starts, unpack it if it is packed,
-and name the main routines in project knowledge.
+npx -y @henols/c64-re-tools@latest install --target claude
+```
+
+`--target` is `claude`, `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor`
+or `windsurf`. Without it, `install` installs for all of them.
+
+Check what works:
+
+```
+npx -y @henols/c64-re-tools@latest status
+```
+
+## Use it
+
+Start the agent in the project, for example `claude`, and ask for what you want:
+
+```
+Write a game in ACME where a sprite moves with the joystick and the border
+flashes when it hits the edge. Build it, run it, and show me the screen.
+
+The music stops when the title screen starts. Find out why.
+
+Reverse engineer original/game.d64. Find how it starts, unpack it if it is
+packed, and name the main routines.
 
 Find the routine that draws the score, and explain how it works.
-
-Write a program in ACME that scrolls a text at the bottom of the screen.
-Build it, run it in the emulator, and write a test for it.
-
-Show me the emulator window.
 ```
 
-The agent keeps what it learns about the program as text in `.c64-re-tools/knowledge/`. Commit that folder with the project. After a `git pull` that joined the work of two computers, run `knowledge.ts merge` when a command reports conflicts.
+The agent keeps what it learns about a program as text in
+`.c64-re-tools/knowledge/`. Commit that folder with the project. If a command
+reports conflicts after a `git pull`, run `knowledge.ts merge`.
+
+Several programs in one repository: install once at the root and give each
+program its own folder. A folder with `.c64-re-tools/` is a project.
 
 ## Skills
 
 | Skill | Use |
 | --- | --- |
-| c64-reverse-engineering | Coordinates an investigation and picks the specialist for the next unknown. |
-| c64-emulator | Runs and observes the program in VICE through the MCP tools. |
-| c64-static-analysis | A fast first pass with DXA and a deeper pass with Ghidra into knowledge, with seeds from knowledge and decompilation. |
-| c64-knowledge | Reads and writes symbols, regions, comments and references, with history. |
+| c64-assembler | Builds ACME source, with errors and symbols. |
+| c64-emulator | Runs, debugs and observes the program in VICE. |
+| c64-memory-map | What an address or a register value means. |
+| c64-testing | Runs scenarios: original against rebuild, or many steps on one program. |
 | c64-disk | Directory, BAM, entries, sector chains and extraction of disk images. |
 | c64-basic | BASIC V2 listings and the SYS/USR handoff to machine code. |
-| c64-unpacker | Packing evidence, and capture of the unpacked program from the emulator. |
-| c64-memory-map | Platform meaning of addresses and register values. |
-| c64-provenance | Byte comparison of releases, and a library of routines that several programs share. |
-| c64-source | ACME source from the image and the knowledge, checked byte by byte, and a loader for the entry state. |
-| c64-assembler | ACME builds with diagnostics and symbols. |
-| c64-testing | Original-against-rebuild scenarios with PASS, FAIL or INCONCLUSIVE. |
+| c64-unpacker | Packing evidence, and capture of the unpacked program. |
+| c64-static-analysis | Analysis with DXA and Ghidra into the knowledge. |
+| c64-knowledge | Symbols, regions, comments and references, with history. |
+| c64-provenance | Compares releases, and keeps a library of shared routines. |
+| c64-source | ACME source from the knowledge, checked byte for byte. |
+| c64-docs | Documentation of a program from its knowledge and source. |
+| c64-reverse-engineering | Leads an investigation and picks the next skill. |
 
-## Examples
+## Settings
 
-Reverse engineering, from an unknown disk to a verified rebuild (the commands
-that the skills run for the agent; `<skills>` is the installed skills
-directory):
-
-```
-node <skills>/c64-disk/scripts/disk.ts directory original/game.d64
-node <skills>/c64-disk/scripts/disk.ts read original/game.d64 GAME --out extracted/game.prg
-node <skills>/c64-basic/scripts/basic.ts extracted/game.prg                  # the SYS address, e.g. $080d
-node <skills>/c64-unpacker/scripts/unpack.ts inspect extracted/game.prg
-node <skills>/c64-static-analysis/scripts/analyze.ts extracted/game.prg --analyzer dxa --listing analysis/game.lst
-node <skills>/c64-static-analysis/scripts/analyze.ts extracted/game.prg --entry '$080d'
-node <skills>/c64-knowledge/scripts/knowledge.ts rename '$080d' main --kind routine --reason 'entry from BASIC'
-node <skills>/c64-static-analysis/scripts/analyze.ts extracted/game.prg --entry '$080d' --decompile '$080d'
-node <skills>/c64-assembler/scripts/assemble.ts --source-root src --entry game.a --out build/game.prg > build/game.json
-node <skills>/c64-testing/scripts/test.ts tests/counts.json                   # PASS, FAIL or INCONCLUSIVE
-```
-
-Development: build with the c64-assembler skill, then load and debug with the
-MCP tools (`c64_program_load`, `c64_breakpoint`, `c64_run_until`,
-`c64_memory_read`, `c64_screen`), and test with the c64-testing skill.
+| Variable | Meaning |
+| --- | --- |
+| `C64RT_VICE`, `C64RT_C1541`, `C64RT_PETCAT` | Full path of the VICE tool, when it is not on `PATH` (host). |
+| `C64RT_ACME`, `C64RT_DXA` | Full path of the tool, when it is not on `PATH`. |
+| `C64RT_GHIDRA` | The Ghidra installation directory, when `analyzeHeadless` is not on `PATH`. |
+| `C64RT_HOST` | `host:port` of the Host Runtime, when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at port 6464. |
+| `C64RT_VIDEO` | `pal` (default) or `ntsc`. |
+| `C64RT_TRACE` | A directory for a trace of a run. See [docs/debug-install.md](docs/debug-install.md). |
 
 ## Developing
 
-To work on the toolkit itself, Node 24 or newer and pnpm are required; install pnpm yourself (for example
-`corepack enable pnpm`). `packageManager` in `package.json` pins its version.
+To work on the toolkit itself you need Node 24 or newer and pnpm.
 
 ```
 pnpm install --frozen-lockfile
-pnpm typecheck     # tsc checks everything; it emits nothing
-pnpm test          # node --test on src/**/*.test.ts and test/**/*.test.ts
+pnpm typecheck
+pnpm test
+pnpm host          # the Host Runtime from this checkout
 ```
 
-Unit tests sit beside their source as `src/**/*.test.ts`; `test/` holds
-integration and end-to-end tests. Node runs the TypeScript directly (type
-stripping), so relative imports name the `.ts` file. Skill scripts import
-`src/` as `#src/...` (the `imports` map in `package.json`); an installed skill
-gets the `src/` modules it reaches and its own `package.json` with that map.
-
-Tests that need real tools are opt-in. Without them they are reported as
-skipped, never as passed:
+Tests that need real tools are skipped unless you turn them on:
 
 ```
 C64RT_LIVE_VICE=/usr/bin/x64sc C64RT_GHIDRA=/opt/ghidra pnpm test
 ```
 
-ACME, DXA, c1541 and petcat tests run when the tools are on `PATH`.
-
-To release, push a tag. See [docs/releasing.md](docs/releasing.md).
-
-## Layout
-
-```
-src/             # mcp, host, host-client, native, knowledge, cli; unit tests beside the source
-skills/          # the skills: SKILL.md, scripts (TypeScript) and references
-distribution/    # the AP SDK plugin definition: skills with the src/ modules they reach
-test/            # fixtures, integration and end-to-end tests
-docs/redesign/   # the design
-```
+To release, see [docs/releasing.md](docs/releasing.md).
 
 ## License
 
-MIT. See [`LICENSE`](./LICENSE).
+MIT. See [LICENSE](LICENSE).
