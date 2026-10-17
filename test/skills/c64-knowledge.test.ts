@@ -212,12 +212,15 @@ test("image puts a capture into the knowledge, and coverage joins maps that are 
   memory.fill(0xea, 0x0400, 0x04ff);
   writeFileSync(join(capture, "image.bin"), memory);
   writeFileSync(join(capture, "image.json"), JSON.stringify({ entry: "$0400", segments: [{ start: "$0400", end: "$04ff" }], stages: [{ stage: 0, entry: "$0871" }], image: "image.bin" }));
-  writeFileSync(join(capture, "entry_state.json"), JSON.stringify({ registers: { pc: "$0400" }, differsFromReset: [] }));
+  const pages = Object.fromEntries(["$0000", "$0100", "$0200", "$0300"].map((page) => [page, "00".repeat(256)]));
+  const state = { registers: { pc: "$0400", a: 0, x: 0, y: 0, sp: 0xf6, flags: { i: true } }, cpuPort: { $00: 0x2f, $01: 0x37 }, pages };
+  writeFileSync(join(capture, "entry_state.json"), JSON.stringify({ ...state, differsFromReset: [] }));
   const imported = knowledge(root, "image", ".c64-re-tools/local/capture/image.json", "--reason", "the capture");
   assert.equal(imported.status, 0);
   assert.deepEqual({ ...imported.json, revision: undefined }, { revision: undefined, bytes: 256, rowsAdded: 4, rowsClosed: 0, entryChanged: true });
   const entry = readFileSync(join(root, ".c64-re-tools", "knowledge", "entry.jsonl"), "utf8");
-  assert.match(entry, /"state":\{"registers":\{"pc":"\$0400"\}\}/);
+  assert.match(entry, /"state":\{"registers":\{"pc":"\$0400","a":0,"x":0,"y":0,"sp":246,"flags":\{"i":true\}\},"cpuPort":/);
+  assert.doesNotMatch(entry, /differsFromReset/, "the comparison with a clean reset stays in the capture");
   assert.equal(knowledge(root, "image", ".c64-re-tools/local/capture/image.json").json.revision, null);
 
   const run = new Uint8Array(0x10000);

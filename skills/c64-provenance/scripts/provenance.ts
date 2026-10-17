@@ -8,10 +8,13 @@
 // routines that several programs share in a library folder and find them in the
 // program (D71).
 
-import { basename, posix, relative } from "node:path";
+import { basename, relative } from "node:path";
 import { parseArgs } from "node:util";
 
-import { type AddressRange, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { type AddressRange, c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { Refusal } from "#src/errors.ts";
+import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
+import { readImage } from "#src/host-client/image.ts";
 import { checkActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT, WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
@@ -42,7 +45,7 @@ import { projectRoot } from "#src/project.ts";
 import { runBody, UsageError } from "#src/script.ts";
 import { compareReleases, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
 import { findRoutine, libraryFolder, LibraryError, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
-import { watchRelease, type ImageState, type Start } from "./lib/runtime.ts";
+import { watchRelease, type Start } from "./lib/runtime.ts";
 import { findLeftovers } from "./lib/leftovers.ts";
 import { separate } from "./lib/separate.ts";
 
@@ -110,84 +113,41 @@ interface LoadedRelease {
   stages?: Array<{ entry: number; wrote: AddressRange[] }>;
 }
 
-/** Reads entry_state.json of the c64-unpacker skill for a start by writes. */
-function entryState(path: string): ImageState | string {
-  let value: Record<string, any>;
-  try {
-    value = JSON.parse(readProjectFile(path).bytes.toString("utf8")) as Record<string, any>;
-  } catch (error) {
-    if (error instanceof WireFailure && error.code === "not-found") return `It has no ${path}; capture it with c64-unpacker.`;
-    if (error instanceof WireFailure) throw error;
-    return `${path} is not JSON: ${(error as Error).message}`;
-  }
-  const registers = value.registers ?? {};
-  const byte = (item: unknown) => Number.isInteger(item) && (item as number) >= 0 && (item as number) <= 0xff;
-  const pages = ["$0000", "$0100", "$0200", "$0300"].map((page) => value.pages?.[page]);
-  const ok =
-    typeof registers.pc === "string" &&
-    /^\$[0-9a-f]{4}$/i.test(registers.pc) &&
-    ["a", "x", "y", "sp"].every((name) => byte(registers[name])) &&
-    typeof registers.flags === "object" &&
-    byte(value.cpuPort?.$00) &&
-    byte(value.cpuPort?.$01) &&
-    pages.every((page) => typeof page === "string" && /^[0-9a-f]{512}$/i.test(page));
-  if (!ok) return `${path} is not an entry_state.json of the c64-unpacker skill.`;
-  const flag = (name: string) => registers.flags[name] === true;
-  return {
-    pc: Number.parseInt(registers.pc.slice(1), 16),
-    a: registers.a,
-    x: registers.x,
-    y: registers.y,
-    sp: registers.sp,
-    flags: { n: flag("n"), v: flag("v"), d: flag("d"), i: flag("i"), z: flag("z"), c: flag("c") },
-    port: [value.cpuPort.$00, value.cpuPort.$01],
-    pages: Buffer.from(pages.join(""), "hex"),
-  };
-}
-
-function readRelease(path: string, shift: number): LoadedRelease {
-  const { bytes } = readProjectFile(path);
+/**
+ * A release to compare: "knowledge" (the program of the knowledge, with its
+ * entry state and stages), a PRG at its load address, or an image.json of the
+ * c64-unpacker skill with the entry_state.json beside it.
+ */
+function readRelease(name: string, shift: number): LoadedRelease {
   const moved = (range: AddressRange) => ({ start: range.start + shift, end: range.end + shift });
   const inside = (range: AddressRange) => range.start >= 0 && range.end <= 0xffff;
-  if (!path.endsWith(".json")) {
-    if (bytes.length < 3) throw new UsageError(`${path} is too short for a PRG`);
-    const load = bytes.readUInt16LE(0);
-    const segment = moved({ start: load, end: load + bytes.length - 3 });
-    if (!inside(segment)) throw new UsageError(`the shift moves ${path} outside $0000-$ffff`);
-    const memory = new Uint8Array(0x10000);
-    memory.set(bytes.subarray(2), load);
-    return { release: { name: path, segments: [segment], byteAt: (at) => bytes[2 + at - segment.start]! }, shift, start: { kind: "program", path }, memory };
+  let image: { segments: AddressRange[]; byteAt: (address: number) => number; memory?: Uint8Array; entry?: number; stages?: Array<Record<string, unknown>>; state?: EntryState };
+  let noState: string;
+  if (name === "knowledge") {
+    const db = openForRead();
+    try {
+      const program = requireProgram(db);
+      image = { ...program, ...(program.state === undefined ? {} : { state: parseEntryState(program.state, "the entry state of the knowledge") }) } as typeof image;
+    } finally {
+      db?.close();
+    }
+    noState = "The knowledge has no entry state: put a c64-unpacker capture in with knowledge.ts image <image.json>.";
+  } else {
+    image = readImage(name);
+    noState = `It has no entry_state.json beside it; capture it with c64-unpacker.`;
   }
-  const fail = (what: string): never => {
-    throw new UsageError(`${path} is not an image.json of the c64-unpacker skill: ${what}`);
-  };
-  let manifest: Record<string, unknown>;
-  try {
-    manifest = JSON.parse(bytes.toString("utf8")) as Record<string, unknown>;
-  } catch (error) {
-    return fail((error as Error).message);
-  }
-  const parse = (value: unknown) => (typeof value === "string" && /^\$[0-9a-f]{4}$/i.test(value) ? Number.parseInt(value.slice(1), 16) : fail("a segment needs start and end as $ addresses"));
-  if (typeof manifest.image !== "string" || !Array.isArray(manifest.segments) || manifest.segments.length === 0) fail("it needs image and segments");
-  const own = (manifest.segments as Array<Record<string, unknown>>).map((segment) => ({ start: parse(segment.start), end: parse(segment.end) })).sort((a, b) => a.start - b.start);
-  const directory = posix.dirname(path);
-  const memory = readProjectFile(posix.join(directory, manifest.image as string)).bytes;
-  if (memory.length !== 0x10000) fail(`its image has ${memory.length} bytes, not 65536`);
-  const segments = own.map(moved);
-  if (!segments.every(inside)) throw new UsageError(`the shift moves ${path} outside $0000-$ffff`);
-  const state = entryState(posix.join(directory, "entry_state.json"));
-  const stages = Array.isArray(manifest.stages)
-    ? (manifest.stages as Array<Record<string, unknown>>).map((stage) => ({
-        entry: parse(stage.entry),
-        wrote: (Array.isArray(stage.wrote) ? (stage.wrote as Array<Record<string, unknown>>) : []).map((range) => ({ start: parse(range.start), end: parse(range.end) })),
-      }))
-    : undefined;
+  const segments = image.segments.map(moved);
+  if (!segments.every(inside)) throw new UsageError(`the shift moves ${name} outside $0000-$ffff`);
+  const memory = image.memory ?? new Uint8Array(0x10000);
+  if (image.memory === undefined) for (const segment of image.segments) for (let at = segment.start; at <= segment.end; at++) memory[at] = image.byteAt(at);
+  const prg = name !== "knowledge" && !name.endsWith(".json");
+  const stages = stagesOf(image.stages, name);
   return {
-    release: { name: path, segments, byteAt: (at) => memory[at - shift]! },
+    release: { name, segments, byteAt: (at) => memory[at - shift]! },
     shift,
-    start: typeof state === "string" ? { kind: "none", reason: state } : { kind: "image", segments: own, byteAt: (at) => memory[at]!, state },
+    start: prg ? { kind: "program", path: name } : image.state === undefined ? { kind: "none", reason: noState } : { kind: "image", segments: image.segments, byteAt: (at) => memory[at]!, state: image.state },
     memory,
-    ...(manifest.entry === undefined ? {} : { entry: parse(manifest.entry) }),
+    ...(image.entry === undefined ? {} : { entry: image.entry }),
     ...(stages === undefined ? {} : { stages }),
   };
 }
@@ -350,12 +310,13 @@ async function run(argv: string[]): Promise<unknown> {
   };
 }
 
-/** The stages of the capture in the knowledge as ranges; a stage that is not a capture stage is refused. */
-function stagesOf(stages: Array<Record<string, unknown>> | undefined): Array<{ entry: number; wrote: AddressRange[] }> | undefined {
+/** The stages of a capture as ranges; a stage that is not a capture stage is refused. `where` names the capture. */
+function stagesOf(stages: Array<Record<string, unknown>> | undefined, where = "the program in the knowledge"): Array<{ entry: number; wrote: AddressRange[] }> | undefined {
   if (stages === undefined) return undefined;
   const parse = (value: unknown) => {
-    if (typeof value === "string" && /^\$[0-9a-f]{4}$/i.test(value)) return Number.parseInt(value.slice(1), 16);
-    throw new UsageError("the stages of the program in the knowledge are not the stages of a c64-unpacker capture; put the capture in again with knowledge.ts image");
+    const at = typeof value === "string" ? c64AddressOf(value) : undefined;
+    if (at !== undefined) return at;
+    throw new Refusal("invalid-input", `the stages of ${where} are not the stages of a c64-unpacker capture; capture it again with c64-unpacker`);
   };
   return stages.map((stage) => ({
     entry: parse(stage.entry),

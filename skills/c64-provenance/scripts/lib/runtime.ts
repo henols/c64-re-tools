@@ -7,8 +7,9 @@
 import { type AddressRange, COVERAGE, formatC64Address, instructionLength } from "#src/c64.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
+import { startAtEntry, type EntryState } from "#src/host-client/entry-state.ts";
 import { runActionStep, type ActionStep } from "#src/host-client/steps.ts";
-import { MAX_MEMORY_READ, MAX_MEMORY_WRITE } from "#src/host-client/tools.ts";
+import { MAX_MEMORY_READ } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
 
@@ -20,26 +21,12 @@ export interface RangeAccess {
   changed: boolean;
 }
 
-/** How a release starts in the emulator. */
+/** How a release starts in the emulator: autostart of a PRG, or the captured program at its entry. */
 export type Start =
   | { kind: "program"; path: string }
-  | { kind: "image"; segments: AddressRange[]; byteAt: (address: number) => number; state: ImageState };
-
-export interface ImageState {
-  pc: number;
-  a: number;
-  x: number;
-  y: number;
-  sp: number;
-  flags: { n: boolean; v: boolean; d: boolean; i: boolean; z: boolean; c: boolean };
-  port: [number, number];
-  /** $0000-$03ff at the entry. */
-  pages: Uint8Array;
-}
+  | { kind: "image"; segments: AddressRange[]; byteAt: (address: number) => number; state: EntryState };
 
 const MAX_WATCH = 256;
-/** Frames until the KERNAL is at the READY prompt, before an image is written. */
-const READY_FRAMES = 150;
 
 const READ = COVERAGE.ramRead | COVERAGE.romRead | COVERAGE.ioRead;
 const WRITE = COVERAGE.ramWrite | COVERAGE.ioWrite;
@@ -61,20 +48,7 @@ async function start(client: ViceSessionClient, how: Start): Promise<string | un
     if (failed === "not-started") return "The program did not start after RUN; it needs a BASIC start line.";
     return undefined;
   }
-  await client.reset({ mode: "hard", run: true });
-  await client.execution({ action: "advance-frames", count: READY_FRAMES, space: "c64" });
-  for (const segment of how.segments) {
-    for (let at = segment.start; at <= segment.end; at += MAX_MEMORY_WRITE) {
-      const last = Math.min(segment.end, at + MAX_MEMORY_WRITE - 1);
-      const bytes = Buffer.from(Array.from({ length: last - at + 1 }, (_, offset) => how.byteAt(at + offset)));
-      await client.memoryWrite({ address: at, data: bytes.toString("hex"), space: "c64", view: "ram" });
-    }
-  }
-  const { state } = how;
-  // Pages 0 to 3 from $0002, then the CPU port: the port bits switch what the CPU sees.
-  await client.memoryWrite({ address: 0x0002, data: Buffer.from(state.pages.subarray(2)).toString("hex"), space: "c64", view: "ram" });
-  await client.memoryWrite({ address: 0x0000, data: Buffer.from(state.port).toString("hex"), space: "c64", view: "cpu" });
-  await client.registersSet("c64", { pc: state.pc, a: state.a, x: state.x, y: state.y, sp: state.sp, flags: state.flags });
+  await startAtEntry(client, how, how.state);
   return undefined;
 }
 

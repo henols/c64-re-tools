@@ -7,6 +7,7 @@ import { c64AddressOf, formatC64Address, formatSprite, formatVicii, parseC64Addr
 import { MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
 import { ACTION_STEP_KEYS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type Location } from "#src/host-client/steps.ts";
+import { applyEntryState, parseEntryState } from "#src/host-client/entry-state.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
@@ -307,22 +308,14 @@ interface Observation {
 /** Writes pages 0-3 and $00/$01 from the entry state of the knowledge: both sides then start from the same RAM. */
 async function normalize(client: ViceSessionClient): Promise<void> {
   const db = openForRead();
-  let state: { pages?: Record<string, string>; cpuPort?: Record<string, number> } | undefined;
+  let state: unknown;
   try {
-    state = programImage(db)?.state as typeof state;
+    state = programImage(db)?.state;
   } finally {
     db?.close();
   }
   if (state === undefined) throw new ScenarioError("normalize needs the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json> of the c64-knowledge skill");
-  const pages = ["$0000", "$0100", "$0200", "$0300"].map((page) => state.pages?.[page]);
-  const port = [state.cpuPort?.$00, state.cpuPort?.$01];
-  if (pages.some((page) => typeof page !== "string" || !/^[0-9a-f]{512}$/.test(page)) || port.some((value) => !isInteger(value, 0, 0xff))) {
-    throw new ScenarioError("the entry state of the knowledge is not the entry state of a c64-unpacker capture: it needs pages $0000 to $0300 and cpuPort $00 and $01");
-  }
-  if ((await client.status()).state === "running") await client.execution({ action: "pause", space: "c64" });
-  // Pages 0 to 3 in RAM from $0002, then the CPU port: the port bits switch what the CPU sees.
-  await client.memoryWrite({ address: 0x0002, data: pages.join("").slice(4), space: "c64", view: "ram" });
-  await client.memoryWrite({ address: 0x0000, data: Buffer.from(port as number[]).toString("hex"), space: "c64", view: "cpu" });
+  await applyEntryState(client, parseEntryState(state, "the entry state of the knowledge"), { registers: false });
 }
 
 /**

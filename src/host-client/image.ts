@@ -3,17 +3,20 @@
 
 import { posix } from "node:path";
 
-import { Refusal } from "../errors.ts";
+import { isRefusal, Refusal } from "../errors.ts";
 import { formatC64Address, prgRange } from "../c64.ts";
+import { readEntryState, type EntryState } from "./entry-state.ts";
 import { readProjectFile } from "./transfer.ts";
 
 export interface Image {
   segments: Array<{ start: number; end: number }>;
   /** The byte at an address inside a segment. */
   byteAt: (address: number) => number;
+  /** image.json only: the 64 KiB memory of the capture, also outside the segments. */
+  memory?: Uint8Array;
   entry?: number;
-  /** entry_state.json next to image.json. */
-  statePath?: string;
+  /** The entry state in entry_state.json next to image.json, when the capture wrote one. */
+  state?: EntryState;
   /** The stages of the capture in image.json, as the unpacker wrote them. */
   stages?: Array<Record<string, unknown>>;
 }
@@ -55,8 +58,20 @@ export function readImage(path: string): Image {
   const directory = posix.dirname(path);
   const memory = readProjectFile(posix.join(directory, manifest.image as string)).bytes;
   if (memory.length !== 0x10000) fail(`its image has ${memory.length} bytes, not 65536`);
-  const image: Image = { segments, byteAt: (at) => memory[at]!, statePath: posix.join(directory, "entry_state.json") };
+  const image: Image = { segments, byteAt: (at) => memory[at]!, memory };
+  const state = entryStateNextTo(posix.join(directory, "entry_state.json"));
+  if (state !== undefined) image.state = state;
   if (manifest.entry !== undefined) image.entry = address(manifest.entry, "entry");
   if (Array.isArray(manifest.stages)) image.stages = manifest.stages.map((stage, index) => (isObject(stage) ? stage : fail(`stage ${index + 1} is not an object`)));
   return image;
+}
+
+/** The entry state of a capture, or undefined when the capture has no entry_state.json. */
+function entryStateNextTo(path: string): EntryState | undefined {
+  try {
+    return readEntryState(path);
+  } catch (error) {
+    if (isRefusal(error) && error.code === "not-found") return undefined;
+    throw error;
+  }
 }

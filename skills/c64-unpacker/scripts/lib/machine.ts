@@ -11,8 +11,6 @@ const MAX_READ = 4096;
 
 /** The I/O areas of the entry state, read without side effects. */
 export const IO_AREAS = { vic: [0xd000, 0x2f], sid: [0xd400, 0x1d], cia1: [0xdc00, 0x10], cia2: [0xdd00, 0x10] } as const;
-/** Frames from a hard reset to the READY prompt, with margin. */
-export const READY_FRAMES = 200;
 
 /** What no register read of a CIA gives. */
 export interface CiaHidden {

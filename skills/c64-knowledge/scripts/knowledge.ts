@@ -8,7 +8,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
-import { isRefusal, Refusal } from "#src/errors.ts";
+import { isRefusal } from "#src/errors.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { formatC64Address, parseC64Address, SYMBOL_NAME, SPACE_PATTERN } from "#src/c64.ts";
 import { readImage } from "#src/host-client/image.ts";
@@ -83,7 +83,6 @@ import {
 } from "#src/knowledge/write.ts";
 import { platformNames } from "#src/platform.ts";
 import { addCoverage, coverageRuns, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
-import { WireFailure } from "#src/host-client/tools.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
 import { runBody, UsageError } from "#src/script.ts";
@@ -663,38 +662,13 @@ function evidenceOf(value: string, space: string): Evidence {
   return { kind, ref, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
-/** An image.json of c64-unpacker capture or a PRG as a write of the program. */
+/** An image.json of c64-unpacker capture or a PRG as a write of the program, with the entry state of the capture. */
 function imageRequest(path: string, space: string): ImageRequest {
-  let image: ReturnType<typeof readImage>;
-  try {
-    image = readImage(path);
-  } catch (error) {
-    if (error instanceof Refusal) throw new UsageError(error.message);
-    throw error;
-  }
+  const image = readImage(path);
   const request: ImageRequest = { space, segments: image.segments, byteAt: image.byteAt };
   if (image.entry !== undefined) request.entry = image.entry;
   if (image.stages !== undefined) request.stages = image.stages;
-  if (image.statePath !== undefined) {
-    let bytes: Buffer | undefined;
-    try {
-      bytes = readProjectFile(image.statePath).bytes;
-    } catch (error) {
-      if (!(error instanceof WireFailure && error.code === "not-found")) throw error;
-    }
-    if (bytes !== undefined) {
-      let state: unknown;
-      try {
-        state = JSON.parse(bytes.toString("utf8"));
-      } catch (error) {
-        throw new UsageError(`${image.statePath} is not JSON: ${(error as Error).message}`);
-      }
-      if (typeof state !== "object" || state === null || Array.isArray(state)) throw new UsageError(`${image.statePath} is not an entry state of c64-unpacker capture`);
-      // The comparison with a clean reset only tells the capture what it found.
-      const { differsFromReset: _differs, ...kept } = state as Record<string, unknown>;
-      request.state = kept;
-    }
-  }
+  if (image.state !== undefined) request.state = image.state.raw;
   return request;
 }
 

@@ -11,6 +11,7 @@ import { parseArgs } from "node:util";
 import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, parseC64Address, READ, WRITE } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
+import { resetToReady } from "#src/host-client/entry-state.ts";
 import { checkActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
@@ -20,7 +21,7 @@ import { runBody, UsageError } from "#src/script.ts";
 import { basicStart, inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges } from "./lib/stages.ts";
-import { entryState, IO_AREAS, json, machineState, readRam, READY_FRAMES, vectorsOf } from "./lib/machine.ts";
+import { entryState, IO_AREAS, json, machineState, readRam, vectorsOf } from "./lib/machine.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
 unpack.ts trace <program.prg> [--frames <n>] [--entry <address>] [--steps <file>]
@@ -547,8 +548,7 @@ async function capture(
       ),
     );
     // A clean machine at the READY prompt shows what the loader and the stages changed.
-    await client.reset({ mode: "hard", run: true });
-    await client.execution({ action: "advance-frames", count: READY_FRAMES, space: "c64" });
+    await resetToReady(client);
     const clean = await machineState(client);
     const differs: Array<{ address: string; entry: number; reset: number }> = [];
     const compare = (base: number, entry: Buffer, reset: Buffer) => entry.forEach((value, offset) => value !== reset[offset] && differs.push({ address: formatC64Address(base + offset), entry: value, reset: reset[offset]! }));
