@@ -4,7 +4,7 @@
 
 import { formatC64Address } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
-import { inspectDisk } from "#src/host-client/tools.ts";
+import { DISK_IMAGE_TYPES, inspectDisk } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { OPTIONS, runScript, type Call, type SubjectSpec } from "#src/script.ts";
 import { parseCrt, parseT64, tapeFile } from "./lib/containers.ts";
@@ -13,14 +13,30 @@ const IMAGE: SubjectSpec = { name: "<image>", help: "a .d64, .d71, .d81 or .g64 
 const NAME: SubjectSpec = { name: "<name>", help: "the file name as the directory shows it. Write a byte that has no character as {$xx}, for example {$c1}" };
 
 type Kind = "disk" | "t64" | "crt";
-const kindOf = (image: string): Kind => (image.toLowerCase().endsWith(".t64") ? "t64" : image.toLowerCase().endsWith(".crt") ? "crt" : "disk");
+/** The kind of a file by its extension; undefined for a file that no command takes. */
+function kindOf(image: string): Kind | undefined {
+  const extension = image.toLowerCase().split(".").at(-1) ?? "";
+  if (extension === "t64" || extension === "crt") return extension;
+  return (DISK_IMAGE_TYPES as readonly string[]).includes(extension) ? "disk" : undefined;
+}
+
+const KIND_TEXT: Record<Kind, string> = { disk: "a .d64, .d71, .d81 or .g64 disk image", t64: "a .t64 tape file", crt: "a .crt cartridge file" };
+
+/** The kind of the image of a command; refuses a file of a kind that the command does not take, and names every kind that it takes. */
+function kindFor(command: string, image: string, takes: readonly Kind[]): Kind {
+  const kind = kindOf(image);
+  if (kind !== undefined && takes.includes(kind)) return kind;
+  const kinds = takes.map((item) => KIND_TEXT[item]);
+  const list = kinds.length === 1 ? kinds[0]! : `${kinds.slice(0, -1).join(", ")} or ${kinds.at(-1)}`;
+  throw new Refusal("invalid-input", `${image} is not a file that ${command} takes. Give ${list}.`);
+}
 
 /** Runs `body` and names the file in a refusal of its content. */
 function about<T>(image: string, body: () => T): T {
   try {
     return body();
   } catch (error) {
-    if (isRefusal(error) && error.code === "invalid-input") throw new Refusal(error.code, `${image}: ${error.message}`);
+    if (isRefusal(error) && error.code === "media-error") throw new Refusal(error.code, `${image}: ${error.message}`);
     throw error;
   }
 }
@@ -55,9 +71,7 @@ function cartridge(image: string) {
 }
 
 /** A command that takes only a disk image. */
-const diskOnly = (call: Call, action: string) => {
-  if (kindOf(call.subject(0)) !== "disk") throw new Refusal("invalid-input", `${action} needs a .d64, .d71, .d81 or .g64 disk image, not ${call.subject(0)}`);
-};
+const diskOnly = (call: Call, action: string) => kindFor(action, call.subject(0), ["disk"]);
 
 await runScript({
   name: "disk",
@@ -69,7 +83,7 @@ await runScript({
       subjects: [{ ...IMAGE, help: "a disk image, a .t64 tape file or a .crt cartridge file, relative to the project folder" }],
       run: async (call) => {
         const image = call.subject(0);
-        const kind = kindOf(image);
+        const kind = kindFor("directory", image, ["disk", "t64", "crt"]);
         if (kind === "t64") return tapeDirectory(image);
         if (kind === "crt") {
           const { header, chips } = cartridge(image);
@@ -113,8 +127,8 @@ await runScript({
       run: async (call) => {
         const [image, name] = [call.subject(0), call.subject(1)];
         const out = call.string("out")!;
-        const kind = kindOf(image);
-        if (kind === "crt") throw new Refusal("invalid-input", `read takes a disk image or a .t64 tape file. Give crt for ${image}`);
+        if (kindOf(image) === "crt") throw new Refusal("invalid-input", `read takes a disk image or a .t64 tape file. Use the command crt for the cartridge file ${image}.`);
+        const kind = kindFor("read", image, ["disk", "t64"]);
         if (kind === "t64") {
           const { bytes } = readProjectFile(image);
           const tape = about(image, () => parseT64(bytes));
@@ -134,7 +148,7 @@ await runScript({
       options: { out: { ...OPTIONS.out, value: "<dir>", help: "the folder for the files, relative to the project folder", required: true } },
       run: (call) => {
         const image = call.subject(0);
-        if (kindOf(image) !== "crt") throw new Refusal("invalid-input", `crt needs a .crt file, not ${image}`);
+        kindFor("crt", image, ["crt"]);
         const out = call.string("out")!;
         const { crt, header, chips } = cartridge(image);
         const files = crt.chips.map((chip, index) => writeReported(`${out}/${chips[index]!.file}`, Buffer.concat([Buffer.from([chip.address & 0xff, chip.address >> 8]), chip.data]), { what: "--out" }));

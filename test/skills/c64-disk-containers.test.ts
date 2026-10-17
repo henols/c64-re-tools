@@ -95,6 +95,27 @@ test("crt writes one PRG for each bank and chip, for space bankN, with a manifes
   assert.equal(disk("crt", "game.d64", "--out", "x").status, 2, "crt needs a .crt file");
 });
 
+test("a file of a kind that a command does not take is refused with every kind that it takes, and a bad CRT or T64 is a media error", () => {
+  writeFileSync(join(project, "notes.txt"), "text");
+  const refused = (args: string[]) => {
+    const result = disk(...args);
+    assert.equal(result.status, 2, args.join(" "));
+    return result.json.error as { code: string; message: string };
+  };
+  assert.deepEqual(refused(["directory", "notes.txt"]), { code: "invalid-input", message: "notes.txt is not a file that directory takes. Give a .d64, .d71, .d81 or .g64 disk image, a .t64 tape file or a .crt cartridge file." });
+  assert.equal(refused(["read", "notes.txt", "GAME", "--out", "x.prg"]).message, "notes.txt is not a file that read takes. Give a .d64, .d71, .d81 or .g64 disk image or a .t64 tape file.");
+  assert.equal(refused(["bam", "notes.txt"]).message, "notes.txt is not a file that bam takes. Give a .d64, .d71, .d81 or .g64 disk image.");
+  assert.equal(refused(["crt", "game.d64", "--out", "x"]).message, "game.d64 is not a file that crt takes. Give a .crt cartridge file.");
+  writeFileSync(join(project, "bad.crt"), Buffer.alloc(0x50));
+  writeFileSync(join(project, "bad.t64"), Buffer.alloc(0x50));
+  assert.deepEqual(refused(["directory", "bad.crt"]), { code: "media-error", message: "bad.crt: the file is not a CRT: it does not start with C64 CARTRIDGE" });
+  assert.deepEqual(refused(["crt", "bad.crt", "--out", "x"]).code, "media-error");
+  assert.deepEqual(refused(["directory", "bad.t64"]), { code: "media-error", message: "bad.t64: the file is not a T64: it does not start with C64" });
+  assert.deepEqual(refused(["read", "bad.t64", "GAME", "--out", "x.prg"]).code, "media-error");
+  writeFileSync(join(project, "type1.crt"), crt(1, 0, 0, [{ bank: 0, address: 0x8000, data: [0] }]));
+  assert.equal(refused(["directory", "type1.crt"]).code, "media-error", "a hardware type that the script does not read");
+});
+
 test("a T64 lists its files, corrects a wrong end address, and extracts a file as a PRG", () => {
   const tape = t64([
     { name: "GAME", start: 0x0801, data: [1, 2, 3, 4], end: 0xc3c6 },

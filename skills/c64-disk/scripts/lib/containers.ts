@@ -34,32 +34,32 @@ const SIGNATURE = "C64 CARTRIDGE   ";
 
 export function parseCrt(bytes: Uint8Array): Crt {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (buffer.length < 0x40 || buffer.toString("latin1", 0, 16) !== SIGNATURE) throw new Refusal("invalid-input", "the file is not a CRT: it does not start with C64 CARTRIDGE");
+  if (buffer.length < 0x40 || buffer.toString("latin1", 0, 16) !== SIGNATURE) throw new Refusal("media-error", "the file is not a CRT: it does not start with C64 CARTRIDGE");
   const headerLength = buffer.readUInt32BE(0x10);
   const type = buffer.readUInt16BE(0x16);
   const exrom = buffer[0x18]!;
   const game = buffer[0x19]!;
   const typeName = CRT_TYPES[type];
   if (typeName === undefined) {
-    throw new Refusal("invalid-input", `the CRT has hardware type ${type}; this toolkit reads types ${Object.entries(CRT_TYPES).map(([number, name]) => `${number} (${name})`).join(", ")}`);
+    throw new Refusal("media-error", `the CRT has hardware type ${type}; this toolkit reads types ${Object.entries(CRT_TYPES).map(([number, name]) => `${number} (${name})`).join(", ")}`);
   }
   const name = buffer.toString("latin1", 0x20, 0x40).replace(/\0+$/, "");
   const chips: CrtChip[] = [];
   let offset = Math.max(headerLength, 0x40);
   while (offset + 0x10 <= buffer.length) {
-    if (buffer.toString("latin1", offset, offset + 4) !== "CHIP") throw new Refusal("invalid-input", `the CRT has no CHIP packet at offset ${offset}`);
+    if (buffer.toString("latin1", offset, offset + 4) !== "CHIP") throw new Refusal("media-error", `the CRT has no CHIP packet at offset ${offset}`);
     const packetLength = buffer.readUInt32BE(offset + 4);
     const chipType = buffer.readUInt16BE(offset + 8);
     const bank = buffer.readUInt16BE(offset + 10);
     const address = buffer.readUInt16BE(offset + 12);
     const size = buffer.readUInt16BE(offset + 14);
-    if (packetLength < 0x10 || offset + packetLength > buffer.length) throw new Refusal("invalid-input", `the CHIP packet at offset ${offset} runs past the end of the file`);
-    if (bank > 255) throw new Refusal("invalid-input", `the CHIP packet at offset ${offset} has bank ${bank}; banks go up to 255`);
-    if (size > packetLength - 0x10 || address + size > 0x10000) throw new Refusal("invalid-input", `the CHIP packet at offset ${offset} has a wrong size ${size} at ${formatC64Address(address)}`);
+    if (packetLength < 0x10 || offset + packetLength > buffer.length) throw new Refusal("media-error", `the CHIP packet at offset ${offset} runs past the end of the file`);
+    if (bank > 255) throw new Refusal("media-error", `the CHIP packet at offset ${offset} has bank ${bank}; banks go up to 255`);
+    if (size > packetLength - 0x10 || address + size > 0x10000) throw new Refusal("media-error", `the CHIP packet at offset ${offset} has a wrong size ${size} at ${formatC64Address(address)}`);
     if (size > 0) chips.push({ bank, address, size, chipType, data: buffer.subarray(offset + 0x10, offset + 0x10 + size) });
     offset += packetLength;
   }
-  if (chips.length === 0) throw new Refusal("invalid-input", "the CRT has no CHIP packet with data");
+  if (chips.length === 0) throw new Refusal("media-error", "the CRT has no CHIP packet with data");
   const crt: Crt = { name, type, typeName, exrom, game, chips };
   if (type === 0) crt.mode = exrom === 0 && game === 1 ? "8k" : exrom === 0 && game === 0 ? "16k" : "ultimax";
   return crt;
@@ -85,7 +85,7 @@ export interface Tape {
 
 export function parseT64(bytes: Uint8Array): Tape {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (buffer.length < 0x40 || !buffer.toString("latin1", 0, 32).startsWith("C64")) throw new Refusal("invalid-input", "the file is not a T64: it does not start with C64");
+  if (buffer.length < 0x40 || !buffer.toString("latin1", 0, 32).startsWith("C64")) throw new Refusal("media-error", "the file is not a T64: it does not start with C64");
   const maxEntries = buffer.readUInt16LE(0x22);
   const name = buffer.toString("latin1", 0x28, 0x40).replace(/[\0 ]+$/, "");
   const raw: Array<Omit<TapeEntry, "bytes" | "end"> & { end: number }> = [];
@@ -107,7 +107,7 @@ export function parseT64(bytes: Uint8Array): Tape {
   // Many T64 files have a wrong end address: the next file or the end of the file bounds each one.
   const offsets = [...raw.map((entry) => entry.offset), buffer.length].sort((a, b) => a - b);
   const entries = raw.map((entry): TapeEntry => {
-    if (entry.offset >= buffer.length) throw new Refusal("invalid-input", `the T64 entry ${entry.name} starts past the end of the file`);
+    if (entry.offset >= buffer.length) throw new Refusal("media-error", `the T64 entry ${entry.name} starts past the end of the file`);
     const available = offsets.find((offset) => offset > entry.offset)! - entry.offset;
     const stated = entry.end - entry.start;
     const bytes = stated > 0 && stated <= available ? stated : Math.min(available, 0x10000 - entry.start);

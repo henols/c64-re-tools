@@ -1,6 +1,8 @@
 // The c64-assembler script: assembles project source with ACME, which it runs
 // itself, and writes the program into the project.
 
+import { posix } from "node:path";
+
 import { formatC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { readProjectTree, writeReported } from "#src/host-client/transfer.ts";
@@ -62,6 +64,14 @@ await runScript({
         const setPc = call.address("set-pc");
         const tree = readProjectTree(sourceRoot);
         if (!tree.files.some((file) => file.path === entry)) throw new Refusal("not-found", `${entry} is not a file in ${sourceRoot}. Give the main source file relative to the source root.`);
+        // ACME sees only the files of the source root: an include folder holds some of them. A path out of the root is refused later.
+        for (const folder of call.strings("include")) {
+          const inside = posix.normalize(folder.replaceAll("\\", "/")).replace(/\/+$/, "");
+          if (inside === "." || inside === ".." || inside.startsWith("../") || posix.isAbsolute(inside)) continue;
+          if (!tree.files.some((file) => file.path.startsWith(`${inside}/`))) {
+            throw new Refusal("not-found", `There is no include folder ${folder} with files in the source root ${sourceRoot}. Give --include a folder relative to the source root.`);
+          }
+        }
         const params: AcmeParams = { files: tree.files, entrySource: entry, includeDirs: call.strings("include"), defines: Object.fromEntries(call.strings("define").map(parseDefine)), ...(setPc === undefined ? {} : { setPc }) };
 
         const { result, attachments } = await assemble(params, tree.contents, localToolContext());

@@ -100,6 +100,7 @@ With `--compare`, `compare` gives `identical` and `segments`: one check for each
 - `FAIL` with `assembled: true`: the build is not identical to the program in the knowledge. Read `compare.segments`.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 - `invalid-input`: an option or a path is wrong. Read the message and correct the call.
+- `not-found`: the source root has no main source file with that name, or no folder with files for an `--include`. Give a path relative to the source root.
 
 ## Handoffs
 

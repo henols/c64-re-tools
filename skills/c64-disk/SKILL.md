@@ -97,9 +97,9 @@ The directory, the BAM, an entry or a sector chain as JSON.
 ## Failure and conflicts
 
 - `not-found`: the image file is missing, or the image has no file with that name. Read the directory again and compare the names.
-- `media-error`: the image has a defect or is not a disk image. The message tells the problem, for example a sector chain that loops. Tell the user. Do not change the image.
+- `media-error`: the image, the T64 file or the CRT file has a defect, or its content is not of its type. A CRT with a hardware type that the script does not read also gives `media-error`. The message tells the problem, for example a sector chain that loops. Tell the user. Do not change the file.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
-- `invalid-input`: an argument or a path is wrong. Read the message and correct the call.
+- `invalid-input`: an argument or a path is wrong. A file with an extension that the command does not take is also wrong. The message gives each type that the command takes. Read the message and correct the call.
 
 A file that is not `closed` was not written fully. Its data can be incomplete.
 

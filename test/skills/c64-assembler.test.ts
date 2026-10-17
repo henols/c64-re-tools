@@ -86,6 +86,10 @@ test("bad options are refused before anything is sent", { skip: acmeSkip }, asyn
     assert.equal(status, 2, args.join(" "));
     assert.equal((json.error as { code: string }).code, "invalid-input");
   }
+  const missing = await assembleScript("build", "src", "main.a", "--include", "nolib", "--out", "build/none.prg");
+  assert.equal(missing.status, 2);
+  assert.deepEqual(missing.json.error, { code: "not-found", message: "There is no include folder nolib with files in the source root src. Give --include a folder relative to the source root." });
+  assert.equal(existsSync(join(project, "build", "none.prg")), false);
 });
 
 test("a missing ACME is refused with the stop instruction", async () => {
