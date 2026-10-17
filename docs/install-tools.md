@@ -1,5 +1,7 @@
 # Install the native tools
 
+<img src="../assets/branding/c64-re-tools-transparent.svg" alt="C64 RE Tools" width="300">
+
 The skill scripts run ACME, dxa and Ghidra on the machine of the agent: in a dev container, inside the container. Check what is missing:
 
 ```
