@@ -267,6 +267,14 @@ export class Call {
   }
 }
 
+/**
+ * A list in a result: its count and its first `max` items (--max-listed). When
+ * the list is cut, rest tells how to get all of it.
+ */
+export function listed<T, U = T>(items: readonly T[], max: number, show: (item: T) => U = (item) => item as unknown as U, rest = "a larger --max-listed"): { count: number; listed: U[]; rest?: string } {
+  return { count: items.length, listed: items.slice(0, max).map(show), ...(items.length > max ? { rest } : {}) };
+}
+
 // ---------------------------------------------------------------------------
 // Usage
 

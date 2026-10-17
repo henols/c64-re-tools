@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
-import { CONTRACT_USAGE, takeProject, UsageError } from "./script.ts";
+import { CONTRACT_USAGE, listed, takeProject, UsageError } from "./script.ts";
 
 const url = (file: string) => JSON.stringify(pathToFileURL(join(import.meta.dirname, file)).href);
 
@@ -177,4 +177,10 @@ test("--project sets the project of the script", () => {
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }
+});
+
+test("a list in a result has its count, its first items, and where to get the rest", () => {
+  assert.deepEqual(listed([1, 2, 3], 5), { count: 3, listed: [1, 2, 3] });
+  assert.deepEqual(listed([1, 2, 3], 2, (item) => item * 10), { count: 3, listed: [10, 20], rest: "a larger --max-listed" });
+  assert.deepEqual(listed([1, 2, 3], 0, undefined, "--out <file>"), { count: 3, listed: [], rest: "--out <file>" });
 });
