@@ -122,7 +122,7 @@ program its own folder. A folder with `.c64-re-tools/` is a project.
 | c64-unpacker | Packing evidence, and capture of the unpacked program. |
 | c64-static-analysis | Analysis with DXA and Ghidra into the knowledge. |
 | c64-knowledge | Symbols, regions, comments and references, with history. |
-| c64-provenance | Compares releases, and keeps a library of shared routines. |
+| c64-provenance | Compares releases, finds leftovers of the development and of cracks, and keeps a library of shared routines. |
 | c64-source | ACME source from the knowledge, checked byte for byte. |
 | c64-docs | Documentation of a program from its knowledge and source. |
 | c64-reverse-engineering | Leads an investigation and picks the next skill. |

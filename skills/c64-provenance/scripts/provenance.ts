@@ -3,7 +3,8 @@
 // release is a PRG or an unpacker image.json. With --run, each release
 // runs in its own emulator, and each listed difference gets its first access
 // and whether the run changed it. The separate command gives evidence from
-// the program in the knowledge. The routine and match commands keep
+// the program in the knowledge, and the leftovers command lists what its
+// unused bytes hold: text, BASIC lines, fills and copies. The routine and match commands keep
 // routines that several programs share in a library folder and find them in the
 // program (D71).
 
@@ -42,10 +43,12 @@ import { runScript, UsageError } from "#src/script.ts";
 import { compareReleases, shiftSuggestion, suggestShifts, type Range, type Release } from "./lib/compare.ts";
 import { findRoutine, libraryFolder, LibraryError, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
 import { watchRelease, type ImageState, type Start } from "./lib/runtime.ts";
+import { findLeftovers } from "./lib/leftovers.ts";
 import { separate } from "./lib/separate.ts";
 
 const USAGE = `provenance.ts <release> <release> [<release> ...] [options]
 provenance.ts separate [--out <file>] [--max-listed <n>]
+provenance.ts leftovers [--out <file>] [--min-text <n>] [--max-listed <n>]
 provenance.ts routine --library <folder> (--module <address> | --start <address> --end <address>)
                       [--name <name>] [--title <text>] [--replace]
 provenance.ts match --library <folder> [--out <file>] [--max-listed <n>]
@@ -62,6 +65,13 @@ that wrote each range, its access in the coverage of the knowledge, whether call
 and jump references in knowledge reach each code region from the entry, and what
 the program reads or executes outside its segments. --out writes all ranges to a file;
 the result lists at most --max-listed of each list (default 50) and its count.
+
+leftovers lists what the program in the knowledge holds besides its working
+code: text in PETSCII, screen codes, ASCII or with bit 7 set (Apple II) and
+assembler source (at least --min-text characters, default 8), BASIC lines away
+from the BASIC start, fills, untouched bytes outside code, exact copies of
+earlier bytes, and code regions that no call or jump reaches and no run executed. Each finding has the stages and the accesses of
+its bytes. --out writes all findings to a file.
 
 routine saves a routine of the program in the knowledge to a library: a plain folder of routine
 files, beside the projects (--library, relative to the working directory, as
@@ -195,6 +205,7 @@ async function run(argv: string[]): Promise<unknown> {
       steps: { type: "string" },
       out: { type: "string" },
       "max-listed": { type: "string" },
+      "min-text": { type: "string" },
       library: { type: "string" },
       module: { type: "string" },
       start: { type: "string" },
@@ -215,6 +226,11 @@ async function run(argv: string[]): Promise<unknown> {
     only("separate", ["out", "max-listed"]);
     if (positionals.length !== 1) throw new UsageError("separate takes no release: it reads the program from the knowledge");
     return separateCommand(values.out, values["max-listed"]);
+  }
+  if (positionals[0] === "leftovers") {
+    only("leftovers", ["out", "min-text", "max-listed"]);
+    if (positionals.length !== 1) throw new UsageError("leftovers takes no release: it reads the program from the knowledge");
+    return leftoversCommand(values.out, values["min-text"], values["max-listed"]);
   }
   if (positionals[0] === "routine") {
     only("routine", ["library", "module", "start", "end", "name", "title", "replace"]);
@@ -347,10 +363,8 @@ function stagesOf(stages: Array<Record<string, unknown>> | undefined): Array<{ e
   }));
 }
 
-/** separate: evidence from the program in the knowledge, with all ranges in --out and the first ones in the result. */
-function separateCommand(out: string | undefined, maxListed: string | undefined): unknown {
-  const max = maxListed ?? "50";
-  if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
+/** The program in the knowledge with its stages and coverage, and the separation of its bytes. */
+function programEvidence() {
   const db = openForRead();
   let program: ReturnType<typeof requireProgram>;
   let coverage: Uint8Array | undefined;
@@ -365,7 +379,6 @@ function separateCommand(out: string | undefined, maxListed: string | undefined)
     db?.close();
   }
   const stages = stagesOf(program.stages);
-  const loaded = { entry: program.entry, stages };
   const found = separate({
     segments: program.segments,
     memory: program.memory,
@@ -375,6 +388,17 @@ function separateCommand(out: string | undefined, maxListed: string | undefined)
     codeRegions: regions,
     references,
   });
+  return { program, stages, coverage, found };
+}
+
+const NO_STAGES = "The program in the knowledge has no stage log. Only a capture of c64-unpacker gives one. A capture of loads holds one part of a program and has none.";
+
+/** separate: evidence from the program in the knowledge, with all ranges in --out and the first ones in the result. */
+function separateCommand(out: string | undefined, maxListed: string | undefined): unknown {
+  const max = maxListed ?? "50";
+  if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
+  const { program, stages, coverage, found } = programEvidence();
+  const loaded = { entry: program.entry, stages };
   const show = (range: Range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
   const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }) }));
@@ -386,7 +410,7 @@ function separateCommand(out: string | undefined, maxListed: string | undefined)
   return {
     ...(loaded.entry === undefined ? {} : { entry: formatC64Address(loaded.entry) }),
     ...(lastStage === undefined
-      ? { noStages: "The program in the knowledge has no stage log. Only a capture of c64-unpacker gives one. A capture of loads holds one part of a program and has none." }
+      ? { noStages: NO_STAGES }
       : {
           stages: lastStage + 1,
           bytesByStage: Object.fromEntries([...[...Array(lastStage + 1).keys()].map((stage): [string, number] => [String(stage), bytes((range) => range.stage === stage)]), ["none", bytes((range) => range.stage === undefined)]]),
@@ -399,6 +423,54 @@ function separateCommand(out: string | undefined, maxListed: string | undefined)
       ...(loaded.entry === undefined ? {} : { unreachable: listed(codeRegions.filter((region) => region.reachable === false)) }),
     },
     ...(coverage === undefined ? {} : { outside: { read: listed(outside.read), executed: listed(outside.executed), generated: listed(outside.generated) } }),
+    ...(out === undefined ? {} : { out }),
+  };
+}
+
+/** The longest text that the result shows; --out has all of it. */
+const SHOWN_TEXT = 120;
+
+/** leftovers: what the program in the knowledge holds besides its working code, with all findings in --out and the first ones in the result. */
+function leftoversCommand(out: string | undefined, minText: string | undefined, maxListed: string | undefined): unknown {
+  const max = maxListed ?? "50";
+  if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
+  const min = minText ?? "8";
+  if (!/^\d{1,3}$/.test(min) || Number(min) < 4) throw new UsageError(`--min-text must be a whole number of 4 or more, not ${min}`);
+  const { program, stages, coverage, found } = programEvidence();
+  const leftovers = findLeftovers({
+    segments: program.segments,
+    memory: program.memory,
+    separation: found,
+    ...(program.segments.some((segment) => segment.start === 0x0801) ? { basicStart: 0x0801 } : {}),
+    minText: Number(min),
+  });
+  const show = <T extends Range & { stages?: number[]; access?: string[] }>({ start, end, stages: wrote, access, ...rest }: T) => ({
+    start: formatC64Address(start),
+    end: formatC64Address(end),
+    ...rest,
+    ...(wrote === undefined ? {} : { stages: wrote }),
+    ...(access === undefined ? {} : { access }),
+  });
+  const all = {
+    text: leftovers.text.map(show),
+    basic: leftovers.basic.map(({ linkedAt, ...rest }) => ({ ...show(rest), linkedAt: formatC64Address(linkedAt) })),
+    fill: leftovers.fill.map(({ pattern, ...rest }) => ({ ...show(rest), pattern: hexBytes(pattern) })),
+    residue: leftovers.residue.map((range) => ({ ...show(range), bytes: hexBytes([...program.memory.subarray(range.start, Math.min(range.end, range.start + 15) + 1)]) + (range.end - range.start >= 16 ? " ..." : "") })),
+    copies: leftovers.copies.map(({ copyOf, ...rest }) => ({ ...show(rest), copyOf: formatC64Address(copyOf) })),
+    deadCode: leftovers.deadCode.map(show),
+  };
+  const listed = <T>(items: T[]) => ({ count: items.length, listed: items.slice(0, Number(max)) });
+  if (out !== undefined) writeProjectFile(out, Buffer.from(`${JSON.stringify(all, null, 1)}\n`), { what: "--out" });
+  return {
+    ...(program.entry === undefined ? { noEntry: "The program in the knowledge has no entry, so deadCode is empty." } : { entry: formatC64Address(program.entry) }),
+    ...(stages === undefined ? { noStages: NO_STAGES } : { stages: stages.length }),
+    ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Add coverage with coverage of the c64-knowledge skill." } : {}),
+    text: listed(all.text.map((item) => (item.text.length > SHOWN_TEXT ? { ...item, text: `${item.text.slice(0, SHOWN_TEXT)} ...`, length: item.text.length } : item))),
+    basic: listed(all.basic),
+    fill: listed(all.fill),
+    residue: listed(all.residue),
+    copies: listed(all.copies),
+    deadCode: listed(all.deadCode),
     ...(out === undefined ? {} : { out }),
   };
 }

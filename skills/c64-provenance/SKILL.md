@@ -1,6 +1,6 @@
 ---
 name: c64-provenance
-description: Use this skill to compare two or more releases of a C64 program, for example cracked versions from different groups. It finds the bytes where the releases differ and shows which releases agree there. It can run each release and tell how the program uses each difference. It also gives evidence for each range of the program in the knowledge. The evidence is the unpack stage, the access, and the code that the entry does not reach. Use the result to separate the content of the application from changes that a release added. It also keeps a library of routines that several programs share. It finds them in the program of the knowledge and writes their names as a batch for c64-knowledge. Do not use it to analyze the code.
+description: Use this skill to compare two or more releases of a C64 program, for example cracked versions from different groups. It finds the bytes where the releases differ and shows which releases agree there. It can run each release and tell how the program uses each difference. It also gives evidence for each range of the program in the knowledge. The evidence is the unpack stage, the access, and the code that the entry does not reach. It also finds leftovers in one program: texts, assembler source, BASIC lines, fills, unused bytes, copies and dead code. It finds text of other computers, for example Apple II source. Leftovers tell about the development, the cracks and the recracks. Use the result to separate the content of the application from changes that a release added. It also keeps a library of routines that several programs share. It finds them in the program of the knowledge and writes their names as a batch for c64-knowledge. Do not use it to analyze the code.
 ---
 
 # c64-provenance
@@ -8,6 +8,8 @@ description: Use this skill to compare two or more releases of a C64 program, fo
 ## Purpose
 
 Compare releases of a C64 program. Find the bytes where they differ and which releases agree. Use this to find which bytes are probably the original application and which are changes of one release.
+
+Find the leftovers in one program. A leftover is a part of the program that the program does not need. Examples are a crack text, an old copy of a routine and a piece of assembler source.
 
 Keep a library of routines that several programs share, for example a music driver or a decruncher. Find the routines of the library in a program, and get their names for that program.
 
@@ -31,6 +33,7 @@ node <skill>/scripts/provenance.ts releases/a.prg releases/b.prg releases/c.prg
 node <skill>/scripts/provenance.ts releases/a.prg releases/b.prg --shift 2:-256 --from '$0900' --to '$09ff'
 node <skill>/scripts/provenance.ts releases/a.prg .c64-re-tools/local/b/image.json --run 600 --steps .c64-re-tools/local/start-game.json
 node <skill>/scripts/provenance.ts separate --out .c64-re-tools/local/separate.json
+node <skill>/scripts/provenance.ts leftovers --out .c64-re-tools/local/leftovers.json
 ```
 
 | Option | Meaning |
@@ -87,6 +90,48 @@ Use `separate` when you have only one release. It reads the program, its stages 
 
 Each list has `count` and `listed`. `listed` has the first ranges, at most `--max-listed`. `--out` writes all of them. Run more coverage runs for parts that are `untouched`, and add them with `coverage` of the c64-knowledge skill, before you decide.
 
+## Leftovers
+
+Use `leftovers` to find what the program holds in addition to its working code. It reads the program, its stages, the coverage and the code regions from the knowledge, as `separate` does. It gives evidence, not a decision. Each list has `count` and `listed`, as in `separate`. `--out` writes all findings.
+
+| List | What it holds |
+|---|---|
+| `text` | Text, and lines of assembler source. `encoding` is `petscii`, `screen`, `ascii` or `high-bit`. `reversed: true` marks screen codes with bit 7 set. `source: true` marks lines of assembler source. A line end in `text` is a new line. `mnemonics` counts 6502 instructions in the text. |
+| `basic` | Two or more BASIC lines away from the BASIC start. `linkedAt` is the address where BASIC linked the lines. It can be another address than the address of the bytes now. |
+| `fill` | One byte that repeats, at least 16 times, or a pattern of two to four bytes that repeats, at least 32 bytes in total. `pattern` is the repeated bytes. |
+| `residue` | Bytes that no run touched and that are no text, BASIC, fill or code region. `bytes` shows the first 16 bytes. |
+| `copies` | Bytes that are the same as earlier bytes of the program, at least 32 bytes. `copyOf` is the address of the earlier bytes. |
+| `deadCode` | Code regions of the knowledge that no call or jump reaches from the entry, and that no run executed. |
+
+Text from another computer can show the tools of the developer:
+
+- `ascii` is text in ASCII, with small letters. A cross assembler on another computer can leave it.
+- `high-bit` is text with bit 7 set. The Apple II keeps text in this form, with `$8d` at the end of a line. Apple II assembler source, for example from Merlin, has `DFB` lines and `*` comments. A C64 text in shifted letters with `$a0` spaces is also `high-bit`.
+- Data of another computer, for example a table of Atari key codes, is not text. The script does not find it. Examine `residue` and the data that no code reads, and use your knowledge of the other computers.
+
+Each finding has `stages`: the unpack stages that wrote its bytes. Each finding also has `access`: the accesses of its bytes in the coverage. A stage before the last stage is a depacker, an intro or a loader.
+
+| Option | Meaning |
+|---|---|
+| `--min-text 6` | The minimum number of characters in a text. The default is 8. A short text, for example a group name, can need 6. |
+
+Do these steps:
+
+1. Unpack the program with `stages` or `capture` of the c64-unpacker skill. Put the capture into the knowledge.
+2. Add the coverage of runs that use many parts of the program. Without coverage, `residue` is empty and no finding has `access`. `noCoverage` tells this.
+3. Run c64-static-analysis. Without code regions, `deadCode` is empty, and `residue` can include code.
+4. Run `leftovers`. When you have two or more releases, also compare them.
+5. Read `text` first: names, dates, greetings and credits. Then read `copies`, `residue`, `basic` and `deadCode`.
+6. Examine each important finding with the c64-emulator skill or the c64-static-analysis skill.
+7. Record each confirmed finding with the c64-knowledge skill. Classify a confirmed PETSCII text as a `petscii` region, and a screen code text as a `screen` region. Classify other text as `bytes`. Write a comment that tells what the leftover is.
+
+Read the findings with care:
+
+- A text is a run of bytes that looks like text. Some runs are data, for example a character map. A text can include one byte before it or after it that is not part of the text.
+- A copy is not always a leftover. A program can copy its code to another address before it runs the code.
+- A text in an early stage is often a crack intro. A text that no run read can be an old text of an earlier release.
+- Keep the fact apart from the conclusion. "Text at $4770" is a fact. "A recrack by group X" is a conclusion.
+
 ## Library of routines
 
 A library is a folder of routine files. Each file holds one routine: its bytes and its knowledge. Keep one library beside the project folders, for example `library/` at the root of the workspace. A library is not a project folder. Commit it with the projects.
@@ -128,7 +173,7 @@ To find the routines in a program:
 Automatic write:
 - none.
 
-Record a confirmed conclusion as a normal comment, region or symbol with the c64-knowledge skill. Do not record the full comparison.
+Record a confirmed conclusion as a normal comment, region or symbol with the c64-knowledge skill. Do not record the full comparison or the full list of leftovers.
 
 `match --out` writes a batch file and does not change the knowledge. Apply the batch with the c64-knowledge skill.
 
@@ -136,7 +181,9 @@ Record a confirmed conclusion as a normal comment, region or symbol with the c64
 
 The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes. `common` gives the ranges where all releases have bytes. `releases` gives the segments and the `shift` of each release. With `--run`, each difference also has `runtime`, and `run` tells if each release started, or why not.
 
-The runtime evidence is evidence only. The script does not decide which bytes are original.
+For `leftovers`: the lists of findings, with `entry` and the number of `stages`. `noEntry`, `noStages` and `noCoverage` tell which knowledge is missing.
+
+The runtime evidence and the leftovers are evidence only. The script does not decide which bytes are original.
 
 The exit status is 0 for a result. The exit status is 1 for an error. The exit status is 2 for a wrong argument.
 

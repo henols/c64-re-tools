@@ -63,6 +63,7 @@ Select the path for the scope:
 | The routines, code, data and references of the program | c64-static-analysis |
 | The platform meaning of an address or a register | c64-memory-map |
 | Differences between releases of the program | c64-provenance |
+| Leftovers of the development, a crack or a recrack: texts, old copies, unused bytes, dead code | c64-provenance `leftovers` |
 | A routine that another program of the workspace has, for example a music driver | c64-provenance, with the library |
 | Source code from the knowledge | c64-source |
 | Source code to build | c64-assembler |
@@ -100,6 +101,7 @@ After stage 7, save each routine that other programs can have to the library wit
 - the generated source
 - the built program and the loader
 - the c64-testing scenarios
+- the c64-testing recordings in `tests/recordings/`
 - the documentation in `README.md` and `docs/`, when the criteria ask for it
 - the runs in `runs/` that the knowledge gives as evidence
 - the scripts in `tools/` for the formats of this program, when you wrote them.
@@ -124,7 +126,7 @@ If the project has no layout, use this one. No script checks it. Each script tak
 original/      the disk image or the program as you got it
 src/           the generated source from c64-source
 build/         programs from c64-assembler
-tests/         c64-testing scenarios
+tests/         c64-testing scenarios, and the recordings in tests/recordings/
 runs/          the runs that the knowledge gives as evidence
 docs/          the documentation from c64-docs, with the reference in docs/reference/
 tools/         scripts for the formats of this program only
