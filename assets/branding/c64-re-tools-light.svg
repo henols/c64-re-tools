@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 330" role="img" aria-label="C64 RE TOOLS logo">
+<title>C64 RE TOOLS</title><rect width="1100" height="330" fill="#f5f0e5"/>
+<g transform="translate(48 40)">
+<path fill="#141f47" fill-rule="evenodd" d="M145 12 A127 127 0 1 0 145 266 L145 207 A68 68 0 1 1 145 71 Z"/>
+<rect x="159" y="38" width="281" height="27" fill="#e43c38"/>
+<rect x="159" y="73" width="281" height="27" fill="#f69033"/>
+<rect x="159" y="108" width="281" height="27" fill="#f3cf41"/>
+<rect x="159" y="143" width="281" height="27" fill="#68ad4f"/>
+<rect x="159" y="178" width="281" height="27" fill="#3998d0"/>
+<text x="450" y="205" fill="#141f47" font-family="Arial Black, DejaVu Sans, sans-serif" font-weight="900" font-size="196" letter-spacing="-9">64</text>
+<text x="458" y="266" fill="#141f47" font-family="Arial Black, DejaVu Sans, sans-serif" font-weight="900" font-size="52" letter-spacing="7">RE TOOLS</text>
+</g></svg>
