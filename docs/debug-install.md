@@ -1,5 +1,7 @@
 # Debugging a run
 
+<img src="../assets/branding/c64-re-tools-transparent.svg" alt="C64 RE Tools" width="300">
+
 ## Trace
 
 Each program writes what it does to a directory, as JSON lines. The Host Runtime also keeps a copy of VICE's log. Nothing of the trace reaches the agent.
