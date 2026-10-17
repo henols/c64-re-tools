@@ -21,10 +21,10 @@ This skill does not read the emulator and does not change project knowledge.
 The script looks up local reference data. It does not use the host runtime.
 
 ```
-node <skill>/scripts/memmap.ts at '$d020' '$0314' '$ffd2'
-node <skill>/scripts/memmap.ts decode '$d018' '$15' --bank '$97'
-node <skill>/scripts/memmap.ts list vic
-node <skill>/scripts/memmap.ts export --out src/hw.asm
+node <skill>/scripts/memory-map.ts at '$d020' '$0314' '$ffd2'
+node <skill>/scripts/memory-map.ts decode '$d018' '$15' --bank '$97'
+node <skill>/scripts/memory-map.ts list vic
+node <skill>/scripts/memory-map.ts export --out src/hw.asm
 ```
 
 | Command | Result |

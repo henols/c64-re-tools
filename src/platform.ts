@@ -4,6 +4,7 @@
 // an address without one belongs to the application.
 
 import { d018Offsets, formatC64Address, vicBankBase } from "./c64.ts";
+import { Refusal } from "./errors.ts";
 
 export interface Entry {
   start: number;
@@ -498,6 +499,6 @@ export function decode(register: number, value: number, dd00?: number): Decoded 
       };
     }
     default:
-      throw new RangeError(`no decoder for ${formatC64Address(register)}; decoders exist for $0001, $d010, $d011, $d015-$d01f (sprite and interrupt bits), $d016, $d018, $dc0d, $dd00 and $dd0d`);
+      throw new Refusal("invalid-input", `There is no decoder for ${formatC64Address(register)}. Decoders exist for $0001, $d010, $d011, $d015-$d01f (sprite and interrupt bits), $d016, $d018, $dc0d, $dd00 and $dd0d`);
   }
 }

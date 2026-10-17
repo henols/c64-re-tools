@@ -10,6 +10,7 @@ import { after, test } from "node:test";
 import { assemble } from "../../src/native/acme.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
+import { Refusal } from "../../src/errors.ts";
 import { areaOf, decode, describeAddress, IO, lookup, platformNames, ROM } from "../../src/platform.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-memmap-"));
@@ -92,24 +93,31 @@ test("register values decode to their C64 meaning", () => {
   assert.deepEqual(decode(0xd015, 0b10000101), { sprites: [0, 2, 7] });
   assert.deepEqual(decode(0xd019, 0x81), { sources: ["raster"], anyInterrupt: true });
   assert.deepEqual(decode(0xdc0d, 0x7f).write, { disables: ["timer A", "timer B", "TOD alarm", "serial port", "FLAG line"] });
-  assert.throws(() => decode(0xd020, 1), RangeError);
+  assert.throws(() => decode(0xd020, 1), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /There is no decoder for \$d020/.test(error.message));
 });
 
 test("the script answers in JSON and refuses bad input", () => {
-  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memmap.ts");
-  const at = spawnSync(process.execPath, [...process.execArgv, script, "at", "$d020", "53281", "%1111111111111110"], { encoding: "utf8" });
+  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memory-map.ts");
+  const at = spawnSync(process.execPath, [...process.execArgv, script, "at", "$d020", "$D021", "$fffe", "$fb"], { encoding: "utf8" });
   assert.equal(at.status, 0);
   assert.deepEqual(
     (JSON.parse(at.stdout) as { addresses: Array<{ name: string }> }).addresses.map((address) => address.name),
-    ["EXTCOL", "BGCOL0", "IRQ vector"],
+    ["EXTCOL", "BGCOL0", "IRQ vector", "FREEZP"],
   );
+  for (const address of ["53281", "%1111111111111110", "d020"]) {
+    const refused = spawnSync(process.execPath, [...process.execArgv, script, "at", address], { encoding: "utf8" });
+    assert.equal(refused.status, 2, address);
+    assert.equal((JSON.parse(refused.stdout) as { error: { code: string } }).error.code, "invalid-input", address);
+  }
+  const value = spawnSync(process.execPath, [...process.execArgv, script, "decode", "$1", "%00110111"], { encoding: "utf8" });
+  assert.equal((JSON.parse(value.stdout) as { value: string }).value, "$37", "a value takes $ and hex, decimal, or % and binary");
   const bad = spawnSync(process.execPath, [...process.execArgv, script, "decode", "$d020", "1"], { encoding: "utf8" });
   assert.equal(bad.status, 2);
   assert.equal((JSON.parse(bad.stdout) as { error: { code: string } }).error.code, "invalid-input");
 });
 
 test("every address in $d000-$dfff says that it is visible only while $01 maps I/O in", () => {
-  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memmap.ts");
+  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memory-map.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "at", "$d020", "$d800", "$dbff", "$de00", "$cfff", "$e000"], { encoding: "utf8" });
   assert.equal(run.status, 0);
   const visible = (JSON.parse(run.stdout) as { addresses: Array<{ visible?: string }> }).addresses.map((address) => address.visible !== undefined);
@@ -125,7 +133,7 @@ test("the platform names are symbols, each name once", () => {
 });
 
 test("export writes the platform names as an ACME include that ACME reads", { skip: acmeSkip }, async () => {
-  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memmap.ts");
+  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memory-map.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "export", "--out", "src/hw.asm"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   assert.equal((JSON.parse(run.stdout) as { names: number }).names, platformNames().length);
