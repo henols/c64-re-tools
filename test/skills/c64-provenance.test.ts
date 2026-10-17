@@ -103,6 +103,11 @@ test("the script compares PRG files and applies a shift", () => {
   assert.deepEqual((aligned.releases as Array<{ shift: number }>).map((item) => item.shift), [0, -256]);
   const bad = spawnSync(process.execPath, [...process.execArgv, script, "compare", "release.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(bad.status, 2);
+  const twice = spawnSync(process.execPath, [...process.execArgv, script, "compare", "release.prg", "moved.prg", "--shift", "2:-256", "--shift", "2:256"], { cwd: project, encoding: "utf8" });
+  assert.equal(twice.status, 2, twice.stdout);
+  const { error } = JSON.parse(twice.stdout) as { error: { code: string; message: string } };
+  assert.equal(error.code, "invalid-input");
+  assert.match(error.message, /^--shift gives release 2 more than one shift \(-256 and 256\)\. Give one --shift for each release/);
 });
 
 test("a missing release is not-found", () => {
@@ -178,6 +183,51 @@ test("separate gives each range its stage and access, each code region its reach
     ],
   );
   assert.deepEqual(found.outside, { read: [{ start: 0xc000, end: 0xc000 }], executed: [{ start: 0xc200, end: 0xc200 }], generated: [{ start: 0xc100, end: 0xc100 }] });
+});
+
+test("a code region whose last instruction runs on reaches the next address; RTS, RTI, JMP, BRK and JAM do not run on", () => {
+  const memory = new Uint8Array(0x10000);
+  // $2000 LDA #$01 / STA $d020 runs on into $2005: JSR $3000 runs on into $2008: BNE $2008 runs on into $200a: JMP $200a.
+  // After the JMP, $200d is reached by nothing; the RTS, RTI, BRK and JAM regions do not run on into the region after them.
+  memory.set([0xa9, 0x01, 0x8d, 0x20, 0xd0, 0x20, 0x00, 0x30, 0xd0, 0xfe, 0x4c, 0x0a, 0x20, 0xea, 0x60, 0xea, 0x40, 0xea, 0x00, 0xea, 0x02, 0xea], 0x2000);
+  const region = (start: number, end: number) => ({ start, end, type: "code" });
+  const found = separate({
+    segments: [{ start: 0x2000, end: 0x2015 }],
+    memory,
+    entry: 0x2000,
+    codeRegions: [region(0x2000, 0x2004), region(0x2005, 0x2007), region(0x2008, 0x2009), region(0x200a, 0x200c), region(0x200d, 0x200e), region(0x200f, 0x2010), region(0x2011, 0x2012), region(0x2013, 0x2014), region(0x2015, 0x2015)],
+    references: [],
+  });
+  assert.deepEqual(
+    found.codeRegions.map((item) => [item.start, item.reachable]),
+    [
+      [0x2000, true],
+      [0x2005, true],
+      [0x2008, true],
+      [0x200a, true],
+      [0x200d, false],
+      [0x200f, false],
+      [0x2011, false],
+      [0x2013, false],
+      [0x2015, false],
+    ],
+  );
+  const reachedFrom = (code: number[]) => {
+    const bytes = new Uint8Array(0x10000);
+    bytes.set([...code, 0xea], 0x4000);
+    return separate({ segments: [{ start: 0x4000, end: 0x4000 + code.length }], memory: bytes, entry: 0x4000, codeRegions: [region(0x4000, 0x4000 + code.length - 1), region(0x4000 + code.length, 0x4000 + code.length)], references: [] }).codeRegions[1]!.reachable;
+  };
+  assert.deepEqual([[0x60], [0x40], [0x4c, 0x00, 0x40], [0x6c, 0x00, 0x40], [0x00], [0x02], [0xf2]].map(reachedFrom), [false, false, false, false, false, false, false]);
+  assert.deepEqual([[0xea], [0x20, 0x00, 0x50], [0xf0, 0x02], [0x18]].map(reachedFrom), [true, true, true, true]);
+  // The Bruce Lee cold start: SEI ... LDA $d011 is code, AND #$ef is a dual-use region (also the IRQ vector), STA $d011 is code again.
+  const coldStart = (gap: number[]) => {
+    const bytes = new Uint8Array(0x10000);
+    bytes.set([0x78, 0xd8, 0xa2, 0xff, 0x9a, 0xad, 0x11, 0xd0, ...gap, 0x8d, 0x11, 0xd0, 0x60], 0x0400);
+    const next = 0x0408 + gap.length;
+    return separate({ segments: [{ start: 0x03ff, end: next + 3 }], memory: bytes, entry: 0x0400, codeRegions: [region(0x0400, 0x0407), region(next, next + 3)], references: [] }).codeRegions[1]!.reachable;
+  };
+  assert.equal(coldStart([0x29, 0xef]), true, "the CPU runs through the AND #$ef of no code region into the next code region");
+  assert.equal(coldStart([0x60, 0xea]), false, "an RTS between the regions does not run on");
 });
 
 test("generated code outside the image joins over gaps of up to two operand bytes, never over the image", () => {

@@ -1,10 +1,11 @@
 // Evidence from one release: for each range of the image, the unpack
 // stage that wrote it and the access class from coverage; for each code
-// region of knowledge, whether call and jump references reach it from the
-// entry; and what the program reads or executes outside the image. Evidence
-// only: nothing here decides what is original.
+// region of knowledge, whether call and jump references or the run on from
+// its last instruction reach it from the entry; and what the program reads
+// or executes outside the image. Evidence only: nothing here decides what is
+// original.
 
-import { type AddressRange, COVERAGE, executedRamCode } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, executedRamCode, instructionLength } from "#src/c64.ts";
 
 export type Access = "executed" | "read" | "written" | "read-written" | "untouched";
 
@@ -49,6 +50,27 @@ export interface Separation {
 
 const SYSTEM_PAGES_END = 0x03ff;
 
+/** BRK, JMP, RTI, RTS, JMP (indirect) and the JAM opcodes: the CPU does not run on to the next instruction after them. */
+const NO_FALL_THROUGH = new Set([0x00, 0x4c, 0x40, 0x60, 0x6c, 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
+
+/**
+ * The address after a code region where the CPU runs on, or undefined when
+ * its last instruction does not run on (RTS, RTI, JMP, BRK, JAM). The
+ * instructions follow one another from the start of the region.
+ */
+export function fallThrough(region: AddressRange, memory: Uint8Array): number | undefined {
+  let at = region.start;
+  let last = at;
+  while (at <= region.end) {
+    last = at;
+    at += instructionLength(memory[at]!);
+  }
+  return NO_FALL_THROUGH.has(memory[last]!) || at > 0xffff ? undefined : at;
+}
+
+/** The most instructions outside the code regions that the run on from a region goes through, for example an instruction in a dual-use region. */
+const MAX_RUN_ON = 16;
+
 /** Joins addresses in order into ranges; `gap` is the most bytes between two addresses in one range. */
 function merge(addresses: number[], gap = 0, joins: (from: number, to: number) => boolean = () => true): AddressRange[] {
   const ranges: AddressRange[] = [];
@@ -92,12 +114,29 @@ export function separate(input: SeparationInput): Separation {
     }
   }
 
-  // Reachability: from the region that holds the entry, through call and jump references, to a fixed point.
+  // Reachability: from the region that holds the entry, through call and jump references and the run on
+  // from the last instruction of a region into the next address, to a fixed point.
   const regions = input.codeRegions.filter((region) => input.segments.some((segment) => region.start <= segment.end && segment.start <= region.end));
   const holding = (address: number) => regions.findIndex((region) => address >= region.start && address <= region.end);
   const reached = new Set<number>();
   if (input.entry !== undefined && holding(input.entry) >= 0) reached.add(holding(input.entry));
-  const flows = input.references.filter((reference) => reference.kind === "call" || reference.kind === "jump");
+  // The CPU runs the bytes after the region as instructions: through bytes of no code region (a dual-use
+  // instruction, for example) into the next code region, unless one of them does not run on.
+  const runOn = (from: number): number | undefined => {
+    let at = from;
+    for (let count = 0; count <= MAX_RUN_ON && at <= 0xffff && inImage(at); count++) {
+      if (holding(at) >= 0) return at;
+      if (NO_FALL_THROUGH.has(input.memory[at]!)) return undefined;
+      at += instructionLength(input.memory[at]!);
+    }
+    return undefined;
+  };
+  const runsOn = regions.flatMap((region) => {
+    const next = fallThrough(region, input.memory);
+    const to = next === undefined ? undefined : runOn(next);
+    return to === undefined ? [] : [{ from: region.end, to }];
+  });
+  const flows = [...input.references.filter((reference) => reference.kind === "call" || reference.kind === "jump"), ...runsOn];
   for (let grown = true; grown; ) {
     grown = false;
     for (const flow of flows) {

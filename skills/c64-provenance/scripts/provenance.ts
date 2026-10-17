@@ -8,7 +8,7 @@
 // routines that several programs share in a library folder and find them in the
 // program (D71).
 
-import { basename, relative } from "node:path";
+import { basename } from "node:path";
 
 import { type AddressRange, c64AddressOf, formatC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
@@ -108,6 +108,7 @@ async function compare(call: Call): Promise<unknown> {
   for (const text of call.strings("shift")) {
     const match = /^(\d+):([+-]?\d+)$/.exec(text);
     if (match === null || Number(match[1]) < 1 || Number(match[1]) > positionals.length) throw new UsageError(`--shift must be <release number>:<bytes>, not ${text}`);
+    if (shifts.has(Number(match[1]))) throw new UsageError(`--shift gives release ${match[1]} more than one shift (${shifts.get(Number(match[1]))} and ${match[2]}). Give one --shift for each release`);
     shifts.set(Number(match[1]), Number(match[2]));
   }
   const frames = call.count("frames");
@@ -364,10 +365,10 @@ function routineCommand(call: Call): unknown {
       operands: listOperands(db, range, SEMANTIC_ORIGINS),
       platform: platform(),
     });
-    const file = saveRoutine(libraryFolder(library, { create: true, cwd: projectRoot() }), routine, call.flag("replace"));
+    const written = saveRoutine(libraryFolder(library, { create: true, cwd: projectRoot() }), routine, call.flag("replace"), projectRoot());
     return {
       routine: routine.name,
-      file: relative(projectRoot(), file).split("\\").join("/"),
+      ...written,
       start: formatC64Address(start),
       end: formatC64Address(end),
       length: routine.bytes.length,
@@ -460,7 +461,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "separate",
-    summary: "Evidence from the program in the knowledge: the unpack stage that wrote each range, its access in the coverage, whether call and jump references reach each code region from the entry, and what the program reads or executes outside its segments.",
+    summary: "Evidence from the program in the knowledge: the unpack stage that wrote each range, its access in the coverage, whether call and jump references, or the run on from the code before it, reach each code region from the entry, and what the program reads or executes outside its segments.",
     options: { out: { ...OPTIONS.out, value: "<file>", help: "write all ranges to this file" }, "max-listed": OPTIONS["max-listed"] },
     run: separateCommand,
   },

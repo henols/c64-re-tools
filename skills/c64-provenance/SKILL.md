@@ -38,7 +38,7 @@ node <skill>/scripts/provenance.ts leftovers --out .c64-re-tools/local/leftovers
 
 | Option | Meaning |
 |---|---|
-| `--shift 2:-256` | Move release 2 (the first release is 1) by -256 bytes. Use it again for more releases. |
+| `--shift 2:-256` | Move release 2 (the first release is 1) by -256 bytes. Use it again for more releases. Give one shift for each release. |
 | `--range '$0900-$09ff'` | Compare only the addresses in this range. |
 | `--frames 600` | Run each release for this many frames, and give each listed difference its runtime evidence. |
 | `--steps .c64-re-tools/local/start-game.json` | With `--frames`: a JSON list of action steps to run before the frames, for example a key to start the game. The steps are the steps of a c64-unpacker steps file. |
@@ -96,7 +96,7 @@ Use `separate` when you have only one release. It reads the program, its stages 
 - `ranges`: the program in ranges with the same stage and access. `stage` is the last unpack stage that wrote the range. The last stage is the program. An earlier stage is a depacker, an intro or a loader. Only a capture of c64-unpacker `capture` has stages. For a program from `loads` or a PRG, `noStages` tells this.
 - `access`: from the coverage of the knowledge: `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs. A `read` byte right after executed code, or at a return address, can be a dummy read of the 6502 that the program does not use.
 - `codeRegions.total`: the number of code regions in the knowledge.
-- `codeRegions.unreachable`: code regions of the knowledge that no chain of call and jump references reaches from the entry. Run c64-static-analysis first, so that the knowledge has the code regions and the references.
+- `codeRegions.unreachable`: code regions of the knowledge that no chain of call and jump references reaches from the entry. A region also reaches the code after it when its last instruction is not RTS, RTI, JMP, BRK or JAM: the CPU continues there. Run c64-static-analysis first, so that the knowledge has the code regions and the references.
 - `outside`: RAM outside the program that the program `read` or `executed` but did not write, and code it `generated`. A loader or an earlier stage put the bytes that the program did not write. A `generated` range can have gaps of two bytes or less: these are operand bytes.
 
 Each list has `count` and `listed`. `listed` has the first ranges, at most `--max-listed` (default 50). `--out` writes all of them and the result shows the file as `{out, bytes, sha256}`. Run more coverage runs for parts that are `untouched`, and add them with `coverage` of the c64-knowledge skill, before you decide.
@@ -112,7 +112,7 @@ Use `leftovers` to find what the program holds in addition to its working code. 
 | `fill` | One byte that repeats, at least 16 times, or a pattern of two to four bytes that repeats, at least 32 bytes in total. `pattern` is the repeated bytes. |
 | `residue` | Bytes that no run touched and that are no text, BASIC, fill or code region. `bytes` shows the first 16 bytes. |
 | `copies` | Bytes that are the same as earlier bytes of the program, at least 32 bytes. `copyOf` is the address of the earlier bytes. |
-| `deadCode` | Code regions of the knowledge that no call or jump reaches from the entry, and that no run executed. |
+| `deadCode` | Code regions of the knowledge that the entry does not reach, as in `codeRegions.unreachable` of `separate`, and that no run executed. |
 
 Text from another computer can show the tools of the developer:
 
@@ -162,7 +162,8 @@ To save a routine:
    - `--name` is the name of the routine and of its file. When you do not give it, the script uses the user or LLM name at the start.
    - `--title` is the title of the routine. When you do not give it, the script uses the module title.
    - A routine has at least 16 bytes. Its last instruction must end in the range.
-3. Read `leftOut`. It lists the rows that the file does not keep, and why. For example, the file does not keep an operand expression that uses a name outside the routine.
+3. The result shows the routine file as `{out, bytes, sha256}`. `out` is relative to the project folder.
+4. Read `leftOut`. It lists the rows that the file does not keep, and why. For example, the file does not keep an operand expression that uses a name outside the routine.
 
 To find the routines in a program:
 

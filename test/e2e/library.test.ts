@@ -5,6 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -78,7 +79,10 @@ test("a routine saved from program A is found in program B at another address, a
 
   // The routine goes to the library beside the projects; --library is relative to the working directory.
   const saved = ok("c64-provenance", "provenance.ts", ["routine", "$1000", "--library", "../library", "--project", "game-a"]);
-  assert.deepEqual({ routine: saved.routine, file: saved.file, start: saved.start, end: saved.end, length: saved.length }, { routine: "play", file: "../library/play.json", start: "$1000", end: "$1026", length: 39 });
+  assert.deepEqual({ routine: saved.routine, out: saved.out, start: saved.start, end: saved.end, length: saved.length }, { routine: "play", out: "../library/play.json", start: "$1000", end: "$1026", length: 39 });
+  // The routine file shows as a written file: its size and SHA-256 are those of the file.
+  const file = readFileSync(join(workspace, "library", "play.json"));
+  assert.deepEqual({ bytes: saved.bytes, sha256: saved.sha256, file: saved.file }, { bytes: file.length, sha256: createHash("sha256").update(file).digest("hex"), file: undefined });
   assert.deepEqual(saved.counts, { symbols: 3, regions: 3, comments: 1, references: 0, operands: 2 });
   assert.match(readFileSync(join(workspace, "library", "play.json"), "utf8"), /"title": "The sound driver"/);
   assert.equal(script("c64-provenance", "provenance.ts", ["routine", "$1000", "--library", "../library", "--project", "game-a"]).json.error.code, "conflict");

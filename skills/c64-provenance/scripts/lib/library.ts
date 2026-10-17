@@ -4,10 +4,12 @@
 // its start, so match finds it in another program at another address and
 // suggests its names there as an apply batch. Nothing here writes knowledge.
 
+import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
+import { writeRefusal, type Written } from "#src/host-client/transfer.ts";
 import { formatC64Address, instructionLength } from "#src/c64.ts";
 import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
@@ -317,16 +319,26 @@ export function readLibrary(folder: string): Routine[] {
     .map((name) => parseRoutine(readFileSync(join(folder, name), "utf8"), name));
 }
 
-/** Writes a routine file into the library: a temporary file, then a rename. Refuses a name that exists unless `replace`. */
-export function saveRoutine(folder: string, routine: Routine, replace: boolean): string {
+/**
+ * Writes a routine file into the library: a temporary file, then a rename.
+ * Refuses a name that exists unless `replace`. Reports the file as a written
+ * file: its path relative to the project folder `root`, its size and its SHA-256.
+ */
+export function saveRoutine(folder: string, routine: Routine, replace: boolean, root = process.cwd()): Written {
   const file = join(folder, `${routine.name}.json`);
+  const out = relative(root, file).split(sep).join("/");
   if (!replace && statSync(file, { throwIfNoEntry: false }) !== undefined) {
     throw new Refusal("conflict", `The library already has the routine ${routine.name}. Give another --name, or give --replace to save over it.`);
   }
+  const bytes = Buffer.from(routineText(routine), "utf8");
   const temporary = `${file}.${process.pid}.tmp`;
-  writeFileSync(temporary, routineText(routine));
-  renameSync(temporary, file);
-  return file;
+  try {
+    writeFileSync(temporary, bytes);
+    renameSync(temporary, file);
+  } catch (error) {
+    throw writeRefusal(error, out, "--library") ?? error;
+  }
+  return { out, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 /** An image to search: its segments and its bytes inside them. */
