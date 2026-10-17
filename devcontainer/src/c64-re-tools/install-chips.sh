@@ -17,7 +17,7 @@ ROMS=(
     "basic.901226-01.bin basic-901226-01.bin 89878cea0a268734696de11c4bae593eaaa506465d2029d619c0e0cbccdfa62d"
     "characters.901225-01.bin chargen-901225-01.bin fd0d53b8480e86163ac98998976c72cc58d5dd8eb824ed7b829774e74213b420"
 )
-PREFIX="${PREFIX:-/usr/local}"c64.h
+PREFIX="${PREFIX:-/usr/local}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 fail() {
