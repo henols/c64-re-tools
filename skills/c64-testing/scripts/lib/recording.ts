@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
-import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, renamedField, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
@@ -153,13 +153,20 @@ export function parseStateItem(text: string): StateItem {
   return { address: match[1]!, size };
 }
 
-export function checkState(value: unknown, fail: (message: string) => never): StateItem[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_STATE_ITEMS) fail(`state must be a list of 1 to ${MAX_STATE_ITEMS} memory items`);
+/** Checks the memory items of state or pin (`what`): names, $ addresses, or { address, size }. */
+export function checkState(value: unknown, fail: (message: string) => never, what = "state"): StateItem[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_STATE_ITEMS) fail(`${what} must be a list of 1 to ${MAX_STATE_ITEMS} memory items`);
   return (value as unknown[]).map((item, index) => {
     const spec = typeof item === "string" ? { address: item } : item;
-    if (!isObject(spec) || typeof spec.address !== "string" || Object.keys(spec).some((key) => key !== "address" && key !== "size")) fail(`state item ${index + 1} must be a name, a $ address, or { address, size }`);
+    if (isObject(spec)) {
+      for (const key of Object.keys(spec)) {
+        const renamed = renamedField(key, ["address", "size"]);
+        if (key !== "address" && key !== "size") fail(`${what} item ${index + 1} has the field ${key}. ${renamed ?? "A memory item has address and size, and nothing else"}`);
+      }
+    }
+    if (!isObject(spec) || typeof spec.address !== "string") fail(`${what} item ${index + 1} must be a name, a $ address, or { address, size }`);
     const size = (spec as { size?: unknown }).size ?? 1;
-    if (!isInteger(size, 1, MAX_STATE_BYTES)) fail(`state item ${index + 1}: size must be from 1 to ${MAX_STATE_BYTES}`);
+    if (!isInteger(size, 1, MAX_STATE_BYTES)) fail(`${what} item ${index + 1}: size must be from 1 to ${MAX_STATE_BYTES}`);
     return { address: (spec as { address: string }).address, size: size as number };
   });
 }
@@ -195,7 +202,7 @@ export function readRecordFile(path: string): RecordFile {
   if ((value.checkpoint === undefined) !== (value.state === undefined)) fail("give checkpoint and state together, or neither: a replay can give them");
   if (value.checkpoint !== undefined && (typeof value.checkpoint !== "string" || value.checkpoint === "")) fail("checkpoint must be the name or $ address of a routine");
   if (value.pin !== undefined && value.checkpoint === undefined) fail("pin needs checkpoint and state");
-  const pin = value.pin === undefined ? undefined : checkState(value.pin, fail);
+  const pin = value.pin === undefined ? undefined : checkState(value.pin, fail, "pin");
   const compare = value.checkpoint === undefined ? undefined : { checkpoint: value.checkpoint as string, state: checkState(value.state, fail), ...(pin === undefined ? {} : { pin }) };
   const inputs = checkInputs(value.inputs, fail);
   if (!Array.isArray(value.steps) || value.steps.length === 0) fail("steps must be a list with at least one step");
@@ -219,7 +226,14 @@ export function readRecordFile(path: string): RecordFile {
 /** What the replay core cannot do of a step that is right for VICE: it has the C64 alone, no raster wait and no conditions. */
 function checkCoreStep(step: ActionStep, at: string, fail: (message: string) => never): void {
   if ("write" in step && step.write.space !== "c64") fail(`${at}: the replay core has the C64 alone, not ${step.write.space}`);
-  if ("press" in step) keyCodes(step.press);
+  if ("press" in step) {
+    try {
+      keyCodes(step.press);
+    } catch (error) {
+      if (isRefusal(error)) fail(`${at}: ${error.message}`);
+      throw error;
+    }
+  }
   if ("type" in step) {
     const keys = keyboardBytes(step.type);
     if (typeof keys !== "string" && keys.length > QUEUE_SIZE) fail(`${at}: the KERNAL keyboard queue holds ${QUEUE_SIZE} keys; give more type steps, or press for keys of the keyboard matrix`);
@@ -242,10 +256,31 @@ export function readRecording(folder: string): Recording {
     if (isRefusal(error)) throw error;
     throw new Refusal("invalid-input", `recording ${path}: ${(error as Error).message}`);
   }
-  if (!isObject(value) || value.format !== RECORDING_FORMAT) throw new Refusal("invalid-input", `recording ${path}: it is not a recording of format ${RECORDING_FORMAT}`);
-  for (const key of ["name", "program", "sha256", "symbols", "hash"]) if (typeof value[key] !== "string") throw new Refusal("invalid-input", `recording ${path}: ${key} is missing`);
-  for (const key of ["inputs", "events", "sites"]) if (!Array.isArray(value[key])) throw new Refusal("invalid-input", `recording ${path}: ${key} is missing`);
-  if (!isInteger(value.ticks, 1, Number.MAX_SAFE_INTEGER)) throw new Refusal("invalid-input", `recording ${path}: ticks is missing`);
+  const fail = (message: string): never => {
+    throw new Refusal("invalid-input", `recording ${path}: ${message}`);
+  };
+  if (!isObject(value) || value.format !== RECORDING_FORMAT) return fail(`it is not a recording of format ${RECORDING_FORMAT}`);
+  for (const key of ["name", "program", "sha256", "symbols", "hash"]) if (typeof value[key] !== "string") fail(`${key} is missing`);
+  for (const key of ["inputs", "events", "sites"]) if (!Array.isArray(value[key])) fail(`${key} is missing`);
+  if (!isInteger(value.ticks, 1, Number.MAX_SAFE_INTEGER)) fail("ticks is missing");
+  // A recording of an older version can have the step forms of the 2.0 files: refused with the form to write, never replayed wrong.
+  const remedy = "Record the session again with record, or write the 2.1 form in recording.json";
+  if (value.compare !== undefined) {
+    const compare = isObject(value.compare) ? value.compare : fail("compare must be an object with checkpoint, state and pin");
+    const where = (message: string): never => fail(`compare: ${message}. ${remedy}`);
+    if (typeof compare.checkpoint !== "string" || compare.checkpoint === "") where("checkpoint must be the name or $ address of a routine");
+    checkState(compare.state, where);
+    if (compare.pin !== undefined) checkState(compare.pin, where, "pin");
+  }
+  (value.events as unknown[]).forEach((event, index) => {
+    const at = `event ${index + 1}`;
+    const where = (message: string): never => fail(`${message}. ${remedy}`);
+    if (!isObject(event) || !isObject(event.action) || !isObject(event.key)) return where(`${at} must be an object with action and key`);
+    const named = typeof event.step === "number" ? `${at} (step ${event.step})` : at;
+    if (event.action.restore === true && Object.keys(event.action).length === 1) return;
+    // The action with the defaults filled in, as the record file gave it.
+    event.action = checkActionStep(stepKind(event.action, ACTION_STEP_KINDS, named, where), event.action, named, where, { press: true });
+  });
   return value as unknown as Recording;
 }
 

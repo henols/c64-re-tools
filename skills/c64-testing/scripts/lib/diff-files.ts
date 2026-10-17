@@ -5,6 +5,8 @@
 // run, or two observations of runs (also two of one run), compare as they are.
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { Refusal } from "#src/errors.ts";
+import { isObject } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -41,33 +43,80 @@ function observation(path: string): MachineState {
       observed[at] = readProjectFile(`${folder}${(value as { file: string }).file}`).bytes.toString("hex");
     }
   }
-  const values: Record<string, number> = {};
-  for (const [register, value] of Object.entries(seen.registers ?? {})) {
-    if (typeof value === "number") values[`cpu.${register}`] = value;
-    else if (typeof value === "string" && value.startsWith("$")) values[`cpu.${register}`] = parseC64Address(value);
-  }
-  return { observed, values };
+  return { observed, values: cpuValues(seen.registers ?? {}) };
 }
 
-/** The state of a snapshot: restored in the session, then read with the readers of the runs. */
-async function snapshotState(client: ViceSessionClient, path: string): Promise<MachineState> {
-  await client.snapshotRestore(readProjectFile(path).bytes);
+/** The CPU registers as values: each register by its name, the pc from a number or "$xxxx", and each flag as cpu.flags.<flag>. */
+function cpuValues(registers: Record<string, unknown>): Record<string, number | boolean> {
+  const values: Record<string, number | boolean> = {};
+  for (const [register, value] of Object.entries(registers)) {
+    if (typeof value === "number") values[`cpu.${register}`] = value;
+    else if (typeof value === "string" && value.startsWith("$")) values[`cpu.${register}`] = parseC64Address(value);
+    else if (register === "flags" && isObject(value)) for (const [flag, set] of Object.entries(value)) if (typeof set === "boolean") values[`cpu.flags.${flag}`] = set;
+  }
+  return values;
+}
+
+/** The size of the header of a module in a VICE snapshot file: the name (16 bytes), the version (2 bytes) and the size (4 bytes). */
+const MODULE_HEADER = 22;
+const VSF_MAGIC = "VICE Snapshot File\x1a";
+const VSF_VERSION = "VICE Version\x1a";
+
+/**
+ * The 64 KiB of C64 RAM that a VICE snapshot file holds: the C64MEM module,
+ * after the CPU port and the cartridge lines (4 bytes). Undefined when the
+ * file has no such module.
+ */
+export function snapshotRam(file: Uint8Array): Uint8Array | undefined {
+  const bytes = Buffer.from(file);
+  if (bytes.subarray(0, VSF_MAGIC.length).toString("latin1") !== VSF_MAGIC) return undefined;
+  // The magic, the version (2 bytes) and the machine name (16 bytes); a newer VICE adds its own version (8 bytes).
+  let at = VSF_MAGIC.length + 2 + 16;
+  if (bytes.subarray(at, at + VSF_VERSION.length).toString("latin1") === VSF_VERSION) at += VSF_VERSION.length + 8;
+  while (at + MODULE_HEADER <= bytes.length) {
+    const name = bytes.subarray(at, at + 16).toString("latin1").replace(/\0+$/, "");
+    const size = bytes.readUInt32LE(at + 18);
+    if (size < MODULE_HEADER) return undefined;
+    if (name === "C64MEM") return at + MODULE_HEADER + 4 + 0x10000 <= bytes.length ? bytes.subarray(at + MODULE_HEADER + 4, at + MODULE_HEADER + 4 + 0x10000) : undefined;
+    at += size;
+  }
+  return undefined;
+}
+
+/**
+ * The state of a snapshot: restored in the session, then read with the
+ * readers of the runs. The RAM must be the RAM of the file: else the
+ * snapshot did not restore, and the state would be wrong.
+ */
+async function snapshotState(client: ViceSessionClient, path: string, ntsc: boolean): Promise<MachineState> {
+  const file = readProjectFile(path).bytes;
+  const saved = snapshotRam(file);
+  if (saved === undefined) throw new Refusal("invalid-input", `${path} is not a snapshot of a C64: it has no C64 memory. Give a file that c64_snapshot save or a save step of a run wrote.`);
+  const restored = await client.snapshotRestore(file);
   const memory = await readMemoryInParts(client, 0x0000, 0x10000, "ram");
+  // $00 and $01 are the CPU port: the file keeps them apart from the RAM.
+  if (("restored" in restored && !restored.restored) || !memory.subarray(2).equals(Buffer.from(saved.subarray(2)))) {
+    throw new Refusal(
+      "invalid-input",
+      `${path} did not restore: the RAM after the restore is not the RAM of the file. A snapshot restores only in a machine of the video standard that saved it. ${ntsc ? "Leave out --ntsc for a PAL snapshot" : "Give --ntsc for an NTSC snapshot"}, or use the emulator version that saved it.`,
+    );
+  }
   const colorRam = Buffer.from((await client.ioRead(0xd800, 0x400)).data, "hex").map((value) => value & 0x0f);
   const vic = Buffer.from((await client.ioRead(0xd000, 0x2f)).data, "hex");
-  const values: Record<string, number> = {};
+  const values: Record<string, number | boolean> = {};
   vic.forEach((value, index) => (values[`vic.${formatC64Address(0xd000 + index)}`] = value));
   for (const chip of (await client.cia("both")).chips) {
     for (const field of ["portA", "portB", "ddrA", "ddrB", "timerA", "timerB", "latchA", "latchB", "controlA", "controlB", "interruptMask"] as const) values[`cia${chip.id}.${field}`] = chip[field];
   }
   const sid = await client.sid();
   for (const voice of sid.voices) for (const [field, value] of Object.entries(voice)) if (field !== "index" && typeof value === "number") values[`sid.voice${voice.index}.${field}`] = value;
-  const registers = await client.registersGet("c64");
-  for (const [field, value] of Object.entries(registers)) if (typeof value === "number") values[`cpu.${field}`] = value;
+  Object.assign(values, cpuValues({ ...(await client.registersGet("c64")) }));
   return { memory: { base: 0, bytes: memory }, colorRam, values };
 }
 
 const show = (range: ChangedRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end), ...(range.a === undefined ? {} : { a: range.a, b: range.b }) });
+/** A changed value as a person reads it: the pc as "$xxxx". */
+const showValue = (item: { name: string; a: number | boolean; b: number | boolean }) => (item.name === "cpu.pc" && typeof item.a === "number" && typeof item.b === "number" ? { name: item.name, a: formatC64Address(item.a), b: formatC64Address(item.b) } : item);
 
 /** The differences of two states of one kind: snapshots, memory files or observations of runs. */
 export async function diffFiles(first: string, second: string, options: { gap: number; max: number; ntsc: boolean; at?: number; out?: string }): Promise<Record<string, unknown>> {
@@ -90,8 +139,8 @@ export async function diffFiles(first: string, second: string, options: { gap: n
   } else {
     const client = await ViceSessionClient.open({ videoStandard: options.ntsc ? "ntsc" : "pal" });
     try {
-      a = await snapshotState(client, first);
-      b = await snapshotState(client, second);
+      a = await snapshotState(client, first, options.ntsc);
+      b = await snapshotState(client, second, options.ntsc);
     } finally {
       await client.close();
     }
@@ -101,7 +150,8 @@ export async function diffFiles(first: string, second: string, options: { gap: n
   const part = (item: { changedBytes: number; ranges: ChangedRange[] } | undefined) => (item === undefined ? undefined : { changedBytes: item.changedBytes, ...listed(item.ranges, max, show, rest) });
   let written: ReturnType<typeof writeReported> | undefined;
   if (options.out !== undefined) {
-    const all = { a: first, b: second, ...(diff.memory === undefined ? {} : { memory: diff.memory.ranges.map(show) }), ...(diff.colorRam === undefined ? {} : { colorRam: diff.colorRam.ranges.map(show) }), values: diff.values ?? [], observed: diff.observed ?? [] };
+    // The names of the result: registers holds the changed values.
+    const all = { a: first, b: second, ...(diff.memory === undefined ? {} : { memory: diff.memory.ranges.map(show) }), ...(diff.colorRam === undefined ? {} : { colorRam: diff.colorRam.ranges.map(show) }), registers: (diff.values ?? []).map(showValue), observed: diff.observed ?? [] };
     written = writeReported(options.out, `${JSON.stringify(all, null, 2)}\n`, { what: "--out" });
   }
   return {
@@ -109,7 +159,7 @@ export async function diffFiles(first: string, second: string, options: { gap: n
     b: second,
     ...(diff.memory === undefined ? {} : { memory: part(diff.memory) }),
     ...(diff.colorRam === undefined ? {} : { colorRam: part(diff.colorRam) }),
-    ...(diff.values === undefined ? {} : { registers: listed(diff.values, max, undefined, rest) }),
+    ...(diff.values === undefined ? {} : { registers: listed(diff.values, max, showValue, rest) }),
     ...(diff.observed === undefined ? {} : { observed: listed(diff.observed, max, undefined, rest) }),
     ...(written === undefined ? {} : written),
   };

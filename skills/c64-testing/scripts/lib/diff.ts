@@ -10,8 +10,8 @@ export interface MachineState {
   memory?: { base: number; bytes: Uint8Array };
   /** Colour RAM $D800-$DBFF, the low 4 bits of each byte. */
   colorRam?: Uint8Array;
-  /** Named single values: VIC-II, CIA and SID registers and the CPU registers, as "vic.$d011", "cia1.timerA", "cpu.pc". */
-  values?: Record<string, number>;
+  /** Named single values: VIC-II, CIA and SID registers and the CPU registers, as "vic.$d011", "cia1.timerA", "cpu.pc", and each CPU flag as "cpu.flags.c". */
+  values?: Record<string, number | boolean>;
   /** The memory items of an observation of a run: the address or name, and its bytes as hex. */
   observed?: Record<string, string>;
 }
@@ -27,7 +27,7 @@ export interface ChangedRange {
 export interface StateDiff {
   memory?: { changedBytes: number; ranges: ChangedRange[] };
   colorRam?: { changedBytes: number; ranges: ChangedRange[] };
-  values?: Array<{ name: string; a: number; b: number }>;
+  values?: Array<{ name: string; a: number | boolean; b: number | boolean }>;
   observed?: Array<{ address: string; a: string; b: string }>;
 }
 

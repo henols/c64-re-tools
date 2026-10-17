@@ -30,6 +30,8 @@ node <skill>/scripts/testing.ts checklist tests/moves-left.json --item 'FIRE sta
 
 `testing.ts checklist` gives a Markdown checklist for a human tester in `text`.
 
+Before the emulator starts, `testing.ts test` examines each file that the scenario names: the program and the symbols of each side, and each snapshot file. A missing file gives `not-found`. A program must be a PRG. The script refuses a disk, tape or cartridge image.
+
 ### Runs
 
 A run does steps on one program, with no comparison, and keeps the results as files. Use it for many steps. One run replaces many emulator calls, for example a visit to each room of a game.
@@ -49,6 +51,8 @@ The run file gives where to start (a program, or a snapshot file), the steps, an
 | `{ "observe": "room3", "memory": ["$c100"], "registers": true }` | Record memory, registers, `vicii` or `sprites` in `results.json`. |
 | `{ "trace": "d011", "points": [{ "kind": "write", "start": "$d011" }], "frames": 100 }` | Record each hit of the points for 100 frames in `d011.json`: the instruction, its registers and the raster line and cycle. A point has the `kind` `exec`, `read` or `write`, a `start` and an optional `end`. `maxHits` limits the hits. |
 | `{ "observe": "all3", "memory": "all" }` | Write all 64 KiB of RAM to `all3.bin`, also the RAM under the ROMs and the I/O area. |
+
+Each step that writes a file must have its own file name. The script refuses a run where two steps write the same file, for example `{ "coverage": "x" }` and `{ "observe": "x", "memory": "all" }`, which both write `x.bin`. The script also examines the start program and each snapshot file before the emulator starts.
 
 A memory item can have `"view": "ram"`. Then it reads the RAM under the ROMs and the I/O area, for example code at `$e000` under the KERNAL. The default view `cpu` reads as the CPU sees memory. An item larger than 4096 bytes goes into its own `.bin` file, and `results.json` gives the file name.
 
@@ -118,7 +122,11 @@ node <skill>/scripts/testing.ts diff .c64-re-tools/local/runs/rooms/results.json
 - Two memory files of a run: the changed ranges. For a file of less than 64 KiB, `--address` gives the address of its first byte.
 - Two observations of runs, also of one run: the changed memory items and registers.
 
-`--gap N` joins ranges across N equal bytes. `--out` writes all ranges to a project file.
+`registers` gives each changed register and chip value. `cpu.pc` is a `$` address. Each CPU flag is `cpu.flags.<flag>`, for example `cpu.flags.c`, with `true` or `false`.
+
+The script refuses a snapshot that does not restore in its emulator. An example is a PAL snapshot with `--ntsc`. Give `--ntsc` only for snapshots of an NTSC machine.
+
+`--gap N` joins ranges across N equal bytes. `--out` writes all ranges and all changed registers to a project file. The file uses the names of the result.
 
 ### Calling the script
 
@@ -180,6 +188,8 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 ## Failure and conflicts
 
 - `invalid-input`: the scenario file has an error. The message names the step. Change the step and run the test again.
+- `invalid-input` that names the 2.0 form: a step, a memory item or a recording has a form of version 2.0. An example is `"at"` in place of `"address"`. The message gives the form to write. Change the file. Record a recording of version 2.0 again.
+- `not-found` before the run: a file of the scenario or the run file is missing, for example the rebuild program. Build the rebuild, or change the path.
 - INCONCLUSIVE, "did not reach the checkpoint": one side did not reach the checkpoint in the frame limit. Find the reason with the c64-emulator skill. Do not report a FAIL.
 - INCONCLUSIVE, "has no symbol": one side has no symbol with that name. Add the name to the knowledge or to the rebuild source.
 - INCONCLUSIVE, "no emulator" or "could not run": the host runtime or the emulator failed. Tell the user the message.

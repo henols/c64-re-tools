@@ -5,7 +5,9 @@
 // checklist gives the Markdown list for a human tester.
 
 import { COVERAGE } from "#src/c64.ts";
+import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
+import { readPrg } from "#src/host-client/image.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { C64RunSession, PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
@@ -18,7 +20,7 @@ import { play } from "./lib/play.ts";
 import { readRecordFile, record, RECORDING_FILES } from "./lib/recording.ts";
 import { replay } from "./lib/replay.ts";
 import { runFile } from "./lib/runs.ts";
-import { readScenario, runScenario, type Scenario, type ScenarioResult } from "./lib/scenario.ts";
+import { namesOf, readScenario, runScenario, scenarioNames, type Scenario, type ScenarioResult } from "./lib/scenario.ts";
 
 /** The default port of the --play page: next to the Host Runtime's 6464. */
 const DEFAULT_HTTP_PORT = 6465;
@@ -35,6 +37,8 @@ const ALWAYS = [
 async function test(call: Call): Promise<ScenarioResult> {
   const scenario = readScenario(call.subject(0));
   const out = call.string("out");
+  // Every file of the scenario is checked before the emulator starts.
+  const names = scenarioNames(scenario);
   let client: ViceSessionClient;
   try {
     client = await ViceSessionClient.open({ videoStandard: scenario.videoStandard ?? "pal" });
@@ -43,7 +47,7 @@ async function test(call: Call): Promise<ScenarioResult> {
     return { result: "INCONCLUSIVE", scenario: scenario.name, reason: `no emulator: ${error.message}`, checkpoints: [], differences: [] };
   }
   try {
-    return await runScenario(client, scenario, out === undefined ? {} : { out });
+    return await runScenario(client, scenario, { names, ...(out === undefined ? {} : { out }) });
   } finally {
     await client.close();
   }
@@ -56,6 +60,15 @@ async function recordCommand(call: Call): Promise<Record<string, unknown>> {
   const httpPort = call.count("http-port") ?? DEFAULT_HTTP_PORT;
   const out = call.string("out")!;
   const file = readRecordFile(call.subject(0));
+  // The program and the symbols are checked before the replay core starts.
+  for (const [field, check] of [["program", () => readPrg(file.program)], ["symbols", () => namesOf(file.symbols)]] as const) {
+    try {
+      check();
+    } catch (error) {
+      if (isRefusal(error)) throw new Refusal(error.code, `record file ${call.subject(0)}: ${field}: ${error.message}`);
+      throw error;
+    }
+  }
   const context = localToolContext();
   const core = await C64RunSession.open(context);
   const workspace = Workspace.create(context.supervisor, "c64-re-tools-record-");

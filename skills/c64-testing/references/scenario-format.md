@@ -123,3 +123,9 @@ Example: visit two rooms from the same start.
 ## Checks
 
 The script checks the scenario before it starts the emulator. A step with an unknown key or a wrong value stops the script with `invalid-input`. The message names the step.
+
+The script also examines each file before it starts the emulator: the program and the symbols of each side, and each snapshot file. A missing file stops the script with `not-found`. A program that is not a PRG, for example a disk image, stops the script with `invalid-input`.
+
+A step in the form of version 2.0 stops the script with `invalid-input`. The message names the old field and gives the step to write. For example, the script refuses `{ "runUntil": { "at": "main_loop" }, "timeoutFrames": 300 }` and gives `{"runUntil": {"target": {"kind": "address", "address": "main_loop"}, "timeoutFrames": 300}}`. A memory item with `at` gets the same refusal: write `address`.
+
+In a run, two steps must not write the same file name. The script refuses such a run before it starts. Names that differ only in upper and lower case are the same name.

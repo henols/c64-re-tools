@@ -6,7 +6,8 @@
 import { formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
-import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, refuseOldStep, renamedField, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { readPrg } from "#src/host-client/image.ts";
 import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, WireFailure, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -35,6 +36,40 @@ const TRACE_KEYS = ["trace", "points", "frames", "maxHits"];
 const OBSERVE_KEYS = ["observe", "memory", "registers", "vicii", "sprites"];
 /** A name of a file that a step writes: letters, digits, dots, underscores or hyphens. */
 const NAME = /^[A-Za-z0-9._-]{1,64}$/;
+/** The file of the observations, which every run writes. */
+const RESULTS = "results.json";
+
+/** The file name of an observed memory item that goes into its own file: more than one read gives. */
+const memoryFile = (observe: string, address: string) => `${observe}-${address.replace(/^\$/, "")}.bin`;
+
+/**
+ * The files that each step of a run writes into --out, by step. Two steps
+ * that write one name (also in another case: some file systems do not tell
+ * them apart) are refused: the second would overwrite the first.
+ */
+function checkFileNames(steps: RunStep[], fail: (message: string) => never): void {
+  const writers = new Map<string, string>([[RESULTS, `the run itself (${RESULTS})`]]);
+  steps.forEach((step, index) => {
+    const named: [string, string[]] =
+      "save" in step
+        ? ["save", [`${step.save}.vsf`]]
+        : "screen" in step
+          ? ["screen", [`${step.screen}.png`]]
+          : "coverage" in step
+            ? ["coverage", [`${step.coverage}.bin`]]
+            : "trace" in step
+              ? ["trace", [`${step.trace}.json`]]
+              : "observe" in step
+                ? ["observe", step.memory === "all" ? [`${step.observe}.bin`] : (step.memory ?? []).flatMap((item) => (typeof item !== "string" && (item.size ?? 1) > MAX_MEMORY_READ ? [memoryFile(step.observe, item.address)] : []))]
+                : ["", []];
+    const [kind, files] = named;
+    for (const file of files) {
+      const other = writers.get(file.toLowerCase());
+      if (other !== undefined) fail(`step ${index + 1} (${kind}) writes ${file}, and ${other} writes that file too. Give one of them another name`);
+      writers.set(file.toLowerCase(), `step ${index + 1} (${kind})`);
+    }
+  });
+}
 
 function readRun(path: string): Run {
   let value: unknown;
@@ -60,8 +95,10 @@ function readRun(path: string): Run {
     const at = `step ${index + 1}`;
     if (!isObject(step)) return fail(`${at} must be an object`);
     const kinds = "observe" in step ? ["observe"] : "trace" in step ? ["trace"] : Object.keys(step).filter((key) => (ACTION_STEP_KINDS as readonly string[]).includes(key) || (OWN_KINDS as readonly string[]).includes(key));
-    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...ACTION_STEP_KINDS, ...OWN_KINDS].join(", ")}`);
+    if (kinds.length > 1) return fail(`${at} has ${kinds.length} step kinds: ${kinds.join(", ")}. Give each one its own step`);
+    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...VICE_STEP_KINDS, ...OWN_KINDS].join(", ")}`);
     const kind = kinds[0]!;
+    refuseOldStep(kind, step, at, fail);
     const allowed = kind === "observe" ? OBSERVE_KEYS : kind === "trace" ? TRACE_KEYS : [kind];
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
     if ((ACTION_STEP_KINDS as readonly string[]).includes(kind)) {
@@ -81,7 +118,8 @@ function readRun(path: string): Run {
       const points = step.points;
       if (!Array.isArray(points) || points.length === 0 || points.length > MAX_TRACE_POINTS) return fail(`${at}: points is a list of 1 to ${MAX_TRACE_POINTS} objects with kind and start`);
       for (const point of points as unknown[]) {
-        if (!isObject(point) || Object.keys(point).some((key) => !["kind", "start", "end"].includes(key))) return fail(`${at}: a point has kind, start and end, and nothing else`);
+        if (!isObject(point)) return fail(`${at}: a point is an object with kind, start and end`);
+        for (const key of Object.keys(point)) if (!["kind", "start", "end"].includes(key)) fail(`${at}: a point has the field ${key}. ${renamedField(key, ["kind", "start", "end"]) ?? "A point has kind, start and end, and nothing else"}`);
         if (!(TRACE_KINDS as readonly unknown[]).includes(point.kind)) fail(`${at}: a point kind is exec, read or write`);
         if (typeof point.start !== "string" || (point.end !== undefined && typeof point.end !== "string")) fail(`${at}: a point needs start, and end when it is a range, as names or $ addresses`);
       }
@@ -92,6 +130,16 @@ function readRun(path: string): Run {
     if (kind !== "observe") return;
     if (labels.has(name as string)) fail(`${at} needs a new observation name`);
     labels.add(name as string);
+    const itemFields = ["address", "size", "view"];
+    if (Array.isArray(step.memory)) {
+      for (const item of step.memory as unknown[]) {
+        if (!isObject(item)) continue;
+        for (const key of Object.keys(item)) {
+          const renamed = renamedField(key, itemFields);
+          if (renamed !== undefined && !itemFields.includes(key)) fail(`${at}: a memory object has the field ${key}. ${renamed}`);
+        }
+      }
+    }
     const memoryItem = (item: unknown) =>
       typeof item === "string" ||
       (isObject(item) &&
@@ -106,7 +154,18 @@ function readRun(path: string): Run {
     if (step.vicii !== undefined && typeof step.vicii !== "boolean") fail(`${at}: vicii must be true or false`);
     if (step.sprites !== undefined && (!Array.isArray(step.sprites) || !step.sprites.every((sprite) => isInteger(sprite, 0, 7)))) fail(`${at}: sprites is a list of numbers from 0 to 7`);
   });
+  checkFileNames(value.steps as RunStep[], fail);
   return value as unknown as Run;
+}
+
+/** The remedy for a start program that is no PRG. */
+const PROGRAM_REMEDY = "A run starts a PRG. Get the PRG out of the disk, tape or cartridge with disk.ts read (or disk.ts crt) of the c64-disk skill";
+
+/** Checks each file that the run reads before the emulator starts: the start program or snapshot, and each snapshot step. */
+function checkRunFiles(run: Run): void {
+  if ("program" in run.start) readPrg(run.start.program, PROGRAM_REMEDY);
+  else readProjectFile(run.start.snapshot);
+  for (const step of run.steps) if ("snapshot" in step) readProjectFile(step.snapshot);
 }
 
 /** A trace hit with $ addresses, as a person reads it. */
@@ -117,6 +176,7 @@ function showHit(hit: TraceHit) {
 /** Runs the run file and writes its files into `out`. failed: a step did not run. */
 export async function runFile(path: string, out: string): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const run = readRun(path);
+  checkRunFiles(run);
   const symbols = namesOf(run.symbols ?? "none");
   const at = (location: string): number => {
     if (location.startsWith("$")) return parseC64Address(location);
@@ -185,7 +245,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
             // More than one read gives goes to a file: results.json stays small.
             if (size <= MAX_MEMORY_READ) memory[spec.address] = bytes.toString("hex");
             else {
-              const file = `${step.observe}-${spec.address.replace(/^\$/, "")}.bin`;
+              const file = memoryFile(step.observe, spec.address);
               write(file, bytes);
               memory[spec.address] = { file };
             }

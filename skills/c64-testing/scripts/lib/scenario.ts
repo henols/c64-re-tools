@@ -7,8 +7,9 @@ import { isRefusal, Refusal } from "#src/errors.ts";
 import { c64AddressOf, formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
-import { ACTION_STEP_KINDS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, checkLocation, isInteger, isObject, refuseOldStep, renamedField, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
 import { applyEntryState, parseEntryState } from "#src/host-client/entry-state.ts";
+import { readPrg } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
@@ -90,6 +91,8 @@ export interface ScenarioResult {
 }
 
 const STEP_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", ...ACTION_STEP_KINDS, "observe"];
+/** The step kinds that a scenario runs: press is for the replay core only. */
+const SHOWN_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", ...VICE_STEP_KINDS, "observe"];
 
 /** The keys each kind of step can have. */
 const STEP_KEYS: Record<string, readonly string[]> = {
@@ -128,8 +131,10 @@ export function readScenario(path: string): Scenario {
     if (!isObject(step)) return fail(`${at} must be an object`);
     // An observe step names what it observes with "memory" and "registers" too.
     const kinds = "observe" in step ? ["observe"] : Object.keys(step).filter((key) => STEP_KINDS.includes(key));
-    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${STEP_KINDS.join(", ")}`);
+    if (kinds.length > 1) return fail(`${at} has ${kinds.length} step kinds: ${kinds.join(", ")}. Give each one its own step`);
+    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${SHOWN_KINDS.join(", ")}`);
     const kind = kinds[0]!;
+    refuseOldStep(kind, step, at, fail);
     const allowed = [...(STEP_KEYS[kind] ?? [kind]), ...(kind === "observe" ? [] : ["side"])];
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
     if (step.side !== undefined && !(SIDES as unknown[]).includes(step.side)) fail(`${at}: side must be original or rebuild`);
@@ -180,12 +185,15 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
         checkLocation(item, `${at}: memory`, fail);
         continue;
       }
-      if (!isObject(item) || Object.keys(item).some((key) => !["address", "size", "view", "tolerance", "exclude"].includes(key))) return fail(`${at}: a memory object has address, size, view, tolerance and exclude, and nothing else`);
+      const itemFields = ["address", "size", "view", "tolerance", "exclude"];
+      if (!isObject(item)) return fail(`${at}: memory must be a list of names, $ addresses or objects with address`);
+      for (const key of Object.keys(item)) if (!itemFields.includes(key)) fail(`${at}: a memory object has the field ${key}. ${renamedField(key, itemFields) ?? `It has ${itemFields.join(", ")}, and nothing else`}`);
       if (item.view !== undefined && item.view !== "cpu" && item.view !== "ram") fail(`${at}: memory.view must be cpu or ram`);
       if (item.exclude !== undefined) {
         if (!Array.isArray(item.exclude) || item.exclude.length === 0) fail(`${at}: memory.exclude must be a list of objects with address and reason`);
         for (const excluded of item.exclude as unknown[]) {
-          if (!isObject(excluded) || Object.keys(excluded).some((key) => key !== "address" && key !== "reason")) return fail(`${at}: an exclude has address and reason, and nothing else`);
+          if (!isObject(excluded)) return fail(`${at}: memory.exclude must be a list of objects with address and reason`);
+          for (const key of Object.keys(excluded)) if (key !== "address" && key !== "reason") fail(`${at}: an exclude has the field ${key}. ${renamedField(key, ["address", "reason"]) ?? "It has address and reason, and nothing else"}`);
           checkLocation(excluded.address, `${at}: memory.exclude.address`, fail);
           if (typeof excluded.reason !== "string" || excluded.reason.trim() === "") fail(`${at}: an exclude needs a reason: why this byte may differ`);
         }
@@ -273,6 +281,33 @@ export function namesOf(source: string, kinds: "code" | "all" = "all"): Map<stri
     if (at === undefined) throw new Refusal("invalid-input", `the symbol ${name} in ${source} has no $ address`);
     names.set(name, at);
   }
+  return names;
+}
+
+/** The remedy for a scenario program that is no PRG. */
+const PROGRAM_REMEDY = "A scenario program is a PRG. Get the PRG out of the disk, tape or cartridge with disk.ts read (or disk.ts crt) of the c64-disk skill";
+
+/**
+ * Checks each file that the scenario names before an emulator starts: the
+ * program and the symbols of each side, and each snapshot file. A missing
+ * file is not-found; a program that is no PRG and a symbols file with no
+ * names are invalid-input. Gives the names of each side.
+ */
+export function scenarioNames(scenario: Scenario): Map<Side, Map<string, number>> {
+  const names = new Map<Side, Map<string, number>>();
+  const named = <T>(field: string, read: () => T): T => {
+    try {
+      return read();
+    } catch (error) {
+      if (isRefusal(error)) throw new Refusal(error.code, `${field}: ${error.message}`);
+      throw error;
+    }
+  };
+  for (const side of SIDES) {
+    named(`${side}.program`, () => readPrg(scenario[side].program, PROGRAM_REMEDY));
+    names.set(side, named(`${side}.symbols`, () => namesOf(scenario[side].symbols)));
+  }
+  for (const step of scenario.steps) if ("snapshot" in step) readProjectFile(step.snapshot);
   return names;
 }
 
@@ -466,12 +501,14 @@ function writeFailFiles(out: string, original: Map<string, Observation>, rebuild
 }
 
 /** Runs the scenario on the original, then on the rebuild, in one VICE session. With out, a FAIL leaves files there. */
-export async function runScenario(client: ViceSessionClient, scenario: Scenario, options: { out?: string } = {}): Promise<ScenarioResult> {
+export async function runScenario(client: ViceSessionClient, scenario: Scenario, options: { out?: string; names?: Map<Side, Map<string, number>> } = {}): Promise<ScenarioResult> {
   const checkpoints = scenario.steps.flatMap((step) => ("observe" in step ? [step.observe] : []));
   const observed = new Map<Side, Map<string, Observation>>();
+  // The names of both sides before either side runs: a bad symbols file is an error, not a result.
+  const names = options.names ?? new Map(SIDES.map((side) => [side, namesOf(scenario[side].symbols)]));
   for (const side of SIDES) {
     try {
-      observed.set(side, await runSide(client, scenario, side, namesOf(scenario[side].symbols), options.out !== undefined));
+      observed.set(side, await runSide(client, scenario, side, names.get(side)!, options.out !== undefined));
     } catch (error) {
       if (error instanceof Inconclusive) return { result: "INCONCLUSIVE", scenario: scenario.name, reason: error.message, checkpoints, differences: [] };
       if (error instanceof WireFailure) {

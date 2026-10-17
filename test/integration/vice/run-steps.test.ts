@@ -122,6 +122,16 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
   assert.equal(status, 0, stdout);
   const diff = JSON.parse(stdout) as { memory: { listed: Array<{ start: string; end: string; a?: string; b?: string }> } };
   assert.ok(diff.memory.listed.some((range) => range.start === "$e000" && range.end === "$e003" && range.b === "01020304"), stdout);
+
+  // PAL snapshots in an NTSC machine do not restore: refused, never a diff of the wrong state.
+  const ntsc = spawn(process.execPath, [...process.execArgv, differ, "diff", "runs/under/a.vsf", "runs/under/b.vsf", "--ntsc"], { cwd: project, env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` }, stdio: ["ignore", "pipe", "inherit"] });
+  let refused = "";
+  ntsc.stdout.on("data", (chunk) => (refused += chunk));
+  const [ntscStatus] = (await once(ntsc, "exit")) as [number | null];
+  assert.equal(ntscStatus, 2, refused);
+  const { error } = JSON.parse(refused) as { error: { code: string; message: string } };
+  assert.equal(error.code, "invalid-input", refused);
+  assert.match(error.message, /^runs\/under\/a\.vsf did not restore: the RAM after the restore is not the RAM of the file\..*Leave out --ntsc for a PAL snapshot/);
 });
 
 test("a trace step writes each write to the counter with the instruction and raster line 128", { skip: liveSkip, timeout: 300_000 }, async () => {

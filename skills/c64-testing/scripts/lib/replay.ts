@@ -6,6 +6,8 @@
 
 import { createHash } from "node:crypto";
 
+import { isRefusal, Refusal } from "#src/errors.ts";
+import { readPrg } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { C64RunSession } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
@@ -47,6 +49,15 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     compared: 0,
     ...fields,
   });
+  // The files of the rebuild are checked before the replay core starts.
+  for (const [option, check] of [["--rebuild", () => values.rebuild !== undefined && readPrg(values.rebuild)], ["--symbols", () => values.symbols !== undefined && namesOf(values.symbols)]] as const) {
+    try {
+      check();
+    } catch (error) {
+      if (isRefusal(error)) throw new Refusal(error.code, `${option}: ${error.message}`);
+      throw error;
+    }
+  }
   const sha256 = createHash("sha256").update(readProjectFile(recording.program).bytes).digest("hex");
   if (sha256 !== recording.sha256) return result("INCONCLUSIVE", "original", { reason: `${recording.program} is not the program of the recording (its SHA-256 changed); record the session again` });
 
