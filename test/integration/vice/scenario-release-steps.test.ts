@@ -57,7 +57,7 @@ test("one-side steps, a raster sync, normalize and an exclude make two different
   writeFileSync(join(project, "counter.prg"), ORIGINAL.prg);
   const page = (fill: number) => Buffer.alloc(256, fill).toString("hex");
   // The entry state that normalize writes is in the knowledge, with its program.
-  importImage(project, new Uint8Array(0x10000), { segments: [{ start: 0xc000, end: 0xc000 }], entry: 0xc000, state: { cpuPort: { $00: 0x2f, $01: 0x37 }, pages: { $0000: page(0x11), $0100: page(0x22), $0200: page(0x33), $0300: page(0x44) } } });
+  importImage(project, new Uint8Array(0x10000), { segments: [{ start: 0xc000, end: 0xc000 }], entry: 0xc000, state: { registers: { pc: "$c000", a: 0, x: 0, y: 0, sp: 0xf6, flags: { i: true } }, cpuPort: { $00: 0x2f, $01: 0x37 }, pages: { $0000: page(0x11), $0100: page(0x22), $0200: page(0x33), $0300: page(0x44) } } });
   const subjects = { original: { program: "gated.prg", symbols: "none" }, rebuild: { program: "counter.prg", symbols: "none" } };
   // The exclude: after normalize the rebuild writes $0002 again, so only that byte differs.
   const diverge = { write: { address: "$0002", data: "99" }, side: "rebuild" };
