@@ -66,7 +66,7 @@ test("data that stayed and code that moved both get a shift, and the present ali
   writeFileSync(join(project, "stay.prg"), prg([data, code]));
   writeFileSync(join(project, "grow.prg"), prg([data, new Uint8Array(256), code]));
   const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "stay.prg", "grow.prg"], { cwd: project, encoding: "utf8" });
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "compare", "stay.prg", "grow.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const result = JSON.parse(run.stdout) as { identicalShare: number; suggestedShifts: Array<{ release: number; shift: number; current?: true }> };
   assert.ok(result.identicalShare < 0.5);
@@ -92,23 +92,23 @@ test("the script compares PRG files and applies a shift", () => {
   writeFileSync(join(project, "release.prg"), prg(0x0801, base));
   writeFileSync(join(project, "moved.prg"), prg(0x0901, base));
   const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
-  const loose = spawnSync(process.execPath, [...process.execArgv, script, "release.prg", "moved.prg"], { cwd: project, encoding: "utf8" });
+  const loose = spawnSync(process.execPath, [...process.execArgv, script, "compare", "release.prg", "moved.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(loose.status, 0, loose.stdout + loose.stderr);
   const unaligned = JSON.parse(loose.stdout) as { identicalShare: number; suggestedShifts: Array<{ release: number; shift: number }> };
   assert.ok(unaligned.identicalShare < 0.5);
   assert.deepEqual(unaligned.suggestedShifts.map((item) => [item.release, item.shift]), [[2, -256]]);
-  const aligned = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "release.prg", "moved.prg", "--shift", "2:-256"], { cwd: project, encoding: "utf8" }).stdout) as Record<string, unknown>;
+  const aligned = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "compare", "release.prg", "moved.prg", "--shift", "2:-256"], { cwd: project, encoding: "utf8" }).stdout) as Record<string, unknown>;
   assert.equal(aligned.differingBytes, 0);
   assert.equal(aligned.identicalShare, 1);
   assert.deepEqual((aligned.releases as Array<{ shift: number }>).map((item) => item.shift), [0, -256]);
-  const bad = spawnSync(process.execPath, [...process.execArgv, script, "release.prg"], { cwd: project, encoding: "utf8" });
+  const bad = spawnSync(process.execPath, [...process.execArgv, script, "compare", "release.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(bad.status, 2);
 });
 
 test("a missing release is not-found", () => {
   const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
   writeFileSync(join(project, "one.prg"), Buffer.from([0x01, 0x08, 0xea]));
-  const missing = spawnSync(process.execPath, [...process.execArgv, script, "one.prg", "missing.prg"], { cwd: project, encoding: "utf8" });
+  const missing = spawnSync(process.execPath, [...process.execArgv, script, "compare", "one.prg", "missing.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(missing.status, 2, missing.stdout + missing.stderr);
   assert.equal((JSON.parse(missing.stdout) as { error: { code: string } }).error.code, "not-found");
 });
@@ -122,12 +122,12 @@ test("an image release counts only inside its segments, and a common range never
   writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ image: "image.bin", segments: [{ start: "$0801", end: "$0900" }, { start: "$0a01", end: "$0b00" }] }));
   writeFileSync(join(project, "whole.prg"), Buffer.concat([Buffer.from([0x01, 0x08]), crackA]));
   const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "unpacked/image.json", "whole.prg"], { cwd: project, encoding: "utf8" });
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "compare", "unpacked/image.json", "whole.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const result = JSON.parse(run.stdout) as { common: unknown; differences: Array<{ start: string; end: string }>; identicalBytes: number };
   assert.deepEqual(result.common, [{ start: "$0801", end: "$0900" }, { start: "$0a01", end: "$0b00" }]);
   assert.deepEqual(result.differences.map((difference) => [difference.start, difference.end]), [["$0900", "$0900"]], "the patch at $0900-$0902 counts only where the image has bytes");
-  const steps = spawnSync(process.execPath, [...process.execArgv, script, "unpacked/image.json", "whole.prg", "--steps", "s.json"], { cwd: project, encoding: "utf8" });
+  const steps = spawnSync(process.execPath, [...process.execArgv, script, "compare", "unpacked/image.json", "whole.prg", "--steps", "s.json"], { cwd: project, encoding: "utf8" });
   assert.equal(steps.status, 2, "--steps needs --run");
 });
 
@@ -219,7 +219,7 @@ test("the separate command reads the program with its stages and the coverage fr
   const written = JSON.parse(readFileSync(join(root, "separate.json"), "utf8")) as { ranges: unknown[]; outside: { generated: unknown[] } };
   assert.equal(written.ranges.length, 2);
   assert.equal(written.outside.generated.length, 3);
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "--run", "5"], { cwd: root, encoding: "utf8" }).status, 2);
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "--frames", "5"], { cwd: root, encoding: "utf8" }).status, 2);
   assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "image.json"], { cwd: root, encoding: "utf8" }).status, 2, "separate takes no release");
   const empty = spawnSync(process.execPath, [...process.execArgv, script, "separate"], { cwd: fresh(), encoding: "utf8" });
   assert.equal(empty.status, 2, "no program in the knowledge");
@@ -242,7 +242,7 @@ test("separate says when the program has no stage log, and a run of releases wit
   writeFileSync(join(project, "same-a.prg"), prg);
   writeFileSync(join(project, "same-b.prg"), prg);
   // No difference: no emulator starts, so no host is needed.
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "same-a.prg", "same-b.prg", "--run", "10"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "compare", "same-a.prg", "same-b.prg", "--frames", "10"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const compared = JSON.parse(run.stdout) as { run: { releases: object; skipped?: string } };
   assert.deepEqual(compared.run.releases, {});

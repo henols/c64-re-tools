@@ -29,9 +29,9 @@ This skill does not change project knowledge.
 The script compares the files locally. Only `--run` uses the host runtime: each release runs in its own emulator.
 
 ```
-node <skill>/scripts/provenance.ts releases/a.prg releases/b.prg releases/c.prg
-node <skill>/scripts/provenance.ts releases/a.prg releases/b.prg --shift 2:-256 --from '$0900' --to '$09ff'
-node <skill>/scripts/provenance.ts releases/a.prg .c64-re-tools/local/b/image.json --run 600 --steps .c64-re-tools/local/start-game.json
+node <skill>/scripts/provenance.ts compare releases/a.prg releases/b.prg releases/c.prg
+node <skill>/scripts/provenance.ts compare releases/a.prg releases/b.prg --shift 2:-256 --range '$0900-$09ff'
+node <skill>/scripts/provenance.ts compare knowledge .c64-re-tools/local/b/image.json --frames 600 --steps .c64-re-tools/local/start-game.json
 node <skill>/scripts/provenance.ts separate --out .c64-re-tools/local/separate.json
 node <skill>/scripts/provenance.ts leftovers --out .c64-re-tools/local/leftovers.json
 ```
@@ -139,9 +139,9 @@ A library is a folder of routine files. Each file holds one routine: its bytes a
 `--library` is relative to the working directory, as `--project`. All other paths are relative to the project folder.
 
 ```
-node <skill>/scripts/provenance.ts routine --module '$1000' --library library --project game-a
-node <skill>/scripts/provenance.ts routine --start '$1000' --end '$1026' --name play --library library --project game-a
-node <skill>/scripts/provenance.ts match --library library --out .c64-re-tools/local/match.json --project game-b
+node <skill>/scripts/provenance.ts routine '$1000' --library ../library --project game-a
+node <skill>/scripts/provenance.ts routine '$1000-$1026' --name play --library ../library --project game-a
+node <skill>/scripts/provenance.ts match --library ../library --out .c64-re-tools/local/match.json --project game-b
 ```
 
 To save a routine:

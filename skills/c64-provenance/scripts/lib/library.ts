@@ -23,17 +23,6 @@ const ROUTINE_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 /** Bytes on each line of a routine file, so that git shows a small diff. */
 const BYTES_PER_LINE = 16;
 
-/** A refusal of the library rules, with a stable code. */
-export class LibraryError extends Error {
-  override name = "LibraryError";
-  readonly code: "invalid-input" | "not-found" | "conflict";
-
-  constructor(code: "invalid-input" | "not-found" | "conflict", message: string) {
-    super(message);
-    this.code = code;
-  }
-}
-
 /**
  * Bytes that move with the routine: a word, or the low or high byte, of the
  * address at `value` (an offset from the routine start; -1 for the RTS entry
@@ -111,9 +100,9 @@ export interface LeftOut {
 export function routineFrom(source: RoutineSource): { routine: Routine; leftOut: LeftOut[] } {
   const { start, end } = source;
   const where = (address: number) => formatC64Address(address);
-  if (!ROUTINE_NAME.test(source.name)) throw new LibraryError("invalid-input", `A routine name is a letter or underscore, then letters, digits or underscores (at most 64), not ${source.name}.`);
+  if (!ROUTINE_NAME.test(source.name)) throw new Refusal("invalid-input", `A routine name is a letter or underscore, then letters, digits or underscores (at most 64), not ${source.name}.`);
   const length = end - start + 1;
-  if (length < MIN_ROUTINE) throw new LibraryError("invalid-input", `${where(start)}-${where(end)} has ${length} bytes. A routine has at least ${MIN_ROUTINE}, because shorter byte sequences occur by chance.`);
+  if (length < MIN_ROUTINE) throw new Refusal("invalid-input", `${where(start)}-${where(end)} has ${length} bytes. A routine has at least ${MIN_ROUTINE}, because shorter byte sequences occur by chance.`);
   const inside = (address: number) => address >= start && address <= end;
   const bytes = Uint8Array.from({ length }, (_, index) => source.byteAt(start + index));
   const leftOut: LeftOut[] = [];
@@ -126,11 +115,11 @@ export function routineFrom(source: RoutineSource): { routine: Routine; leftOut:
   for (const region of codeRegions) {
     for (let at = Math.max(region.start, next); at <= Math.min(region.end, end); at = next) {
       next = at + instructionLength(bytes[at - start]!);
-      if (next - 1 > end) throw new LibraryError("invalid-input", `The instruction at ${where(at)} runs past the end ${where(end)} of the routine. Give an end after it.`);
+      if (next - 1 > end) throw new Refusal("invalid-input", `The instruction at ${where(at)} runs past the end ${where(end)} of the routine. Give an end after it.`);
       instructions.push(at - start);
     }
   }
-  if (instructions.length === 0) throw new LibraryError("invalid-input", `The knowledge has no code region in ${where(start)}-${where(end)}. Run c64-static-analysis first, or classify the code.`);
+  if (instructions.length === 0) throw new Refusal("invalid-input", `The knowledge has no code region in ${where(start)}-${where(end)}. Run c64-static-analysis first, or classify the code.`);
 
   // The operands: an address inside the routine moves with it; one outside may differ.
   const relocations = new Map<number, Relocation>();
@@ -247,7 +236,7 @@ export function routineText(routine: Routine): string {
 /** Reads the text of a routine file. Throws LibraryError for a file that is no routine. */
 export function parseRoutine(text: string, file: string): Routine {
   const fail = (what: string): never => {
-    throw new LibraryError("invalid-input", `${file} is not a routine file of the library: ${what}.`);
+    throw new Refusal("invalid-input", `${file} is not a routine file of the library: ${what}.`);
   };
   let value: Record<string, unknown>;
   try {
@@ -306,15 +295,15 @@ export function parseRoutine(text: string, file: string): Routine {
  * `create`, a missing folder is made.
  */
 export function libraryFolder(folder: string, options: { create: boolean; cwd?: string }): string {
-  if (folder.length === 0) throw new LibraryError("invalid-input", "The library folder must not be empty.");
+  if (folder.length === 0) throw new Refusal("invalid-input", "The library folder must not be empty.");
   const path = resolve(options.cwd ?? process.cwd(), folder);
   const stat = statSync(path, { throwIfNoEntry: false });
   if (stat === undefined) {
-    if (!options.create) throw new LibraryError("not-found", `There is no library folder ${folder}. Save a routine to it first with routine.`);
+    if (!options.create) throw new Refusal("not-found", `There is no library folder ${folder}. Save a routine to it first with routine.`);
     mkdirSync(path, { recursive: true });
-  } else if (!stat.isDirectory()) throw new LibraryError("invalid-input", `${folder} is not a folder.`);
+  } else if (!stat.isDirectory()) throw new Refusal("invalid-input", `${folder} is not a folder.`);
   if (statSync(join(path, PROJECT_DIRECTORY), { throwIfNoEntry: false }) !== undefined) {
-    throw new LibraryError("invalid-input", `${folder} is a project folder. A library is a plain folder beside the projects, for example library/ at the workspace root.`);
+    throw new Refusal("invalid-input", `${folder} is a project folder. A library is a plain folder beside the projects, for example library/ at the workspace root.`);
   }
   return path;
 }
@@ -332,7 +321,7 @@ export function readLibrary(folder: string): Routine[] {
 export function saveRoutine(folder: string, routine: Routine, replace: boolean): string {
   const file = join(folder, `${routine.name}.json`);
   if (!replace && statSync(file, { throwIfNoEntry: false }) !== undefined) {
-    throw new LibraryError("conflict", `The library already has the routine ${routine.name}. Give another --name, or give --replace to save over it.`);
+    throw new Refusal("conflict", `The library already has the routine ${routine.name}. Give another --name, or give --replace to save over it.`);
   }
   const temporary = `${file}.${process.pid}.tmp`;
   writeFileSync(temporary, routineText(routine));

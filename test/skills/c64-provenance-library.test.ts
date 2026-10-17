@@ -9,7 +9,8 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "../../src/knowledge/read.ts";
-import { findRoutine, libraryFolder, LibraryError, parseRoutine, readLibrary, routineFrom, routineText, saveRoutine, suggest, type ProgramKnowledge, type RoutineSource } from "../../skills/c64-provenance/scripts/lib/library.ts";
+import { Refusal } from "../../src/errors.ts";
+import { findRoutine, libraryFolder, parseRoutine, readLibrary, routineFrom, routineText, saveRoutine, suggest, type ProgramKnowledge, type RoutineSource } from "../../skills/c64-provenance/scripts/lib/library.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-library-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -117,7 +118,7 @@ test("the routine file has its keys in a fixed order and reads back the same", (
   assert.deepEqual(parseRoutine(text, "play.json"), routine);
   assert.equal(routineText(parseRoutine(text, "play.json")), text);
   assert.throws(() => parseRoutine(text, "other.json"), /its name play is not its file name/);
-  assert.throws(() => parseRoutine(text.replace('"length": 39', '"length": 40'), "play.json"), LibraryError);
+  assert.throws(() => parseRoutine(text.replace('"length": 39', '"length": 40'), "play.json"), Refusal);
 });
 
 test("a routine refuses a short range, a range without code, an instruction past its end, and a bad name", () => {

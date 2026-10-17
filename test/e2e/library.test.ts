@@ -77,21 +77,21 @@ test("a routine saved from program A is found in program B at another address, a
   ok("c64-knowledge", "knowledge.ts", ["apply", "named.json", "--reason", "the sound driver", "--project", "game-a"]);
 
   // The routine goes to the library beside the projects; --library is relative to the working directory.
-  const saved = ok("c64-provenance", "provenance.ts", ["routine", "--module", "$1000", "--library", "library", "--project", "game-a"]);
-  assert.deepEqual({ routine: saved.routine, file: saved.file, start: saved.start, end: saved.end, length: saved.length }, { routine: "play", file: join("library", "play.json"), start: "$1000", end: "$1026", length: 39 });
+  const saved = ok("c64-provenance", "provenance.ts", ["routine", "$1000", "--library", "../library", "--project", "game-a"]);
+  assert.deepEqual({ routine: saved.routine, file: saved.file, start: saved.start, end: saved.end, length: saved.length }, { routine: "play", file: "../library/play.json", start: "$1000", end: "$1026", length: 39 });
   assert.deepEqual(saved.counts, { symbols: 3, regions: 3, comments: 1, references: 0, operands: 2 });
   assert.match(readFileSync(join(workspace, "library", "play.json"), "utf8"), /"title": "The sound driver"/);
-  assert.equal(script("c64-provenance", "provenance.ts", ["routine", "--module", "$1000", "--library", "library", "--project", "game-a"]).json.error.code, "conflict");
+  assert.equal(script("c64-provenance", "provenance.ts", ["routine", "$1000", "--library", "../library", "--project", "game-a"]).json.error.code, "conflict");
   // The library is no project, and nothing is written at the workspace root.
   assert.deepEqual(readdirSync(join(workspace, "library")), ["play.json"]);
   assert.ok(!existsSync(join(workspace, ".c64-re-tools")));
-  assert.equal(script("c64-provenance", "provenance.ts", ["match", "--library", "game-a", "--project", "game-b"]).json.error.code, "invalid-input");
+  assert.equal(script("c64-provenance", "provenance.ts", ["match", "--library", "../game-a", "--project", "game-b"]).json.error.code, "invalid-input");
 
   // Program B: match finds the routine $2000 bytes higher, with the other SID register listed.
   ok("c64-knowledge", "knowledge.ts", ["image", "b.prg", "--project", "game-b"]);
-  const matched = ok("c64-provenance", "provenance.ts", ["match", "--library", "library", "--out", ".c64-re-tools/local/match.json", "--project", "game-b"]);
+  const matched = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--out", ".c64-re-tools/local/match.json", "--project", "game-b"]);
   assert.deepEqual(matched.matches, { count: 1, listed: [{ routine: "play", start: "$3000", end: "$3026", shift: 0x2000, differing: [{ address: "$3005", library: "$d400", program: "$d407" }] }] });
-  assert.deepEqual(matched.batch, { out: ".c64-re-tools/local/match.json", writes: 9, known: 0, leftOut: { count: 0, listed: [] } });
+  assert.deepEqual({ ...matched.batch, bytes: undefined, sha256: undefined }, { bytes: undefined, sha256: undefined, out: ".c64-re-tools/local/match.json", writes: 9, known: 0, leftOut: { count: 0, listed: [] } });
   assert.equal(matched.apply, 'knowledge.ts apply .c64-re-tools/local/match.json --reason "names of library routines"');
 
   // The agent applies the batch as the LLM.
@@ -100,8 +100,8 @@ test("a routine saved from program A is found in program B at another address, a
   assert.equal(at.symbol.name, "set_pointer");
   assert.equal(at.symbol.origin, "llm");
   // A second match finds that B already has every name.
-  const again = ok("c64-provenance", "provenance.ts", ["match", "--library", "library", "--out", ".c64-re-tools/local/match.json", "--project", "game-b"]);
-  assert.deepEqual(again.batch, { out: ".c64-re-tools/local/match.json", writes: 0, known: 9, leftOut: { count: 0, listed: [] } });
+  const again = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--out", ".c64-re-tools/local/match.json", "--project", "game-b"]);
+  assert.deepEqual({ ...again.batch, bytes: undefined, sha256: undefined }, { bytes: undefined, sha256: undefined, out: ".c64-re-tools/local/match.json", writes: 0, known: 9, leftOut: { count: 0, listed: [] } });
 
   if (generateSkip !== false) {
     t.diagnostic(generateSkip);

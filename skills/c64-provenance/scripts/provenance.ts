@@ -9,15 +9,14 @@
 // program (D71).
 
 import { basename, relative } from "node:path";
-import { parseArgs } from "node:util";
 
-import { type AddressRange, c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { type AddressRange, c64AddressOf, formatC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
 import { readImage } from "#src/host-client/image.ts";
 import { readActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
-import { writeProjectFile } from "#src/host-client/transfer.ts";
+import { writeReported } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { programCoverage, requireProgram } from "#src/knowledge/program.ts";
@@ -42,64 +41,13 @@ import {
 import { CODE_REGION_TYPES, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
-import { runBody, UsageError } from "#src/script.ts";
+import { knowledgeNames } from "#src/knowledge/names.ts";
+import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
 import { compareReleases, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
-import { findRoutine, libraryFolder, LibraryError, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
+import { findRoutine, libraryFolder, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
 import { watchRelease, type Start } from "./lib/runtime.ts";
 import { findLeftovers } from "./lib/leftovers.ts";
 import { separate } from "./lib/separate.ts";
-
-const USAGE = `provenance.ts <release> <release> [<release> ...] [options]
-provenance.ts separate [--out <file>] [--max-listed <n>]
-provenance.ts leftovers [--out <file>] [--min-text <n>] [--max-listed <n>]
-provenance.ts routine --library <folder> (--module <address> | --start <address> --end <address>)
-                      [--name <name>] [--title <text>] [--replace]
-provenance.ts match --library <folder> [--out <file>] [--max-listed <n>]
-
-  --shift <n>:<bytes>   move release n (1 = the first) by a number of bytes, for example 2:-256
-  --from <address>      compare from this address
-  --to <address>        compare up to this address
-  --run <frames>        run each release in its own emulator for this many frames, and
-                        give each listed difference its first access and whether it changed
-  --steps <file>        with --run: action steps (JSON) to run before the frames
-
-separate gives evidence from the program in the knowledge: the unpack stage
-that wrote each range, its access in the coverage of the knowledge, whether call
-and jump references in knowledge reach each code region from the entry, and what
-the program reads or executes outside its segments. --out writes all ranges to a file;
-the result lists at most --max-listed of each list (default 50) and its count.
-
-leftovers lists what the program in the knowledge holds besides its working
-code: text in PETSCII, screen codes, ASCII or with bit 7 set (Apple II) and
-assembler source (at least --min-text characters, default 8), BASIC lines away
-from the BASIC start, fills, untouched bytes outside code, exact copies of
-earlier bytes, and code regions that no call or jump reaches and no run executed. Each finding has the stages and the accesses of
-its bytes. --out writes all findings to a file.
-
-routine saves a routine of the program in the knowledge to a library: a plain folder of routine
-files, beside the projects (--library, relative to the working directory, as
---project). It takes a module of the knowledge, or --start and --end. Its
-code regions give the instructions; the user and LLM names, regions, comments,
-references and operand expressions go into the file at offsets. --name defaults
-to the user or LLM name at the start, --title to the module title.
-
-match finds each routine of the library in the program of the knowledge: the opcodes and other
-fixed bytes equal, and the addresses into the routine moved by one shift.
-Operands that address something outside the routine may differ; the result
-lists them. --out writes the names of the routines at the found addresses as a
-batch for knowledge.ts apply, and the result lists what it left out.
-
-A release to compare is a PRG, placed at its load address, or an image.json of
-the c64-unpacker skill, compared inside its segments. Paths are relative to the
-project folder. The result is one JSON object.`;
-
-function address(text: string, option: string): number {
-  try {
-    return parseC64Address(text);
-  } catch {
-    throw new UsageError(`${option} must be $ followed by four hex digits, not ${text}`);
-  }
-}
 
 const hexBytes = (bytes: number[]) => Buffer.from(bytes).toString("hex").replace(/(..)(?!$)/g, "$1 ");
 
@@ -152,77 +100,24 @@ function readRelease(name: string, shift: number): LoadedRelease {
   };
 }
 
-async function run(argv: string[]): Promise<unknown> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    strict: true,
-    allowPositionals: true,
-    options: {
-      shift: { type: "string", multiple: true },
-      from: { type: "string" },
-      to: { type: "string" },
-      run: { type: "string" },
-      steps: { type: "string" },
-      out: { type: "string" },
-      "max-listed": { type: "string" },
-      "min-text": { type: "string" },
-      library: { type: "string" },
-      module: { type: "string" },
-      start: { type: "string" },
-      end: { type: "string" },
-      name: { type: "string" },
-      title: { type: "string" },
-      replace: { type: "boolean" },
-      help: { type: "boolean" },
-    },
-  });
-  if (values.help) throw new UsageError("");
-  /** Refuses the options that `command` does not take. */
-  const only = (command: string, allowed: readonly string[]) => {
-    const used = Object.keys(values).filter((option) => option !== "help" && !allowed.includes(option));
-    if (used.length > 0) throw new UsageError(`${command} does not take --${used.join(", --")}`);
-  };
-  if (positionals[0] === "separate") {
-    only("separate", ["out", "max-listed"]);
-    if (positionals.length !== 1) throw new UsageError("separate takes no release: it reads the program from the knowledge");
-    return separateCommand(values.out, values["max-listed"]);
-  }
-  if (positionals[0] === "leftovers") {
-    only("leftovers", ["out", "min-text", "max-listed"]);
-    if (positionals.length !== 1) throw new UsageError("leftovers takes no release: it reads the program from the knowledge");
-    return leftoversCommand(values.out, values["min-text"], values["max-listed"]);
-  }
-  if (positionals[0] === "routine") {
-    only("routine", ["library", "module", "start", "end", "name", "title", "replace"]);
-    if (positionals.length !== 1) throw new UsageError("routine takes no image: it reads the program from the knowledge");
-    return routineCommand(values);
-  }
-  if (positionals[0] === "match") {
-    only("match", ["library", "out", "max-listed"]);
-    if (positionals.length !== 1) throw new UsageError("match takes no image: it reads the program from the knowledge");
-    return matchCommand(values.library, values.out, values["max-listed"]);
-  }
-  only("a comparison", ["shift", "from", "to", "run", "steps"]);
-  if (positionals.length < 2) throw new UsageError("give two or more releases");
+/** compare: the releases byte by byte, and with --frames the first access of each difference in each release. */
+async function compare(call: Call): Promise<unknown> {
+  const positionals = call.subjects;
+  if (positionals.length < 2) throw new UsageError("compare needs two or more releases");
   const shifts = new Map<number, number>();
-  for (const text of values.shift ?? []) {
+  for (const text of call.strings("shift")) {
     const match = /^(\d+):([+-]?\d+)$/.exec(text);
     if (match === null || Number(match[1]) < 1 || Number(match[1]) > positionals.length) throw new UsageError(`--shift must be <release number>:<bytes>, not ${text}`);
     shifts.set(Number(match[1]), Number(match[2]));
   }
-  if (values.steps !== undefined && values.run === undefined) throw new UsageError("--steps works only with --run");
-  let frames: number | undefined;
-  if (values.run !== undefined) {
-    if (!/^\d{1,6}$/.test(values.run) || Number(values.run) < 1 || Number(values.run) > MAX_EXECUTION_COUNT) throw new UsageError(`--run needs a frame count from 1 to ${MAX_EXECUTION_COUNT}, not ${values.run}`);
-    frames = Number(values.run);
-  }
-  const steps: ActionStep[] = values.steps === undefined ? [] : readActionSteps(values.steps, "--steps");
+  const frames = call.count("frames");
+  const stepsFile = call.string("steps");
+  if (stepsFile !== undefined && frames === undefined) throw new UsageError("--steps works only with --frames");
+  const steps: ActionStep[] = stepsFile === undefined ? [] : readActionSteps(stepsFile, "--steps");
   const loaded = positionals.map((path, index) => readRelease(path, shifts.get(index + 1) ?? 0));
   const releases = loaded.map((item) => item.release);
-  const comparison = compareReleases(releases, {
-    ...(values.from === undefined ? {} : { from: address(values.from, "--from") }),
-    ...(values.to === undefined ? {} : { to: address(values.to, "--to") }),
-  });
+  const range = call.range("range");
+  const comparison = compareReleases(releases, range === undefined ? {} : { from: range.start, to: range.end });
   const compared = comparison.identicalBytes + comparison.differingBytes;
   const identicalShare = compared === 0 ? 0 : comparison.identicalBytes / compared;
   // A poor match at the load addresses can mean that the releases are placed differently.
@@ -343,17 +238,18 @@ function programEvidence() {
 const NO_STAGES = "The program in the knowledge has no stage log. Only a capture of c64-unpacker gives one. A capture of loads holds one part of a program and has none.";
 
 /** separate: evidence from the program in the knowledge, with all ranges in --out and the first ones in the result. */
-function separateCommand(out: string | undefined, maxListed: string | undefined): unknown {
-  const max = maxListed ?? "50";
-  if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
+function separateCommand(call: Call): unknown {
+  const out = call.string("out");
+  const max = call.count("max-listed")!;
   const { program, stages, coverage, found } = programEvidence();
   const loaded = { entry: program.entry, stages };
   const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
   const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }) }));
   const outside = { read: found.outside.read.map(show), executed: found.outside.executed.map(show), generated: found.outside.generated.map(show) };
-  const listed = <T>(items: T[]) => ({ count: items.length, listed: items.slice(0, Number(max)) });
-  if (out !== undefined) writeProjectFile(out, Buffer.from(`${JSON.stringify({ ranges, codeRegions, outside }, null, 1)}\n`), { what: "--out" });
+  const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify({ ranges, codeRegions, outside }, null, 1)}\n`, { what: "--out" });
+  const rest = out === undefined ? undefined : out;
+  const list = <T>(items: T[]) => listed(items, max, undefined, rest);
   const bytes = (filter: (range: (typeof found.ranges)[number]) => boolean) => found.ranges.filter(filter).reduce((sum, range) => sum + range.end - range.start + 1, 0);
   const lastStage = loaded.stages === undefined ? undefined : loaded.stages.length - 1;
   return {
@@ -365,14 +261,14 @@ function separateCommand(out: string | undefined, maxListed: string | undefined)
           bytesByStage: Object.fromEntries([...[...Array(lastStage + 1).keys()].map((stage): [string, number] => [String(stage), bytes((range) => range.stage === stage)]), ["none", bytes((range) => range.stage === undefined)]]),
         }),
     ...(coverage === undefined ? {} : { bytesByAccess: Object.fromEntries((["executed", "read", "written", "read-written", "untouched"] as const).map((access) => [access, bytes((range) => range.access === access)])) }),
-    ranges: listed(ranges),
+    ranges: list(ranges),
     // total counts every code region; unreachable is a list like the others.
     codeRegions: {
       total: codeRegions.length,
-      ...(loaded.entry === undefined ? {} : { unreachable: listed(codeRegions.filter((region) => region.reachable === false)) }),
+      ...(loaded.entry === undefined ? {} : { unreachable: list(codeRegions.filter((region) => region.reachable === false)) }),
     },
-    ...(coverage === undefined ? {} : { outside: { read: listed(outside.read), executed: listed(outside.executed), generated: listed(outside.generated) } }),
-    ...(out === undefined ? {} : { out }),
+    ...(coverage === undefined ? {} : { outside: { read: list(outside.read), executed: list(outside.executed), generated: list(outside.generated) } }),
+    ...(written === undefined ? {} : written),
   };
 }
 
@@ -380,18 +276,17 @@ function separateCommand(out: string | undefined, maxListed: string | undefined)
 const SHOWN_TEXT = 120;
 
 /** leftovers: what the program in the knowledge holds besides its working code, with all findings in --out and the first ones in the result. */
-function leftoversCommand(out: string | undefined, minText: string | undefined, maxListed: string | undefined): unknown {
-  const max = maxListed ?? "50";
-  if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
-  const min = minText ?? "8";
-  if (!/^\d{1,3}$/.test(min) || Number(min) < 4) throw new UsageError(`--min-text must be a whole number of 4 or more, not ${min}`);
+function leftoversCommand(call: Call): unknown {
+  const out = call.string("out");
+  const max = call.count("max-listed")!;
+  const min = call.count("min-text")!;
   const { program, stages, coverage, found } = programEvidence();
   const leftovers = findLeftovers({
     segments: program.segments,
     memory: program.memory,
     separation: found,
     ...(program.segments.some((segment) => segment.start === 0x0801) ? { basicStart: 0x0801 } : {}),
-    minText: Number(min),
+    minText: min,
   });
   const show = <T extends AddressRange & { stages?: number[]; access?: string[] }>({ start, end, stages: wrote, access, ...rest }: T) => ({
     start: formatC64Address(start),
@@ -408,55 +303,50 @@ function leftoversCommand(out: string | undefined, minText: string | undefined, 
     copies: leftovers.copies.map(({ copyOf, ...rest }) => ({ ...show(rest), copyOf: formatC64Address(copyOf) })),
     deadCode: leftovers.deadCode.map(show),
   };
-  const listed = <T>(items: T[]) => ({ count: items.length, listed: items.slice(0, Number(max)) });
-  if (out !== undefined) writeProjectFile(out, Buffer.from(`${JSON.stringify(all, null, 1)}\n`), { what: "--out" });
+  const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify(all, null, 1)}\n`, { what: "--out" });
+  const list = <T>(items: T[]) => listed(items, max, undefined, out ?? "a larger --max-listed, or --out <file>");
   return {
     ...(program.entry === undefined ? { noEntry: "The program in the knowledge has no entry, so deadCode is empty." } : { entry: formatC64Address(program.entry) }),
     ...(stages === undefined ? { noStages: NO_STAGES } : { stages: stages.length }),
     ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Add coverage with coverage of the c64-knowledge skill." } : {}),
-    text: listed(all.text.map((item) => (item.text.length > SHOWN_TEXT ? { ...item, text: `${item.text.slice(0, SHOWN_TEXT)} ...`, length: item.text.length } : item))),
-    basic: listed(all.basic),
-    fill: listed(all.fill),
-    residue: listed(all.residue),
-    copies: listed(all.copies),
-    deadCode: listed(all.deadCode),
-    ...(out === undefined ? {} : { out }),
+    text: list(all.text.map((item) => (item.text.length > SHOWN_TEXT ? { ...item, text: `${item.text.slice(0, SHOWN_TEXT)} ...`, length: item.text.length } : item))),
+    basic: list(all.basic),
+    fill: list(all.fill),
+    residue: list(all.residue),
+    copies: list(all.copies),
+    deadCode: list(all.deadCode),
+    ...(written === undefined ? {} : written),
   };
 }
-
 
 const platform = () => new Map(platformNames().map((entry) => [entry.name, entry.address]));
 
 /** routine: saves a module or a range of the program in the knowledge, with its knowledge, as a routine of the library (D71). */
-function routineCommand(values: { library?: string; module?: string; start?: string; end?: string; name?: string; title?: string; replace?: boolean }): unknown {
-  if (values.library === undefined) throw new UsageError("routine needs --library <folder>");
-  if (values.module !== undefined && (values.start !== undefined || values.end !== undefined)) throw new UsageError("routine takes --module, or --start and --end, not both");
-  if (values.module === undefined && values.start === undefined && values.end === undefined) throw new UsageError("routine needs --module <address>, or --start and --end");
-  if (values.module === undefined && (values.start === undefined || values.end === undefined)) throw new UsageError("routine needs both --start and --end");
+function routineCommand(call: Call): unknown {
+  const given = call.subject(0);
+  const library = call.string("library")!;
   const db = openForRead();
   try {
     const image = requireProgram(db);
     const segmentOf = (at: number) => image.segments.find((segment) => at >= segment.start && at <= segment.end);
     let start: number;
     let end: number;
-    let title = values.title;
-    if (values.module !== undefined) {
-      start = address(values.module, "--module");
+    let title = call.string("title");
+    if (!given.includes("-")) {
+      start = call.parseAddress(given, "<module>");
       const modules = listModules(db);
       const module = modules.find((item) => item.start === start);
-      if (module === undefined) throw new LibraryError("not-found", `No module starts at ${formatC64Address(start)}. List the modules with knowledge.ts modules, or give --start and --end.`);
+      if (module === undefined) throw new Refusal("not-found", `No module starts at ${formatC64Address(start)}. List the modules with knowledge.ts modules, or give a range <start>-<end>.`);
       const segment = segmentOf(start);
       if (segment === undefined) throw new UsageError(`The module at ${formatC64Address(start)} is outside the segments of the program.`);
       end = (modules.find((item) => item.start > start && item.start <= segment.end)?.start ?? segment.end + 1) - 1;
       title ??= module.title;
     } else {
-      start = address(values.start!, "--start");
-      end = address(values.end!, "--end");
-      if (end < start) throw new UsageError("--end is before --start");
+      ({ start, end } = call.parseRange(given, "<range>"));
       if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Address(start)}-${formatC64Address(end)} is not inside one segment of the program.`);
     }
     const range = { start, end };
-    const name = values.name ?? listSymbols(db, { start, end: start }, undefined, SEMANTIC_ORIGINS)[0]?.name;
+    const name = call.string("name") ?? listSymbols(db, { start, end: start }, undefined, SEMANTIC_ORIGINS)[0]?.name;
     if (name === undefined) throw new UsageError(`The knowledge has no user or LLM name at ${formatC64Address(start)}: give --name.`);
     const { routine, leftOut } = routineFrom({
       name,
@@ -474,10 +364,10 @@ function routineCommand(values: { library?: string; module?: string; start?: str
       operands: listOperands(db, range, SEMANTIC_ORIGINS),
       platform: platform(),
     });
-    const file = saveRoutine(libraryFolder(values.library, { create: true }), routine, values.replace === true);
+    const file = saveRoutine(libraryFolder(library, { create: true, cwd: projectRoot() }), routine, call.flag("replace"));
     return {
       routine: routine.name,
-      file: relative(process.cwd(), file),
+      file: relative(projectRoot(), file).split("\\").join("/"),
       start: formatC64Address(start),
       end: formatC64Address(end),
       length: routine.bytes.length,
@@ -493,13 +383,13 @@ function routineCommand(values: { library?: string; module?: string; start?: str
 }
 
 /** match: finds the routines of the library in the program of the knowledge, and with --out writes their names there as an apply batch (D71). */
-function matchCommand(library: string | undefined, out: string | undefined, maxListed: string | undefined): unknown {
-  if (library === undefined) throw new UsageError("match needs --library <folder>");
-  const max = maxListed ?? "50";
-  if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
-  const listed = <T>(items: T[]) => ({ count: items.length, listed: items.slice(0, Number(max)) });
-  const routines = readLibrary(libraryFolder(library, { create: false }));
-  if (routines.length === 0) throw new LibraryError("not-found", `The library ${library} has no routine files. Save a routine with routine first.`);
+function matchCommand(call: Call): unknown {
+  const library = call.string("library")!;
+  const out = call.string("out");
+  const max = call.count("max-listed")!;
+  const list = <T>(items: T[]) => listed(items, max);
+  const routines = readLibrary(libraryFolder(library, { create: false, cwd: projectRoot() }));
+  if (routines.length === 0) throw new Refusal("not-found", `The library ${library} has no routine files. Save a routine with routine first.`);
   const programDb = openForRead();
   let image: ReturnType<typeof requireProgram>;
   try {
@@ -520,7 +410,7 @@ function matchCommand(library: string | undefined, out: string | undefined, maxL
       })),
     )
     .sort((a, b) => a.start.localeCompare(b.start));
-  const result: Record<string, unknown> = { library, routines: routines.length, matches: listed(matches) };
+  const result: Record<string, unknown> = { library, routines: routines.length, matches: list(matches) };
   if (out === undefined) return result;
   const db = openForRead();
   let suggestions: ReturnType<typeof suggest>;
@@ -545,12 +435,72 @@ function matchCommand(library: string | undefined, out: string | undefined, maxL
     db?.close();
   }
   const { batch, known, leftOut } = suggestions;
-  writeProjectFile(out, Buffer.from(batch.length === 0 ? "[]\n" : `[\n${batch.map((write) => ` ${JSON.stringify(write)}`).join(",\n")}\n]\n`), { what: "--out" });
+  const written = writeReported(out, batch.length === 0 ? "[]\n" : `[\n${batch.map((write) => ` ${JSON.stringify(write)}`).join(",\n")}\n]\n`, { what: "--out" });
   return {
     ...result,
-    batch: { out, writes: batch.length, known, leftOut: listed(leftOut) },
+    batch: { ...written, writes: batch.length, known, leftOut: list(leftOut) },
     ...(batch.length === 0 ? {} : { apply: `knowledge.ts apply ${out} --reason "names of library routines"` }),
   };
 }
 
-await runBody((argv) => run(argv), { usage: USAGE });
+const LIBRARY = { kind: "text", value: "<folder>", required: true, help: "the library: a plain folder of routine files beside the projects, relative to the project folder, for example ../library" } as const;
+
+const COMMANDS: CommandSpec[] = [
+  {
+    name: "compare",
+    summary: "Compares releases byte by byte, in their common ranges, and suggests shifts when they are placed differently.",
+    subjects: [{ name: "<release>", help: "knowledge (the program in the knowledge), a PRG at its load address, or an image.json of the c64-unpacker skill with the entry_state.json beside it. Two or more", list: true }],
+    options: {
+      shift: { kind: "text", value: "<n>:<bytes>", multiple: true, help: "move release n (1 is the first) by a number of bytes, for example 2:-256" },
+      range: { ...OPTIONS.range, help: "compare only the addresses from start to end" },
+      frames: { ...OPTIONS.frames, max: MAX_EXECUTION_COUNT, help: "run each release in its own emulator for n frames, and give each listed difference its first access and whether it changed" },
+      steps: { ...OPTIONS.steps, help: "with --frames: action steps (JSON) to run before the frames" },
+    },
+    run: compare,
+  },
+  {
+    name: "separate",
+    summary: "Evidence from the program in the knowledge: the unpack stage that wrote each range, its access in the coverage, whether call and jump references reach each code region from the entry, and what the program reads or executes outside its segments.",
+    options: { out: { ...OPTIONS.out, value: "<file>", help: "write all ranges to this file" }, "max-listed": OPTIONS["max-listed"] },
+    run: separateCommand,
+  },
+  {
+    name: "leftovers",
+    summary: "What the program in the knowledge holds besides its working code: texts in PETSCII, screen codes, ASCII or with bit 7 set (Apple II), assembler source, BASIC lines away from the BASIC start, fills, untouched bytes outside code, copies of earlier bytes, and code regions that nothing reaches and no run executed.",
+    options: {
+      out: { ...OPTIONS.out, value: "<file>", help: "write all findings to this file" },
+      "min-text": { kind: "count", value: "<n>", min: 4, max: 999, default: 8, help: "the shortest text to find (default 8)" },
+      "max-listed": OPTIONS["max-listed"],
+    },
+    run: leftoversCommand,
+  },
+  {
+    name: "routine",
+    summary: "Saves a routine of the program in the knowledge to a library, with its user and LLM names, regions, comments, references and operand expressions at offsets.",
+    subjects: [{ name: "<module|range>", help: "the start address of a module of the knowledge, or a range <start>-<end>" }],
+    options: {
+      library: LIBRARY,
+      name: { kind: "text", value: "<name>", help: "the routine name. The default is the user or LLM name at the start" },
+      title: { kind: "text", value: "<text>", help: "the title. The default is the module title" },
+      replace: { kind: "flag", help: "replace a routine file of the same name" },
+    },
+    run: routineCommand,
+  },
+  {
+    name: "match",
+    summary: "Finds each routine of the library in the program of the knowledge: the opcodes and other fixed bytes equal, and the addresses into the routine moved by one shift.",
+    options: {
+      library: { ...LIBRARY, help: "the library folder, relative to the project folder, for example ../library" },
+      out: { ...OPTIONS.out, value: "<file>", help: "write the names of the routines at the found addresses as a batch for knowledge.ts apply" },
+      "max-listed": OPTIONS["max-listed"],
+    },
+    run: matchCommand,
+  },
+];
+
+await runScript({
+  name: "provenance",
+  summary: "Where the parts of a program come from: a comparison of releases, the separation of the program in the knowledge, its leftovers, and a library of known routines.",
+  names: knowledgeNames,
+  commands: COMMANDS,
+});

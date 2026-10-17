@@ -64,7 +64,7 @@ test("each difference gets its first access in every release and whether the run
     }),
   );
 
-  const child = spawn(process.execPath, [...process.execArgv, script, "a.prg", "b.prg", "unpacked/image.json", "--run", "50"], {
+  const child = spawn(process.execPath, [...process.execArgv, script, "compare", "a.prg", "b.prg", "unpacked/image.json", "--frames", "50"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
     stdio: ["ignore", "pipe", "inherit"],
@@ -97,7 +97,7 @@ test("each difference gets its first access in every release and whether the run
   );
 
   // With a shift, the watches sit at the release's own addresses, and runtime gives those addresses.
-  const shifted = spawn(process.execPath, [...process.execArgv, script, "a.prg", "b.prg", "--shift", "1:16", "--run", "50"], {
+  const shifted = spawn(process.execPath, [...process.execArgv, script, "compare", "a.prg", "b.prg", "--shift", "1:16", "--frames", "50"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
     stdio: ["ignore", "pipe", "inherit"],
