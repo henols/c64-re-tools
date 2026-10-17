@@ -1,42 +1,27 @@
-# Dependencies, installed with `pnpm install`; never committed.
+# Dependencies, installed with `pnpm install`.
 node_modules/
 
-# Toolkit-owned project state (.c64-re-tools/knowledge.db). An analysed
-# project commits it; this repository is the tool, and its test runs write
-# one of their own, so here it stays ignored at any depth.
+# Project state that the test runs write.
 .c64-re-tools/
 
 # npm pack output.
 *.tgz
 
-# Local editor config, machine-specific, never shared.
+# Local editor, agent and tooling files.
 /.vscode/
-
-# .claude/settings.json is committed and holds no machine-specific content.
-# Machine-specific permissions go in .claude/settings.local.json.
-/.claude/settings.local.json
-
-# Local Claude Code tooling (commands, skills, agents, hooks). Machine-local
-# and not project source.
-/.claude/agents/
-/.claude/commands/
-/.claude/hooks/
-/.claude/scripts/
-/.claude/skills/
-# .agents/ is skills-manager scratch and stays ignored, EXCEPT the mastra skill,
-# which is kept in-repo so git worktrees (tracked files only) can read it.
-/.agents/*
-!/.agents/skills/
-/.agents/skills/*
-!/.agents/skills/mastra/
+/.claude/
+/.agents/
 /.codex/
+/.mcp.json
+/.graphifyignore
+/skills-lock.json
 
-# Real-release disk images for opt-in live tests. Never committed.
+# Real-release disk images for opt-in live tests.
 /corpus/
 
-# Graphify raw scratch output. Regenerable, so it is ignored.
+# Graphify output.
 /graphify-out/
 
-# Field-test reports that test/field/collect.ts gathers from a test project.
-# They hold session transcripts, so they stay on this machine.
+# Field-test reports that test/field/report.ts gathers. They hold session
+# transcripts, so they stay on this machine.
 /field-reports/
