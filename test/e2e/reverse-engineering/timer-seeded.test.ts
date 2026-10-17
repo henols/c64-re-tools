@@ -62,7 +62,7 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
   const { address } = await startHost();
   const run = (name: string, file: string, ...args: string[]) => skill(address, name, file, ...args);
 
-  const captured = await run("c64-unpacker", "unpack.ts", "capture", "original/timer.prg", "--until", "$c000", "--out", "unpacked");
+  const captured = await run("c64-unpacker", "unpacker.ts", "capture", "original/timer.prg", "--until", "$c000", "--out", "unpacked");
   assert.equal(captured.status, 0, captured.stdout);
   const state = JSON.parse(readFileSync(join(project, "unpacked", "entry_state.json"), "utf8")) as Record<string, any>;
   assert.equal(state.cia.cia1.latchA, 0x4025, "the KERNAL's latch of CIA 1 timer A");

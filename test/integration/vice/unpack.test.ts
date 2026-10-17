@@ -26,7 +26,7 @@ import { stagedPrg } from "../../fixtures/prg/staged.ts";
 import { xorPackedPrg } from "../../fixtures/prg/xor-packed.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-unpacker/scripts/unpack.ts");
+const script = resolve(import.meta.dirname, "../../../skills/c64-unpacker/scripts/unpacker.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpack-"));
 writeFileSync(join(project, "packed.prg"), xorPackedPrg);
 writeFileSync(join(project, "gated.prg"), gatedPackedPrg);
@@ -55,7 +55,7 @@ async function unpack(...args: string[]): Promise<{ status: number | null; json:
 
 test("a capture at the unpacked entry gives the original program back", { skip: liveSkip, timeout: 180_000 }, async () => {
   const end = 0xc000 + ORIGINAL.prg.length - 3;
-  const { status, json } = await unpack("capture", "packed.prg", "--until", "$c000", "--out", "unpacked/game", "--range", "$c000", `$${end.toString(16)}`);
+  const { status, json } = await unpack("capture", "packed.prg", "--until", "$c000", "--out", "unpacked/game", "--range", `$c000-$${end.toString(16)}`);
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.segments, [{ start: "$c000", end: `$${end.toString(16)}` }]);
   assert.equal(json.pc, "$c000");
@@ -80,7 +80,7 @@ test("trace finds the code that the packed program wrote and runs; its range sta
   assert.equal(traced.json.suggestedUntil, traced.json.pc);
 
   const end = 0xc000 + ORIGINAL.prg.length - 3;
-  const captured = await unpack("capture", "packed.prg", "--until", running.start, "--out", "unpacked/traced", "--range", "$c000", `$${end.toString(16)}`);
+  const captured = await unpack("capture", "packed.prg", "--until", running.start, "--out", "unpacked/traced", "--range", `$c000-$${end.toString(16)}`);
   assert.equal(captured.status, 0, JSON.stringify(captured.json));
   assert.deepEqual([...readFileSync(join(project, "unpacked", "traced", `segment-c000-${end.toString(16)}.prg`))], [...ORIGINAL.prg]);
 });
@@ -102,7 +102,7 @@ test("trace finds no written code in a program that runs as it loaded; a program
 
 test("a steps file presses the key that an intro waits for", { skip: liveSkip, timeout: 240_000 }, async () => {
   const end = 0xc000 + ORIGINAL.prg.length - 3;
-  const range = ["--range", "$c000", `$${end.toString(16)}`];
+  const range = ["--range", `$c000-$${end.toString(16)}`];
   const blocked = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/blocked", "--timeout-frames", "300", ...range);
   assert.equal(blocked.json.captured, false, "without a key the intro waits");
   const { status, json } = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/gated", "--steps", "press-key.json", ...range);

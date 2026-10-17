@@ -54,7 +54,7 @@ test("code-like bytes do not look packed", () => {
 
 test("a short program is unclear, and the script reports it", () => {
   writeFileSync(join(project, "packed.prg"), xorPackedPrg);
-  const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpack.ts");
+  const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpacker.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "packed.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const result = JSON.parse(run.stdout) as Record<string, unknown>;
@@ -100,7 +100,7 @@ test("inspect refuses a link to a file outside the project", { skip: process.pla
   try {
     writeFileSync(join(outside, "game.prg"), xorPackedPrg);
     symlinkSync(join(outside, "game.prg"), join(project, "linked.prg"));
-    const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpack.ts");
+    const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpacker.ts");
     const linked = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "linked.prg"], { cwd: project, encoding: "utf8" });
     assert.equal(linked.status, 2, linked.stdout + linked.stderr);
     assert.equal((JSON.parse(linked.stdout) as { error: { code: string } }).error.code, "invalid-input");

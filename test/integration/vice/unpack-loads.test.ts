@@ -17,7 +17,7 @@ import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { buildD64 } from "../../fixtures/d64.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-unpacker/scripts/unpack.ts");
+const script = resolve(import.meta.dirname, "../../../skills/c64-unpacker/scripts/unpacker.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpack-loads-"));
 let server: HostServer | undefined;
 after(async () => {

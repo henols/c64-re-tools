@@ -10,7 +10,7 @@ import { readCoverage } from "#src/host-client/coverage.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isObject, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
-import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
+import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { UsageError } from "#src/script.ts";
 import { entryState, json, machineState, readRam, vectorsOf } from "./machine.ts";
@@ -157,7 +157,8 @@ export async function loads(program: string, options: { out: string; steps: Load
       const state = await machineState(client);
       const vectors = vectorsOf(state, memory);
       const directory = `${options.out}/${step.capture}`;
-      const write = (name: string, bytes: Uint8Array) => writeProjectFile(`${directory}/${name}`, bytes, { what: "--out" });
+      const written: Written[] = [];
+      const write = (name: string, bytes: Uint8Array) => written.push(writeReported(`${directory}/${name}`, bytes, { what: "--out" }));
       write("image.bin", memory);
       const files = segments.map((segment) => {
         const name = `segment-${hex4(segment.start)}-${hex4(segment.end)}.prg`;
@@ -187,6 +188,7 @@ export async function loads(program: string, options: { out: string; steps: Load
       captures.push({
         capture: step.capture,
         out: directory,
+        files: written,
         pc: formatC64Address(registers.pc),
         ...(keyWait ? { keyWait: true } : {}),
         segments: segments.map(showRange),

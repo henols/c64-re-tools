@@ -70,7 +70,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   assert.deepEqual(basic.json.handoffs, [{ kind: "sys", line: 10, address: "$080d" }]);
 
   // 3. Packing: the BASIC start is the same; the file is too short for entropy evidence.
-  const packing = await run("c64-unpacker", "unpack.ts", "inspect", "extracted/game.prg");
+  const packing = await run("c64-unpacker", "unpacker.ts", "inspect", "extracted/game.prg");
   assert.deepEqual(packing.json.basicStart, { line: 10, sys: "$080d" });
 
   // 4. The program goes into the knowledge, and a fast DXA first pass finds the BASIC start by itself.

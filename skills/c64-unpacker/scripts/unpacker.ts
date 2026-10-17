@@ -6,71 +6,20 @@
 // writes the memory into the project. "loads" captures each part of a
 // multi-load program. No native unpack tool is used.
 
-import { parseArgs } from "node:util";
-
-import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, parseC64Address, READ, WRITE } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, READ, WRITE } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
 import { readActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
-import { knowledgeAt } from "#src/knowledge/names.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
-import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
+import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { resolveProjectPath } from "#src/project.ts";
-import { runBody, UsageError } from "#src/script.ts";
-import { basicStart, inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
+import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
+import { OPTIONS, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
+import { basicStart, inspect, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges } from "./lib/stages.ts";
 import { entryState, IO_AREAS, json, machineState, readRam, vectorsOf } from "./lib/machine.ts";
-
-const USAGE = `unpack.ts inspect <program.prg>
-unpack.ts trace <program.prg> [--frames <n>] [--entry <address>] [--steps <file>]
-unpack.ts capture <program.prg> --until <address> --out <dir> [--range <start> <end>] [--exclude <start>-<end>]... [--timeout-frames <n>] [--entry <address>] [--steps <file>] [--min-stage <bytes>]
-unpack.ts stages <program.prg> [--frames <n>] [--entry <address>] [--steps <file>] [--min-stage <bytes>]
-unpack.ts loads <program> --steps <file> --out <dir> [--drive] [--min-block <bytes>]
-
-inspect   packing evidence: the BASIC start and the entropy of the bytes
-trace     run the program for <n> frames (default 3000) and report the memory
-          that it wrote and then executed; --entry starts it there instead of RUN
-capture   run the program until the CPU gets to <address> after the steps, and write into the
-          directory --out: image.bin (64 KiB of RAM), image.json (the entry,
-          the segments that the stages wrote, the vectors, the stages), a PRG
-          for each segment, and entry_state.json (registers, $00/$01, pages
-          0-3, VIC, SID and CIA registers, vectors, and what differs from a
-          clean reset). --range gives one segment in place of the found ones.
-          --exclude (more than once) leaves a range out of the segments, for
-          example bytes that a crack left and the program never reads.
-          --entry starts it there instead of RUN.
-
-stages    run the program for <n> frames (default 3000) and report each stage:
-          where it starts, the memory it wrote, and where the next one starts.
-          A stage starts when the CPU executes a block of at least
-          --min-stage bytes (default 64) that the stage before wrote.
-
-loads     run a multi-load program (a PRG, or a disk, tape or cartridge image)
-          with the steps file; each capture step {"capture": "<name>"} writes
-          <dir>/<name>/ with image.bin, image.json, entry_state.json and a PRG
-          for each block of at least --min-block bytes (default 64) that the C64
-          side changed since the previous capture. --drive also writes the 2 KiB
-          drive RAM as drive8.prg, for knowledge space drive8.
-
---steps <file>  a JSON list of input steps that run right after the program
-          starts: write, registers, joystick, type, frames and runUntil, as in
-          c64-testing scenarios, with $ addresses only. Use it to press a key
-          in an intro or to get through a menu. stages and capture track the
-          stages in frames steps and in runUntil steps with at alone.
-
-Addresses are $ and four hex digits. The result is one JSON object.`;
-
-
-function address(text: string, option: string): number {
-  try {
-    return parseC64Address(text);
-  } catch {
-    throw new UsageError(`${option} must be $ followed by four hex digits, not ${text}`);
-  }
-}
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
@@ -484,10 +433,9 @@ async function stages(program: string, options: { frames: number; entry?: number
   }
 }
 
-
 async function capture(
   program: string,
-  options: { until: number; out: string; range?: [number, number]; exclude: Array<{ start: number; end: number }>; timeoutFrames: number; entry?: number; steps: ActionStep[]; minStage: number },
+  options: { until: number; out: string; range?: AddressRange; exclude: AddressRange[]; timeoutFrames: number; entry?: number; steps: ActionStep[]; minStage: number },
 ): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
@@ -504,14 +452,15 @@ async function capture(
     const memory = await readRam(client, 0x0000, 0x10000);
     const state = await machineState(client);
     // The segments: what the stages wrote, without loader leftovers, with no overlap.
-    const found = options.range !== undefined ? [{ start: options.range[0], end: options.range[1] }] : captureSegments(followed.stages, registers.pc);
+    const found = options.range !== undefined ? [options.range] : captureSegments(followed.stages, registers.pc);
     const inside = options.exclude.find((range) => registers.pc >= range.start && registers.pc <= range.end);
     if (inside !== undefined) {
       return { output: { captured: false, reason: `The entry ${formatC64Address(registers.pc)} is in --exclude ${formatC64Address(inside.start)}-${formatC64Address(inside.end)}. A segment must hold the entry.` }, failed: true };
     }
     const segments = withoutRanges(found, options.exclude);
     const file = (path: string) => `${options.out}/${path}`;
-    const write = (path: string, bytes: Uint8Array) => writeProjectFile(file(path), bytes, { what: "--out" });
+    const written: Written[] = [];
+    const write = (path: string, bytes: Uint8Array) => written.push(writeReported(file(path), bytes, { what: "--out" }));
     write("image.bin", memory);
     const files = segments.map((segment) => {
       const name = `segment-${segment.start.toString(16).padStart(4, "0")}-${segment.end.toString(16).padStart(4, "0")}.prg`;
@@ -550,7 +499,7 @@ async function capture(
         captured: true,
         pc: formatC64Address(registers.pc),
         out: options.out,
-        files: ["image.json", "image.bin", "entry_state.json", ...files],
+        files: written,
         segments: segments.map(showRange),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
         stages: followed.stages.length,
@@ -563,127 +512,87 @@ async function capture(
   }
 }
 
-/** The options that each command takes; any other option is refused, not ignored. */
-const OPTIONS_OF: Record<string, string[]> = {
-  inspect: [],
-  trace: ["frames", "entry", "steps"],
-  stages: ["frames", "entry", "steps", "min-stage"],
-  capture: ["until", "out", "range", "exclude", "timeout-frames", "entry", "steps", "min-stage"],
-  loads: ["steps", "out", "drive", "min-block"],
+const PROGRAM = { name: "<program>", help: "a PRG file, relative to the project folder" };
+const FRAMES: OptionSpec = { ...OPTIONS.frames, max: 30_000, default: 3000, help: "run the program for n frames (default 3000)" };
+const ENTRY: OptionSpec = { ...OPTIONS.entry, help: "start the program here in place of RUN" };
+const STEPS: OptionSpec = { ...OPTIONS.steps, help: "action steps (JSON) that run right after the program starts, for example to press a key in an intro or to get through a menu" };
+const MIN_STAGE: OptionSpec = { kind: "count", value: "<bytes>", min: 1, max: 0x10000, default: 64, help: "a stage starts when the CPU executes a block of at least this many bytes that the stage before wrote (default 64)" };
+
+/** The result of a command: PASS, or FAIL with the reason. */
+const outcome = ({ output, failed }: { output: unknown; failed: boolean }) => ({ result: failed ? "FAIL" : "PASS", ...(output as Record<string, unknown>) });
+const entryOf = (call: Call) => {
+  const entry = call.address("entry");
+  return entry === undefined ? {} : { entry };
+};
+const stepsOf = (call: Call) => {
+  const path = call.string("steps");
+  return path === undefined ? [] : readActionSteps(path, "--steps");
 };
 
-async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    strict: true,
-    allowPositionals: true,
-    options: {
-      until: { type: "string" },
-      out: { type: "string" },
-      range: { type: "string" },
-      exclude: { type: "string", multiple: true },
-      "timeout-frames": { type: "string" },
-      frames: { type: "string" },
-      entry: { type: "string" },
-      steps: { type: "string" },
-      "min-stage": { type: "string" },
-      "min-block": { type: "string" },
-      drive: { type: "boolean" },
-      help: { type: "boolean" },
-    },
-  });
-  if (values.help) throw new UsageError("");
-  const [command, program, ...rest] = positionals;
-  if (program === undefined) throw new UsageError("give a command and a program");
-  const allowed = OPTIONS_OF[command ?? ""];
-  if (allowed === undefined) throw new UsageError(`unknown command ${command}`);
-  for (const option of Object.keys(values)) {
-    if (option !== "help" && !allowed.includes(option)) throw new UsageError(`${command} does not take --${option}`);
-  }
-  if (command === "inspect") {
-    if (rest.length > 0) throw new UsageError("inspect takes one program");
-    const { bytes } = readProjectFile(program);
-    try {
-      return { output: inspect(bytes), failed: false };
-    } catch (error) {
-      if (error instanceof PackingError) throw new UsageError(error.message);
-      throw error;
-    }
-  }
-  if (command === "trace") {
-    if (rest.length > 0) throw new UsageError("trace takes one program");
-    const frames = values.frames === undefined ? 3000 : Number(values.frames);
-    if (!Number.isInteger(frames) || frames < 1 || frames > 30_000) throw new UsageError("--frames must be from 1 to 30000");
-    const steps = values.steps === undefined ? [] : readActionSteps(values.steps, "--steps");
-    return trace(program, { frames, steps, ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }) });
-  }
-  if (command === "stages") {
-    if (rest.length > 0) throw new UsageError("stages takes one program");
-    const frames = values.frames === undefined ? 3000 : Number(values.frames);
-    if (!Number.isInteger(frames) || frames < 1 || frames > 30_000) throw new UsageError("--frames must be from 1 to 30000");
-    const minStage = values["min-stage"] === undefined ? 64 : Number(values["min-stage"]);
-    if (!Number.isInteger(minStage) || minStage < 1 || minStage > 0x10000) throw new UsageError("--min-stage must be from 1 to 65536");
-    const steps = values.steps === undefined ? [] : readActionSteps(values.steps, "--steps");
-    // A runUntil step to a raster line or a memory value cannot be tracked in chunks of frames; capture takes it.
-    if (steps.some((step) => "runUntil" in step && !trackedRunUntil(step))) throw new UsageError("stages takes a runUntil step only with at alone; use frames steps or runUntil at");
-    return stages(program, { frames, steps, minStage, ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }) });
-  }
-  if (command === "loads") {
-    if (rest.length > 0) throw new UsageError("loads takes one program");
-    if (values.steps === undefined || values.out === undefined) throw new UsageError("loads needs --steps and --out");
-    try {
-      resolveProjectPath(values.out);
-    } catch {
-      throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
-    }
-    const minBlock = values["min-block"] === undefined ? 64 : Number(values["min-block"]);
-    if (!Number.isInteger(minBlock) || minBlock < 1 || minBlock > 0x10000) throw new UsageError("--min-block must be from 1 to 65536");
-    return loads(program, { out: values.out, steps: readLoadSteps(values.steps), drive: values.drive === true, minBlock });
-  }
-  if (values.until === undefined || values.out === undefined) throw new UsageError("capture needs --until and --out");
-  // --range takes two values: the end is the next positional argument.
-  let range: [number, number] | undefined;
-  if (values.range !== undefined) {
-    if (rest.length !== 1) throw new UsageError("--range takes a start and an end address");
-    range = [address(values.range, "--range"), address(rest[0]!, "--range")];
-    if (range[1] < range[0]) throw new UsageError("the --range end must not be before its start");
-  } else if (rest.length > 0) {
-    throw new UsageError("too many arguments");
-  }
-  const exclude = (values.exclude ?? []).map((value) => {
-    const parts = value.split("-");
-    if (parts.length !== 2) throw new UsageError(`--exclude takes <start>-<end>, not ${value}`);
-    const range = { start: address(parts[0]!, "--exclude"), end: address(parts[1]!, "--exclude") };
-    if (range.end < range.start) throw new UsageError(`the --exclude end must not be before its start: ${value}`);
-    return range;
-  });
-  try {
-    resolveProjectPath(values.out);
-  } catch {
-    throw new UsageError(`--out must be a path relative to the project folder that stays inside it, not ${values.out}`);
-  }
-  const timeoutFrames = values["timeout-frames"] === undefined ? 3000 : Number(values["timeout-frames"]);
-  if (!Number.isInteger(timeoutFrames) || timeoutFrames < 1 || timeoutFrames > 30_000) throw new UsageError("--timeout-frames must be from 1 to 30000");
-  const steps = values.steps === undefined ? [] : readActionSteps(values.steps, "--steps");
-  const minStage = values["min-stage"] === undefined ? 64 : Number(values["min-stage"]);
-  if (!Number.isInteger(minStage) || minStage < 1 || minStage > 0x10000) throw new UsageError("--min-stage must be from 1 to 65536");
-  return capture(program, {
-    until: address(values.until, "--until"),
-    out: values.out,
-    ...(range === undefined ? {} : { range }),
-    exclude,
-    timeoutFrames,
-    steps,
-    minStage,
-    ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }),
-  });
-}
-
-await runBody(
-  async (argv) => {
-    const { output, failed } = await run(argv);
-    if (failed) process.exitCode = 1;
-    return output;
+const COMMANDS: CommandSpec[] = [
+  {
+    name: "inspect",
+    summary: "Packing evidence: the BASIC start and the entropy of the bytes.",
+    subjects: [PROGRAM],
+    run: (call) => inspect(readProjectFile(call.subject(0)).bytes),
   },
-  { usage: USAGE },
-);
+  {
+    name: "trace",
+    summary: "Runs the program and reports the memory that it wrote and then executed.",
+    subjects: [PROGRAM],
+    options: { frames: FRAMES, entry: ENTRY, steps: STEPS },
+    run: async (call) => outcome(await trace(call.subject(0), { frames: call.count("frames")!, steps: stepsOf(call), ...entryOf(call) })),
+  },
+  {
+    name: "stages",
+    summary: "Runs the program and reports each stage: where it starts, the memory it wrote, and where the next one starts.",
+    subjects: [PROGRAM],
+    options: { frames: FRAMES, entry: ENTRY, steps: STEPS, "min-stage": MIN_STAGE },
+    notes: "stages tracks the stages in frames steps and in runUntil steps to an address target without a condition.",
+    run: async (call) => {
+      const steps = stepsOf(call);
+      // A runUntil step to a raster line or a memory value cannot be tracked in chunks of frames; capture takes it.
+      if (steps.some((step) => "runUntil" in step && !trackedRunUntil(step))) throw new UsageError("stages takes a runUntil step only with an address target without a condition. Use frames steps, or capture");
+      return outcome(await stages(call.subject(0), { frames: call.count("frames")!, steps, minStage: call.count("min-stage")!, ...entryOf(call) }));
+    },
+  },
+  {
+    name: "capture",
+    summary: "Runs the program until the CPU gets to --until after the steps, and writes into --out: image.bin (64 KiB of RAM), image.json (the entry, the segments that the stages wrote, the vectors, the stages), a PRG for each segment, and entry_state.json.",
+    subjects: [PROGRAM],
+    options: {
+      until: { kind: "address", value: "<address>", required: true, help: "the unpacked entry point" },
+      out: { ...OPTIONS.out, value: "<dir>", required: true, help: "the folder for the capture, relative to the project folder" },
+      range: { ...OPTIONS.range, help: "one segment in place of the found ones" },
+      exclude: { kind: "range", value: "<start>-<end>", multiple: true, help: "a range to leave out of the segments, for example bytes that a crack left and the program never reads" },
+      "timeout-frames": { ...OPTIONS["timeout-frames"], max: 30_000, default: 3000, help: "stop the wait for --until after n frames (default 3000)" },
+      entry: ENTRY,
+      steps: STEPS,
+      "min-stage": MIN_STAGE,
+    },
+    notes: "entry_state.json has the registers, $00/$01, pages 0-3, the VIC, SID and CIA registers, the vectors, and what differs from a clean reset.",
+    run: async (call) => {
+      const range = call.range("range");
+      return outcome(await capture(call.subject(0), { until: call.address("until")!, out: call.string("out")!, ...(range === undefined ? {} : { range }), exclude: call.ranges("exclude"), timeoutFrames: call.count("timeout-frames")!, steps: stepsOf(call), minStage: call.count("min-stage")!, ...entryOf(call) }));
+    },
+  },
+  {
+    name: "loads",
+    summary: "Runs a multi-load program with the steps file. Each capture step {\"capture\": \"<name>\"} writes <dir>/<name>/ with image.bin, image.json, entry_state.json and a PRG for each block that the C64 side changed since the previous capture.",
+    subjects: [{ name: "<program>", help: "a PRG, or a disk, tape or cartridge image, relative to the project folder" }],
+    options: {
+      steps: { ...STEPS, required: true, help: "action steps and capture steps (JSON)" },
+      out: { ...OPTIONS.out, value: "<dir>", required: true, help: "the folder for the captures, relative to the project folder" },
+      drive: { kind: "flag", help: "also write the 2 KiB drive RAM as drive8.prg, for knowledge space drive8" },
+      "min-block": { kind: "count", value: "<bytes>", min: 1, max: 0x10000, default: 64, help: "write a changed block of at least this many bytes (default 64)" },
+    },
+    run: async (call) => outcome(await loads(call.subject(0), { out: call.string("out")!, steps: readLoadSteps(call.string("steps")!), drive: call.flag("drive"), minBlock: call.count("min-block")! })),
+  },
+];
+
+await runScript({
+  name: "unpacker",
+  summary: "Packing evidence of a program, and captures of the program after it unpacked itself. It never names a packer and runs no native unpack tool.",
+  names: knowledgeNames,
+  commands: COMMANDS,
+});

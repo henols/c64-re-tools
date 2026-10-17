@@ -2,8 +2,7 @@
 // over and how compressed the bytes look. It never names a packer.
 
 import { basicLineText, findHandoffs, formatC64Address, instructionLength, parseTokenized } from "#src/c64.ts";
-
-export class PackingError extends Error {}
+import { Refusal } from "#src/errors.ts";
 
 /** A 256-byte block above this many bits per byte looks compressed. */
 const HIGH_ENTROPY = 6.9;
@@ -112,7 +111,7 @@ function startSignals(program: Uint8Array, load: number, end: number, sys: numbe
 }
 
 export function inspect(program: Uint8Array): PackingEvidence {
-  if (program.length < 3) throw new PackingError("the file is too short for a PRG");
+  if (program.length < 3) throw new Refusal("invalid-input", "the file is too short for a PRG");
   const load = program[0]! | (program[1]! << 8);
   const end = load + program.length - 3;
   const basic = basicStart(program);
