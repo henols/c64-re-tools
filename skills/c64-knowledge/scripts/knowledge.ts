@@ -8,7 +8,8 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
-import { Refusal } from "#src/errors.ts";
+import { isRefusal, Refusal } from "#src/errors.ts";
+import { knowledgeNames } from "#src/knowledge/names.ts";
 import { formatC64Address, parseC64Address, SYMBOL_NAME, SPACE_PATTERN } from "#src/c64.ts";
 import { readImage } from "#src/host-client/image.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
@@ -19,7 +20,6 @@ import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import {
   at,
-  analyzerNamed,
   analyzerNamesAt,
   commentsAt,
   currentRevision,
@@ -40,7 +40,6 @@ import {
   referencesTo,
   search,
   symbolAt,
-  symbolNamed,
   type CommentRow,
   type MacroRow,
   type MacroUseRow,
@@ -210,16 +209,11 @@ function address(value: string | undefined, what = "address"): number {
 }
 
 function addressOfName(name: string, what: string): number {
-  const db = openForRead();
   try {
-    const symbol = symbolNamed(db, name, nameSpace);
-    if (symbol !== undefined) return symbol.address;
-    const second = analyzerNamed(db, name, nameSpace);
-    if (second.length === 1) return second[0]!.address;
-    if (second.length > 1) throw new UsageError(`${what}: the analyzers give ${name} to ${second.map((row) => `${formatC64Address(row.address)} (${row.origin})`).join(" and ")}; give the address`);
-    throw new UsageError(`${what}: no symbol or analyzer name is ${name}`);
-  } finally {
-    db?.close();
+    return knowledgeNames(name, nameSpace);
+  } catch (error) {
+    if (isRefusal(error)) throw new UsageError(`${what}: ${error.message}`);
+    throw error;
   }
 }
 

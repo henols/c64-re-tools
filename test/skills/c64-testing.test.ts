@@ -12,7 +12,7 @@ import { openForWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
 import type { ViceSessionClient } from "../../src/host-client/vice-session.ts";
 import { changedRanges, diffStates } from "../../skills/c64-testing/scripts/lib/diff.ts";
-import { compare, loadSymbols, readScenario, resolve, runScenario, ScenarioError } from "../../skills/c64-testing/scripts/lib/scenario.ts";
+import { compare, namesOf, readScenario, resolve, runScenario, ScenarioError } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-testing-"));
 const home = process.cwd();
@@ -58,9 +58,9 @@ test("each side resolves names from its own symbols", () => {
     JSON.stringify({ assembled: true, symbols: [{ name: "draw", kind: "address", address: "$0900" }, { name: "player_x", kind: "constant", value: "$c200" }, { name: "BIG", kind: "constant", value: "$11170" }] }),
   );
   writeFileSync(join(project, "map.json"), JSON.stringify({ player_x: "$c300" }));
-  const original = loadSymbols({ program: "x", symbols: "knowledge" });
-  const fromAssembler = loadSymbols({ program: "x", symbols: "assembled.json" });
-  const fromMap = loadSymbols({ program: "x", symbols: "map.json" });
+  const original = namesOf("knowledge");
+  const fromAssembler = namesOf("assembled.json");
+  const fromMap = namesOf("map.json");
   assert.equal(resolve("player_x", original, "original"), 0xc100);
   assert.equal(resolve("player_x", fromAssembler, "rebuild"), 0xc200);
   assert.equal(resolve("draw", fromAssembler, "rebuild"), 0x0900);
@@ -68,7 +68,7 @@ test("each side resolves names from its own symbols", () => {
   assert.equal(resolve("player_x", fromMap, "rebuild"), 0xc300);
   assert.equal(resolve("$d020", fromMap, "rebuild"), 0xd020, "a $ address is the same on both sides");
   assert.throws(() => resolve("lives", fromMap, "rebuild"), /rebuild side has no symbol lives/);
-  assert.equal(loadSymbols({ program: "x", symbols: "none" }).size, 0);
+  assert.equal(namesOf("none").size, 0);
 });
 
 test("only differences outside the explicit tolerance count", () => {

@@ -10,8 +10,8 @@ import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { STOP_AND_ASK } from "../../src/protocol/messages.ts";
-import { codeLabels, firstDifference, joystickMask, keyCodes, mover, parseStateItem, pinLines, readRecordFile, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
-import { ScenarioError } from "../../skills/c64-testing/scripts/lib/scenario.ts";
+import { firstDifference, joystickMask, keyCodes, mover, parseStateItem, pinLines, readRecordFile, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { namesOf, ScenarioError } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-recording-"));
 mkdirSync(join(project, ".c64-re-tools"));
@@ -95,9 +95,9 @@ test("a site moves with the code label before it; ROM sites, constants and far l
     { site: "$ea93", addr: "$dc01", reads: 10, rom: true },
     { site: "$9000", addr: "$dc00", reads: 1, rom: false },
   ];
-  const from = codeLabels("old.json");
+  const from = namesOf("old.json", "code");
   assert.equal(from.has("PORT"), false);
-  assert.deepEqual(siteMap(sites, from, codeLabels("new.json")), [[0x256b, 0x256f]]);
+  assert.deepEqual(siteMap(sites, from, namesOf("new.json", "code")), [[0x256b, 0x256f]]);
 });
 
 test("the pinned fields of a checkpoint follow the state, and do not count as a difference", () => {

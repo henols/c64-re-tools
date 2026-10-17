@@ -14,8 +14,8 @@ import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runBody, UsageError } from "#src/script.ts";
-import { codeLabels, firstDifference, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./lib/recording.ts";
-import { ScenarioError } from "./lib/scenario.ts";
+import { firstDifference, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./lib/recording.ts";
+import { namesOf, ScenarioError } from "./lib/scenario.ts";
 
 const USAGE = `replay.ts <recording folder> [--checkpoint <routine> --state <item> ... [--pin <item> ...]] [--rebuild <prg> [--symbols <file>]] [--out <dir>]
 
@@ -121,7 +121,7 @@ async function run(argv: string[]): Promise<ReplayResult> {
     const rebuild: ReplaySubject = { side: "rebuild", program: values.rebuild, symbols: values.symbols ?? originalSymbols };
     let movedSites: number;
     try {
-      movedSites = siteMap(recording.sites, codeLabels(originalSymbols), codeLabels(rebuild.symbols)).length;
+      movedSites = siteMap(recording.sites, namesOf(originalSymbols, "code"), namesOf(rebuild.symbols, "code")).length;
     } catch (error) {
       throw new UsageError(`--symbols ${rebuild.symbols}: ${(error as Error).message}`);
     }

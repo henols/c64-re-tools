@@ -14,11 +14,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
 import { checkActionStep, isInteger, isObject, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
-import { openForRead } from "#src/knowledge/database.ts";
-import { listSymbols } from "#src/knowledge/read.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
-import { loadSymbols, ScenarioError, type Outcome } from "./scenario.ts";
+import { namesOf, ScenarioError, type Outcome } from "./scenario.ts";
 
 export const RECORDING_FORMAT = 1;
 /**
@@ -249,34 +247,6 @@ function sideAddresses(symbols: Map<string, number>, side: string, move: { code:
   return { code: (location) => resolve(location, "code"), data: (location) => resolve(location, "data") };
 }
 
-/**
- * The symbols of a symbol source that move with the program: with "code",
- * knowledge labels and routines, else all knowledge symbols; the address
- * symbols of c64-assembler output; or every entry of a name → address map.
- * Constants do not move with the code, so they are left out.
- */
-export function codeLabels(symbols: string, kind: "code" | "all" = "code"): Map<string, number> {
-  if (symbols === "none") return new Map();
-  if (symbols === "knowledge") {
-    const db = openForRead();
-    try {
-      return new Map(
-        listSymbols(db)
-          .filter((row) => kind === "all" || row.kind === "label" || row.kind === "routine")
-          .map((row) => [row.name, row.address]),
-      );
-    } finally {
-      db?.close();
-    }
-  }
-  const value = JSON.parse(readProjectFile(symbols).bytes.toString("utf8")) as unknown;
-  const assembled = (value as { symbols?: Array<{ name: string; kind?: string; address?: string }> }).symbols;
-  if (Array.isArray(assembled)) {
-    return new Map(assembled.filter((symbol) => symbol.address !== undefined).map((symbol) => [symbol.name, parseC64Address(symbol.address!)]));
-  }
-  return new Map(Object.entries(value as Record<string, string>).map(([name, address]) => [name, parseC64Address(address)]));
-}
-
 /** The furthest a site can be from the label before it and still move with that label. */
 const MAX_LABEL_DISTANCE = 4096;
 
@@ -401,7 +371,7 @@ export interface RecordOutcome {
 export async function record(core: C64RunSession, file: RecordFile, workspace: Workspace, input?: (core: C64RunSession) => Promise<void>): Promise<RecordOutcome> {
   const prg = readProjectFile(file.program).bytes;
   const same = (address: number) => address;
-  const at = sideAddresses(loadSymbols({ program: file.program, symbols: file.symbols }), "original", { code: same, data: same });
+  const at = sideAddresses(namesOf(file.symbols), "original", { code: same, data: same });
   // A checkpoint and state of the record file must resolve now, so that a replay can use them.
   if (file.compare !== undefined) {
     at.code(file.compare.checkpoint);
@@ -526,9 +496,9 @@ export async function replaySide(
   const same = (address: number) => address;
   const move = original
     ? { code: same, data: same }
-    : { code: mover(codeLabels(names), codeLabels(subject.symbols)), data: mover(codeLabels(names, "all"), codeLabels(subject.symbols, "all")) };
-  const at = sideAddresses(loadSymbols({ program: subject.program, symbols: subject.symbols }), subject.side, move);
-  const moved = original ? [] : siteMap(recording.sites, codeLabels(names), codeLabels(subject.symbols));
+    : { code: mover(namesOf(names, "code"), namesOf(subject.symbols, "code")), data: mover(namesOf(names), namesOf(subject.symbols)) };
+  const at = sideAddresses(namesOf(subject.symbols), subject.side, move);
+  const moved = original ? [] : siteMap(recording.sites, namesOf(names, "code"), namesOf(subject.symbols, "code"));
   const map = new Map(moved);
   const reads = workspace.path(`${subject.side}-${RECORDING_FILES.reads}`);
   writeFileSync(reads, readProjectFile(`${folder}/${RECORDING_FILES.reads}`).bytes);

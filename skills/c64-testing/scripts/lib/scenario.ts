@@ -3,14 +3,15 @@
 // Observations name semantic symbols that resolve per side, comparisons are
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
-import { formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
+import { c64AddressOf, formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
 import { ACTION_STEP_KEYS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
-import { listAnalyzerNames, listSymbols } from "#src/knowledge/read.ts";
+import { nameTable } from "#src/knowledge/names.ts";
+import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
 import { programImage } from "#src/knowledge/program.ts";
 
 export class ScenarioError extends Error {}
@@ -233,46 +234,47 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
   }
 }
 
-/** Name → address for one side. */
-export function loadSymbols(subject: Subject): Map<string, number> {
-  const symbols = new Map<string, number>();
-  if (subject.symbols === "none") return symbols;
-  if (subject.symbols === "knowledge") {
+/**
+ * Name → address from a source of names: none; the knowledge (its symbols and
+ * the analyzer names that only one address has); the c64-assembler output; or
+ * a JSON map of name to $ address. With kinds "code", only the names that move
+ * with the code: labels and routines of the knowledge, and the labels of the
+ * assembler output. With "all", also the data names and the assembler
+ * constants of four hex digits: RAM variables such as "counter = $c100" lie
+ * outside the program, so the assembler reports them as constants.
+ */
+export function namesOf(source: string, kinds: "code" | "all" = "all"): Map<string, number> {
+  if (source === "none") return new Map();
+  if (source === "knowledge") {
     const db = openForRead();
-    for (const symbol of listSymbols(db)) symbols.set(symbol.name, symbol.address);
-    // An analyzer name gives an address too, when no symbol has the name and only one analyzer gives it.
-    const second = new Map<string, number[]>();
-    for (const row of listAnalyzerNames(db)) second.set(row.name, [...(second.get(row.name) ?? []), row.address]);
-    for (const [name, addresses] of second) if (!symbols.has(name) && new Set(addresses).size === 1) symbols.set(name, addresses[0]!);
-    db?.close();
-    return symbols;
+    try {
+      return nameTable(db, DEFAULT_SPACE, kinds === "code" ? ["label", "routine"] : undefined);
+    } finally {
+      db?.close();
+    }
   }
   let value: unknown;
   try {
-    value = JSON.parse(readProjectFile(subject.symbols).bytes.toString("utf8"));
+    value = JSON.parse(readProjectFile(source).bytes.toString("utf8"));
   } catch (error) {
-    throw new ScenarioError(`cannot read the symbols ${subject.symbols}: ${(error as Error).message}`);
+    throw new ScenarioError(`cannot read the symbols ${source}: ${(error as Error).message}`);
   }
-  // c64-assembler output, or a plain name → "$xxxx" map. A constant in the
-  // assembler output counts too: RAM variables such as "counter = $c100" lie
-  // outside the program, so the assembler reports them as constants.
   const assembled = (value as { symbols?: Array<{ name: string; address?: string; value?: string }> }).symbols;
   const entries: Array<[string, unknown]> = Array.isArray(assembled)
     ? assembled.flatMap((symbol): Array<[string, unknown]> => {
         if (symbol.address !== undefined) return [[symbol.name, symbol.address]];
         // A constant above $ffff has more digits and is no address.
-        if (typeof symbol.value === "string" && /^\$[0-9a-f]{4}$/.test(symbol.value)) return [[symbol.name, symbol.value]];
+        if (kinds === "all" && typeof symbol.value === "string" && /^\$[0-9a-f]{4}$/.test(symbol.value)) return [[symbol.name, symbol.value]];
         return [];
       })
     : Object.entries(value as Record<string, unknown>);
+  const names = new Map<string, number>();
   for (const [name, address] of entries) {
-    try {
-      symbols.set(name, parseC64Address(String(address)));
-    } catch {
-      throw new ScenarioError(`the symbol ${name} in ${subject.symbols} has no $xxxx address`);
-    }
+    const at = typeof address === "string" ? c64AddressOf(address) : undefined;
+    if (at === undefined) throw new ScenarioError(`the symbol ${name} in ${source} has no $ address`);
+    names.set(name, at);
   }
-  return symbols;
+  return names;
 }
 
 /** A failure that makes the comparison impossible: the result is INCONCLUSIVE. */
@@ -479,7 +481,7 @@ export async function runScenario(client: ViceSessionClient, scenario: Scenario,
   const observed = new Map<Side, Map<string, Observation>>();
   for (const side of SIDES) {
     try {
-      observed.set(side, await runSide(client, scenario, side, loadSymbols(scenario[side]), options.out !== undefined));
+      observed.set(side, await runSide(client, scenario, side, namesOf(scenario[side].symbols), options.out !== undefined));
     } catch (error) {
       if (error instanceof Inconclusive) return { result: "INCONCLUSIVE", scenario: scenario.name, reason: error.message, checkpoints, differences: [] };
       if (error instanceof WireFailure) {

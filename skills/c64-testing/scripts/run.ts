@@ -15,7 +15,7 @@ import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts"
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runBody, UsageError } from "#src/script.ts";
-import { loadSymbols } from "./lib/scenario.ts";
+import { namesOf } from "./lib/scenario.ts";
 
 const USAGE = `run.ts <run.json> --out <dir>
 
@@ -123,7 +123,7 @@ function showHit(hit: TraceHit) {
 
 async function runFile(path: string, out: string): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const run = readRun(path);
-  const symbols = loadSymbols({ program: "", symbols: run.symbols ?? "none" });
+  const symbols = namesOf(run.symbols ?? "none");
   const at = (location: string): number => {
     if (location.startsWith("$")) return parseC64Address(location);
     const address = symbols.get(location);
