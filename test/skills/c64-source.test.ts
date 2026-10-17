@@ -827,8 +827,8 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
   const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
   assert.equal(knowledge("image", "test.prg").status, 0);
   assert.equal(knowledge("rename", "$1000", "start", "--kind", "routine").status, 0);
-  assert.equal(knowledge("patch", "$1000", "$1004", "CRACK", "--code", "        lda #1\n        sta $d021").status, 0);
-  assert.equal(knowledge("patch", "$1005", "$1007", "BIG", "--code", "        nop\n        nop\n        nop\n        nop").status, 0);
+  assert.equal(knowledge("patch", "$1000-$1004", "CRACK", "--code", "        lda #1\n        sta $d021").status, 0);
+  assert.equal(knowledge("patch", "$1005-$1007", "BIG", "--code", "        nop\n        nop\n        nop\n        nop").status, 0);
   const generate = () => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "--out", "src"], { cwd: project, encoding: "utf8" });
   type Result = { check: { identical: boolean }; switches: Array<{ name: string; result: string; changedBytes?: number; overflow?: Array<{ start: string; message: string }> }> };
   const first = generate();

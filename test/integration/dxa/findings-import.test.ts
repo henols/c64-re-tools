@@ -65,7 +65,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
 
   // 2. Semantic work: the LLM names the routine, the user says what the table is.
   assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "rename", "$0818", "init_result", "--kind", "routine", "--expect-revision", nthIn(project, 2))).json.revision, nthIn(project, 3));
-  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "classify", "$0824", "$0827", "sprite", "--origin", "user", "--expect-revision", nthIn(project, 3))).json.revision, nthIn(project, 4));
+  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "classify", "$0824-$0827", "sprite", "--by", "user", "--expect-revision", nthIn(project, 3))).json.revision, nthIn(project, 4));
 
   // 3. A changed program: NOPs instead of the JMP let the code run on into the routine, so the two
   //    unused bytes become reachable code. (A JMP to them is not enough: DXA keeps them as data.)

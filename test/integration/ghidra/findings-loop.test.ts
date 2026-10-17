@@ -42,7 +42,7 @@ async function skill(name: string, file: string, ...args: string[]): Promise<Rec
 
 test("Ghidra findings, a semantic rename and a seeded re-run go through one importer", { skip, timeout: 900_000 }, async () => {
   // 1. The program goes into the knowledge; the first Ghidra pass makes generated names, regions and references Ghidra knowledge.
-  assert.equal((await skill("c64-knowledge", "knowledge.ts", "image", "game.prg", "--origin", "user")).revision, nthIn(project, 1));
+  assert.equal((await skill("c64-knowledge", "knowledge.ts", "image", "game.prg", "--by", "user")).revision, nthIn(project, 1));
   const first = await skill("c64-static-analysis", "analyze.ts", "--entry", "$080d");
   assert.equal(first.revision, nthIn(project, 2), JSON.stringify(first));
   assert.deepEqual((await skill("c64-knowledge", "knowledge.ts", "at", "$0818")).analyzerNames, [{ address: "$0818", name: "FUN_0818", kind: "routine", origin: "ghidra", revision: nthIn(project, 2) }]);
@@ -50,7 +50,7 @@ test("Ghidra findings, a semantic rename and a seeded re-run go through one impo
   // 2. Semantic work: the LLM names the routine; the user marks $080d as data (wrong on purpose).
   const renamed = await skill("c64-knowledge", "knowledge.ts", "rename", "$0818", "init_result", "--kind", "routine", "--reason", "stores the result", "--expect-revision", nthIn(project, 2));
   assert.equal(renamed.revision, nthIn(project, 3), JSON.stringify(renamed));
-  const marked = await skill("c64-knowledge", "knowledge.ts", "rename", "$080d", "start_table", "--kind", "variable", "--origin", "user", "--expect-revision", nthIn(project, 3));
+  const marked = await skill("c64-knowledge", "knowledge.ts", "rename", "$080d", "start_table", "--kind", "variable", "--by", "user", "--expect-revision", nthIn(project, 3));
   assert.equal(marked.revision, nthIn(project, 4), JSON.stringify(marked));
 
   // 3. Seeded re-run: Ghidra gets the semantic names; nothing changes owner, the contradiction is reported.

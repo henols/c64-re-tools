@@ -1,26 +1,26 @@
 // The c64-knowledge script: reads and writes .c64-re-tools/knowledge/ in the
-// project folder (--project, or the one found from the working directory) and
-// prints one compact JSON result.
+// project folder (--project, or the one found from the working directory).
+// Each command prints one JSON result.
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { parseArgs } from "node:util";
 
-import { isRefusal } from "#src/errors.ts";
-import { knowledgeNames } from "#src/knowledge/names.ts";
-import { formatC64Address, parseC64Address, SYMBOL_NAME, SPACE_PATTERN } from "#src/c64.ts";
+import { formatC64Address } from "#src/c64.ts";
+import { Refusal } from "#src/errors.ts";
 import { readImage } from "#src/host-client/image.ts";
-import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
+import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
-import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
+import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
+import { knowledgeNames } from "#src/knowledge/names.ts";
+import { addCoverage, coverageRuns, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
 import {
-  at,
   analyzerNamesAt,
+  at,
   commentsAt,
   currentRevision,
   listAnalyzerNames,
@@ -30,9 +30,9 @@ import {
   listModules,
   listOperands,
   listPatches,
-  listSpaces,
   listReferences,
   listRegions,
+  listSpaces,
   listSuppressions,
   listSymbols,
   operandAt,
@@ -51,7 +51,7 @@ import {
   type SuppressionRow,
   type SymbolRow,
 } from "#src/knowledge/read.ts";
-import { ANALYZERS, COMMENT_PLACEMENTS, type CommentPlacement, DEFAULT_SPACE, EVIDENCE_KINDS, isSemantic, OPERAND_SELECTS, type OperandSelect, type Origin, ORIGINS, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SEMANTIC_ORIGINS, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
+import { ANALYZERS, COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, isSemantic, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, SEMANTIC_ORIGINS, SYMBOL_KINDS, type Origin, type OperandSelect } from "#src/knowledge/schema.ts";
 import {
   addReference,
   applyBatch,
@@ -82,148 +82,13 @@ import {
   type WriteContext,
 } from "#src/knowledge/write.ts";
 import { platformNames } from "#src/platform.ts";
-import { addCoverage, coverageRuns, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
+import { OPTIONS, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
-import { runBody, UsageError } from "#src/script.ts";
-
-const USAGE = `knowledge.ts <command> [arguments] [options]
-
-Read (no database needed):
-  at <address>                        everything known at one address
-  search <text>                       symbol names, analyzer names and comment texts
-  symbols [--start A --end A --kind K --origin O] [--analyzer]
-                                      --analyzer: the second names that DXA, Ghidra
-                                      and the idioms gave
-  regions [--start A --end A --type T --origin O]
-  comments [--start A --end A --origin O]
-  references [--start A --end A --kind K --origin O]
-  suppressions [--start A --end A]   places that removals keep free of analyzer facts
-  modules [--start A --end A --origin O]   where the files of generated source start
-  operands [--start A --end A --origin O]  operand expressions of instructions
-  patches [--start A --end A --switch S --origin O]   code that a switch puts in
-  switches                            each switch with the ranges of its patches
-  macros [--origin O]                 the macros of the generated source
-  uses [--start A --end A --macro M --origin O]   instructions written as a macro
-  spaces                              the address spaces that hold knowledge
-  program                             the program in the knowledge: its
-                                      segments and entry, and the coverage maps
-                                      that coverage imported, with the ranges
-  history <address> | history --name <name> | history --macro <name>
-  revisions [--limit N --before R]
-  revision <revision>
-  export --out <file> [--start A --end A --origin O]   all current knowledge to a project file
-  listing <start> <end> [--out <file>]
-                                      the program as ACME lines with names, operand
-                                      expressions, comments, the access of each line
-                                      in the coverage (x executed, r read, w written)
-                                      and the references in and out; --out writes it
-                                      as text
-
-Every command takes --space S: c64 (the default), drive8 for code in the 1541
-drive, or bank0 to bank255 for cartridge banks. A write in a batch can name its
-own space.
-
-Read option --origin O: user, llm, dxa, ghidra, heuristic, semantic (user and
-llm) or analyzer (dxa, ghidra and heuristic), or a comma list. search takes it too.
-
-Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
-  rename <address> <name> [--kind K]
-  remove-symbol <address>
-  classify <start> <end> <type> [--element N]
-  unclassify <start> <end>
-  comment <address> <line|side> <text>
-  uncomment <address> <line|side>
-  reference <from> <to> <kind>
-  unreference <from> <to> <kind>
-  module <start> <file.asm> [--title T]   a file of generated source starts here
-  unmodule <start>
-  operand <address> --lo|--hi|--value <symbol> [--offset N]
-  operand <address> --expr <text>
-                           write the operand of the instruction at <address> as
-                           an expression: the low or high byte of symbol + N, the
-                           value symbol + N, or ACME expression text; refused when
-                           it does not give the operand in the program of the
-                           knowledge; give a negative offset as --offset=-1
-  unoperand <address>
-  patch <start> <end> <SWITCH> --code <text>|--code-file <file>|--nop [--comment T]
-                           ACME code that replaces <start>-<end> when the build
-                           defines SWITCH as 1 (c64-assembler --define SWITCH=1);
-                           NOP fills the rest of the range; --nop puts only NOP
-  unpatch <start>
-  macro <name> [--params a,b] --body <text>|--body-file <file> [--comment T]
-                           an ACME macro; the body names a param with a dot: .a
-  unmacro <name>
-  use <start> <end> <macro> [--args "x, y"]
-                           write the instructions <start>-<end> as one use of
-                           the macro, with one expression for each param
-  unuse <start>
-  image <image.json|prg>   put the program into the knowledge: its bytes, and
-                           for an image.json of c64-unpacker capture also the
-                           entry, the entry state and the stages; with --space for
-                           drive code or a cartridge bank. Only changed bytes write
-  coverage <map.bin>...    join coverage maps of c64_memmap or a run into the
-                           coverage of the knowledge; each map is evidence
-                           of the revision, named by its path
-  revert <revision>
-  merge                    decide the conflicts that a git merge of two
-                           computers' work left: of the rows of one conflict,
-                           the newest stays; one revision for all
-  join <batch>... --out <file>
-                           join the batches of agents that worked in parallel into
-                           one batch for apply; writes no knowledge. A batch is a
-                           list of writes, or {"owner": "$1000-$1fff", "ops": [...]}:
-                           at an address in its owner range its name, comment,
-                           operand and module win, and its regions come last
-  apply <file>             many writes from a JSON file ('-' reads standard input),
-                           all as one revision, or none when one is refused;
-                           operand, patch and use writes are checked against the
-                           program of --space in the knowledge
-
-Write options:
-  --reason <text>          why, kept with the revision
-  --evidence <kind:ref>    what the change rests on: coverage:<map> (a map that
-                           coverage imported), test:<file>, file:<file> or
-                           note:<text> (repeatable)
-  --expect-revision <R>    refuse the write if knowledge changed after revision R
-  --origin user|llm        who decided (default llm)
-
-Addresses are $ and four hex digits; quote them in a shell: '$2100'. A name
-also gives an address: a symbol name first, then an analyzer name.
-A revision is its id, for example 20261015T214501.123-k3f9qz, or a start of
-the id that only one revision has; 0 is the knowledge before every revision.`;
-
-/** The space whose names give addresses: the --space of the command. */
-let nameSpace = DEFAULT_SPACE;
-
-/** An address as $ and four hex digits, or the address of a symbol name, else of an analyzer name. */
-function address(value: string | undefined, what = "address"): number {
-  if (value === undefined) throw new UsageError(`${what} is missing`);
-  if (SYMBOL_NAME.test(value)) return addressOfName(value, what);
-  try {
-    return parseC64Address(value);
-  } catch {
-    throw new UsageError(`${what} must be $ followed by four hex digits, for example '$2100', or a name, not ${value}`);
-  }
-}
-
-function addressOfName(name: string, what: string): number {
-  try {
-    return knowledgeNames(name, nameSpace);
-  } catch (error) {
-    if (isRefusal(error)) throw new UsageError(`${what}: ${error.message}`);
-    throw error;
-  }
-}
 
 function oneOf<T extends string>(values: readonly T[], value: string | undefined, what: string): T {
   if (value === undefined || !(values as readonly string[]).includes(value)) throw new UsageError(`${what} must be one of: ${values.join(", ")}`);
   return value as T;
-}
-
-function integer(value: string | undefined, what: string): number {
-  if (value === undefined || !/^\d+$/.test(value)) throw new UsageError(`${what} must be a whole number`);
-  return Number(value);
 }
 
 // Output shapes: addresses as $xxxx, nothing internal.
@@ -332,120 +197,6 @@ function reasonsOf(db: DatabaseSync | undefined, rows: SuppressionRow[]): Map<st
   return reasons;
 }
 
-function run(argv: string[]): unknown {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    strict: true,
-    options: {
-      start: { type: "string" },
-      end: { type: "string" },
-      kind: { type: "string" },
-      type: { type: "string" },
-      name: { type: "string" },
-      limit: { type: "string" },
-      before: { type: "string" },
-      reason: { type: "string" },
-      "expect-revision": { type: "string" },
-      origin: { type: "string" },
-      element: { type: "string" },
-      evidence: { type: "string", multiple: true },
-      out: { type: "string" },
-      title: { type: "string" },
-      space: { type: "string" },
-      lo: { type: "string" },
-      hi: { type: "string" },
-      value: { type: "string" },
-      expr: { type: "string" },
-      offset: { type: "string" },
-      code: { type: "string" },
-      "code-file": { type: "string" },
-      nop: { type: "boolean" },
-      comment: { type: "string" },
-      params: { type: "string" },
-      body: { type: "string" },
-      "body-file": { type: "string" },
-      args: { type: "string" },
-      switch: { type: "string" },
-      macro: { type: "string" },
-      analyzer: { type: "boolean" },
-      help: { type: "boolean" },
-    },
-  });
-  const [command, ...args] = positionals;
-  if (values.help || command === undefined) throw new UsageError("");
-  if (values.space !== undefined && !SPACE_PATTERN.test(values.space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
-  const space = values.space ?? DEFAULT_SPACE;
-  nameSpace = space;
-  const range = { start: values.start === undefined ? 0x0000 : address(values.start, "--start"), end: values.end === undefined ? 0xffff : address(values.end, "--end") };
-
-  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "operands", "patches", "switches", "macros", "uses", "spaces", "program", "history", "revisions", "revision", "export", "listing"]);
-  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "operand", "unoperand", "patch", "unpatch", "macro", "unmacro", "use", "unuse", "revert", "apply", "merge", "image", "coverage"]);
-  // join reads batch files and writes one: no knowledge opens.
-  if (command === "join") return joinCommand(args, values.out, space);
-  // Refuse a mistyped command before anything opens, so no database appears by accident.
-  if (!read.has(command) && !write.has(command)) throw new UsageError(`unknown command: ${command}`);
-  if (read.has(command)) {
-    const origins = values.origin === undefined ? undefined : originFilter(values.origin);
-    if (command === "export" && values.out === undefined) throw new UsageError("export needs --out <file>");
-    const db = openForRead();
-    try {
-      const answer = readAnswer(db, command, args, values, range, origins, space);
-      const found = conflicts(db);
-      // A git merge can leave conflicts: every read shows them until merge decides them.
-      return found.length === 0 ? answer : { ...answer, conflicts: found.map(showConflict) };
-    } finally {
-      db?.close();
-    }
-  }
-
-  const context: WriteContext = { origin: values.origin === undefined ? "llm" : oneOf(SEMANTIC_ORIGINS, values.origin, "--origin") };
-  if (values.reason !== undefined) context.description = values.reason;
-  if (values["expect-revision"] !== undefined) context.expectedRevision = values["expect-revision"];
-  if (values.evidence !== undefined) context.evidence = values.evidence.map((value) => evidenceOf(value, space));
-  // Every argument is checked before the database opens: a refused write creates no database.
-  if (values.title !== undefined && command !== "module") throw new UsageError("--title works only with module");
-  for (const option of ["lo", "hi", "value", "expr", "offset"] as const) {
-    if (values[option] !== undefined && command !== "operand") throw new UsageError(`--${option} works only with operand`);
-  }
-  const only: Array<[keyof typeof values, readonly string[]]> = [
-    ["code", ["patch"]],
-    ["code-file", ["patch"]],
-    ["nop", ["patch"]],
-    ["comment", ["patch", "macro"]],
-    ["params", ["macro"]],
-    ["body", ["macro"]],
-    ["body-file", ["macro"]],
-    ["args", ["use"]],
-  ];
-  for (const [option, commands] of only) {
-    if (values[option] !== undefined && !commands.includes(command)) throw new UsageError(`--${option} works only with ${commands.join(", ")}`);
-  }
-  const operation =
-    command === "image" || command === "coverage"
-      ? programOperation(command, args, context, space)
-      : command === "apply"
-      ? applyOperation(args, context, space)
-      : command === "operand"
-        ? operandOperation(args, values, context, space)
-        : command === "patch" || command === "macro" || command === "use"
-          ? sourceOperation(command, args, values, context, space)
-          : writeOperation(command, args, values.kind, values.element, context, values.title, space);
-  return withWrite(operation);
-}
-
-type ReadValues = {
-  analyzer?: boolean | undefined;
-  kind?: string | undefined;
-  type?: string | undefined;
-  name?: string | undefined;
-  limit?: string | undefined;
-  before?: string | undefined;
-  out?: string | undefined;
-  switch?: string | undefined;
-  macro?: string | undefined;
-};
-
 /** The lookups of a listing: the program and the coverage in the knowledge, the knowledge of the space and the platform names of the C64. */
 function listingSource(db: DatabaseSync | undefined, space: string): ListingSource {
   const image = requireProgram(db, space);
@@ -473,142 +224,6 @@ function listingSource(db: DatabaseSync | undefined, space: string): ListingSour
     references: (at) => ({ in: referencesTo(db, at, space).length, out: referencesFrom(db, at, space).length }),
     ...(coverage === undefined ? {} : { coverage }),
   };
-}
-
-/** The answer of one read command. */
-function readAnswer(db: DatabaseSync | undefined, command: string, args: string[], values: ReadValues, range: { start: number; end: number }, origins: Origin[] | undefined, space: string): Record<string, unknown> {
-  switch (command) {
-    case "listing": {
-      if (args.length !== 2) throw new UsageError("listing needs <start> <end>");
-      const start = address(args[0], "start");
-      const end = address(args[1], "end");
-      if (end < start) throw new UsageError("the end must not be before the start");
-      const source = listingSource(db, space);
-      const lines = listing(source, start, end);
-      if (values.out !== undefined) {
-        writeProjectFile(values.out, Buffer.from(listingText(lines), "utf8"), { what: "--out" });
-        return { out: values.out, lines: lines.length };
-      }
-      return { lines: lines.map((row) => ({ ...row, address: formatC64Address(row.address) })) };
-    }
-    case "at": {
-      const known = at(db, address(args[0]), space);
-      return {
-        ...(space === DEFAULT_SPACE ? {} : { space }),
-        address: formatC64Address(known.address),
-        ...(known.symbol === undefined ? {} : { symbol: symbol(known.symbol) }),
-        ...(known.analyzerNames.length === 0 ? {} : { analyzerNames: known.analyzerNames.map(symbol) }),
-        ...(known.region === undefined ? {} : { region: region(known.region) }),
-        comments: known.comments.map(comment),
-        referencesFrom: known.referencesFrom.map(reference),
-        referencesTo: known.referencesTo.map(reference),
-        ...(known.operand === undefined ? {} : { operand: operand(known.operand) }),
-        ...(known.patch === undefined ? {} : { patch: patch(known.patch) }),
-        ...(known.macroUse === undefined ? {} : { macroUse: macroUse(known.macroUse) }),
-        ...(known.suppressions.length === 0 ? {} : { suppressions: known.suppressions.map(suppression) }),
-        revision: known.revision,
-      };
-    }
-    case "search": {
-      if (args[0] === undefined || args[0] === "") throw new UsageError("search needs text");
-      const found = search(db, args[0], values.limit === undefined ? 50 : integer(values.limit, "--limit"), origins, space);
-      return { symbols: found.symbols.map(symbol), analyzerNames: found.analyzerNames.map(symbol), comments: found.comments.map(comment) };
-    }
-    case "symbols": {
-      const kind = values.kind === undefined ? undefined : oneOf(SYMBOL_KINDS, values.kind, "--kind");
-      if (values.analyzer) return { analyzerNames: listAnalyzerNames(db, range, kind, origins, space).map(symbol) };
-      return { symbols: listSymbols(db, range, kind, origins, space).map(symbol) };
-    }
-    case "regions":
-      return { regions: listRegions(db, range, values.type === undefined ? undefined : oneOf(REGION_TYPES, values.type, "--type"), origins, space).map(region) };
-    case "comments":
-      return { comments: listComments(db, range, origins, space).map(comment) };
-    case "references":
-      return { references: listReferences(db, range, values.kind === undefined ? undefined : oneOf(REFERENCE_KINDS, values.kind, "--kind"), origins, space).map(reference) };
-    case "program": {
-      const image = programImage(db, space);
-      const ranges = db === undefined ? [] : (db.prepare("SELECT kind, count(*) AS count FROM current_coverage WHERE space = ? GROUP BY kind ORDER BY kind").all(space) as Array<{ kind: string; count: number }>);
-      return {
-        ...(space === DEFAULT_SPACE ? {} : { space }),
-        image:
-          image === undefined
-            ? null
-            : {
-                segments: image.segments.map((segment) => ({ start: formatC64Address(segment.start), end: formatC64Address(segment.end) })),
-                bytes: image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0),
-                ...(image.entry === undefined ? {} : { entry: formatC64Address(image.entry) }),
-                state: image.state !== undefined,
-                stages: image.stages?.length ?? 0,
-              },
-        coverage: { maps: [...new Set(coverageRuns(db).filter((run) => run.space === space).map((run) => run.name))], ranges: Object.fromEntries(ranges.map((row) => [row.kind, row.count])) },
-      };
-    }
-    case "export": {
-      const exported = {
-        revision: currentRevision(db),
-        ...(space === DEFAULT_SPACE ? {} : { space }),
-        symbols: listSymbols(db, range, undefined, origins, space).map(symbol),
-        analyzerNames: listAnalyzerNames(db, range, undefined, origins, space).map(symbol),
-        regions: listRegions(db, range, undefined, origins, space).map(region),
-        comments: listComments(db, range, origins, space).map(comment),
-        references: listReferences(db, range, undefined, origins, space).map(reference),
-        suppressions: listSuppressions(db, range, space).map(suppression),
-        modules: listModules(db, range, origins, space).map(module),
-        operands: listOperands(db, range, origins, space).map(operand),
-        patches: listPatches(db, range, undefined, origins, space).map(patch),
-        macros: listMacros(db, origins, space).map(macro),
-        macroUses: listMacroUses(db, range, undefined, origins, space).map(macroUse),
-      };
-      const bytes = Buffer.from(`${JSON.stringify(exported, null, 2)}\n`, "utf8");
-      writeProjectFile(values.out!, bytes, { what: "--out" });
-      return {
-        out: values.out,
-        bytes: bytes.length,
-        counts: { symbols: exported.symbols.length, analyzerNames: exported.analyzerNames.length, regions: exported.regions.length, comments: exported.comments.length, references: exported.references.length, suppressions: exported.suppressions.length, modules: exported.modules.length, operands: exported.operands.length, patches: exported.patches.length, macros: exported.macros.length, macroUses: exported.macroUses.length },
-        revision: exported.revision,
-      };
-    }
-    case "suppressions": {
-      const rows = listSuppressions(db, range, space);
-      const reasons = reasonsOf(db, rows);
-      return { suppressions: rows.map((row) => ({ ...suppression(row), ...(reasons.has(row.revision) ? { reason: reasons.get(row.revision) } : {}) })) };
-    }
-    case "modules":
-      return { modules: listModules(db, range, origins, space).map(module) };
-    case "operands":
-      return { operands: listOperands(db, range, origins, space).map(operand) };
-    case "patches":
-      return { patches: listPatches(db, range, values.switch, origins, space).map(patch) };
-    case "switches": {
-      const switches = new Map<string, PatchRow[]>();
-      for (const row of listPatches(db, undefined, undefined, undefined, space)) switches.set(row.switch, [...(switches.get(row.switch) ?? []), row]);
-      return {
-        switches: [...switches].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, rows]) => ({ name, define: `--define ${name}=1`, patches: rows.map((row) => ({ start: formatC64Address(row.start), end: formatC64Address(row.end) })) })),
-      };
-    }
-    case "macros":
-      return { macros: listMacros(db, origins, space).map(macro) };
-    case "uses":
-      return { uses: listMacroUses(db, range, values.macro, origins, space).map(macroUse) };
-    case "spaces":
-      return { spaces: listSpaces(db) };
-    case "history":
-      // Each row with the reason and the evidence of the revision that wrote it.
-      return {
-        history: (values.macro !== undefined ? historyOfMacro(db, values.macro, space) : values.name === undefined ? historyAt(db, address(args[0]), space) : historyNamed(db, values.name, space)).map((entry) => ({ ...historyEntry(entry), ...revisionNote(db, entry.from) })),
-      };
-    case "revisions": {
-      const options: { limit?: number; before?: string } = {};
-      if (values.limit !== undefined) options.limit = integer(values.limit, "--limit");
-      if (values.before !== undefined) options.before = values.before;
-      return { revisions: revisions(db, options) };
-    }
-    default: {
-      if (args[0] === undefined) throw new UsageError("revision is missing");
-      const changes = revision(db, args[0]);
-      return { revision: changes.revision, added: changes.added.map(historyEntry), closed: changes.closed.map(historyEntry) };
-    }
-  }
 }
 
 /** --origin for reads: one origin, semantic (user and llm), analyzer (dxa and ghidra), or a comma list. */
@@ -672,24 +287,6 @@ function imageRequest(path: string, space: string): ImageRequest {
   return request;
 }
 
-/** image and coverage: the program and what the runs did go into the knowledge, so no project file is made again. */
-function programOperation(command: "image" | "coverage", args: string[], context: WriteContext, space: string): WriteOperation {
-  if (command === "image") {
-    if (args.length !== 1) throw new UsageError("image needs one image.json or PRG");
-    const request = imageRequest(args[0]!, space);
-    return (db) => {
-      const { revision, current } = setImage(db, context, request);
-      return { revision, ...spaceOf(current), bytes: current.bytes, rowsAdded: current.rowsAdded, rowsClosed: current.rowsClosed, entryChanged: current.entry };
-    };
-  }
-  if (args.length === 0) throw new UsageError("coverage needs one or more coverage maps");
-  const maps = args.map((path) => ({ bytes: readProjectFile(path).bytes, name: knowledgePath(path, "coverage <map>") }));
-  return (db) => {
-    const { revision, current } = addCoverage(db, context, { space, maps });
-    return { revision, ...spaceOf(current), imported: current.imported, known: current.known, ranges: current.ranges };
-  };
-}
-
 /**
  * The program in the knowledge that operand, patch and macro use writes
  * are checked against, with the platform names. A byte outside
@@ -708,99 +305,6 @@ function offsetOf(value: unknown, what: string): number {
   if (match === null) throw new UsageError(`${what} must be a whole number such as 1, -1 or '$1000'`);
   const size = match[2]!.startsWith("$") ? Number.parseInt(match[2]!.slice(1), 16) : Number(match[2]);
   return match[1] === "-" ? -size : size;
-}
-
-/** operand <address> with one of --lo, --hi, --value or --expr. */
-function operandOperation(args: string[], values: Record<string, unknown>, context: WriteContext, space: string): WriteOperation {
-  const given = (["lo", "hi", "value", "expr"] as const).filter((option) => values[option] !== undefined);
-  if (given.length !== 1) throw new UsageError("operand needs exactly one of --lo, --hi, --value or --expr");
-  const select: OperandSelect = given[0]!;
-  const request: { space: string; address: number; select: OperandSelect; symbol?: string; offset?: number; expression?: string } = { space, address: address(args[0]), select };
-  if (select === "expr") {
-    if (values.offset !== undefined) throw new UsageError("--offset works with --lo, --hi and --value, not with --expr");
-    request.expression = values.expr as string;
-  } else {
-    request.symbol = values[select] as string;
-    if (values.offset !== undefined) request.offset = offsetOf(values.offset, "--offset");
-  }
-  return (db) => {
-    const result = setOperand(db, { ...context, image: operandImage(db, space) }, request);
-    return { revision: result.revision, operand: operand(result.current), ...(result.previous === undefined ? {} : { previous: operand(result.previous) }) };
-  };
-}
-
-/** A comma list of params or args; an empty text is an empty list. */
-const commaList = (value: string) => (value.trim() === "" ? [] : value.split(",").map((item) => item.trim()));
-
-/** The text of an option, or of the project file that a --*-file option names; exactly one of them. */
-function textOrFile(values: Record<string, unknown>, option: string, what: string): string | undefined {
-  const inline = values[option] as string | undefined;
-  const file = values[`${option}-file`] as string | undefined;
-  if (inline !== undefined && file !== undefined) throw new UsageError(`give --${option} or --${option}-file, not both`);
-  if (file !== undefined) return readProjectFile(file).bytes.toString("utf8");
-  if (inline === undefined) return undefined;
-  if (inline === "") throw new UsageError(`${what} is empty`);
-  return inline;
-}
-
-/** patch, macro and use: the writes of the generated source. */
-function sourceOperation(command: "patch" | "macro" | "use", args: string[], values: Record<string, unknown>, context: WriteContext, space: string): WriteOperation {
-  const comment = values.comment as string | undefined;
-  switch (command) {
-    case "patch": {
-      if (args[2] === undefined) throw new UsageError("the switch name is missing");
-      const code = textOrFile(values, "code", "--code");
-      if ((code === undefined) === (values.nop !== true)) throw new UsageError("patch needs exactly one of --code, --code-file or --nop");
-      const request = { space, start: address(args[0], "start"), end: address(args[1], "end"), switch: args[2], code: code ?? "", ...(comment === undefined ? {} : { comment }) };
-      return (db) => {
-        const result = setPatch(db, { ...context, image: operandImage(db, space) }, request);
-        return { revision: result.revision, patch: patch(result.current), ...(result.previous === undefined ? {} : { previous: patch(result.previous) }) };
-      };
-    }
-    case "macro": {
-      if (args[0] === undefined) throw new UsageError("the macro name is missing");
-      const body = textOrFile(values, "body", "--body");
-      if (body === undefined) throw new UsageError("macro needs --body or --body-file");
-      const request = { space, name: args[0], params: commaList((values.params as string | undefined) ?? ""), body, ...(comment === undefined ? {} : { comment }) };
-      return (db) => {
-        const result = setMacro(db, context, request);
-        return { revision: result.revision, macro: macro(result.current), ...(result.previous === undefined ? {} : { previous: macro(result.previous) }) };
-      };
-    }
-    case "use": {
-      if (args[2] === undefined) throw new UsageError("the macro name is missing");
-      const request = { space, start: address(args[0], "start"), end: address(args[1], "end"), macro: args[2], args: commaList((values.args as string | undefined) ?? "") };
-      return (db) => {
-        const result = setMacroUse(db, { ...context, image: operandImage(db, space) }, request);
-        return { revision: result.revision, use: macroUse(result.current), ...(result.previous === undefined ? {} : { previous: macroUse(result.previous) }) };
-      };
-    }
-  }
-}
-
-/** apply <file>: the batch as BatchOperation values, checked before the database opens. */
-function applyOperation(args: string[], context: WriteContext, space: string): WriteOperation {
-  if (args.length !== 1) throw new UsageError("apply needs one file, or - for standard input");
-  const text = args[0] === "-" ? readFileSync(0, "utf8") : readProjectFile(args[0]!).bytes.toString("utf8");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    throw new UsageError(`the batch is not JSON: ${(error as Error).message}`);
-  }
-  if (!Array.isArray(parsed)) throw new UsageError("the batch is a JSON list of writes, for example [{\"op\": \"rename\", \"address\": \"$2100\", \"name\": \"update_player\"}]");
-  const operations = parsed.map((item, index) => batchOperation(item, `write ${index + 1}`, space));
-  const checked = operations.some((operation) => operation.op === "operand" || operation.op === "patch" || operation.op === "use");
-  return (db) => {
-    const applied = applyBatch(db, checked ? { ...context, image: operandImage(db, space) } : context, operations);
-    // replaced: each write that replaced a row of another origin, with that row as previous gives it for one write.
-    const replaced = applied.steps.flatMap((step, index) =>
-      step.previous === undefined
-        ? []
-        : [{ write: index + 1, op: operations[index]!.op, previous: shownPrevious(step.previous) }],
-    );
-    return { revision: applied.revision, writes: applied.steps.length, replaced };
-  };
 }
 
 /** A row that a write of a batch replaced, in its output shape. */
@@ -844,64 +348,585 @@ function batchJson(write: BatchOperation): Record<string, unknown> {
   return out;
 }
 
-/** Reads the batches, joins them, and writes the joined batch to --out. One name or one module file at two addresses writes nothing. */
-function joinCommand(files: string[], out: string | undefined, space: string): Record<string, unknown> {
-  if (files.length < 2) throw new UsageError("join needs two or more batch files");
-  if (out === undefined) throw new UsageError("join needs --out <file>");
-  const batches: Batch[] = files.map((file) => {
-    let value: unknown;
-    try {
-      value = JSON.parse(readProjectFile(file).bytes.toString("utf8"));
-    } catch (error) {
-      throw new UsageError(`${file}: ${(error as Error).message}`);
-    }
-    const shaped = Array.isArray(value) ? { ops: value } : (value as { owner?: unknown; ops?: unknown });
-    if (typeof shaped !== "object" || shaped === null || !Array.isArray(shaped.ops)) throw new UsageError(`${file}: a batch is a list of writes, or {"owner": "$1000-$1fff", "ops": [...]}`);
-    let owner: Batch["owner"];
-    if (shaped.owner !== undefined) {
-      const parts = typeof shaped.owner === "string" ? shaped.owner.split("-") : [];
-      if (parts.length !== 2) throw new UsageError(`${file}: owner must be "<start>-<end>", for example "$1000-$1fff"`);
-      owner = { start: address(parts[0], `${file}: owner`), end: address(parts[1], `${file}: owner`) };
-      if (owner.end < owner.start) throw new UsageError(`${file}: the owner range ends before it starts`);
-    }
-    const ops = (shaped.ops as unknown[]).map((item, index) => batchOperation(item, `${file}: write ${index + 1}`, space));
-    return { file, ...(owner === undefined ? {} : { owner }), ops };
-  });
-  const owned = batches.filter((batch) => batch.owner !== undefined);
-  for (const [index, batch] of owned.entries()) {
-    const other = owned.slice(index + 1).find((next) => next.owner!.start <= batch.owner!.end && batch.owner!.start <= next.owner!.end);
-    if (other !== undefined) throw new UsageError(`the owner ranges of ${batch.file} and ${other.file} overlap; give each address one owner`);
-  }
-  const joined = joinBatches(batches);
-  const choice = (item: JoinChoice) => ({ ...item, at: typeof item.at === "number" ? formatC64Address(item.at) : item.at, ...(item.space === DEFAULT_SPACE ? { space: undefined } : {}) });
-  const clash = (item: JoinClash) => ({ ...item, ...(item.space === DEFAULT_SPACE ? { space: undefined } : {}), places: item.places.map((place) => ({ address: formatC64Address(place.address), file: place.file })) });
-  const choices = joined.choices.map(choice);
-  if (joined.clashes.length > 0) {
-    process.exitCode = 1;
-    return { joined: false, clashes: joined.clashes.map(clash), choices, remedy: "Give each name and each module file one address in the batches, then join again." };
-  }
-  const bytes = Buffer.from(`${JSON.stringify(joined.ops.map(batchJson), null, 1)}\n`, "utf8");
-  writeProjectFile(out, bytes, { what: "--out" });
-  return { joined: true, out, writes: joined.ops.length, repeated: joined.repeated, choices, apply: `knowledge.ts apply ${out}` };
+// ---------------------------------------------------------------------------
+// Commands
+
+type WriteOperation = (db: DatabaseSync) => unknown;
+
+/** The address and revision subjects of the commands. */
+const ADDRESS: SubjectSpec = { name: "<address>", help: "an address or a name" };
+const RANGE: SubjectSpec = { name: "<range>", help: "<start>-<end>, each an address or a name, for example '$1000-$10ff'" };
+const START: SubjectSpec = { name: "<start>", help: "the start address of the row" };
+const REVISION: SubjectSpec = { name: "<revision>", help: "a revision id, or a start of the id that only one revision has; 0 is the knowledge before every revision" };
+
+const SPACE = { space: OPTIONS.space };
+const FILTER = { ...SPACE, range: OPTIONS.range, origin: OPTIONS.origin };
+const SYMBOL_KIND: OptionSpec = { kind: "choice", value: "<kind>", choices: SYMBOL_KINDS, help: `one of ${SYMBOL_KINDS.join(", ")}` };
+const REFERENCE_KIND: OptionSpec = { kind: "choice", value: "<kind>", choices: REFERENCE_KINDS, help: `one of ${REFERENCE_KINDS.join(", ")}` };
+const WRITE: Record<string, OptionSpec> = {
+  ...SPACE,
+  by: { kind: "choice", value: "<user|llm>", choices: SEMANTIC_ORIGINS, default: "llm", help: "who decided: user, or llm (the default)" },
+  reason: OPTIONS.reason,
+  evidence: OPTIONS.evidence,
+  "expect-revision": OPTIONS["expect-revision"],
+};
+
+/** The rows from --range, or every address. */
+const rangeOf = (call: Call) => call.range("range") ?? { start: 0x0000, end: 0xffff };
+const originsOf = (call: Call) => {
+  const value = call.string("origin");
+  return value === undefined ? undefined : originFilter(value);
+};
+
+/** A read command: it opens the knowledge for reading, and its answer shows the conflicts that a git merge left. */
+function readCommand(spec: Omit<CommandSpec, "run">, answer: (db: DatabaseSync | undefined, call: Call) => Record<string, unknown>): CommandSpec {
+  return {
+    ...spec,
+    options: { ...SPACE, ...spec.options },
+    run: (call) => {
+      const db = openForRead();
+      try {
+        const result = answer(db, call);
+        const found = conflicts(db);
+        return found.length === 0 ? result : { ...result, conflicts: found.map(showConflict) };
+      } finally {
+        db?.close();
+      }
+    },
+  };
 }
 
+/** A write command: every value is checked before the knowledge opens, so a refused write makes no knowledge folder. */
+function writeCommand(spec: Omit<CommandSpec, "run">, prepare: (call: Call) => WriteOperation): CommandSpec {
+  return {
+    ...spec,
+    notes: [spec.notes, "A write is one revision. It makes .c64-re-tools/knowledge/ when it is not there."].filter((note) => note !== undefined).join("\n"),
+    options: { ...spec.options, ...WRITE },
+    run: (call) => withWrite(prepare(call)),
+  };
+}
+
+/** The write context of --by, --reason, --expect-revision and --evidence. */
+function contextOf(call: Call): WriteContext {
+  const context: WriteContext = { origin: call.string("by") as WriteContext["origin"] };
+  const reason = call.string("reason");
+  if (reason !== undefined) context.description = reason;
+  const expected = call.string("expect-revision");
+  if (expected !== undefined) context.expectedRevision = expected;
+  const evidence = call.strings("evidence");
+  if (evidence.length > 0) context.evidence = evidence.map((value) => evidenceOf(value, call.space));
+  return context;
+}
+
+/** A write that reports the revision and the row it wrote, and the row it replaced. */
+function shown<T, U>(result: { revision: string | null; current: T; previous?: T | undefined }, name: string, show: (row: T) => U) {
+  return { revision: result.revision, [name]: show(result.current), ...(result.previous === undefined ? {} : { previous: show(result.previous) }) };
+}
+
+/** The text of an option, or of the project file that a --*-file option names; exactly one of them. */
+function textOrFile(call: Call, option: string): string | undefined {
+  const inline = call.string(option);
+  const file = call.string(`${option}-file`);
+  if (inline !== undefined && file !== undefined) throw new UsageError(`give --${option} or --${option}-file, not both`);
+  if (file !== undefined) return readProjectFile(file).bytes.toString("utf8");
+  return inline;
+}
+
+/** A comma list of params or args; an empty text is an empty list. */
+const commaList = (value: string) => (value.trim() === "" ? [] : value.split(",").map((item) => item.trim()));
+
+const READ_COMMANDS: CommandSpec[] = [
+  readCommand({ name: "at", summary: "Everything known at one address.", subjects: [ADDRESS] }, (db, call) => {
+    const known = at(db, call.parseAddress(call.subject(0), "<address>"), call.space);
+    return {
+      ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }),
+      address: formatC64Address(known.address),
+      ...(known.symbol === undefined ? {} : { symbol: symbol(known.symbol) }),
+      ...(known.analyzerNames.length === 0 ? {} : { analyzerNames: known.analyzerNames.map(symbol) }),
+      ...(known.region === undefined ? {} : { region: region(known.region) }),
+      comments: known.comments.map(comment),
+      referencesFrom: known.referencesFrom.map(reference),
+      referencesTo: known.referencesTo.map(reference),
+      ...(known.operand === undefined ? {} : { operand: operand(known.operand) }),
+      ...(known.patch === undefined ? {} : { patch: patch(known.patch) }),
+      ...(known.macroUse === undefined ? {} : { macroUse: macroUse(known.macroUse) }),
+      ...(known.suppressions.length === 0 ? {} : { suppressions: known.suppressions.map(suppression) }),
+      revision: known.revision,
+    };
+  }),
+  readCommand(
+    {
+      name: "search",
+      summary: "Symbol names, analyzer names and comment texts that hold the text.",
+      subjects: [{ name: "<text>", help: "the text to find" }],
+      options: { origin: OPTIONS.origin, limit: { kind: "count", value: "<n>", min: 1, max: 10_000, default: 50, help: "at most n rows of each kind (default 50)" } },
+    },
+    (db, call) => {
+      const found = search(db, call.subject(0), call.count("limit")!, originsOf(call), call.space);
+      return { symbols: found.symbols.map(symbol), analyzerNames: found.analyzerNames.map(symbol), comments: found.comments.map(comment) };
+    },
+  ),
+  readCommand(
+    { name: "symbols", summary: "The symbols, or with --analyzer the second names that DXA, Ghidra and the idioms gave.", options: { ...FILTER, kind: SYMBOL_KIND, analyzer: { kind: "flag", help: "the analyzer names in place of the symbols" } } },
+    (db, call) => {
+      const kind = call.string("kind") as (typeof SYMBOL_KINDS)[number] | undefined;
+      if (call.flag("analyzer")) return { analyzerNames: listAnalyzerNames(db, rangeOf(call), kind, originsOf(call), call.space).map(symbol) };
+      return { symbols: listSymbols(db, rangeOf(call), kind, originsOf(call), call.space).map(symbol) };
+    },
+  ),
+  readCommand({ name: "regions", summary: "The regions: code, data, tables and the other types.", options: { ...FILTER, type: { kind: "choice", value: "<type>", choices: REGION_TYPES, help: `one of ${REGION_TYPES.join(", ")}` } } }, (db, call) => ({
+    regions: listRegions(db, rangeOf(call), call.string("type") as (typeof REGION_TYPES)[number] | undefined, originsOf(call), call.space).map(region),
+  })),
+  readCommand({ name: "comments", summary: "The comments.", options: FILTER }, (db, call) => ({ comments: listComments(db, rangeOf(call), originsOf(call), call.space).map(comment) })),
+  readCommand({ name: "references", summary: "The references: calls, jumps, reads, writes and pointers.", options: { ...FILTER, kind: REFERENCE_KIND } }, (db, call) => ({
+    references: listReferences(db, rangeOf(call), call.string("kind") as (typeof REFERENCE_KINDS)[number] | undefined, originsOf(call), call.space).map(reference),
+  })),
+  readCommand({ name: "suppressions", summary: "The places that removals keep free of analyzer facts, with the reason of each.", options: { range: OPTIONS.range } }, (db, call) => {
+    const rows = listSuppressions(db, rangeOf(call), call.space);
+    const reasons = reasonsOf(db, rows);
+    return { suppressions: rows.map((row) => ({ ...suppression(row), ...(reasons.has(row.revision) ? { reason: reasons.get(row.revision) } : {}) })) };
+  }),
+  readCommand({ name: "modules", summary: "Where the files of the generated source start.", options: FILTER }, (db, call) => ({ modules: listModules(db, rangeOf(call), originsOf(call), call.space).map(module) })),
+  readCommand({ name: "operands", summary: "The operand expressions of instructions.", options: FILTER }, (db, call) => ({ operands: listOperands(db, rangeOf(call), originsOf(call), call.space).map(operand) })),
+  readCommand({ name: "patches", summary: "The code that a switch puts in.", options: { ...FILTER, switch: { kind: "text", value: "<switch>", help: "only the patches of this switch" } } }, (db, call) => ({
+    patches: listPatches(db, rangeOf(call), call.string("switch"), originsOf(call), call.space).map(patch),
+  })),
+  readCommand({ name: "switches", summary: "Each switch with the ranges of its patches." }, (db, call) => {
+    const switches = new Map<string, PatchRow[]>();
+    for (const row of listPatches(db, undefined, undefined, undefined, call.space)) switches.set(row.switch, [...(switches.get(row.switch) ?? []), row]);
+    return {
+      switches: [...switches].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, rows]) => ({ name, define: `--define ${name}=1`, patches: rows.map((row) => ({ start: formatC64Address(row.start), end: formatC64Address(row.end) })) })),
+    };
+  }),
+  readCommand({ name: "macros", summary: "The macros of the generated source.", options: { origin: OPTIONS.origin } }, (db, call) => ({ macros: listMacros(db, originsOf(call), call.space).map(macro) })),
+  readCommand({ name: "uses", summary: "The instructions written as a macro.", options: { ...FILTER, macro: { kind: "text", value: "<name>", help: "only the uses of this macro" } } }, (db, call) => ({
+    uses: listMacroUses(db, rangeOf(call), call.string("macro"), originsOf(call), call.space).map(macroUse),
+  })),
+  readCommand({ name: "spaces", summary: "The address spaces that hold knowledge." }, (db) => ({ spaces: listSpaces(db) })),
+  readCommand({ name: "program", summary: "The program in the knowledge: its segments and entry, and the coverage maps that coverage imported, with the ranges." }, (db, call) => {
+    const image = programImage(db, call.space);
+    const ranges = db === undefined ? [] : (db.prepare("SELECT kind, count(*) AS count FROM current_coverage WHERE space = ? GROUP BY kind ORDER BY kind").all(call.space) as Array<{ kind: string; count: number }>);
+    return {
+      ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }),
+      image:
+        image === undefined
+          ? null
+          : {
+              segments: image.segments.map((segment) => ({ start: formatC64Address(segment.start), end: formatC64Address(segment.end) })),
+              bytes: image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0),
+              ...(image.entry === undefined ? {} : { entry: formatC64Address(image.entry) }),
+              state: image.state !== undefined,
+              stages: image.stages?.length ?? 0,
+            },
+      coverage: { maps: [...new Set(coverageRuns(db).filter((run) => run.space === call.space).map((run) => run.name))], ranges: Object.fromEntries(ranges.map((row) => [row.kind, row.count])) },
+    };
+  }),
+  readCommand(
+    {
+      name: "history",
+      summary: "The rows at an address, of a name or of a macro, through all revisions, each with the reason and the evidence of its revision.",
+      subjects: [{ ...ADDRESS, optional: true }],
+      options: { name: { kind: "text", value: "<name>", help: "the history of a name in place of an address" }, macro: { kind: "text", value: "<name>", help: "the history of a macro in place of an address" } },
+      notes: "Give exactly one of <address>, --name and --macro.",
+    },
+    (db, call) => {
+      const name = call.string("name");
+      const macroName = call.string("macro");
+      if ([call.subjects.length > 0, name !== undefined, macroName !== undefined].filter(Boolean).length !== 1) throw new UsageError("history needs exactly one of <address>, --name and --macro");
+      const entries = macroName !== undefined ? historyOfMacro(db, macroName, call.space) : name !== undefined ? historyNamed(db, name, call.space) : historyAt(db, call.parseAddress(call.subject(0), "<address>"), call.space);
+      return { history: entries.map((entry) => ({ ...historyEntry(entry), ...revisionNote(db, entry.from) })) };
+    },
+  ),
+  readCommand(
+    { name: "revisions", summary: "The revisions, newest first.", options: { limit: { kind: "count", value: "<n>", min: 1, max: 100_000, help: "at most n revisions" }, before: { kind: "text", value: "<revision>", help: "only the revisions before this one" } } },
+    (db, call) => {
+      const options: { limit?: number; before?: string } = {};
+      const limit = call.count("limit");
+      if (limit !== undefined) options.limit = limit;
+      const before = call.string("before");
+      if (before !== undefined) options.before = before;
+      return { revisions: revisions(db, options) };
+    },
+  ),
+  readCommand({ name: "revision", summary: "The rows that one revision added and closed.", subjects: [REVISION] }, (db, call) => {
+    const changes = revision(db, call.subject(0));
+    return { revision: changes.revision, added: changes.added.map(historyEntry), closed: changes.closed.map(historyEntry) };
+  }),
+  readCommand({ name: "export", summary: "All current knowledge to a project file as JSON.", options: { ...FILTER, out: { ...OPTIONS.out, value: "<file>", help: "the JSON file, relative to the project folder", required: true } } }, (db, call) => {
+    const range = rangeOf(call);
+    const origins = originsOf(call);
+    const space = call.space;
+    const exported = {
+      revision: currentRevision(db),
+      ...(space === DEFAULT_SPACE ? {} : { space }),
+      symbols: listSymbols(db, range, undefined, origins, space).map(symbol),
+      analyzerNames: listAnalyzerNames(db, range, undefined, origins, space).map(symbol),
+      regions: listRegions(db, range, undefined, origins, space).map(region),
+      comments: listComments(db, range, origins, space).map(comment),
+      references: listReferences(db, range, undefined, origins, space).map(reference),
+      suppressions: listSuppressions(db, range, space).map(suppression),
+      modules: listModules(db, range, origins, space).map(module),
+      operands: listOperands(db, range, origins, space).map(operand),
+      patches: listPatches(db, range, undefined, origins, space).map(patch),
+      macros: listMacros(db, origins, space).map(macro),
+      macroUses: listMacroUses(db, range, undefined, origins, space).map(macroUse),
+    };
+    const counts = Object.fromEntries(Object.entries(exported).flatMap(([key, value]) => (Array.isArray(value) ? [[key, value.length]] : [])));
+    return { counts, revision: exported.revision, ...writeReported(call.string("out")!, `${JSON.stringify(exported, null, 2)}\n`, { what: "--out" }) };
+  }),
+  readCommand(
+    {
+      name: "listing",
+      summary: "The program as ACME lines with names, operand expressions, comments, the access of each line in the coverage (x executed, r read, w written) and the references in and out.",
+      subjects: [RANGE],
+      options: { out: { ...OPTIONS.out, value: "<file>", help: "write the listing as text to this file in place of the lines in the result" } },
+    },
+    (db, call) => {
+      const { start, end } = call.parseRange(call.subject(0), "<range>");
+      const lines = listing(listingSource(db, call.space), start, end);
+      const out = call.string("out");
+      if (out !== undefined) return { lines: lines.length, ...writeReported(out, listingText(lines), { what: "--out" }) };
+      return { lines: lines.map((row) => ({ ...row, address: formatC64Address(row.address) })) };
+    },
+  ),
+];
+
+const WRITE_COMMANDS: CommandSpec[] = [
+  writeCommand({ name: "rename", summary: "Gives an address a name.", subjects: [ADDRESS, { name: "<name>", help: "the new name: assembler label syntax" }], options: { kind: SYMBOL_KIND } }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>"), name: call.subject(1), ...(call.string("kind") === undefined ? {} : { kind: call.string("kind") as (typeof SYMBOL_KINDS)[number] }) };
+    return (db) => shown(renameSymbol(db, context, request), "symbol", symbol);
+  }),
+  writeCommand({ name: "remove-symbol", summary: "Removes the name at an address.", subjects: [ADDRESS] }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>") };
+    return (db) => ({ revision: removeSymbol(db, context, request).revision });
+  }),
+  writeCommand(
+    {
+      name: "classify",
+      summary: "Gives a range a region type.",
+      subjects: [RANGE, { name: "<type>", help: `one of ${REGION_TYPES.join(", ")}` }],
+      options: { element: { kind: "count", value: "<n>", min: 1, max: 0x10000, help: "the bytes of one element of a table: the length of the range is a multiple of it" } },
+    },
+    (call) => {
+      const context = contextOf(call);
+      const element = call.count("element");
+      const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>"), type: oneOf(REGION_TYPES, call.subject(1), "<type>"), ...(element === undefined ? {} : { element }) };
+      return (db) => {
+        const result = classifyRegion(db, context, request);
+        return { revision: result.revision, regions: result.current.map(region), ...(result.previous === undefined ? {} : { previous: result.previous.map(region) }) };
+      };
+    },
+  ),
+  writeCommand({ name: "unclassify", summary: "Removes the region types of a range.", subjects: [RANGE] }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>") };
+    return (db) => ({ revision: unclassifyRegion(db, context, request).revision });
+  }),
+  writeCommand(
+    {
+      name: "comment",
+      summary: "Writes a comment at an address: a line of its own above it, or at the end of its line.",
+      subjects: [ADDRESS, { name: "<placement>", help: `one of ${COMMENT_PLACEMENTS.join(", ")}` }, { name: "<text>", help: "the comment", list: true }],
+    },
+    (call) => {
+      const context = contextOf(call);
+      const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>"), placement: oneOf(COMMENT_PLACEMENTS, call.subject(1), "<placement>"), text: call.rest(2).join(" ") };
+      return (db) => {
+        const result = setComment(db, context, request);
+        return { revision: result.revision, comment: comment(result.current) };
+      };
+    },
+  ),
+  writeCommand({ name: "uncomment", summary: "Removes a comment.", subjects: [ADDRESS, { name: "<placement>", help: `one of ${COMMENT_PLACEMENTS.join(", ")}` }] }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>"), placement: oneOf(COMMENT_PLACEMENTS, call.subject(1), "<placement>") };
+    return (db) => ({ revision: removeComment(db, context, request).revision });
+  }),
+  ...(["reference", "unreference"] as const).map((name) =>
+    writeCommand(
+      {
+        name,
+        summary: name === "reference" ? "Records that code at one address refers to another." : "Removes a reference.",
+        subjects: [{ name: "<from>", help: "the address of the instruction" }, { name: "<to>", help: "the address it refers to" }, { name: "<kind>", help: `one of ${REFERENCE_KINDS.join(", ")}` }],
+      },
+      (call) => {
+        const context = contextOf(call);
+        const request = { space: call.space, from: call.parseAddress(call.subject(0), "<from>"), to: call.parseAddress(call.subject(1), "<to>"), kind: oneOf(REFERENCE_KINDS, call.subject(2), "<kind>") };
+        return name === "reference"
+          ? (db) => {
+              const result = addReference(db, context, request);
+              return { revision: result.revision, reference: reference(result.current) };
+            }
+          : (db) => ({ revision: removeReference(db, context, request).revision });
+      },
+    ),
+  ),
+  writeCommand(
+    { name: "module", summary: "Records that a file of the generated source starts at an address.", subjects: [START, { name: "<file.asm>", help: "the source file" }], options: { title: { kind: "text", value: "<text>", help: "the title of the file" } } },
+    (call) => {
+      const context = contextOf(call);
+      const title = call.string("title");
+      const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>"), file: call.subject(1), ...(title === undefined ? {} : { title }) };
+      return (db) => {
+        const result = setModule(db, context, request);
+        return { revision: result.revision, module: module(result.current) };
+      };
+    },
+  ),
+  writeCommand({ name: "unmodule", summary: "Removes the module that starts at an address.", subjects: [START] }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>") };
+    return (db) => ({ revision: removeModule(db, context, request).revision });
+  }),
+  writeCommand(
+    {
+      name: "operand",
+      summary: "Writes the operand of the instruction at an address as an expression.",
+      subjects: [ADDRESS],
+      options: {
+        lo: { kind: "text", value: "<symbol>", help: "the low byte of symbol + offset" },
+        hi: { kind: "text", value: "<symbol>", help: "the high byte of symbol + offset" },
+        value: { kind: "text", value: "<symbol>", help: "the value symbol + offset" },
+        expr: { kind: "text", value: "<text>", help: "ACME expression text" },
+        offset: { kind: "text", value: "<n>", help: "with --lo, --hi or --value: a whole number such as 1, '$1000' or, as --offset=-1, a negative one" },
+      },
+      notes: "Give exactly one of --lo, --hi, --value and --expr. The write is refused when the expression does not give the operand in the program of the knowledge.",
+    },
+    (call) => {
+      const context = contextOf(call);
+      const given = (["lo", "hi", "value", "expr"] as const).filter((option) => call.string(option) !== undefined);
+      if (given.length !== 1) throw new UsageError("operand needs exactly one of --lo, --hi, --value or --expr");
+      const select: OperandSelect = given[0]!;
+      const offset = call.string("offset");
+      const request: { space: string; address: number; select: OperandSelect; symbol?: string; offset?: number; expression?: string } = { space: call.space, address: call.parseAddress(call.subject(0), "<address>"), select };
+      if (select === "expr") {
+        if (offset !== undefined) throw new UsageError("--offset works with --lo, --hi and --value, not with --expr");
+        request.expression = call.string("expr")!;
+      } else {
+        request.symbol = call.string(select)!;
+        if (offset !== undefined) request.offset = offsetOf(offset, "--offset");
+      }
+      return (db) => shown(setOperand(db, { ...context, image: operandImage(db, call.space) }, request), "operand", operand);
+    },
+  ),
+  writeCommand({ name: "unoperand", summary: "Removes the operand expression at an address.", subjects: [ADDRESS] }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>") };
+    return (db) => ({ revision: removeOperand(db, context, request).revision });
+  }),
+  writeCommand(
+    {
+      name: "patch",
+      summary: "ACME code that replaces a range when the build defines the switch as 1 (c64-assembler --define SWITCH=1). NOP fills the rest of the range.",
+      subjects: [RANGE, { name: "<switch>", help: "the switch name" }],
+      options: {
+        code: { kind: "text", value: "<text>", help: "the ACME code" },
+        "code-file": { kind: "path", value: "<file>", help: "a project file with the ACME code" },
+        nop: { kind: "flag", help: "put only NOP" },
+        comment: { kind: "text", value: "<text>", help: "a comment for the patch" },
+      },
+      notes: "Give exactly one of --code, --code-file and --nop.",
+    },
+    (call) => {
+      const context = contextOf(call);
+      const code = textOrFile(call, "code");
+      if ((code === undefined) === !call.flag("nop")) throw new UsageError("patch needs exactly one of --code, --code-file or --nop");
+      const commentText = call.string("comment");
+      const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>"), switch: call.subject(1), code: code ?? "", ...(commentText === undefined ? {} : { comment: commentText }) };
+      return (db) => shown(setPatch(db, { ...context, image: operandImage(db, call.space) }, request), "patch", patch);
+    },
+  ),
+  writeCommand({ name: "unpatch", summary: "Removes the patch that starts at an address.", subjects: [START] }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>") };
+    return (db) => ({ revision: removePatch(db, context, request).revision });
+  }),
+  writeCommand(
+    {
+      name: "macro",
+      summary: "Writes an ACME macro. The body names a param with a dot: .a",
+      subjects: [{ name: "<name>", help: "the macro name" }],
+      options: {
+        params: { kind: "text", value: "<a,b>", help: "the params, a comma list" },
+        body: { kind: "text", value: "<text>", help: "the body" },
+        "body-file": { kind: "path", value: "<file>", help: "a project file with the body" },
+        comment: { kind: "text", value: "<text>", help: "a comment for the macro" },
+      },
+      notes: "Give --body or --body-file.",
+    },
+    (call) => {
+      const context = contextOf(call);
+      const body = textOrFile(call, "body");
+      if (body === undefined || body === "") throw new UsageError("macro needs --body or --body-file with text");
+      const commentText = call.string("comment");
+      const request = { space: call.space, name: call.subject(0), params: commaList(call.string("params") ?? ""), body, ...(commentText === undefined ? {} : { comment: commentText }) };
+      return (db) => shown(setMacro(db, context, request), "macro", macro);
+    },
+  ),
+  writeCommand({ name: "unmacro", summary: "Removes a macro that no use has.", subjects: [{ name: "<name>", help: "the macro name" }] }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space, name: call.subject(0) };
+    return (db) => ({ revision: removeMacro(db, context, request).revision });
+  }),
+  writeCommand(
+    {
+      name: "use",
+      summary: "Writes the instructions of a range as one use of a macro.",
+      subjects: [RANGE, { name: "<macro>", help: "the macro name" }],
+      options: { args: { kind: "text", value: "<x, y>", help: "one expression for each param, a comma list" } },
+    },
+    (call) => {
+      const context = contextOf(call);
+      const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>"), macro: call.subject(1), args: commaList(call.string("args") ?? "") };
+      return (db) => {
+        const result = setMacroUse(db, { ...context, image: operandImage(db, call.space) }, request);
+        return { revision: result.revision, use: macroUse(result.current), ...(result.previous === undefined ? {} : { previous: macroUse(result.previous) }) };
+      };
+    },
+  ),
+  writeCommand({ name: "unuse", summary: "Removes the macro use that starts at an address.", subjects: [START] }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>") };
+    return (db) => ({ revision: removeMacroUse(db, context, request).revision });
+  }),
+  writeCommand(
+    {
+      name: "image",
+      summary: "Puts the program into the knowledge: its bytes, and for an image.json of a c64-unpacker capture also the entry, the entry state and the stages. Only changed bytes write.",
+      subjects: [{ name: "<file>", help: "an image.json of c64-unpacker capture or loads, or a PRG" }],
+    },
+    (call) => {
+      const context = contextOf(call);
+      const request = imageRequest(call.subject(0), call.space);
+      return (db) => {
+        const { revision, current } = setImage(db, context, request);
+        return { revision, ...spaceOf(current), bytes: current.bytes, rowsAdded: current.rowsAdded, rowsClosed: current.rowsClosed, entryChanged: current.entry };
+      };
+    },
+  ),
+  writeCommand(
+    {
+      name: "coverage",
+      summary: "Joins coverage maps of c64_memmap or of a run into the coverage of the knowledge. Each map is named by its path: --evidence coverage:<path> cites it.",
+      subjects: [{ name: "<map>", help: "a 64 KiB coverage map", list: true }],
+    },
+    (call) => {
+      const context = contextOf(call);
+      const maps = call.subjects.map((path) => ({ bytes: readProjectFile(path).bytes, name: knowledgePath(path, "<map>") }));
+      return (db) => {
+        const { revision, current } = addCoverage(db, context, { space: call.space, maps });
+        return { revision, ...spaceOf(current), imported: current.imported, known: current.known, ranges: current.ranges };
+      };
+    },
+  ),
+  writeCommand({ name: "revert", summary: "Undoes one revision with a new revision.", subjects: [REVISION] }, (call) => {
+    const context = contextOf(call);
+    const request = { revision: call.subject(0) };
+    return (db) => ({ revision: revert(db, context, request).revision });
+  }),
+  writeCommand({ name: "merge", summary: "Decides the conflicts that a git merge of two computers' work left: of the rows of one conflict, the newest stays. One revision for all." }, (call) => {
+    const context = contextOf(call);
+    const platform = new Map(platformNames().map((entry) => [entry.name, entry.address]));
+    return (db) => {
+      const merged = mergeConflicts(db, context, platform);
+      return { revision: merged.revision, choices: merged.current.map(showChoice) };
+    };
+  }),
+  writeCommand(
+    {
+      name: "apply",
+      summary: "Many writes from a JSON file, all as one revision, or none when one is refused.",
+      subjects: [{ name: "<file>", help: "the batch: a JSON list of writes, or - for standard input" }],
+      notes: 'A write is {"op": "<command>", ...}, for example {"op": "rename", "address": "$2100", "name": "update_player"}. A range is "start" and "end". A write can name its own "space". operand, patch and use writes are checked against the program of their space.',
+    },
+    (call) => {
+      const context = contextOf(call);
+      const path = call.subject(0);
+      const text = path === "-" ? readFileSync(0, "utf8") : readProjectFile(path).bytes.toString("utf8");
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch (error) {
+        throw new Refusal("invalid-input", `the batch ${path} is not JSON: ${(error as Error).message}`);
+      }
+      if (!Array.isArray(parsed)) throw new Refusal("invalid-input", `the batch ${path} is a JSON list of writes, for example [{"op": "rename", "address": "$2100", "name": "update_player"}]`);
+      const operations = parsed.map((item, index) => batchOperation(call, item, `write ${index + 1}`));
+      const checked = operations.some((operation) => operation.op === "operand" || operation.op === "patch" || operation.op === "use");
+      return (db) => {
+        const applied = applyBatch(db, checked ? { ...context, image: operandImage(db, call.space) } : context, operations);
+        // replaced: each write that replaced a row of another origin, with that row as previous gives it for one write.
+        const replaced = applied.steps.flatMap((step, index) => (step.previous === undefined ? [] : [{ write: index + 1, op: operations[index]!.op, previous: shownPrevious(step.previous) }]));
+        return { revision: applied.revision, writes: applied.steps.length, replaced };
+      };
+    },
+  ),
+];
+
+/** join: the batches of agents that worked in parallel, as one batch for apply. It writes no knowledge. */
+const JOIN: CommandSpec = {
+  name: "join",
+  summary: "Joins the batches of agents that worked in parallel into one batch for apply. It writes no knowledge.",
+  subjects: [{ name: "<batch>", help: 'a batch: a list of writes, or {"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}', list: true }],
+  options: { ...SPACE, out: { ...OPTIONS.out, value: "<file>", help: "the joined batch, relative to the project folder", required: true } },
+  notes: "At an address in the owner range of a batch, its name, comment, operand and module win, and its regions come last. One name or one module file at two addresses writes nothing.",
+  run: (call) => {
+    if (call.subjects.length < 2) throw new UsageError("join needs two or more batch files");
+    const batches: Batch[] = call.subjects.map((file) => {
+      let value: unknown;
+      try {
+        value = JSON.parse(readProjectFile(file).bytes.toString("utf8"));
+      } catch (error) {
+        if (error instanceof SyntaxError) throw new Refusal("invalid-input", `${file} is not JSON: ${error.message}`);
+        throw error;
+      }
+      const shaped = Array.isArray(value) ? { ops: value } : (value as { owner?: unknown; ops?: unknown });
+      if (typeof shaped !== "object" || shaped === null || !Array.isArray(shaped.ops)) throw new Refusal("invalid-input", `${file}: a batch is a list of writes, or {"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}`);
+      let owner: Batch["owner"];
+      if (shaped.owner !== undefined) {
+        const given = shaped.owner as { start?: unknown; end?: unknown };
+        if (typeof given !== "object" || given === null || typeof given.start !== "string" || typeof given.end !== "string" || Object.keys(given).length !== 2) {
+          throw new Refusal("invalid-input", `${file}: owner must be {"start": "<address>", "end": "<address>"}, for example {"start": "$1000", "end": "$1fff"}`);
+        }
+        owner = { start: call.parseAddress(given.start, `${file}: owner.start`), end: call.parseAddress(given.end, `${file}: owner.end`) };
+        if (owner.end < owner.start) throw new Refusal("invalid-input", `${file}: the owner range ends before it starts`);
+      }
+      const ops = (shaped.ops as unknown[]).map((item, index) => batchOperation(call, item, `${file}: write ${index + 1}`));
+      return { file, ...(owner === undefined ? {} : { owner }), ops };
+    });
+    const owned = batches.filter((batch) => batch.owner !== undefined);
+    for (const [index, batch] of owned.entries()) {
+      const other = owned.slice(index + 1).find((next) => next.owner!.start <= batch.owner!.end && batch.owner!.start <= next.owner!.end);
+      if (other !== undefined) throw new Refusal("invalid-input", `The owner ranges of ${batch.file} and ${other.file} overlap. Give each address one owner.`);
+    }
+    const joined = joinBatches(batches);
+    const choice = (item: JoinChoice) => ({ ...item, at: typeof item.at === "number" ? formatC64Address(item.at) : item.at, ...(item.space === DEFAULT_SPACE ? { space: undefined } : {}) });
+    if (joined.clashes.length > 0) {
+      const clash = (item: JoinClash) => `${item.what} ${item.value} at ${item.places.map((place) => `${formatC64Address(place.address)} (${place.file})`).join(" and ")}${item.space === DEFAULT_SPACE ? "" : ` in ${item.space}`}`;
+      throw new Refusal("conflict", `The batches give one ${joined.clashes.map(clash).join(", one ")}. Nothing was written. Give each name and each module file one address in the batches, then join again.`);
+    }
+    const out = call.string("out")!;
+    return { writes: joined.ops.length, repeated: joined.repeated, choices: joined.choices.map(choice), apply: `knowledge.ts apply ${out}`, ...writeReported(out, `${JSON.stringify(joined.ops.map(batchJson), null, 1)}\n`, { what: "--out" }) };
+  },
+};
+
 /** One write of a batch. A write names its own space, or takes the one of --space. */
-function batchOperation(item: unknown, at: string, space: string): BatchOperation {
-  const operation = batchFields(item, at);
+function batchOperation(call: Call, item: unknown, at: string): BatchOperation {
+  if (typeof item !== "object" || item === null || Array.isArray(item)) throw new Refusal("invalid-input", `${at}: a write is an object with op`);
   const own = (item as Record<string, unknown>).space;
-  if (own !== undefined && typeof own !== "string") throw new UsageError(`${at}: space must be a string`);
-  return { ...operation, space: own ?? space };
+  if (own !== undefined && typeof own !== "string") throw new Refusal("invalid-input", `${at}: space must be a string`);
+  const space = (own as string | undefined) ?? call.space;
+  return { ...batchFields(item as Record<string, unknown>, at, (text, what) => call.parseAddress(text, what, space)), space };
 }
 
 /** The fields of one write of a batch, with its addresses parsed. */
-function batchFields(item: unknown, at: string): BatchOperation {
-  if (typeof item !== "object" || item === null || Array.isArray(item)) throw new UsageError(`${at}: a write is an object with op`);
-  const fields = item as Record<string, unknown>;
+function batchFields(fields: Record<string, unknown>, at: string, address: (text: string, what: string) => number): BatchOperation {
   const op = oneOf(Object.keys(BATCH_FIELDS) as Array<BatchOperation["op"]>, String(fields.op), `${at}: op`);
   const unknown = Object.keys(fields).filter((key) => key !== "op" && key !== "space" && !BATCH_FIELDS[op].includes(key));
-  if (unknown.length > 0) throw new UsageError(`${at}: ${op} takes ${BATCH_FIELDS[op].join(", ")}, not ${unknown.join(", ")}`);
+  if (unknown.length > 0) throw new Refusal("invalid-input", `${at}: ${op} takes ${BATCH_FIELDS[op].join(", ")}, not ${unknown.join(", ")}`);
   const text = (key: string) => {
-    if (typeof fields[key] !== "string") throw new UsageError(`${at}: ${key} must be a string`);
+    if (typeof fields[key] !== "string") throw new Refusal("invalid-input", `${at}: ${key} must be a string`);
     return fields[key] as string;
   };
   const place = (key: string) => address(text(key), `${at}: ${key}`);
@@ -910,7 +935,7 @@ function batchFields(item: unknown, at: string): BatchOperation {
     const value = fields[key];
     if (value === undefined) return [];
     if (typeof value === "string") return commaList(value);
-    if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new UsageError(`${at}: ${key} must be a list of strings or a comma list`);
+    if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Refusal("invalid-input", `${at}: ${key} must be a list of strings or a comma list`);
     return (value as string[]).map((item) => item.trim());
   };
   const optional = (key: string) => (fields[key] === undefined ? {} : { [key]: text(key) });
@@ -920,7 +945,7 @@ function batchFields(item: unknown, at: string): BatchOperation {
     case "remove-symbol":
       return { op, address: place("address") };
     case "classify": {
-      if (fields.element !== undefined && typeof fields.element !== "number") throw new UsageError(`${at}: element must be a number`);
+      if (fields.element !== undefined && typeof fields.element !== "number") throw new Refusal("invalid-input", `${at}: element must be a number`);
       return { op, start: place("start"), end: place("end"), type: oneOf(REGION_TYPES, text("type"), `${at}: type`), ...(fields.element === undefined ? {} : { element: fields.element as number }) };
     }
     case "unclassify":
@@ -963,108 +988,9 @@ function batchFields(item: unknown, at: string): BatchOperation {
   }
 }
 
-type WriteOperation = (db: DatabaseSync) => unknown;
-
-function writeOperation(command: string, args: string[], kind: string | undefined, element: string | undefined, context: WriteContext, title: string | undefined, space: string): WriteOperation {
-  switch (command) {
-    case "rename": {
-      if (args[1] === undefined) throw new UsageError("name is missing");
-      const request: { space: string; address: number; name: string; kind?: SymbolKind } = { space, address: address(args[0]), name: args[1] };
-      if (kind !== undefined) request.kind = oneOf(SYMBOL_KINDS, kind, "--kind");
-      return (db) => {
-        const result = renameSymbol(db, context, request);
-        return { revision: result.revision, symbol: symbol(result.current), ...(result.previous === undefined ? {} : { previous: symbol(result.previous) }) };
-      };
-    }
-    case "remove-symbol": {
-      const request = { space, address: address(args[0]) };
-      return (db) => ({ revision: removeSymbol(db, context, request).revision });
-    }
-    case "classify": {
-      const request = {
-        space,
-        start: address(args[0], "start"),
-        end: address(args[1], "end"),
-        type: oneOf(REGION_TYPES, args[2], "type") as RegionType,
-        ...(element === undefined ? {} : { element: integer(element, "--element") }),
-      };
-      return (db) => {
-        const result = classifyRegion(db, context, request);
-        return { revision: result.revision, regions: result.current.map(region), ...(result.previous === undefined ? {} : { previous: result.previous.map(region) }) };
-      };
-    }
-    case "unclassify": {
-      const request = { space, start: address(args[0], "start"), end: address(args[1], "end") };
-      return (db) => ({ revision: unclassifyRegion(db, context, request).revision });
-    }
-    case "comment": {
-      if (args.length < 3) throw new UsageError("text is missing");
-      const request = { space, address: address(args[0]), placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") as CommentPlacement, text: args.slice(2).join(" ") };
-      return (db) => {
-        const result = setComment(db, context, request);
-        return { revision: result.revision, comment: comment(result.current) };
-      };
-    }
-    case "uncomment": {
-      const request = { space, address: address(args[0]), placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") };
-      return (db) => ({ revision: removeComment(db, context, request).revision });
-    }
-    case "reference": {
-      const request = { space, from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") as ReferenceKind };
-      return (db) => {
-        const result = addReference(db, context, request);
-        return { revision: result.revision, reference: reference(result.current) };
-      };
-    }
-    case "unreference": {
-      const request = { space, from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") };
-      return (db) => ({ revision: removeReference(db, context, request).revision });
-    }
-    case "module": {
-      if (args[1] === undefined) throw new UsageError("file is missing");
-      const request = { space, start: address(args[0], "start"), file: args[1], ...(title === undefined ? {} : { title }) };
-      return (db) => {
-        const result = setModule(db, context, request);
-        return { revision: result.revision, module: module(result.current) };
-      };
-    }
-    case "unmodule": {
-      const request = { space, start: address(args[0], "start") };
-      return (db) => ({ revision: removeModule(db, context, request).revision });
-    }
-    case "unoperand": {
-      const request = { space, address: address(args[0]) };
-      return (db) => ({ revision: removeOperand(db, context, request).revision });
-    }
-    case "unpatch": {
-      const request = { space, start: address(args[0], "start") };
-      return (db) => ({ revision: removePatch(db, context, request).revision });
-    }
-    case "unmacro": {
-      if (args[0] === undefined) throw new UsageError("the macro name is missing");
-      const request = { space, name: args[0] };
-      return (db) => ({ revision: removeMacro(db, context, request).revision });
-    }
-    case "unuse": {
-      const request = { space, start: address(args[0], "start") };
-      return (db) => ({ revision: removeMacroUse(db, context, request).revision });
-    }
-    case "merge": {
-      if (args.length > 0) throw new UsageError("merge takes no arguments");
-      const platform = new Map(platformNames().map((entry) => [entry.name, entry.address]));
-      return (db) => {
-        const merged = mergeConflicts(db, context, platform);
-        return { revision: merged.revision, choices: merged.current.map(showChoice) };
-      };
-    }
-    case "revert": {
-      if (args[0] === undefined) throw new UsageError("revision is missing");
-      const request = { revision: args[0] };
-      return (db) => ({ revision: revert(db, context, request).revision });
-    }
-    default:
-      throw new UsageError(`unknown command: ${command}`);
-  }
-}
-
-await runBody((argv) => run(argv), { usage: USAGE });
+await runScript({
+  name: "knowledge",
+  summary: "Reads and writes the knowledge of the project: names, regions, comments, references, the program and its coverage, and the source knowledge. A read needs no knowledge folder. Every command takes --space: c64 (the default), drive8 for 1541 drive code, or bank0 to bank255 for cartridge banks.",
+  names: knowledgeNames,
+  commands: [...READ_COMMANDS, ...WRITE_COMMANDS, JOIN],
+});

@@ -32,9 +32,9 @@ test("from a clean project: a read, the first write, several changes, the curren
   knowledge("rename", "$2100", "FUN_2100", "--kind", "routine", "--reason", "entry found by tracing");
   assert.deepEqual(readdirSync(join(root, ".c64-re-tools")).sort(), ["knowledge", "local"], "the first write creates the knowledge");
 
-  knowledge("classify", "$2000", "$2fff", "code", "--expect-revision", nthIn(root, 1));
-  knowledge("classify", "$2800", "$283f", "sprite", "--reason", "drawn as the player sprite");
-  knowledge("rename", "$2100", "update_player", "--reason", "reads joystick 2 and moves the player", "--origin", "user");
+  knowledge("classify", "$2000-$2fff", "code", "--expect-revision", nthIn(root, 1));
+  knowledge("classify", "$2800-$283f", "sprite", "--reason", "drawn as the player sprite");
+  knowledge("rename", "$2100", "update_player", "--reason", "reads joystick 2 and moves the player", "--by", "user");
   knowledge("comment", "$2100", "line", "Reads joystick 2 and moves the player.");
   knowledge("reference", "$2100", "$dc00", "read");
   knowledge("rename", "$2800", "player_sprite", "--kind", "data");

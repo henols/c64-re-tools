@@ -89,7 +89,7 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
   const [first, second] = [join(scratch, "first"), join(scratch, "second")];
   for (const clone of [first, second]) gitOk(scratch, "clone", "-q", origin, clone);
   write(first, "rename", "$1002", "copy_loop");
-  write(first, "classify", "$1010", "$101f", "bytes", "--element", "4");
+  write(first, "classify", "$1010-$101f", "bytes", "--element", "4");
   write(first, "comment", "$1000", "line", "Copies the table to the screen.");
   write(first, "rename", "$1020", "after_table");
   gitOk(first, "add", "-A");
@@ -97,7 +97,7 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
   gitOk(first, "push", "-q", "origin", "main");
   later();
   write(second, "rename", "$1002", "fill_screen");
-  write(second, "classify", "$1008", "$1017", "code");
+  write(second, "classify", "$1008-$1017", "code");
   write(second, "comment", "$100e", "side", "Padding.");
   gitOk(second, "add", "-A");
   gitOk(second, "commit", "-q", "-m", "second computer");
@@ -116,7 +116,7 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
   assert.equal((refused.json.error as { code: string }).code, "conflict");
   assert.match((refused.json.error as { message: string }).message, /knowledge\.ts merge/);
 
-  const merged = knowledge(second, "merge", "--reason", "merge of two computers", "--origin", "user");
+  const merged = knowledge(second, "merge", "--reason", "merge of two computers", "--by", "user");
   assert.equal(merged.status, 0, JSON.stringify(merged.json));
   const choices = merged.json.choices as Array<{ conflict: string; kept: { name?: string; type?: string }; closed: Array<{ name?: string; type?: string }> }>;
   assert.deepEqual(

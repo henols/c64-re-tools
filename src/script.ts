@@ -174,14 +174,14 @@ export class Call {
 
   // Parsers for text: a subject, or a value in a JSON file. `what` names the value in an error.
 
-  /** An address: $ and 1 to 4 hex digits, or a name in the space of the command. */
-  parseAddress(text: string, what: string): number {
+  /** An address: $ and 1 to 4 hex digits, or a name in `space` (default: the space of the command). */
+  parseAddress(text: string, what: string, space = this.space): number {
     const value = c64AddressOf(text);
     if (value !== undefined) return value;
     if (!SYMBOL_NAME.test(text)) throw new UsageError(`${what} must be ${ADDRESS_FORM}, not ${JSON.stringify(text)}`);
     if (this.#names === undefined) throw new UsageError(`${what}: ${this.script}.ts ${this.command} takes no names. Give $ and 1 to 4 hex digits, not ${text}`);
     try {
-      return this.#names(text, this.space);
+      return this.#names(text, space);
     } catch (error) {
       if (isRefusal(error)) throw new UsageError(`${what}: ${error.message}`);
       throw error;
@@ -189,11 +189,11 @@ export class Call {
   }
 
   /** A range <start>-<end>, each an address; the start is not after the end. */
-  parseRange(text: string, what: string): AddressRange {
+  parseRange(text: string, what: string, space = this.space): AddressRange {
     const parts = rangeParts(text);
     if (parts === undefined) throw new UsageError(`${what} must be <start>-<end>, each ${ADDRESS_FORM}, for example '$c000-$cfff', not ${JSON.stringify(text)}`);
-    const start = this.parseAddress(parts[0], `${what} start`);
-    const end = this.parseAddress(parts[1], `${what} end`);
+    const start = this.parseAddress(parts[0], `${what} start`, space);
+    const end = this.parseAddress(parts[1], `${what} end`, space);
     if (end < start) throw new UsageError(`${what} ends at ${formatC64Address(end)}, before its start ${formatC64Address(start)}`);
     return { start, end };
   }

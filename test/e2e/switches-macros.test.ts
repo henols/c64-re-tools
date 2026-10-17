@@ -79,7 +79,7 @@ test("switches and macros: the source stays identical, each switch fits, and CRA
   );
   ok("c64-knowledge", "knowledge.ts", ["image", "game.prg"]);
   ok("c64-knowledge", "knowledge.ts", ["apply", "knowledge.json", "--reason", "the crack and the counters"]);
-  ok("c64-knowledge", "knowledge.ts", ["patch", "$100b", "$100d", "TRAINER", "--nop", "--comment", "Lives stay."]);
+  ok("c64-knowledge", "knowledge.ts", ["patch", "$100b-$100d", "TRAINER", "--nop", "--comment", "Lives stay."]);
   assert.deepEqual(ok("c64-knowledge", "knowledge.ts", ["switches"]).switches.map((item: { name: string; patches: unknown[] }) => [item.name, item.patches.length]), [["CRACK", 3], ["TRAINER", 1]]);
 
   const generated = ok("c64-source", "generate.ts", ["--out", "src"]);
