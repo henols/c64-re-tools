@@ -446,12 +446,6 @@ function exitStatusOf(result: unknown): number {
   return outcome === "FAIL" ? 1 : outcome === "INCONCLUSIVE" ? 3 : 0;
 }
 
-/** True for an error that node:util parseArgs throws for a wrong command line. */
-function isParseArgsError(error: unknown): error is Error {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return error instanceof Error && typeof code === "string" && code.startsWith("ERR_PARSE_ARGS_");
-}
-
 /** What the envelope needs of a script: its name for messages, and the usage for a wrong command line. */
 interface Envelope {
   name: string;
@@ -479,14 +473,13 @@ async function envelope(script: Envelope): Promise<void> {
     if (printed) return;
     printed = true;
     process.stdout.write(`${JSON.stringify(value)}\n`);
-    // A body of runBody may have set its own status for a FAIL.
-    process.exitCode = status === 0 ? (process.exitCode ?? 0) : status;
+    process.exitCode = status;
   };
 
   const fail = (error: unknown) => {
     let code: ErrorCode;
     let message: string;
-    if (error instanceof UsageError || isParseArgsError(error)) {
+    if (error instanceof UsageError) {
       code = "invalid-input";
       message = `${error.message}\n\n${script.usage(commandName)}`;
     } else if (isRefusal(error)) {
@@ -544,20 +537,5 @@ export async function runScript(script: ScriptSpec): Promise<void> {
       if (asksHelp(rest)) return { text: commandUsage(script, command) };
       return command.run(parseCall(script, command, rest));
     },
-  });
-}
-
-/**
- * The envelope of a script that does not use the command contract yet: the body
- * gets the command line without --project and returns the result. The errors
- * and the exit status follow the contract. The last script that moves to
- * runScript deletes this.
- */
-export async function runBody(body: (argv: string[]) => unknown, options: { usage: string }): Promise<void> {
-  const name = process.argv[1]?.split(/[\\/]/).at(-1)?.replace(/\.ts$/, "") ?? "script";
-  await envelope({
-    name,
-    usage: () => `${options.usage}\n\n${CONTRACT_USAGE}`,
-    perform: (argv) => (asksHelp(argv) ? { text: `${options.usage}\n\n${CONTRACT_USAGE}` } : body(argv)),
   });
 }
