@@ -43,7 +43,7 @@ test("a scenario needs a name, both subjects, known steps and at least one check
     twoKinds: { ...valid, steps: [{ reset: "hard", frames: 5 }, valid.steps[2]] },
     noObserve: { ...valid, steps: [{ reset: "hard" }] },
     sameCheckpoint: { ...valid, steps: [valid.steps[2], valid.steps[2]] },
-    noTimeout: { ...valid, steps: [{ runUntil: { at: "done" } }, valid.steps[2]] },
+    noTimeout: { ...valid, steps: [{ runUntil: { address: "done" } }, valid.steps[2]] },
   })) {
     assert.throws(() => readScenario(scenarioFile(`${name}.json`, bad)), Refusal, name);
   }
@@ -87,7 +87,7 @@ test("only differences outside the explicit tolerance count", () => {
 });
 
 test("an excluded byte does not count, and steps for one side and the new step kinds check", () => {
-  const observation = (bytes: number[]) => ({ memory: [{ label: "$d01e (2 bytes)", address: 0xd01e, bytes, tolerance: 0, excluded: [{ offset: 0, at: "$d01e", reason: "latched collision, not writable" }] }], registers: {} });
+  const observation = (bytes: number[]) => ({ memory: [{ label: "$d01e (2 bytes)", address: 0xd01e, bytes, tolerance: 0, excluded: [{ offset: 0, address: "$d01e", reason: "latched collision, not writable" }] }], registers: {} });
   assert.deepEqual(compare(new Map([["c", observation([1, 5])]]), new Map([["c", observation([0, 5])]])), [], "the excluded first byte differs");
   assert.equal(compare(new Map([["c", observation([1, 5])]]), new Map([["c", observation([1, 6])]])).length, 1, "the second byte still counts");
   const scenario = (steps: unknown[]) => scenarioFile("d46.json", { ...valid, steps: [...steps, { observe: "x", memory: ["$c000"] }] });
@@ -100,7 +100,7 @@ test("an excluded byte does not count, and steps for one side and the new step k
     [{ observe: "y", memory: ["$c000"], side: "original" }],
     [{ runUntil: { target: { kind: "raster", line: 400 }, timeoutFrames: 2 } }],
     [{ normalize: "entry_state.json" }],
-    [{ observe: "y", memory: [{ at: "$d01e", exclude: [{ at: "$d01e" }] }] }],
+    [{ observe: "y", memory: [{ address: "$d01e", exclude: [{ address: "$d01e" }] }] }],
   ]) {
     assert.throws(() => readScenario(scenario(bad)), Refusal, JSON.stringify(bad));
   }
@@ -131,7 +131,7 @@ test("each step is checked before the scenario runs", () => {
       { type: { mode: "text", text: "RUN\n" } },
       { frames: 10 },
       { runUntil: { target: { kind: "memory", address: "game_state", operator: "eq", value: 2 }, timeoutFrames: 600 } },
-      { observe: "all", memory: ["player_x", { at: "$0400", size: 40, tolerance: 1 }], registers: ["pc", "flags"], screen: { maxMismatchRatio: 0.01, mask: [{ x: 0, y: 0, width: 320, height: 8 }] }, vicii: true, sprites: [0, 7] },
+      { observe: "all", memory: ["player_x", { address: "$0400", size: 40, tolerance: 1 }], registers: ["pc", "flags"], screen: { maxMismatchRatio: 0.01, mask: [{ x: 0, y: 0, width: 320, height: 8 }] }, vicii: true, sprites: [0, 7] },
     ],
   };
   assert.equal(readScenario(scenarioFile("accepted.json", accepted)).steps.length, 9);
@@ -154,13 +154,13 @@ test("each step is checked before the scenario runs", () => {
     typeNoKey: { type: { mode: "text", text: "é" } },
     framesZero: { frames: 0 },
     runUntilText: { runUntil: "main", timeoutFrames: 10 },
-    runUntilBoth: { runUntil: { at: "main", memory: { at: "x", equals: 1 } }, timeoutFrames: 10 },
+    runUntilBoth: { runUntil: { address: "main", memory: { address: "x", equals: 1 } }, timeoutFrames: 10 },
     runUntilValue: { runUntil: { target: { kind: "memory", address: "x", operator: "eq", value: 256 }, timeoutFrames: 10 } },
     runUntilTimeout: { runUntil: { target: { kind: "address", address: "main" }, timeoutFrames: 0 } },
     unknownKey: { frames: 5, count: 5 },
     observeRegister: { observe: "x", registers: ["q"] },
-    observeMemorySize: { observe: "x", memory: [{ at: "$0400", size: 0 }] },
-    observeTolerance: { observe: "x", memory: [{ at: "$0400", tolerance: -1 }] },
+    observeMemorySize: { observe: "x", memory: [{ address: "$0400", size: 0 }] },
+    observeTolerance: { observe: "x", memory: [{ address: "$0400", tolerance: -1 }] },
     observeMask: { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 0, height: 8 }] } },
     observeFullMask: { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 384, height: 272 }] } },
     observeHalvesMask: { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 384, height: 136 }, { x: 0, y: 136, width: 400, height: 200 }] } },
@@ -262,7 +262,7 @@ test("diff gives the changed ranges of two memory files and the changed items of
   assert.deepEqual(JSON.parse(memory.stdout).memory, { changedBytes: 2, count: 1, listed: [{ start: "$2fa1", end: "$2fa2", a: "0000", b: "0707" }] });
   const observed = differ("results.json:start", "results.json:later");
   assert.equal(observed.status, 0, observed.stdout + observed.stderr);
-  assert.deepEqual(JSON.parse(observed.stdout), { a: "results.json:start", b: "results.json:later", registers: { count: 1, listed: [{ name: "cpu.pc", a: 0x0400, b: 0x0410 }] }, observed: { count: 1, listed: [{ at: "room", a: "00", b: "05" }] } });
+  assert.deepEqual(JSON.parse(observed.stdout), { a: "results.json:start", b: "results.json:later", registers: { count: 1, listed: [{ name: "cpu.pc", a: 0x0400, b: 0x0410 }] }, observed: { count: 1, listed: [{ address: "room", a: "00", b: "05" }] } });
   assert.equal(differ("before.bin", "results.json:later").status, 2, "two states of one kind");
   assert.equal(differ("results.json:start", "results.json:nothing").status, 2);
 });

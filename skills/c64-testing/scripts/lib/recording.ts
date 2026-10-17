@@ -42,7 +42,7 @@ const MAX_STATE_BYTES = 4096;
 const REBUILD_TIME_FACTOR = 2;
 
 export interface StateItem {
-  at: Location;
+  address: Location;
   size: number;
 }
 
@@ -144,17 +144,17 @@ export function parseStateItem(text: string): StateItem {
   const match = /^([^:]+)(?::(\d+))?$/.exec(text);
   const size = Number(match?.[2] ?? 1);
   if (match === null || !isInteger(size, 1, MAX_STATE_BYTES)) throw new Refusal("invalid-input", `--state ${text}: give a name or a $ address, with :size from 1 to ${MAX_STATE_BYTES}`);
-  return { at: match[1]!, size };
+  return { address: match[1]!, size };
 }
 
 export function checkState(value: unknown, fail: (message: string) => never): StateItem[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_STATE_ITEMS) fail(`state must be a list of 1 to ${MAX_STATE_ITEMS} memory items`);
   return (value as unknown[]).map((item, index) => {
-    const spec = typeof item === "string" ? { at: item } : item;
-    if (!isObject(spec) || typeof spec.at !== "string" || Object.keys(spec).some((key) => key !== "at" && key !== "size")) fail(`state item ${index + 1} must be a name, a $ address, or { at, size }`);
+    const spec = typeof item === "string" ? { address: item } : item;
+    if (!isObject(spec) || typeof spec.address !== "string" || Object.keys(spec).some((key) => key !== "address" && key !== "size")) fail(`state item ${index + 1} must be a name, a $ address, or { address, size }`);
     const size = (spec as { size?: unknown }).size ?? 1;
     if (!isInteger(size, 1, MAX_STATE_BYTES)) fail(`state item ${index + 1}: size must be from 1 to ${MAX_STATE_BYTES}`);
-    return { at: (spec as { at: string }).at, size: size as number };
+    return { address: (spec as { address: string }).address, size: size as number };
   });
 }
 
@@ -390,7 +390,7 @@ async function doAction(core: C64RunSession, step: ActionStep, at: SideAddresses
 }
 
 function rangesArgument(state: StateItem[], at: SideAddresses): string {
-  return state.map((item) => `${hex(at.data(item.at))}:${item.size}`).join(",");
+  return state.map((item) => `${hex(at.data(item.address))}:${item.size}`).join(",");
 }
 
 export interface RecordOutcome {
@@ -412,7 +412,7 @@ export async function record(core: C64RunSession, file: RecordFile, workspace: W
   // A checkpoint and state of the record file must resolve now, so that a replay can use them.
   if (file.compare !== undefined) {
     at.code(file.compare.checkpoint);
-    for (const item of file.compare.state) at.data(item.at);
+    for (const item of file.compare.state) at.data(item.address);
   }
   const reads = workspace.path(RECORDING_FILES.reads);
   const coverage = workspace.path(RECORDING_FILES.coverage);
@@ -592,7 +592,7 @@ export interface CheckpointDifference {
   /** 1 = the first checkpoint. */
   checkpoint: number;
   tick: { original: number; rebuild: number };
-  items: Array<{ at: Location; original: string; rebuild: string }>;
+  items: Array<{ address: Location; original: string; rebuild: string }>;
 }
 
 /** The pinned values of each sample line: the fields after the state items. */
@@ -611,7 +611,7 @@ export function firstDifference(expected: string[], got: string[], state: StateI
     const a = allA.slice(0, state.length);
     const b = allB.slice(0, state.length);
     if (a.join(" ") === b.join(" ")) continue;
-    const items = state.flatMap((item, at) => (a[at] === b[at] ? [] : [{ at: item.at, original: a[at] ?? "", rebuild: b[at] ?? "" }]));
+    const items = state.flatMap((item, at) => (a[at] === b[at] ? [] : [{ address: item.address, original: a[at] ?? "", rebuild: b[at] ?? "" }]));
     return { checkpoint: index + 1, tick: { original: Number(tickA), rebuild: Number(tickB) }, items };
   }
   return undefined;

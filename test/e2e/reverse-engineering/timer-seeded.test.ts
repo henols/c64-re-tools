@@ -86,7 +86,7 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
         name: "reads the timer at the entry",
         original: { program: "original/timer.prg", symbols: "none" },
         rebuild: { program: loader, symbols: "none" },
-        steps: [{ reset: "hard" }, { autostart: true }, { runUntil: { target: { kind: "address", address: "$c00c" }, timeoutFrames: 300 } }, { observe: "seeded", memory: [{ at: "$c100", size: 2 }] }],
+        steps: [{ reset: "hard" }, { autostart: true }, { runUntil: { target: { kind: "address", address: "$c00c" }, timeoutFrames: 300 } }, { observe: "seeded", memory: [{ address: "$c100", size: 2 }] }],
       }),
     );
     return run("c64-testing", "testing.ts", "test", name);

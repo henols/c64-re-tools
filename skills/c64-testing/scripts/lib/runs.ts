@@ -19,8 +19,8 @@ type RunStep =
   | { save: string }
   | { screen: string }
   | { coverage: string }
-  | { trace: string; points: Array<{ kind: TraceKind; at: string; end?: string }>; frames: number; maxHits?: number }
-  | { observe: string; memory?: "all" | Array<string | { at: string; size?: number; view?: "cpu" | "ram" }>; registers?: boolean; vicii?: boolean; sprites?: number[] };
+  | { trace: string; points: Array<{ kind: TraceKind; start: string; end?: string }>; frames: number; maxHits?: number }
+  | { observe: string; memory?: "all" | Array<string | { address: string; size?: number; view?: "cpu" | "ram" }>; registers?: boolean; vicii?: boolean; sprites?: number[] };
 
 interface Run {
   name: string;
@@ -79,11 +79,11 @@ function readRun(path: string): Run {
       if (labels.has(name as string)) fail(`${at} needs a new name`);
       labels.add(name as string);
       const points = step.points;
-      if (!Array.isArray(points) || points.length === 0 || points.length > MAX_TRACE_POINTS) return fail(`${at}: points is a list of 1 to ${MAX_TRACE_POINTS} objects with kind and at`);
+      if (!Array.isArray(points) || points.length === 0 || points.length > MAX_TRACE_POINTS) return fail(`${at}: points is a list of 1 to ${MAX_TRACE_POINTS} objects with kind and start`);
       for (const point of points as unknown[]) {
-        if (!isObject(point) || Object.keys(point).some((key) => !["kind", "at", "end"].includes(key))) return fail(`${at}: a point has kind, at and end, and nothing else`);
+        if (!isObject(point) || Object.keys(point).some((key) => !["kind", "start", "end"].includes(key))) return fail(`${at}: a point has kind, start and end, and nothing else`);
         if (!(TRACE_KINDS as readonly unknown[]).includes(point.kind)) fail(`${at}: a point kind is exec, read or write`);
-        if (typeof point.at !== "string" || (point.end !== undefined && typeof point.end !== "string")) fail(`${at}: a point needs at, and end when it is a range, as names or $ addresses`);
+        if (typeof point.start !== "string" || (point.end !== undefined && typeof point.end !== "string")) fail(`${at}: a point needs start, and end when it is a range, as names or $ addresses`);
       }
       if (!isInteger(step.frames, 1, MAX_TRACE_FRAMES)) fail(`${at}: frames must be a number from 1 to ${MAX_TRACE_FRAMES}`);
       if (step.maxHits !== undefined && !isInteger(step.maxHits, 1, MAX_TRACE_HITS)) fail(`${at}: maxHits must be a number from 1 to ${MAX_TRACE_HITS}`);
@@ -95,12 +95,12 @@ function readRun(path: string): Run {
     const memoryItem = (item: unknown) =>
       typeof item === "string" ||
       (isObject(item) &&
-        typeof item.at === "string" &&
-        Object.keys(item).every((key) => ["at", "size", "view"].includes(key)) &&
+        typeof item.address === "string" &&
+        Object.keys(item).every((key) => ["address", "size", "view"].includes(key)) &&
         (item.size === undefined || isInteger(item.size, 1, 0x10000)) &&
         (item.view === undefined || item.view === "cpu" || item.view === "ram"));
     if (step.memory !== undefined && step.memory !== "all" && (!Array.isArray(step.memory) || !step.memory.every(memoryItem))) {
-      fail(`${at}: memory is "all", or a list of names, $ addresses, or objects with at, size (1 to 65536) and view (cpu or ram)`);
+      fail(`${at}: memory is "all", or a list of names, $ addresses, or objects with address, size (1 to 65536) and view (cpu or ram)`);
     }
     if (step.registers !== undefined && typeof step.registers !== "boolean") fail(`${at}: registers must be true or false`);
     if (step.vicii !== undefined && typeof step.vicii !== "boolean") fail(`${at}: vicii must be true or false`);
@@ -161,7 +161,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
         await client.memmap({ action: "clear" });
       } else if ("trace" in step) {
         // A trace: every hit of the points while the program runs on, to <name>.json.
-        const points = step.points.map((point) => ({ kind: point.kind, start: at(point.at), end: at(point.end ?? point.at) }));
+        const points = step.points.map((point) => ({ kind: point.kind, start: at(point.start), end: at(point.end ?? point.start) }));
         if (points.some((point) => point.end < point.start)) throw new UsageError(`the trace ${step.trace} has a point whose end is before its start`);
         const traced = await client.trace({ points, frames: step.frames, maxHits: step.maxHits ?? MAX_TRACE_HITS });
         write(`${step.trace}.json`, Buffer.from(`${JSON.stringify({ points: step.points, frames: traced.frames, end: traced.end, hits: traced.hits.map(showHit) }, null, 1)}\n`));
@@ -179,15 +179,15 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
         } else if (step.memory !== undefined) {
           const memory: Record<string, string | { file: string }> = {};
           for (const item of step.memory) {
-            const spec = typeof item === "string" ? { at: item } : item;
+            const spec = typeof item === "string" ? { address: item } : item;
             const size = spec.size ?? 1;
-            const bytes = await readMemoryInParts(client, at(spec.at), size, spec.view ?? "cpu");
+            const bytes = await readMemoryInParts(client, at(spec.address), size, spec.view ?? "cpu");
             // More than one read gives goes to a file: results.json stays small.
-            if (size <= MAX_MEMORY_READ) memory[spec.at] = bytes.toString("hex");
+            if (size <= MAX_MEMORY_READ) memory[spec.address] = bytes.toString("hex");
             else {
-              const file = `${step.observe}-${spec.at.replace(/^\$/, "")}.bin`;
+              const file = `${step.observe}-${spec.address.replace(/^\$/, "")}.bin`;
               write(file, bytes);
-              memory[spec.at] = { file };
+              memory[spec.address] = { file };
             }
           }
           seen.memory = memory;

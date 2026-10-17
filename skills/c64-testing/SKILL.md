@@ -113,7 +113,7 @@ node <skill>/scripts/testing.ts diff .c64-re-tools/local/runs/rooms/results.json
 `testing.ts diff` tells what changed between two states of one kind. Use it in place of your own compare script.
 
 - Two snapshot files: the script restores each one in its own emulator. It gives the changed ranges of the RAM and of the colour RAM, and the changed VIC-II, CIA, SID and CPU registers.
-- Two memory files of a run: the changed ranges. For a file of less than 64 KiB, `--at` gives the address of its first byte.
+- Two memory files of a run: the changed ranges. For a file of less than 64 KiB, `--address` gives the address of its first byte.
 - Two observations of runs, also of one run: the changed memory items and registers.
 
 `--gap N` joins ranges across N equal bytes. `--out` writes all ranges to a project file.

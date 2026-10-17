@@ -163,12 +163,12 @@ const COMMANDS: CommandSpec[] = [
       gap: { kind: "count", value: "<n>", min: 0, max: 0xffff, default: 0, help: "join changed ranges across at most n equal bytes (default 0)" },
       "max-listed": OPTIONS["max-listed"],
       ntsc: { kind: "flag", help: "the snapshots are of an NTSC machine (default PAL)" },
-      at: { kind: "address", value: "<address>", help: "the address of the first byte of a memory file that is shorter than 64 KiB" },
+      address: { kind: "address", value: "<address>", help: "the address of the first byte of a memory file that is shorter than 64 KiB" },
       out: { ...OPTIONS.out, value: "<file>", help: "also write all ranges to this file" },
     },
     run: (call) => {
-      const [at, out] = [call.address("at"), call.string("out")];
-      return diffFiles(call.subject(0), call.subject(1), { gap: call.count("gap")!, max: call.count("max-listed")!, ntsc: call.flag("ntsc"), ...(at === undefined ? {} : { at }), ...(out === undefined ? {} : { out }) });
+      const [address, out] = [call.address("address"), call.string("out")];
+      return diffFiles(call.subject(0), call.subject(1), { gap: call.count("gap")!, max: call.count("max-listed")!, ntsc: call.flag("ntsc"), ...(address === undefined ? {} : { at: address }), ...(out === undefined ? {} : { out }) });
     },
   },
   {

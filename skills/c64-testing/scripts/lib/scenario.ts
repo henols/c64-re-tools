@@ -23,15 +23,15 @@ export const SIDES: Side[] = ["original", "rebuild"];
 export type { Location };
 
 export interface MemoryObservation {
-  at: Location;
-  /** Bytes from `at`; 1 when not given, at most 64 KiB. */
+  address: Location;
+  /** Bytes from `address`; 1 when not given, at most 64 KiB. */
   size?: number;
   /** cpu (the default) reads as the CPU sees memory; ram reads the RAM under the ROMs and the I/O area. */
   view?: "cpu" | "ram";
   /** The largest allowed difference per byte; 0 when not given. */
   tolerance?: number;
   /** Bytes in the range that the comparison leaves out, each with the reason. */
-  exclude?: Array<{ at: Location; reason: string }>;
+  exclude?: Array<{ address: Location; reason: string }>;
 }
 
 export interface ScreenPolicy {
@@ -84,7 +84,7 @@ export interface ScenarioResult {
   checkpoints: string[];
   differences: Difference[];
   /** The bytes that the comparison left out, with their reasons. */
-  excluded?: Array<{ checkpoint: string; at: Location; reason: string }>;
+  excluded?: Array<{ checkpoint: string; address: Location; reason: string }>;
   /** The files that a FAIL wrote with --out. */
   files?: Written[];
 }
@@ -174,23 +174,23 @@ function checkStep(kind: string, step: Record<string, unknown>, at: string, fail
 function checkObserve(step: Record<string, unknown>, at: string, fail: (message: string) => never, videoStandard: "pal" | "ntsc"): void {
   if (typeof step.observe !== "string" || step.observe === "") fail(`${at} needs a new checkpoint name`);
   if (step.memory !== undefined) {
-    if (!Array.isArray(step.memory) || step.memory.length === 0) fail(`${at}: memory must be a list of names, $ addresses or objects with at`);
+    if (!Array.isArray(step.memory) || step.memory.length === 0) fail(`${at}: memory must be a list of names, $ addresses or objects with address`);
     for (const item of step.memory as unknown[]) {
       if (typeof item === "string") {
         checkLocation(item, `${at}: memory`, fail);
         continue;
       }
-      if (!isObject(item) || Object.keys(item).some((key) => !["at", "size", "view", "tolerance", "exclude"].includes(key))) return fail(`${at}: a memory object has at, size, view, tolerance and exclude, and nothing else`);
+      if (!isObject(item) || Object.keys(item).some((key) => !["address", "size", "view", "tolerance", "exclude"].includes(key))) return fail(`${at}: a memory object has address, size, view, tolerance and exclude, and nothing else`);
       if (item.view !== undefined && item.view !== "cpu" && item.view !== "ram") fail(`${at}: memory.view must be cpu or ram`);
       if (item.exclude !== undefined) {
-        if (!Array.isArray(item.exclude) || item.exclude.length === 0) fail(`${at}: memory.exclude must be a list of objects with at and reason`);
+        if (!Array.isArray(item.exclude) || item.exclude.length === 0) fail(`${at}: memory.exclude must be a list of objects with address and reason`);
         for (const excluded of item.exclude as unknown[]) {
-          if (!isObject(excluded) || Object.keys(excluded).some((key) => key !== "at" && key !== "reason")) return fail(`${at}: an exclude has at and reason, and nothing else`);
-          checkLocation(excluded.at, `${at}: memory.exclude.at`, fail);
+          if (!isObject(excluded) || Object.keys(excluded).some((key) => key !== "address" && key !== "reason")) return fail(`${at}: an exclude has address and reason, and nothing else`);
+          checkLocation(excluded.address, `${at}: memory.exclude.address`, fail);
           if (typeof excluded.reason !== "string" || excluded.reason.trim() === "") fail(`${at}: an exclude needs a reason: why this byte may differ`);
         }
       }
-      checkLocation(item.at, `${at}: memory.at`, fail);
+      checkLocation(item.address, `${at}: memory.address`, fail);
       if (item.size !== undefined && !isInteger(item.size, 1, 0x10000)) fail(`${at}: memory.size must be a number from 1 to 65536`);
       if (item.tolerance !== undefined && !isInteger(item.tolerance, 0, 0xff)) fail(`${at}: memory.tolerance must be a number from 0 to 255`);
     }
@@ -293,7 +293,7 @@ export function resolve(location: Location, symbols: Map<string, number>, side: 
 }
 
 interface Observation {
-  memory: Array<{ label: string; address: number; bytes: number[]; tolerance: number; excluded: Array<{ offset: number; at: Location; reason: string }> }>;
+  memory: Array<{ label: string; address: number; bytes: number[]; tolerance: number; excluded: Array<{ offset: number; address: Location; reason: string }> }>;
   registers: Partial<Record<ObservedRegister, unknown>>;
   screen?: { match: boolean; mismatchingPixels: number; comparedPixels: number; mismatchRatio: number; bounds?: unknown };
   vicii?: unknown;
@@ -348,16 +348,16 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
       checkpoint++;
       const observation: Observation = { memory: [], registers: {} };
       for (const item of step.memory ?? []) {
-        const spec: MemoryObservation = typeof item === "string" ? { at: item } : item;
-        const address = at(spec.at);
+        const spec: MemoryObservation = typeof item === "string" ? { address: item } : item;
+        const address = at(spec.address);
         const size = spec.size ?? 1;
         const read = { data: (await readMemoryInParts(client, address, size, spec.view ?? "cpu")).toString("hex") };
         const excluded = (spec.exclude ?? []).map((exclude) => {
-          const offset = at(exclude.at) - address;
-          if (offset < 0 || offset >= size) throw new Refusal("invalid-input", `the exclude ${exclude.at} lies outside the observed ${spec.at} (${size} bytes)`);
-          return { offset, at: exclude.at, reason: exclude.reason };
+          const offset = at(exclude.address) - address;
+          if (offset < 0 || offset >= size) throw new Refusal("invalid-input", `the exclude ${exclude.address} lies outside the observed ${spec.address} (${size} bytes)`);
+          return { offset, address: exclude.address, reason: exclude.reason };
         });
-        observation.memory.push({ label: size > 1 ? `${spec.at} (${size} bytes)` : spec.at, address, bytes: [...Buffer.from(read.data, "hex")], tolerance: spec.tolerance ?? 0, excluded });
+        observation.memory.push({ label: size > 1 ? `${spec.address} (${size} bytes)` : spec.address, address, bytes: [...Buffer.from(read.data, "hex")], tolerance: spec.tolerance ?? 0, excluded });
       }
       if (step.registers !== undefined) {
         const registers = await client.registersGet("c64");
@@ -483,7 +483,7 @@ export async function runScenario(client: ViceSessionClient, scenario: Scenario,
   const original = observed.get("original")!;
   const rebuild = observed.get("rebuild")!;
   const differences = compare(original, rebuild);
-  const excluded = [...original].flatMap(([checkpoint, observation]) => observation.memory.flatMap((item) => item.excluded.map((excluded) => ({ checkpoint, at: excluded.at, reason: excluded.reason }))));
+  const excluded = [...original].flatMap(([checkpoint, observation]) => observation.memory.flatMap((item) => item.excluded.map((excluded) => ({ checkpoint, address: excluded.address, reason: excluded.reason }))));
   const files = differences.length > 0 && options.out !== undefined ? writeFailFiles(options.out, original, rebuild, differences) : [];
   return {
     result: differences.length === 0 ? "PASS" : "FAIL",

@@ -26,7 +26,7 @@ export interface StateDiff {
   memory?: { changedBytes: number; ranges: ChangedRange[] };
   colorRam?: { changedBytes: number; ranges: ChangedRange[] };
   values?: Array<{ name: string; a: number; b: number }>;
-  observed?: Array<{ at: string; a: string; b: string }>;
+  observed?: Array<{ address: string; a: string; b: string }>;
 }
 
 /** Changed ranges of two byte arrays of one length, joined across gaps of at most `gap` equal bytes. */
@@ -64,7 +64,7 @@ export function diffStates(a: MachineState, b: MachineState, gap = 0): StateDiff
   if (a.observed !== undefined && b.observed !== undefined) {
     result.observed = Object.keys(a.observed)
       .filter((at) => b.observed![at] !== undefined && a.observed![at] !== b.observed![at])
-      .map((at) => ({ at, a: a.observed![at]!, b: b.observed![at]! }));
+      .map((at) => ({ address: at, a: a.observed![at]!, b: b.observed![at]! }));
   }
   return result;
 }

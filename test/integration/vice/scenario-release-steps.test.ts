@@ -50,7 +50,7 @@ const steps = [
   { runUntil: { target: { kind: "raster", line: 100 }, timeoutFrames: 5 } },
   { normalize: true },
 ];
-const memory = [{ at: "$c100" }, { at: "$0002", size: 4, exclude: [{ at: "$0002", reason: "the test writes it after normalize on one side" }] }];
+const memory = [{ address: "$c100" }, { address: "$0002", size: 4, exclude: [{ address: "$0002", reason: "the test writes it after normalize on one side" }] }];
 
 test("one-side steps, a raster sync, normalize and an exclude make two different starts comparable; a FAIL leaves its files", { skip: liveSkip, timeout: 300_000 }, async () => {
   writeFileSync(join(project, "gated.prg"), gatedPackedPrg);
@@ -64,7 +64,7 @@ test("one-side steps, a raster sync, normalize and an exclude make two different
   writeFileSync(join(project, "pass.json"), JSON.stringify({ name: "counts", ...subjects, steps: [...steps, diverge, { observe: "done", memory }] }));
   const pass = await runTest("pass.json");
   assert.equal(pass.json.result, "PASS", JSON.stringify(pass.json));
-  assert.deepEqual(pass.json.excluded, [{ checkpoint: "done", at: "$0002", reason: "the test writes it after normalize on one side" }]);
+  assert.deepEqual(pass.json.excluded, [{ checkpoint: "done", address: "$0002", reason: "the test writes it after normalize on one side" }]);
 
   // The screens differ: the original went through BASIC (RUN on the screen), the rebuild did not.
   writeFileSync(join(project, "fail.json"), JSON.stringify({ name: "screens", ...subjects, steps: [...steps, { observe: "done", memory, screen: {} }] }));

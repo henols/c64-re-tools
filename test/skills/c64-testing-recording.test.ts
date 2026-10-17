@@ -26,7 +26,7 @@ const valid = {
   program: "game.prg",
   symbols: "none",
   checkpoint: "$c015",
-  state: ["$c100", { at: "$c101", size: 2 }],
+  state: ["$c100", { address: "$c101", size: 2 }],
   steps: [{ frames: 10 }, { joystick: { port: 2, direction: "left" } }, { press: "RUN\n" }, { runUntil: { target: { kind: "address", address: "$c015" }, timeoutFrames: 5 } }],
 };
 
@@ -37,10 +37,10 @@ function file(name: string, value: unknown): string {
 
 test("a record file needs a program and steps the replay core can do; a checkpoint and state are optional", () => {
   const read = readRecordFile(file("ok.json", valid));
-  assert.deepEqual(read.compare, { checkpoint: "$c015", state: [{ at: "$c100", size: 1 }, { at: "$c101", size: 2 }] });
+  assert.deepEqual(read.compare, { checkpoint: "$c015", state: [{ address: "$c100", size: 1 }, { address: "$c101", size: 2 }] });
   assert.deepEqual(read.inputs, ["$dc00", "$dc01", "$d419", "$d41a", "$d41b", "$d41c", "$de00-$dfff"]);
   assert.deepEqual(readRecordFile(file("range.json", { ...valid, inputs: ["$dc00", "$d012-$d012"] })).inputs, ["$dc00", "$d012-$d012"]);
-  assert.deepEqual(readRecordFile(file("pin.json", { ...valid, pin: [{ at: "$0016", size: 2 }] })).compare?.pin, [{ at: "$0016", size: 2 }]);
+  assert.deepEqual(readRecordFile(file("pin.json", { ...valid, pin: [{ address: "$0016", size: 2 }] })).compare?.pin, [{ address: "$0016", size: 2 }]);
   assert.equal(read.load, false);
   assert.equal(readRecordFile(file("bare.json", { ...valid, checkpoint: undefined, state: undefined })).compare, undefined);
   for (const [name, bad] of Object.entries({
@@ -61,8 +61,8 @@ test("a record file needs a program and steps the replay core can do; a checkpoi
 });
 
 test("a state item of the command line is a name or an address with an optional size", () => {
-  assert.deepEqual(parseStateItem("room"), { at: "room", size: 1 });
-  assert.deepEqual(parseStateItem("$c100:2"), { at: "$c100", size: 2 });
+  assert.deepEqual(parseStateItem("room"), { address: "room", size: 1 });
+  assert.deepEqual(parseStateItem("$c100:2"), { address: "$c100", size: 2 });
   assert.throws(() => parseStateItem("room:0"), Refusal);
 });
 
@@ -102,16 +102,16 @@ test("a site moves with the code label before it; ROM sites, constants and far l
 });
 
 test("the pinned fields of a checkpoint follow the state, and do not count as a difference", () => {
-  const state = [{ at: "room", size: 1 }];
+  const state = [{ address: "room", size: 1 }];
   assert.deepEqual(pinLines(["100 00 1a02", "200 01 1b02"], state), ["1a02", "1b02"]);
   assert.equal(firstDifference(["100 00 1a02"], ["90 00 9902"], state), undefined);
 });
 
 test("the first different checkpoint names the state items that differ", () => {
-  const state = [{ at: "room", size: 1 }, { at: "$c100", size: 2 }];
+  const state = [{ address: "room", size: 1 }, { address: "$c100", size: 2 }];
   const expected = ["100 00 0102", "200 01 0103", "300 01 0104"];
   assert.equal(firstDifference(expected, ["90 00 0102", "180 01 0103", "290 01 0104"], state), undefined);
-  assert.deepEqual(firstDifference(expected, ["90 00 0102", "180 02 0103"], state), { checkpoint: 2, tick: { original: 200, rebuild: 180 }, items: [{ at: "room", original: "01", rebuild: "02" }] });
+  assert.deepEqual(firstDifference(expected, ["90 00 0102", "180 02 0103"], state), { checkpoint: 2, tick: { original: 200, rebuild: 180 }, items: [{ address: "room", original: "01", rebuild: "02" }] });
 });
 
 test("record and replay refuse by name when c64run is missing", () => {

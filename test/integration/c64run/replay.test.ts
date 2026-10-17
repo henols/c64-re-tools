@@ -108,10 +108,10 @@ test("a relocated rebuild replays the same, and a changed one fails at the first
   assert.deepEqual([moved.status, moved.result.result, moved.result.movedSites, moved.result.idleReads], [0, "PASS", 1, undefined]);
   const right = script("replay", ["tests/recordings/walk", ...compare, "--rebuild", "right.prg", "--out", "out"]);
   assert.equal(right.status, 1, JSON.stringify(right.result));
-  const difference = right.result.firstDifference as { checkpoint: number; items: Array<{ at: string; original: string; rebuild: string }> };
+  const difference = right.result.firstDifference as { checkpoint: number; items: Array<{ address: string; original: string; rebuild: string }> };
   // Left is pressed after 20 frames: the frame that sees it first differs, in the left count.
   assert.ok(difference.checkpoint >= 20 && difference.checkpoint <= 23, `checkpoint ${difference.checkpoint}`);
-  assert.equal(difference.items[0]!.at, "$c100");
+  assert.equal(difference.items[0]!.address, "$c100");
   assert.deepEqual((right.result.files as Array<{ out: string }>).map((file: { out: string }) => file.out.split("/").at(-1)), [`original-${difference.checkpoint}.bin`, `rebuild-${difference.checkpoint}.bin`]);
   assert.equal(readFileSync(join(project, "out", `rebuild-${difference.checkpoint}.bin`)).length, 65536);
 });

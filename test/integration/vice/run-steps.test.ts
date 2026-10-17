@@ -51,7 +51,7 @@ test("a run writes screens, a coverage map, a snapshot and observations; a later
         { frames: 20 },
         { screen: "left" },
         { coverage: "left" },
-        { observe: "counted", memory: [{ at: "$c100", size: 2 }], registers: true },
+        { observe: "counted", memory: [{ address: "$c100", size: 2 }], registers: true },
         { save: "after-left" },
       ],
     }),
@@ -68,7 +68,7 @@ test("a run writes screens, a coverage map, a snapshot and observations; a later
   const [frames, left] = Buffer.from(results.observations.counted!.memory["$c100"]!, "hex");
   assert.ok(frames! >= 19 && left! >= 19, `frames ${frames}, left ${left}`);
 
-  writeFileSync(join(project, "second.json"), JSON.stringify({ name: "go on", start: { snapshot: "runs/first/after-left.vsf" }, steps: [{ frames: 10 }, { observe: "later", memory: [{ at: "$c100", size: 2 }] }] }));
+  writeFileSync(join(project, "second.json"), JSON.stringify({ name: "go on", start: { snapshot: "runs/first/after-left.vsf" }, steps: [{ frames: 10 }, { observe: "later", memory: [{ address: "$c100", size: 2 }] }] }));
   const second = await runSteps("second.json", "--out", "runs/second");
   assert.equal(second.status, 0, JSON.stringify(second.json));
   const later = JSON.parse(readFileSync(join(project, "runs", "second", "results.json"), "utf8")) as { observations: { later: { memory: Record<string, string> } } };
@@ -98,8 +98,8 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
         { save: "a" },
         { write: { address: "$e000", data: "01020304" } },
         { save: "b" },
-        { observe: "under", memory: [{ at: "$e000", size: 4, view: "ram" }] },
-        { observe: "rom", memory: [{ at: "$e000", size: 4 }] },
+        { observe: "under", memory: [{ address: "$e000", size: 4, view: "ram" }] },
+        { observe: "rom", memory: [{ address: "$e000", size: 4 }] },
         { observe: "everything", memory: "all" },
       ],
     }),
@@ -128,7 +128,7 @@ test("a trace step writes each write to the counter with the instruction and ras
   writeFileSync(join(project, "counter.prg"), joystickCounterPrg);
   writeFileSync(
     join(project, "traced.json"),
-    JSON.stringify({ name: "trace", start: { program: "counter.prg", load: true }, steps: [{ registers: { pc: "$c000" } }, { frames: 3 }, { trace: "counter", points: [{ kind: "write", at: "$c100" }], frames: 5 }] }),
+    JSON.stringify({ name: "trace", start: { program: "counter.prg", load: true }, steps: [{ registers: { pc: "$c000" } }, { frames: 3 }, { trace: "counter", points: [{ kind: "write", start: "$c100" }], frames: 5 }] }),
   );
   const run = await runSteps("traced.json", "--out", "runs/traced");
   assert.equal(run.status, 0, JSON.stringify(run.json));
