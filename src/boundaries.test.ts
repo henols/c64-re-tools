@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["c64", "errors", "graphics", "opcodes", "package", "platform", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
+      return ["c64", "errors", "graphics", "media", "opcodes", "package", "platform", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -46,9 +46,11 @@ const ALLOWED: Record<string, readonly string[]> = {
   protocol: ["c64"],
   // The package name and channel: the npx command in refusals and help texts.
   package: [],
+  // Media file signatures and sizes: the host checks a file before VICE gets it, and c64-disk reads it.
+  media: [],
   "host-client": ["protocol", "c64", "project", "trace", "package"],
   mcp: ["host-client", "protocol", "c64", "trace", "package"],
-  host: ["native", "protocol", "c64", "graphics", "opcodes", "trace", "package"],
+  host: ["native", "protocol", "c64", "graphics", "opcodes", "trace", "package", "media"],
   knowledge: ["c64", "project", "time"],
   // The call contract of the skill scripts: the command line, the values, the envelope.
   script: ["protocol", "project", "trace", "c64"],
@@ -59,7 +61,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   distribution: ["package"],
   convert: ["knowledge"],
 };
-const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "graphics", "opcodes", "platform", "script", "time"];
+const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "graphics", "opcodes", "platform", "script", "time", "media"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

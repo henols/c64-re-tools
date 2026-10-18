@@ -5,6 +5,7 @@
 
 import { formatC64Address, petsciiNameToText } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
+import { hasSignature } from "#src/media.ts";
 
 /** The CRT hardware types this toolkit reads, by type number. */
 export const CRT_TYPES: Record<number, string> = { 0: "normal", 5: "Ocean", 19: "Magic Desk", 32: "EasyFlash" };
@@ -30,11 +31,9 @@ export interface Crt {
   chips: CrtChip[];
 }
 
-const SIGNATURE = "C64 CARTRIDGE   ";
-
 export function parseCrt(bytes: Uint8Array): Crt {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (buffer.length < 0x40 || buffer.toString("latin1", 0, 16) !== SIGNATURE) throw new Refusal("media-error", "the file is not a CRT: it does not start with C64 CARTRIDGE");
+  if (buffer.length < 0x40 || !hasSignature("crt", buffer)) throw new Refusal("media-error", "the file is not a CRT: it does not start with C64 CARTRIDGE");
   const headerLength = buffer.readUInt32BE(0x10);
   const type = buffer.readUInt16BE(0x16);
   const exrom = buffer[0x18]!;
@@ -85,7 +84,7 @@ export interface Tape {
 
 export function parseT64(bytes: Uint8Array): Tape {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (buffer.length < 0x40 || !buffer.toString("latin1", 0, 32).startsWith("C64")) throw new Refusal("media-error", "the file is not a T64: it does not start with C64");
+  if (buffer.length < 0x40 || !hasSignature("t64", buffer)) throw new Refusal("media-error", "the file is not a T64: it does not start with C64");
   const maxEntries = buffer.readUInt16LE(0x22);
   const name = buffer.toString("latin1", 0x28, 0x40).replace(/[\0 ]+$/, "");
   const raw: Array<Omit<TapeEntry, "bytes" | "end"> & { end: number }> = [];
