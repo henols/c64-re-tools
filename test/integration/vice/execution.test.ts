@@ -25,7 +25,7 @@ test("pause stops with a pc, status agrees, and resume runs again", { skip: live
   assert.equal(paused.state, "stopped");
   assert.ok(paused.pc !== undefined);
   const status = await session.handle("status", {});
-  assert.deepEqual(status, { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: paused.pc });
+  assert.deepEqual(status, { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: paused.pc, space: "c64" });
   // A stopped CPU does not move between reads.
   assert.equal((await session.handle("registersGet", { space: "c64" })).pc, paused.pc);
   assert.deepEqual(await session.handle("execution", { action: "resume", space: "c64" }), { state: "running" });

@@ -46,7 +46,7 @@ test("host → MCP → one VICE: KERNAL bytes, registers and running state", { s
     // A paused machine reports stopped with its pc, and reads keep it stopped.
     const paused = await tool(client, "c64_execution", { action: "pause" });
     assert.equal(paused.state, "stopped");
-    assert.deepEqual(await tool(client, "c64_status"), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, version: PACKAGE.version, pc: paused.pc });
+    assert.deepEqual(await tool(client, "c64_status"), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, version: PACKAGE.version, pc: paused.pc, space: "c64" });
     await tool(client, "c64_memory_read", { address: "$e000", size: 1 });
     assert.equal((await tool(client, "c64_status")).state, "stopped");
     assert.deepEqual(await tool(client, "c64_execution", { action: "resume" }), { state: "running" });

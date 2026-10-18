@@ -210,7 +210,7 @@ test("stages follows a release whose stages write over code that ran before, and
     ],
     JSON.stringify(found),
   );
-  assert.deepEqual(found[1]!.wrote, [{ start: "$0801", end: "$0900" }], "the mover wrote the payload over the stub");
+  assert.deepEqual(fromScreen(found[1]!.wrote), [{ start: "$0801", end: "$0900" }], "the mover wrote the payload over the stub");
   assert.deepEqual(found[2]!.wrote, [{ start: "$0801", end: "$0840" }], "the payload wrote over its own start code");
 });
 

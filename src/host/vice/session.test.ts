@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { after, test } from "node:test";
 
-import { isRefusal } from "../../errors.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { Command } from "./binary-monitor.ts";
 import { FakeVice } from "./fake-vice.testkit.ts";
@@ -29,7 +28,7 @@ async function startSession(options: SessionOptions = {}) {
 }
 
 const failsWith = (code: string, message?: RegExp) => (error: unknown) =>
-  isRefusal(error) && error.code === code && (message === undefined || message.test(error.message));
+  error instanceof WireFailure && error.code === code && (message === undefined || message.test(error.message));
 
 async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -446,8 +445,8 @@ test("an autostart index of a DEL entry or past the last entry is refused before
   await assert.rejects(session.handle("autostart", { type: "d64", index: 2, run: true }, [image]), (error: WireFailure) => error.code === "invalid-input" && /entry 1 \(----------------\) is a DEL entry/.test(error.message));
   await assert.rejects(session.handle("autostart", { type: "d64", index: 3, run: true }, [image]), (error: WireFailure) => error.code === "invalid-input" && /2 directory entries, so index 2 selects no entry/.test(error.message));
   // An image that is not of its type never reaches VICE.
-  await assert.rejects(session.handle("autostart", { type: "g64", index: 0, run: true }, [image]), (error: Error & { code?: string }) => error.code === "media-error" && /does not start with "GCR-1541"/.test(error.message));
-  await assert.rejects(session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.alloc(16, 0x55)]), (error: Error & { code?: string }) => error.code === "media-error");
+  await assert.rejects(session.handle("autostart", { type: "g64", index: 0, run: true }, [image]), (error: unknown) => error instanceof WireFailure && error.code === "media-error" && /does not start with "GCR-1541"/.test(error.message));
+  await assert.rejects(session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.alloc(16, 0x55)]), (error: unknown) => error instanceof WireFailure && error.code === "media-error");
   assert.equal(fake.autostarts.length, 0);
   await session.handle("autostart", { type: "d64", index: 1, run: true }, [image]);
   await session.handle("autostart", { type: "d64", index: 0, run: true }, [image]);

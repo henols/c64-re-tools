@@ -30,6 +30,7 @@ import {
 import { decodeProgramCounter, MonitorConnectionError, MonitorError, MonitorTimeoutError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
 import { decodeCia, decodeSid, decodeSprite, decodeVicii } from "./chips.ts";
 import { compareFrames, differenceImage } from "./screen.ts";
+import { isRefusal } from "../../errors.ts";
 import { checkMedia } from "../../media.ts";
 import { launchVice, startErrorLines, type ViceMode, type ViceProcess } from "./process.ts";
 import { TextMonitorError, TextMonitorTimeoutError } from "./text-monitor.ts";
@@ -916,6 +917,8 @@ export class ViceSession implements ViceSessionHandle {
   /** A reset or an autostart starts a jammed CPU and the CPU history again. */
   #clearJam(): void {
     this.#autostarting = false;
+    // A reset sets the clock back to 0: the history from before it is of this run again.
+    this.#historySince = undefined;
     this.#jammed = undefined;
     this.#historyStopped = false;
     this.#historyOld = false;
@@ -1558,6 +1561,8 @@ export class ViceSession implements ViceSessionHandle {
 
   async #translate(error: unknown, runningBefore: boolean, halts: number): Promise<unknown> {
     if (error instanceof WireFailure) return error;
+    // A refusal of a shared module (for example the media check) goes on the wire as the host's own.
+    if (isRefusal(error)) return new WireFailure(error.code, error.message);
     if (this.#closed) return new WireFailure("machine-unavailable", "The emulator session is closed.");
     if (error instanceof MonitorConnectionError || error instanceof TextMonitorError || error instanceof StepTimeout) {
       this.#log(error.message);
