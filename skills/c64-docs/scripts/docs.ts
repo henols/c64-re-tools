@@ -221,8 +221,7 @@ function link(call: Call): Record<string, unknown> {
     return undefined;
   };
 
-  // The entries of the reference: each <a id> that is a name.
-  const entries = new Map<string, string>();
+  // The pages of the reference: each must be from the revision of the source.
   const referencePages = reference === undefined ? [] : markdownFiles(reference);
   for (const page of referencePages) {
     const text = files.text(page);
@@ -234,7 +233,6 @@ function link(call: Call): Record<string, unknown> {
     if (text.startsWith(GENERATED_MARK) && stamp !== null && stamp[1] !== map.revision) {
       problems.push({ page, line: 1, kind: "stale-reference", message: `${page} is from knowledge revision ${stamp[1]}, and the source from ${map.revision}. Run docs.ts generate again.` });
     }
-    for (const match of text.matchAll(/<a id="([^"]+)"><\/a>/g)) if (addresses.has(match[1]!) && !entries.has(match[1]!)) entries.set(match[1]!, `${page}#${match[1]}`);
   }
   const inside = (path: string, directory: string | undefined) => directory !== undefined && (path === directory || path.startsWith(`${directory}/`));
   const context = {
@@ -243,7 +241,6 @@ function link(call: Call): Record<string, unknown> {
       const label = map.labelOf(name);
       return label === undefined ? undefined : `${map.pathOf(label.file)}#L${label.line}`;
     },
-    entryOf: (name: string) => entries.get(name),
     bodyEnd,
     placeOf,
     lineOf: (address: number) => {
@@ -281,7 +278,7 @@ function link(call: Call): Record<string, unknown> {
   for (const problem of problems) byKind[problem.kind] = (byKind[problem.kind] ?? 0) + 1;
   const output: Record<string, unknown> = {
     pages: pages.length,
-    ...(reference === undefined ? { reference: "none: no reference/ folder is in or beside the given pages. Give --reference <dir>, or run docs.ts generate for links to the entries" } : { reference }),
+    ...(reference === undefined ? { reference: "none: no reference/ folder is in or beside the given pages. Give --reference <dir>, or run docs.ts generate" } : { reference }),
     ...(check ? { notUpToDate: { links, pages: changedPages } } : { linked: { links, pages: changedPages } }),
     problems: { byKind, ...listed(problems, call.count("max-listed")!, (problem) => ({ at: `${problem.page}:${problem.line}`, kind: problem.kind, message: problem.message })) },
   };
@@ -292,11 +289,11 @@ const SOURCE = { kind: "path", value: "<dir>", help: "the source folder of c64-s
 
 await runScript({
   name: "docs",
-  summary: "Generates the reference pages of a program, and links the name mentions of the documentation to the source and the reference.",
+  summary: "Generates the reference pages of a program, and links the names in the documentation to their lines in the source.",
   commands: [
     {
       name: "generate",
-      summary: "Writes the reference pages: a page for each module, and pages for the names, the variables, the tables, the memory map and the graphics.",
+      summary: "Writes the reference pages: a page for each module, and pages for the tables, the memory map with the variables, and the graphics.",
       subjects: [{ name: "<source-dir>", help: SOURCE.help }],
       options: {
         out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "the folder for the reference pages, relative to the project folder, for example docs/reference. generate writes only there and refuses a page in it that it did not write", required: true },
@@ -310,7 +307,7 @@ await runScript({
     },
     {
       name: "link",
-      summary: "Links the name mentions of the pages to the source and the reference, and checks every link and image. result is FAIL when a page has a problem, or with --check when a link is not up to date.",
+      summary: "Links each name with its address in the pages to its line in the source, and checks every link and image. result is FAIL when a page has a problem, or with --check when a link is not up to date.",
       subjects: [{ name: "<page>", help: ".md files and folders of the documentation, relative to the project folder, for example README.md docs. link reads each file and every .md file below each folder", list: true }],
       options: {
         source: { ...SOURCE, required: true },
@@ -318,7 +315,7 @@ await runScript({
         check: { kind: "flag", help: "write nothing. FAIL when a link is not up to date or a page has a problem" },
         "max-listed": OPTIONS["max-listed"],
       },
-      notes: "A name in backticks gets a link to its line in the source. An address in backticks after the name gets a link to the entry of the name in the reference.",
+      notes: "A name in backticks with its address in backticks after it, for example `draw_room` `$09BC`, becomes one link to the line of the name in the source. A name without an address gets no link. A name gets one link in each section, and a table gets no links.",
       run: link,
     },
   ],

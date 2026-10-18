@@ -1,9 +1,12 @@
-// The links of a page written by a person. A name in backticks links to
-// its line in the source; the address after it links to the entry of the name
-// in the reference, or, for an address inside the routine or the data of the
-// name ("draw_room $0AAF", a place in draw_room), to the line of that address. A link that points into the source or the reference is
-// managed: docs.ts link writes it again when a line moves. Other links stay as the
-// person wrote them; docs.ts link only checks that their targets exist.
+// The links of a page written by a person. A name in backticks with its
+// address in backticks after it ("draw_room $09BC") is one link to the line of
+// the name in the source, or, for an address inside the routine or the data of
+// the name ("draw_room $0AAF", a place in draw_room), to the line of that
+// address. A name without an address gets no link: the person gives the
+// address only where a reader needs the code. A link that points into the
+// source or the reference is managed: docs.ts link writes it again when a line
+// moves. Other links stay as the person wrote them; docs.ts link only checks
+// that their targets exist.
 
 import { posix } from "node:path";
 
@@ -16,8 +19,6 @@ export interface LinkContext {
   addressOf: (name: string) => number | undefined;
   /** The project path and line of the label of a name, as path#Lnn. */
   codeOf: (name: string) => string | undefined;
-  /** The project path and anchor of the entry of a name, as path#name. */
-  entryOf: (name: string) => string | undefined;
   /** The last address of the routine or data of a name: an address up to it is a place inside the name. */
   bodyEnd: (name: string) => number | undefined;
   /** The project path and line that writes an address, as path#Lnn. */
@@ -28,7 +29,7 @@ export interface LinkContext {
   managed: (path: string) => boolean;
 }
 
-export type ProblemKind = "unknown-name" | "wrong-address" | "missing-file" | "missing-anchor" | "missing-line" | "outside-project" | "stale-reference";
+export type ProblemKind = "unknown-name" | "wrong-address" | "repeated-link" | "link-in-table" | "missing-file" | "missing-anchor" | "missing-line" | "outside-project" | "stale-reference";
 
 export interface Problem {
   page: string;
@@ -42,15 +43,13 @@ const NAME = String.raw`([A-Za-z_][A-Za-z0-9_]*)(\+(?:\$[0-9A-Fa-f]{1,4}|[0-9]+)
 const ADDRESS = String.raw`\$([0-9A-Fa-f]{2,4})(?:-\$[0-9A-Fa-f]{2,4})?`;
 const TICK = "`";
 /**
- * A name in backticks, linked or not, with an optional address in backticks
- * after it, linked or not. Groups: 1 the [ of a linked name, 2 the name, 3 its
- * offset, 4 the target of the name, 5 the space or bracket between them, 6 the
- * address text, 7 its start digits, 8 the target of the address.
+ * A name in backticks and an address in backticks after it, as text or as one
+ * link. Groups: 1 the [ of the link, 2 the name, 3 its offset, 4 the space
+ * between them, 5 the address text, 6 its start digits, 7 the target of the link.
  */
-const MENTION = new RegExp(
-  String.raw`(\[)?${TICK}${NAME}${TICK}(?:\]\(([^)\s]*)\))?(?:(\s*\(\s*|\s+)\[?${TICK}(${ADDRESS})${TICK}(?:\]\(([^)\s]*)\))?)?`,
-  "g",
-);
+const MENTION = new RegExp(String.raw`(\[)?${TICK}${NAME}${TICK}(\s+)${TICK}(${ADDRESS})${TICK}(?:\]\(([^)\s]*)\))?`, "g");
+const HEADING = /^#{1,6}\s/;
+const TABLE_ROW = /^\s*\|/;
 
 const relative = (page: string, target: string) => {
   const [path, fragment] = target.split("#");
@@ -74,47 +73,48 @@ export function targetPath(page: string, target: string): string | undefined {
 export function linkPage(text: string, context: LinkContext): { text: string; changed: number; problems: Problem[] } {
   const problems: Problem[] = [];
   let changed = 0;
+  // The first link of each name and address in the section: a heading starts a new section.
+  let linkedAt = new Map<string, number>();
   const lines = proseLines(text).map((line, index) => {
     if (!line.prose) return line.text;
-    return line.text.replace(MENTION, (whole: string, open: string | undefined, name: string, offset: string | undefined, nameTarget: string | undefined, space: string | undefined, addressText: string | undefined, digits: string | undefined, addressTarget: string | undefined, at: number, all: string) => {
-      // "[`x`]" without a target is no link of ours: leave it.
-      if (open !== undefined && nameTarget === undefined) return whole;
-      const ownLink = (target: string | undefined) => target !== undefined && !context.managed(targetPath(context.page, target) ?? "");
+    if (HEADING.test(line.text)) linkedAt = new Map();
+    const inTable = TABLE_ROW.test(line.text);
+    return line.text.replace(MENTION, (whole: string, open: string | undefined, name: string, offset: string | undefined, space: string, addressText: string, digits: string, target: string | undefined) => {
+      // "[`x` `$10`]" without a target, or "`x` `$10`](y)" in a link of the person: no link of ours, leave it.
+      if ((open === undefined) !== (target === undefined)) return whole;
+      // A link to another target than the source is the person's own link: it stays as it is.
+      if (target !== undefined && !context.managed(targetPath(context.page, target) ?? "")) return whole;
       const address = context.addressOf(name);
       const report = (kind: ProblemKind, message: string) => problems.push({ page: context.page, line: index + 1, kind, message });
-      // In a list "`a`/`b` `$1000`/`$1010`" the address belongs to another name: the name gets its link, the address stays as it is.
-      const namePart = open === undefined ? `${TICK}${name}${offset ?? ""}${TICK}` : `[${TICK}${name}${offset ?? ""}${TICK}](${nameTarget})`;
-      const listed = addressText !== undefined && (all[at - 1] === "/" || all[at + whole.length] === "/");
-      const rest = listed ? whole.slice(namePart.length) : "";
-      const claimed = addressText !== undefined;
-      if (listed) addressText = digits = addressTarget = undefined;
+      const shown = `${TICK}${name}${offset ?? ""}${TICK}${space}${TICK}${addressText}${TICK}`;
       if (address === undefined) {
-        // A word in backticks is no claim of a name; with an address after it, or with a link of ours, it is.
-        if (claimed || (nameTarget !== undefined && !ownLink(nameTarget))) {
-          report("unknown-name", `\`${name}\` is no name of the knowledge or the source. Apply the name to the knowledge, or correct the page.`);
-        }
+        report("unknown-name", `\`${name}\` is no name of the knowledge or the source. Apply the name to the knowledge, or correct the page.`);
         return whole;
       }
       const delta = offset === undefined ? 0 : offset.startsWith("+$") ? Number.parseInt(offset.slice(2), 16) : Number.parseInt(offset.slice(1), 10);
-      const given = digits === undefined ? undefined : Number.parseInt(digits, 16);
-      const place = given !== undefined && given !== address + delta && given > address && given <= (context.bodyEnd(name) ?? address);
-      if (given !== undefined && given !== address + delta && !place) {
+      const given = Number.parseInt(digits, 16);
+      const place = given !== address + delta && given > address && given <= (context.bodyEnd(name) ?? address);
+      if (given !== address + delta && !place) {
         const expected = `$${(address + delta).toString(16).toUpperCase().padStart(4, "0")}`;
-        const holder = context.placeOf(given!);
-        report("wrong-address", `\`${name}${offset ?? ""}\` is ${expected} in the knowledge, and the page gives ${addressText}${holder === undefined || holder === name ? "" : `, a place in \`${holder}\``}. Correct the name or the address.${digits!.length <= 2 ? ` For a value, write \`${name}\` = \`${addressText}\`.` : ""}`);
+        const holder = context.placeOf(given);
+        report("wrong-address", `\`${name}${offset ?? ""}\` is ${expected} in the knowledge, and the page gives ${addressText}${holder === undefined || holder === name ? "" : `, a place in \`${holder}\``}. Correct the name or the address.${digits.length <= 2 ? ` For a value, write \`${name}\` = \`${addressText}\`.` : ""}`);
         // A mention with a problem gets no link: the text stays as the person wrote it until it is correct.
         return whole;
       }
-      const shownName = `${TICK}${name}${offset ?? ""}${TICK}`;
-      const code = context.codeOf(name);
-      const nameLink = ownLink(nameTarget) ? `[${shownName}](${nameTarget})` : code === undefined ? shownName : `[${shownName}](${relative(context.page, code)})`;
-      let result = nameLink;
-      if (addressText !== undefined) {
-        const entry = place ? context.lineOf(given!) : context.entryOf(name);
-        const shownAddress = `${TICK}${addressText}${TICK}`;
-        result += space! + (ownLink(addressTarget) ? `[${shownAddress}](${addressTarget})` : entry === undefined ? shownAddress : `[${shownAddress}](${relative(context.page, entry)})`);
+      if (inTable) {
+        report("link-in-table", `\`${name}${offset ?? ""}\` ${addressText} is a link in a table. Write \`${name}\` without the address in the table, and link it in the text above the table.`);
+        return whole;
       }
-      result += rest;
+      const key = `${name}${offset ?? ""} ${given}`;
+      const first = linkedAt.get(key);
+      if (first !== undefined) {
+        report("repeated-link", `\`${name}${offset ?? ""}\` ${addressText} has a link at line ${first} of this section already. Write \`${name}\` without the address here.`);
+        return whole;
+      }
+      linkedAt.set(key, index + 1);
+      // The name links to its line; a place inside it or a byte after it links to the line of that address.
+      const code = given === address ? context.codeOf(name) : (context.lineOf(given) ?? context.codeOf(name));
+      const result = code === undefined ? shown : `[${shown}](${relative(context.page, code)})`;
       if (result !== whole) changed++;
       return result;
     });

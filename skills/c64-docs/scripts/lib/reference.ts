@@ -65,7 +65,7 @@ interface Entry {
 export function buildReference(input: ReferenceInput): { files: ReferenceFile[]; counts: Record<string, number> } {
   const { map, out } = input;
   const pieces = map.files.filter((file) => !NOT_PIECES.has(file));
-  const pageOfFile = (file: string) => (file === "constants.asm" ? posix.join(out, "variables.md") : posix.join(out, "modules", `${stem(file)}.md`));
+  const pageOfFile = (file: string) => (file === "constants.asm" ? posix.join(out, "memory-map.md") : posix.join(out, "modules", `${stem(file)}.md`));
 
   // --- Names and their entries ------------------------------------------------
   const knowledgeNames = new Map(input.symbols.map((symbol) => [symbol.name, symbol]));
@@ -107,8 +107,12 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     const entry = entries.get(name);
     return entry === undefined ? `\`${text}\`` : `[\`${text}\`](${rel(page, entry.page)}#${name})`;
   };
-  /** A name and its address: the name to its line, the address to its entry (the convention of every page). */
-  const pair = (page: string, name: string, address: number) => `${codeOfName(page, name)} ${entryOfName(page, name, hex(address))}`;
+  /** A name and its address as one link to the line of the name (the convention of every page). */
+  const pair = (page: string, name: string, address: number) => {
+    const label = map.labelOf(name);
+    const shown = `\`${name}\` \`${hex(address)}\``;
+    return label === undefined ? shown : `[${shown}](${rel(page, map.pathOf(label.file))}#L${label.line})`;
+  };
   const codeOfAddress = (page: string, address: number) => {
     const line = map.lineOf(address);
     return line === undefined ? `\`${hex(address)}\`` : `[\`${hex(address)}\`](${rel(page, map.pathOf(line.file))}#L${line.line})`;
@@ -129,6 +133,13 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     return entries.has(named.name) ? entryOfName(page, named.name, shown) : codeOfName(page, named.name).replace(`\`${named.name}\``, `\`${shown}\``);
   };
   const capped = (items: string[]) => (items.length <= MAX_LISTED ? items.join(", ") : `${items.slice(0, MAX_LISTED).join(", ")} and ${items.length - MAX_LISTED} more`);
+  /** The routines that read or write a range, each linked to its entry. */
+  const ownersOf = (page: string, start: number, end: number, kind: string) =>
+    capped(
+      [...new Set(input.references.filter((reference) => reference.kind === kind && reference.to >= start && reference.to <= end).map((reference) => ownerAt(reference.from)?.name ?? hex(reference.from)))].map((name) =>
+        entries.has(name) ? entryOfName(page, name, name) : `\`${name}\``,
+      ),
+    );
 
   // --- The routine graph ----------------------------------------------------
   const tableReferences: GraphReference[] = [];
@@ -270,8 +281,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       if (regions.length > 0) {
         lines.push("", "## Data", "", "| Range | Type | Name | Read by | Written by |", "|---|---|---|---|---|");
         for (const region of regions) {
-          const into = input.references.filter((reference) => reference.to >= region.start && reference.to <= region.end);
-          const owners = (kind: string) => capped([...new Set(into.filter((reference) => reference.kind === kind).map((reference) => ownerAt(reference.from)?.name ?? hex(reference.from)))].map((name) => (entries.has(name) ? entryOfName(page, name, name) : `\`${name}\``)));
+          const owners = (kind: string) => ownersOf(page, region.start, region.end, kind);
           const name = entryAt.get(region.start);
           lines.push(`| ${codeOfAddress(page, region.start)}${region.end === region.start ? "" : `-\`${hex(region.end)}\``} | ${region.type}${region.element === undefined ? "" : ` of ${region.element}`} | ${name === undefined ? "" : codeOfName(page, name.name)} | ${owners("read")} | ${owners("write")} |`);
         }
@@ -280,18 +290,6 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     if (own.length > 0) lines.push("", "## Names");
     for (const entry of own) lines.push(...entryText(page, entry));
     counts.entries += own.length;
-    write(page, lines);
-  }
-
-  // --- Variables: the names outside the image -------------------------------
-  {
-    const page = posix.join(out, "variables.md");
-    const outside = [...entries.values()].filter((entry) => map.labelOf(entry.name)?.file === "constants.asm").sort((a, b) => a.address - b.address);
-    const inside = [...entries.values()].filter((entry) => entry.kind === "variable" && map.labelOf(entry.name)?.file !== "constants.asm").sort((a, b) => a.address - b.address);
-    const lines = ["# Variables", "", `The names outside the image, with the routines that read and write them. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`];
-    if (inside.length > 0) lines.push("", "Variables inside the image are on the page of their file:", "", ...inside.map((entry) => `- ${pair(page, entry.name, entry.address)}`));
-    for (const entry of outside) lines.push(...entryText(page, entry));
-    counts.entries += outside.length;
     write(page, lines);
   }
 
@@ -358,26 +356,23 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
   // --- Memory map ---------------------------------------------------------------
   {
     const page = posix.join(out, "memory-map.md");
-    const lines = ["# Memory map", "", `Every region of the knowledge in address order. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`, "", "| Range | Bytes | Type | Name | File |", "|---|---|---|---|---|"];
+    const lines = ["# Memory map", "", `Every region of the knowledge in address order, then the variables outside the program. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`, "", "## Regions", "", "| Range | Bytes | Type | Name | File |", "|---|---|---|---|---|"];
     for (const region of [...input.regions].sort((a, b) => a.start - b.start)) {
       const name = entryAt.get(region.start);
       const line = map.lineOf(region.start);
       const file = line === undefined || !pieces.includes(line.file) ? "" : `[${line.file}](${rel(page, pageOfFile(line.file))})`;
       lines.push(`| ${codeOfAddress(page, region.start)}${region.end === region.start ? "" : `-\`${hex(region.end)}\``} | ${region.end - region.start + 1} | ${region.type} | ${name === undefined ? "" : pair(page, name.name, region.start)} | ${file} |`);
     }
-    write(page, lines);
-  }
-
-  // --- Symbols --------------------------------------------------------------------
-  {
-    const page = posix.join(out, "symbols.md");
-    const lines = ["# Names", "", `Every name in alphabetical order. The name links to its line in the source, the address to its entry. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`, "", "| Name | Address | Kind |", "|---|---|---|"];
-    const names = [...new Set([...entries.keys(), ...input.symbols.map((symbol) => symbol.name)])].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()) || a.localeCompare(b));
-    for (const name of names) {
-      const entry = entries.get(name);
-      const symbol = knowledgeNames.get(name);
-      const address = entry?.address ?? symbol!.address;
-      lines.push(`| ${codeOfName(page, name)} | ${entryOfName(page, name, hex(address))} | ${entry?.kind ?? symbol!.kind} |`);
+    // The names outside the image: zero page, the stack, work areas and the chips. The module pages link to their rows.
+    const outside = [...entries.values()].filter((entry) => map.labelOf(entry.name)?.file === "constants.asm").sort((a, b) => a.address - b.address);
+    if (outside.length > 0) {
+      lines.push("", "## Variables outside the program", "", "| Address | Name | Comment | Read by | Written by |", "|---|---|---|---|---|");
+      for (const entry of outside) {
+        const at = `\`${entry.spanEnd > entry.address ? range(entry.address, entry.spanEnd) : hex(entry.address)}\``;
+        const owners = (kind: string) => ownersOf(page, entry.address, entry.spanEnd, kind);
+        lines.push(`| ${at} | <a id="${entry.name}"></a>${codeOfName(page, entry.name)} | ${commentLines(entry.address).join(" ").replace(/\|/g, "\\|")} | ${owners("read")} | ${owners("write")} |`);
+      }
+      counts.entries += outside.length;
     }
     write(page, lines);
   }
@@ -388,7 +383,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     const lines = [
       "# Reference",
       "",
-      `Generated from the knowledge and the source in [${map.directory}](${rel(page, map.directory)}). The other pages: [names](symbols.md), [variables](variables.md), [tables](tables.md), [memory map](memory-map.md) and [graphics](graphics.md).`,
+      `Generated from the knowledge and the source in [${map.directory}](${rel(page, map.directory)}). The other pages: [tables](tables.md), [memory map and variables](memory-map.md) and [graphics](graphics.md).`,
       "",
       "| File | Range | Title | Routines | Names |",
       "|---|---|---|---|---|",

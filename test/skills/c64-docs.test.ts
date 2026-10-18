@@ -131,7 +131,7 @@ function project(): { root: string; revision: string } {
   return { root, revision };
 }
 
-test("docs.ts generate writes the reference: module pages with anchors and links to the lines, tables, variables and graphics", () => {
+test("docs.ts generate writes the reference: module pages with anchors and links to the lines, tables, the memory map with the variables, and graphics", () => {
   const { root, revision } = project();
   const result = generate(root, "src", "--out", "docs/reference");
   assert.equal(result.status, 0, JSON.stringify(result.json));
@@ -142,15 +142,22 @@ test("docs.ts generate writes the reference: module pages with anchors and links
   assert.match(main, /<a id="draw"><\/a>\n### \[`draw`\]\(\.\.\/\.\.\/\.\.\/src\/main_code\.asm#L9\) `\$1010`/);
   assert.match(main, /Draws the screen\./);
   assert.match(main, /- \*\*Called from:\*\* \[`main`\]\(main_code\.md#main\) \[`\$1003`\]\(\.\.\/\.\.\/\.\.\/src\/main_code\.asm#L7\)/);
-  assert.match(main, /- \*\*Writes:\*\* \[`counter`\]\(\.\.\/variables\.md#counter\)/);
+  assert.match(main, /- \*\*Writes:\*\* \[`counter`\]\(\.\.\/memory-map\.md#counter\)/);
   // The table entries make edges from the routine that reads the table to each handler.
   assert.match(main, /n1010 ==> n1020\n {2}n1010 ==> n1028/);
   assert.match(main, /- \*\*Entry of:\*\* \[`handlers`\]\(\.\.\/tables\.md#handlers\)/);
   const tables = read("tables.md");
-  assert.match(tables, /\| 0 \| \[`\$2000`\]\(\.\.\/\.\.\/src\/tables\.asm#L6\) \| `\$101F` \| \[`handler_a`\]\(\.\.\/\.\.\/src\/main_code\.asm#L13\) \[`\$1020`\]\(modules\/main_code\.md#handler_a\) \|/);
+  assert.match(tables, /\| 0 \| \[`\$2000`\]\(\.\.\/\.\.\/src\/tables\.asm#L6\) \| `\$101F` \| \[`handler_a` `\$1020`\]\(\.\.\/\.\.\/src\/main_code\.asm#L13\) \|/);
   assert.match(tables, /- \*\*Read by:\*\* \[`draw`\]\(modules\/main_code\.md#draw\) \[`\$1012`\]/);
-  assert.match(read("variables.md"), /<a id="counter"><\/a>\n### \[`counter`\]\(\.\.\/\.\.\/src\/constants\.asm#L2\) `\$0002`/);
-  assert.match(read("symbols.md"), /\| \[`ship`\]\(\.\.\/\.\.\/src\/tables\.asm#L7\) \| \[`\$2040`\]\(modules\/tables\.md#ship\) \| data \|/);
+  // The variables outside the program are rows of the memory map; there is no page of all names.
+  const memory = read("memory-map.md");
+  assert.match(memory, /## Variables outside the program\n\n\| Address \| Name \| Comment \| Read by \| Written by \|\n\|---\|---\|---\|---\|---\|\n\| `\$0002` \| <a id="counter"><\/a>\[`counter`\]\(\.\.\/\.\.\/src\/constants\.asm#L2\) \| {2}\| {2}\| \[`draw`\]\(modules\/main_code\.md#draw\) \|/);
+  assert.match(memory, /\| \[`\$2040`\]\(\.\.\/\.\.\/src\/tables\.asm#L8\)-`\$207F` \| 64 \| sprite \| \[`ship` `\$2040`\]\(\.\.\/\.\.\/src\/tables\.asm#L7\) \|/);
+  assert.equal(existsSync(join(root, "docs/reference/symbols.md")), false);
+  assert.equal(existsSync(join(root, "docs/reference/variables.md")), false);
+  // Every link of the reference reaches its file, anchor and line.
+  const checked = link(root, "docs", "--source", "src", "--check");
+  assert.equal(checked.status, 0, JSON.stringify(checked.json));
   const graphics = read("graphics.md");
   assert.match(graphics, /!\[ship in hires\]\(images\/ship-hires\.png\)/);
   const sheet = readPng(readFileSync(join(root, "docs/reference/images/ship-hires.png")));
@@ -192,10 +199,18 @@ test("docs.ts generate refuses a page of a person in the output directory and a 
 const PAGE = [
   "# Notes",
   "",
-  "`main` `$1000` calls `draw` (`$1010`), which writes `counter` at `draw` `$1015`.",
+  "`main` `$1000` calls `draw` `$1010`, which writes `counter` at `draw` `$1015`.",
   "The table `handlers+1` `$2001` holds the high bytes; `counter` = `$10` at start.",
   "`nothing` `$1234` and `main` `$1020` are wrong; `rts` is no name.",
-  "`handler_a`/`handler_b` `$1020`/`$1028` are the handlers.",
+  "`main` `$1000` has a link in this section already.",
+  "",
+  "| Routine | Note |",
+  "|---|---|",
+  "| `draw` `$1010` | a link in a table |",
+  "",
+  "## Later",
+  "",
+  "`main` `$1000` gets a link in a new section; `draw` stays as text, and [`draw` `$1010`](https://example.com/draw) is a link of the person.",
   "",
   "```mermaid",
   "flowchart LR",
@@ -220,33 +235,43 @@ test("docs.ts generate refuses --out through a symbolic link out of the project 
   assert.equal(existsSync(join(outside, "index.md")), true, "the file outside the project stays");
 });
 
-test("docs.ts link links each name to its line and its address to its entry or its place, and reports what is wrong", () => {
+test("docs.ts link makes one link of a name and its address, once in a section and not in a table, and reports what is wrong", () => {
   const { root } = project();
   assert.equal(generate(root, "src", "--out", "docs/reference").status, 0);
   writeFileSync(join(root, "docs/notes.md"), PAGE);
   const first = link(root, "docs", "--source", "src");
   assert.equal(first.status, 1, "the page has problems");
   const text = readFileSync(join(root, "docs/notes.md"), "utf8").split("\n");
+  // One link for the name and its address; a place inside a routine and a byte after a name link to the line of that address. A name without an address stays as text.
   assert.equal(
     text[2],
-    "[`main`](../src/main_code.asm#L5) [`$1000`](reference/modules/main_code.md#main) calls [`draw`](../src/main_code.asm#L9) ([`$1010`](reference/modules/main_code.md#draw)), which writes [`counter`](../src/constants.asm#L2) at [`draw`](../src/main_code.asm#L9) [`$1015`](../src/main_code.asm#L12).",
+    "[`main` `$1000`](../src/main_code.asm#L5) calls [`draw` `$1010`](../src/main_code.asm#L9), which writes `counter` at [`draw` `$1015`](../src/main_code.asm#L12).",
   );
-  assert.equal(text[3], "The table [`handlers+1`](../src/tables.asm#L5) [`$2001`](reference/modules/tables.md#handlers) holds the high bytes; [`counter`](../src/constants.asm#L2) = `$10` at start.");
+  assert.equal(text[3], "The table [`handlers+1` `$2001`](../src/tables.asm#L6) holds the high bytes; `counter` = `$10` at start.");
   assert.equal(text[4], "`nothing` `$1234` and `main` `$1020` are wrong; `rts` is no name.", "a mention with a problem gets no link");
-  assert.equal(text[5], "[`handler_a`](../src/main_code.asm#L13)/[`handler_b`](../src/main_code.asm#L15) `$1020`/`$1028` are the handlers.");
-  assert.equal(text[9], '  a["`main` `$1000`"]', "a diagram stays as it is");
+  assert.equal(text[5], "`main` `$1000` has a link in this section already.", "a second link of a name in a section stays as text");
+  assert.equal(text[9], "| `draw` `$1010` | a link in a table |", "a table gets no link");
+  assert.equal(
+    text[13],
+    "[`main` `$1000`](../src/main_code.asm#L5) gets a link in a new section; `draw` stays as text, and [`draw` `$1010`](https://example.com/draw) is a link of the person.",
+  );
+  assert.equal(text[17], '  a["`main` `$1000`"]', "a diagram stays as it is");
   const problems = (first.json.problems as { listed: Array<{ at: string; kind: string; message: string }> }).listed;
   assert.deepEqual(
     problems.map((problem) => [problem.at, problem.kind]),
     [
       ["docs/notes.md:5", "unknown-name"],
       ["docs/notes.md:5", "wrong-address"],
-      ["docs/notes.md:13", "missing-file"],
-      ["docs/notes.md:13", "missing-anchor"],
-      ["docs/notes.md:13", "missing-line"],
+      ["docs/notes.md:6", "repeated-link"],
+      ["docs/notes.md:10", "link-in-table"],
+      ["docs/notes.md:21", "missing-file"],
+      ["docs/notes.md:21", "missing-anchor"],
+      ["docs/notes.md:21", "missing-line"],
     ],
   );
   assert.match(problems[1]!.message, /`main` is \$1000 in the knowledge, and the page gives \$1020, a place in `handler_a`/);
+  assert.match(problems[2]!.message, /has a link at line 3 of this section already\. Write `main` without the address here\./);
+  assert.match(problems[3]!.message, /link it in the text above the table/);
 
   // A second run changes nothing; --check writes nothing and fails while a page has problems.
   const second = link(root, "docs", "--source", "src");
@@ -265,7 +290,7 @@ test("docs.ts link links each name to its line and its address to its entry or i
   writeFileSync(join(root, "src/source-map.json"), JSON.stringify(map));
   const moved = link(root, "docs", "--source", "src");
   assert.deepEqual(moved.json.linked, { links: 1, pages: ["docs/notes.md"] });
-  assert.equal(readFileSync(join(root, "docs/notes.md"), "utf8"), "[`main`](../src/main_code.asm#L4) [`$1000`](reference/modules/main_code.md#main)\n");
+  assert.equal(readFileSync(join(root, "docs/notes.md"), "utf8"), "[`main` `$1000`](../src/main_code.asm#L4)\n");
 });
 
 test("docs.ts link takes the entry page in the project folder beside the docs directory", () => {
@@ -277,7 +302,7 @@ test("docs.ts link takes the entry page in the project folder beside the docs di
   assert.equal(linked.status, 0);
   assert.equal(linked.json.reference, "docs/reference", "the reference of the docs directory");
   assert.deepEqual(linked.json.linked, { links: 2, pages: ["README.md", "docs/notes.md"] });
-  assert.equal(readFileSync(join(root, "README.md"), "utf8"), "[`main`](src/main_code.asm#L5) [`$1000`](docs/reference/modules/main_code.md#main), see [notes](docs/notes.md).\n");
+  assert.equal(readFileSync(join(root, "README.md"), "utf8"), "[`main` `$1000`](src/main_code.asm#L5), see [notes](docs/notes.md).\n");
   assert.equal(link(root, "README.md", "docs", "README.md", "--source", "src", "--check").status, 0);
   // A page given as a file finds the reference folder beside it.
   const page = link(root, "docs/notes.md", "--source", "src", "--check");
