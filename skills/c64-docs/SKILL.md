@@ -144,7 +144,7 @@ Do not store:
 - `invalid-input` that names an old revision: the knowledge changed after the source. Generate the source again, then run `docs.ts generate`.
 - `invalid-input` that names a page in the reference directory: the page is not a page of `docs.ts generate`. Move the page out of the directory. Do not give `--out` a directory with pages that you wrote.
 - `unknown-name`: the page uses a name that is not in the knowledge. Record the name with c64-knowledge, or correct the page.
-- `wrong-address`: the address after the name is not the address of the name, and it is not a place inside it. The message gives the routine that holds the address. Correct the name or the address. For a value, write `` `scroll_moves` = `$10` ``.
+- `wrong-address`: the address after the name is not the address of the name, and it is not a place inside it. The message gives the routine that holds the address. Correct the name or the address. For a value, write `` `scroll_moves` = `$10` ``. The script does not link such a mention until it is correct.
 - `missing-file`, `missing-anchor` or `missing-line`: a link goes to nothing. Correct the link. An image of an asset must exist in the project.
 - `stale-reference`: the source or the reference is older than the knowledge. Do steps 2 and 3 of the workflow again.
 - `conflict`: the knowledge has conflicts from a git merge. Run `knowledge.ts merge` of c64-knowledge.

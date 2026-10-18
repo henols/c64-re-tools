@@ -231,6 +231,7 @@ test("docs.ts link links each name to its line and its address to its entry or i
     "[`main`](../src/main_code.asm#L5) [`$1000`](reference/modules/main_code.md#main) calls [`draw`](../src/main_code.asm#L9) ([`$1010`](reference/modules/main_code.md#draw)), which writes [`counter`](../src/constants.asm#L2) at [`draw`](../src/main_code.asm#L9) [`$1015`](../src/main_code.asm#L12).",
   );
   assert.equal(text[3], "The table [`handlers+1`](../src/tables.asm#L5) [`$2001`](reference/modules/tables.md#handlers) holds the high bytes; [`counter`](../src/constants.asm#L2) = `$10` at start.");
+  assert.equal(text[4], "`nothing` `$1234` and `main` `$1020` are wrong; `rts` is no name.", "a mention with a problem gets no link");
   assert.equal(text[5], "[`handler_a`](../src/main_code.asm#L13)/[`handler_b`](../src/main_code.asm#L15) `$1020`/`$1028` are the handlers.");
   assert.equal(text[9], '  a["`main` `$1000`"]', "a diagram stays as it is");
   const problems = (first.json.problems as { listed: Array<{ at: string; kind: string; message: string }> }).listed;

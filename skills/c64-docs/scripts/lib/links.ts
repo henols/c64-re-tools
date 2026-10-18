@@ -102,6 +102,8 @@ export function linkPage(text: string, context: LinkContext): { text: string; ch
         const expected = `$${(address + delta).toString(16).toUpperCase().padStart(4, "0")}`;
         const holder = context.placeOf(given!);
         report("wrong-address", `\`${name}${offset ?? ""}\` is ${expected} in the knowledge, and the page gives ${addressText}${holder === undefined || holder === name ? "" : `, a place in \`${holder}\``}. Correct the name or the address.${digits!.length <= 2 ? ` For a value, write \`${name}\` = \`${addressText}\`.` : ""}`);
+        // A mention with a problem gets no link: the text stays as the person wrote it until it is correct.
+        return whole;
       }
       const shownName = `${TICK}${name}${offset ?? ""}${TICK}`;
       const code = context.codeOf(name);
