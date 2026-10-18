@@ -2,8 +2,6 @@
 
 These rules apply to each page that you write. `docs.ts link` checks the rules that a script can check.
 
-The rules in this file are in Simplified Technical English. The pages that you write are not. Write the pages in plain English for a human reader.
-
 ## Explain first
 
 - Start each section with what the part does and why. Use the words of the program: the rooms, the player, the lanterns, the score. Then name the code.
@@ -49,7 +47,7 @@ The rules in this file are in Simplified Technical English. The pages that you w
 
 ## Text
 
-- Write plain English in short paragraphs. A sentence can join a cause and its effect.
+- Write the pages in the language and the style that the user or the project asks for.
 - Use a numbered list for steps in an order. Use a bulleted list for items without an order. Use a table for items with the same fields.
 - Use the same word for the same thing on each page. Define each term of the program one time, in the conventions block.
 - Write the entry page up to the findings for any reader who knows the C64 as a user. Write the other pages for a person who knows the 6502 and the C64, but not the program.
