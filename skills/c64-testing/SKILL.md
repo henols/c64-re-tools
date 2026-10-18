@@ -1,13 +1,13 @@
 ---
 name: c64-testing
-description: Use this skill to test if a rebuilt or changed C64 program behaves as the original. It runs one scenario on the original and then on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. It also makes a checklist for a human playtest. Use its run command to explore a program with many steps, for example to visit each room or level. A run keeps screens, coverage maps and snapshots as files. Use its record and replay commands to keep a long play session of the original and replay it on each rebuild. Do not use it to find the cause of a difference.
+description: Use this skill to test if a rebuilt or changed C64 program behaves as the original. It runs one scenario on the original and then on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. It also makes a checklist for a human playtest. Use its run command to explore a program with many steps, for example to visit each room or level. A run keeps screens, coverage maps and snapshots as files. An expect step in a run compares memory and registers with expected values, for a new program or a fix that has no original. Use its record and replay commands to keep a long play session of the original and replay it on each rebuild. Do not use it to find the cause of a difference.
 ---
 
 # c64-testing
 
 ## Purpose
 
-Test if a rebuild or a changed program behaves as the original in a scenario. Give one result: PASS, FAIL or INCONCLUSIVE.
+Test if a rebuild or a changed program behaves as the original in a scenario. Test if a program has the expected values in a run. Give one result: PASS, FAIL or INCONCLUSIVE.
 
 A PASS proves only the behavior that the scenario does and observes. It does not prove that the two programs are equal in all behavior.
 
@@ -51,12 +51,13 @@ The run file gives where to start (a program, or a snapshot file), the steps, an
 | `{ "observe": "room3", "memory": ["$c100"], "registers": true }` | Record memory, registers, `vicii` or `sprites` in `results.json`. |
 | `{ "trace": "d011", "points": [{ "kind": "write", "start": "$d011" }], "frames": 100 }` | Record each hit of the points for 100 frames in `d011.json`: the instruction, its registers and the raster line and cycle. A point has the `kind` `exec`, `read` or `write`, a `start` and an optional `end`. `maxHits` limits the hits. |
 | `{ "observe": "all3", "memory": "all" }` | Write all 64 KiB of RAM to `all3.bin`, also the RAM under the ROMs and the I/O area. |
+| `{ "expect": "title", "memory": [{ "address": "$0400", "text": "HELLO" }], "registers": { "a": 0 } }` | Compare memory and registers with the expected values. `data` gives hex bytes, `text` gives screen codes. `mask` compares only some bits. A value that is not equal does not stop the run. |
 
 Each step that writes a file must have its own file name. The script refuses a run where two steps write the same file, for example `{ "coverage": "x" }` and `{ "observe": "x", "memory": "all" }`, which both write `x.bin`. The script also examines the start program and each snapshot file before the emulator starts.
 
 A memory item can have `"view": "ram"`. Then it reads the RAM under the ROMs and the I/O area, for example code at `$e000` under the KERNAL. The default view `cpu` reads as the CPU sees memory. An item larger than 4096 bytes goes into its own `.bin` file, and `results.json` gives the file name.
 
-See [references/scenario-format.md](references/scenario-format.md), section Runs. `result` is PASS when all steps ran, and FAIL when a step did not run. `reason` tells why. A long run can need more time than one shell call. Then run it in the background.
+See [references/scenario-format.md](references/scenario-format.md), section Runs. `result` is PASS when all steps ran and each `expect` step passed. It is FAIL when a step did not run, and `reason` tells why. It is also FAIL when an `expect` step found a value that is not equal. Then `failedExpectations` names the steps, and `expectations` gives the expected and the actual values. A long run can need more time than one shell call. Then run it in the background.
 
 ### Recordings
 
@@ -218,4 +219,5 @@ Do not add a mask or a tolerance only to make a test pass. A tolerance must have
 - Find the cause of a difference → c64-emulator
 - Find the code that causes it → c64-static-analysis
 - Rebuild after a correction → c64-assembler
+- Write or change a program, with expect steps as its tests → c64-development
 - Record a confirmed conclusion → c64-knowledge

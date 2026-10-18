@@ -85,6 +85,39 @@ test("a runUntil that does not reach its target ends the run with the reason", {
   assert.deepEqual((json.files as Array<{ out: string }>).map((file: { out: string }) => file.out.split("/").at(-1)), ["results.json"], "the steps after it did not run");
 });
 
+test("an expect step passes on equal values, fails on others with each mismatch, and the later steps still run", { skip: liveSkip, timeout: 180_000 }, async () => {
+  writeFileSync(join(project, "counter.prg"), joystickCounterPrg);
+  writeFileSync(
+    join(project, "expect.json"),
+    JSON.stringify({
+      name: "expect",
+      start: { program: "counter.prg", load: true },
+      steps: [
+        { registers: { pc: "$c000", a: 7 } },
+        { write: { address: "$0400", data: "08050c0c0f" } },
+        { write: { address: "$d020", data: "01" } },
+        // $d020 reads its unused bits as 1: the mask compares only the colour.
+        { expect: "good", memory: [{ address: "$0400", text: "HELLO" }, { address: "$d020", data: "01", mask: "0f" }], registers: { pc: "$c000", a: 7 } },
+        { expect: "bad", memory: [{ address: "$0400", text: "WORLD" }, { address: "$d020", data: "02", mask: "0f" }], registers: { a: 8 } },
+        { screen: "after" },
+      ],
+    }),
+  );
+  const { status, json } = await runSteps("expect.json", "--out", "runs/expect");
+  assert.equal(status, 1, JSON.stringify(json));
+  assert.equal(json.result, "FAIL");
+  assert.equal(json.completed, true);
+  assert.deepEqual(json.failedExpectations, ["bad"]);
+  const [good, bad] = json.expectations as Array<{ expect: string; pass: boolean; count: number; mismatches: unknown[] }>;
+  assert.deepEqual(good, { expect: "good", pass: true, count: 0, mismatches: [] });
+  assert.deepEqual(bad!.mismatches, [
+    { address: "$0400", expected: "WORLD", actual: "HELLO" },
+    { address: "$d020", expected: "$02", actual: "$f1" },
+    { register: "a", expected: 8, actual: 7 },
+  ]);
+  assert.ok((json.files as Array<{ out: string }>).some((file) => file.out.endsWith("after.png")), "the step after the failed expectation ran");
+});
+
 test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff finds the change between two snapshots", { skip: liveSkip, timeout: 300_000 }, async () => {
   writeFileSync(join(project, "counter.prg"), joystickCounterPrg);
   writeFileSync(

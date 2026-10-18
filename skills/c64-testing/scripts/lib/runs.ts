@@ -1,13 +1,15 @@
 // The runs of c64-testing: steps in their own emulator, from a program or a
 // snapshot file, and what the steps ask for written into a folder: screens,
 // coverage maps, snapshot files, and results.json with the observations. One
-// side, no comparison.
+// side, no comparison with another program: an expect step checks the memory
+// and registers against the values that the run file gives.
 
-import { formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
+import { formatC64Address, formatC64Byte, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
+import { screenText } from "#src/graphics.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
-import { ACTION_STEP_KINDS, checkActionStep, checkStepNames, isInteger, isObject, refuseOldStep, renamedField, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, checkLocation, checkStepNames, isInteger, isObject, refuseOldStep, renamedField, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, WireFailure, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
@@ -23,7 +25,27 @@ type RunStep =
   | { screen: string }
   | { coverage: string }
   | { trace: string; points: Array<{ kind: TraceKind; start: string; end?: string }>; frames: number; maxHits?: number }
-  | { observe: string; memory?: "all" | Array<string | { address: string; size?: number; view?: "cpu" | "ram" }>; registers?: boolean; vicii?: boolean; sprites?: number[] };
+  | { observe: string; memory?: "all" | Array<string | { address: string; size?: number; view?: "cpu" | "ram" }>; registers?: boolean; vicii?: boolean; sprites?: number[] }
+  | { expect: string; memory?: ExpectedMemory[]; registers?: ExpectedRegisters };
+
+/** Expected bytes at an address: hex data, under an optional mask, or text as screen codes. */
+interface ExpectedMemory {
+  address: string;
+  data?: string;
+  text?: string;
+  mask?: string;
+  view?: "cpu" | "ram";
+}
+
+type ExpectedRegisters = Extract<ActionStep, { registers: unknown }>["registers"];
+
+/** One value that differs from the expected value. */
+interface Mismatch {
+  address?: string;
+  register?: string;
+  expected: string | number | boolean;
+  actual: string | number | boolean;
+}
 
 interface Run {
   name: string;
@@ -33,9 +55,15 @@ interface Run {
   steps: RunStep[];
 }
 
-const OWN_KINDS = ["snapshot", "save", "screen", "coverage", "observe", "trace"] as const;
+const OWN_KINDS = ["snapshot", "save", "screen", "coverage", "observe", "expect", "trace"] as const;
 const TRACE_KEYS = ["trace", "points", "frames", "maxHits"];
 const OBSERVE_KEYS = ["observe", "memory", "registers", "vicii", "sprites"];
+const EXPECT_KEYS = ["expect", "memory", "registers"];
+const EXPECTED_MEMORY_KEYS = ["address", "data", "text", "mask", "view"];
+/** The characters that screenText gives for the screen codes 0 to 63; a graphics code gives a dot. */
+const SCREEN_TEXT = /^[@A-Z[£\]^< !"#$%&'()*+,\-./0-9:;=>?]+$/;
+/** The most differing bytes that an expectation lists; count gives all of them. */
+const MAX_LISTED_MISMATCHES = 16;
 /** A name of a file that a step writes: letters, digits, dots, underscores or hyphens. */
 const NAME = /^[A-Za-z0-9._-]{1,64}$/;
 /** The file of the observations, which every run writes. */
@@ -96,12 +124,12 @@ function readRun(path: string): Run {
   (value.steps as unknown[]).forEach((step, index) => {
     const at = `step ${index + 1}`;
     if (!isObject(step)) return fail(`${at} must be an object`);
-    const kinds = "observe" in step ? ["observe"] : "trace" in step ? ["trace"] : Object.keys(step).filter((key) => (ACTION_STEP_KINDS as readonly string[]).includes(key) || (OWN_KINDS as readonly string[]).includes(key));
+    const kinds = "observe" in step ? ["observe"] : "expect" in step ? ["expect"] : "trace" in step ? ["trace"] : Object.keys(step).filter((key) => (ACTION_STEP_KINDS as readonly string[]).includes(key) || (OWN_KINDS as readonly string[]).includes(key));
     if (kinds.length > 1) return fail(`${at} has ${kinds.length} step kinds: ${kinds.join(", ")}. Give each one its own step`);
     if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...VICE_STEP_KINDS, ...OWN_KINDS].join(", ")}`);
     const kind = kinds[0]!;
     refuseOldStep(kind, step, at, fail);
-    const allowed = kind === "observe" ? OBSERVE_KEYS : kind === "trace" ? TRACE_KEYS : [kind];
+    const allowed = kind === "observe" ? OBSERVE_KEYS : kind === "expect" ? EXPECT_KEYS : kind === "trace" ? TRACE_KEYS : [kind];
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
     if ((ACTION_STEP_KINDS as readonly string[]).includes(kind)) {
       // The step with its defaults filled in, as the shared schema of the action steps gives it.
@@ -127,6 +155,33 @@ function readRun(path: string): Run {
       }
       if (!isInteger(step.frames, 1, MAX_TRACE_FRAMES)) fail(`${at}: frames must be a number from 1 to ${MAX_TRACE_FRAMES}`);
       if (step.maxHits !== undefined && !isInteger(step.maxHits, 1, MAX_TRACE_HITS)) fail(`${at}: maxHits must be a number from 1 to ${MAX_TRACE_HITS}`);
+      return;
+    }
+    if (kind === "expect") {
+      if (labels.has(name as string)) fail(`${at} needs a new name`);
+      labels.add(name as string);
+      if (step.memory === undefined && step.registers === undefined) fail(`${at}: expect needs memory, registers or both`);
+      if (step.memory !== undefined) {
+        if (!Array.isArray(step.memory) || step.memory.length === 0) return fail(`${at}: memory is a list of objects with address, and data or text`);
+        for (const item of step.memory as unknown[]) {
+          if (!isObject(item)) return fail(`${at}: memory is a list of objects with address, and data or text`);
+          for (const key of Object.keys(item)) if (!EXPECTED_MEMORY_KEYS.includes(key)) fail(`${at}: an expected memory object has the field ${key}. It has address, data or text, mask and view, and nothing else`);
+          checkLocation(item.address, `${at}: address`, fail);
+          if ((item.data === undefined) === (item.text === undefined)) fail(`${at}: an expected memory object needs data or text, not both`);
+          if (item.data !== undefined && (typeof item.data !== "string" || !/^(?:[0-9a-fA-F]{2})+$/.test(item.data))) fail(`${at}: data must be hex bytes, two digits per byte, no separators, for example 0801`);
+          if (item.text !== undefined && (typeof item.text !== "string" || !SCREEN_TEXT.test(item.text))) {
+            fail(`${at}: text has the characters of the upper-case set: @, A to Z, digits, space, the signs !"#$%&'()*+,-./:;<=>? and [£]^<. Write letters in upper case`);
+          }
+          const size = typeof item.data === "string" ? item.data.length / 2 : typeof item.text === "string" ? item.text.length : 0;
+          if (size > MAX_MEMORY_READ) fail(`${at}: an expected memory object has at most ${MAX_MEMORY_READ} bytes`);
+          if (item.mask !== undefined && (item.data === undefined || typeof item.mask !== "string" || !/^(?:[0-9a-fA-F]{2})+$/.test(item.mask) || item.mask.length !== (item.data as string).length)) {
+            fail(`${at}: mask needs data, and is hex bytes of the same length as data`);
+          }
+          if (item.view !== undefined && item.view !== "cpu" && item.view !== "ram") fail(`${at}: view must be cpu or ram`);
+        }
+      }
+      // The registers have the fields of a registers step: only pc can be a name.
+      if (step.registers !== undefined) step.registers = (checkActionStep("registers", { registers: step.registers }, at, fail) as { registers: ExpectedRegisters }).registers;
       return;
     }
     if (kind !== "observe") return;
@@ -190,7 +245,38 @@ function showHit(hit: TraceHit) {
   return { ...hit, pc: formatC64Address(hit.pc), ...(hit.address === undefined ? {} : { address: formatC64Address(hit.address) }) };
 }
 
-/** Runs the run file and writes its files into `out`. failed: a step did not run. */
+/**
+ * The values of an expect step that differ: each byte of data (under its
+ * mask), the text of screen codes as one string, and each register.
+ */
+async function expected(client: ViceSessionClient, step: Extract<RunStep, { expect: string }>, at: (location: string) => number): Promise<Mismatch[]> {
+  const mismatches: Mismatch[] = [];
+  for (const item of step.memory ?? []) {
+    const address = at(item.address);
+    if (item.text !== undefined) {
+      const actual = screenText(await readMemoryInParts(client, address, item.text.length, item.view ?? "cpu")).join("");
+      if (actual !== item.text) mismatches.push({ address: formatC64Address(address), expected: item.text, actual });
+      continue;
+    }
+    const data = Buffer.from(item.data!, "hex");
+    const mask = item.mask === undefined ? undefined : Buffer.from(item.mask, "hex");
+    const actual = await readMemoryInParts(client, address, data.length, item.view ?? "cpu");
+    data.forEach((byte, offset) => {
+      const bits = mask?.[offset] ?? 0xff;
+      if ((actual[offset]! & bits) !== (byte & bits)) mismatches.push({ address: formatC64Address((address + offset) & 0xffff), expected: formatC64Byte(byte), actual: formatC64Byte(actual[offset]!) });
+    });
+  }
+  if (step.registers !== undefined) {
+    const registers = await client.registersGet("c64");
+    const { pc, flags, ...bytes } = step.registers;
+    if (pc !== undefined && registers.pc !== at(pc)) mismatches.push({ register: "pc", expected: formatC64Address(at(pc)), actual: formatC64Address(registers.pc) });
+    for (const [name, value] of Object.entries(bytes) as Array<["a" | "x" | "y" | "sp", number]>) if (registers[name] !== value) mismatches.push({ register: name, expected: value, actual: registers[name] });
+    for (const [name, value] of Object.entries(flags ?? {}) as Array<[keyof typeof registers.flags, boolean]>) if (registers.flags[name] !== value) mismatches.push({ register: `flags.${name}`, expected: value, actual: registers.flags[name] });
+  }
+  return mismatches;
+}
+
+/** Runs the run file and writes its files into `out`. failed: a step did not run, or an expect step found a value that differs. */
 export async function runFile(path: string, out: string): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const run = readRun(path);
   checkRunFiles(path, run);
@@ -206,8 +292,15 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
   };
   // Every name of the steps resolves before the emulator starts. A refusal names the step.
   run.steps.forEach((step, index) => {
-    if ("trace" in step || "observe" in step) {
-      const names = "trace" in step ? step.points.flatMap((point) => [point.start, ...(point.end === undefined ? [] : [point.end])]) : step.memory === undefined || step.memory === "all" ? [] : step.memory.map((item) => (typeof item === "string" ? item : item.address));
+    if ("trace" in step || "observe" in step || "expect" in step) {
+      const names =
+        "trace" in step
+          ? step.points.flatMap((point) => [point.start, ...(point.end === undefined ? [] : [point.end])])
+          : "expect" in step
+            ? [...(step.memory ?? []).map((item) => item.address), ...(step.registers?.pc === undefined ? [] : [step.registers.pc])]
+            : step.memory === undefined || step.memory === "all"
+              ? []
+              : step.memory.map((item) => (typeof item === "string" ? item : item.address));
       for (const name of names) {
         try {
           at(name);
@@ -227,6 +320,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
     files.push(name);
   };
   const observations: Record<string, unknown> = {};
+  const expectations: Array<{ expect: string; pass: boolean; count: number; mismatches: Mismatch[] }> = [];
   const traces: Record<string, unknown> = {};
   const client = await ViceSessionClient.open({ videoStandard: run.videoStandard ?? "pal" });
   let done = 0;
@@ -295,6 +389,10 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
         if (step.vicii === true) seen.vicii = formatVicii(await client.vicii());
         if (step.sprites !== undefined) seen.sprites = (await client.sprites(step.sprites)).sprites.map(formatSprite);
         observations[step.observe] = seen;
+      } else if ("expect" in step) {
+        // A mismatch does not stop the run: the later steps and expectations still run.
+        const mismatches = await expected(client, step, at);
+        expectations.push({ expect: step.expect, pass: mismatches.length === 0, count: mismatches.length, mismatches: mismatches.slice(0, MAX_LISTED_MISMATCHES) });
       } else {
         const notReached = await runActionStep(client, step, at);
         if (notReached !== undefined && "runUntil" in step) {
@@ -305,9 +403,21 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
       done++;
     }
     const pc = (await client.registersGet("c64")).pc;
-    const results = { name: run.name, completed: reason === undefined, steps: run.steps.length, done, ...(reason === undefined ? {} : { reason }), pc: formatC64Address(pc), files: [...files], observations, ...(Object.keys(traces).length === 0 ? {} : { traces }) };
+    const failedExpectations = expectations.filter((item) => !item.pass).map((item) => item.expect);
+    const results = {
+      name: run.name,
+      completed: reason === undefined,
+      steps: run.steps.length,
+      done,
+      ...(reason === undefined ? {} : { reason }),
+      pc: formatC64Address(pc),
+      files: [...files],
+      observations,
+      ...(expectations.length === 0 ? {} : { expectations, failedExpectations }),
+      ...(Object.keys(traces).length === 0 ? {} : { traces }),
+    };
     write("results.json", Buffer.from(`${JSON.stringify(results, null, 2)}\n`));
-    return { output: { ...results, files: written, observations: Object.keys(observations), out }, failed: reason !== undefined };
+    return { output: { ...results, files: written, observations: Object.keys(observations), out }, failed: reason !== undefined || failedExpectations.length > 0 };
   } finally {
     await client.close();
   }

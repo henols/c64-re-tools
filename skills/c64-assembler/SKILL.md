@@ -111,3 +111,4 @@ With `--compare`, `compare` gives `identical` and `segments`: one check for each
 
 - Run or debug the program → c64-emulator
 - Compare the rebuild with the original → c64-testing
+- Write a new program, or add a feature or a fix → c64-development

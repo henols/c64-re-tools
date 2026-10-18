@@ -92,7 +92,7 @@ A run file (for `testing.ts run`) has:
 - `start`: `{ "program": "game.prg" }` to autostart a program with a BASIC start line, `{ "program": "game.prg", "load": true }` to load it with the CPU stopped (set `pc` in a step), or `{ "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" }`.
 - `symbols`: optional, `knowledge`, `none` (default), or a JSON file as for a subject. Without `symbols`, a run has no names: give `"symbols": "knowledge"` to use the names of the knowledge.
 - `videoStandard`: optional, `pal` (default) or `ntsc`.
-- `steps`: the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage`, `trace` and `observe`.
+- `steps`: the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage`, `trace`, `observe` and `expect`.
 
 A `trace` step has a name, `points` (1 to 8), `frames` (1 to 3000) and an optional `maxHits` (at most 20000). A point has `kind` (`exec`, `read` or `write`), `start` and an optional `end`. The step writes `<name>.json` with each hit. `results.json` gives the file, the count of hits, the frames and why the trace ended. A trace that a breakpoint, a watchpoint or a JAM ends also ends the run.
 
@@ -100,7 +100,39 @@ In a run, an `observe` step can have `memory`, `registers`, `vicii` and `sprites
 
 In a run, a memory item has `address`, `size` (1 to 65536) and `view`. An item larger than 4096 bytes goes into the file `<observe>-<address>.bin`, without the `$`. `"memory": "all"` writes all 64 KiB of RAM to `<observe>.bin`.
 
-A name in `save`, `screen`, `coverage` and `observe` has 1 to 64 letters, digits, dots, underscores or hyphens. The files go into the `--out` directory, with `results.json`. It has the observations, the files and the steps done. If a `runUntil` step did not reach its target, it also tells why the run stopped.
+A name in `save`, `screen`, `coverage`, `observe` and `expect` has 1 to 64 letters, digits, dots, underscores or hyphens. The files go into the `--out` directory, with `results.json`. It has the observations, the expectations, the files and the steps done. If a `runUntil` step did not reach its target, it also tells why the run stopped.
+
+### Expected values
+
+An `expect` step compares the memory and the registers with the values that the step gives. It writes no file. Use it to test a program that has no original, for example a new program or a fix.
+
+```json
+{ "expect": "title",
+  "memory": [
+    { "address": "$0400", "text": "HELLO FROM C64" },
+    { "address": "score", "data": "0000" },
+    { "address": "$d020", "data": "01", "mask": "0f" }
+  ],
+  "registers": { "pc": "main_loop", "a": 0, "flags": { "i": true } } }
+```
+
+The step has a name, and `memory`, `registers` or both.
+
+A memory item has `address` and one of these two keys:
+
+- `data`: the bytes as hex. The step compares each byte.
+- `text`: characters on the screen, as screen codes of the upper-case set. The step reads one byte for each character. It compares the text, not the reverse video. A graphics character reads as a dot. Write letters in upper case.
+
+A memory item can also have:
+
+- `mask`: hex bytes with the same length as `data`. The step compares only the bits that are 1 in the mask. Use it for an I/O register with bits that read as 1, for example `$d020`.
+- `view`: `cpu` (default) or `ram`.
+
+A memory item has at most 4096 bytes.
+
+`registers` has the fields of a `registers` step: `pc`, `a`, `x`, `y`, `sp` and `flags`. Only `pc` can be a name.
+
+A value that is not equal does not stop the run. The later steps run. `results.json` and the result have `expectations`. For each step, it gives `pass` and the count of values that are not equal. It also lists at most 16 of them, with the expected and the actual value. `failedExpectations` names each step that did not pass. The result is FAIL when an expectation did not pass.
 
 Example: visit two rooms from the same start.
 

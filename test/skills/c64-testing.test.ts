@@ -343,6 +343,29 @@ test("a run refuses two steps that write one file, across step kinds, and names 
   assert.equal(refused([{ screen: "Room" }, { screen: "room" }]), "run collide.json: step 2 (screen) writes room.png, and step 1 (screen) writes that file too. Give one of them another name");
 });
 
+test("a run refuses a wrong expect step before it opens an emulator, and names the step", () => {
+  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
+  const refused = (steps: unknown[]) => {
+    writeFileSync(join(project, "expect.json"), JSON.stringify({ name: "expect", start: { program: "game.prg" }, steps }));
+    const run = spawnSync(process.execPath, [...process.execArgv, script, "run", "expect.json", "--out", "out"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+    assert.equal(run.status, 2, run.stdout);
+    const { error } = JSON.parse(run.stdout) as { error: { code: string; message: string } };
+    assert.equal(error.code, "invalid-input");
+    return error.message.split("\n")[0]!;
+  };
+  assert.equal(refused([{ expect: "e" }]), "run expect.json: step 1: expect needs memory, registers or both");
+  assert.equal(refused([{ expect: "e", memory: [{ address: "$0400", data: "08", text: "H" }] }]), "run expect.json: step 1: an expected memory object needs data or text, not both");
+  assert.match(refused([{ expect: "e", memory: [{ address: "$0400", text: "hello" }] }]), /^run expect\.json: step 1: text has the characters of the upper-case set: .*Write letters in upper case$/);
+  assert.equal(refused([{ expect: "e", memory: [{ address: "$d020", data: "01", mask: "0f0f" }] }]), "run expect.json: step 1: mask needs data, and is hex bytes of the same length as data");
+  assert.equal(refused([{ expect: "e", memory: [{ address: "$0400", data: "01", size: 1 }] }]), "run expect.json: step 1: an expected memory object has the field size. It has address, data or text, mask and view, and nothing else");
+  assert.equal(refused([{ observe: "e", memory: ["$0400"] }, { expect: "e", memory: [{ address: "$0400", data: "01" }] }]), "run expect.json: step 2 needs a new name");
+  assert.match(refused([{ expect: "e", screen: {} }]), /^run expect\.json: step 1 has the key screen/);
+  assert.match(refused([{ expect: "e", registers: { a: 300 } }]), /^run expect\.json: step 1/);
+  assert.match(refused([{ expect: "e", memory: [{ address: "score", data: "00" }] }]), /^run expect\.json: step 1: score is a name, and the run file has no symbols/);
+  assert.match(refused([{ expect: "e", registers: { pc: "main_loop" } }]), /^run expect\.json: step 1: main_loop is a name, and the run file has no symbols/);
+});
+
 test("a run and a scenario refuse the 2.0 step and memory forms with the field and the 2.1 form", () => {
   const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
@@ -357,7 +380,7 @@ test("a run and a scenario refuse the 2.0 step and memory forms with the field a
   assert.equal(run([{ observe: "x", memory: [{ at: "$0400", size: 2 }] }]), "run old-run.json: step 1: a memory object has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(run([{ trace: "t", points: [{ kind: "exec", at: "$c000" }], frames: 5 }]), "run old-run.json: step 1: a point has the field at. at is a 2.0 field. Write start in place of at");
   assert.equal(run([{ press: " " }]).startsWith("run old-run.json: step 1: press pushes keys of the keyboard matrix"), true);
-  assert.equal(run([{ wait: 5 }]), "run old-run.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil, snapshot, save, screen, coverage, observe, trace");
+  assert.equal(run([{ wait: 5 }]), "run old-run.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil, snapshot, save, screen, coverage, observe, expect, trace");
   const scenario = (steps: unknown[]) => message("checklist", "old-scenario.json", { ...valid, steps });
   assert.equal(scenario([{ type: " ", side: "original" }, valid.steps[2]]), 'scenario old-scenario.json: step 1 has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}, "side": "original"}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes');
   assert.equal(scenario([{ runUntil: { at: "title_menu_loop" }, timeoutFrames: 600 }, valid.steps[2]]), 'scenario old-scenario.json: step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "title_menu_loop"}, "timeoutFrames": 600}}');
