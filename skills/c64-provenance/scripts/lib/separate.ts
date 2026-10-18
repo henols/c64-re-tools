@@ -1,7 +1,8 @@
 // Evidence from one release: for each range of the image, the unpack
 // stage that wrote it and the access class from coverage; for each code
 // region of knowledge, whether call and jump references or the run on from
-// its last instruction reach it from the entry; and what the program reads
+// its last instruction reach it from a root (the entry, and the NMI, RESET
+// and IRQ vectors at $fffa-$ffff when the image holds them); and what the program reads
 // or executes outside the image. Evidence only: nothing here decides what is
 // original.
 
@@ -30,13 +31,21 @@ export interface EvidenceRange extends AddressRange {
 
 export interface CodeRegionEvidence extends AddressRange {
   type: string;
-  /** Absent when the image has no entry. */
+  /** Absent when the image has no root: no entry and no hardware vector. */
   reachable?: boolean;
   /** Absent without coverage. */
   executed?: boolean;
 }
 
+/** An address where the reachability starts, and why: the entry, or a hardware vector in the image. */
+export interface Root {
+  address: number;
+  from: "entry" | "NMI vector $fffa" | "RESET vector $fffc" | "IRQ vector $fffe";
+}
+
 export interface Separation {
+  /** The roots of the reachability, in the order entry, NMI, RESET, IRQ. */
+  roots: Root[];
   ranges: EvidenceRange[];
   codeRegions: CodeRegionEvidence[];
   /**
@@ -49,6 +58,24 @@ export interface Separation {
 }
 
 const SYSTEM_PAGES_END = 0x03ff;
+
+/** The hardware vectors of the 6510: the CPU reads them from $fffa-$ffff, the RAM when the KERNAL is banked out. */
+const HARDWARE_VECTORS = [
+  { at: 0xfffa, from: "NMI vector $fffa" },
+  { at: 0xfffc, from: "RESET vector $fffc" },
+  { at: 0xfffe, from: "IRQ vector $fffe" },
+] as const;
+
+/**
+ * The roots of the reachability: the entry, and each hardware vector whose
+ * two bytes are in the image. An interrupt handler runs by its vector, and
+ * no call or jump reference reaches it.
+ */
+export function reachabilityRoots(segments: readonly AddressRange[], memory: Uint8Array, entry?: number): Root[] {
+  const inImage = (address: number) => segments.some((segment) => address >= segment.start && address <= segment.end);
+  const vectors = HARDWARE_VECTORS.filter((vector) => inImage(vector.at) && inImage(vector.at + 1)).map((vector): Root => ({ address: memory[vector.at]! | (memory[vector.at + 1]! << 8), from: vector.from }));
+  return [...(entry === undefined ? [] : [{ address: entry, from: "entry" as const }]), ...vectors];
+}
 
 /** BRK, JMP, RTI, RTS, JMP (indirect) and the JAM opcodes: the CPU does not run on to the next instruction after them. */
 const NO_FALL_THROUGH = new Set([0x00, 0x4c, 0x40, 0x60, 0x6c, 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
@@ -114,12 +141,13 @@ export function separate(input: SeparationInput): Separation {
     }
   }
 
-  // Reachability: from the region that holds the entry, through call and jump references and the run on
+  // Reachability: from the regions that hold a root, through call and jump references and the run on
   // from the last instruction of a region into the next address, to a fixed point.
   const regions = input.codeRegions.filter((region) => input.segments.some((segment) => region.start <= segment.end && segment.start <= region.end));
   const holding = (address: number) => regions.findIndex((region) => address >= region.start && address <= region.end);
+  const roots = reachabilityRoots(input.segments, input.memory, input.entry);
   const reached = new Set<number>();
-  if (input.entry !== undefined && holding(input.entry) >= 0) reached.add(holding(input.entry));
+  for (const root of roots) if (holding(root.address) >= 0) reached.add(holding(root.address));
   // The CPU runs the bytes after the region as instructions: through bytes of no code region (a dual-use
   // instruction, for example) into the next code region, unless one of them does not run on.
   const runOn = (from: number): number | undefined => {
@@ -154,7 +182,7 @@ export function separate(input: SeparationInput): Separation {
       ran = false;
       for (let address = region.start; address <= region.end && !ran; address++) ran = executed[address] === 1;
     }
-    return { start: region.start, end: region.end, type: region.type, ...(input.entry === undefined ? {} : { reachable: reached.has(index) }), ...(ran === undefined ? {} : { executed: ran }) };
+    return { start: region.start, end: region.end, type: region.type, ...(roots.length === 0 ? {} : { reachable: reached.has(index) }), ...(ran === undefined ? {} : { executed: ran }) };
   });
 
   const read: number[] = [];
@@ -174,5 +202,5 @@ export function separate(input: SeparationInput): Separation {
     for (let address = from + 1; address < to; address++) if (inImage(address)) return false;
     return true;
   };
-  return { ranges, codeRegions, outside: { read: merge(read), executed: merge(ranOutside), generated: merge(generated, 2, outsideImage) } };
+  return { roots, ranges, codeRegions, outside: { read: merge(read), executed: merge(ranOutside), generated: merge(generated, 2, outsideImage) } };
 }

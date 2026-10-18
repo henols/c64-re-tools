@@ -5,8 +5,8 @@
 // suggests its names there as an apply batch. Nothing here writes knowledge.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
 import { writeRefusal, type Written } from "#src/host-client/transfer.ts";
@@ -14,7 +14,7 @@ import { formatC64Address, instructionLength } from "#src/c64.ts";
 import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
 import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, OPERAND_SELECTS, type OperandSelect, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
-import { PROJECT_DIRECTORY } from "#src/project.ts";
+import { checkOutputPath, isInside, PROJECT_DIRECTORY } from "#src/project.ts";
 
 /** A routine shorter than this is not saved and not searched: its bytes occur by chance. */
 export const MIN_ROUTINE = 16;
@@ -292,13 +292,35 @@ export function parseRoutine(text: string, file: string): Routine {
 }
 
 /**
+ * Refuses a library folder to write that is inside the project `root`, also
+ * through a symbolic link, when the output check of every script refuses it
+ * (checkOutputPath): for example a folder in the knowledge. A folder outside
+ * the project gets no check.
+ */
+function checkLibraryOutput(path: string, root: string): void {
+  let existing = path;
+  while (statSync(existing, { throwIfNoEntry: false }) === undefined && dirname(existing) !== existing) existing = dirname(existing);
+  const real = join(realpathSync(existing), relative(existing, path));
+  const realRoot = realpathSync(root);
+  for (const [base, target] of [[root, path], [realRoot, real]] as const) {
+    if (isInside(base, target)) {
+      checkOutputPath(relative(base, target) || ".", "folder", { root: base, what: "--library" });
+      return;
+    }
+  }
+}
+
+/**
  * The library folder that --library names, relative to the working directory
  * like --project (D71). A library is a plain folder, never a project. With
- * `create`, a missing folder is made.
+ * `create`, a missing folder is made; a folder inside the project must pass
+ * the output check of every script, which refuses the knowledge.
  */
 export function libraryFolder(folder: string, options: { create: boolean; cwd?: string }): string {
   if (folder.length === 0) throw new Refusal("invalid-input", "The library folder must not be empty.");
-  const path = resolve(options.cwd ?? process.cwd(), folder);
+  const root = options.cwd ?? process.cwd();
+  const path = resolve(root, folder);
+  if (options.create) checkLibraryOutput(path, root);
   const stat = statSync(path, { throwIfNoEntry: false });
   if (stat === undefined) {
     if (!options.create) throw new Refusal("not-found", `There is no library folder ${folder}. Save a routine to it first with routine.`);

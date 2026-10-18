@@ -3,7 +3,7 @@
 // address, with the names there as an apply batch.
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -285,4 +285,18 @@ test("the library is a plain folder: routine refuses a name that exists, and a p
   assert.throws(() => libraryFolder("missing", { create: false, cwd: scratch }), /There is no library folder missing/);
   mkdirSync(join(scratch, "game", ".c64-re-tools"), { recursive: true });
   assert.throws(() => libraryFolder("game", { create: true, cwd: scratch }), /game is a project folder\. A library is a plain folder/);
+});
+
+test("routine refuses a library in the knowledge of the project, also through a symbolic link, and makes no folder there", () => {
+  const project = join(scratch, "project");
+  mkdirSync(join(project, ".c64-re-tools", "knowledge"), { recursive: true });
+  const knowledge = /--library: \.c64-re-tools\/knowledge(\/x3)? is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the c64-knowledge skill writes it/;
+  assert.throws(() => libraryFolder(".c64-re-tools/knowledge", { create: true, cwd: project }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && knowledge.test(error.message));
+  assert.throws(() => libraryFolder(".c64-re-tools/knowledge/x3", { create: true, cwd: project }), knowledge);
+  assert.equal(existsSync(join(project, ".c64-re-tools", "knowledge", "x3")), false);
+  symlinkSync(join(project, ".c64-re-tools", "knowledge"), join(scratch, "linked"));
+  assert.throws(() => libraryFolder("../linked", { create: true, cwd: project }), knowledge);
+  // A library beside the project and a folder of the project outside the knowledge stay possible.
+  assert.equal(libraryFolder("../library", { create: true, cwd: project }), join(scratch, "library"));
+  assert.equal(libraryFolder(".c64-re-tools/local/library", { create: true, cwd: project }), join(project, ".c64-re-tools", "local", "library"));
 });

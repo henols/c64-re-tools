@@ -325,3 +325,50 @@ test("separate says when the program has no stage log, and a run of releases wit
   assert.deepEqual(compared.run.releases, {});
   assert.match(compared.run.skipped ?? "", /no differences/);
 });
+
+test("separate starts the reachability at the entry and at each hardware vector in the image, and names the roots", () => {
+  const memory = new Uint8Array(0x10000);
+  memory.set([0x60], 0x1000); // the entry: RTS
+  memory.set([0x40], 0x1100); // the IRQ handler: RTI, which no call or jump reaches
+  memory.set([0x00, 0x12, 0x00, 0x10, 0x00, 0x11], 0xfffa); // NMI $1200, RESET $1000, IRQ $1100
+  const region = (start: number, end: number) => ({ start, end, type: "code" });
+  const codeRegions = [region(0x1000, 0x1000), region(0x1100, 0x1100)];
+  const withVectors = separate({ segments: [{ start: 0x1000, end: 0x1100 }, { start: 0xfffa, end: 0xffff }], memory, entry: 0x1000, codeRegions, references: [] });
+  assert.deepEqual(withVectors.roots, [
+    { address: 0x1000, from: "entry" },
+    { address: 0x1200, from: "NMI vector $fffa" },
+    { address: 0x1000, from: "RESET vector $fffc" },
+    { address: 0x1100, from: "IRQ vector $fffe" },
+  ]);
+  assert.deepEqual(withVectors.codeRegions.map((item) => [item.start, item.reachable]), [[0x1000, true], [0x1100, true]], "the IRQ handler is reachable by its vector");
+  // Without the vectors in the image, only the entry is a root.
+  const withoutVectors = separate({ segments: [{ start: 0x1000, end: 0x1100 }, { start: 0xfffa, end: 0xfffe }], memory, entry: 0x1000, codeRegions, references: [] });
+  assert.deepEqual(withoutVectors.roots, [{ address: 0x1000, from: "entry" }, { address: 0x1200, from: "NMI vector $fffa" }, { address: 0x1000, from: "RESET vector $fffc" }], "the IRQ vector needs both of its bytes in the image");
+  assert.deepEqual(withoutVectors.codeRegions.map((item) => [item.start, item.reachable]), [[0x1000, true], [0x1100, false]]);
+  // No entry, but the vectors: the reachability starts at the vectors.
+  const noEntry = separate({ segments: [{ start: 0x1000, end: 0x1100 }, { start: 0xfffa, end: 0xffff }], memory, codeRegions, references: [] });
+  assert.deepEqual(noEntry.codeRegions.map((item) => [item.start, item.reachable]), [[0x1000, true], [0x1100, true]]);
+  // No root at all: no reachability.
+  const none = separate({ segments: [{ start: 0x1000, end: 0x1100 }], memory, codeRegions, references: [] });
+  assert.deepEqual(none.roots, []);
+  assert.equal(none.codeRegions[0]!.reachable, undefined);
+});
+
+test("the separate command names the roots of the reachability in the result and in --out", () => {
+  const memory = new Uint8Array(0x10000);
+  memory.fill(0xea, 0x2000, 0x20ff);
+  memory.set([0x00, 0x20, 0x00, 0x20, 0x80, 0x20], 0xfffa);
+  const root = fresh();
+  importImage(root, memory, { segments: [{ start: 0x2000, end: 0x20ff }, { start: 0xfffa, end: 0xffff }], entry: 0x2000 });
+  const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "separate", "--out", "separate.json"], { cwd: root, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const roots = [
+    { address: "$2000", from: "entry" },
+    { address: "$2000", from: "NMI vector $fffa" },
+    { address: "$2000", from: "RESET vector $fffc" },
+    { address: "$2080", from: "IRQ vector $fffe" },
+  ];
+  assert.deepEqual((JSON.parse(run.stdout) as { roots: unknown }).roots, roots);
+  assert.deepEqual((JSON.parse(readFileSync(join(root, "separate.json"), "utf8")) as { roots: unknown }).roots, roots);
+});

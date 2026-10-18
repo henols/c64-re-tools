@@ -97,7 +97,8 @@ Use `separate` when you have only one release. It reads the program, its stages 
 - `ranges`: the program in ranges with the same stage and access. `stage` is the last unpack stage that wrote the range. The last stage is the program. An earlier stage is a depacker, an intro or a loader. Only a capture of c64-unpacker `capture` has stages. For a program from `loads` or a PRG, `noStages` tells this.
 - `access`: from the coverage of the knowledge: `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs. A `read` byte right after executed code, or at a return address, can be a dummy read of the 6502 that the program does not use.
 - `codeRegions.total`: the number of code regions in the knowledge.
-- `codeRegions.unreachable`: code regions of the knowledge that no chain of call and jump references reaches from the entry. A region also reaches the code after it when its last instruction is not RTS, RTI, JMP, BRK or JAM: the CPU continues there. Run c64-static-analysis first, so that the knowledge has the code regions and the references.
+- `roots`: the addresses where the reachability starts. They are the entry, and the NMI, RESET and IRQ vectors at `$FFFA`-`$FFFF` when the image holds them. An interrupt handler starts from its vector, because no call or jump goes to it. `from` tells the source of each root.
+- `codeRegions.unreachable`: code regions of the knowledge that no chain of call and jump references reaches from a root. A region also reaches the code after it when its last instruction is not RTS, RTI, JMP, BRK or JAM: the CPU continues there. Run c64-static-analysis first, so that the knowledge has the code regions and the references.
 - `outside`: RAM outside the program that the program `read` or `executed` but did not write, and code it `generated`. A loader or an earlier stage put the bytes that the program did not write. A `generated` range can have gaps of two bytes or less: these are operand bytes.
 
 Each list has `count` and `listed`. `listed` has the first ranges, at most `--max-listed` (default 50). `--out` writes all of them and the result shows the file as `{out, bytes, sha256}`. Run more coverage runs for parts that are `untouched`, and add them with `coverage` of the c64-knowledge skill, before you decide.
@@ -113,7 +114,7 @@ Use `leftovers` to find what the program holds in addition to its working code. 
 | `fill` | One byte that repeats, at least 16 times, or a pattern of two to four bytes that repeats, at least 32 bytes in total. `pattern` is the repeated bytes. |
 | `residue` | Bytes that no run touched and that are no text, BASIC, fill or code region. `bytes` shows the first 16 bytes. |
 | `copies` | Bytes that are the same as earlier bytes of the program, at least 32 bytes. `copyOf` is the address of the earlier bytes. |
-| `deadCode` | Code regions of the knowledge that the entry does not reach, as in `codeRegions.unreachable` of `separate`, and that no run executed. |
+| `deadCode` | Code regions of the knowledge that no root reaches, as in `codeRegions.unreachable` of `separate`, and that no run executed. |
 
 Text from another computer can show the tools of the developer:
 
@@ -194,7 +195,7 @@ Record a confirmed conclusion as a normal comment, region or symbol with the c64
 
 The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes. `common` gives the ranges where all releases have bytes. `releases` gives the segments and the `shift` of each release. With `--frames`, each difference also has `runtime`, and `run` tells if each release started, or why not.
 
-For `leftovers`: the lists of findings, with `entry` and the number of `stages`. `noEntry`, `noStages` and `noCoverage` tell which knowledge is missing.
+For `leftovers`: the lists of findings, with `entry`, `roots` and the number of `stages`. `noStages` and `noCoverage` tell which knowledge is missing. Without a root, `roots` tells why `deadCode` is empty.
 
 The runtime evidence and the leftovers are evidence only. The script does not decide which bytes are original.
 

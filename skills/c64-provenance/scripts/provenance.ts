@@ -47,7 +47,7 @@ import { compareReleases, shiftSuggestion, suggestShifts, type Release } from ".
 import { findRoutine, libraryFolder, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
 import { watchRelease, type Start } from "./lib/runtime.ts";
 import { findLeftovers } from "./lib/leftovers.ts";
-import { separate } from "./lib/separate.ts";
+import { separate, type Root } from "./lib/separate.ts";
 
 const hexBytes = (bytes: number[]) => Buffer.from(bytes).toString("hex").replace(/(..)(?!$)/g, "$1 ");
 
@@ -239,6 +239,11 @@ function programEvidence() {
   return { program, stages, coverage, found };
 }
 
+/** The roots of the reachability as a person reads them. */
+const showRoots = (roots: readonly Root[]) => roots.map((root) => ({ address: formatC64Address(root.address), from: root.from }));
+
+const NO_ROOTS = "none: the program in the knowledge has no entry, and the image does not hold the hardware vectors at $fffa-$ffff, so no code region is reachable or unreachable.";
+
 const NO_STAGES = "The program in the knowledge has no stage log. Only a capture of c64-unpacker gives one. A capture of loads holds one part of a program and has none.";
 
 /** separate: evidence from the program in the knowledge, with all ranges in --out and the first ones in the result. */
@@ -251,7 +256,8 @@ function separateCommand(call: Call): unknown {
   const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
   const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }) }));
   const outside = { read: found.outside.read.map(show), executed: found.outside.executed.map(show), generated: found.outside.generated.map(show) };
-  const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify({ ranges, codeRegions, outside }, null, 1)}\n`, { what: "--out" });
+  const roots = showRoots(found.roots);
+  const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify({ roots, ranges, codeRegions, outside }, null, 1)}\n`, { what: "--out" });
   const rest = out === undefined ? undefined : out;
   const list = <T>(items: T[]) => listed(items, max, undefined, rest);
   const bytes = (filter: (range: (typeof found.ranges)[number]) => boolean) => found.ranges.filter(filter).reduce((sum, range) => sum + range.end - range.start + 1, 0);
@@ -266,10 +272,12 @@ function separateCommand(call: Call): unknown {
         }),
     ...(coverage === undefined ? {} : { bytesByAccess: Object.fromEntries((["executed", "read", "written", "read-written", "untouched"] as const).map((access) => [access, bytes((range) => range.access === access)])) }),
     ranges: list(ranges),
+    // The roots of the reachability: the entry and the hardware vectors in the image.
+    roots: roots.length === 0 ? NO_ROOTS : roots,
     // total counts every code region; unreachable is a list like the others.
     codeRegions: {
       total: codeRegions.length,
-      ...(loaded.entry === undefined ? {} : { unreachable: list(codeRegions.filter((region) => region.reachable === false)) }),
+      ...(roots.length === 0 ? {} : { unreachable: list(codeRegions.filter((region) => region.reachable === false)) }),
     },
     ...(coverage === undefined ? {} : { outside: { read: list(outside.read), executed: list(outside.executed), generated: list(outside.generated) } }),
     ...(written === undefined ? {} : written),
@@ -310,7 +318,8 @@ function leftoversCommand(call: Call): unknown {
   const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify(all, null, 1)}\n`, { what: "--out" });
   const list = <T>(items: T[]) => listed(items, max, undefined, out ?? "a larger --max-listed, or --out <file>");
   return {
-    ...(program.entry === undefined ? { noEntry: "The program in the knowledge has no entry, so deadCode is empty." } : { entry: formatC64Address(program.entry) }),
+    ...(program.entry === undefined ? {} : { entry: formatC64Address(program.entry) }),
+    roots: found.roots.length === 0 ? NO_ROOTS : showRoots(found.roots),
     ...(stages === undefined ? { noStages: NO_STAGES } : { stages: stages.length }),
     ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Add coverage with coverage of the c64-knowledge skill." } : {}),
     text: list(all.text.map((item) => (item.text.length > SHOWN_TEXT ? { ...item, text: `${item.text.slice(0, SHOWN_TEXT)} ...`, length: item.text.length } : item))),
