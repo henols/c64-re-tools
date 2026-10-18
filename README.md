@@ -71,8 +71,8 @@ needs a Debian or Ubuntu image. `runArgs` is for Docker on Linux.
 To use prereleases, add `"channel": "next"` next to `target`, then rebuild the
 container. To go back to releases, remove `channel` (or set `"latest"`) and
 rebuild. The Feature reads its options only when the container is built.
-`next` moves only when a prerelease is tagged, so it can be older than
-`latest`: `npm view @henols/c64-re-tools dist-tags` shows both.
+With `next`, the container gets the newer of the prerelease and the release,
+so it is never older than `latest`.
 
 ### Without a container
 
@@ -83,7 +83,8 @@ Then, in your project:
 npx -y @henols/c64-re-tools@latest install --target claude
 ```
 
-For a prerelease, use `@next` in place of `@latest`.
+For a prerelease, use `@next` in place of `@latest`. npm moves `next` only when
+a prerelease is tagged, so after a release `@next` can be older than `@latest`.
 
 `--target` is `claude`, `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor`
 or `windsurf`. Without it, `install` installs for all of them.

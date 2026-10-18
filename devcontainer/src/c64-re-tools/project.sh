@@ -19,11 +19,30 @@ say() {
     printf 'c64-re-tools: %s\n' "$*" >&2
 }
 
+# The newer of two versions. A release is newer than a prerelease of the same X.Y.Z.
+newer() {
+    local a="${1%%-*}" b="${2%%-*}"
+    if [[ -z "$2" || ("${a}" == "${b}" && "$1" != *-*) ]]; then
+        echo "$1"
+    elif [[ -z "$1" || "${a}" == "${b}" ]]; then
+        echo "$2"
+    elif [[ "$(printf '%s\n%s\n' "${a}" "${b}" | sort -V | tail -1)" == "${a}" ]]; then
+        echo "$1"
+    else
+        echo "$2"
+    fi
+}
+
 # Sets VERSION and TARBALL: the version that CHANNEL names in the registry now.
+# next is the newer of next and latest, so it never falls behind a release.
 resolve() {
-    local manifest
-    manifest="$(curl -fsSL --retry 3 "${REGISTRY}/@henols%2fc64-re-tools/${CHANNEL}")" || return 1
-    VERSION="$(printf '%s' "${manifest}" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+    local tags latest next manifest
+    tags="$(curl -fsSL --retry 3 "${REGISTRY}/-/package/@henols%2fc64-re-tools/dist-tags")" || return 1
+    latest="$(printf '%s' "${tags}" | grep -o '"latest":"[^"]*"' | cut -d'"' -f4 || true)"
+    next="$(printf '%s' "${tags}" | grep -o '"next":"[^"]*"' | cut -d'"' -f4 || true)"
+    if [[ "${CHANNEL}" == next ]]; then VERSION="$(newer "${latest}" "${next}")"; else VERSION="${latest}"; fi
+    [[ -n "${VERSION}" ]] || return 1
+    manifest="$(curl -fsSL --retry 3 "${REGISTRY}/@henols%2fc64-re-tools/${VERSION}")" || return 1
     TARBALL="$(printf '%s' "${manifest}" | grep -o '"tarball":"[^"]*"' | head -1 | cut -d'"' -f4)"
     [[ -n "${VERSION}" && -n "${TARBALL}" ]]
 }
