@@ -186,4 +186,6 @@ A clear answer for the scope, with the durable conclusions in the project knowle
 
 All specialist skills in the table above.
 
-A new feature or a fix for the rebuilt program → c64-development
+A new feature or a correction of the rebuilt program → c64-development
+
+The start of a new program from the rebuilt program → c64-export

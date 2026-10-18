@@ -47,7 +47,7 @@ One repository can hold several programs, with one project folder for each progr
 First select the path:
 
 - The project has no program yet: path A.
-- The program has source that a person wrote: path B.
+- The program has source that a person wrote: path B. A project from the c64-export skill also takes path B.
 - The source comes from c64-source: path C. The source has `main.asm` and `source-map.json` from c64-source. Do not edit this source. The next `source.ts generate` writes over it.
 
 ### Acceptance checks
@@ -177,3 +177,4 @@ A program that builds, with a run file in `tests/` for each acceptance check, an
 - Unused ranges of a rebuilt program → c64-provenance
 - Documentation → c64-docs
 - Code that nobody understands yet → c64-reverse-engineering
+- The start of a new program from a rebuilt program → c64-export

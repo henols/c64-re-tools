@@ -1,6 +1,6 @@
 ---
 name: c64-source
-description: Use this skill to generate ACME source code for a C64 program from the project knowledge. The knowledge holds the program, its entry state, the coverage and the names. The script runs Ghidra for the instructions and writes the source files. It checks with ACME that the source assembles to the same bytes as the program. It can also write a loader that sets the entry state of an unpacked program. Use it to make a rebuild. Do not edit the generated files. Change the knowledge and generate again.
+description: Use this skill to generate ACME source code for a C64 program from the project knowledge. The knowledge holds the program, its entry state, the coverage and the names. The script runs Ghidra for the instructions and writes the source files. It checks with ACME that the source assembles to the same bytes as the program. It can also write a loader that sets the entry state of an unpacked program. It can also export the program as the start of a new program. The export is a new project with one value for each switch and without unused code. Use it to make a rebuild. Do not edit the generated files. Change the knowledge and generate again.
 ---
 
 # c64-source
@@ -137,6 +137,88 @@ The script simulates the copies first. Then it runs `loader.prg` in the emulator
 
 The entry state is the state of the base release. Thus the script builds and checks `loader.prg` with the switch values of the base release. For a loader of the default build, build `loader.asm` with the c64-assembler skill and no option.
 
+## Export for a new application
+
+`export` writes the program of the knowledge as the start of a new program: a new project folder and a zip file of it. A person changes the source of the new project directly. The c64-export skill gives the full procedure.
+
+```
+node <skill>/scripts/source.ts export --to ../game-new
+node <skill>/scripts/source.ts export --to ../game-new --name game --drop '$081b-$0822'
+```
+
+| Option | Meaning |
+|---|---|
+| `--to ../game-new` | The folder of the new project, relative to the project folder. The folder must be new or empty, and no project can hold it. The script also writes `../game-new.zip`. |
+| `--name game` | The name of `baseline/game.prg` and `build/game.prg`. The default is the name of the folder. |
+| `--keep '$2000-$20ff'` | A range that stays, also when nothing uses it. Use it again for more ranges. |
+| `--drop '$081b-$0822'` | A range that becomes free. Use it again for more ranges. Code that stays must not go to the range or read it. |
+| `--max-listed 20` | List at most this number of items in each list. The default is 50. |
+
+The script does these steps. It writes nothing until all the checks pass.
+
+1. It builds the source of the base release. The build must give the program byte by byte, with all the patches.
+2. It sets each switch to its export value:
+   - `fix`, `trainer` and `cheat`: 1. Trainers and cheats become a part of the new program.
+   - `protection` and `crack`: 0.
+   - `change`: its default.
+3. It builds the program with these values. This build can change bytes only in the patches.
+4. It finds the free ranges. Each free range gets the bytes $00 and the label `free_xxxx`. No address moves.
+5. It makes the source of the new program. ACME must assemble the source to the new program byte by byte. For a capture with an entry state, the script also makes `loader.asm` and simulates its copies. It does not run the loader in the emulator.
+6. It writes the new project and the zip file.
+
+### The free ranges
+
+The script divides the decoded instructions into blocks. A block stops after RTS, RTI, JMP, BRK or a JAM, and before a gap. A block of code becomes free only when both of these are true:
+
+- No run of the coverage executed it.
+- No path gets to it from the entry, the hardware vectors or the code that stays. A path is a call, a jump, a branch, a reference of the knowledge or an operand expression. An entry of a table and two immediate operands that give its address are paths too.
+
+Code that a run executed always stays. `unreachableExecuted` lists the executed code that the entry and the vectors do not get to. An example is a copy check whose call the export removed. Give its range to `--drop` to make it free.
+
+Data becomes free only when all of these are true:
+
+- Its region type is `bytes`, `words`, a table of addresses, `petscii`, `workspace` or `unused`.
+- No run read, wrote or executed a byte of it.
+- No code that stays reads it or names it, and no table that stays has an entry in it.
+- It is not at the first address of the program and not at $fffa-$ffff.
+
+The VIC-II reads `charset`, `sprite`, `bitmap` and `screen` data without the CPU, so the coverage does not show these reads. This data stays unless `--drop` names it. Bytes without a region also stay.
+
+The entry is the entry of the knowledge. Without it, the entry is the address of the first SYS in the BASIC line of the program. Without coverage, nothing becomes free by itself. Without an entry and without the hardware vectors in the image, no code is unreachable.
+
+### The new project
+
+```
+README.md                  the commands to build and test, the free ranges and the origin
+src/                       main.asm, constants.asm, macros.asm, the modules and loader.asm
+baseline/<name>.prg        the exported program, and baseline/<name>.json with its symbols
+tests/                     the tests of the project, changed for the new program
+.c64-re-tools/knowledge/   the knowledge of the new program
+```
+
+- The source has no mark line, no `switches.asm`, no patch zones and no `; not executed` lines. It keeps the names, the comments, the operand expressions and the macros. A line comment at each changed patch gives the switch, its kind, its value and the comments of the switch and the patch.
+- The knowledge has one revision `export`. It holds the program, the entry and its state, the names, the comments, the regions and the modules. It has no history, analyzer names, references, operand expressions, macros, patches, switches, releases or coverage.
+- The tests come from the JSON files in `tests/`:
+  - A scenario compares the build of the new project with the baseline. Both sides are the same program, so a step of the original side alone goes. A step of the rebuild side alone runs on both sides.
+  - A run file runs the build of the new project.
+  - Both take the names from the symbol files.
+  - The script leaves out a test that restores a snapshot. It also leaves out a test with a name that the new program does not have, or with an address in a free range.
+  - The script does not copy recordings, record files or `runs/`.
+- The zip file holds the folder without `.c64-re-tools/local/`.
+
+The result of `export`:
+
+- `result`: `PASS` when the script wrote the new project. `FAIL` with `stage` when a check failed: `original`, `switches`, `export` or `loader`. Then the script wrote nothing.
+- `to` and `zip`: the folder and the zip file.
+- `switches`: each switch with `kind`, `base` and the export `value`.
+- `free`: the count of free bytes, and each free range with `bytes`, `what` and `label`.
+- `unreachableExecuted`: each range of executed code that the entry does not get to, with the `routine` before it and its `--drop` option.
+- `knowledge`: the counts of the rows of the new knowledge.
+- `tests`: the `written` tests, and the `leftOut` tests with the reason.
+- `loader`: the copies, the copier, `stackByte` and `simulated: true`.
+- `noCoverage` or `unrooted`: why nothing became free by itself.
+- `spacesLeftOut`: the spaces that the export does not have. The export has only the space `c64`.
+
 ## Knowledge
 
 Read:
@@ -199,6 +281,10 @@ Do not store:
 - `loader.verified: false` with a `reason`: the script did not make the loader. The script still writes and checks the source. When no copy order or no free pages exist, or the loader needs too many copies, the reason gives the ranges. Capture the program again with fewer segments, or write the loader by hand.
 - `loader.verified: false` with `differences`: the loader ran, and `differences` gives the bytes and registers that are not equal.
 - `loader.verified: false` with `stop`: the loader did not get to its copier or to its jump. `stop` gives the address where it stopped and `port`, the value of $01. `history` gives the last 16 instructions. `cause` gives the first byte of the copier that is not equal to its byte in the loader file. If the copier ran, `cause` can also give the first byte that a copy did not write correctly.
+- `export` with `stage: "original"`: the source of the knowledge does not pass. Run `generate`, and correct the knowledge until `generate` gives PASS.
+- `export` with `stage: "switches"`: the build with the export values changes bytes outside the patches, or a patch does not fit. Read `build`. Correct the patches.
+- `export` refuses two switches that change one range: the export puts both alternatives in. Give all but one of them the kind `change` and the default of the base release with `switch` of the c64-knowledge skill.
+- `export` refuses `--drop`: read the message. It names the code that stays and goes to the range or reads it, or the code or region that the range cuts.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disassembler or emulator script.
 
 ## Handoffs
@@ -208,3 +294,4 @@ Do not store:
 - Names, regions, comments and modules → c64-knowledge
 - Build the program → c64-assembler
 - Test the rebuild against the original → c64-testing
+- The start of a new program from the rebuild → c64-export

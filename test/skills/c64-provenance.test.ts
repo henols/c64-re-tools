@@ -9,7 +9,7 @@ import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
 import { compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
-import { separate } from "../../skills/c64-provenance/scripts/lib/separate.ts";
+import { separate } from "../../src/knowledge/separate.ts";
 import { seededBytes } from "../kit.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
 

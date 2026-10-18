@@ -7,7 +7,7 @@
 import { Refusal } from "./errors.ts";
 import { accessSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /** The folder that marks a project and holds its knowledge. */
 export const PROJECT_DIRECTORY = ".c64-re-tools";
@@ -128,6 +128,30 @@ export function namedProject(folder: string, cwd: string = process.cwd()): strin
     throw new Refusal("invalid-input", `${folder} is inside the project ${relative(cwd, outer) || outer}. Give that project folder.`);
   }
   return path;
+}
+
+/**
+ * The folder of a new project that `folder` names, relative to the project
+ * `currentRoot` or absolute, and the zip file beside it (`<folder>.zip`). The
+ * folder must not exist or be empty. It must be outside the current project
+ * and must not hold it, and no folder above it is a project: then the new
+ * project is a project of its own.
+ */
+export function newProjectFolder(folder: string, currentRoot: string): { root: string; zip: string } {
+  if (folder.length === 0) throw new Refusal("invalid-input", "The folder of the new project must not be empty.");
+  const root = resolve(currentRoot, folder);
+  const zip = `${root}.zip`;
+  if (dirname(root) === root) throw new Refusal("invalid-input", `${folder} is the root of a file system. Give a folder for the new project.`);
+  if (root === homedir()) throw new Refusal("invalid-input", "The home folder cannot be the folder of a new project.");
+  if (isInside(currentRoot, root)) throw new Refusal("invalid-input", `${folder} is inside the project ${currentRoot}. Give a folder outside it, for example ../${basename(root)}.`);
+  if (isInside(root, currentRoot)) throw new Refusal("invalid-input", `${folder} holds the project ${currentRoot}. Give a folder outside it.`);
+  const outer = foldersUpFrom(root).slice(1).find(isProject);
+  if (outer !== undefined) throw new Refusal("invalid-input", `${folder} is inside the project ${outer}. Give a folder that is in no project.`);
+  const stat = statSync(root, { throwIfNoEntry: false });
+  if (stat !== undefined && !stat.isDirectory()) throw new Refusal("invalid-input", `${folder} is not a folder.`);
+  if (stat !== undefined && readdirSync(root).length > 0) throw new Refusal("conflict", `${folder} is not empty. Give a new or empty folder, or remove the folder of an earlier export.`);
+  if (existsSync(zip)) throw new Refusal("conflict", `${zip} exists. Remove the zip file of an earlier export, or give another folder.`);
+  return { root, zip };
 }
 
 /**

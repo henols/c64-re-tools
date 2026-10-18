@@ -47,7 +47,7 @@ import { compareReleases, identicalShare, shiftSuggestion, suggestShifts, type R
 import { findRoutine, libraryFolder, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
 import { watchRelease, type Start } from "./lib/runtime.ts";
 import { findLeftovers } from "./lib/leftovers.ts";
-import { separate, type Root } from "./lib/separate.ts";
+import { separate, type Root } from "#src/knowledge/separate.ts";
 
 const hexBytes = (bytes: number[]) => Buffer.from(bytes).toString("hex").replace(/(..)(?!$)/g, "$1 ");
 

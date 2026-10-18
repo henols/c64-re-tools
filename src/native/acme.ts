@@ -4,12 +4,23 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 
+import { formatC64Address } from "../c64.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { isRelativePath } from "../protocol/tools.ts";
 import type { AcmeParams, AcmeResult, AssembledSymbol, Diagnostic } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { ACME, findTool } from "./discover.ts";
 import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
+
+/** A symbol of a build as a person and c64-testing read it: an address as $ and four hex digits, a constant as $ and at least four hex digits. */
+export function showSymbol(symbol: AssembledSymbol) {
+  return symbol.kind === "address"
+    ? { name: symbol.name, kind: "address", address: formatC64Address(symbol.address), used: symbol.used }
+    : { name: symbol.name, kind: "constant", value: `$${symbol.value.toString(16).padStart(4, "0")}`, used: symbol.used };
+}
+
+/** The text of a symbols file (--out-symbols): the symbols of a build, which c64-testing reads for the names of a program. */
+export const symbolsFileText = (symbols: readonly AssembledSymbol[]) => `${JSON.stringify({ symbols: symbols.map(showSymbol) }, null, 1)}\n`;
 
 const PROGRAM = "program.prg";
 const SYMBOLS = "symbols.txt";

@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { Refusal } from "./errors.ts";
-import { findProject, namedProject, projectRelative, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
+import { findProject, namedProject, newProjectFolder, projectRelative, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
 
 const root = process.cwd();
 
@@ -126,6 +126,30 @@ test("a named project must be a folder, not the home folder and not inside anoth
     // A project inside a project is a project of its own.
     mkdirSync(join(workspace, "game", "disk2", ".c64-re-tools"), { recursive: true });
     assert.equal(namedProject(join("game", "disk2"), workspace), join(workspace, "game", "disk2"));
+  });
+});
+
+test("a new project folder is new or empty, outside the current project, and in no project; its zip must not exist", () => {
+  withHome((home) => {
+    const workspace = join(home, "workspace");
+    const game = join(workspace, "game");
+    mkdirSync(join(game, ".c64-re-tools"), { recursive: true });
+    mkdirSync(join(workspace, "empty"));
+    mkdirSync(join(workspace, "full"));
+    writeFileSync(join(workspace, "full", "x"), "x");
+    writeFileSync(join(workspace, "file"), "x");
+    assert.deepEqual(newProjectFolder("../new", game), { root: join(workspace, "new"), zip: join(workspace, "new.zip") });
+    assert.equal(newProjectFolder(join(workspace, "empty"), game).root, join(workspace, "empty"));
+    assert.throws(() => newProjectFolder("out", game), refusal("invalid-input", /inside the project .*Give a folder outside it, for example \.\.\/out/));
+    assert.throws(() => newProjectFolder(".", game), refusal("invalid-input", /inside the project/));
+    assert.throws(() => newProjectFolder("..", game), refusal("invalid-input", /holds the project/));
+    assert.throws(() => newProjectFolder("../full", game), refusal("conflict", /is not empty/));
+    assert.throws(() => newProjectFolder("../file", game), refusal("invalid-input", /is not a folder/));
+    assert.throws(() => newProjectFolder(home, game), refusal("invalid-input", /home folder/));
+    mkdirSync(join(workspace, "other", ".c64-re-tools"), { recursive: true });
+    assert.throws(() => newProjectFolder("../other/inner", game), refusal("invalid-input", /is inside the project .*other/));
+    writeFileSync(join(workspace, "done.zip"), "x");
+    assert.throws(() => newProjectFolder("../done", game), refusal("conflict", /done\.zip exists/));
   });
 });
 

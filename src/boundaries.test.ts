@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["c64", "errors", "graphics", "media", "opcodes", "package", "platform", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
+      return ["c64", "errors", "graphics", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -40,6 +40,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   graphics: [],
   // The one time format (ISO 8601 at +01:00).
   time: [],
+  // A zip archive of files given as bytes: the package of an exported project.
+  zip: [],
   // The opt-in trace of a process, for people. Every program may write to it.
   trace: ["time"],
   project: ["c64"],
@@ -62,7 +64,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   distribution: ["package"],
   convert: ["knowledge"],
 };
-const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "graphics", "opcodes", "platform", "script", "time", "media"];
+const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "graphics", "opcodes", "platform", "script", "time", "media", "zip"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

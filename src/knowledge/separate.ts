@@ -6,7 +6,7 @@
 // or executes outside the image. Evidence only: nothing here decides what is
 // original.
 
-import { type AddressRange, COVERAGE, executedRamCode, instructionLength } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, executedRamCode, instructionLength } from "../c64.ts";
 
 export type Access = "executed" | "read" | "written" | "read-written" | "untouched";
 
@@ -21,6 +21,8 @@ export interface SeparationInput {
   coverage?: Uint8Array;
   codeRegions: Array<AddressRange & { type: string }>;
   references: Array<{ from: number; to: number; kind: string }>;
+  /** More roots after the entry and the hardware vectors, for example code that a run executed. */
+  roots?: Root[];
 }
 
 export interface EvidenceRange extends AddressRange {
@@ -37,14 +39,14 @@ export interface CodeRegionEvidence extends AddressRange {
   executed?: boolean;
 }
 
-/** An address where the reachability starts, and why: the entry, or a hardware vector in the image. */
+/** An address where the reachability starts, and why: the entry, a hardware vector in the image, or a root that the caller gives. */
 export interface Root {
   address: number;
-  from: "entry" | "NMI vector $fffa" | "RESET vector $fffc" | "IRQ vector $fffe";
+  from: "entry" | "NMI vector $fffa" | "RESET vector $fffc" | "IRQ vector $fffe" | "executed code" | "kept range" | "table entry";
 }
 
 export interface Separation {
-  /** The roots of the reachability, in the order entry, NMI, RESET, IRQ. */
+  /** The roots of the reachability, in the order entry, NMI, RESET, IRQ, then the roots of the input. */
   roots: Root[];
   ranges: EvidenceRange[];
   codeRegions: CodeRegionEvidence[];
@@ -78,7 +80,7 @@ export function reachabilityRoots(segments: readonly AddressRange[], memory: Uin
 }
 
 /** BRK, JMP, RTI, RTS, JMP (indirect) and the JAM opcodes: the CPU does not run on to the next instruction after them. */
-const NO_FALL_THROUGH = new Set([0x00, 0x4c, 0x40, 0x60, 0x6c, 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
+export const NO_FALL_THROUGH = new Set([0x00, 0x4c, 0x40, 0x60, 0x6c, 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
 
 /**
  * The address after a code region where the CPU runs on, or undefined when
@@ -141,13 +143,14 @@ export function separate(input: SeparationInput): Separation {
     }
   }
 
-  // Reachability: from the regions that hold a root, through call and jump references and the run on
-  // from the last instruction of a region into the next address, to a fixed point.
   const regions = input.codeRegions.filter((region) => input.segments.some((segment) => region.start <= segment.end && segment.start <= region.end));
-  const holding = (address: number) => regions.findIndex((region) => address >= region.start && address <= region.end);
-  const roots = reachabilityRoots(input.segments, input.memory, input.entry);
-  const reached = new Set<number>();
-  for (const root of roots) if (holding(root.address) >= 0) reached.add(holding(root.address));
+  // The region of each address: the first region that holds it, as a search in region order finds it.
+  const owner = new Int32Array(0x10000).fill(-1);
+  regions.forEach((region, index) => {
+    for (let address = Math.max(region.start, 0); address <= Math.min(region.end, 0xffff); address++) if (owner[address] === -1) owner[address] = index;
+  });
+  const holding = (address: number) => (address >= 0 && address <= 0xffff ? owner[address]! : -1);
+  const roots = [...reachabilityRoots(input.segments, input.memory, input.entry), ...(input.roots ?? [])];
   // The CPU runs the bytes after the region as instructions: through bytes of no code region (a dual-use
   // instruction, for example) into the next code region, unless one of them does not run on.
   const runOn = (from: number): number | undefined => {
@@ -164,16 +167,27 @@ export function separate(input: SeparationInput): Separation {
     const to = next === undefined ? undefined : runOn(next);
     return to === undefined ? [] : [{ from: region.end, to }];
   });
-  const flows = [...input.references.filter((reference) => reference.kind === "call" || reference.kind === "jump"), ...runsOn];
-  for (let grown = true; grown; ) {
-    grown = false;
-    for (const flow of flows) {
-      const from = holding(flow.from);
-      const to = holding(flow.to);
-      if (from >= 0 && to >= 0 && reached.has(from) && !reached.has(to)) {
-        reached.add(to);
-        grown = true;
-      }
+  // From the regions that hold a root, through call and jump references and the run on, to every region they reach.
+  const next = regions.map((): number[] => []);
+  for (const flow of [...input.references.filter((reference) => reference.kind === "call" || reference.kind === "jump"), ...runsOn]) {
+    const from = holding(flow.from);
+    const to = holding(flow.to);
+    if (from >= 0 && to >= 0) next[from]!.push(to);
+  }
+  const reached = new Set<number>();
+  const queue: number[] = [];
+  for (const root of roots) {
+    const index = holding(root.address);
+    if (index >= 0 && !reached.has(index)) {
+      reached.add(index);
+      queue.push(index);
+    }
+  }
+  while (queue.length > 0) {
+    for (const to of next[queue.pop()!]!) {
+      if (reached.has(to)) continue;
+      reached.add(to);
+      queue.push(to);
     }
   }
   const codeRegions = regions.map((region, index): CodeRegionEvidence => {

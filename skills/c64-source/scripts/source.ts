@@ -10,11 +10,11 @@
 // FAIL.
 
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join, relative, sep } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
-import { type AddressRange, coverageSeedKinds, formatC64Address, textToPetscii } from "#src/c64.ts";
+import { type AddressRange, coverageSeedKinds, findHandoffs, formatC64Address, parseTokenized, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { readImage, type Image } from "#src/host-client/image.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
@@ -22,21 +22,25 @@ import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
 import { writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
-import { openForRead } from "#src/knowledge/database.ts";
+import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
-import { analyzedBytes, programCoverage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
-import { ANALYZER_NAME_ORDER, baseValue, currentRevision, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listReleases, listSwitches, listSymbols, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, RELEASE_DEFINE, type Space } from "#src/knowledge/schema.ts";
-import { assemble } from "#src/native/acme.ts";
+import { analyzedBytes, memoryRows, programCoverage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
+import { ANALYZER_NAME_ORDER, baseValue, currentRevision, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listReleases, listSpaces, listSwitches, listSymbols, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, RELEASE_DEFINE, type Space } from "#src/knowledge/schema.ts";
+import { subtract, write } from "#src/knowledge/write.ts";
+import { assemble, symbolsFileText } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, romUseOfProgram } from "#src/platform.ts";
-import { resolveProjectPath } from "#src/project.ts";
+import { ensureLocal, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRoot, resolveProjectPath } from "#src/project.ts";
+import { isoCet } from "#src/time.ts";
+import { zipFiles } from "#src/zip.ts";
 import { listed, OPTIONS, runScript, UsageError, type Call } from "#src/script.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, loaderState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
+import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
 import { entriesInData, entryOutsideImage, hasSwitchFile, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
 
 /** At most this many diagnostics or differences of one check. */
@@ -86,6 +90,9 @@ function readKnowledge(space: Space, analyzerNames = false) {
   }
 }
 
+/** The knowledge of one space that a source is made from. */
+type SourceKnowledge = ReturnType<typeof readKnowledge>;
+
 /**
  * The names of the user and the LLM, and for each address without one the
  * first analyzer name in the order heuristic, Ghidra, DXA. An analyzer
@@ -114,7 +121,7 @@ function withAnalyzerNames(symbols: SymbolRow[], second: SymbolRow[]): SymbolRow
  * is in the source. A program without a seed has no known code: it is data
  * only, and Ghidra does not run.
  */
-async function decode(image: ProgramImage, knowledge: ReturnType<typeof readKnowledge>, entries: number[], coverage: Uint8Array | undefined): Promise<{ instructions: Map<number, number>; dataOnly: boolean }> {
+async function decode(image: ProgramImage, knowledge: Pick<SourceKnowledge, "routines" | "regions">, entries: number[], coverage: Uint8Array | undefined): Promise<{ instructions: Map<number, number>; dataOnly: boolean }> {
   const inImage = (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end);
   const seeds = new Set<number>([...(image.entry === undefined ? [] : [image.entry]), ...entries]);
   for (const address of knowledge.routines) seeds.add(address);
@@ -362,14 +369,15 @@ interface BuildCheck {
   diagnostics?: Diagnostic[];
 }
 
+/** What ACME gives for a source: the program, or the diagnostics. */
+type Assembled = Awaited<ReturnType<typeof assembleFiles>>;
+
 /**
- * Builds the source with the defines and compares it with the build of the
- * base release: only the ranges may change, and the program keeps its start
- * and length. A patch longer than its range, or two alternatives together,
- * stop ACME with !error.
+ * Compares a build with the build of the base release: only the ranges may
+ * change, and the program keeps its start and length. A patch longer than its
+ * range, or two alternatives together, stop ACME with !error.
  */
-async function checkBuild(files: Array<{ name: string; text: string }>, defines: Record<string, number>, ranges: readonly AddressRange[], base: { program: Buffer; start: number }): Promise<BuildCheck> {
-  const built = await assembleFiles(files, "main.asm", defines);
+function compareBuilds(built: Assembled, ranges: readonly AddressRange[], base: { program: Buffer; start: number }): BuildCheck {
   if (built.program === undefined) {
     const overflow = built.diagnostics.flatMap((diagnostic) => {
       const found = /The patch \S+ at (\$[0-9a-f]{4}) has .*|\S+ and \S+ change (\$[0-9a-f]{4})-\$[0-9a-f]{4}: turn on one of them\./.exec(diagnostic.message);
@@ -391,6 +399,11 @@ async function checkBuild(files: Array<{ name: string; text: string }>, defines:
     else outside = { count: (outside?.count ?? 0) + 1, first: outside?.first ?? { address: formatC64Address(address), built: now, base: before } };
   }
   return outside === undefined ? { result: "fits", changedBytes: changed } : { result: "changes outside", changedBytes: changed, outside };
+}
+
+/** Builds the source with the defines and compares it with the build of the base release (compareBuilds). */
+async function checkBuild(files: Array<{ name: string; text: string }>, defines: Record<string, number>, ranges: readonly AddressRange[], base: { program: Buffer; start: number }): Promise<BuildCheck> {
+  return compareBuilds(await assembleFiles(files, "main.asm", defines), ranges, base);
 }
 
 /** What a build with one switch at the value that the base release does not have gives. */
@@ -608,26 +621,41 @@ function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boole
   return removed;
 }
 
-async function generate(call: Call): Promise<{ output: Record<string, unknown>; failed: boolean; removed: string[] }> {
-  const out = call.string("out")!;
-  const entries = call.addresses("entry");
-  const max = call.count("max-listed")!;
-  const space = call.space;
-  const loaderWanted = call.flag("loader");
-  if (space !== DEFAULT_SPACE && loaderWanted) throw new UsageError("--loader works only in space c64");
-  const knowledge = readKnowledge(space, call.flag("analyzer-names"));
+/** The instructions that Ghidra decoded, and whether the program has known code. */
+type DecodedProgram = Awaited<ReturnType<typeof decode>>;
+
+/** How buildSource makes and checks the source of a knowledge. */
+interface SourceOptions {
+  space: Space;
+  /** More entry points for Ghidra. */
+  entries: number[];
+  header: string[];
+  /** The first line of each file, or none. */
+  mark?: string;
+  /** The switch values of the build that must give the program. */
+  defines: Record<string, number>;
+  /** The instructions of an earlier decode: then Ghidra does not run again. */
+  decoded?: DecodedProgram;
+  /** Mark the code that no run executed. Without the marks, the coverage only gives the seeds of Ghidra and the ROM use. */
+  notExecutedMarks: boolean;
+  /** With an entry state, the loader is planned too. */
+  state?: EntryState;
+  loaderHeader?: string[];
+}
+
+/**
+ * The source of a knowledge: the layout, the rendered files and the build
+ * with the defines. An operand expression that ACME refuses or assembles to
+ * other bytes is written as its number, and a macro use as its instructions;
+ * then the source is assembled again.
+ */
+async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
+  const { space } = options;
   const image = knowledge.program;
   const coverage = knowledge.coverage;
-  if (loaderWanted && (image.state === undefined || image.entry === undefined)) {
-    throw new Refusal("not-found", "--loader needs the entry and the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json>");
-  }
-  // Read the entry state before the long steps, so a bad state stops the run at once.
-  const state = loaderWanted ? loaderState(image.state, "the entry state of the knowledge") : undefined;
   const romUse = romUseOfProgram(coverage, image.state);
   const platform = platformNamesFor(romUse);
-  const { instructions, dataOnly } = await decode(image, knowledge, entries, coverage);
-  // Every build that is compared with the program is the build of the base release: each switch at its base value.
-  const baseDefines = Object.fromEntries(knowledge.switches.map((row) => [row.name, row.base]));
+  const { instructions, dataOnly } = options.decoded ?? (await decode(image, knowledge, options.entries, coverage));
   const laid = layout({
     segments: image.segments,
     byteAt: image.byteAt,
@@ -644,48 +672,112 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     releases: knowledge.releases.map((release) => ({ label: release.label, file: release.file, base: release.base, ...(release.comment === undefined ? {} : { comment: release.comment }) })),
     macros: knowledge.macros,
     macroUses: knowledge.macroUses,
-    ...(coverage === undefined ? {} : { coverage }),
+    ...(coverage === undefined || !options.notExecutedMarks ? {} : { coverage }),
     // The platform names are C64 names: drive code and banks get none. A ROM that the program does not use gives none.
     ...(space === DEFAULT_SPACE ? { platform, platformLeftOut: leftOutNames(platform), describe: describeAddress, decode: decodeRegister } : {}),
   });
   const asBytes = await probe(laid);
-  const header = [`Generated by c64-source from knowledge revision ${knowledge.revision}${space === DEFAULT_SPACE ? "" : ` in space ${space}`}.`, "Change names, comments, regions and modules in knowledge, then generate again."];
+  const { header } = options;
   let loader: LoaderPlan | undefined;
   // An image without its entry has no program: the source is still written and checked, but the run fails.
   const missingEntry = entryOutsideImage(image.entry, image.segments);
   // A loader that cannot be planned does not stop the source: the source is written and checked, and the result says why.
+  const { state } = options;
   let loaderRefused: string | undefined = state === undefined ? undefined : missingEntry;
   if (state !== undefined && missingEntry === undefined) {
     const segments = image.segments.map((segment) => ({ ...segment, files: laid.pieces.filter((piece) => piece.start >= segment.start && piece.start <= segment.end).map((piece) => piece.file) }));
     try {
       const entryName = laid.names.get(image.entry!);
-      loader = planLoader({ segments, byteAt: image.byteAt, state, entry: image.entry!, ...(entryName === undefined ? {} : { entryName }), switches: hasSwitchFile(laid), macros: laid.macros.length > 0, header: [`Loader generated by c64-source from knowledge revision ${knowledge.revision}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] });
+      loader = planLoader({ segments, byteAt: image.byteAt, state, entry: image.entry!, ...(entryName === undefined ? {} : { entryName }), switches: hasSwitchFile(laid), macros: laid.macros.length > 0, header: options.loaderHeader ?? [] });
     } catch (error) {
       if (!(error instanceof WireFailure)) throw error;
       loaderRefused = error.message;
     }
   }
-  // Every generated file starts with the mark, so a later run knows its own files and removes the ones it does not write again.
-  const marked = (list: Array<{ name: string; text: string }>) => list.map((file) => ({ ...file, text: `${GENERATED_MARK}. Do not edit: change the knowledge and generate again.\n${file.text}` }));
+  // With a mark, every file starts with it.
+  const { mark } = options;
+  const marked = (list: Array<{ name: string; text: string }>) => (mark === undefined ? list : list.map((file) => ({ ...file, text: `${mark}\n${file.text}` })));
+  const markLines = mark === undefined ? 0 : 1;
   const loaderFiles = loader === undefined ? [] : [{ name: "loader.asm", text: loader.text }];
-  // An operand expression that ACME refuses, or assembles to other bytes, is written as its number, and a macro use as its
-  // instructions; then the source is assembled again.
   const numbers = new Map<number, string>();
   const asInstructions = new Map<number, string>();
   let rendered = render(laid, asBytes, header, numbers, asInstructions);
   if (laid.macroUses.size > 0) for (const [start, reason] of await probeUses(laid, rendered, image)) asInstructions.set(start, reason);
   if (asInstructions.size > 0) rendered = render(laid, asBytes, header, numbers, asInstructions);
   let files = marked([...rendered.files, ...loaderFiles]);
-  let built = await assembleFiles(files, "main.asm", baseDefines);
+  let built = await assembleFiles(files, "main.asm", options.defines);
   for (let round = 0; round < ROUNDS && (rendered.expressions.length > 0 || rendered.uses.length > 0); round++) {
-    const blamed = blame(rendered, built, image, 1);
+    const blamed = blame(rendered, built, image, markLines);
     if (blamed.numbers.size === 0 && blamed.uses.size === 0) break;
     for (const [address, reason] of blamed.numbers) numbers.set(address, reason);
     for (const [start, reason] of blamed.uses) asInstructions.set(start, reason);
     rendered = render(laid, asBytes, header, numbers, asInstructions);
     files = marked([...rendered.files, ...loaderFiles]);
-    built = await assembleFiles(files, "main.asm", baseDefines);
+    built = await assembleFiles(files, "main.asm", options.defines);
   }
+  return { romUse, instructions, dataOnly, laid, rendered, files, built, loader, missingEntry, loaderRefused };
+}
+
+/**
+ * Assembles loader.asm with the defines and simulates its copies: the
+ * loader as it loads, then every copy in its order, byte by byte. A layout
+ * other than the plan is a defect of the script.
+ */
+async function buildLoader(files: Array<{ name: string; text: string }>, loader: LoaderPlan, image: ProgramImage, state: EntryState, defines: Record<string, number>): Promise<{ program: Buffer; symbols: AssembledSymbol[]; jump: number; copierSource: number; expected: (address: number) => number } | { diagnostics: Diagnostic[] }> {
+  const loaderBuilt = await assembleFiles(files, "loader.asm", defines);
+  if (loaderBuilt.program === undefined) return { diagnostics: loaderBuilt.diagnostics.slice(0, MAX_DIAGNOSTICS) };
+  const program = loaderBuilt.program;
+  const memory = new Int16Array(0x10000).fill(-1);
+  program.subarray(2).forEach((byte, offset) => (memory[loaderBuilt.start! + offset] = byte));
+  const expected = (address: number) => (image.segments.some((segment) => address >= segment.start && address <= segment.end) ? image.byteAt(address) : state.pages[address]!);
+  const wrongPacking = loader.blocks.find((block) => {
+    for (let address = block.range.start; address <= block.range.end; address++) if (memory[block.packedAt + address - block.range.start] !== block.bytes(address)) return true;
+    return false;
+  });
+  if (loaderBuilt.start !== 0x0801 || loaderBuilt.start + program.length - 3 !== loader.end || wrongPacking !== undefined) {
+    throw new WireFailure("operation-failed", `The assembled loader does not have the planned layout${wrongPacking === undefined ? "" : ` (${wrongPacking.what})`}. This is a defect of the c64-source script.`);
+  }
+  const symbolValue = (name: string) => {
+    const symbol = loaderBuilt.symbols?.find((item) => item.name === name);
+    if (symbol === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${name} label. This is a defect of the c64-source script.`);
+    return symbol.kind === "address" ? symbol.address : symbol.value;
+  };
+  const jump = symbolValue(LOADER_JUMP);
+  const wrong = simulate(memory, loader.copies, expected);
+  if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatC64Address(wrong)}. This is a defect of the c64-source script.`);
+  return { program, symbols: loaderBuilt.symbols ?? [], jump, copierSource: symbolValue(COPIER_SOURCE), expected };
+}
+
+/** The first line of each file that generate writes. */
+const GENERATED_LINE = `${GENERATED_MARK}. Do not edit: change the knowledge and generate again.`;
+
+async function generate(call: Call): Promise<{ output: Record<string, unknown>; failed: boolean; removed: string[] }> {
+  const out = call.string("out")!;
+  const entries = call.addresses("entry");
+  const max = call.count("max-listed")!;
+  const space = call.space;
+  const loaderWanted = call.flag("loader");
+  if (space !== DEFAULT_SPACE && loaderWanted) throw new UsageError("--loader works only in space c64");
+  const knowledge = readKnowledge(space, call.flag("analyzer-names"));
+  const image = knowledge.program;
+  if (loaderWanted && (image.state === undefined || image.entry === undefined)) {
+    throw new Refusal("not-found", "--loader needs the entry and the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json>");
+  }
+  // Read the entry state before the long steps, so a bad state stops the run at once.
+  const state = loaderWanted ? loaderState(image.state, "the entry state of the knowledge") : undefined;
+  // Every build that is compared with the program is the build of the base release: each switch at its base value.
+  const baseDefines = Object.fromEntries(knowledge.switches.map((row) => [row.name, row.base]));
+  const header = [`Generated by c64-source from knowledge revision ${knowledge.revision}${space === DEFAULT_SPACE ? "" : ` in space ${space}`}.`, "Change names, comments, regions and modules in knowledge, then generate again."];
+  const loaderHeader = [`Loader generated by c64-source from knowledge revision ${knowledge.revision}.`, "It copies the segments into place, sets the entry state and jumps to the entry."];
+  const { romUse, dataOnly, laid, rendered, files, built, loader, missingEntry, loaderRefused } = await buildSource(knowledge, {
+    space,
+    entries,
+    header,
+    mark: GENERATED_LINE,
+    defines: baseDefines,
+    notExecutedMarks: true,
+    ...(state === undefined ? {} : { state, loaderHeader }),
+  });
   const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), loaderWanted).map((name) => `${out}/${name}`);
   const written: Written[] = files.map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
   written.push(writeReported(`${out}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.revision, files), { what: "--out" }));
@@ -787,30 +879,11 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   if (loader === undefined || state === undefined) return { output, removed, failed: missingEntry !== undefined || sourceFailed };
 
   // The entry state is the state of the base release: the loader is built and checked with it.
-  const loaderBuilt = await assembleFiles(files, "loader.asm", baseDefines);
-  if (loaderBuilt.program === undefined) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics.slice(0, MAX_DIAGNOSTICS) } }, removed, failed: true };
-  const program = loaderBuilt.program;
-  // The simulation: the loader in memory as it loads, then every copy in its order, byte by byte.
-  const memory = new Int16Array(0x10000).fill(-1);
-  program.subarray(2).forEach((byte, offset) => (memory[loaderBuilt.start! + offset] = byte));
-  const expected = (address: number) => (image.segments.some((segment) => address >= segment.start && address <= segment.end) ? image.byteAt(address) : state.pages[address]!);
-  const wrongPacking = loader.blocks.find((block) => {
-    for (let address = block.range.start; address <= block.range.end; address++) if (memory[block.packedAt + address - block.range.start] !== block.bytes(address)) return true;
-    return false;
-  });
-  if (loaderBuilt.start !== 0x0801 || loaderBuilt.start + program.length - 3 !== loader.end || wrongPacking !== undefined) {
-    throw new WireFailure("operation-failed", `The assembled loader does not have the planned layout${wrongPacking === undefined ? "" : ` (${wrongPacking.what})`}. This is a defect of the c64-source script.`);
-  }
-  const jumpSymbol = loaderBuilt.symbols?.find((symbol) => symbol.name === LOADER_JUMP);
-  if (jumpSymbol === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${LOADER_JUMP} label. This is a defect of the c64-source script.`);
-  const jump = jumpSymbol.kind === "address" ? jumpSymbol.address : jumpSymbol.value;
-  const wrong = simulate(memory, loader.copies, expected);
-  if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatC64Address(wrong)}. This is a defect of the c64-source script.`);
+  const loaderBuilt = await buildLoader(files, loader, image, state, baseDefines);
+  if ("diagnostics" in loaderBuilt) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics } }, removed, failed: true };
+  const { program, jump, copierSource, expected } = loaderBuilt;
   const loaderPath = `${out}/loader.prg`;
   written.push(writeReported(loaderPath, program, { what: "--out" }));
-  const copierSymbol = loaderBuilt.symbols?.find((symbol) => symbol.name === COPIER_SOURCE);
-  if (copierSymbol === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${COPIER_SOURCE} label. This is a defect of the c64-source script.`);
-  const copierSource = copierSymbol.kind === "address" ? copierSymbol.address : copierSymbol.value;
   const ran = await runLoader(loaderPath, program, loader, image, state, jump, copierSource, expected);
   output.loader = {
     program: loaderPath,
@@ -822,6 +895,288 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     ...(loaderLimits(loader).length === 0 ? {} : { limits: loaderLimits(loader) }),
   };
   return { output, removed, failed: !ran.verified || sourceFailed };
+}
+
+/** The value of a switch in an export: fixes, trainers and cheats are in; protection and crack changes are out; a change keeps its default. */
+function exportValue(row: SourceSwitch): 0 | 1 {
+  if (row.kind === "change") return row.default;
+  return row.kind === "fix" || row.kind === "trainer" || row.kind === "cheat" ? 1 : 0;
+}
+
+const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** The entry of a PRG without one in the knowledge: the address of the first SYS of its BASIC line, when the image holds it. */
+function basicEntry(image: ProgramImage): number | undefined {
+  const first = image.segments[0];
+  if (first === undefined) return undefined;
+  const tokenized = parseTokenized(Uint8Array.from([first.start & 0xff, first.start >> 8, ...image.memory.subarray(first.start, first.end + 1)]));
+  if ("reason" in tokenized) return undefined;
+  const sys = findHandoffs(tokenized.lines).find((handoff) => handoff.kind === "sys" && "address" in handoff);
+  const address = sys !== undefined && "address" in sys ? sys.address : undefined;
+  return address !== undefined && image.segments.some((segment) => address >= segment.start && address <= segment.end) ? address : undefined;
+}
+
+/** The parts of a region outside the holes. A part that is not the whole region has no element size: its length need not be a multiple of it. */
+function clipped<R extends { start: number; end: number; element?: number }>(region: R, holes: readonly AddressRange[]): R[] {
+  return subtract(region, [...holes]).map((piece) => {
+    if (piece.start === region.start && piece.end === region.end) return region;
+    const part = { ...region, ...piece };
+    delete part.element;
+    return part;
+  });
+}
+
+/** The regions that decide the memory map: the user and LLM regions, and the parts of analyzer regions outside them. */
+function effectiveRegions(regions: SourceKnowledge["regions"]): SourceKnowledge["regions"] {
+  const semantic = regions.filter((region) => isSemantic(region.origin));
+  const holes = semantic.map((region) => ({ start: region.start, end: region.end }));
+  return [...semantic, ...regions.filter((region) => !isSemantic(region.origin)).flatMap((region) => clipped(region, holes))].sort((a, b) => a.start - b.start);
+}
+
+/** Every file in a folder with its path in it, with / between the parts, in path order. `skip` leaves out a folder by its path. */
+function filesIn(root: string, skip: (path: string) => boolean, folder = ""): Array<{ path: string; bytes: Buffer }> {
+  const found: Array<{ path: string; bytes: Buffer }> = [];
+  for (const entry of readdirSync(join(root, folder), { withFileTypes: true })) {
+    const path = folder === "" ? entry.name : `${folder}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (!skip(path)) found.push(...filesIn(root, skip, path));
+    } else if (entry.isFile()) found.push({ path, bytes: readFileSync(join(root, path)) });
+  }
+  return found.sort((a, b) => (a.path < b.path ? -1 : 1));
+}
+
+/**
+ * export: the program of the knowledge as the start of a new program, in a
+ * new project folder and a zip file of it. Every switch is fixed at its export
+ * value, code and data that nothing uses become free ($00), the source has no
+ * mark, no switches and no not-executed marks, and the knowledge keeps the
+ * program, the entry, the names, the comments and the memory map. Nothing is
+ * written until every check passes.
+ */
+async function exportProject(call: Call): Promise<Record<string, unknown>> {
+  const project = projectRoot();
+  const { root: to, zip } = newProjectFolder(call.string("to")!, project);
+  const name = call.string("name") ?? basename(to);
+  if (!NAME_PATTERN.test(name)) throw new UsageError(`--name ${name}: a name has letters, digits, dots, underscores and hyphens, and starts with a letter or a digit. Give --name`);
+  const keep = call.ranges("keep");
+  const drop = call.ranges("drop");
+  const max = call.count("max-listed")!;
+  const shownRange = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const fromProject = (path: string) => relative(project, path).split(sep).join("/");
+
+  const db = openForRead();
+  const spacesLeftOut = (() => {
+    try {
+      return listSpaces(db).filter((space) => space !== DEFAULT_SPACE);
+    } finally {
+      db?.close();
+    }
+  })();
+  const knowledge = readKnowledge(DEFAULT_SPACE);
+  const image = knowledge.program;
+  const state = image.state === undefined || image.entry === undefined ? undefined : loaderState(image.state, "the entry state of the knowledge");
+
+  // 1. The source of the knowledge must give the base release byte for byte, with every patch in it.
+  const baseDefines = Object.fromEntries(knowledge.switches.map((row) => [row.name, row.base]));
+  const original = await buildSource(knowledge, { space: DEFAULT_SPACE, entries: [], header: [], defines: baseDefines, notExecutedMarks: false });
+  const fix = "Run source.ts generate, correct the knowledge until generate gives PASS, then export again.";
+  if (original.built.program === undefined) return { result: "FAIL", stage: "original", reason: `The source of the knowledge does not assemble. ${fix}`, diagnostics: original.built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
+  const checked = check(original.built.program, original.built.start!, image);
+  if (!checked.identical) return { result: "FAIL", stage: "original", reason: `The source of the knowledge does not assemble to the program. ${fix}`, check: checked };
+  if (original.missingEntry !== undefined) return { result: "FAIL", stage: "original", reason: original.missingEntry };
+  if (original.laid.patchesNotWritten.length > 0) {
+    return { result: "FAIL", stage: "original", reason: `The source cannot write every patch. ${fix}`, patchesNotWritten: listed(original.laid.patchesNotWritten, max, (item) => ({ ...shownRange(item), switch: item.switch, reason: item.reason })) };
+  }
+
+  // 2. Each switch at its export value. Two alternatives of one range cannot both be in.
+  const values = new Map(knowledge.switches.map((row) => [row.name, exportValue(row)]));
+  for (const patch of original.laid.patches.values()) {
+    const both = patch.alternatives.filter((alternative) => values.get(alternative.switch) !== alternative.base);
+    if (both.length > 1) {
+      throw new Refusal("invalid-input", `The switches ${both.map((item) => item.switch).join(" and ")} change ${formatC64Address(patch.start)}-${formatC64Address(patch.end)} in different ways, and the export puts both in. Give all but one of them the kind change with --default and the value of the base release (knowledge.ts switch), then export again.`);
+    }
+  }
+  const exportDefines = Object.fromEntries(values);
+  const withPatches = switchesOf(original.laid);
+  const changedSwitches = knowledge.switches.filter((row) => values.get(row.name) !== row.base);
+  const patchesIn = changedSwitches.flatMap((row) => withPatches.get(row.name) ?? []);
+  const baked = await assembleFiles(original.files, "main.asm", exportDefines);
+  const bakedCheck = compareBuilds(baked, patchesIn, { program: original.built.program, start: original.built.start! });
+  const switches = knowledge.switches.map((row) => ({ name: row.name, kind: row.kind, base: row.base, value: values.get(row.name)! }));
+  if (bakedCheck.result !== "fits" || baked.program === undefined) return { result: "FAIL", stage: "switches", reason: "The build with the export values of the switches does not fit. Build each switch alone with source.ts generate and correct its patches.", switches, build: bakedCheck };
+
+  // 3. The baked image: the bytes of that build in the segments of the program.
+  const memory = Uint8Array.from(image.memory);
+  for (const segment of image.segments) for (let address = segment.start; address <= segment.end; address++) memory[address] = baked.program[2 + address - baked.start!]!;
+  const changed = patchesIn.filter((patch) => {
+    for (let address = patch.start; address <= patch.end; address++) if (memory[address] !== image.byteAt(address)) return true;
+    return false;
+  });
+  const bakedImage: ProgramImage = { space: DEFAULT_SPACE, segments: image.segments, memory, byteAt: (address) => memory[address]!, ...(image.entry === undefined ? {} : { entry: image.entry }), ...(image.state === undefined ? {} : { state: image.state }) };
+  const decoded = await decode(bakedImage, knowledge, [], knowledge.coverage);
+
+  // 4. The free ranges.
+  const addressOf = new Map(knowledge.symbols.map((symbol) => [symbol.name, symbol.address]));
+  const operandTargets = new Map<number, number[]>();
+  for (const operand of knowledge.operands) {
+    const names = operand.symbol !== undefined ? [operand.symbol] : identifiers(operand.expression ?? "");
+    const targets = names.flatMap((item) => (addressOf.has(item) ? [(addressOf.get(item)! + (operand.symbol !== undefined ? operand.offset : 0)) & 0xffff] : []));
+    if (targets.length > 0) operandTargets.set(operand.address, targets);
+  }
+  const regions = effectiveRegions(knowledge.regions);
+  const entry = image.entry ?? basicEntry(image);
+  const plan = planDrops({
+    segments: image.segments,
+    memory,
+    ...(entry === undefined ? {} : { entry }),
+    instructions: decoded.instructions,
+    ...(knowledge.coverage === undefined ? {} : { coverage: knowledge.coverage }),
+    regions,
+    references: knowledge.references,
+    operandTargets,
+    changed,
+    keep,
+    drop,
+    routines: knowledge.symbols.filter((symbol) => symbol.kind === "routine"),
+  });
+  const free = plan.free;
+  const inFree = (address: number) => free.some((range) => address >= range.start && address <= range.end);
+  const overlapsAny = (start: number, end: number, ranges: readonly AddressRange[]) => ranges.some((range) => start <= range.end && range.start <= end);
+  for (const range of free) memory.fill(0, range.start, range.end + 1);
+
+  // 5. The knowledge of the export: the baked program with the free ranges, without patches, switches and releases.
+  const revision = knowledge.revision ?? "";
+  const taken = new Set(knowledge.symbols.map((symbol) => symbol.name));
+  const freeSymbols = free.filter((range) => !taken.has(freeName(range))).map((range) => ({ space: DEFAULT_SPACE, address: range.start, name: freeName(range), kind: "label" as const, origin: "llm" as const, revision }));
+  const lineComments = new Map<number, string>();
+  for (const range of free) lineComments.set(range.start, `Free: ${range.end - range.start + 1} bytes of ${range.what} that nothing uses. The export made them $00.`);
+  for (const row of changedSwitches) {
+    for (const patch of withPatches.get(row.name) ?? []) {
+      if (!changed.includes(patch)) continue;
+      const alternative = patch.alternatives.find((item) => item.switch === row.name);
+      const text = [`${row.name} (${row.kind}) is ${values.get(row.name)} in the export.`, row.comment, alternative?.comment].filter((part) => part !== undefined && part !== "").join(" ");
+      lineComments.set(patch.start, lineComments.has(patch.start) ? `${lineComments.get(patch.start)} ${text}` : text);
+    }
+  }
+  const keptComments = knowledge.comments.filter((comment) => !inFree(comment.address));
+  const comments = [
+    ...keptComments.map((comment) => (comment.placement === "line" && lineComments.has(comment.address) ? { ...comment, text: `${comment.text} ${lineComments.get(comment.address)}` } : comment)),
+    ...[...lineComments].filter(([address]) => !keptComments.some((comment) => comment.placement === "line" && comment.address === address)).map(([address, text]) => ({ space: DEFAULT_SPACE, address, placement: "line" as const, text, origin: "llm" as const, revision })),
+  ].sort((a, b) => a.address - b.address);
+  const freeHoles = free.map((range) => ({ start: range.start, end: range.end }));
+  const clip = <R extends { start: number; end: number; element?: number }>(region: R): R[] => clipped(region, freeHoles);
+  const exportRegions = [...regions.flatMap(clip), ...free.map((range) => ({ space: DEFAULT_SPACE, start: range.start, end: range.end, type: "unused" as const, origin: "llm" as const, revision }))].sort((a, b) => a.start - b.start);
+  const derived: SourceKnowledge = {
+    ...knowledge,
+    program: { ...bakedImage, byteAt: (address) => memory[address]! },
+    symbols: [...knowledge.symbols.filter((symbol) => !inFree(symbol.address)), ...freeSymbols].sort((a, b) => a.address - b.address),
+    routines: knowledge.routines.filter((address) => !inFree(address)),
+    regions: [...knowledge.regions.flatMap(clip), ...exportRegions.filter((region) => region.type === "unused" && free.some((range) => range.start === region.start))],
+    comments,
+    references: knowledge.references.filter((reference) => !inFree(reference.from) && !inFree(reference.to) && !overlapsAny(reference.from, reference.from, changed)),
+    operands: knowledge.operands.filter((operand) => !inFree(operand.address) && !overlapsAny(operand.address, operand.address, changed)),
+    macroUses: knowledge.macroUses.filter((use) => !overlapsAny(use.start, use.end, [...changed, ...free])),
+    patches: [],
+    switches: [],
+    releases: [],
+  };
+  const instructions = new Map([...decoded.instructions].filter(([address, length]) => !overlapsAny(address, address + length - 1, free)));
+  const header = [`${name}: the start of a new program, exported from ${basename(project)} at knowledge revision ${knowledge.revision}.`, "You own this source: change it as you like."];
+  const exported = await buildSource(derived, {
+    space: DEFAULT_SPACE,
+    entries: [],
+    header,
+    defines: {},
+    decoded: { instructions, dataOnly: decoded.dataOnly },
+    notExecutedMarks: false,
+    ...(state === undefined ? {} : { state, loaderHeader: [`The loader of ${name}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] }),
+  });
+  if (exported.built.program === undefined) return { result: "FAIL", stage: "export", reason: "The source of the export does not assemble. This is a defect of the c64-source script.", diagnostics: exported.built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
+  const exportCheck = check(exported.built.program, exported.built.start!, derived.program);
+  if (!exportCheck.identical) return { result: "FAIL", stage: "export", reason: "The source of the export does not assemble to the exported program. This is a defect of the c64-source script.", check: exportCheck };
+
+  // 6. The loader of a capture: planned and simulated. The tests of the new project run it.
+  let baseline = { program: exported.built.program, symbols: exported.built.symbols ?? [], entryFile: "main.asm" };
+  let loaderOutput: Record<string, unknown> | undefined;
+  if (state !== undefined) {
+    if (exported.loader === undefined) return { result: "FAIL", stage: "loader", reason: exported.loaderRefused ?? "The loader could not be planned." };
+    const loaderBuilt = await buildLoader(exported.files, exported.loader, derived.program, state, {});
+    if ("diagnostics" in loaderBuilt) return { result: "FAIL", stage: "loader", reason: "loader.asm does not assemble. This is a defect of the c64-source script.", diagnostics: loaderBuilt.diagnostics };
+    baseline = { program: loaderBuilt.program, symbols: loaderBuilt.symbols, entryFile: "loader.asm" };
+    loaderOutput = {
+      copies: exported.loader.copies.map((copy) => ({ what: copy.what, to: `${formatC64Address(copy.target.start)}-${formatC64Address(copy.target.end)}` })),
+      copier: formatC64Address(exported.loader.copier),
+      stackByte: formatC64Address(exported.loader.stackByte),
+      simulated: true,
+      ...(loaderLimits(exported.loader).length === 0 ? {} : { limits: loaderLimits(exported.loader) }),
+    };
+  }
+  const shownSymbols = baseline.symbols.filter((symbol) => symbol.kind === "address" || symbol.used);
+
+  // 7. The tests of the project, changed for the new project.
+  const testsFolder = join(project, "tests");
+  const testFiles = existsSync(testsFolder) ? readdirSync(testsFolder, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name).sort() : [];
+  const symbolMap = new Map(shownSymbols.map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+  const tests: Array<{ file: string; kind: "scenario" | "run"; text: string }> = [];
+  const testsLeftOut: Array<{ file: string; reason: string }> = [];
+  for (const file of testFiles) {
+    const rewritten = rewriteTest(readFileSync(join(testsFolder, file), "utf8"), name, symbolMap, free);
+    if ("reason" in rewritten) testsLeftOut.push({ file: `tests/${file}`, reason: rewritten.reason });
+    else tests.push({ file: `tests/${file}`, kind: rewritten.kind, text: rewritten.text });
+  }
+
+  // 8. Write the new project, then the zip of it. The knowledge goes first: withWrite tries it in memory before it makes the folder.
+  const memoryRowsOf = memoryRows(derived.program.segments, derived.program.byteAt);
+  const kept = { symbols: derived.symbols.length, comments: comments.length, regions: exportRegions.length, modules: knowledge.modules.length };
+  withWrite(
+    (index) =>
+      write(index, { origin: "llm", description: `Export of ${basename(project)} at knowledge revision ${knowledge.revision}` }, "export", (change) => {
+        for (const [address, bytes] of [...memoryRowsOf].sort(([a], [b]) => a - b)) change.insertMemory({ space: DEFAULT_SPACE, address, bytes, origin: "llm" });
+        if (image.entry !== undefined) change.insertEntry({ space: DEFAULT_SPACE, address: image.entry, state: image.state === undefined ? null : JSON.stringify(image.state), stages: null, origin: "llm" });
+        for (const { revision: _revision, ...symbol } of derived.symbols) change.insertSymbol(symbol);
+        for (const { revision: _revision, ...comment } of comments) change.insertComment(comment);
+        for (const { revision: _revision, ...region } of exportRegions) change.insertRegion(region);
+        for (const { revision: _revision, ...module } of knowledge.modules) change.insertModule(module);
+      }),
+    to,
+  );
+  const put = (path: string, data: Uint8Array | string) => writeReported(path, data, { root: to, what: "--to" });
+  const files: Written[] = [];
+  files.push(
+    put(
+      "README.md",
+      readmeText({ name, project: basename(project), revision: knowledge.revision, date: isoCet().slice(0, 10), entryFile: baseline.entryFile, free, switches, tests: { written: tests.map(({ file, kind }) => ({ file, kind })), leftOut: testsLeftOut } }),
+    ),
+  );
+  for (const file of exported.files) files.push(put(`src/${file.name}`, file.text));
+  files.push(put(`baseline/${name}.prg`, baseline.program), put(`baseline/${name}.json`, symbolsFileText(shownSymbols)));
+  for (const test of tests) files.push(put(test.file, test.text));
+  ensureLocal(to);
+  const folder = basename(to);
+  const archive = zipFiles(filesIn(to, (path) => path === `${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}`).map((file) => ({ path: `${folder}/${file.path}`, bytes: file.bytes })));
+  writeFileSync(zip, archive);
+  const zipWritten: Written = { out: fromProject(zip), bytes: archive.length, sha256: createHash("sha256").update(archive).digest("hex") };
+
+  const freeBytes = free.reduce((sum, range) => sum + range.end - range.start + 1, 0);
+  return {
+    result: "PASS",
+    to: fromProject(to),
+    zip: zipWritten,
+    source: { project: basename(project), revision: knowledge.revision },
+    files: listed(files.map((file) => ({ ...file, out: fromProject(join(to, file.out)) })), max, (file) => file, "the folder of the new project"),
+    switches,
+    check: exportCheck,
+    ...(loaderOutput === undefined ? {} : { loader: loaderOutput }),
+    ...(plan.rooted ? {} : { unrooted: "The knowledge has no entry, the program has no BASIC line with SYS, and the image does not hold the hardware vectors. Thus no code is unreachable, and nothing became free by itself." }),
+    ...(knowledge.coverage === undefined ? { noCoverage: "The knowledge has no coverage, so nothing became free by itself. Only --drop makes a range free." } : {}),
+    free: { bytes: freeBytes, ...listed(free, max, (range) => ({ ...shownRange(range), bytes: range.end - range.start + 1, what: range.what, label: freeName(range) })) },
+    unreachableExecuted: listed(plan.unreachableExecuted, max, (range) => ({ ...shownRange(range), ...(range.routine === undefined ? {} : { routine: range.routine }), drop: `--drop '${formatC64Address(range.start)}-${formatC64Address(range.end)}'` })),
+    knowledge: kept,
+    tests: { written: tests.map((test) => test.file), leftOut: listed(testsLeftOut, max, (item) => item) },
+    ...(spacesLeftOut.length === 0 ? {} : { spacesLeftOut }),
+    ...(exported.rendered.operandsAsNumbers.length === 0 ? {} : { operandsAsNumbers: listed(exported.rendered.operandsAsNumbers, max, (item) => ({ address: formatC64Address(item.address), expression: item.expression, reason: item.reason })) }),
+    ...(exported.rendered.macrosAsInstructions.length === 0 ? {} : { macrosAsInstructions: listed(exported.rendered.macrosAsInstructions, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), macro: item.macro, reason: item.reason })) }),
+  };
 }
 
 await runScript({
@@ -848,6 +1203,19 @@ await runScript({
         const gone = removed.filter((path) => !written.has(path));
         return { result: failed ? "FAIL" : "PASS", ...output, ...(gone.length === 0 ? {} : { removed: gone }) };
       },
+    },
+    {
+      name: "export",
+      summary: "Writes the program of the knowledge as the start of a new program: a new project folder with the source, a baseline program, the tests and a slim knowledge, and a zip file of the folder. Each switch is fixed at its export value, and code and data that nothing uses become free. result is PASS when the export is written, else FAIL with the stage that failed.",
+      options: {
+        to: { kind: "text", value: "<folder>", required: true, help: "the folder of the new project, relative to the project folder, for example ../game-new. It must be new or empty, and outside every project. The zip file is <folder>.zip beside it" },
+        name: { kind: "text", value: "<name>", help: "the name of the program files baseline/<name>.prg and build/<name>.prg. The default is the name of the folder" },
+        keep: { ...OPTIONS.range, multiple: true, help: "a range that stays, also when nothing uses it" },
+        drop: { ...OPTIONS.range, multiple: true, help: "a range that becomes free: code that the entry does not reach (see unreachableExecuted), or data. Nothing that stays may go to it or read it" },
+        "max-listed": OPTIONS["max-listed"],
+      },
+      notes: "Fixes, trainers and cheats are in, protection and crack changes are out, and a change keeps its default. Code becomes free only when no run executed it and nothing reaches it; data only when no run touched it and nothing names it. Charset, sprite, bitmap and screen data stay unless --drop names them. Addresses do not move: a free range is $00 with a label free_xxxx. The export needs coverage in the knowledge to make ranges free by itself.",
+      run: (call) => exportProject(call),
     },
   ],
 });

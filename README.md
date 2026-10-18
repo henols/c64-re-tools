@@ -111,6 +111,7 @@ container and give each program its own folder. A folder with `.c64-re-tools/` i
 | c64-emulator | Runs, debugs and observes the program in VICE. |
 | c64-memory-map | What an address or a register value means. |
 | c64-development | Writes new programs, and adds features and fixes, with tests that give PASS or FAIL. |
+| c64-export | Exports a rebuilt program as the start of a new program: one value per switch, no unused code, a zip file. |
 | c64-testing | Runs scenarios: original against rebuild, or many steps on one program with expected values. |
 | c64-disk | Directory, BAM, entries, sector chains and extraction of disk images. |
 | c64-basic | BASIC V2 listings and the SYS/USR handoff to machine code. |

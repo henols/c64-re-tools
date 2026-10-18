@@ -73,7 +73,7 @@ function rangesWhere(has: (address: number) => boolean): AddressRange[] {
 }
 
 /** The memory rows of the segments: at most MEMORY_ROW bytes, never across a multiple of MEMORY_ROW. */
-function memoryRows(segments: readonly AddressRange[], byteAt: (address: number) => number): Map<number, string> {
+export function memoryRows(segments: readonly AddressRange[], byteAt: (address: number) => number): Map<number, string> {
   const rows = new Map<number, string>();
   for (const segment of segments) {
     for (let at = segment.start; at <= segment.end; ) {

@@ -8,7 +8,7 @@
 
 import { type AddressRange, basicLineText } from "#src/c64.ts";
 import { MNEMONICS } from "#src/opcodes.ts";
-import type { Access, Separation } from "./separate.ts";
+import type { Access, Separation } from "#src/knowledge/separate.ts";
 
 export interface LeftoversInput {
   segments: AddressRange[];

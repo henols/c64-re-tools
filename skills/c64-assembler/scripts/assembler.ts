@@ -12,7 +12,7 @@ import { knowledgeNames } from "#src/knowledge/names.ts";
 import { requireProgram } from "#src/knowledge/program.ts";
 import { releaseLabeled } from "#src/knowledge/read.ts";
 import { RELEASE_DEFINE } from "#src/knowledge/schema.ts";
-import { assemble } from "#src/native/acme.ts";
+import { assemble, showSymbol, symbolsFileText } from "#src/native/acme.ts";
 import { localToolContext } from "#src/native/local.ts";
 import type { AcmeParams, AssembledSymbol } from "#src/native/types.ts";
 import { listed as listedItems, OPTIONS, runScript, UsageError } from "#src/script.ts";
@@ -26,13 +26,6 @@ function parseDefine(text: string): [string, number | boolean] {
   if (/^\$[0-9a-fA-F]+$/.test(value)) return [match[1]!, Number.parseInt(value.slice(1), 16)];
   if (/^-?\d+$/.test(value)) return [match[1]!, Number(value)];
   throw new UsageError(`--define ${match[1]} needs an integer or true/false, not ${value}`);
-}
-
-/** A symbol of the build: an address as $ and four hex digits, a constant as $ and at least four hex digits. */
-function showSymbol(symbol: AssembledSymbol) {
-  return symbol.kind === "address"
-    ? { name: symbol.name, kind: "address", address: formatC64Address(symbol.address), used: symbol.used }
-    : { name: symbol.name, kind: "constant", value: `$${symbol.value.toString(16).padStart(4, "0")}`, used: symbol.used };
 }
 
 await runScript({
@@ -114,7 +107,7 @@ await runScript({
           ...(plain ? { plain: true } : {}),
           loadRange: { start: formatC64Address(range.start), end: formatC64Address(range.end), bytes: range.bytes },
           symbols: listedItems(shown, call.count("max-listed")!, showSymbol, "a larger --max-listed, or --out-symbols <file.json> for the whole list"),
-          ...(symbolsPath === undefined ? {} : { symbolsFile: writeReported(symbolsPath, `${JSON.stringify({ symbols: shown.map(showSymbol) }, null, 1)}\n`, { what: "--out-symbols" }) }),
+          ...(symbolsPath === undefined ? {} : { symbolsFile: writeReported(symbolsPath, symbolsFileText(shown), { what: "--out-symbols" }) }),
           ...(all ? {} : { unusedConstants: result.symbols!.length - shown.length }),
           diagnostics: result.diagnostics,
           ...(compared === undefined ? {} : { compare: compared }),
