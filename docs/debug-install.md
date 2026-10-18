@@ -24,6 +24,17 @@ For the MCP server and the skill scripts, set `C64RT_TRACE` in the project's `.c
 
 `status` in the container must show the Host Runtime as reachable. The Host Runtime listens on every address, and `runArgs` in the README lets the container reach it as `host.docker.internal`.
 
+Each start installs the toolkit and its tools again, but only what changed. To do it now and see the output:
+
+```
+/usr/local/share/c64-re-tools/project.sh update
+cat /usr/local/share/c64-re-tools/tools.version
+```
+
+`tools.version` is the toolkit version of the installed tools. A new release is on npm some minutes after its tag; until then the start keeps the earlier version.
+
+If the build stops with `Digest did not match` for the Feature, remove its entry from `.devcontainer/devcontainer-lock.json` and rebuild.
+
 ## Field test
 
 Tests c64-re-tools with an agent and brings back one report. In the project:

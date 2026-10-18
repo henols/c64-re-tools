@@ -65,8 +65,9 @@ with the tools of that version, so the tools and the skills always match. Add to
 "runArgs": ["--add-host=host.docker.internal:host-gateway"]
 ```
 
-`target` is the harness, or a comma list such as `claude,codex`. The Feature
-needs a Debian or Ubuntu image. `runArgs` is for Docker on Linux.
+`target` is the harness, or a comma list such as `claude,codex`. `channel` is
+`latest` (the default) or `next` (prereleases). The Feature needs a Debian or
+Ubuntu image. `runArgs` is for Docker on Linux.
 
 ### Without a container
 
