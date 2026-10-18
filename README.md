@@ -90,12 +90,15 @@ Start the agent in the project, for example `claude`, and ask for what you want:
 ```
 Write a game in ACME where a sprite moves with the joystick and the border
 flashes when it hits the edge. Build it, run it, and show me the screen.
-
+```
+```
 The music stops when the title screen starts. Find out why.
-
+```
+```
 Reverse engineer original/game.d64. Find how it starts, unpack it if it is
 packed, and name the main routines.
-
+```
+```
 Find the routine that draws the score, and explain how it works.
 ```
 
