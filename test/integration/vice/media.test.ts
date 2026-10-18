@@ -93,3 +93,22 @@ test("a cartridge stays through a reset; an autostart of a PRG detaches it and r
   await waitForPcIn(BORDER_LOOP_START, BORDER_LOOP_END, 60_000);
   assert.equal((await session.handle("status", {})).cartridge, false);
 });
+
+test("a snapshot restore stops an autostart that still loads, and a broken cartridge never reaches the emulator", { skip: liveSkip, timeout: 120_000 }, async () => {
+  const prg = Buffer.from(borderLoopPrg);
+  await session.handle("reset", { mode: "hard", run: true });
+  await session.handle("execution", { action: "advance-frames", count: 150, space: "c64" });
+  await session.handle("memoryWrite", { address: 0x0801, data: "c0ffee", space: "c64", view: "ram" });
+  await session.handle("snapshot", { action: "save", name: "before-autostart" });
+  await session.handle("autostart", { type: "prg", index: 0, run: true }, [prg]);
+  await session.handle("execution", { action: "pause", space: "c64" });
+  await session.handle("snapshot", { action: "restore", name: "before-autostart" });
+  await session.handle("execution", { action: "advance-frames", count: 300, space: "c64" });
+  assert.equal((await session.handle("memoryRead", { address: 0x0801, size: 3, space: "c64", view: "ram" })).data, "c0ffee", "the autostart did not load the program over the restored memory");
+
+  await assert.rejects(
+    session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.alloc(16, 0x55)]),
+    (error: unknown) => error instanceof WireFailure && error.code === "media-error",
+  );
+  assert.equal((await session.handle("status", {})).cartridge, false);
+});

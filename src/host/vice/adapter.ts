@@ -59,7 +59,10 @@ export function conditionExpression(condition: Condition, space: Space): string 
     }
     case "memory": {
       if (condition.space !== "c64") {
-        throw new WireFailure("unsupported-in-space", "A memory condition can test only space c64 memory.");
+        throw new WireFailure(
+          "unsupported-in-space",
+          "A memory target or a memory condition tests only space c64 memory. For the drive, use a watchpoint in space drive8, or a c64_run_until address target in space drive8.",
+        );
       }
       return `(@${condition.view}:${formatC64Address(condition.address)} ${operator(condition.operator)} ${formatC64Byte(condition.value)})`;
     }

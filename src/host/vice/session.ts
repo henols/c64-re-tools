@@ -30,6 +30,7 @@ import {
 import { decodeProgramCounter, MonitorConnectionError, MonitorError, MonitorTimeoutError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
 import { decodeCia, decodeSid, decodeSprite, decodeVicii } from "./chips.ts";
 import { compareFrames, differenceImage } from "./screen.ts";
+import { checkMedia } from "./media-check.ts";
 import { launchVice, startErrorLines, type ViceMode, type ViceProcess } from "./process.ts";
 import { TextMonitorError, TextMonitorTimeoutError } from "./text-monitor.ts";
 
@@ -193,6 +194,13 @@ export class ViceSession implements ViceSessionHandle {
    * pc write, and reports the JAM only once.
    */
   #jammed: number | undefined;
+  /**
+   * An autostart can still be loading: VICE goes on with it after a snapshot
+   * restore and writes the program over the restored memory. Only a reset stops it.
+   */
+  #autostarting = false;
+  /** The C64 clock just after the last snapshot restore: VICE keeps the history of before it. */
+  #historySince: bigint | undefined;
   /** VICE records no CPU history after a JAM until the next reset. */
   #historyStopped = false;
   /** The CPU ran again after a JAM without a reset: the CPU history that VICE gives is old. */
@@ -396,6 +404,7 @@ export class ViceSession implements ViceSessionHandle {
       case "autostart": {
         const { type, index, run } = params as ViceOperations["autostart"]["params"];
         const bytes = onlyAttachment(attachments);
+        checkMedia(type, bytes);
         if (index > 0 && this.#directory !== undefined && isOneOf(DISK_IMAGE_TYPES, type)) checkDirectoryEntry(await this.#directory(type, bytes), index);
         const file = this.#stage(bytes, type);
         // VICE keeps a cartridge through every reset and autostart, as a real C64 does.
@@ -415,6 +424,7 @@ export class ViceSession implements ViceSessionHandle {
         }
         await this.#runningCommand(() => this.#machine.autostart(file, index, run));
         this.#clearJam();
+        this.#autostarting = true;
         if (type === "crt") this.#cartridge = true;
         this.#replaceStaged(stagedKind(type), file);
         // A reset sets the CPU clock back, so the stopwatch starts again.
@@ -423,7 +433,9 @@ export class ViceSession implements ViceSessionHandle {
       }
       case "diskAttach": {
         const { type } = params as ViceOperations["diskAttach"]["params"];
-        const file = this.#stage(onlyAttachment(attachments), type);
+        const bytes = onlyAttachment(attachments);
+        checkMedia(type, bytes);
+        const file = this.#stage(bytes, type);
         await this.#observe(() => this.#machine.attachDisk(file));
         this.#replaceStaged("disk", file);
         return { attached: true };
@@ -543,11 +555,18 @@ export class ViceSession implements ViceSessionHandle {
       // VICE 3.9 sends no JAM event: the opcode at the pc tells.
       const stop = this.#lastStop ?? ((await this.#jamAt(status.pc)) ? { stopReason: "jam" as const } : undefined);
       if (stop !== undefined) Object.assign(status, stop);
+      // A point in the drive stopped it: the pc is the drive's, as advance-frames and run-until give it.
+      const point = status.pointId === undefined ? undefined : (status.stopReason === "watchpoint" ? this.#watchpoints : this.#breakpoints).get(status.pointId);
+      status.space = point?.space === "drive8" ? "drive8" : "c64";
+      if (status.space === "drive8") status.pc = (await this.#machine.readRegisters("drive8")).pc;
     }
     return status;
   }
 
   async #execution(params: ExecutionParams): Promise<ExecutionResult> {
+    if (params.space === "drive8" && (params.action === "pause" || params.action === "resume")) {
+      throw new WireFailure("unsupported-in-space", `${params.action} stops or runs the whole machine, the computer and the disk drive together: use space c64.`);
+    }
     if (params.action === "resume") {
       if (this.#state === "stopped") {
         await this.#refuseJammed("resume");
@@ -896,6 +915,7 @@ export class ViceSession implements ViceSessionHandle {
 
   /** A reset or an autostart starts a jammed CPU and the CPU history again. */
   #clearJam(): void {
+    this.#autostarting = false;
     this.#jammed = undefined;
     this.#historyStopped = false;
     this.#historyOld = false;
@@ -1121,9 +1141,10 @@ export class ViceSession implements ViceSessionHandle {
       );
     }
     return this.#observe(async () => {
-      const raw = await this.#machine.history(params.limit, params.space);
-      if (params.space === "drive8") return { entries: raw.map(({ clock: _clock, ...entry }) => entry) };
+      const all = await this.#machine.history(params.limit, params.space);
+      if (params.space === "drive8") return { entries: all.map(({ clock: _clock, ...entry }) => entry) };
       const now = await this.#machine.clock();
+      const raw = entriesSince(all, this.#historySince, now);
       const position = await this.#machine.rasterPosition();
       const { lines, cycles } = RASTER[this.#videoStandard];
       const frame = BigInt(lines * cycles);
@@ -1218,7 +1239,10 @@ export class ViceSession implements ViceSessionHandle {
   async #restoreFrom(file: string): Promise<{ restored: true; state: "stopped" }> {
     await this.#stop();
     const elapsed = (await this.#machine.clock()) - this.#timingStart;
+    // The restore replaces the whole machine state, so the reset that stops the autostart leaves no trace.
+    if (this.#autostarting) await this.#reset({ mode: "soft", run: false });
     await this.#machine.restoreSnapshot(file);
+    this.#historySince = await this.#machine.clock();
     // A restore starts a jammed CPU again, but VICE still records no CPU history.
     this.#jammed = undefined;
     if (this.#historyStopped) this.#historyOld = true;
@@ -1612,6 +1636,23 @@ export class ViceSession implements ViceSessionHandle {
       this.#state = "running";
     }
   }
+}
+
+/**
+ * The history entries (oldest first) that the CPU executed after a restore at
+ * clock `since`, with the clock at `now`: the last entries, back to the first
+ * one outside since to now or the first one whose clock does not go up to the
+ * next. The others are of before the restore.
+ */
+export function entriesSince<T extends { clock: bigint }>(entries: readonly T[], since: bigint | undefined, now: bigint): T[] {
+  if (since === undefined) return [...entries];
+  let first = entries.length;
+  while (first > 0) {
+    const entry = entries[first - 1]!;
+    if (entry.clock < since || entry.clock > now || (first < entries.length && entry.clock >= entries[first]!.clock)) break;
+    first--;
+  }
+  return entries.slice(first);
 }
 
 /** The one attachment of an operation that takes a file (see attachmentCount); refuses any other count. */

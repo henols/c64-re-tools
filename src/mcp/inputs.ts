@@ -33,12 +33,15 @@ export const AddressInput = z
   .transform((value) => c64AddressOf(value)!)
   .describe("C64 address: $ and 1 to 4 hex digits, $0000 to $ffff");
 
+/** The space of a memory target or condition: the emulator tests only C64 memory. */
+const MemorySpaceInput = SpaceInput.describe("c64 only: the emulator tests only C64 memory. For the drive, use a watchpoint or an address target in space drive8");
+
 const rasterLine = z.number().int().min(0).max(MAX_RASTER_LINE).describe("raster line: PAL 0-311, NTSC 0-262");
 
 const condition = z
   .discriminatedUnion("kind", [
     z.object({ kind: z.literal("register"), register: z.enum(CONDITION_REGISTERS), operator: z.enum(COMPARISONS), value: Byte }).strict(),
-    z.object({ kind: z.literal("memory"), address: AddressInput, operator: z.enum(COMPARISONS), value: Byte, space: SpaceInput, view: MemoryViewInput }).strict(),
+    z.object({ kind: z.literal("memory"), address: AddressInput, operator: z.enum(COMPARISONS), value: Byte, space: MemorySpaceInput, view: MemoryViewInput }).strict(),
     z.object({ kind: z.literal("raster"), line: rasterLine, cycle: z.number().int().min(0).max(64).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64. True from this cycle on") }).strict(),
   ])
   .describe("register: a CPU register compared to a byte. memory: a byte in memory compared to a byte. raster: the raster position");
@@ -50,7 +53,7 @@ export const TOOL_INPUTS = {
 
   runTarget: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("address"), address: AddressInput, space: SpaceInput, condition: condition.optional().describe("stop at the address only when this is true") }).strict(),
-    z.object({ kind: z.literal("memory"), address: AddressInput, operator: z.enum(COMPARISONS), value: Byte, space: SpaceInput, view: MemoryViewInput }).strict(),
+    z.object({ kind: z.literal("memory"), address: AddressInput, operator: z.enum(COMPARISONS), value: Byte, space: MemorySpaceInput, view: MemoryViewInput }).strict(),
     z.object({ kind: z.literal("raster"), line: rasterLine, cycle: z.number().int().min(0).max(64).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64. Default 0") }).strict(),
   ]),
 
@@ -82,7 +85,7 @@ export const TOOL_INPUTS = {
 
   joystick: z
     .object({
-      port: z.union([z.literal(1), z.literal(2)]).describe("control port 1 or 2"),
+      port: z.union([z.literal(1), z.literal(2)], { error: "port must be the number 1 or 2" }).describe("control port 1 or 2"),
       direction: z.enum(JOYSTICK_DIRECTIONS),
       fire: z.boolean().default(false),
     })

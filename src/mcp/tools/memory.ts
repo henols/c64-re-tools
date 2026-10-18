@@ -123,7 +123,7 @@ export const c64MemorySearch = defineTool({
   title: "Search C64 memory",
   description:
     `Find a byte pattern of 1 to ${MAX_SEARCH_PATTERN} bytes in memory from start to end. ?? matches any byte. ` +
-    `The result gives the start address of each match, at most maxResults (1 to ${MAX_SEARCH_RESULTS}, default 100). ` +
+    `The result gives the start address of each match, at most maxResults (1 to ${MAX_SEARCH_RESULTS}, default 100). truncated: true tells that more matches can follow. ` +
     "This does not change the run state of the machine.",
   inputSchema: z
     .object({
@@ -135,7 +135,7 @@ export const c64MemorySearch = defineTool({
       maxResults: z.number().int().min(1).max(MAX_SEARCH_RESULTS).default(100),
     })
     .strict(),
-  outputSchema: z.object({ matches: z.array(AddressOutput) }),
+  outputSchema: z.object({ matches: z.array(AddressOutput), truncated: z.boolean().optional().describe("true when the result has maxResults matches: more can follow. Search again from the address after the last match") }),
   readOnly: true,
   async run(input, session) {
     if (input.pattern.length > MAX_SEARCH_PATTERN) {
@@ -147,7 +147,8 @@ export const c64MemorySearch = defineTool({
     // VICE refuses a range shorter than the pattern. Such a range has no match.
     if (end - input.start + 1 < input.pattern.length) return { matches: [] };
     const result = await session.memorySearch({ ...input, end });
-    return { matches: result.matches.map(formatC64Address) };
+    const matches = result.matches.map(formatC64Address);
+    return matches.length >= input.maxResults ? { matches, truncated: true } : { matches };
   },
 });
 

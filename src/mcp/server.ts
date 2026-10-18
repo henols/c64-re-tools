@@ -182,7 +182,8 @@ function describeIssues(error: z.ZodError, input?: z.ZodObject): string {
   return error.issues
     .map((issue) => {
       const where = issue.path.length === 0 ? "input" : issue.path.join(".");
-      const fields = issue.code === "unrecognized_keys" && issue.path.length === 0 && input !== undefined ? `. The fields are ${Object.keys(input.shape).join(", ")}` : "";
+      const names = input === undefined ? [] : Object.keys(input.shape);
+      const fields = issue.code !== "unrecognized_keys" || issue.path.length !== 0 || input === undefined ? "" : names.length === 0 ? ". The tool takes no fields" : `. The fields are ${names.join(", ")}`;
       return `${where}: ${issue.message}${fields}`;
     })
     .join(". ");

@@ -385,6 +385,8 @@ export interface MachineStatus {
   stopReason?: PointStopReason;
   /** The id of the breakpoint or watchpoint that stopped the machine. */
   pointId?: number;
+  /** With pc: the CPU whose address pc is, drive8 when a point in the drive stopped the machine. */
+  space?: "c64" | "drive8";
 }
 
 /** What stopped the machine outside a request that stops it. */
@@ -1092,7 +1094,8 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
         typeof value.cartridge === "boolean" &&
         (value.stopReason === undefined || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
-        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER));
+        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER)) &&
+        (value.space === undefined || isOneOf(SPACES, value.space));
       if (!ok) throw new ProtocolError("status result is malformed");
       break;
     }

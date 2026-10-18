@@ -339,7 +339,9 @@ export const c64Memmap = defineTool({
     "A read on a byte right after executed code, or at a return address, can be a dummy read that the CPU does not use. " +
     "Action summary gives the counts for RAM, ROM and I/O. It also gives the executed code in RAM with its operand bytes, and the RAM that was written and executed. " +
     `Each list has at most ${MAX_SUMMARY_RANGES} ranges. ` +
-    "Action clear sets all access records to zero.",
+    "Action clear sets all access records to zero. " +
+    "The emulator decides RAM, ROM or I/O from one bit of $01. At $A000-$BFFF it gives ROM when bit 0 is set, also when bit 1 is clear and the CPU used RAM. " +
+    "Every access at $D000-$DFFF is I/O, also when $01 shows RAM or the character ROM there. emulatorFlaw in the result tells when ROM at $A000-$BFFF can be RAM.",
   inputSchema: z
     .object({
       action: z.enum(["read", "summary", "clear"]),
@@ -362,6 +364,7 @@ export const c64Memmap = defineTool({
     writtenAndExecuted: z.array(RangeOutput).optional(),
     writtenAndExecutedTruncated: z.boolean().optional(),
     cleared: z.boolean().optional(),
+    emulatorFlaw: z.string().optional().describe("a known flaw of VICE that can make the ROM and I/O classes wrong in this result"),
     ...WrittenOutput,
   }),
   readOnly: false,
@@ -391,12 +394,14 @@ export const c64Memmap = defineTool({
         ...(code.length > MAX_SUMMARY_RANGES ? { codeTruncated: true } : {}),
         writtenAndExecuted: showRanges(written),
         ...(written.length > MAX_SUMMARY_RANGES ? { writtenAndExecutedTruncated: true } : {}),
+        ...basicRomFlaw(romInBasicArea(map, start)),
       };
     }
     requireOut(fields, ["maxRanges"]);
     requireFields("read", fields, ["start", "end", "maxRanges", "out", "project"]);
     if (fields.out !== undefined) {
-      return writeOut(fields.out, await readCoverage(session, start, end), fields.project);
+      const map = await readCoverage(session, start, end);
+      return { ...writeOut(fields.out, map, fields.project), ...basicRomFlaw(romInBasicArea(map, start)) };
     }
     const result = await session.memmap({ action: "read", start, end, maxRanges: fields.maxRanges ?? 256 });
     const ranges = result.ranges.map((range) => ({
@@ -407,8 +412,29 @@ export const c64Memmap = defineTool({
       write: (range.flags & WRITE) !== 0,
       in: sources(range.flags),
     }));
-    return result.next === undefined ? { ranges } : { ranges, truncated: true, next: formatC64Address(result.next) };
+    const flaw = basicRomFlaw(result.ranges.some((range) => range.start <= 0xbfff && range.end >= 0xa000 && (range.flags & ROM_ACCESS) !== 0));
+    return result.next === undefined ? { ranges, ...flaw } : { ranges, truncated: true, next: formatC64Address(result.next), ...flaw };
   },
 });
+
+const ROM_ACCESS = COVERAGE.romRead | COVERAGE.romExecute;
+
+/** True when the map from `start` has a ROM access at $A000-$BFFF. */
+function romInBasicArea(map: Uint8Array, start: number): boolean {
+  for (let address = Math.max(start, 0xa000); address <= Math.min(start + map.length - 1, 0xbfff); address++) {
+    if ((map[address - start]! & ROM_ACCESS) !== 0) return true;
+  }
+  return false;
+}
+
+/** VICE tests only bit 0 of $01 for $A000-$BFFF; the C64 shows BASIC ROM there only when bits 0 and 1 are set. */
+function basicRomFlaw(present: boolean): { emulatorFlaw?: string } {
+  if (!present) return {};
+  return {
+    emulatorFlaw:
+      "The emulator gives ROM for an access at $A000-$BFFF when bit 0 of $01 is set, also when bit 1 is clear and the CPU used the RAM there. " +
+      "Read $01 of the program at that time before you take rom at $A000-$BFFF as the BASIC ROM.",
+  };
+}
 
 export const debugTools = [c64Breakpoint, c64Watchpoint, c64CpuHistory, c64Trace, c64Backtrace, c64Profile, c64Memmap, c64Timing];

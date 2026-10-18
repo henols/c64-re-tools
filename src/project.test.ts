@@ -109,6 +109,9 @@ test("a named project must be a folder, not the home folder and not inside anoth
     assert.throws(() => namedProject("file", workspace), refusal("invalid-input", /is not a folder/));
     assert.throws(() => namedProject(home, workspace), refusal("invalid-input", /home folder/));
     assert.throws(() => namedProject(join("game", "src"), workspace), refusal("invalid-input", /inside the project game\. Give that project folder/));
+    // A project inside a project is a project of its own.
+    mkdirSync(join(workspace, "game", "disk2", ".c64-re-tools"), { recursive: true });
+    assert.equal(namedProject(join("game", "disk2"), workspace), join(workspace, "game", "disk2"));
   });
 });
 

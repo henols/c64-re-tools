@@ -117,7 +117,8 @@ export function namedProject(folder: string, cwd: string = process.cwd()): strin
   if (stat === undefined) throw new Refusal("not-found", `There is no folder ${folder}.`);
   if (!stat.isDirectory()) throw new Refusal("invalid-input", `${folder} is not a folder.`);
   if (path === homedir()) throw new Refusal("invalid-input", "The home folder is not a project folder.");
-  const outer = foldersUpFrom(path).slice(1).find(isProject);
+  // A project inside another project is a project of its own, as the lookup from a working directory in it finds.
+  const outer = isProject(path) ? undefined : foldersUpFrom(path).slice(1).find(isProject);
   if (outer !== undefined) {
     throw new Refusal("invalid-input", `${folder} is inside the project ${relative(cwd, outer) || outer}. Give that project folder.`);
   }

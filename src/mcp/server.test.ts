@@ -161,7 +161,7 @@ class FakeSession implements ViceSessionApi {
     return { frames: [{ address: 0x2100, returnAddress: 0x1980 }, { address: 0xfce2 }] };
   }
   async trace(params: { points: Array<{ kind: string; start: number; end: number }>; frames: number; maxHits: number }) {
-    return { hits: [{ point: 0, pc: 0x09c1, bytes: "8d11d0", text: "sta $d011", a: 0x8b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 279, rasterCycle: 22, address: 0xd011, value: 0x8b }], frames: params.frames, end: "frames" as const, pc: 0x0440 };
+    return { hits: [{ point: 0, pc: 0x09c1, bytes: "8d11d0", text: "STA $d011", a: 0x8b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 279, rasterCycle: 22, address: 0xd011, value: 0x8b }], frames: params.frames, end: "frames" as const, pc: 0x0440 };
   }
   profiles: unknown[] = [];
   profile(params: { action: "read"; limit: number }): Promise<{ entries: ProfileEntry[] }>;
@@ -747,6 +747,8 @@ test("a range shorter than the pattern has no match, and end must not be lower t
   assert.deepEqual((await call(client, "c64_memory_search", { start: "$fffe", pattern: "00 00 00" })).structuredContent, { matches: [] });
   assert.deepEqual((await call(client, "c64_memory_search", { start: "$1000", end: "$1001", pattern: "00 00 00" })).structuredContent, { matches: [] });
   assert.equal(session.searches.length, 0, "VICE gets no search that it refuses");
+  assert.deepEqual((await call(client, "c64_memory_search", { start: "$0800", pattern: "a9", maxResults: 2 })).structuredContent, { matches: ["$2100", "$37a0"], truncated: true });
+  assert.deepEqual((await call(client, "c64_memory_search", { start: "$0800", pattern: "a9", maxResults: 3 })).structuredContent, { matches: ["$2100", "$37a0"] });
   assert.match(errorOf(await call(client, "c64_memory_search", { start: "$1000", end: "$0fff", pattern: "00" })).message, /end is lower than start/);
   await client.close();
 });
@@ -761,6 +763,8 @@ test("refusals name the rule that the call broke", async () => {
   assert.equal(await message("c64_snapshot", { action: "restore", name: "a", file: "a.vsf" }), "Action restore takes name or file, not both.");
   assert.match(await message("c64_snapshot", { action: "restore" }), /needs name .* or file/);
   assert.match(await message("c64_program_load", { path: "original/game.d64" }), /is a \.d64 image, not a PRG\. Use c64_autostart/);
+  assert.match(await message("c64_sid", { voice: 1 }), /Unrecognized key.*The tool takes no fields$/);
+  assert.match(await message("c64_joystick", { port: 3, direction: "up" }), /port must be the number 1 or 2/);
   await client.close();
 });
 
@@ -1059,7 +1063,7 @@ test("c64_trace takes points with an optional end and gives the hits with $ addr
     frames: 100,
     pc: "$0440",
     count: 1,
-    hits: [{ point: 0, pc: "$09c1", bytes: "8d11d0", text: "sta $d011", a: 0x8b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 279, rasterCycle: 22, address: "$d011", value: 0x8b }],
+    hits: [{ point: 0, pc: "$09c1", bytes: "8d11d0", text: "STA $d011", a: 0x8b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 279, rasterCycle: 22, address: "$d011", value: 0x8b }],
   });
   assert.equal(errorOf(await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011", end: "$d010" }], frames: 1 })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_trace", { points: [], frames: 1 })).code, "invalid-input");

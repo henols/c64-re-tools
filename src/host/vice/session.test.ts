@@ -6,7 +6,7 @@ import { WireFailure } from "../../protocol/messages.ts";
 import { Command } from "./binary-monitor.ts";
 import { FakeVice } from "./fake-vice.testkit.ts";
 import { readPng } from "../../graphics.testkit.ts";
-import { ViceSession, type SessionOptions } from "./session.ts";
+import { entriesSince, ViceSession, type SessionOptions } from "./session.ts";
 
 const fakes: FakeVice[] = [];
 const processes: Array<{ stop(): Promise<void> }> = [];
@@ -56,7 +56,7 @@ test("status reads warp from VICE, reports no pc while running and keeps it runn
 test("a breakpoint that stops the machine while status reads warp is reported as stopped with its pc", async () => {
   const { fake, session } = await startSession();
   fake.stopsAtNextCommand = { pc: 0x2100 };
-  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0x2100 });
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0x2100, space: "c64" });
   assert.equal(fake.running, false);
   await session.close();
 });
@@ -97,7 +97,7 @@ test("a read while stopped leaves the machine stopped and status reports the pc"
   });
   assert.ok(!fake.commands.includes(Command.exit), "a read must not resume a machine a breakpoint stopped");
   assert.equal(fake.running, false);
-  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0x2100 });
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0x2100, space: "c64" });
   await session.close();
 });
 
@@ -186,7 +186,7 @@ test("a reset without run stops at the reset vector and leaves no checkpoint", a
   assert.equal(fake.running, false);
   assert.equal(fake.registers.PC, 0xfce2);
   assert.equal(fake.checkpoints.size, 0);
-  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0xfce2 });
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0xfce2, space: "c64" });
   await session.close();
 });
 
@@ -443,13 +443,16 @@ test("an autostart index of a DEL entry or past the last entry is refused before
   const image = Buffer.alloc(174848, 0x11);
   // The session gets the VICE index: the caller's index plus 1.
   await assert.rejects(session.handle("autostart", { type: "d64", index: 2, run: true }, [image]), (error: WireFailure) => error.code === "invalid-input" && /entry 1 \(----------------\) is a DEL entry/.test(error.message));
-  await assert.rejects(session.handle("autostart", { type: "g64", index: 3, run: true }, [image]), (error: WireFailure) => error.code === "invalid-input" && /2 directory entries, so index 2 selects no entry/.test(error.message));
+  await assert.rejects(session.handle("autostart", { type: "d64", index: 3, run: true }, [image]), (error: WireFailure) => error.code === "invalid-input" && /2 directory entries, so index 2 selects no entry/.test(error.message));
+  // An image that is not of its type never reaches VICE.
+  await assert.rejects(session.handle("autostart", { type: "g64", index: 0, run: true }, [image]), (error: WireFailure) => error.code === "media-error" && /does not start with "GCR-1541"/.test(error.message));
+  await assert.rejects(session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.alloc(16, 0x55)]), (error: WireFailure) => error.code === "media-error");
   assert.equal(fake.autostarts.length, 0);
   await session.handle("autostart", { type: "d64", index: 1, run: true }, [image]);
   await session.handle("autostart", { type: "d64", index: 0, run: true }, [image]);
   await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
   assert.deepEqual(fake.autostarts.map((autostart) => autostart.index), [1, 0, 0]);
-  assert.deepEqual(listed, ["d64", "g64", "d64"], "only a disk image with an index is listed");
+  assert.deepEqual(listed, ["d64", "d64", "d64"], "only a disk image with an index is listed");
   await session.close();
 });
 
@@ -921,9 +924,11 @@ test("a stop in the drive that status sees first is completed before status repo
     warp: false,
     window: false,
     cartridge: false,
-    pc: 0x1236,
+    // The drive's pc: the computer's is $1236.
+    pc: (await session.handle("registersGet", { space: "drive8" })).pc,
     stopReason: "breakpoint",
     pointId: 1,
+    space: "drive8",
   });
   assert.equal(fake.running, false);
   assert.equal(fake.checkpoints.size, 1, "only the user breakpoint is left");
@@ -1185,5 +1190,24 @@ test("observe reads every asked part from one stop and keeps the run state", asy
   assert.equal(fake.running, true);
   const only = await session.handle("observe", { timing: true });
   assert.deepEqual(Object.keys(only), ["timing"]);
+  await session.close();
+});
+
+test("after a restore, the history gives only the instructions that ran after it", () => {
+  const at = (...clocks: number[]) => clocks.map((clock) => ({ clock: BigInt(clock) }));
+  assert.deepEqual(entriesSince(at(10, 20, 30), undefined, 40n), at(10, 20, 30));
+  // Restored at clock 100 (later than the old run): the old entries are before it.
+  assert.deepEqual(entriesSince(at(10, 20, 30, 101, 105), 100n, 106n), at(101, 105));
+  // Restored at clock 5 (earlier): the old entries have larger clocks, and the order breaks there.
+  assert.deepEqual(entriesSince(at(10, 20, 30, 6, 9), 5n, 9n), at(6, 9));
+  // Nothing ran after the restore: every entry is old, and later than now.
+  assert.deepEqual(entriesSince(at(10, 20, 30), 5n, 5n), []);
+});
+
+test("pause and resume act on the whole machine and refuse space drive8", async () => {
+  const { session } = await startSession();
+  for (const action of ["pause", "resume"] as const) {
+    await assert.rejects(session.handle("execution", { action, space: "drive8" }), /stops or runs the whole machine/);
+  }
   await session.close();
 });

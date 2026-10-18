@@ -57,6 +57,7 @@ For a large result, give `out` with a path in the project. `c64_memory_read`, `c
 
 - Only the first byte of an instruction gets execute. Thus `read` without `out` gives a new range at each instruction of code. For code, use `summary`, or `read` with `out`.
 - A read on a byte right after executed code, or at a return address, can be a dummy read of the 6502. The CPU reads such a byte but does not use it.
+- VICE has a known flaw: it uses only one bit of `$01` to find RAM or ROM. At `$A000-$BFFF` it gives `rom` when bit 0 is set, also when bit 1 is clear and the CPU used the RAM there. Many games set `$01` to `$35`. Then code that runs at `$A000-$BFFF` shows as ROM. `emulatorFlaw` in the result tells when this can occur. Every access at `$D000-$DFFF` shows as I/O.
 
 `c64_profile` gives the routines that used the most cycles since the session started, the last `clear` or the last `c64_window`. Use action `clear` before the part of the program that you want to measure. The profiler gives the cycles to the routine that a JSR called last. Code that the CPU enters with JMP or a branch counts for that routine. After `c64_window` or a snapshot restore, the profiler of VICE keeps the routines that ran before the restore. Then `c64_profile` can give the cycles of the program to such a routine, for example `$fd50`. Do not trust the routine addresses of `c64_profile` after a restore.
 
@@ -80,7 +81,7 @@ Write operations need a stopped CPU. Stop the CPU with `c64_execution` action `p
 
 A cartridge from `c64_autostart` stays in the C64 through every reset, as on a real C64. `c64_status` gives `cartridge: true` while the C64 has it, and `cartridge: false` when it does not. `c64_autostart` of a file that is not a cartridge removes the cartridge first. `c64_autostart` also sets both joysticks to the center first. `joysticksCentred` gives the ports that it changed.
 
-Step, next and until-return work only in space `c64`. The emulator cannot stop the disk drive CPU after one instruction. To find when the drive executes an address, use `c64_run_until` with an address target in space `drive8`, or a breakpoint in space `drive8`. The drive can execute a few more instructions before it stops. The computer completes its current instruction. The `pc` in the result is the drive address where it stopped. `space` in the result is `drive8`. A breakpoint or a watchpoint in space `drive8` that stops `advance-frames` gives the same `pc` and `space`.
+Step, next and until-return work only in space `c64`. The emulator cannot stop the disk drive CPU after one instruction. To find when the drive executes an address, use `c64_run_until` with an address target in space `drive8`, or a breakpoint in space `drive8`. The drive can execute a few more instructions before it stops. The computer completes its current instruction. The `pc` in the result is the drive address where it stopped. `space` in the result is `drive8`. A breakpoint or a watchpoint in space `drive8` that stops `advance-frames` gives the same `pc` and `space`. `c64_status` also gives them. A memory target or a memory condition tests only space `c64`.
 
 `c64_keyboard` puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard matrix directly does not see them. Many games do this. No MCP tool presses a key of the keyboard matrix. For such a program:
 

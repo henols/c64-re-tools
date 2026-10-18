@@ -33,7 +33,7 @@ test("a trace records the writes to a register with the instruction and the rast
     assert.equal(writes.hits.length, 5);
     for (const hit of writes.hits) {
       assert.equal(hit.pc, 0xc005, "the instruction that wrote, not the next one");
-      assert.equal(hit.text, "sta $d011");
+      assert.equal(hit.text, "STA $d011");
       assert.equal(hit.address, 0xd011);
       assert.ok(hit.rasterLine >= 0 && hit.rasterLine < 312 && hit.rasterCycle < 63, JSON.stringify(hit));
     }

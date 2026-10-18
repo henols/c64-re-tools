@@ -78,7 +78,7 @@ export function useKind(opcode: number): UseKind {
 }
 
 
-/** The text of the instruction in `bytes` at `pc`, for example "sta $d011" or "bne $c002". */
+/** The text of the instruction in `bytes` at `pc` as the monitor shows it, for example "STA $d011" or "BNE $c002". */
 export function instructionText(bytes: readonly number[], pc: number): string {
   const { mnemonic, mode } = OPCODES[bytes[0]!]!;
   const low = bytes[1] ?? 0;
@@ -97,7 +97,8 @@ export function instructionText(bytes: readonly number[], pc: number): string {
     izy: `(${formatC64Byte(low)}),y`,
     rel: formatC64Address((pc + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff),
   };
-  return operand[mode] === "" ? mnemonic : `${mnemonic} ${operand[mode]}`;
+  const name = mnemonic.toUpperCase();
+  return operand[mode] === "" ? name : `${name} ${operand[mode]}`;
 }
 
 /**
