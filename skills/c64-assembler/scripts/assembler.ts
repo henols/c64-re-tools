@@ -11,8 +11,8 @@ import { knowledgeNames } from "#src/knowledge/names.ts";
 import { requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
 import { assemble } from "#src/native/acme.ts";
 import { localToolContext } from "#src/native/local.ts";
-import type { AcmeParams } from "#src/native/types.ts";
-import { OPTIONS, runScript, UsageError } from "#src/script.ts";
+import type { AcmeParams, AssembledSymbol } from "#src/native/types.ts";
+import { listed as listedItems, OPTIONS, runScript, UsageError } from "#src/script.ts";
 import { compareBuild } from "./lib/compare.ts";
 
 function parseDefine(text: string): [string, number | boolean] {
@@ -23,6 +23,13 @@ function parseDefine(text: string): [string, number | boolean] {
   if (/^\$[0-9a-fA-F]+$/.test(value)) return [match[1]!, Number.parseInt(value.slice(1), 16)];
   if (/^-?\d+$/.test(value)) return [match[1]!, Number(value)];
   throw new UsageError(`--define ${match[1]} needs an integer or true/false, not ${value}`);
+}
+
+/** A symbol of the build: an address as $ and four hex digits, a constant as $ and at least four hex digits. */
+function showSymbol(symbol: AssembledSymbol) {
+  return symbol.kind === "address"
+    ? { name: symbol.name, kind: "address", address: formatC64Address(symbol.address), used: symbol.used }
+    : { name: symbol.name, kind: "constant", value: `$${symbol.value.toString(16).padStart(4, "0")}`, used: symbol.used };
 }
 
 await runScript({
@@ -43,9 +50,11 @@ await runScript({
         define: { kind: "text", value: "NAME=VALUE", multiple: true, help: "an assembler symbol: an integer ($hex allowed) or true/false" },
         "set-pc": { kind: "address", value: "<address>", help: "the start address when the source sets none, for example '$0801'" },
         compare: { kind: "flag", help: "check the program byte by byte against the program in the knowledge, each segment" },
-        space: { ...OPTIONS.space, help: "with --compare: the knowledge space of the program: c64 (the default), drive8, or bank0 to bank255" },
+        space: { kind: "space", value: "<space>", help: "with --compare: the knowledge space of the program: c64 (the default), drive8, or bank0 to bank255" },
         plain: { kind: "flag", help: "write the bytes only, without the 2-byte load address of a PRG" },
         "all-symbols": { kind: "flag", help: "list also the constants that the source does not use" },
+        "max-listed": { ...OPTIONS["max-listed"], help: "list at most n symbols (default 50). The count is always given" },
+        "out-symbols": { kind: "path", value: "<file.json>", help: "write all symbols to this project file as {\"symbols\": [...]}: the names of the rebuild for c64-testing" },
       },
       notes: "Symbol values are $ and at least four hex digits. Put the program into the knowledge with knowledge.ts image of the c64-knowledge skill before --compare.",
       run: async (call) => {
@@ -53,6 +62,7 @@ await runScript({
         const out = call.string("out")!;
         // Read the program before ACME runs, so a project without it stops at once.
         let program: ProgramImage | undefined;
+        if (call.string("space") !== undefined && !call.flag("compare")) throw new UsageError("--space works only with --compare: it names the knowledge space of the program to compare with");
         if (call.flag("compare")) {
           const db = openForRead();
           try {
@@ -82,7 +92,8 @@ await runScript({
         const compared = program === undefined ? undefined : compareBuild(attachments![0]!, program);
         // An include file of platform names gives many constants that the program does not use.
         const all = call.flag("all-symbols");
-        const listed = result.symbols!.filter((symbol) => all || symbol.kind === "address" || symbol.used);
+        const shown = result.symbols!.filter((symbol) => all || symbol.kind === "address" || symbol.used);
+        const symbolsPath = call.string("out-symbols");
         return {
           // A build that differs from its reference is a failed check.
           result: compared !== undefined && !compared.identical ? "FAIL" : "PASS",
@@ -90,12 +101,9 @@ await runScript({
           ...written,
           ...(plain ? { plain: true } : {}),
           loadRange: { start: formatC64Address(range.start), end: formatC64Address(range.end), bytes: range.bytes },
-          symbols: listed.map((symbol) =>
-            symbol.kind === "address"
-              ? { name: symbol.name, kind: "address", address: formatC64Address(symbol.address), used: symbol.used }
-              : { name: symbol.name, kind: "constant", value: `$${symbol.value.toString(16).padStart(4, "0")}`, used: symbol.used },
-          ),
-          ...(all ? {} : { unusedConstants: result.symbols!.length - listed.length }),
+          symbols: listedItems(shown, call.count("max-listed")!, showSymbol, "a larger --max-listed, or --out-symbols <file.json> for all symbols"),
+          ...(symbolsPath === undefined ? {} : { symbolsFile: writeReported(symbolsPath, `${JSON.stringify({ symbols: shown.map(showSymbol) }, null, 1)}\n`, { what: "--out-symbols" }) }),
+          ...(all ? {} : { unusedConstants: result.symbols!.length - shown.length }),
           diagnostics: result.diagnostics,
           ...(compared === undefined ? {} : { compare: compared }),
         };

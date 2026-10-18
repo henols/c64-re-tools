@@ -19,7 +19,7 @@ test("a build is identical to the program, or names its first different byte", (
   const reference = program([0xc000, [1, 2, 3, 4]]);
   assert.deepEqual(compareBuild(prg(0xc000, [1, 2, 3, 4]), reference), { identical: true, segments: [{ start: "$c000", end: "$c003", result: "identical" }] });
   const different = compareBuild(prg(0xc000, [1, 9, 3, 8]), reference);
-  assert.deepEqual(different.segments, [{ start: "$c000", end: "$c003", result: "different", differences: 2, firstDifference: { address: "$c001", built: 9, reference: 2 } }]);
+  assert.deepEqual(different.segments, [{ start: "$c000", end: "$c003", result: "different", differences: 2, firstDifference: { address: "$c001", built: "$09", reference: "$02" } }]);
   assert.equal(different.identical, false);
 });
 

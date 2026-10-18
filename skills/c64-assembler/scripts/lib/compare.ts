@@ -1,7 +1,7 @@
 // The byte check of a build: the assembled program against the program
 // in the knowledge, segment by segment.
 
-import { formatC64Address, prgRange } from "#src/c64.ts";
+import { formatC64Address, formatC64Byte, prgRange } from "#src/c64.ts";
 
 export interface SegmentCheck {
   start: string;
@@ -10,7 +10,8 @@ export interface SegmentCheck {
   /** Bytes of the segment that the build does not hold. */
   uncovered?: number;
   differences?: number;
-  firstDifference?: { address: string; built: number; reference: number };
+  /** The first address that differs, with its byte in the build and in the knowledge, each as $ and two hex digits. */
+  firstDifference?: { address: string; built: string; reference: string };
 }
 
 /** The program that the build is checked against: its segments and its bytes in them. */
@@ -34,7 +35,7 @@ export function compareBuild(prg: Uint8Array, program: Reference): { identical: 
       const referenceByte = program.byteAt(address);
       if (builtByte === referenceByte) continue;
       differences++;
-      first ??= { address: formatC64Address(address), built: builtByte, reference: referenceByte };
+      first ??= { address: formatC64Address(address), built: formatC64Byte(builtByte), reference: formatC64Byte(referenceByte) };
     }
     const uncovered = segment.end - segment.start + 1 - (to - from + 1);
     return {

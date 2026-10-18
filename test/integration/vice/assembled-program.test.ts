@@ -53,9 +53,9 @@ test("assembled source loads into VICE and reaches its known end state", { skip,
     { cwd: project, env: { ...process.env, C64RT_HOST: hostAddress }, encoding: "utf8" },
   );
   assert.equal(assembled.status, 0, assembled.stdout + assembled.stderr);
-  const build = JSON.parse(assembled.stdout) as { symbols: Array<{ name: string; address?: string; value?: string }> };
+  const build = JSON.parse(assembled.stdout) as { symbols: { listed: Array<{ name: string; address?: string; value?: string }> } };
   const valueOf = (name: string) => Number.parseInt(symbol(name).value!.slice(1), 16);
-  const symbol = (name: string) => build.symbols.find((entry) => entry.name === name)!;
+  const symbol = (name: string) => build.symbols.listed.find((entry) => entry.name === name)!;
 
   // 2. The MCP loads it from the same project and runs it to the known state.
   const { client } = await startMcp(hostAddress, { cwd: project });

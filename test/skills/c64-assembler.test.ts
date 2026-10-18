@@ -46,11 +46,24 @@ test("the script writes the program into the project and reports symbols", { ski
   assert.deepEqual((json.loadRange as { start: string }).start, "$0801");
   const program = readFileSync(join(project, "build", "counter.prg"));
   assert.equal(program.readUInt16LE(0), 0x0801);
-  const symbols = json.symbols as Array<Record<string, unknown>>;
+  const { count, listed: symbols } = json.symbols as { count: number; listed: Array<Record<string, unknown>> };
+  assert.equal(count, symbols.length);
   assert.deepEqual(symbols.find((symbol) => symbol.name === "start"), { name: "start", kind: "address", address: "$080d", used: false });
   assert.deepEqual(symbols.find((symbol) => symbol.name === "MAX"), { name: "MAX", kind: "constant", value: "$000a", used: true });
   assert.equal(symbols.find((symbol) => symbol.name === "UNUSED_CONSTANT"), undefined, "an unused constant is left out");
   assert.equal(json.unusedConstants, 1);
+});
+
+test("--max-listed limits the symbols in the result, and --out-symbols writes all of them", { skip: acmeSkip }, async () => {
+  const { status, json } = await assembleScript("build", "src", "main.a", "--include", "lib", "--out", "build/counter.prg", "--max-listed", "1", "--out-symbols", "build/counter.json");
+  assert.equal(status, 0, JSON.stringify(json));
+  const symbols = json.symbols as { count: number; listed: unknown[]; rest: string };
+  assert.equal(symbols.listed.length, 1);
+  assert.ok(symbols.count > 1);
+  assert.equal(symbols.rest, "a larger --max-listed, or --out-symbols <file.json> for all symbols");
+  const file = JSON.parse(readFileSync(join(project, "build", "counter.json"), "utf8")) as { symbols: Array<{ name: string }> };
+  assert.equal(file.symbols.length, symbols.count);
+  assert.equal((json.symbolsFile as { out: string }).out, "build/counter.json");
 });
 
 test("--all-symbols lists the unused constants, and --plain writes the bytes without the load address", { skip: acmeSkip }, async () => {
@@ -58,7 +71,7 @@ test("--all-symbols lists the unused constants, and --plain writes the bytes wit
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.plain, true);
   assert.equal(json.unusedConstants, undefined);
-  const symbols = json.symbols as Array<Record<string, unknown>>;
+  const symbols = (json.symbols as { listed: Array<Record<string, unknown>> }).listed;
   assert.deepEqual(symbols.find((symbol) => symbol.name === "UNUSED_CONSTANT"), { name: "UNUSED_CONSTANT", kind: "constant", value: "$0063", used: false });
   const plain = readFileSync(join(project, "build", "counter.bin"));
   assert.deepEqual(plain, readFileSync(join(project, "build", "counter.prg")).subarray(2));
@@ -81,6 +94,7 @@ test("bad options are refused before anything is sent", { skip: acmeSkip }, asyn
     ["build", "src", "main.a", "--out", "../escape.prg"],
     ["build", "src", "main.a", "--out", "x.prg", "--define", "X=abc"],
     ["build", "src", "main.a", "--out", "x.prg", "--set-pc", "2049"],
+    ["build", "src", "main.a", "--out", "x.prg", "--space", "drive8"],
   ]) {
     const { status, json } = await assembleScript(...args);
     assert.equal(status, 2, args.join(" "));
@@ -122,4 +136,5 @@ test("--compare checks the build against the program in the knowledge and fails 
   const [segment] = (different.json.compare as { segments: Array<{ result: string; firstDifference: { address: string } }> }).segments;
   assert.equal(segment!.result, "different");
   assert.equal(segment!.firstDifference.address, "$0809");
+  assert.match(JSON.stringify(segment!.firstDifference), /^\{"address":"\$0809","built":"\$[0-9a-f]{2}","reference":"\$[0-9a-f]{2}"\}$/);
 });

@@ -31,9 +31,11 @@ node <skill>/scripts/assembler.ts build src main.a --out build/game.prg
 | `--include lib` | An include directory, relative to the source root. Use it again for more directories. |
 | `--define DEBUG=1` | An assembler symbol: an integer, also as `$` hex, or `true` or `false`. Use it again for more symbols. |
 | `--set-pc '$0801'` | The start address when the source does not set one. |
-| `--compare` | Check the program byte by byte against the program in the knowledge, each segment. Put it in with `image` of the c64-knowledge skill. `--space drive8` or `--space bank0` compares with the program of that space. |
+| `--compare` | Check the program byte by byte against the program in the knowledge, each segment. Put it in with `image` of the c64-knowledge skill. `--space drive8` or `--space bank0` compares with the program of that space. The script refuses `--space` without `--compare`. |
 | `--plain` | Write only the bytes of the program, without the 2-byte load address of a PRG. `loadRange` still tells where the bytes go. |
 | `--all-symbols` | List all symbols. Without it, the list does not include the constants that the source does not use. `unusedConstants` gives their count. |
+| `--max-listed 200` | Show at most 200 symbols in the result. The default is 50. `symbols.count` gives the count of all symbols. |
+| `--out-symbols build/game.json` | Write all symbols to this file as `{"symbols": [...]}`. Give this file to the c64-testing skill as the symbols of the rebuild. |
 
 The script copies the full source root. Put all files that the program includes under it. Version control directories stay out.
 
@@ -64,7 +66,7 @@ The target CPU is the 6510. The output is a C64 PRG, or the bytes only with `--p
 
 1. Find the source root and the entry source. The entry source sets its own start address with `* = $0801` or similar.
 2. Run the script.
-3. If `result` is `PASS`, the PRG is at `out`. `loadRange` tells where it loads. `symbols` gives each symbol:
+3. If `result` is `PASS`, the PRG is at `out`. `loadRange` tells where it loads. `symbols` is a list with `count` and `listed`. Each item in `listed` is one symbol:
    - Kind `address` has a value in `loadRange`. It gives the `address`.
    - Kind `constant` has a value outside `loadRange`. It gives the `value` as `$` and four or more hex digits. A label in a `!pseudopc` block can be a constant, because its value is the run address, not the load address.
    - `used` is `false` when the source does not use the symbol.
@@ -92,7 +94,7 @@ A symbol from the rebuilt source can give the address of a routine in the rebuil
 - `FAIL` with `assembled: false`: the source has errors. `diagnostics` gives them.
 - `FAIL` with `assembled: true`: `--compare` found differences. The PRG is at `out`.
 
-With `--compare`, `compare` gives `identical` and `segments`: one check for each segment of the program in the knowledge. The `result` of a check is `identical`, `different` with `firstDifference`, or `not covered` when the build does not hold the segment.
+With `--compare`, `compare` gives `identical` and `segments`: one check for each segment of the program in the knowledge. The `result` of a check is `identical`, `different` with `firstDifference`, or `not covered` when the build does not hold the segment. `firstDifference` gives the `address`, and the byte of the build (`built`) and of the knowledge (`reference`), each as `$` and two hex digits.
 
 ## Failure and conflicts
 
