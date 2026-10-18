@@ -77,7 +77,18 @@ export type ImportConflict =
       current: { address: number; name: string; kind: SymbolKind; origin: Origin };
       finding: { name: string; kind: SymbolKind };
     }
-  | { category: "region"; start: number; end: number; current: { type: RegionType; origin: Origin }; finding: { type: RegionType } };
+  | { category: "region"; start: number; end: number; current: { type: RegionType; origin: Origin }; finding: { type: RegionType } }
+  | {
+      /** A data finding over code that a run executed or that the user or the LLM named: the finding is not imported. */
+      category: "code-evidence";
+      start: number;
+      end: number;
+      finding: { type: RegionType };
+      /** The first executed instruction start in the range. */
+      executed?: number;
+      /** The first code name (label or routine) of the user or the LLM in the range. */
+      symbol?: { address: number; name: string; kind: SymbolKind; origin: Origin };
+    };
 
 export interface ImportCounts {
   added: number;
@@ -252,16 +263,53 @@ const YIELDS_TO_HEURISTIC = new Set<Origin>(["dxa", "ghidra"]);
 /** Analyzers whose data gives way to a code finding over an executed instruction start. */
 const YIELDS_TO_EXECUTED_CODE = new Set<Origin>(["dxa", "ghidra"]);
 
-/** True when an address in the range is an executed instruction start. */
-function holdsExecuted(findings: NormalizedFindings, start: number, end: number): boolean {
-  if (findings.executed === undefined) return false;
-  for (let address = start; address <= end; address++) if (findings.executed(address)) return true;
-  return false;
+/** The first address in the range that is an executed instruction start, or undefined. */
+function firstExecuted(findings: NormalizedFindings, start: number, end: number): number | undefined {
+  if (findings.executed === undefined) return undefined;
+  for (let address = start; address <= end; address++) if (findings.executed(address)) return address;
+  return undefined;
 }
 
-function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
-  const { analyzer } = findings;
-  const space = findings.space ?? DEFAULT_SPACE;
+/** True when an address in the range is an executed instruction start. */
+function holdsExecuted(findings: NormalizedFindings, start: number, end: number): boolean {
+  return firstExecuted(findings, start, end) !== undefined;
+}
+
+/**
+ * The data findings of DXA or Ghidra that code evidence contradicts: an
+ * executed instruction start, or a code name (label or routine) of the user or
+ * the LLM, in the range. Evidence wins over an analyzer guess: such a finding
+ * is not imported, and the analyzer's own code there stays.
+ */
+function contradictedData(db: DatabaseSync, findings: NormalizedFindings, space: Space): Array<ImportConflict & { category: "code-evidence" }> {
+  if (!YIELDS_TO_EXECUTED_CODE.has(findings.analyzer)) return [];
+  const names = db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE space = ? AND origin IN ('user', 'llm') AND kind IN ('label', 'routine') AND address BETWEEN ? AND ? ORDER BY address LIMIT 1`);
+  const found: Array<ImportConflict & { category: "code-evidence" }> = [];
+  for (const region of findings.regions) {
+    if (isCode(region.type) || region.type === "dual-use") continue;
+    const executed = firstExecuted(findings, region.start, region.end);
+    const raw = names.get(space, region.start, region.end) as Record<string, unknown> | undefined;
+    if (executed === undefined && raw === undefined) continue;
+    const symbol = raw === undefined ? undefined : toSymbol(raw);
+    found.push({
+      category: "code-evidence",
+      start: region.start,
+      end: region.end,
+      finding: { type: region.type },
+      ...(executed === undefined ? {} : { executed }),
+      ...(symbol === undefined ? {} : { symbol: { address: symbol.address, name: symbol.name, kind: symbol.kind, origin: symbol.origin } }),
+    });
+  }
+  return found;
+}
+
+function importRegions(db: DatabaseSync, change: Change, given: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
+  const { analyzer } = given;
+  const space = given.space ?? DEFAULT_SPACE;
+  // Data findings over code evidence are conflicts, not facts.
+  const contradicted = contradictedData(db, given, space);
+  result.conflicts.push(...contradicted);
+  const findings = { ...given, regions: given.regions.filter((region) => !contradicted.some((item) => item.start === region.start && item.end === region.end)) };
   if (analyzer === "heuristic") {
     // An idiom is specific evidence about its bytes: the DXA or Ghidra region there gives way, its parts outside stay.
     for (const region of findings.regions) {
@@ -333,6 +381,14 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
       if (suppressed.length > 0) result.regions.suppressed++;
       for (const piece of subtract(region, [...protectedRows, ...suppressed])) desired.set(`${piece.start}-${piece.end}`, { ...piece, type: region.type });
     }
+    // Under a contradicted data finding, the analyzer's own regions stay: they join the findings of the same type next to them.
+    for (const row of own) {
+      for (const item of contradicted) {
+        const inside = { start: Math.max(row.start, item.start, range.start), end: Math.min(row.end, item.end, range.end) };
+        if (inside.start > inside.end) continue;
+        for (const piece of subtract(inside, [...protectedRows, ...suppressionsOverlapping(db, "region", inside.start, inside.end, space)])) keepPiece(desired, { ...piece, type: row.type });
+      }
+    }
     const retiredRanges = new Set<string>();
     for (const row of own) {
       const inside = { start: Math.max(row.start, range.start), end: Math.min(row.end, range.end) };
@@ -355,6 +411,22 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
     }
     result.regions.retired += retiredRanges.size;
   }
+}
+
+/** Puts a kept piece into the desired regions, joined with the pieces of the same type that touch or overlap it. */
+function keepPiece(desired: Map<string, { start: number; end: number; type: RegionType }>, piece: { start: number; end: number; type: RegionType }): void {
+  let joined = { ...piece };
+  for (let found = true; found; ) {
+    found = false;
+    for (const [key, other] of desired) {
+      if (other.type !== joined.type || other.end + 1 < joined.start || joined.end + 1 < other.start) continue;
+      desired.delete(key);
+      joined = { start: Math.min(joined.start, other.start), end: Math.max(joined.end, other.end), type: joined.type };
+      found = true;
+      break;
+    }
+  }
+  desired.set(`${joined.start}-${joined.end}`, joined);
 }
 
 function importReferences(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {

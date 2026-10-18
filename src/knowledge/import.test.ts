@@ -456,3 +456,40 @@ test("a code finding over an executed instruction start replaces another analyze
   assert.equal(kept.conflicts.length, 1);
   assert.deepEqual(regionList(user), [[0x2000, 0x20ff, "bytes", "user"]]);
 });
+
+test("a re-run does not replace the analyzer's own code with data where a run executed code or the LLM named code", () => {
+  const db = fresh();
+  importFindings(db, findings("dxa", 0x1380, 0x148f, { regions: [{ start: 0x1386, end: 0x1487, type: "code" }] }));
+  renameSymbol(db, { origin: "llm" }, { address: 0x143a, name: "decode_any_key_rows", kind: "label" });
+  // The second DXA run finds data at $143a-$1461 and $147e-$1487.
+  const second = findings("dxa", 0x1380, 0x148f, {
+    regions: [
+      { start: 0x1386, end: 0x1439, type: "code" },
+      { start: 0x143a, end: 0x1461, type: "bytes" },
+      { start: 0x1462, end: 0x147d, type: "code" },
+      { start: 0x147e, end: 0x1487, type: "bytes" },
+    ],
+  });
+  const result = importFindings(db, second);
+  assert.deepEqual(result.conflicts, [
+    { category: "code-evidence", start: 0x143a, end: 0x1461, finding: { type: "bytes" }, symbol: { address: 0x143a, name: "decode_any_key_rows", kind: "label", origin: "llm" } },
+  ]);
+  assert.deepEqual(regionList(db), [
+    [0x1386, 0x147d, "code", "dxa"],
+    [0x147e, 0x1487, "bytes", "dxa"],
+  ]);
+  // Executed code holds the same way, also with no name there.
+  const run = fresh();
+  importFindings(run, findings("ghidra", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x20ff, type: "code" }] }));
+  const executed = importFindings(run, findings("ghidra", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x207f, type: "code" }, { start: 0x2080, end: 0x20ff, type: "bytes" }], executed: (address) => address === 0x2090 }));
+  assert.deepEqual(executed.conflicts, [{ category: "code-evidence", start: 0x2080, end: 0x20ff, finding: { type: "bytes" }, executed: 0x2090 }]);
+  assert.deepEqual(regionList(run), [[0x2000, 0x20ff, "code", "ghidra"]]);
+  assert.equal(executed.revision, null, "nothing changed");
+  // Without evidence, the analyzer's newer data replaces its own code.
+  const plain = importFindings(run, findings("ghidra", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x207f, type: "code" }, { start: 0x2080, end: 0x20ff, type: "bytes" }] }));
+  assert.deepEqual(plain.conflicts, []);
+  assert.deepEqual(regionList(run), [
+    [0x2000, 0x207f, "code", "ghidra"],
+    [0x2080, 0x20ff, "bytes", "ghidra"],
+  ]);
+});

@@ -121,6 +121,15 @@ function withRemedy(reason: string): string {
 
 /** One conflict: what the knowledge has, and what the analyzer found, under the analyzer's name. */
 function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<string, unknown> {
+  if (conflict.category === "code-evidence") {
+    return {
+      range: { start: formatC64Address(conflict.start), end: formatC64Address(conflict.end) },
+      [analyzer]: conflict.finding,
+      ...(conflict.executed === undefined ? {} : { executed: formatC64Address(conflict.executed) }),
+      ...(conflict.symbol === undefined ? {} : { knowledge: { ...conflict.symbol, address: formatC64Address(conflict.symbol.address) } }),
+      problem: conflict.executed !== undefined ? "a run executed code here: the data finding is not imported" : "the knowledge has a code name here: the data finding is not imported",
+    };
+  }
   if (conflict.category === "symbol") {
     return {
       at: formatC64Address(conflict.address),
