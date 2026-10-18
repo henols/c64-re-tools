@@ -38,6 +38,7 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
 ```
 
 - Release by tag only: `git tag v2.0.0-rc.2 && git push origin v2.0.0-rc.2` (prerelease, npm `next`) or `v2.0.0` (release, `latest`). The tag gives the version; the repo keeps `0.0.0-development`. Never bump the version in a commit.
+- CI on push runs on ubuntu-latest only. A tag tests nothing again: it needs a passed CI run of a push to main for the tagged commit. Platforms (macOS, Windows), Dev container Feature and Live run only when started by hand (`gh workflow run <name>`); never run OS-specific tests automatically.
 
 - Unit tests sit beside source (`src/**/*.test.ts`); `test/` is for integration/e2e.
   Node runs `.ts` by type stripping, so relative imports end in `.ts` and only

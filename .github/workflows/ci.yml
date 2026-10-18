@@ -1,14 +1,19 @@
 name: CI
 
-# Tests every push and pull request. A tag on a commit of main is also a
-# release, and the tag gives the version:
+# Tests every push to main and every pull request on ubuntu-latest. The
+# tests for other systems run only when started by hand: Platforms (macOS,
+# Windows), Dev container Feature and Live.
+#
+# A tag on a commit of main is a release, and the tag gives the version:
 #   git tag v2.0.0-rc.2 && git push origin v2.0.0-rc.2   a prerelease, npm dist-tag next
 #   git tag v2.0.0      && git push origin v2.0.0        a release, npm dist-tag latest
-# Each job writes the tag's version into package.json and the plugin
-# manifests inside the runner; nothing is pushed back. npm trusts this
-# workflow file as the package's publisher (trusted publishing through
-# OIDC), so no npm token is stored. A failed job is re-run alone: the
-# publish and the GitHub Release skip what exists.
+# A release tests nothing again: it needs the passed CI run of the push to
+# main for the same commit, and waits for it if it still runs. Each job
+# writes the tag's version into package.json and the plugin manifests
+# inside the runner; nothing is pushed back. npm trusts this workflow file
+# as the package's publisher (trusted publishing through OIDC), so no npm
+# token is stored. A failed job is re-run alone: the publish and the GitHub
+# Release skip what exists.
 
 on:
   push:
@@ -22,12 +27,9 @@ permissions:
 
 jobs:
   test:
-    name: test (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    name: test (ubuntu-latest)
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -52,14 +54,10 @@ jobs:
 
   installed:
     name: installed package (ubuntu-latest)
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.tag.outputs.version }}
-      channel: ${{ steps.tag.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -67,24 +65,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      # A release tag: the package from here on has the tag's version.
-      - name: Set the version of the release tag
-        id: tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          node distribution/version.ts tag "$GITHUB_REF_NAME" | tee -a "$GITHUB_OUTPUT"
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "$GITHUB_REF_NAME is not on main. Tag a commit of main." >&2
-            exit 1
-          fi
-
       # npm publish drops a manifest field it finds invalid (bin paths that
       # start with ./) and only warns; npm pack keeps them, so the smoke test
       # below cannot see it. The dry run fails for a version that is already
       # published, so only its warning counts.
       - name: Check that npm publishes package.json unchanged
         run: |
-          npm publish --dry-run --access public --tag "${{ steps.tag.outputs.channel || 'next' }}" > "$RUNNER_TEMP/publish.log" 2>&1 || true
+          npm publish --dry-run --access public --tag next > "$RUNNER_TEMP/publish.log" 2>&1 || true
           if grep -q auto-corrected "$RUNNER_TEMP/publish.log"; then cat "$RUNNER_TEMP/publish.log"; exit 1; fi
 
       # The install route: the packed package through npx, as users run
@@ -101,16 +88,59 @@ jobs:
           test -f .claude/skills/c64-memory-map/scripts/memory-map.ts
           test -f .claude/skills/c64-memory-map/package.json
           test -z "$(find . -type l)"
-          grep -qE 'c64-re-tools@${{ steps.tag.outputs.channel || '(latest|next)' }}"' .mcp.json
+          grep -qE 'c64-re-tools@(latest|next)"' .mcp.json
           node .claude/skills/c64-memory-map/scripts/memory-map.ts at '$d020' | grep -q EXTCOL
           # No host and no native tools here: status reports them and exits 1.
           code=0
           npx -y "$package" c64-re-tools status || code=$?
           test "$code" -eq 1
 
+  # A release tag: the commit must be on main and its CI run must have passed.
+  tested:
+    name: tested on main
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # the CI run of the commit
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Set the version of the release tag
+        id: tag
+        run: |
+          node distribution/version.ts tag "$GITHUB_REF_NAME" | tee -a "$GITHUB_OUTPUT"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "$GITHUB_REF_NAME is not on main. Tag a commit of main." >&2
+            exit 1
+          fi
+
+      - name: Find the passed CI run of the commit on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          run="$(gh run list --workflow ci.yml --branch main --event push --commit "$GITHUB_SHA" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          if [ -z "$run" ]; then
+            echo "CI did not run on main for $GITHUB_SHA. Tag the commit that a push to main tested." >&2
+            exit 1
+          fi
+          if ! gh run watch "$run" --exit-status --interval 30 > /dev/null; then
+            echo "CI run $run on main for $GITHUB_SHA did not pass. Fix main, then tag the new commit." >&2
+            exit 1
+          fi
+          echo "CI run $run on main for $GITHUB_SHA passed."
+
   publish:
-    needs: [test, installed]
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [tested]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -132,20 +162,15 @@ jobs:
       - name: Publish
         run: |
           node distribution/version.ts tag "$GITHUB_REF_NAME"
-          version="${{ needs.installed.outputs.version }}"
+          version="${{ needs.tested.outputs.version }}"
           if [ "$(npm view "@henols/c64-re-tools@$version" version 2>/dev/null)" = "$version" ]; then
             echo "@henols/c64-re-tools@$version is on npm already."
           else
-            npm publish --provenance --access public --tag "${{ needs.installed.outputs.channel }}"
+            npm publish --provenance --access public --tag "${{ needs.tested.outputs.channel }}"
           fi
 
-  feature:
-    if: startsWith(github.ref, 'refs/tags/v')
-    uses: ./.github/workflows/devcontainer.yml
-
   github-release:
-    needs: [installed, publish, feature]
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [tested, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write # the GitHub Release
@@ -158,7 +183,7 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             echo "The release $GITHUB_REF_NAME exists already."
           else
-            prerelease=$([ "${{ needs.installed.outputs.channel }}" = next ] && echo --prerelease || true)
+            prerelease=$([ "${{ needs.tested.outputs.channel }}" = next ] && echo --prerelease || true)
             gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME" $prerelease
           fi
 

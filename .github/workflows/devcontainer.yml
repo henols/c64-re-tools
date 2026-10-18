@@ -3,14 +3,10 @@ name: Dev container Feature
 # Builds the c64-re-tools dev container Feature on the base images of
 # devcontainer/test/c64-re-tools/scenarios.json and checks that every tool
 # runs and that the toolkit is in the project. arm64 builds Ghidra's natives.
-# Runs when the Feature changes, by hand, and before a release (ci.yml).
+# Runs only when started by hand.
 
 on:
-  push:
-    branches: [main]
-    paths: ["devcontainer/**", ".github/workflows/devcontainer.yml"]
   workflow_dispatch:
-  workflow_call:
 
 permissions:
   contents: read
