@@ -164,8 +164,6 @@ Tests that need real tools are skipped unless you turn them on:
 C64RT_LIVE_VICE=/usr/bin/x64sc C64RT_GHIDRA=/opt/ghidra pnpm test
 ```
 
-To release, see [docs/releasing.md](docs/releasing.md).
-
 ## License
 
 MIT. See [LICENSE](LICENSE).
