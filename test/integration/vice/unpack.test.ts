@@ -40,6 +40,9 @@ after(async () => {
   rmSync(project, { recursive: true, force: true });
 });
 
+/** The written blocks from $0400 on: the KERNAL writes variables in pages 0-3 while a stage runs, and wrote lists each block. */
+const fromScreen = (wrote: Array<{ start: string; end: string }>) => wrote.filter((block) => Number.parseInt(block.start.slice(1), 16) >= 0x0400);
+
 async function unpack(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
   if (server === undefined) {
     const supervisor = new ProcessSupervisor();
@@ -140,8 +143,21 @@ test("stages finds each stage of a staged release and where the next one starts"
     ],
     JSON.stringify(found),
   );
-  assert.deepEqual(found[0]!.wrote, [{ start: "$c000", end: "$c07f" }], "stage 0 wrote stage 1");
-  assert.deepEqual(found[1]!.wrote, [{ start: "$4000", end: "$407f" }], "stage 1 wrote the program");
+  assert.deepEqual(fromScreen(found[0]!.wrote), [{ start: "$c000", end: "$c07f" }], "stage 0 wrote stage 1");
+  assert.deepEqual(fromScreen(found[1]!.wrote), [{ start: "$4000", end: "$407f" }], "stage 1 wrote the program");
+  assert.ok(found[1]!.wrote.some((block) => block.start === "$00c6"), `wrote keeps a small block: the length of the keyboard queue. ${JSON.stringify(found[1]!.wrote)}`);
+});
+
+test("--min-stage decides only where a stage starts: wrote and the segments keep every written block", { skip: liveSkip, timeout: 300_000 }, async () => {
+  // 129 bytes and more: the 128-byte blocks of this release start no stage, so it is one stage.
+  const staged = await unpack("stages", "staged.prg", "--steps", "press-key.json", "--frames", "400", "--min-stage", "129");
+  assert.equal(staged.status, 0, JSON.stringify(staged.json));
+  const found = staged.json.stages as Array<{ entry: string; wrote: Array<{ start: string; end: string }> }>;
+  assert.deepEqual(found.map((stage) => stage.entry), ["$080d"], JSON.stringify(found));
+  assert.deepEqual(fromScreen(found[0]!.wrote), [{ start: "$4000", end: "$407f" }, { start: "$4100", end: "$4100" }, { start: "$c000", end: "$c07f" }], "the program counts frames in $4100: a block of one byte");
+  const captured = await unpack("capture", "staged.prg", "--until", "$4000", "--out", "unpacked/one-stage", "--steps", "press-key.json", "--timeout-frames", "400", "--min-stage", "129");
+  assert.equal(captured.status, 0, JSON.stringify(captured.json));
+  assert.deepEqual(captured.json.segments, [{ start: "$4000", end: "$407f" }, { start: "$c000", end: "$c07f" }], "pages 0-3 are in the entry state, not in a segment");
 });
 
 test("a capture at the last stage writes the image, its segments and the entry state", { skip: liveSkip, timeout: 300_000 }, async () => {
@@ -220,5 +236,5 @@ test("a routine that the program writes and calls, and that returns, starts no s
   assert.equal(status, 0, JSON.stringify(json));
   const found = json.stages as Array<{ entry: string; next?: string; wrote: Array<{ start: string; end: string }> }>;
   assert.deepEqual(found.map((stage) => [stage.entry, stage.next]), [["$080d", undefined]], JSON.stringify(found));
-  assert.deepEqual(found[0]!.wrote, [{ start: "$9e00", end: "$9e7f" }]);
+  assert.deepEqual(fromScreen(found[0]!.wrote), [{ start: "$4100", end: "$4101" }, { start: "$9e00", end: "$9e7f" }], "the two counters of the program are small blocks");
 });

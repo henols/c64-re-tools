@@ -123,7 +123,7 @@ await runScript({
       name: "read",
       summary: "Writes the bytes of one file into the project. It also reads a .t64 tape file.",
       subjects: [{ ...IMAGE, help: "a disk image or a .t64 tape file, relative to the project folder" }, NAME],
-      options: { out: { ...OPTIONS.out, value: "<file>", help: "the file to write, relative to the project folder", required: true } },
+      options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "the file to write, relative to the project folder", required: true } },
       run: async (call) => {
         const [image, name] = [call.subject(0), call.subject(1)];
         const out = call.string("out")!;
@@ -145,7 +145,7 @@ await runScript({
       name: "crt",
       summary: "Writes each CHIP packet of a cartridge as a PRG, and crt.json with the header and the packets.",
       subjects: [{ name: "<file.crt>", help: "a .crt cartridge file, relative to the project folder" }],
-      options: { out: { ...OPTIONS.out, value: "<dir>", help: "the folder for the files, relative to the project folder", required: true } },
+      options: { out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "the folder for the files, relative to the project folder", required: true } },
       run: (call) => {
         const image = call.subject(0);
         kindFor("crt", image, ["crt"]);

@@ -297,7 +297,7 @@ await runScript({
       summary: "Writes the reference pages: a page for each module, and pages for the names, the variables, the tables, the memory map and the graphics.",
       subjects: [{ name: "<source-dir>", help: SOURCE.help }],
       options: {
-        out: { ...OPTIONS.out, value: "<dir>", help: "the folder for the reference pages, relative to the project folder, for example docs/reference. generate writes only there and refuses a page in it that it did not write", required: true },
+        out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "the folder for the reference pages, relative to the project folder, for example docs/reference. generate writes only there and refuses a page in it that it did not write", required: true },
         "max-listed": OPTIONS["max-listed"],
       },
       notes: "When the knowledge has the program of the source (knowledge.ts image of the c64-knowledge skill), the reference decodes the tables and shows the graphics.",

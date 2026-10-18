@@ -13,7 +13,7 @@ import { parseArgs } from "node:util";
 
 import { c64AddressOf, formatC64Address, SPACE_PATTERN, SYMBOL_NAME, type AddressRange } from "./c64.ts";
 import { isRefusal, Refusal, type ErrorCode } from "./errors.ts";
-import { projectRoot, resolveProjectPath, useProject } from "./project.ts";
+import { checkOutputPath, projectRoot, resolveProjectPath, useProject, type OutputKind } from "./project.ts";
 import { shownMessage } from "./protocol/messages.ts";
 import { elapsedMs, startTrace, trace, type TraceFields } from "./trace.ts";
 
@@ -59,6 +59,12 @@ export interface OptionSpec {
   max?: number;
   /** The value when the option is not given. */
   default?: number | string;
+  /**
+   * path only: the command writes there, a file or files in a folder. The
+   * path is checked before the command runs (checkOutputPath). Every option
+   * --out and --out-<name> has it.
+   */
+  output?: OutputKind;
 }
 
 /** The options that have one meaning in every script. A command can change the help, the value and whether it is required, never the kind. */
@@ -339,6 +345,8 @@ function commandOptions(command: CommandSpec): Record<string, OptionSpec> {
     const shared = (OPTIONS as Record<string, OptionSpec>)[name];
     if (shared !== undefined && shared.kind !== spec.kind) throw fault(`--${name} of ${command.name} is a ${spec.kind}, but OPTIONS has it as a ${shared.kind}`);
     if (name === "help" || name === "project") throw fault(`--${name} of ${command.name}: the contract owns this option`);
+    if (spec.kind === "path" && (name === "out" || name.startsWith("out-")) && spec.output === undefined) throw fault(`--${name} of ${command.name} has no output kind (file or folder)`);
+    if (spec.output !== undefined && spec.kind !== "path") throw fault(`--${name} of ${command.name} has an output kind, but it is a ${spec.kind}, not a path`);
   }
   return options;
 }
@@ -420,6 +428,16 @@ function refuseSplitRange(command: CommandSpec, options: Readonly<Record<string,
   }
 }
 
+/**
+ * Refuses an output path before the command does any work: a path that
+ * leaves the project, a path in the knowledge, a folder where a file must be,
+ * a file where a folder must be, or a folder that cannot be written.
+ */
+function checkOutput(text: string, what: string, kind: OutputKind): void {
+  checkPath(text, what);
+  checkOutputPath(text, kind, { root: projectRoot(), what });
+}
+
 /** Parses the command line of one command. Refuses a wrong count of subjects, an unknown option, a missing required option or a value of the wrong form. */
 export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readonly string[]): Call {
   const options = commandOptions(command);
@@ -459,7 +477,10 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
       if (spec.kind === "range" && rangeParts(text) === undefined) throw new UsageError(`--${name} must be <start>-<end>, each ${ADDRESS_FORM}, for example '$c000-$cfff', not ${JSON.stringify(text)}`);
       if (spec.kind === "space" && !SPACE_PATTERN.test(text)) throw new UsageError(`--${name} must be c64, drive8, or bank0 to bank255, not ${JSON.stringify(text)}`);
       if (spec.kind === "choice" && !(spec.choices ?? []).includes(text)) throw new UsageError(`--${name} must be one of ${(spec.choices ?? []).join(", ")}, not ${JSON.stringify(text)}`);
-      if (spec.kind === "path") checkPath(text, `--${name}`);
+      if (spec.kind === "path") {
+        if (spec.output === undefined) checkPath(text, `--${name}`);
+        else checkOutput(text, `--${name}`, spec.output);
+      }
     }
   }
   const call = new Call(script.name, command.name, subjects, options, values, script.names);

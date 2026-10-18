@@ -9,7 +9,6 @@
 import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, READ, WRITE } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
-import { resetToReady } from "#src/host-client/entry-state.ts";
 import { readActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
@@ -20,7 +19,7 @@ import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec, ty
 import { basicStart, inspect, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges } from "./lib/stages.ts";
-import { entryState, IO_AREAS, json, machineState, readRam, vectorsOf } from "./lib/machine.ts";
+import { entryStateFile, machineState, readRam, readyState, vectorsOf } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
@@ -165,6 +164,13 @@ async function firstPcAfterBasic(client: ViceSessionClient, from: number, to: nu
   return from > to ? undefined : firstPcIn(client, [{ start: from, end: to }]);
 }
 
+/**
+ * What a stage wrote: every written block, also a small one. --min-stage
+ * decides only where a stage starts; the wrote list and the capture segments
+ * keep each byte that a stage wrote.
+ */
+const stageWrote = (map: Uint8Array) => writtenBlocks(map, 1);
+
 /** Frames between two looks at the memory map while stages are followed. */
 const STAGE_CHUNK_FRAMES = 25;
 const MAX_STAGES = 16;
@@ -238,7 +244,7 @@ async function follow(
   let stage = { map: new Uint8Array(0x10000), own: new Set<number>(), called: [] as AddressRange[] };
   const startStage = async (next: number, last: Uint8Array) => {
     mergeMaps(stage.map, last);
-    found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(stage.map, options.minStage), next });
+    found.push({ entry, firstFrame, frames: total - firstFrame, wrote: stageWrote(stage.map), next });
     entry = next;
     firstFrame = total;
     stage = { map: new Uint8Array(0x10000), own: new Set<number>(), called: [] };
@@ -428,7 +434,7 @@ async function follow(
   else reached = await trackTo(options.until, left);
   await client.snapshot({ action: "remove", name: STAGE_SNAPSHOT }).catch(() => undefined);
   mergeMaps(stage.map, await readCoverage(client));
-  found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(stage.map, options.minStage) });
+  found.push({ entry, firstFrame, frames: total - firstFrame, wrote: stageWrote(stage.map) });
   return { stages: found, frames: total, reached, ...(halted === undefined ? {} : { halted }) };
 }
 
@@ -529,14 +535,8 @@ async function capture(
       ),
     );
     // A clean machine at the READY prompt shows what the loader and the stages changed.
-    await resetToReady(client);
-    const clean = await machineState(client);
-    const differs: Array<{ address: string; entry: number; reset: number }> = [];
-    const compare = (base: number, entry: Buffer, reset: Buffer) => entry.forEach((value, offset) => value !== reset[offset] && differs.push({ address: formatC64Address(base + offset), entry: value, reset: reset[offset]! }));
-    compare(0x0000, state.port, clean.port);
-    compare(0x0002, state.pages.subarray(2), clean.pages.subarray(2));
-    for (const [name, [address]] of Object.entries(IO_AREAS)) compare(address, state.io[name as keyof typeof IO_AREAS], clean.io[name as keyof typeof IO_AREAS]);
-    write("entry_state.json", json(entryState(registers, state, vectors, differs)));
+    const entry = entryStateFile(registers, state, vectors, await readyState(client));
+    write("entry_state.json", entry.bytes);
     return {
       output: {
         captured: true,
@@ -546,7 +546,7 @@ async function capture(
         segments: segments.map(showRange),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
         stages: followed.stages.length,
-        differsFromReset: differs.length,
+        differsFromReset: entry.differsFromReset,
       },
       failed: false,
     };
@@ -569,7 +569,7 @@ const entryOf = (call: Call) => {
 };
 const stepsOf = (call: Call) => {
   const path = call.string("steps");
-  return path === undefined ? [] : readActionSteps(path, "--steps");
+  return path === undefined ? [] : readActionSteps(path, "--steps", knowledgeAt());
 };
 
 const COMMANDS: CommandSpec[] = [
@@ -595,7 +595,8 @@ const COMMANDS: CommandSpec[] = [
     run: async (call) => {
       const steps = stepsOf(call);
       // A runUntil step to a raster line or a memory value cannot be tracked in chunks of frames; capture takes it.
-      if (steps.some((step) => "runUntil" in step && !trackedRunUntil(step))) throw new UsageError("stages takes a runUntil step only with an address target without a condition. Use frames steps, or capture");
+      const untracked = steps.findIndex((step) => "runUntil" in step && !trackedRunUntil(step));
+      if (untracked >= 0) throw new UsageError(`--steps ${call.string("steps")!}: step ${untracked + 1}: stages takes a runUntil step only with an address target without a condition. Use frames steps, or capture`);
       return outcome(await stages(call.subject(0), { frames: call.count("frames")!, steps, minStage: call.count("min-stage")!, ...entryOf(call) }));
     },
   },
@@ -605,7 +606,7 @@ const COMMANDS: CommandSpec[] = [
     subjects: [PROGRAM],
     options: {
       until: { kind: "address", value: "<address>", required: true, help: "the unpacked entry point" },
-      out: { ...OPTIONS.out, value: "<dir>", required: true, help: "the folder for the capture, relative to the project folder" },
+      out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the capture, relative to the project folder" },
       range: { ...OPTIONS.range, help: "one segment in place of the found ones" },
       exclude: { kind: "range", value: "<start>-<end>", multiple: true, help: "a range to leave out of the segments, for example bytes that a crack left and the program never reads" },
       "timeout-frames": { ...OPTIONS["timeout-frames"], max: 30_000, default: 3000, help: "stop the wait for --until after n frames (default 3000)" },
@@ -632,7 +633,7 @@ const COMMANDS: CommandSpec[] = [
     subjects: [{ name: "<program>", help: "a PRG, or a disk, tape or cartridge image, relative to the project folder" }],
     options: {
       steps: { ...STEPS, required: true, help: "action steps and capture steps (JSON)" },
-      out: { ...OPTIONS.out, value: "<dir>", required: true, help: "the folder for the captures, relative to the project folder" },
+      out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the captures, relative to the project folder" },
       drive: { kind: "flag", help: "also write the 2 KiB drive RAM as drive8.prg, for knowledge space drive8" },
       "min-block": { kind: "count", value: "<bytes>", min: 1, max: 0x10000, default: 64, help: "write a changed block of at least this many bytes (default 64)" },
     },

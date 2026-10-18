@@ -2,13 +2,15 @@
 // and the blocks that a capture writes.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
 import { changedBlocks, readLoadSteps } from "../../skills/c64-unpacker/scripts/lib/loads.ts";
+import { withWrite } from "../../src/knowledge/database.ts";
+import { renameSymbol } from "../../src/knowledge/write.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-loads-"));
 const home = process.cwd();
@@ -28,6 +30,10 @@ test("a steps file of loads has action steps and capture steps with new names", 
   assert.throws(steps([{ capture: "a/b" }]), /capture needs a name/);
   assert.throws(steps([{ capture: "a", frames: 1 }]), /only capture/);
   assert.throws(steps([{ runUntil: { target: { kind: "address", address: "12-3" }, timeoutFrames: 1 } }, { capture: "a" }]), /runUntil\.target\.address must be \$ and 1 to 4 hex digits/);
+  // A name must be in the knowledge: an unknown name stops the call before the emulator starts, with the file and the step.
+  assert.throws(steps([{ capture: "a" }, { runUntil: { target: { kind: "address", address: "main" }, timeoutFrames: 1 } }]), { code: "invalid-input", message: /^--steps steps\.json: step 2: main is not a name in the knowledge\. Give a \$ address/ });
+  mkdirSync(join(project, ".c64-re-tools"), { recursive: true });
+  withWrite((db) => renameSymbol(db, { origin: "user" }, { address: 0xc000, name: "main" }), project);
   assert.equal(steps([{ runUntil: { target: { kind: "address", address: "main" }, timeoutFrames: 1 } }, { capture: "a" }])().length, 2, "a name is an address of the knowledge");
   assert.throws(steps([{ press: "A" }, { capture: "a" }]), /step 1: press pushes keys of the keyboard matrix, and only the record and replay commands of c64-testing have them/);
 });

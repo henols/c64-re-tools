@@ -26,7 +26,7 @@ node <skill>/scripts/unpacker.ts capture original/game.prg --until '$c000' --out
 node <skill>/scripts/unpacker.ts loads original/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts --drive
 ```
 
-`inspect` examines the file locally. `trace`, `stages`, `capture` and `loads` start their own emulator through the host runtime and start the program. `trace` runs the program and finds the memory that the program wrote and then executed. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). `capture` stops the program when the CPU gets to the `--until` address. In `stages` and `capture`, a `frames` step and a `runUntil` step to an address without a condition count as run time. `stages` refuses a different `runUntil` step.
+`inspect` examines the file locally. `trace`, `stages`, `capture` and `loads` start their own emulator through the host runtime and start the program. `trace` runs the program and finds the memory that the program wrote and then executed. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). `wrote` lists each block that the stage wrote, also a small block. `capture` stops the program when the CPU gets to the `--until` address. In `stages` and `capture`, a `frames` step and a `runUntil` step to an address without a condition count as run time. `stages` refuses a different `runUntil` step.
 
 | Option | Meaning |
 |---|---|
@@ -41,11 +41,11 @@ node <skill>/scripts/unpacker.ts loads original/game.d64 --steps .c64-re-tools/l
 | `--max-listed 50` | `trace` only: the most ranges that `writtenThenExecuted` lists (default 50). |
 | `--drive` | `loads` only: each capture also writes the 2 KiB RAM of the 1541 drive as `drive8.prg`. |
 | `--min-block 64` | `loads` only: the smallest block of changed memory that becomes a segment (default 64). The result counts smaller changes as `smallChanges`. |
-| `--min-stage 64` | `stages` and `capture`: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). |
+| `--min-stage 64` | `stages` and `capture`: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). It does not change `wrote` or the segments. |
 
 The capture reads RAM, also the RAM under the ROMs and the I/O area. The script refuses an option that the command does not use. It refuses a wrong `--range` or `--exclude` before the emulator starts.
 
-A steps file is a JSON list of steps. Each step has the input of the MCP tool of the same action. An address in a step can be a name. For example, wait 50 frames and type a space:
+A steps file is a JSON list of steps. Each step has the input of the MCP tool of the same action. An address in a step can be a name. The script refuses an unknown name before the emulator starts. The message gives the file and the step. For example, wait 50 frames and type a space:
 
 ```json
 [{ "frames": 50 }, { "type": { "mode": "text", "text": " " } }]
@@ -69,6 +69,7 @@ The scripts refuse a step in the form of version 2.0, for example `{ "runUntil":
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The script examines each `--out` path before it starts work. It refuses a path in `.c64-re-tools/knowledge/` and the index of the knowledge, because only c64-knowledge writes them. It refuses a folder where the command writes a file, and a file where the command writes a folder.
 - The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
 - An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
 - The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
@@ -107,7 +108,7 @@ The scripts refuse a step in the form of version 2.0, for example `{ "runUntil":
    - A program can be relocated and not packed. Then a short copier moves the code and jumps to it. The moved code is the last stage. Make sure that the `entry` of the last stage is not code that the program writes later. An example is a routine that the program makes at run time. Disassemble the entry to make sure.
 4. Run `capture` with that address and a directory in `--out`. Give the same `--steps` as before. The directory gets:
    - `image.bin`: all 64 KiB of RAM at the entry.
-   - `image.json`: the entry, the segments, the vectors and the stages. A segment is a block that a stage wrote. A block is not a segment when it holds the entry of a later stage before the program, and no stage wrote over that entry. The block with the capture entry is always a segment. Segments do not overlap. `writtenBy` tells the last stage that wrote into the segment.
+   - `image.json`: the entry, the segments, the vectors and the stages. A segment is a block that a stage wrote, also a small block. A block is not a segment when it holds the entry of a later stage before the program, and no stage wrote over that entry. A block that a stage before the program wrote in such a block is also not a segment, for example a variable of a loader. A block that is fully in pages 0 to 3 is not a segment, because `entry_state.json` holds these pages. The block with the capture entry is always a segment. Segments do not overlap. `writtenBy` tells the last stage that wrote into the segment.
    - One PRG for each segment.
    - `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, and the vectors. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
 5. Make sure that the result is the application: the code at the entry must not be the unpacker again. A segment can be data that a loader left, for example intro graphics. Keep it until other evidence shows that the program does not use it. Then capture again with `--exclude` for that range. Thus the source and the loader do not include the range.
@@ -150,7 +151,9 @@ The packing evidence, the stages, or the unpacked program with its image, segmen
 
 `trace`, `stages`, `capture` and `loads` give `result: "PASS"` or `result: "FAIL"`. A FAIL has `reason`. `capture` gives the written files in `files`, each as `{out, bytes, sha256}`.
 
-For `loads`: `captures`, with the name, the PC, the segments, the files and the drive file of each capture. `keyWait: true` tells that the CPU was in the KERNAL wait for a key.
+`capture` gives `differsFromReset`: the count of bytes that are not as a clean C64 has them at READY.
+
+For `loads`: `captures`, with the name, the PC, the segments, `differsFromReset`, the files and the drive file of each capture. Each `entry_state.json` of `loads` has `differsFromReset` as the one of `capture` has. `keyWait: true` tells that the CPU was in the KERNAL wait for a key.
 
 ## Failure and conflicts
 

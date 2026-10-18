@@ -145,11 +145,11 @@ export function joystickMask(direction: Extract<ActionStep, { joystick: unknown 
   return direction.split("-").reduce((mask, part) => mask | (bits[part] ?? 0), fire ? 0x10 : 0);
 }
 
-/** A state item of the command line: a name or a $ address, with :size for more than one byte. */
-export function parseStateItem(text: string): StateItem {
+/** A state item of the command line: a name or a $ address, with :size for more than one byte. `option` names the option of the item in a refusal. */
+export function parseStateItem(text: string, option = "--state"): StateItem {
   const match = /^([^:]+)(?::(\d+))?$/.exec(text);
   const size = Number(match?.[2] ?? 1);
-  if (match === null || !isInteger(size, 1, MAX_STATE_BYTES)) throw new Refusal("invalid-input", `--state ${text}: give a name or a $ address, with :size from 1 to ${MAX_STATE_BYTES}`);
+  if (match === null || !isInteger(size, 1, MAX_STATE_BYTES)) throw new Refusal("invalid-input", `${option} ${text}: give a name or a $ address, with :size from 1 to ${MAX_STATE_BYTES}`);
   return { address: match[1]!, size };
 }
 

@@ -123,14 +123,14 @@ const COMMANDS: CommandSpec[] = [
     name: "test",
     summary: "Runs a scenario on the original and then on the rebuild in one emulator. result is PASS, FAIL with the differences, or INCONCLUSIVE with the reason.",
     subjects: [{ name: "<scenario.json>", help: "a scenario file, relative to the project folder. See references/scenario-format.md" }],
-    options: { out: { ...OPTIONS.out, value: "<dir>", help: "with a FAIL, write both screens, the difference image and memory.json with each differing byte into this folder" } },
+    options: { out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write both screens, the difference image and memory.json with each differing byte into this folder" } },
     run: test,
   },
   {
     name: "run",
     summary: "Runs the steps of a run file in its own emulator and writes what they ask for into --out: screens, coverage maps, snapshot files, traces, and results.json with the observations. result is FAIL when a step did not run.",
     subjects: [{ name: "<run.json>", help: "a run file, relative to the project folder. See references/scenario-format.md, section Runs" }],
-    options: { out: { ...OPTIONS.out, value: "<dir>", required: true, help: "the folder for the files of the steps and results.json" } },
+    options: { out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the files of the steps and results.json" } },
     run: async (call) => {
       const { output, failed } = await runFile(call.subject(0), call.string("out")!);
       return { result: failed ? "FAIL" : "PASS", ...output };
@@ -141,7 +141,7 @@ const COMMANDS: CommandSpec[] = [
     summary: "Plays the steps of a record file on the original in the replay core (c64run), and writes the session as a recording folder: recording.json, reads.txt and coverage.bin. result is FAIL when the session did not complete.",
     subjects: [{ name: "<record.json>", help: "a record file, relative to the project folder. See references/recording-format.md" }],
     options: {
-      out: { ...OPTIONS.out, value: "<dir>", required: true, help: "the recording folder, for example tests/recordings/<name>" },
+      out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the recording folder, for example tests/recordings/<name>" },
       play: { kind: "flag", help: "a person plays after the steps: the script prints the address of a page on stderr. The page shows the start screen frozen until Start (Enter). End (F12) saves the recording, Cancel (F11) ends without one" },
       joystick: { kind: "count", value: "<1|2>", min: 1, max: 2, help: "with --play: the joystick port that the program reads, at the start (default 2). F9 on the page changes it" },
       "http-port": { kind: "count", value: "<n>", min: 0, max: 65535, help: `with --play: the port of the page (default ${DEFAULT_HTTP_PORT})` },
@@ -158,7 +158,7 @@ const COMMANDS: CommandSpec[] = [
       pin: { kind: "text", value: "<item>", multiple: true, help: `random state in RAM, in the form of --state: at each checkpoint the rebuild gets the original's values there` },
       rebuild: { kind: "path", value: "<prg>", help: "the rebuild to compare with the original" },
       symbols: { ...OPTIONS.symbols, help: "the names of the rebuild: the c64-assembler output (default: the symbols of the recording)" },
-      out: { ...OPTIONS.out, value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder" },
+      out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder" },
     },
     notes: "A recording without names takes the names of the knowledge for the original. A $ address is an address of the original: on the rebuild it moves with the name before it.",
     run: (call) => {
@@ -178,7 +178,7 @@ const COMMANDS: CommandSpec[] = [
       "max-listed": OPTIONS["max-listed"],
       ntsc: { kind: "flag", help: "the snapshots are of an NTSC machine (default PAL)" },
       address: { kind: "address", value: "<address>", help: "the address of the first byte of a memory file that is shorter than 64 KiB" },
-      out: { ...OPTIONS.out, value: "<file>", help: "also write all ranges to this file" },
+      out: { ...OPTIONS.out, output: "file", value: "<file>", help: "also write all ranges to this file" },
     },
     run: (call) => {
       const [address, out] = [call.address("address"), call.string("out")];

@@ -578,7 +578,7 @@ const READ_COMMANDS: CommandSpec[] = [
     const changes = revision(db, call.subject(0));
     return { revision: changes.revision, added: list(call, changes.added, historyEntry, MORE), closed: list(call, changes.closed, historyEntry, MORE) };
   }),
-  readCommand({ name: "export", summary: "All current knowledge to a project file as JSON.", options: { ...FILTER, out: { ...OPTIONS.out, value: "<file>", help: "the JSON file, relative to the project folder", required: true } } }, (db, call) => {
+  readCommand({ name: "export", summary: "All current knowledge to a project file as JSON.", options: { ...FILTER, out: { ...OPTIONS.out, output: "file", value: "<file>", help: "the JSON file, relative to the project folder", required: true } } }, (db, call) => {
     const range = rangeOf(call);
     const origins = originsOf(call);
     const space = call.space;
@@ -605,7 +605,7 @@ const READ_COMMANDS: CommandSpec[] = [
       name: "listing",
       summary: "The program as ACME lines with names, operand expressions, comments, the access of each line in the coverage (x executed, r read, w written) and the references in and out.",
       subjects: [RANGE],
-      options: { out: { ...OPTIONS.out, value: "<file>", help: "write the listing as text to this file in place of the lines in the result" }, ...LIST },
+      options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the listing as text to this file in place of the lines in the result" }, ...LIST },
     },
     (db, call) => {
       const { start, end } = call.parseRange(call.subject(0), "<range>");
@@ -907,7 +907,7 @@ const JOIN: CommandSpec = {
   name: "join",
   summary: "Joins the batches of agents that worked in parallel into one batch for apply. It writes no knowledge.",
   subjects: [{ name: "<batch>", help: 'a batch: a list of writes, or {"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}', list: true }],
-  options: { ...SPACE, out: { ...OPTIONS.out, value: "<file>", help: "the joined batch, relative to the project folder", required: true } },
+  options: { ...SPACE, out: { ...OPTIONS.out, output: "file", value: "<file>", help: "the joined batch, relative to the project folder", required: true } },
   notes: "At an address in the owner range of a batch, its name, comment, operand and module win, and its regions come last. One name or one module file at two addresses writes nothing.",
   run: (call) => {
     if (call.subjects.length < 2) throw new UsageError("join needs two or more batch files");

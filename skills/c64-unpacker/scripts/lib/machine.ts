@@ -3,6 +3,7 @@
 // capture and loads commands of the unpacker share it.
 
 import { formatC64Address } from "#src/c64.ts";
+import { resetToReady } from "#src/host-client/entry-state.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
 
 type Registers = Awaited<ReturnType<ViceSessionClient["registersGet"]>>;
@@ -61,8 +62,34 @@ export function vectorsOf(state: MachineState, memory: Buffer) {
   };
 }
 
-/** The content of entry_state.json; `differsFromReset` only when the caller compared with a clean reset. */
-export function entryState(registers: Registers, state: MachineState, vectors: ReturnType<typeof vectorsOf>, differsFromReset?: Array<{ address: string; entry: number; reset: number }>) {
+/** The state of a clean machine at the READY prompt after a hard reset: what differsFromReset compares with. It resets the machine. */
+export async function readyState(client: ViceSessionClient): Promise<MachineState> {
+  await resetToReady(client);
+  return machineState(client);
+}
+
+/** The bytes that differ from a clean machine: the CPU port, pages 0-3 from $0002, and the I/O areas. */
+export function differsFrom(state: MachineState, clean: MachineState): Array<{ address: string; entry: number; reset: number }> {
+  const differs: Array<{ address: string; entry: number; reset: number }> = [];
+  const compare = (base: number, entry: Buffer, reset: Buffer) => entry.forEach((value, offset) => value !== reset[offset] && differs.push({ address: formatC64Address(base + offset), entry: value, reset: reset[offset]! }));
+  compare(0x0000, state.port, clean.port);
+  compare(0x0002, state.pages.subarray(2), clean.pages.subarray(2));
+  for (const [name, [address]] of Object.entries(IO_AREAS)) compare(address, state.io[name as keyof typeof IO_AREAS], clean.io[name as keyof typeof IO_AREAS]);
+  return differs;
+}
+
+/**
+ * entry_state.json, the one writer of capture and loads: the state at the
+ * entry, and what differs from `clean` (readyState). Gives the file and the
+ * count of differing bytes.
+ */
+export function entryStateFile(registers: Registers, state: MachineState, vectors: ReturnType<typeof vectorsOf>, clean: MachineState): { bytes: Buffer; differsFromReset: number } {
+  const differs = differsFrom(state, clean);
+  return { bytes: json(entryState(registers, state, vectors, differs)), differsFromReset: differs.length };
+}
+
+/** The content of entry_state.json. */
+function entryState(registers: Registers, state: MachineState, vectors: ReturnType<typeof vectorsOf>, differsFromReset: Array<{ address: string; entry: number; reset: number }>) {
   return {
     registers: { pc: formatC64Address(registers.pc), a: registers.a, x: registers.x, y: registers.y, sp: registers.sp, flags: registers.flags },
     cpuPort: { $00: state.port[0], $01: state.port[1] },
@@ -71,7 +98,7 @@ export function entryState(registers: Registers, state: MachineState, vectors: R
     // The CIA latches and interrupt masks: write-only on the chip, so the I/O bytes do not hold them.
     cia: state.cia,
     vectors,
-    ...(differsFromReset === undefined ? {} : { differsFromReset }),
+    differsFromReset,
   };
 }
 

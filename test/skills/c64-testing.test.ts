@@ -255,7 +255,10 @@ test("diff gives the changed ranges of two memory files and the changed items of
   after.set([7, 7], 0x2fa1);
   writeFileSync(join(project, "before.bin"), before);
   writeFileSync(join(project, "after.bin"), after);
-  writeFileSync(join(project, "results.json"), JSON.stringify({ observations: { start: { memory: { room: "00", $0400: "2020" }, registers: { a: 1, pc: "$0400" } }, later: { memory: { room: "05", $0400: "2020" }, registers: { a: 1, pc: "$0410" } } } }));
+  writeFileSync(
+    join(project, "results.json"),
+    JSON.stringify({ observations: { start: { memory: { room: "00", $0400: "2020" }, registers: { a: 1, pc: "$0400" } }, later: { memory: { room: "05", $0400: "2020" }, registers: { a: 1, pc: "$0410" } }, other: { memory: { $c000: "01" } } } }),
+  );
   const script = resolvePath(import.meta.dirname, "../../skills/c64-testing/scripts/testing.ts");
   const differ = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, "diff", ...args], { cwd: project, encoding: "utf8" });
   const memory = differ("before.bin", "after.bin");
@@ -263,7 +266,27 @@ test("diff gives the changed ranges of two memory files and the changed items of
   assert.deepEqual(JSON.parse(memory.stdout).memory, { changedBytes: 2, count: 1, listed: [{ start: "$2fa1", end: "$2fa2", a: "0000", b: "0707" }] });
   const observed = differ("results.json:start", "results.json:later");
   assert.equal(observed.status, 0, observed.stdout + observed.stderr);
-  assert.deepEqual(JSON.parse(observed.stdout), { a: "results.json:start", b: "results.json:later", registers: { count: 1, listed: [{ name: "cpu.pc", a: "$0400", b: "$0410" }] }, observed: { count: 1, listed: [{ address: "room", a: "00", b: "05" }] } });
+  assert.deepEqual(JSON.parse(observed.stdout), {
+    a: "results.json:start",
+    b: "results.json:later",
+    registers: { compared: 2, count: 1, listed: [{ name: "cpu.pc", a: "$0400", b: "$0410" }] },
+    observed: { compared: 2, count: 1, listed: [{ address: "room", a: "00", b: "05" }] },
+  });
+  // Nothing in common: the result says that nothing was compared, so a count of 0 does not read as equal.
+  const apart = differ("results.json:start", "results.json:other");
+  assert.equal(apart.status, 0, apart.stdout + apart.stderr);
+  assert.deepEqual(JSON.parse(apart.stdout).observed, {
+    compared: 0,
+    reason: "No memory item was compared: the observations have none in common. results.json:start has room, $0400; results.json:other has $c000.",
+    count: 0,
+    listed: [],
+  });
+  assert.deepEqual(JSON.parse(apart.stdout).registers, {
+    compared: 0,
+    reason: "No register was compared: the observations have none in common. results.json:start has cpu.a, cpu.pc; results.json:other has none.",
+    count: 0,
+    listed: [],
+  });
   assert.equal(differ("before.bin", "results.json:later").status, 2, "two states of one kind");
   assert.equal(differ("results.json:start", "results.json:nothing").status, 2);
 });
@@ -279,7 +302,7 @@ test("diff compares the CPU flags, shows the pc as $xxxx, and --out names the ch
     { name: "cpu.pc", a: "$c000", b: "$c010" },
     { name: "cpu.flags.c", a: false, b: true },
   ];
-  assert.deepEqual(result.registers, { count: 2, listed: changed });
+  assert.deepEqual(result.registers, { compared: 9, count: 2, listed: changed });
   const file = JSON.parse(readFileSync(join(project, "flags-diff.json"), "utf8")) as Record<string, unknown>;
   assert.deepEqual(file.registers, changed, "the file names the list registers, as the result does");
   assert.equal(file.values, undefined);
@@ -368,6 +391,7 @@ test("test and run check every file before the emulator: a missing file is not-f
     return call("run", name, "--out", "out");
   };
   assert.equal(run("run-missing.json", { name: "r", start: { program: "nope.prg" }, steps: [{ frames: 1 }] }).code, "not-found");
-  assert.match(run("run-disk.json", { name: "r", start: { program: "game.d64" }, steps: [{ frames: 1 }] }).message, /^game\.d64 is a disk image \(\.d64\), not a PRG\. A run starts a PRG/);
-  assert.equal(run("run-snapshot.json", { name: "r", start: { program: "game.prg" }, steps: [{ snapshot: "nope.vsf" }] }).code, "not-found");
+  assert.match(run("run-disk.json", { name: "r", start: { program: "game.d64" }, steps: [{ frames: 1 }] }).message, /^run run-disk\.json: start\.program: game\.d64 is a disk image \(\.d64\), not a PRG\. A run starts a PRG/);
+  assert.deepEqual(run("run-snapshot.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { snapshot: "nope.vsf" }] }), { code: "not-found", message: "run run-snapshot.json: step 2: snapshot: There is no file at nope.vsf in the project folder." });
+  assert.deepEqual(run("run-name.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { runUntil: { target: { kind: "address", address: "nonsense" } } }] }), { code: "invalid-input", message: "run run-name.json: step 2: the symbols have no nonsense" });
 });

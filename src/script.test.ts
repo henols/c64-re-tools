@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -29,11 +29,12 @@ await runScript({
   names,
   commands: [
     { name: "echo", summary: "Gives its subjects and options back.", subjects: [{ name: "<word>", help: "a word" }, { name: "<more>", help: "more words", optional: true, list: true }],
-      options: { out: OPTIONS.out, flag: { kind: "flag", help: "a flag" }, item: { kind: "text", value: "<text>", help: "an item", multiple: true }, "max-listed": OPTIONS["max-listed"] },
+      options: { out: { ...OPTIONS.out, output: "file" }, flag: { kind: "flag", help: "a flag" }, item: { kind: "text", value: "<text>", help: "an item", multiple: true }, "max-listed": OPTIONS["max-listed"] },
       run: (call) => ({ subjects: call.subjects, out: call.string("out") ?? null, flag: call.flag("flag"), items: call.strings("item"), maxListed: call.count("max-listed") }) },
     { name: "at", summary: "An address.", subjects: [{ name: "<address>", help: "an address" }], options: { space: OPTIONS.space, entry: OPTIONS.entry, range: OPTIONS.range },
       run: (call) => ({ address: call.parseAddress(call.subject(0), "<address>"), entry: call.address("entry") ?? null, range: call.range("range") ?? null }) },
-    { name: "need", summary: "A required option.", options: { out: { ...OPTIONS.out, required: true }, frames: OPTIONS.frames }, run: (call) => ({ out: call.string("out"), frames: call.count("frames") ?? null }) },
+    { name: "need", summary: "A required option.", options: { out: { ...OPTIONS.out, output: "folder", required: true }, frames: OPTIONS.frames }, run: (call) => ({ out: call.string("out"), frames: call.count("frames") ?? null }) },
+    { name: "bare", summary: "An --out without an output kind.", options: { out: OPTIONS.out }, run: () => ({}) },
     { name: "check", summary: "A check.", subjects: [{ name: "<result>", help: "PASS, FAIL or INCONCLUSIVE" }], run: (call) => ({ result: call.subject(0) }) },
     { name: "refuse", summary: "Refuses.", run: () => { throw new WireFailure("machine-unavailable", "The Host Runtime does not answer."); } },
     { name: "coded", summary: "An error with a code from the list.", run: () => { throw new Coded("two writes disagree"); } },
@@ -118,6 +119,7 @@ test("a fault is operation-failed with no stack, also one that nothing caught", 
   assert.match(refused(["later"], "operation-failed").message, /demo\.ts later failed inside c64-re-tools: late\./);
   assert.match(refused(["reject"], "operation-failed").message, /demo\.ts reject failed inside c64-re-tools: lost\./);
   assert.match(refused(["wrong"], "operation-failed").message, /--out of wrong is a flag, but OPTIONS has it as a path\. This is a fault of the toolkit/);
+  assert.match(refused(["bare"], "operation-failed").message, /--out of bare has no output kind \(file or folder\)\. This is a fault of the toolkit/);
 });
 
 test("a wrong command line is invalid-input with exit status 2", () => {
@@ -188,6 +190,39 @@ test("--project sets the project of the script", () => {
     const missing = run(["where", "--project", "nothing"], sandbox);
     assert.equal(missing.status, 2, missing.stderr);
     assert.equal(missing.json.error.code, "not-found");
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("an output path is refused before the command runs: in the knowledge, a folder for a file, a file for a folder", () => {
+  const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-script-"));
+  try {
+    mkdirSync(join(sandbox, ".c64-re-tools", "knowledge"), { recursive: true });
+    mkdirSync(join(sandbox, ".c64-re-tools", "local"), { recursive: true });
+    mkdirSync(join(sandbox, "results"));
+    writeFileSync(join(sandbox, ".c64-re-tools", "knowledge", "symbols.jsonl"), "keep\n");
+    writeFileSync(join(sandbox, "README.md"), "x");
+    const error = (args: string[]) => {
+      const result = run(args, sandbox);
+      assert.equal(result.status, 2, result.stdout);
+      assert.equal(result.json.error.code, "invalid-input", result.stdout);
+      return result.json.error.message as string;
+    };
+    assert.match(error(["echo", "a", "--out", ".c64-re-tools/knowledge/symbols.jsonl"]), /^--out: \.c64-re-tools\/knowledge\/symbols\.jsonl is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the c64-knowledge skill writes it/);
+    assert.match(error(["echo", "a", "--out", "./.C64-RE-TOOLS/Knowledge/new.jsonl"]), /is in \.c64-re-tools\/knowledge\//);
+    assert.match(error(["echo", "a", "--out", ".c64-re-tools/local/knowledge.db"]), /is in \.c64-re-tools\/local\/knowledge\.db, the knowledge/);
+    assert.match(error(["need", "--out", ".c64-re-tools/knowledge"]), /is in \.c64-re-tools\/knowledge\//);
+    assert.equal(error(["echo", "a", "--out", "results"]), "--out: results is a folder. Give the path of a file.");
+    assert.equal(error(["need", "--out", "README.md"]), "--out: README.md has a file where a folder must be. Give a path whose folders are folders.");
+    assert.equal(error(["echo", "a", "--out", "README.md/page.md"]), "--out: README.md/page.md has a file where a folder must be. Give a path whose folders are folders.");
+    if (process.platform !== "win32") {
+      symlinkSync(join(sandbox, ".c64-re-tools", "knowledge"), join(sandbox, "linked"));
+      assert.match(error(["echo", "a", "--out", "linked/symbols.jsonl"]), /is in \.c64-re-tools\/knowledge\//);
+    }
+    assert.equal(readFileSync(join(sandbox, ".c64-re-tools", "knowledge", "symbols.jsonl"), "utf8"), "keep\n");
+    assert.deepEqual(run(["echo", "a", "--out", ".c64-re-tools/local/scratch.json"], sandbox).json.out, ".c64-re-tools/local/scratch.json");
+    assert.deepEqual(run(["need", "--out", "results/new/deeper"], sandbox).json.out, "results/new/deeper");
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }

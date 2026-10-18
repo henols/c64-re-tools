@@ -2,10 +2,10 @@
 // The host never sees a client path: only bytes and the file's type.
 
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, relative, sep } from "node:path";
 
-import { isInside, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "../project.ts";
+import { checkOutputPath, isInside, projectRoot, resolveProject, resolveProjectFile, writeProblem } from "../project.ts";
 import { isRefusal } from "../errors.ts";
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
@@ -58,49 +58,37 @@ export function readProjectFile(path: string, options: { root?: string } = {}): 
   return { bytes: readFileSync(real), type: extname(path).slice(1).toLowerCase() };
 }
 
-/** Why a file cannot be written, by the error code of the file system; the codes that are a fault of the path. */
-const WRITE_PROBLEMS: Record<string, string> = {
-  EISDIR: "is a folder. Give the path of a file",
-  EEXIST: "has a file where a folder must be. Give a path whose folders are folders",
-  ENOTDIR: "has a file where a folder must be. Give a path whose folders are folders",
-  ENOENT: "is in a folder that does not exist",
-  EACCES: "cannot be written: there is no permission. Give a path that you can write",
-  EPERM: "cannot be written: there is no permission. Give a path that you can write",
-  EROFS: "is on a file system that is read-only. Give another path",
-  ENAMETOOLONG: "is too long. Give a shorter path",
-};
-
 /**
  * The refusal for a write that the file system refused because of the path
  * (a folder, a file in place of a folder, no permission): invalid-input with
  * the path. Undefined for another error, which is no fault of the path.
  */
 export function writeRefusal(error: unknown, path: string, what?: string): WireFailure | undefined {
-  const problem = WRITE_PROBLEMS[(error as NodeJS.ErrnoException | undefined)?.code ?? ""];
-  return problem === undefined ? undefined : new WireFailure("invalid-input", `${what === undefined ? "" : `${what}: `}${path} ${problem}.`);
+  const message = writeProblem(error, path, what);
+  return message === undefined ? undefined : new WireFailure("invalid-input", message);
 }
 
 /**
  * Writes bytes to a project file on the client side, making its directories
- * and overwriting it. Throws WireFailure(invalid-input) for a path outside the
- * project, also one that leaves it through a symbolic link, and for a path
- * that the file system refuses: a folder, a file in place of a folder, no permission.
+ * and overwriting it. First the check of checkOutputPath, which a script also
+ * does on its output options before any work. Throws WireFailure(invalid-input)
+ * for a path outside the project, also one that leaves it through a symbolic
+ * link, for a path in the knowledge, and for a path that the file system
+ * refuses: a folder, a file in place of a folder, no permission.
  */
 export function writeProjectFile(path: string, bytes: Uint8Array, options: { root?: string; what?: string } = {}): void {
   const root = options.root ?? currentProject();
   const refuse = () => new WireFailure("invalid-input", `${options.what ?? path}: give a path relative to the project folder that stays inside it, not ${path}.`);
   let file: string;
   try {
-    file = resolveProjectPath(path, root);
-  } catch {
-    throw refuse();
+    file = checkOutputPath(path, "file", { root, ...(options.what === undefined ? {} : { what: options.what }) });
+  } catch (error) {
+    if (isRefusal(error)) throw new WireFailure(error.code, error.message);
+    throw error;
   }
-  // The nearest folder that exists must be inside the project before a folder is made below it.
-  let existing = dirname(file);
-  while (!existsSync(existing)) existing = dirname(existing);
-  if (!isInside(realpathSync(root), realpathSync(existing))) throw refuse();
   try {
     mkdirSync(dirname(file), { recursive: true });
+    // Again after the folders are made: another process can change the folders between the check and the write.
     if (!isInside(realpathSync(root), realpathSync(dirname(file)))) throw refuse();
     let link = false;
     try {

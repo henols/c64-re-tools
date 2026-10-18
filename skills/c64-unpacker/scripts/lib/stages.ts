@@ -93,25 +93,33 @@ export function executedIn(map: Uint8Array, block: AddressRange): AddressRange[]
   return ranges;
 }
 
+/** Pages 0-3 ($0000-$03ff) are in entry_state.json: a written block that is all in them is no segment. */
+export const FIRST_SEGMENT_ADDRESS = 0x0400;
+
 /**
  * The segments of a capture: the blocks that the stages wrote, without loader
- * leftovers, joined into ranges that do not overlap or touch. A block
+ * leftovers and without blocks that are all in pages 0-3 (the entry state
+ * holds them), joined into ranges that do not overlap or touch. A block
  * is a leftover when it holds the entry of an intermediate stage that started
  * after the block's writer, and no write from that stage on replaced the code
  * at that entry. Code that a stage ran before a later stage wrote over
  * it never drops a block, and the block that holds the capture entry is always
- * a segment. The filter comes before the join: a join first would drop the
- * program with a leftover. `writtenBy` is the last stage that wrote into the
- * range.
+ * a segment. A block that an intermediate stage wrote inside a leftover, for
+ * example a variable of the loader, is a leftover too. The filter comes before
+ * the join: a join first would drop the program with a leftover. `writtenBy` is
+ * the last stage that wrote into the range.
  */
 export function captureSegments(stages: ReadonlyArray<{ entry: number; wrote: readonly AddressRange[] }>, entry: number): Array<AddressRange & { writtenBy: number }> {
   const last = stages.length - 1;
   const replaced = (from: number, address: number) => stages.slice(from).some((stage) => inRanges(stage.wrote, address));
   const leftover = (block: AddressRange, writer: number) =>
     !contains(block, entry) && stages.some((stage, index) => index > writer && index < last && contains(block, stage.entry) && !replaced(index, stage.entry));
-  const blocks = stages
-    .flatMap((stage, index) => stage.wrote.map((range) => ({ start: range.start, end: range.end, writtenBy: index })))
-    .filter((block) => !leftover(block, block.writtenBy))
+  const written = stages.flatMap((stage, index) => stage.wrote.map((range) => ({ start: range.start, end: range.end, writtenBy: index })));
+  const leftovers = written.filter((block) => leftover(block, block.writtenBy));
+  const inLeftover = (block: AddressRange & { writtenBy: number }) =>
+    block.writtenBy < last && !contains(block, entry) && leftovers.some((left) => block.start >= left.start && block.end <= left.end);
+  const blocks = written
+    .filter((block) => !leftover(block, block.writtenBy) && !inLeftover(block) && (block.end >= FIRST_SEGMENT_ADDRESS || contains(block, entry)))
     .sort((a, b) => a.start - b.start);
   const segments: Array<AddressRange & { writtenBy: number }> = [];
   for (const block of blocks) {

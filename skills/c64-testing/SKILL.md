@@ -120,7 +120,7 @@ node <skill>/scripts/testing.ts diff .c64-re-tools/local/runs/rooms/results.json
 
 - Two snapshot files: the script restores each one in its own emulator. It gives the changed ranges of the RAM and of the colour RAM, and the changed VIC-II, CIA, SID and CPU registers.
 - Two memory files of a run: the changed ranges. For a file of less than 64 KiB, `--address` gives the address of its first byte.
-- Two observations of runs, also of one run: the changed memory items and registers.
+- Two observations of runs, also of one run: the changed memory items and registers. `compared` gives the count of items that both observations have. With `compared: 0`, `reason` tells what each observation has. Then the diff compared nothing, and the observations are not equal.
 
 `registers` gives each changed register and chip value. `cpu.pc` is a `$` address. Each CPU flag is `cpu.flags.<flag>`, for example `cpu.flags.c`, with `true` or `false`.
 
@@ -135,6 +135,7 @@ The script refuses a snapshot that does not restore in its emulator. An example 
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
+- The script examines each `--out` path before it starts work. It refuses a path in `.c64-re-tools/knowledge/` and the index of the knowledge, because only c64-knowledge writes them. It refuses a folder where the command writes a file, and a file where the command writes a folder.
 - The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
 - An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
 - The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.

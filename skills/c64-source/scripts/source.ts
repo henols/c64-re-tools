@@ -734,7 +734,7 @@ await runScript({
       name: "generate",
       summary: "Writes the source files, source-map.json and not_executed.json, and checks them. result is PASS when every check passes, else FAIL.",
       options: {
-        out: { ...OPTIONS.out, value: "<dir>", help: "the folder for the source files, relative to the project folder", required: true },
+        out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "the folder for the source files, relative to the project folder", required: true },
         entry: { ...OPTIONS.entry, multiple: true, help: "an entry point for Ghidra" },
         space: { ...OPTIONS.space, help: "the knowledge space of the program: c64 (the default), drive8, or bank0 to bank255. The coverage and --loader are for c64 only" },
         loader: { kind: "flag", help: "also write loader.asm and loader.prg: the loader copies the segments into place, sets the entry state of the knowledge, and jumps to the entry. It is checked in the emulator" },

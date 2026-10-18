@@ -215,7 +215,8 @@ test("docs.ts generate refuses --out through a symbolic link out of the project 
   symlinkSync(outside, join(root, "docs/reference"));
   const refused = generate(root, "src", "--out", "docs/reference");
   assert.equal(refused.status, 2);
-  assert.match(String((refused.json.error as { message: string }).message), /--out must be a path relative to the project folder that stays inside it, also through symbolic links/);
+  // The shared check of every output refuses it before the command starts.
+  assert.equal((refused.json.error as { message: string }).message, "--out: give a path relative to the project folder that stays inside it, not docs/reference.");
   assert.equal(existsSync(join(outside, "index.md")), true, "the file outside the project stays");
 });
 

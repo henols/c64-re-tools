@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -33,10 +33,16 @@ const SCRIPTS: Script[] = readdirSync(join(ROOT, "skills"))
     return names.map((name) => ({ skill, name, path: join(ROOT, "skills", skill, "scripts", name) }));
   });
 
+/** The content of a knowledge file that no --out may change. */
+const KEPT = "kept\n";
+
 let project: string;
 before(() => {
   project = mkdtempSync(join(tmpdir(), "c64-re-tools-contract-"));
-  mkdirSync(join(project, ".c64-re-tools"));
+  mkdirSync(join(project, ".c64-re-tools", "knowledge"), { recursive: true });
+  writeFileSync(join(project, ".c64-re-tools", "knowledge", "symbols.jsonl"), KEPT);
+  writeFileSync(join(project, "README.md"), "x");
+  mkdirSync(join(project, "afolder"));
 });
 after(() => rmSync(project, { recursive: true, force: true }));
 
@@ -81,6 +87,8 @@ interface Command {
   required: number;
   /** The options and their value forms, for example ["--out", "<path>"]; a flag has no value form. */
   options: Array<[string, string | undefined]>;
+  /** The options that the command needs, with their value forms. */
+  needed: Array<[string, string]>;
 }
 
 let commandsCache: Command[] | undefined;
@@ -101,7 +109,8 @@ async function commands(): Promise<Command[]> {
       const words = synopsis.split(" ").slice(2);
       const required = words.filter((word) => /^<[^>]+>(\.\.\.)?$/.test(word)).length;
       const options = [...synopsis.matchAll(/(--[a-z0-9-]+)(?: (<[^>\]]+>|NAME=VALUE))?/g)].map((match): [string, string | undefined] => [match[1]!, match[2]]);
-      return { script, name, usage, required, options };
+      const needed = [...synopsis.matchAll(/(?<!\[)(--[a-z0-9-]+) (<[^>\]]+>)/g)].map((match): [string, string] => [match[1]!, match[2]!]);
+      return { script, name, usage, required, options, needed };
     });
   });
   commandsCache = lists.flat();
@@ -146,6 +155,28 @@ test("every wrong call is one JSON error with exit status 2 and nothing on stder
       if (value === "<file>" || value === "<path>" || value === "<dir>") refused(await call(command.script, [command.name, ...subjects, option, "../out"]), "invalid-input", `${what} ${option} ../out`);
     }
   });
+});
+
+/** A value of the form, which the command line parser takes. */
+const SAMPLE: Record<string, string> = { "<address>": "$0400", "<start>-<end>": "$0400-$04ff", "<n>": "1", "<bytes>": "64" };
+
+test("every --out and --out-<name> is refused before the command does any work: in the knowledge, a folder for a file, a file for a folder", async () => {
+  const found = (await commands()).filter((command) => command.options.some(([option]) => /^--out(-|$)/.test(option)));
+  assert.ok(found.length >= 20, `${found.length} commands with an output`);
+  await all(found, async (command) => {
+    // required counts the values of the needed options too.
+    const subjects = Array.from({ length: command.required - command.needed.length }, () => "x");
+    for (const [option, value] of command.options.filter(([name]) => /^--out(-|$)/.test(name))) {
+      const what = `${command.script.name} ${command.name} ${option}`;
+      const others = command.needed.filter(([name]) => name !== option).flatMap(([name, form]) => [name, SAMPLE[form] ?? "x"]);
+      const refusedAt = async (path: string) => refused(await call(command.script, [command.name, ...subjects, ...others, option, path]), "invalid-input", `${what} ${path}`).message;
+      const folder = value === "<dir>";
+      assert.match(await refusedAt(folder ? ".c64-re-tools/knowledge" : ".c64-re-tools/knowledge/symbols.jsonl"), new RegExp(`^${option}: \\.c64-re-tools/knowledge.* is in \\.c64-re-tools/knowledge/, the knowledge of the project`), what);
+      if (folder) assert.equal(await refusedAt("README.md"), `${option}: README.md has a file where a folder must be. Give a path whose folders are folders.`, what);
+      else assert.equal(await refusedAt("afolder"), `${option}: afolder is a folder. Give the path of a file.`, what);
+    }
+  });
+  assert.equal(readFileSync(join(project, ".c64-re-tools", "knowledge", "symbols.jsonl"), "utf8"), KEPT);
 });
 
 test("no code that a script reaches throws a bare Error, TypeError or RangeError", () => {

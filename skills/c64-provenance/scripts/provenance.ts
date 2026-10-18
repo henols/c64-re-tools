@@ -41,7 +41,7 @@ import {
 import { CODE_REGION_TYPES, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
-import { knowledgeNames } from "#src/knowledge/names.ts";
+import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
 import { compareReleases, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
 import { findRoutine, libraryFolder, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
@@ -107,14 +107,17 @@ async function compare(call: Call): Promise<unknown> {
   const shifts = new Map<number, number>();
   for (const text of call.strings("shift")) {
     const match = /^(\d+):([+-]?\d+)$/.exec(text);
-    if (match === null || Number(match[1]) < 1 || Number(match[1]) > positionals.length) throw new UsageError(`--shift must be <release number>:<bytes>, not ${text}`);
+    if (match === null) throw new UsageError(`--shift must be <release number>:<bytes>, for example 2:-256, not ${text}`);
+    if (Number(match[1]) < 1 || Number(match[1]) > positionals.length) {
+      throw new UsageError(`--shift ${text}: there is no release ${match[1]}. This compare has ${positionals.length} releases: give a release number from 1 to ${positionals.length}`);
+    }
     if (shifts.has(Number(match[1]))) throw new UsageError(`--shift gives release ${match[1]} more than one shift (${shifts.get(Number(match[1]))} and ${match[2]}). Give one --shift for each release`);
     shifts.set(Number(match[1]), Number(match[2]));
   }
   const frames = call.count("frames");
   const stepsFile = call.string("steps");
   if (stepsFile !== undefined && frames === undefined) throw new UsageError("--steps works only with --frames");
-  const steps: ActionStep[] = stepsFile === undefined ? [] : readActionSteps(stepsFile, "--steps");
+  const steps: ActionStep[] = stepsFile === undefined ? [] : readActionSteps(stepsFile, "--steps", knowledgeAt());
   const loaded = positionals.map((path, index) => readRelease(path, shifts.get(index + 1) ?? 0));
   const releases = loaded.map((item) => item.release);
   const range = call.range("range");
@@ -462,14 +465,14 @@ const COMMANDS: CommandSpec[] = [
   {
     name: "separate",
     summary: "Evidence from the program in the knowledge: the unpack stage that wrote each range, its access in the coverage, whether call and jump references, or the run on from the code before it, reach each code region from the entry, and what the program reads or executes outside its segments.",
-    options: { out: { ...OPTIONS.out, value: "<file>", help: "write all ranges to this file" }, "max-listed": OPTIONS["max-listed"] },
+    options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write all ranges to this file" }, "max-listed": OPTIONS["max-listed"] },
     run: separateCommand,
   },
   {
     name: "leftovers",
     summary: "What the program in the knowledge holds besides its working code: texts in PETSCII, screen codes, ASCII or with bit 7 set (Apple II), assembler source, BASIC lines away from the BASIC start, fills, untouched bytes outside code, copies of earlier bytes, and code regions that nothing reaches and no run executed.",
     options: {
-      out: { ...OPTIONS.out, value: "<file>", help: "write all findings to this file" },
+      out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write all findings to this file" },
       "min-text": { kind: "count", value: "<n>", min: 4, max: 999, default: 8, help: "the shortest text to find (default 8)" },
       "max-listed": OPTIONS["max-listed"],
     },
@@ -492,7 +495,7 @@ const COMMANDS: CommandSpec[] = [
     summary: "Finds each routine of the library in the program of the knowledge: the opcodes and other fixed bytes equal, and the addresses into the routine moved by one shift.",
     options: {
       library: { ...LIBRARY, help: "the library folder, relative to the project folder, for example ../library" },
-      out: { ...OPTIONS.out, value: "<file>", help: "write the names of the routines at the found addresses as a batch for knowledge.ts apply" },
+      out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the names of the routines at the found addresses as a batch for knowledge.ts apply" },
       "max-listed": OPTIONS["max-listed"],
     },
     run: matchCommand,

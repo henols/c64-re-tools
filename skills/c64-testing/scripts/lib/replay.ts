@@ -37,7 +37,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
   const folder = values.folder.replace(/\/+$/, "").replace(/\/recording\.json$/, "");
   const recording = readRecording(folder);
   const given: Comparison | undefined =
-    values.checkpoint === undefined ? undefined : { checkpoint: values.checkpoint, state: values.state.map(parseStateItem), ...(values.pin.length === 0 ? {} : { pin: values.pin.map(parseStateItem) }) };
+    values.checkpoint === undefined ? undefined : { checkpoint: values.checkpoint, state: values.state.map((item) => parseStateItem(item, "--state")), ...(values.pin.length === 0 ? {} : { pin: values.pin.map((item) => parseStateItem(item, "--pin")) }) };
   const compare = given ?? recording.compare;
   if (values.rebuild !== undefined && compare === undefined) throw new UsageError("the recording has no checkpoint and state: give --checkpoint and --state");
   const result = (outcome: ReplayResult["result"], side: ReplayResult["side"], fields: Partial<ReplayResult> = {}): ReplayResult => ({

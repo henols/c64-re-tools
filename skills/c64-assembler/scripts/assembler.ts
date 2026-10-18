@@ -45,7 +45,7 @@ await runScript({
         { name: "<entry>", help: "the main source file, relative to the source root" },
       ],
       options: {
-        out: { ...OPTIONS.out, value: "<file.prg>", help: "where to write the program, relative to the project folder", required: true },
+        out: { ...OPTIONS.out, output: "file", value: "<file.prg>", help: "where to write the program, relative to the project folder", required: true },
         include: { kind: "text", value: "<dir>", multiple: true, help: "an include folder, relative to the source root" },
         define: { kind: "text", value: "NAME=VALUE", multiple: true, help: "an assembler symbol: an integer ($hex allowed) or true/false" },
         "set-pc": { kind: "address", value: "<address>", help: "the start address when the source sets none, for example '$0801'" },

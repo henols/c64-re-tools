@@ -91,6 +91,13 @@ test("inspect, trace, stages and capture take a PRG: a disk image and a file pas
   assert.equal(refused("trace", "packed.prg", "--steps", "wait.json"), "--steps wait.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil");
   writeFileSync(join(project, "old.json"), JSON.stringify([{ runUntil: { at: "$0400" }, timeoutFrames: 100 }]));
   assert.equal(refused("stages", "packed.prg", "--steps", "old.json"), '--steps old.json: step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "$0400"}, "timeoutFrames": 100}}');
+  // Every name of the steps resolves before the emulator starts; an unknown one names the file and the step, as invalid-input like --until.
+  writeFileSync(join(project, "name.json"), JSON.stringify([{ frames: 10 }, { runUntil: { target: { kind: "address", address: "nonsense" }, timeoutFrames: 10 } }]));
+  for (const command of [["trace"], ["stages"], ["capture", "--until", "$080d", "--out", "x"]]) {
+    assert.match(refused(command[0]!, "packed.prg", "--steps", "name.json", ...command.slice(1)), /^--steps name\.json: step 2: nonsense is not a name in the knowledge\. Give a \$ address/);
+  }
+  writeFileSync(join(project, "raster.json"), JSON.stringify([{ frames: 10 }, { runUntil: { target: { kind: "raster", line: 100 }, timeoutFrames: 10 } }]));
+  assert.equal(refused("stages", "packed.prg", "--steps", "raster.json"), "--steps raster.json: step 2: stages takes a runUntil step only with an address target without a condition. Use frames steps, or capture");
   writeFileSync(join(project, "parts.json"), JSON.stringify([{ wait: 10 }, { capture: "a" }]));
   assert.equal(refused("loads", "game.d64", "--steps", "parts.json", "--out", "parts"), "--steps parts.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil, capture");
 });
@@ -240,9 +247,36 @@ test("capture segments do not overlap, and a block that later stages wrote over 
     ],
     0x8ab2,
   );
+  // The blocks that are all in pages 0-3 are in the entry state: the program starts at the block of stage 2 that goes past $03ff.
   assert.deepEqual(segments, [
-    { start: 0x0000, end: 0xd0ff, writtenBy: 3 },
+    { start: 0x00c5, end: 0xd0ff, writtenBy: 3 },
     { start: 0xe000, end: 0xffff, writtenBy: 2 },
+  ]);
+});
+
+test("a small written block is a segment; a block all in pages 0-3 is not, unless it holds the capture entry", () => {
+  // The Bruce Lee field run with --min-stage 1000: one stage wrote the key page, the vectors and the KERNAL variables.
+  const stages = [
+    { entry: 0x0871, wrote: [range(0x00a2, 0x00a2), range(0x01e2, 0x01fa), range(0x0277, 0x0277), range(0x033c, 0xa9ff), range(0xc800, 0xc80f), range(0xcf00, 0xcfff), range(0xfe00, 0xffff)] },
+    { entry: 0x0400, wrote: [] },
+  ];
+  assert.deepEqual(captureSegments(stages, 0x0400), [
+    { start: 0x033c, end: 0xa9ff, writtenBy: 0 },
+    { start: 0xc800, end: 0xc80f, writtenBy: 0 },
+    { start: 0xcf00, end: 0xcfff, writtenBy: 0 },
+    { start: 0xfe00, end: 0xffff, writtenBy: 0 },
+  ]);
+  assert.deepEqual(captureSegments([{ entry: 0x080d, wrote: [range(0x0340, 0x037f)] }, { entry: 0x0340, wrote: [] }], 0x0340), [{ start: 0x0340, end: 0x037f, writtenBy: 0 }]);
+  // The default run: the loader at $c000 is a leftover, and so are the variables that it wrote inside itself. The program's own writes there stay.
+  const loader = [
+    { entry: 0x0871, wrote: [range(0x033c, 0xa9ff), range(0xc000, 0xc1ff), range(0xcf00, 0xcfff)] },
+    { entry: 0xc000, wrote: [range(0x0400, 0x0400), range(0xc020, 0xc020), range(0xc025, 0xc025)] },
+    { entry: 0x0400, wrote: [range(0xc100, 0xc101)] },
+  ];
+  assert.deepEqual(captureSegments(loader, 0x0400), [
+    { start: 0x033c, end: 0xa9ff, writtenBy: 1 },
+    { start: 0xc100, end: 0xc101, writtenBy: 2 },
+    { start: 0xcf00, end: 0xcfff, writtenBy: 0 },
   ]);
 });
 

@@ -36,6 +36,12 @@ const MEDIA_KINDS: Record<string, string> = {
 /** The remedy for a disk, tape or cartridge file where a PRG must be: get the PRG out of it. */
 export const MEDIA_REMEDY = "Get the PRG out of it with disk.ts read (or disk.ts crt for a cartridge) of the c64-disk skill";
 
+/** Refuses a disk, tape or cartridge file by its extension (`type`, lowercase, without the dot): invalid-input with `remedy`. */
+function refuseMedia(path: string, type: string, remedy: string): void {
+  const media = MEDIA_KINDS[type];
+  if (media !== undefined) throw new Refusal("invalid-input", `${path} is ${media} (.${type}), not a PRG. ${remedy}.`);
+}
+
 /**
  * Reads a PRG of the project: a 2-byte load address, and bytes that end at
  * $ffff or before. Refuses a disk, tape or cartridge file and any other file
@@ -43,8 +49,7 @@ export const MEDIA_REMEDY = "Get the PRG out of it with disk.ts read (or disk.ts
  */
 export function readPrg(path: string, remedy = MEDIA_REMEDY): { bytes: Buffer; start: number; end: number; body: Uint8Array } {
   const { bytes, type } = readProjectFile(path);
-  const media = MEDIA_KINDS[type];
-  if (media !== undefined) throw new Refusal("invalid-input", `${path} is ${media} (.${type}), not a PRG. ${remedy}.`);
+  refuseMedia(path, type, remedy);
   try {
     return { bytes, ...prgRange(bytes) };
   } catch (error) {
@@ -53,18 +58,13 @@ export function readPrg(path: string, remedy = MEDIA_REMEDY): { bytes: Buffer; s
   }
 }
 
-/** Reads an image.json or a PRG, relative to the project folder. */
+/** Reads an image.json or a PRG, relative to the project folder. Refuses a disk, tape or cartridge file as readPrg does. */
 export function readImage(path: string): Image {
-  const { bytes } = readProjectFile(path);
   if (!path.endsWith(".json")) {
-    let range: ReturnType<typeof prgRange>;
-    try {
-      range = prgRange(bytes);
-    } catch (error) {
-      throw new Refusal("invalid-input", `${path}: ${(error as Error).message}`);
-    }
+    const range = readPrg(path);
     return { segments: [{ start: range.start, end: range.end }], byteAt: (address) => range.body[address - range.start]! };
   }
+  const { bytes } = readProjectFile(path);
   const fail = (what: string): never => {
     throw new Refusal("invalid-input", `${path} is not an image.json of the c64-unpacker skill: ${what}`);
   };

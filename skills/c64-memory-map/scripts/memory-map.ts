@@ -71,7 +71,7 @@ await runScript({
     {
       name: "export",
       summary: "Writes the platform names as an ACME include: NAME = $xxxx.",
-      options: { out: { ...OPTIONS.out, value: "<file>", help: "the include file, relative to the project folder", required: true } },
+      options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "the include file, relative to the project folder", required: true } },
       run: (call) => {
         const names = platformNames();
         const lines = ["; C64 platform names from the c64-memory-map skill, for ACME.", ...names.map((item) => `${item.name} = ${item.address < 0x100 ? formatC64Byte(item.address) : formatC64Address(item.address)}`.padEnd(24) + `; ${item.meaning}`)];

@@ -108,6 +108,33 @@ test("the script compares PRG files and applies a shift", () => {
   const { error } = JSON.parse(twice.stdout) as { error: { code: string; message: string } };
   assert.equal(error.code, "invalid-input");
   assert.match(error.message, /^--shift gives release 2 more than one shift \(-256 and 256\)\. Give one --shift for each release/);
+  const refused = (args: string[]) => {
+    const run = spawnSync(process.execPath, [...process.execArgv, script, "compare", ...args], { cwd: project, encoding: "utf8" });
+    assert.equal(run.status, 2, run.stdout);
+    return JSON.parse(run.stdout).error as { code: string; message: string };
+  };
+  const third = refused(["release.prg", "moved.prg", "--shift", "3:-1280"]);
+  assert.equal(third.code, "invalid-input");
+  assert.match(third.message, /^--shift 3:-1280: there is no release 3\. This compare has 2 releases: give a release number from 1 to 2\n/);
+  assert.match(refused(["release.prg", "moved.prg", "--shift", "2-256"]).message, /^--shift must be <release number>:<bytes>, for example 2:-256, not 2-256\n/);
+});
+
+test("compare refuses a disk, tape or cartridge image with the remedy, as the unpacker does", () => {
+  const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
+  writeFileSync(join(project, "game.d64"), Buffer.alloc(174848));
+  writeFileSync(join(project, "one.prg"), Buffer.from([0x01, 0x08, 0xea]));
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "compare", "one.prg", "game.d64"], { cwd: project, encoding: "utf8" });
+  assert.equal(run.status, 2, run.stdout);
+  assert.deepEqual(JSON.parse(run.stdout).error, {
+    code: "invalid-input",
+    message: "game.d64 is a disk image (.d64), not a PRG. Get the PRG out of it with disk.ts read (or disk.ts crt for a cartridge) of the c64-disk skill.",
+  });
+  // An unknown name in the steps stops the call before an emulator starts (no host listens at port 1).
+  writeFileSync(join(project, "name.json"), JSON.stringify([{ runUntil: { target: { kind: "address", address: "nonsense" } } }]));
+  const named = spawnSync(process.execPath, [...process.execArgv, script, "compare", "one.prg", "one.prg", "--frames", "10", "--steps", "name.json"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  assert.equal(named.status, 2, named.stdout);
+  assert.equal(JSON.parse(named.stdout).error.code, "invalid-input");
+  assert.match(JSON.parse(named.stdout).error.message, /^--steps name\.json: step 1: nonsense is not a name in the knowledge/);
 });
 
 test("a missing release is not-found", () => {

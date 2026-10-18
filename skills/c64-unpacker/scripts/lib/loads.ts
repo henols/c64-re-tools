@@ -7,13 +7,14 @@
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
-import { ACTION_STEP_KINDS, checkActionStep, isObject, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, checkStepNames, isObject, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { UsageError } from "#src/script.ts";
-import { entryState, json, machineState, readRam, vectorsOf } from "./machine.ts";
+import { entryStateFile, json, machineState, readRam, readyState, vectorsOf } from "./machine.ts";
+import { FIRST_SEGMENT_ADDRESS } from "./stages.ts";
 
 
 export type LoadStep = ActionStep | { capture: string };
@@ -22,8 +23,6 @@ export type LoadStep = ActionStep | { capture: string };
 const NAME = /^[A-Za-z0-9._-]{1,64}$/;
 /** The drive RAM of a 1541. */
 const DRIVE_RAM = 0x0800;
-/** Pages 0-3 belong to the entry state, not to the segments. */
-const FIRST_SEGMENT_ADDRESS = 0x0400;
 /** The KERNAL LOAD entry in the jump table. */
 const KERNAL_LOAD = 0xffd5;
 /** The KERNAL loop that waits for a key at READY. or at an INPUT statement. */
@@ -57,7 +56,10 @@ export function readLoadSteps(path: string): LoadStep[] {
     if (kinds.length > 1) return fail(`${at} has ${kinds.length} step kinds: ${kinds.join(", ")}. Give each one its own step`);
     if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...VICE_STEP_KINDS, "capture"].join(", ")}`);
     // The step with its defaults filled in, as the shared schema of the action steps gives it.
-    (value as unknown[])[index] = checkActionStep(kinds[0] as ActionStepKind, step, at, fail);
+    const checked = checkActionStep(kinds[0] as ActionStepKind, step, at, fail);
+    // Its names resolve now: an unknown name stops the call before the emulator starts.
+    checkStepNames([checked], knowledgeAt(), `--steps ${path}`, index + 1);
+    (value as unknown[])[index] = checked;
   });
   if (names.size === 0) fail("the steps have no capture step");
   return value as LoadStep[];
@@ -97,6 +99,8 @@ const hex4 = (value: number) => value.toString(16).padStart(4, "0");
 export async function loads(program: string, options: { out: string; steps: LoadStep[]; drive: boolean; minBlock: number }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
+    // A clean machine at the READY prompt shows what the program changed at each capture. The run goes on after a capture, so it is read first.
+    const clean = await readyState(client);
     await client.reset({ mode: "hard", run: false });
     let previous: Buffer;
     /** A PRG that autostart put into memory without the CPU: its bytes count as written in the first capture. */
@@ -184,7 +188,8 @@ export async function loads(program: string, options: { out: string; steps: Load
           ...(drive === undefined ? {} : { drive }),
         }),
       );
-      write("entry_state.json", json(entryState(registers, state, vectors)));
+      const entry = entryStateFile(registers, state, vectors, clean);
+      write("entry_state.json", entry.bytes);
       const keyWait = registers.pc >= KERNAL_KEY_WAIT.start && registers.pc <= KERNAL_KEY_WAIT.end;
       captures.push({
         capture: step.capture,
@@ -193,6 +198,7 @@ export async function loads(program: string, options: { out: string; steps: Load
         pc: formatC64Address(registers.pc),
         ...(keyWait ? { keyWait: true } : {}),
         segments: segments.map(showRange),
+        differsFromReset: entry.differsFromReset,
         ...(small === 0 ? {} : { smallChanges: small }),
         ...(drive === undefined ? {} : { drive: drive.file }),
       });

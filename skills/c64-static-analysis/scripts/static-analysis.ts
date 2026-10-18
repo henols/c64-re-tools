@@ -4,7 +4,7 @@
 // structural findings into .c64-re-tools/knowledge/.
 
 import { COVERAGE, formatC64Address, prgRange } from "#src/c64.ts";
-import { Refusal } from "#src/errors.ts";
+import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
@@ -279,7 +279,7 @@ async function analyze(call: Call): Promise<unknown> {
         written = writeReported(listingPath, listing, { what: "--out-listing" });
       } catch (error) {
         const recorded = imported.revision === null ? "The knowledge did not change." : `The knowledge has the findings as revision ${imported.revision}.`;
-        throw new WireFailure("operation-failed", `The script did not write the listing to ${listingPath}: ${(error as Error).message}. ${recorded}`);
+        throw new WireFailure(isRefusal(error) ? error.code : "operation-failed", `The script did not write the listing to ${listingPath}: ${(error as Error).message.replace(/\.$/, "")}. ${recorded}`);
       }
     }
     const found = idiomsResult();
@@ -343,9 +343,9 @@ await runScript({
         decompile: { kind: "address", value: "<address>", multiple: true, help: "ghidra: a routine to decompile, at most 32" },
         space: OPTIONS.space,
         "max-listed": { ...OPTIONS["max-listed"], help: "list at most n labels, functions or candidates (default 50, 0 for none). The counts are always given, and the knowledge has all labels and functions" },
-        "out-listing": { kind: "path", value: "<file>", help: "dxa: write the disassembly listing to this project file" },
-        "out-instructions": { kind: "path", value: "<file>", help: "ghidra: write every instruction (address, bytes, mnemonic, mode, operand, target, executed) to this project file as JSON" },
-        "out-macro-batch": { kind: "path", value: "<file>", help: "write the macro candidates as an apply batch of c64-knowledge (the macros and their uses) to this project file" },
+        "out-listing": { kind: "path", output: "file", value: "<file>", help: "dxa: write the disassembly listing to this project file" },
+        "out-instructions": { kind: "path", output: "file", value: "<file>", help: "ghidra: write every instruction (address, bytes, mnemonic, mode, operand, target, executed) to this project file as JSON" },
+        "out-macro-batch": { kind: "path", output: "file", value: "<file>", help: "write the macro candidates as an apply batch of c64-knowledge (the macros and their uses) to this project file" },
       },
       notes: "The program and the coverage come from the knowledge: put them in with knowledge.ts image and coverage of the c64-knowledge skill. The executed code of the coverage is seeded. Routine symbols in the knowledge are entry points too. Ghidra needs at least one entry point. DXA finds the SYS of a BASIC start by itself.",
       run: analyze,

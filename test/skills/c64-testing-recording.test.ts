@@ -63,7 +63,8 @@ test("a record file needs a program and steps the replay core can do; a checkpoi
 test("a state item of the command line is a name or an address with an optional size", () => {
   assert.deepEqual(parseStateItem("room"), { address: "room", size: 1 });
   assert.deepEqual(parseStateItem("$c100:2"), { address: "$c100", size: 2 });
-  assert.throws(() => parseStateItem("room:0"), Refusal);
+  assert.throws(() => parseStateItem("room:0"), { code: "invalid-input", message: /^--state room:0: give a name or a \$ address, with :size from 1 to / });
+  assert.throws(() => parseStateItem("seed:0", "--pin"), { code: "invalid-input", message: /^--pin seed:0: give a name or a \$ address/ });
 });
 
 test("an address of the original moves with the name before it", () => {

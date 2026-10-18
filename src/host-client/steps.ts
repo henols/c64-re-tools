@@ -384,8 +384,42 @@ export function checkActionSteps(value: unknown, fail: (message: string) => neve
   });
 }
 
-/** Reads a steps file of the project: a JSON list of action steps. `option` names the option of the file in a refusal. */
-export function readActionSteps(path: string, option: string): ActionStep[] {
+/** The names and addresses of an action step: each location that the step resolves when it runs. */
+export function stepLocations(step: ActionStep): Location[] {
+  if ("write" in step) return [step.write.address];
+  if ("registers" in step) return step.registers.pc === undefined ? [] : [step.registers.pc];
+  if (!("runUntil" in step)) return [];
+  const { target } = step.runUntil;
+  if (target.kind === "raster") return [];
+  if (target.kind === "memory") return [target.address];
+  return [target.address, ...(target.condition?.kind === "memory" ? [target.condition.address] : [])];
+}
+
+/**
+ * Resolves every name of the steps with `at` before the steps run, so that an
+ * unknown name stops the call before the emulator starts. A refusal of `at` becomes
+ * invalid-input that names `where` (for example the option and the file) and the step.
+ * `first` is the number of the first of the steps in the file.
+ */
+export function checkStepNames(steps: readonly ActionStep[], at: (location: Location) => number, where: string, first = 1): void {
+  steps.forEach((step, index) => {
+    for (const location of stepLocations(step)) {
+      try {
+        at(location);
+      } catch (error) {
+        if (isRefusal(error)) throw new Refusal("invalid-input", `${where}: step ${index + first}: ${error.message}`);
+        throw error;
+      }
+    }
+  });
+}
+
+/**
+ * Reads a steps file of the project: a JSON list of action steps. `option`
+ * names the option of the file in a refusal. With `at`, every name of the
+ * steps must resolve (checkStepNames).
+ */
+export function readActionSteps(path: string, option: string, at?: (location: Location) => number): ActionStep[] {
   const fail = (message: string): never => {
     throw new Refusal("invalid-input", `${option} ${path}: ${message}`);
   };
@@ -396,7 +430,9 @@ export function readActionSteps(path: string, option: string): ActionStep[] {
     if (error instanceof SyntaxError) return fail(`it is not JSON: ${error.message}`);
     throw error;
   }
-  return checkActionSteps(value, fail);
+  const steps = checkActionSteps(value, fail);
+  if (at !== undefined) checkStepNames(steps, at, `${option} ${path}`);
+  return steps;
 }
 
 /** Stops the CPU when it runs: a write, a register change or an exact frame count needs it stopped. */

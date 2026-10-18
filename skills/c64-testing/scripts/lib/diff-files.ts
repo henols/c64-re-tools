@@ -118,6 +118,18 @@ const show = (range: ChangedRange) => ({ start: formatC64Address(range.start), e
 /** A changed value as a person reads it: the pc as "$xxxx". */
 const showValue = (item: { name: string; a: number | boolean; b: number | boolean }) => (item.name === "cpu.pc" && typeof item.a === "number" && typeof item.b === "number" ? { name: item.name, a: formatC64Address(item.a), b: formatC64Address(item.b) } : item);
 
+/**
+ * How many items two observations have in common, by name: the items that the
+ * diff compared. With none, the reason names what each side has, so that a
+ * count of 0 does not read as "equal".
+ */
+export function comparedItems(what: string, a: readonly string[], b: readonly string[], first: string, second: string): { compared: number; reason?: string } {
+  const compared = a.filter((name) => b.includes(name)).length;
+  if (compared > 0) return { compared };
+  const has = (names: readonly string[]) => (names.length === 0 ? "none" : names.join(", "));
+  return { compared, reason: `No ${what} was compared: the observations have none in common. ${first} has ${has(a)}; ${second} has ${has(b)}.` };
+}
+
 /** The differences of two states of one kind: snapshots, memory files or observations of runs. */
 export async function diffFiles(first: string, second: string, options: { gap: number; max: number; ntsc: boolean; at?: number; out?: string }): Promise<Record<string, unknown>> {
   const kind = kindOf(first);
@@ -159,8 +171,8 @@ export async function diffFiles(first: string, second: string, options: { gap: n
     b: second,
     ...(diff.memory === undefined ? {} : { memory: part(diff.memory) }),
     ...(diff.colorRam === undefined ? {} : { colorRam: part(diff.colorRam) }),
-    ...(diff.values === undefined ? {} : { registers: listed(diff.values, max, showValue, rest) }),
-    ...(diff.observed === undefined ? {} : { observed: listed(diff.observed, max, undefined, rest) }),
+    ...(diff.values === undefined ? {} : { registers: { ...(kind === "observation" ? comparedItems("register", Object.keys(a.values ?? {}), Object.keys(b.values ?? {}), first, second) : {}), ...listed(diff.values, max, showValue, rest) } }),
+    ...(diff.observed === undefined ? {} : { observed: { ...comparedItems("memory item", Object.keys(a.observed ?? {}), Object.keys(b.observed ?? {}), first, second), ...listed(diff.observed, max, undefined, rest) } }),
     ...(written === undefined ? {} : written),
   };
 }

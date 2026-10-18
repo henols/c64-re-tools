@@ -5,7 +5,7 @@
 // the agent saves for itself and ignores itself in git.
 
 import { Refusal } from "./errors.ts";
-import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -179,6 +179,113 @@ export function resolveProjectPath(path: string, root = projectRoot()): string {
   const candidate = resolve(root, path);
   if (isInside(root, candidate)) return candidate;
   throw new Refusal("invalid-input", `${path} leads out of the project folder: give a path that stays inside it.`);
+}
+
+/** The folder of the committed knowledge text in PROJECT_DIRECTORY. The knowledge (src/knowledge/database.ts) has the same name. */
+export const KNOWLEDGE_TEXT_DIRECTORY = "knowledge";
+
+/** The index of the knowledge in LOCAL_DIRECTORY, and the files that SQLite keeps beside it. The knowledge has the same name. */
+const KNOWLEDGE_INDEX = /^knowledge\.db(?:-wal|-shm|-journal)?$/;
+
+/**
+ * The part of the knowledge that a path relative to the project folder is in:
+ * the text in .c64-re-tools/knowledge/ or the index in .c64-re-tools/local/.
+ * Undefined for every other path. Letter case does not count: some file
+ * systems do not tell the cases apart.
+ */
+export function knowledgePart(fromRoot: string): string | undefined {
+  const parts = fromRoot.split(/[\\/]+/).filter((part) => part !== "" && part !== ".").map((part) => part.toLowerCase());
+  if (parts[0] !== PROJECT_DIRECTORY) return undefined;
+  if (parts[1] === KNOWLEDGE_TEXT_DIRECTORY) return `${PROJECT_DIRECTORY}/${KNOWLEDGE_TEXT_DIRECTORY}/`;
+  if (parts[1] === LOCAL_DIRECTORY && parts.length === 3 && KNOWLEDGE_INDEX.test(parts[2]!)) return `${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/${parts[2]}`;
+  return undefined;
+}
+
+/** What a command writes at an output path: one file, or files in a folder. */
+export type OutputKind = "file" | "folder";
+
+/** Why a file cannot be written, by the error code of the file system; the codes that are a fault of the path. */
+const WRITE_PROBLEMS: Record<string, string> = {
+  EISDIR: "is a folder. Give the path of a file",
+  EEXIST: "has a file where a folder must be. Give a path whose folders are folders",
+  ENOTDIR: "has a file where a folder must be. Give a path whose folders are folders",
+  ENOENT: "is in a folder that does not exist",
+  EACCES: "cannot be written: there is no permission. Give a path that you can write",
+  EPERM: "cannot be written: there is no permission. Give a path that you can write",
+  EROFS: "is on a file system that is read-only. Give another path",
+  ENAMETOOLONG: "is too long. Give a shorter path",
+};
+
+/**
+ * The message for a write that the file system refused because of the path
+ * (a folder, a file in place of a folder, no permission): the path and what
+ * to do. Undefined for another error, which is no fault of the path.
+ */
+export function writeProblem(error: unknown, path: string, what?: string): string | undefined {
+  const problem = WRITE_PROBLEMS[(error as NodeJS.ErrnoException | undefined)?.code ?? ""];
+  return problem === undefined ? undefined : `${what === undefined ? "" : `${what}: `}${path} ${problem}.`;
+}
+
+/**
+ * Checks a path that a command writes, before the command does any work. The
+ * path must stay inside the project, also through symbolic links, and must
+ * not be in the knowledge (only the c64-knowledge skill writes it). A file
+ * must not be a folder or a symbolic link; a folder must be a folder. The
+ * nearest folder that exists must be a folder that can be written. Returns
+ * the absolute path. Throws a Refusal (invalid-input) whose message starts
+ * with `what` (for example --out). writeProjectFile does the same check for
+ * each file that it writes.
+ */
+export function checkOutputPath(path: string, kind: OutputKind, options: { root?: string; what?: string } = {}): string {
+  const root = options.root ?? projectRoot();
+  const what = options.what;
+  const outside = () => new Refusal("invalid-input", `${what ?? path}: give a path relative to the project folder that stays inside it, not ${path}.`);
+  const problem = (error: unknown) => {
+    const message = writeProblem(error, path, what);
+    return message === undefined ? error : new Refusal("invalid-input", message);
+  };
+  const inKnowledge = (fromRoot: string) => {
+    const part = knowledgePart(fromRoot);
+    if (part !== undefined) {
+      throw new Refusal("invalid-input", `${what === undefined ? "" : `${what}: `}${path} is in ${part}, the knowledge of the project. Only the c64-knowledge skill writes it: a write there destroys the knowledge. Give a path outside ${PROJECT_DIRECTORY}/${KNOWLEDGE_TEXT_DIRECTORY}/, for example ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/<file>.`);
+    }
+  };
+  let target: string;
+  try {
+    target = resolveProjectPath(path, root);
+  } catch {
+    throw outside();
+  }
+  inKnowledge(relative(root, target));
+  // The nearest entry that exists: the path itself, or a folder above it.
+  let existing = target;
+  for (;;) {
+    let found;
+    try {
+      found = lstatSync(existing, { throwIfNoEntry: false });
+    } catch (error) {
+      throw problem(error);
+    }
+    if (found !== undefined) break;
+    existing = dirname(existing);
+  }
+  const realRoot = realpathSync(root);
+  if (existing === target && kind === "file" && lstatSync(target).isSymbolicLink()) throw outside();
+  const real = realpathSync(existing);
+  if (!isInside(realRoot, real)) throw outside();
+  inKnowledge(relative(realRoot, join(real, relative(existing, target))));
+  const stat = statSync(real);
+  if (existing === target && kind === "file") {
+    if (stat.isDirectory()) throw problem({ code: "EISDIR" });
+  } else if (!stat.isDirectory()) {
+    throw problem({ code: "ENOTDIR" });
+  }
+  try {
+    accessSync(real, constants.W_OK);
+  } catch (error) {
+    throw problem(error);
+  }
+  return target;
 }
 
 /** A project path in one spelling: relative to the project folder, with / and without ./, .. or a double /. Refuses a path as resolveProjectPath does. */
