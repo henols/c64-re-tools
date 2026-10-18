@@ -304,7 +304,8 @@ function checkLibraryOutput(path: string, root: string): void {
   const realRoot = realpathSync(root);
   for (const [base, target] of [[root, path], [realRoot, real]] as const) {
     if (isInside(base, target)) {
-      checkOutputPath(relative(base, target) || ".", "folder", { root: base, what: "--library" });
+      // A project path shows with "/" on every system, as the messages give it.
+      checkOutputPath(relative(base, target).split(sep).join("/") || ".", "folder", { root: base, what: "--library" });
       return;
     }
   }

@@ -86,7 +86,7 @@ test("the equivalent rebuild passes, the different one fails, an unreachable che
   assert.equal(fail.status, 1);
   assert.equal(fail.json.result, "FAIL");
   // Only the counter differs: the screen, the border and A are the same on both sides.
-  assert.deepEqual(fail.json.differences, [{ checkpoint: "counted", what: "memory counter", original: "0a", rebuild: "09" }]);
+  assert.deepEqual(fail.json.differences, [{ checkpoint: "counted", what: "memory counter", bytes: { count: 1, listed: [{ address: "$c100", original: "0a", rebuild: "09" }] } }]);
 
   const inconclusive = await runTest("inconclusive.json");
   assert.equal(inconclusive.status, 3);
