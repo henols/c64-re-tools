@@ -6,6 +6,8 @@
 #   project.sh tools     the native tools only (at image build, as root)
 #   project.sh install   the native tools, then the toolkit into the project (after create)
 #   project.sh update    the same at each start; on a failure the installed copy stays
+# npx runs with --prefer-online: its cached package data can be minutes old and
+# not know a version that the registry just named.
 
 set -Eeuo pipefail
 
@@ -82,7 +84,7 @@ case "${1:-}" in
     install)
         resolve || { say "the registry ${REGISTRY} gave no version for the channel ${CHANNEL}."; exit 1; }
         tools
-        exec npx -y "@henols/c64-re-tools@${VERSION}" install --target "${TARGET}"
+        exec npx --prefer-online -y "@henols/c64-re-tools@${VERSION}" install --target "${TARGET}"
         ;;
     update)
         if ! resolve; then
@@ -90,7 +92,7 @@ case "${1:-}" in
         elif ! tools; then
             say "the native tools of ${VERSION} did not install; the installed tools and toolkit stay."
         else
-            npx -y "@henols/c64-re-tools@${VERSION}" update --target "${TARGET}" || say "the update failed; the installed copy stays."
+            npx --prefer-online -y "@henols/c64-re-tools@${VERSION}" update --target "${TARGET}" || say "the update failed; the installed copy stays."
         fi
         ;;
     *)
