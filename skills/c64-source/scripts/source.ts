@@ -1,18 +1,23 @@
 // The c64-source script: generates ACME source from the program and the
 // knowledge and Ghidra's instructions, which it runs itself, and checks
-// with ACME that the source assembles to the program byte by byte. With --loader it
-// also writes a loader that recreates the entry state, simulates it, and
-// checks it in the emulator. Each switch of the patches is built on
-// alone and checked. A macro use that does not give the bytes of the
-// image is written as its instructions. result is PASS when every check
-// passes, else FAIL.
+// with ACME that the build of the base release assembles to the program byte
+// by byte. With --loader it also writes a loader that recreates the entry
+// state, simulates it, and checks it in the emulator. The default build may
+// differ from the program only in the patches that it puts in; each release
+// builds to the bytes of its file; each switch is built alone against the
+// base release. A macro use that does not give the bytes of the image is
+// written as its instructions. result is PASS when every check passes, else
+// FAIL.
 
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
 import { type AddressRange, coverageSeedKinds, formatC64Address, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
+import { readImage, type Image } from "#src/host-client/image.ts";
+import { readProjectFile } from "#src/host-client/transfer.ts";
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
 import { writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -20,8 +25,8 @@ import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
 import { analyzedBytes, programCoverage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
-import { ANALYZER_NAME_ORDER, currentRevision, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listSymbols, type SymbolRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, type Space } from "#src/knowledge/schema.ts";
+import { ANALYZER_NAME_ORDER, baseValue, currentRevision, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listReleases, listSwitches, listSymbols, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, RELEASE_DEFINE, type Space } from "#src/knowledge/schema.ts";
 import { assemble } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
@@ -32,7 +37,7 @@ import { listed, OPTIONS, runScript, UsageError, type Call } from "#src/script.t
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, loaderState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
-import { entriesInData, entryOutsideImage, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered } from "./lib/source.ts";
+import { entriesInData, entryOutsideImage, hasSwitchFile, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
 
 /** At most this many diagnostics or differences of one check. */
 const MAX_DIAGNOSTICS = 20;
@@ -55,6 +60,8 @@ function readKnowledge(space: Space, analyzerNames = false) {
     if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was generated. Run c64-knowledge's knowledge.ts merge, then generate again.`);
     const symbols = listSymbols(db, undefined, undefined, undefined, space);
     const second = listAnalyzerNames(db, undefined, undefined, undefined, space);
+    const releases = listReleases(db, undefined, space);
+    const base = releases.find((release) => release.base)?.label;
     return {
       revision: currentRevision(db),
       program: requireProgram(db, space),
@@ -69,6 +76,8 @@ function readKnowledge(space: Space, analyzerNames = false) {
       references: listReferences(db, undefined, undefined, undefined, space),
       operands: listOperands(db, undefined, undefined, space),
       patches: listPatches(db, undefined, undefined, undefined, space),
+      switches: listSwitches(db, undefined, space).map((row): SourceSwitch => ({ name: row.name, kind: row.kind, default: row.default, base: baseValue(row, base), releases: row.releases, ...(row.comment === undefined ? {} : { comment: row.comment }) })),
+      releases,
       macros: listMacros(db, undefined, space),
       macroUses: listMacroUses(db, undefined, undefined, undefined, space),
     };
@@ -326,7 +335,7 @@ interface SegmentCheck {
 }
 
 /** Compares the assembled program with the image, segment by segment. */
-function check(program: Buffer, start: number, image: ProgramImage): { identical: boolean; segments: SegmentCheck[] } {
+function check(program: Buffer, start: number, image: Pick<ProgramImage, "segments" | "byteAt">): { identical: boolean; segments: SegmentCheck[] } {
   const end = start + program.length - 3;
   const segments = image.segments.map((segment): SegmentCheck => {
     const shown = { start: formatC64Address(segment.start), end: formatC64Address(segment.end) };
@@ -344,45 +353,34 @@ function check(program: Buffer, start: number, image: ProgramImage): { identical
   return { identical: segments.every((segment) => segment.result === "identical"), segments };
 }
 
-/** What a build with one switch on gives. */
-interface SwitchCheck {
-  name: string;
-  define: string;
-  patches: Array<{ start: string; end: string; bytes: number; insideNames?: string[] }>;
+/** What a build with other switch values gives, against the build of the base release. */
+interface BuildCheck {
   result: "fits" | "overflow" | "changes outside" | "does not assemble";
   changedBytes?: number;
-  outside?: { count: number; first: { address: string; built: number; default: number } };
+  outside?: { count: number; first: { address: string; built: number; base: number } };
   overflow?: Array<{ start: string; message: string }>;
   diagnostics?: Diagnostic[];
 }
 
 /**
- * Builds the source with one switch on and compares it with the default
- * build: only the ranges of its patches may change, and the program keeps its
- * start and length. A patch longer than its range stops ACME with !error.
+ * Builds the source with the defines and compares it with the build of the
+ * base release: only the ranges may change, and the program keeps its start
+ * and length. A patch longer than its range, or two alternatives together,
+ * stop ACME with !error.
  */
-async function checkSwitch(name: string, patches: PatchBlock[], files: Array<{ name: string; text: string }>, base: { program: Buffer; start: number }, names: Layout["names"]): Promise<SwitchCheck> {
-  const shown: SwitchCheck = {
-    name,
-    define: `--define ${name}=1`,
-    patches: patches.map((patch) => {
-      const inside = patch.inner.map((address) => names.get(address)!);
-      return { start: formatC64Address(patch.start), end: formatC64Address(patch.end), bytes: patch.end - patch.start + 1, ...(inside.length === 0 ? {} : { insideNames: inside }) };
-    }),
-    result: "fits",
-  };
-  const built = await assembleFiles(files, "main.asm", { [name]: 1 });
+async function checkBuild(files: Array<{ name: string; text: string }>, defines: Record<string, number>, ranges: readonly AddressRange[], base: { program: Buffer; start: number }): Promise<BuildCheck> {
+  const built = await assembleFiles(files, "main.asm", defines);
   if (built.program === undefined) {
     const overflow = built.diagnostics.flatMap((diagnostic) => {
-      const found = /The patch \S+ at (\$[0-9a-f]{4}) has .*/.exec(diagnostic.message);
-      return found === null ? [] : [{ start: found[1]!, message: found[0] }];
+      const found = /The patch \S+ at (\$[0-9a-f]{4}) has .*|\S+ and \S+ change (\$[0-9a-f]{4})-\$[0-9a-f]{4}: turn on one of them\./.exec(diagnostic.message);
+      return found === null ? [] : [{ start: (found[1] ?? found[2])!, message: found[0] }];
     });
-    if (overflow.length > 0) return { ...shown, result: "overflow", overflow };
-    return { ...shown, result: "does not assemble", diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
+    if (overflow.length > 0) return { result: "overflow", overflow };
+    return { result: "does not assemble", diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
   }
-  const inside = (address: number) => patches.some((patch) => address >= patch.start && address <= patch.end);
+  const inside = (address: number) => ranges.some((range) => address >= range.start && address <= range.end);
   let changed = 0;
-  let outside: SwitchCheck["outside"];
+  let outside: BuildCheck["outside"];
   const end = Math.max(base.start + base.program.length, built.start! + built.program.length) - 2;
   for (let address = Math.min(base.start, built.start!); address < end; address++) {
     const at = (program: Buffer, start: number) => (address >= start && address < start + program.length - 2 ? program[2 + address - start]! : -1);
@@ -390,9 +388,77 @@ async function checkSwitch(name: string, patches: PatchBlock[], files: Array<{ n
     const before = at(base.program, base.start);
     if (now === before) continue;
     if (inside(address)) changed++;
-    else outside = { count: (outside?.count ?? 0) + 1, first: outside?.first ?? { address: formatC64Address(address), built: now, default: before } };
+    else outside = { count: (outside?.count ?? 0) + 1, first: outside?.first ?? { address: formatC64Address(address), built: now, base: before } };
   }
-  return outside === undefined ? { ...shown, changedBytes: changed } : { ...shown, result: "changes outside", changedBytes: changed, outside };
+  return outside === undefined ? { result: "fits", changedBytes: changed } : { result: "changes outside", changedBytes: changed, outside };
+}
+
+/** What a build with one switch at the value that the base release does not have gives. */
+type SwitchCheck = BuildCheck & {
+  name: string;
+  kind: string;
+  default: number;
+  base: number;
+  define: string;
+  patches: Array<{ start: string; end: string; bytes: number; insideNames?: string[] }>;
+};
+
+/** Builds the source with one switch changed from its base value; only the ranges of its patches may change. */
+async function checkSwitch(row: SourceSwitch, patches: PatchBlock[], files: Array<{ name: string; text: string }>, defines: Record<string, number>, base: { program: Buffer; start: number }, names: Layout["names"]): Promise<SwitchCheck> {
+  const value = 1 - row.base;
+  const built = await checkBuild(files, { ...defines, [row.name]: value }, patches, base);
+  return {
+    name: row.name,
+    kind: row.kind,
+    default: row.default,
+    base: row.base,
+    define: `--define ${row.name}=${value}`,
+    patches: patches.map((patch) => {
+      const inside = patch.inner.map((address) => names.get(address)!);
+      return { start: formatC64Address(patch.start), end: formatC64Address(patch.end), bytes: patch.end - patch.start + 1, ...(inside.length === 0 ? {} : { insideNames: inside }) };
+    }),
+    ...built,
+  };
+}
+
+/** What the build of a release gives against the bytes of its file. */
+interface ReleaseCheck {
+  label: string;
+  base: boolean;
+  file: string;
+  define: string;
+  result: "identical" | "different" | "layout differs" | "file changed" | "does not assemble";
+  reason?: string;
+  segments?: SegmentCheck[];
+  diagnostics?: Diagnostic[];
+}
+
+/**
+ * Builds a release with RELEASE_<label> and compares it with its file. A
+ * release whose segments are not the segments of the program has moved code,
+ * which patches cannot give: it is shown and does not fail the run.
+ */
+async function checkRelease(release: ReleaseRow, files: Array<{ name: string; text: string }>, program: ProgramImage): Promise<ReleaseCheck> {
+  const shown = { label: release.label, base: release.base, file: release.file, define: `--define ${RELEASE_DEFINE}${release.label}=1` };
+  let image: Image;
+  try {
+    const bytes = readProjectFile(release.file).bytes;
+    if (createHash("sha256").update(bytes).digest("hex") !== release.sha256) {
+      return { ...shown, result: "file changed", reason: `The SHA-256 of ${release.file} is not the one that the knowledge has. Record the release again (knowledge.ts release), or put back the file.` };
+    }
+    image = readImage(release.file);
+  } catch (error) {
+    if (!(error instanceof Refusal || error instanceof WireFailure)) throw error;
+    return { ...shown, result: "file changed", reason: error.message };
+  }
+  if (JSON.stringify(image.segments) !== JSON.stringify(program.segments)) {
+    const segments = (list: readonly AddressRange[]) => list.map((segment) => `${formatC64Address(segment.start)}-${formatC64Address(segment.end)}`).join(", ");
+    return { ...shown, result: "layout differs", reason: `The release has the segments ${segments(image.segments)}, and the program has ${segments(program.segments)}. Patches change bytes in place; they cannot move code.` };
+  }
+  const built = await assembleFiles(files, "main.asm", { [`${RELEASE_DEFINE}${release.label}`]: 1 });
+  if (built.program === undefined) return { ...shown, result: "does not assemble", diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
+  const checked = check(built.program, built.start!, image);
+  return { ...shown, result: checked.identical ? "identical" : "different", ...(checked.identical ? {} : { segments: checked.segments.filter((segment) => segment.result !== "identical") }) };
 }
 
 /** Reads RAM in parts. */
@@ -560,6 +626,8 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const romUse = romUseOfProgram(coverage, image.state);
   const platform = platformNamesFor(romUse);
   const { instructions, dataOnly } = await decode(image, knowledge, entries, coverage);
+  // Every build that is compared with the program is the build of the base release: each switch at its base value.
+  const baseDefines = Object.fromEntries(knowledge.switches.map((row) => [row.name, row.base]));
   const laid = layout({
     segments: image.segments,
     byteAt: image.byteAt,
@@ -572,6 +640,8 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     referenceTargets: knowledge.references.map((reference) => reference.to),
     operands: knowledge.operands,
     patches: knowledge.patches,
+    switches: knowledge.switches,
+    releases: knowledge.releases.map((release) => ({ label: release.label, file: release.file, base: release.base, ...(release.comment === undefined ? {} : { comment: release.comment }) })),
     macros: knowledge.macros,
     macroUses: knowledge.macroUses,
     ...(coverage === undefined ? {} : { coverage }),
@@ -589,7 +659,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     const segments = image.segments.map((segment) => ({ ...segment, files: laid.pieces.filter((piece) => piece.start >= segment.start && piece.start <= segment.end).map((piece) => piece.file) }));
     try {
       const entryName = laid.names.get(image.entry!);
-      loader = planLoader({ segments, byteAt: image.byteAt, state, entry: image.entry!, ...(entryName === undefined ? {} : { entryName }), macros: laid.macros.length > 0, header: [`Loader generated by c64-source from knowledge revision ${knowledge.revision}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] });
+      loader = planLoader({ segments, byteAt: image.byteAt, state, entry: image.entry!, ...(entryName === undefined ? {} : { entryName }), switches: hasSwitchFile(laid), macros: laid.macros.length > 0, header: [`Loader generated by c64-source from knowledge revision ${knowledge.revision}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] });
     } catch (error) {
       if (!(error instanceof WireFailure)) throw error;
       loaderRefused = error.message;
@@ -606,7 +676,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   if (laid.macroUses.size > 0) for (const [start, reason] of await probeUses(laid, rendered, image)) asInstructions.set(start, reason);
   if (asInstructions.size > 0) rendered = render(laid, asBytes, header, numbers, asInstructions);
   let files = marked([...rendered.files, ...loaderFiles]);
-  let built = await assembleFiles(files, "main.asm");
+  let built = await assembleFiles(files, "main.asm", baseDefines);
   for (let round = 0; round < ROUNDS && (rendered.expressions.length > 0 || rendered.uses.length > 0); round++) {
     const blamed = blame(rendered, built, image, 1);
     if (blamed.numbers.size === 0 && blamed.uses.size === 0) break;
@@ -614,7 +684,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     for (const [start, reason] of blamed.uses) asInstructions.set(start, reason);
     rendered = render(laid, asBytes, header, numbers, asInstructions);
     files = marked([...rendered.files, ...loaderFiles]);
-    built = await assembleFiles(files, "main.asm");
+    built = await assembleFiles(files, "main.asm", baseDefines);
   }
   const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), loaderWanted).map((name) => `${out}/${name}`);
   const written: Written[] = files.map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
@@ -689,15 +759,35 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const checked = check(built.program, built.start!, image);
   output.check = checked;
   if (!checked.identical) return { output: { ...output, ...notBuilt("The source does not assemble to the image, and the loader includes it.") }, removed, failed: true };
-  // Each switch on alone, against the default build; combinations are not built.
+  const baseBuild = { program: built.program, start: built.start! };
+  // Each switch alone at the value that the base release does not have, against the base release.
   const switches: SwitchCheck[] = [];
-  for (const [name, patches] of switchesOf(laid)) switches.push(await checkSwitch(name, patches, files, { program: built.program, start: built.start! }, laid.names));
+  const withPatches = switchesOf(laid);
+  for (const row of laid.switches) {
+    const patches = withPatches.get(row.name);
+    if (patches !== undefined) switches.push(await checkSwitch(row, patches, files, baseDefines, baseBuild, laid.names));
+  }
   if (switches.length > 0) output.switches = switches;
-  const sourceFailed = laid.patchesNotWritten.length > 0 || switches.some((item) => item.result !== "fits");
+  // The default build: the patches of each switch whose default is not its base value are in, and nothing else changes.
+  let defaultFailed = false;
+  if (laid.switches.length > 0) {
+    const changed = laid.switches.filter((row) => row.default !== row.base);
+    const ranges = changed.flatMap((row) => withPatches.get(row.name) ?? []);
+    const built = await checkBuild(files, {}, ranges, baseBuild);
+    output.default = { in: changed.map((row) => row.name), ...built };
+    defaultFailed = built.result !== "fits";
+  }
+  // Each release built with its switch values, against its file.
+  const releases: ReleaseCheck[] = [];
+  for (const release of knowledge.releases) releases.push(await checkRelease(release, files, image));
+  if (releases.length > 0) output.releases = releases;
+  const releasesFailed = releases.some((item) => item.result !== "identical" && (item.base || item.result !== "layout differs"));
+  const sourceFailed = laid.patchesNotWritten.length > 0 || switches.some((item) => item.result !== "fits") || defaultFailed || releasesFailed;
   if (loaderRefused !== undefined) return { output: { ...output, loader: { verified: false, reason: loaderRefused } }, removed, failed: true };
   if (loader === undefined || state === undefined) return { output, removed, failed: missingEntry !== undefined || sourceFailed };
 
-  const loaderBuilt = await assembleFiles(files, "loader.asm");
+  // The entry state is the state of the base release: the loader is built and checked with it.
+  const loaderBuilt = await assembleFiles(files, "loader.asm", baseDefines);
   if (loaderBuilt.program === undefined) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics.slice(0, MAX_DIAGNOSTICS) } }, removed, failed: true };
   const program = loaderBuilt.program;
   // The simulation: the loader in memory as it loads, then every copy in its order, byte by byte.

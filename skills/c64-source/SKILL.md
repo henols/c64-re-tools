@@ -66,11 +66,11 @@ When the knowledge has coverage, code that no run executed gets the line `; not 
 
 1. Put the program into the knowledge with `image` of the c64-knowledge skill. For a packed program, capture it first with the c64-unpacker skill. For a program without a packer, use the PRG.
 2. Run the script.
-3. Read `result` and `check`. `check.identical: true` tells that the source assembles to the program byte by byte.
+3. Read `result` and `check`. `check.identical: true` tells that the build of the base release assembles to the program byte by byte. Without switches, this build is the default build.
 4. Read the source. A label `l_xxxx` is an address that has no name in the knowledge.
 5. Record names, comments, regions and modules with the c64-knowledge skill. Use `apply` for many changes.
 6. Run the script again. Do steps 4 to 6 again until the source is clear.
-7. Build the program with the c64-assembler skill: `assembler.ts build src main.asm --out <file.prg>`.
+7. Build the program with the c64-assembler skill: `assembler.ts build src main.asm --out <file.prg>`. This is the default build. For a release, add `--release <label>`.
 8. For an unpacked program, run the script with `--loader` at the end. Test `loader.prg` against the original with the c64-testing skill.
 
 ## The source
@@ -78,7 +78,7 @@ When the knowledge has coverage, code that no run executed gets the line `; not 
 - `main.asm` sets the address of each segment and includes the files in address order.
 - Each module in the knowledge is one file. A module starts at its address and stops at the next module or at the end of its segment. Without modules, each segment is one file, `segment_xxxx.asm`.
 - `constants.asm` holds the names of addresses outside the program, for example `EXTCOL = $d020`. The file puts the names in groups by memory area, for example zero page, VIC-II registers or CIA 1 registers. Each group is in address order. Drive code and banks have one group only. The side comment of a name tells what the address is. This text is the knowledge comment of the address. Without a comment, the text is the platform meaning. When the knowledge name is not the platform name, the platform name comes first. For an I/O mirror without a meaning, the text gives the register that the mirror repeats. Then `Used:` counts how the source uses the name. The kinds are `read`, `written`, `modified`, `called`, `jumped to`, `jumped through`, `branched to`, `pointer`, `address`, `table` and `macro argument`. `address` is an immediate operand expression. `table` is an entry in a table of addresses.
-- The top of `constants.asm` sets each switch to 0, for example `!ifndef CRACK { CRACK = 0 }`. A build that defines the switch as 1 uses the patches of that switch.
+- `switches.asm` holds every switch and every release of the knowledge. `main.asm` and `loader.asm` include it first. The script writes it only when the knowledge has switches or releases. For each release, a block `!ifdef RELEASE_<label>` gives each switch the value of that release. Then each switch gets its default, for example `!ifndef PROTECTION { PROTECTION = 0 }`. The switches are in groups by kind. The side comment gives the releases that have the switch on, the ranges of its patches and the comment of the switch.
 - A label or a constant gets the name of the address in the knowledge. Without a knowledge name, it gets the platform name of the c64-memory-map skill, for example `EXTCOL` or `CHROUT`. A platform name wins over a name from an analyzer (`dxa`, `ghidra` or `heuristic`), for example `EXTCOL` over `ld020`. A `user` or `llm` name wins over a platform name. An address in the program without a name gets `l_xxxx`.
 - The source uses the names of a ROM only when the program uses that ROM. When the knowledge has coverage, a ROM is in use when a run executed code of it. A read of ROM bytes as data does not count. Without coverage, `$01` of the entry state tells which ROMs are in. When the program uses neither ROM, the zero page and pages 2 and 3 get no system names. `romNamesLeftOut` gives the ROMs that the source did not name, and the evidence. An operand expression or a macro use with such a name gets that reason.
 - `sta $d011  ; $d011: yScroll 3, rows 25, displayEnabled` is a store of an immediate to a register that the c64-memory-map skill decodes. The side comment gives the decoded value. A side comment in the knowledge replaces it.
@@ -94,18 +94,25 @@ When the knowledge has coverage, code that no run executed gets the line `; not 
 - `not decoded` marks bytes in a code region that Ghidra did not decode.
 - `; not executed $xxxx-$yyyy` starts code that no run of the coverage executed. The range is the same as in `not_executed.json`.
 - `+inc16 ptr` is a use of a macro of the knowledge. `macros.asm` holds the macros. `main.asm` and `loader.asm` include it. The comments inside a use go to its side comment.
-- `!zone patch_CRACK_100e` starts a patch of the knowledge. `!if CRACK` has the code of the patch and NOP to the end of the range. `else` has the original code. The labels inside the range come before the zone as `name = * + n`. Thus both builds have them.
+- `!zone patch_PROTECTION_100e` starts a patch of the knowledge. The condition is the state that the program does not have. It is `!if TRAINER` when the base release has the switch off. It is `!if PROTECTION = 0` when the base release has it on. The block has the code of the patch and NOP to the end of the range. `else` has the original code. The labels inside the range come before the zone as `name = * + n`. Thus all builds have them.
+- Alternatives are patches of two or more switches at one range. They follow as `} else { !if FIX_B {`. A line before them stops the build with `!error` when two of them are in.
 
 Do not edit the generated files. The next run writes over them.
 
 ## Switches and macros
 
-A switch changes the program only when the build defines it. Thus the source without a define stays identical to the program.
+The program of the knowledge is the base release. The default build is the clean program: no copy protection, no trainer, no cheat and no crack change, and all corrections. Thus the default build can differ from the program. The script does these checks:
 
-1. The script checks the default build with `check`.
-2. Then it builds each switch on its own, with the switch as 1. It does not build two switches together.
-3. The build of a switch must have the same length as the default build. It can change bytes only in the ranges of its patches.
-4. Build the program with a switch on with the c64-assembler skill: `--define CRACK=1`.
+1. `check`: the build of the base release, with each switch at its base value, must give the program byte by byte.
+2. `switches`: the script builds each switch alone at the other value. It does not build two switches together. The build must have the same length as the build of the base release. It can change bytes only in the ranges of the patches of the switch.
+3. `default`: the default build must have the same length. It can change bytes only in the patches of the switches in `default.in`. These are the switches whose default is not their base value.
+4. `releases`: the script builds each release with `RELEASE_<label>=1` and compares it with the file of the release.
+
+Build the program with the c64-assembler skill:
+
+- The default build: no option.
+- A release: `--release ORIGINAL`.
+- One switch: `--define TRAINER=1`.
 
 The script writes a patch only when its range is complete items of one file. A patch cannot cut an instruction. Its switch name cannot be a name of the source.
 
@@ -127,6 +134,8 @@ The copy table, the copier and the jump to the entry use labels, not numbers. `l
 The flags go through the free stack byte below the stack pointer (`stackByte`). The loader changes this byte. The loader does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. `loader.limits` names each CIA value that the loader cannot set as it was at the entry. A program that reads the SID voice 3 for random numbers can still differ in a scenario. A raster sync does not change a timer or the SID. Then observe after the program sets up its own random numbers. To sync the original and the rebuild in a test, see the sync rules of the c64-testing skill.
 
 The script simulates the copies first. Then it runs `loader.prg` in the emulator to its jump to the entry. It compares the memory, $00/$01, the registers, the screen registers of the VIC-II, the VIC bank and the raster line with the entry state there. It also compares the CIA timers, latches and interrupt masks. `loader.verified: true` tells that all of them are equal. An interrupt can run right at the entry, as in the original program.
+
+The entry state is the state of the base release. Thus the script builds and checks `loader.prg` with the switch values of the base release. For a loader of the default build, build `loader.asm` with the c64-assembler skill and no option.
 
 ## Knowledge
 
@@ -157,11 +166,19 @@ Do not store:
 - `macroUses`: the count of macro uses that the source has.
 - `macrosAsInstructions`: the macro uses that the source has as instructions, each with its `start`, `end`, `macro` and `reason`.
 - `patchesNotWritten`: the patches that the source does not have, each with its range, `switch` and `reason`.
-- `check`: `identical`, and the result for each segment. A different segment gives its first different address.
-- `switches`: the build of each switch. Each item has the `define` for the c64-assembler skill, the patches and the `result` of the build with the switch on. `fits` tells that the build is good, and `changedBytes` counts the changed bytes. `overflow` tells that the code of a patch is longer than its range. `changes outside` gives the first byte outside the ranges that changed. `does not assemble` gives the diagnostics of ACME. `insideNames` lists the labels inside a patch. Code that writes to one of these labels changes the patch when the switch is on.
+- `check`: `identical`, and the result for each segment of the build of the base release. A different segment gives its first different address.
+- `switches`: the build of each switch that has patches. Each item has `kind`, `default`, `base`, the `define` for the c64-assembler skill and the patches. `result` is the result of the build with the switch at the value that is not `base`. `fits` tells that the build is good, and `changedBytes` counts the changed bytes. `overflow` tells that the code of a patch is longer than its range. `changes outside` gives the first byte outside the ranges that changed. `does not assemble` gives the diagnostics of ACME. `insideNames` lists the labels inside a patch. Code that writes to one of these labels changes the patch when the switch is on.
+- `default`: the default build. `in` lists the switches whose patches are in. `result` and `changedBytes` are as in `switches`.
+- `releases`: the build of each release. Each item has `label`, `base`, `file`, the `define` and the `result`. `identical` tells that the build gives the bytes of the file. `different` gives the segments that differ. `layout differs` tells that the release has other segments than the program: patches cannot move code, so this result does not fail the run. `file changed` tells that the file is not the file that the knowledge recorded. `does not assemble` gives the diagnostics of ACME.
 - `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`. `limits` lists the CIA values that the loader cannot set. An entry state from an old capture has no CIA values. Then `limits` tells you to capture the program again. When the script cannot make the loader, `loader` has `verified: false` and a `reason`. The loader includes the source. Thus a source that does not assemble to the program also stops the loader.
 
-`result` is `PASS` when the source is identical and the emulator check of the loader passes. `result` is `FAIL` for a failed check and for an entry in no segment. A patch that the source does not have, or a switch that does not fit, also gives `FAIL`. `asBytes`, `notExecuted`, `operandsAsNumbers`, `macrosAsInstructions` and `patchesNotWritten` are lists of at most `--max-listed` items.
+`result` is `PASS` when the source is identical and the emulator check of the loader passes. `result` is `FAIL` for a failed check and for an entry in no segment. These also give `FAIL`:
+
+- a patch that the source does not have
+- a switch or a default build that does not fit
+- a release that the build does not give. A release with `layout differs` does not give `FAIL`, but the base release must be `identical`.
+
+`asBytes`, `notExecuted`, `operandsAsNumbers`, `macrosAsInstructions` and `patchesNotWritten` are lists of at most `--max-listed` items.
 
 ## Failure and conflicts
 
@@ -171,7 +188,10 @@ Do not store:
 - `invalid-input` that names a symbol or a module: change that symbol or module in the knowledge.
 - `switches` with `overflow`: make the code of the patch shorter, or make the range of the patch larger, with `patch` of the c64-knowledge skill.
 - `switches` with `does not assemble`: read the diagnostics and correct the code of the patch.
-- `patchesNotWritten`: read each `reason`. Move the start or the end of the patch to an instruction, or give the switch another name.
+- `patchesNotWritten`: read each `reason`. Move the start or the end of the patch to an instruction, or give the switch another name. For a switch that is not in the knowledge, write it with `switch` of the c64-knowledge skill.
+- `default` with `overflow` and the message `turn on one of them`: two alternatives are in the default build. Give one of the switches the default of the base release.
+- `releases` with `different`: the release has bytes that no patch gives. Compare the releases with the c64-provenance skill. Then record a switch and a patch for each difference.
+- `releases` with `file changed`: put back the file, or record the release again with `release` of the c64-knowledge skill.
 - `macrosAsInstructions`: read each `reason`. Correct the macro or the args, or remove the use with `unuse`. The source stays identical, so this is not a failure.
 - `entryOutside`: the run fails, but the script still writes and checks the source. With `--loader`, `loader.verified` is `false` with the same `reason`. Capture the program again with c64-unpacker `loads` or `capture`. Make sure that a segment holds the entry. Then put it into the knowledge again with `image`.
 - `dataOnly`: this is not a failure. If the space has code, give `--entry` or classify the code with the c64-knowledge skill. Then generate again.

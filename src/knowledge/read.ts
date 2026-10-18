@@ -6,7 +6,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { AddressRange } from "../c64.ts";
 import { Refusal } from "../errors.ts";
-import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SuppressionEntity, type SymbolKind } from "./schema.ts";
+import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SuppressionEntity, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { NO_REVISION } from "./text.ts";
 
 export interface SymbolRow {
@@ -86,8 +86,10 @@ export interface OperandRow {
 }
 
 /**
- * Code that replaces [start, end] when the build defines the switch as 1
- *. The code fits the range; NOP fills the rest. Empty code is only NOP.
+ * Code that replaces [start, end] when its switch does not have its base value:
+ * the program bytes are the base release, so the code is the other state. The
+ * code fits the range; NOP fills the rest. Empty code is only NOP. Patches of
+ * different switches can have the same range: they are alternatives.
  */
 export interface PatchRow {
   space: Space;
@@ -95,6 +97,30 @@ export interface PatchRow {
   end: number;
   switch: string;
   code: string;
+  comment?: string;
+  origin: Extract<Origin, "user" | "llm">;
+  revision: string;
+}
+
+/** A switch of the patches: what it changes, its value in the default build, and the releases that have it on. */
+export interface SwitchRow {
+  space: Space;
+  name: string;
+  kind: SwitchKind;
+  default: 0 | 1;
+  releases: string[];
+  comment?: string;
+  origin: Extract<Origin, "user" | "llm">;
+  revision: string;
+}
+
+/** A release of the program: its project file with the SHA-256, and whether its bytes are the program of the knowledge. */
+export interface ReleaseRow {
+  space: Space;
+  label: string;
+  file: string;
+  sha256: string;
+  base: boolean;
   comment?: string;
   origin: Extract<Origin, "user" | "llm">;
   revision: string;
@@ -136,6 +162,8 @@ export const SUPPRESSION_COLUMNS = "space, entity, start_address, end_address, t
 export const MODULE_COLUMNS = "space, start_address, file, title, origin, valid_from_revision";
 export const OPERAND_COLUMNS = "space, address, selector, symbol, offset, expression, origin, valid_from_revision";
 export const PATCH_COLUMNS = "space, start_address, end_address, switch_name, code, comment, origin, valid_from_revision";
+export const SWITCH_COLUMNS = "space, name, kind, default_value, releases, comment, origin, valid_from_revision";
+export const RELEASE_COLUMNS = "space, label, file, sha256, base, comment, origin, valid_from_revision";
 export const MACRO_COLUMNS = "space, name, params, body, comment, origin, valid_from_revision";
 export const MACRO_USE_COLUMNS = "space, start_address, end_address, macro, args, origin, valid_from_revision";
 
@@ -217,6 +245,34 @@ export function toPatch(row: Raw): PatchRow {
   };
   if (row.comment !== null && row.comment !== undefined) patch.comment = row.comment as string;
   return patch;
+}
+
+export function toSwitch(row: Raw): SwitchRow {
+  const value: SwitchRow = {
+    space: row.space as Space,
+    name: row.name as string,
+    kind: row.kind as SwitchKind,
+    default: row.default_value === 1 ? 1 : 0,
+    releases: items(row.releases as string),
+    origin: row.origin as SwitchRow["origin"],
+    revision: row.valid_from_revision as string,
+  };
+  if (row.comment !== null && row.comment !== undefined) value.comment = row.comment as string;
+  return value;
+}
+
+export function toRelease(row: Raw): ReleaseRow {
+  const release: ReleaseRow = {
+    space: row.space as Space,
+    label: row.label as string,
+    file: row.file as string,
+    sha256: row.sha256 as string,
+    base: row.base === 1,
+    origin: row.origin as ReleaseRow["origin"],
+    revision: row.valid_from_revision as string,
+  };
+  if (row.comment !== null && row.comment !== undefined) release.comment = row.comment as string;
+  return release;
 }
 
 export function toMacro(row: Raw): MacroRow {
@@ -437,6 +493,44 @@ export function macroUsesOverlapping(db: DatabaseSync | undefined, start: number
     .map((row) => toMacroUse(row as Raw));
 }
 
+export function switchNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): SwitchRow | undefined {
+  const row = db?.prepare(`SELECT ${SWITCH_COLUMNS} FROM current_switches WHERE space = ? AND name = ?`).get(space, name) as Raw | undefined;
+  return row === undefined ? undefined : toSwitch(row);
+}
+
+/** Current switches of a space, by name. */
+export function listSwitches(db: DatabaseSync | undefined, origins?: OriginFilter, space: Space = DEFAULT_SPACE): SwitchRow[] {
+  if (db === undefined) return [];
+  return db
+    .prepare(`SELECT ${SWITCH_COLUMNS} FROM current_switches WHERE space = ? ORDER BY name`)
+    .all(space)
+    .map((row) => toSwitch(row as Raw))
+    .filter(kept(origins));
+}
+
+export function releaseLabeled(db: DatabaseSync | undefined, label: string, space: Space = DEFAULT_SPACE): ReleaseRow | undefined {
+  const row = db?.prepare(`SELECT ${RELEASE_COLUMNS} FROM current_releases WHERE space = ? AND label = ?`).get(space, label) as Raw | undefined;
+  return row === undefined ? undefined : toRelease(row);
+}
+
+/** Current releases of a space: the base release first, then by label. */
+export function listReleases(db: DatabaseSync | undefined, origins?: OriginFilter, space: Space = DEFAULT_SPACE): ReleaseRow[] {
+  if (db === undefined) return [];
+  return db
+    .prepare(`SELECT ${RELEASE_COLUMNS} FROM current_releases WHERE space = ? ORDER BY base DESC, label`)
+    .all(space)
+    .map((row) => toRelease(row as Raw))
+    .filter(kept(origins));
+}
+
+/**
+ * The value of a switch in the program of the knowledge: 1 when the base
+ * release has it on. A patch holds the code of the other value.
+ */
+export function baseValue(row: Pick<SwitchRow, "releases">, base: string | undefined): 0 | 1 {
+  return base !== undefined && row.releases.includes(base) ? 1 : 0;
+}
+
 export function macroNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): MacroRow | undefined {
   const row = db?.prepare(`SELECT ${MACRO_COLUMNS} FROM current_macros WHERE space = ? AND name = ?`).get(space, name) as Raw | undefined;
   return row === undefined ? undefined : toMacro(row);
@@ -585,7 +679,7 @@ export function listSpaces(db: DatabaseSync | undefined): Space[] {
   if (db === undefined) return [];
   const rows = db
     .prepare(
-      `SELECT space FROM current_symbols UNION SELECT space FROM current_analyzer_names UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands UNION SELECT space FROM current_patches UNION SELECT space FROM current_macros UNION SELECT space FROM current_macro_uses UNION SELECT space FROM current_memory UNION SELECT space FROM current_entries UNION SELECT space FROM current_coverage`,
+      `SELECT space FROM current_symbols UNION SELECT space FROM current_analyzer_names UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands UNION SELECT space FROM current_patches UNION SELECT space FROM current_switches UNION SELECT space FROM current_releases UNION SELECT space FROM current_macros UNION SELECT space FROM current_macro_uses UNION SELECT space FROM current_memory UNION SELECT space FROM current_entries UNION SELECT space FROM current_coverage`,
     )
     .all() as Array<{ space: Space }>;
   const order = (space: Space) => (space === "c64" ? -2 : space === "drive8" ? -1 : Number(space.slice(4)));

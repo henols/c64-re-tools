@@ -88,7 +88,15 @@ With `--frames`, a PRG starts with autostart and RUN. An image starts from its b
    - Disassemble the bytes of each release with the c64-emulator skill, or analyze them with the c64-static-analysis skill.
    - Find what the change does, for example a trainer, a removed copy protection, or a changed text.
 6. Decide which bytes are probably the original application. Use more than the byte comparison: the code, the text, and the history of the releases.
-7. Record the conclusion as a comment or a region with the c64-knowledge skill.
+7. Record each release with `release` of the c64-knowledge skill. The base release is the program of the knowledge.
+8. Record each difference as a switch and a patch with the c64-knowledge skill. Select the kind of the switch:
+   - `protection`: a copy protection, or the code that a crack changed to remove it.
+   - `trainer` or `cheat`: a trainer or a cheat.
+   - `crack`: another change of a cracker in the program, for example a credit text.
+   - `fix`: a correction of a bug. Make one switch for each correction, not one switch for each release.
+   - `change`: another difference.
+9. Give the switch the labels of the releases that have it on. The patch holds the bytes of the state that the base release does not have.
+10. Record each other conclusion as a comment or a region with the c64-knowledge skill.
 
 ## One release
 
@@ -136,7 +144,7 @@ Do these steps:
 4. Run `leftovers`. When you have two or more releases, also compare them.
 5. Read `text` first: names, dates, greetings and credits. Then read `copies`, `residue`, `basic` and `deadCode`.
 6. Examine each important finding with the c64-emulator skill or the c64-static-analysis skill.
-7. Record each confirmed finding with the c64-knowledge skill. Classify a confirmed PETSCII text as a `petscii` region, and a screen code text as a `screen` region. Classify other text as `bytes`. Write a comment that tells what the leftover is.
+7. Record each confirmed finding with the c64-knowledge skill. Do not remove a leftover from the program: a rebuild keeps it. Only the data of a cracktro goes out, with `capture --exclude` of the c64-unpacker skill. Classify a confirmed PETSCII text as a `petscii` region, and a screen code text as a `screen` region. Classify other text as `bytes`. Write a comment that tells what the leftover is.
 
 Read the findings with care:
 
@@ -187,7 +195,7 @@ To find the routines in a program:
 Automatic write:
 - none.
 
-Record a confirmed conclusion as a normal comment, region or symbol with the c64-knowledge skill. Do not record the full comparison or the full list of leftovers.
+Record a confirmed conclusion as a normal comment, region, symbol, release, switch or patch with the c64-knowledge skill. Do not record the full comparison or the full list of leftovers.
 
 `match --out` writes a batch file and does not change the knowledge. Apply the batch with the c64-knowledge skill.
 

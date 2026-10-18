@@ -1,9 +1,10 @@
-// Code switches and macros. A program with a copy check
-// gets a CRACK switch of three patches and a TRAINER switch of only NOP; a
-// macro writes one of two 16-bit increments, and the other one, with a label
-// inside it, stays instructions. The source is identical to the program, each
-// switch fits, a build with CRACK on differs only in its ranges, and the
-// macro candidates of the analyzer, applied, keep the source identical.
+// Code switches and macros. The original release has a copy check: a
+// PROTECTION switch of three patches holds the code without it, and a TRAINER
+// switch of only NOP keeps the lives. A macro writes one of two 16-bit
+// increments, and the other one, with a label inside it, stays instructions.
+// The build of the original is identical to the program, each switch fits,
+// the default build is the program without the copy check, and the macro
+// candidates of the analyzer, applied, keep the source identical.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -56,7 +57,7 @@ const CODE = [
 
 const INC16 = CATALOGUE.find((idiom) => idiom.name === "inc16")!;
 
-test("switches and macros: the source stays identical, each switch fits, and CRACK on changes only its ranges", { skip, timeout: 900_000 }, () => {
+test("switches and macros: the original stays identical, each switch fits, and the default build has no copy check", { skip, timeout: 900_000 }, () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.from([0x00, 0x10, ...CODE]));
   writeFileSync(
     join(project, "knowledge.json"),
@@ -72,37 +73,52 @@ test("switches and macros: the source stays identical, each switch fits, and CRA
       { op: "macro", name: "inc16", params: INC16.params, body: INC16.body, comment: INC16.comment },
       { op: "use", start: "$1005", end: "$100a", macro: "inc16", args: ["ptr"] },
       { op: "use", start: "$1011", end: "$1016", macro: "inc16", args: ["$fd"] },
-      { op: "patch", start: "$100e", end: "$1010", switch: "CRACK", code: "", comment: "No copy check." },
-      { op: "patch", start: "$1027", end: "$1028", switch: "CRACK", code: "" },
-      { op: "patch", start: "$102a", end: "$102c", switch: "CRACK", code: "        rts" },
+      { op: "patch", start: "$100e", end: "$1010", switch: "PROTECTION", code: "", comment: "No copy check." },
+      { op: "patch", start: "$1027", end: "$1028", switch: "PROTECTION", code: "" },
+      { op: "patch", start: "$102a", end: "$102c", switch: "PROTECTION", code: "        rts" },
     ]),
   );
   ok("c64-knowledge", "knowledge.ts", ["image", "game.prg"]);
-  ok("c64-knowledge", "knowledge.ts", ["apply", "knowledge.json", "--reason", "the crack and the counters"]);
+  ok("c64-knowledge", "knowledge.ts", ["release", "ORIGINAL", "--file", "game.prg", "--base", "--comment", "With the copy check."]);
+  ok("c64-knowledge", "knowledge.ts", ["switch", "PROTECTION", "--kind", "protection", "--releases", "ORIGINAL", "--comment", "The copy check reads the keyboard."]);
+  ok("c64-knowledge", "knowledge.ts", ["switch", "TRAINER", "--kind", "trainer", "--comment", "Infinite lives."]);
+  ok("c64-knowledge", "knowledge.ts", ["apply", "knowledge.json", "--reason", "the copy check and the counters"]);
   ok("c64-knowledge", "knowledge.ts", ["patch", "$100b-$100d", "TRAINER", "--nop", "--comment", "Lives stay."]);
-  assert.deepEqual(ok("c64-knowledge", "knowledge.ts", ["switches"]).switches.listed.map((item: { name: string; patches: unknown[] }) => [item.name, item.patches.length]), [["CRACK", 3], ["TRAINER", 1]]);
+  assert.deepEqual(
+    ok("c64-knowledge", "knowledge.ts", ["switches"]).switches.listed.map((item: { name: string; default: number; base: number; patches: unknown[] }) => [item.name, item.default, item.base, item.patches.length]),
+    [["PROTECTION", 0, 1, 3], ["TRAINER", 0, 0, 1]],
+  );
 
   const generated = ok("c64-source", "source.ts", ["generate", "--out", "src"]);
   assert.equal(generated.check.identical, true);
-  assert.deepEqual(generated.files.map((file: { out: string }) => file.out).filter((path: string) => path.endsWith(".asm")), ["src/segment_1000.asm", "src/constants.asm", "src/macros.asm", "src/main.asm"]);
-  assert.deepEqual(generated.switches.map((item: { name: string; result: string; changedBytes: number }) => [item.name, item.result, item.changedBytes]), [["CRACK", "fits", 8], ["TRAINER", "fits", 3]]);
+  assert.deepEqual(generated.files.map((file: { out: string }) => file.out).filter((path: string) => path.endsWith(".asm")), ["src/segment_1000.asm", "src/switches.asm", "src/constants.asm", "src/macros.asm", "src/main.asm"]);
+  assert.deepEqual(generated.switches.map((item: { name: string; result: string; changedBytes: number }) => [item.name, item.result, item.changedBytes]), [["PROTECTION", "fits", 8], ["TRAINER", "fits", 3]]);
+  assert.deepEqual(generated.default, { in: ["PROTECTION"], result: "fits", changedBytes: 8 });
+  assert.deepEqual(generated.releases.map((item: { label: string; result: string }) => [item.label, item.result]), [["ORIGINAL", "identical"]]);
   assert.equal(generated.macroUses, 1);
   assert.deepEqual(generated.macrosAsInstructions.listed, [{ start: "$1011", end: "$1016", macro: "inc16", reason: "The source has a label at $1013, inside the use." }]);
   const text = readFileSync(join(project, "src", "segment_1000.asm"), "utf8");
   assert.match(text, /^loop\n {8}\+inc16 ptr\n/m);
   assert.match(text, /^!zone patch_TRAINER_100b \{\n\.patch_start\n!if TRAINER \{\n/m);
-  assert.match(readFileSync(join(project, "src", "constants.asm"), "utf8"), /^!ifndef CRACK \{ CRACK = 0 \} {3}; 3 patches: \$100e-\$1010, \$1027-\$1028, \$102a-\$102c$/m);
+  assert.match(text, /^!zone patch_PROTECTION_100e \{\n\.patch_start\n!if PROTECTION = 0 \{\n {8}; PROTECTION off: /m);
+  const switches = readFileSync(join(project, "src", "switches.asm"), "utf8");
+  assert.match(switches, /^; Copy protection: off by default\n!ifndef PROTECTION \{ PROTECTION = 0 \} ; on in ORIGINAL\. \$100e-\$1010, \$1027-\$1028, \$102a-\$102c\. The copy check reads the keyboard\.$/m);
+  assert.match(switches, /^; Trainers: off by default\n!ifndef TRAINER \{ TRAINER = 0 \} {7}; on in no release\. \$100b-\$100d\. Infinite lives\.$/m);
 
-  // The agent builds the cracked program with c64-assembler: only the bytes of the CRACK ranges differ.
-  const cracked = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/cracked.prg", "--define", "CRACK=1", "--compare"]);
-  assert.equal(cracked.status, 1, JSON.stringify(cracked.json));
-  const [segment] = cracked.json.compare.segments as Array<{ differences: number; firstDifference: { address: string } }>;
+  // The agent builds the default program with c64-assembler: only the bytes of the PROTECTION ranges differ from the original.
+  const clean = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/clean.prg", "--compare"]);
+  assert.equal(clean.status, 1, JSON.stringify(clean.json));
+  const [segment] = clean.json.compare.segments as Array<{ differences: number; firstDifference: { address: string } }>;
   assert.deepEqual([segment!.differences, segment!.firstDifference.address], [8, "$100e"]);
-  const built = readFileSync(join(project, "build", "cracked.prg"));
+  const built = readFileSync(join(project, "build", "clean.prg"));
   assert.deepEqual([...built.subarray(2 + 0x0e, 2 + 0x11)], [0xea, 0xea, 0xea], "no JSR check");
   assert.deepEqual([...built.subarray(2 + 0x2a, 2 + 0x2d)], [0x60, 0xea, 0xea], "fail returns");
-  const off = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/game.prg", "--compare"]);
-  assert.equal(off.json.compare.identical, true, "without a define, every switch is off");
+  assert.deepEqual([...built.subarray(2 + 0x0b, 2 + 0x0e)], [0xce, 0x00, 0x20], "the trainer is off");
+  const original = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/game.prg", "--release", "ORIGINAL", "--compare"]);
+  assert.equal(original.json.compare.identical, true, "the build of the original release is the program");
+  const trained = ok("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/trained.prg", "--define", "TRAINER=1"]);
+  assert.equal(trained.assembled, true);
+  assert.deepEqual([...readFileSync(join(project, "build", "trained.prg")).subarray(2 + 0x0b, 2 + 0x0e)], [0xea, 0xea, 0xea], "lives stay");
 
   // The analyzer finds the set16 at $1017 and knows the two uses of inc16 in the knowledge.
   const analyzed = ok("c64-static-analysis", "static-analysis.ts", ["analyze", "--entry", "$1000", "--out-macro-batch", ".c64-re-tools/local/macros.json"]);

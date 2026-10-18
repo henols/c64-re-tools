@@ -9,8 +9,8 @@ import { formatC64Address } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { openForWrite, transaction } from "./database.ts";
 import { setImage } from "./program.ts";
-import { at, commentsAt, currentRevision, listMacroUses, listModules, listPatches, listSuppressions, listSymbols, macroNamed, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
-import { historyAt, historyOfMacro, revision as revisionChanges } from "./history.ts";
+import { at, commentsAt, currentRevision, listMacroUses, listModules, listPatches, listSwitches, switchNamed, listSuppressions, listSymbols, macroNamed, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
+import { historyAt, historyOfMacro, historyOfSwitch, revision as revisionChanges } from "./history.ts";
 import {
   addReference,
   applyBatch,
@@ -23,6 +23,8 @@ import {
   removeOperand,
   removePatch,
   removeReference,
+  removeRelease,
+  removeSwitch,
   removeSymbol,
   renameSymbol,
   revert,
@@ -32,6 +34,8 @@ import {
   setModule,
   setOperand,
   setPatch,
+  setRelease,
+  setSwitch,
   leastPatchBytes,
   unclassifyRegion,
   type OperandImage,
@@ -347,8 +351,8 @@ test("a module starts a file of generated source: one per address and per file, 
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
   for (const file of ["../x.asm", "sub/x.asm", "x.a", ".asm", "x y.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
   // c64-source writes these files itself; macOS and Windows ignore the letter case.
-  for (const file of ["main.asm", "loader.asm", "constants.asm", "macros.asm", "Main.asm", "CONSTANTS.asm"]) {
-    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /writes main\.asm, loader\.asm, constants\.asm, macros\.asm itself/.test(error.message), file);
+  for (const file of ["main.asm", "loader.asm", "switches.asm", "constants.asm", "macros.asm", "Main.asm", "CONSTANTS.asm", "Switches.asm"]) {
+    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /writes main\.asm, loader\.asm, switches\.asm, constants\.asm, macros\.asm itself/.test(error.message), file);
   }
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
   assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: nth(db, 3) }, "a write without a title keeps it");
@@ -538,11 +542,19 @@ function sourceImage(): OperandImage {
   return { byteAt: (address) => bytes.get(address) ?? image.byteAt(address), platform: image.platform };
 }
 
+/** The base release ORIGINAL, and a change switch for each name, off by default and off in ORIGINAL. */
+function withSwitches(db: DatabaseSync, image: OperandImage, ...names: string[]): void {
+  setRelease(db, { origin: "user" }, { label: "ORIGINAL", file: "original/game.prg", sha256: "a".repeat(64), base: true });
+  for (const name of names) setSwitch(db, { origin: "user", image }, { name, kind: "change", default: 0 });
+}
+
 test("a patch puts code in a range of the image under a switch", () => {
   const db = fresh();
   const context: WriteContext = { origin: "llm", image: sourceImage() };
+  withSwitches(db, context.image!, "CRACK", "TRAINER");
+  assert.throws(() => setPatch(db, context, { start: 0x8079, end: 0x807d, switch: "CHEAT", code: "" }), /There is no switch CHEAT\. Write it first/);
   const first = setPatch(db, context, { start: 0x8079, end: 0x807d, switch: "CRACK", code: "  lda #0\n  rts  \n", comment: "Skips the check." });
-  assert.deepEqual(first.current, { space: "c64", start: 0x8079, end: 0x807d, switch: "CRACK", code: "  lda #0\n  rts", comment: "Skips the check.", origin: "llm", revision: nth(db, 1) });
+  assert.deepEqual(first.current, { space: "c64", start: 0x8079, end: 0x807d, switch: "CRACK", code: "  lda #0\n  rts", comment: "Skips the check.", origin: "llm", revision: nth(db, 4) });
   assert.equal(setPatch(db, context, { start: 0x8079, end: 0x807d, switch: "CRACK", code: "  lda #0\n  rts" }).revision, null, "the same patch, no revision; the comment stays");
   setPatch(db, { ...context, origin: "user" }, { start: 0x807e, end: 0x807f, switch: "CRACK", code: "" });
   assert.deepEqual(listPatches(db, undefined, "CRACK").map((row) => [row.start, row.end, row.code]), [[0x8079, 0x807d, "  lda #0\n  rts"], [0x807e, 0x807f, ""]]);
@@ -553,10 +565,7 @@ test("a patch puts code in a range of the image under a switch", () => {
   assert.throws(() => setPatch(db, context, { start: 0x9000, end: 0x9001, switch: "CRACK", code: "" }), /\$9000 is outside the image/);
   assert.throws(() => setPatch(db, context, { start: 0x807c, end: 0x807e, switch: "TRAINER", code: "" }), /overlaps the patch of CRACK at \$8079-\$807d/);
   for (const name of ["crack", "C", "1UP", "CRACK-1"]) assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: name, code: "" }), failsWith("invalid-input"), name);
-  assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "VICSCN", code: "" }), /is a C64 platform name/);
-  renameSymbol(db, llm, { address: 0x2000, name: "LIVES" });
-  assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "LIVES", code: "" }), /is the name of the symbol at \$2000/);
-  assert.throws(() => renameSymbol(db, llm, { address: 0x2001, name: "CRACK" }), /CRACK is the switch of the patch at \$8079-\$807d/);
+  assert.throws(() => renameSymbol(db, llm, { address: 0x2001, name: "CRACK" }), /CRACK is the name of a switch/);
   // c64-source writes the code inside { }: braces must pair, except in comments and strings.
   for (const code of ["!if X {", "}"]) assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code }), /The patch code has a/, code);
   for (const code of ["lda #0 ; }", 'lda #"{"', "!if X { nop }"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
@@ -571,10 +580,52 @@ test("a patch puts code in a range of the image under a switch", () => {
 
   removePatch(db, llm, { start: 0x807e });
   assert.throws(() => removePatch(db, llm, { start: 0x807e }), failsWith("not-found"));
-  revert(db, llm, { revision: nth(db, 2) });
+  revert(db, llm, { revision: nth(db, 5) });
   assert.deepEqual(listPatches(db).map((row) => row.start), [0x8079, 0x807e], "a revert restores patches");
 });
 
+test("a switch has a kind, a default and the releases that have it on; the base release decides the state of the program", () => {
+  const db = fresh();
+  const image = sourceImage();
+  const context: WriteContext = { origin: "llm", image };
+  assert.throws(() => setSwitch(db, context, { name: "PROTECTION", kind: "protection" }), /no base release/);
+  setRelease(db, llm, { label: "ORIGINAL", file: "original/game.prg", sha256: "a".repeat(64), base: true, comment: "Uncracked." });
+  setRelease(db, llm, { label: "V2", file: "original/game-v2.prg", sha256: "b".repeat(64) });
+  assert.throws(() => setRelease(db, llm, { label: "V2", file: "original/game-v2.prg", sha256: "b".repeat(64), base: true }), /The release ORIGINAL is the base release/);
+  for (const label of ["v2", "V", "2V"]) assert.throws(() => setRelease(db, llm, { label, file: "x.prg", sha256: "b".repeat(64) }), failsWith("invalid-input"), label);
+
+  // The kinds give the default: the default build is the clean program with every fix.
+  const protection = setSwitch(db, context, { name: "PROTECTION", kind: "protection", releases: ["ORIGINAL"], comment: "The disk check." });
+  assert.deepEqual(protection.current, { space: "c64", name: "PROTECTION", kind: "protection", default: 0, releases: ["ORIGINAL"], comment: "The disk check.", origin: "llm", revision: nth(db, 3) });
+  assert.equal(setSwitch(db, context, { name: "FIX_LIVES", kind: "fix", releases: ["V2"] }).current.default, 1);
+  assert.equal(setSwitch(db, context, { name: "FIX_LIVES", kind: "fix" }).revision, null, "a write without releases keeps them");
+  for (const kind of ["protection", "trainer", "cheat", "crack"] as const) assert.throws(() => setSwitch(db, context, { name: "OTHER", kind, default: 1 }), /off in the default build/, kind);
+  assert.throws(() => setSwitch(db, context, { name: "OTHER", kind: "change" }), /needs a default/);
+  assert.throws(() => setSwitch(db, context, { name: "OTHER", kind: "fix", releases: ["V3"] }), /There is no release V3/);
+  assert.throws(() => setSwitch(db, context, { name: "RELEASE_V2", kind: "fix" }), /does not start with RELEASE_/);
+  assert.throws(() => setSwitch(db, context, { name: "VICSCN", kind: "fix" }), /is a C64 platform name/);
+  renameSymbol(db, llm, { address: 0x2000, name: "LIVES" });
+  assert.throws(() => setSwitch(db, context, { name: "LIVES", kind: "fix" }), /is the name of the symbol at \$2000/);
+  assert.throws(() => renameSymbol(db, llm, { address: 0x2001, name: "RELEASE_V2" }), /RELEASE_V2 builds the release V2/);
+  assert.deepEqual(listSwitches(db).map((row) => [row.name, row.default]), [["FIX_LIVES", 1], ["PROTECTION", 0]]);
+
+  // A patch holds the state that the base release does not have: that state cannot change under it.
+  setPatch(db, context, { start: 0x8079, end: 0x807b, switch: "PROTECTION", code: "!fill 3, $ea", comment: "No check." });
+  assert.throws(() => setSwitch(db, context, { name: "PROTECTION", kind: "protection", releases: [] }), /changes whether the base release ORIGINAL has it on/);
+  assert.equal(setSwitch(db, context, { name: "PROTECTION", kind: "protection", releases: ["ORIGINAL", "V2"] }).current.releases.join(), "ORIGINAL,V2", "V2 has it on too: the base value stays");
+  assert.throws(() => removeSwitch(db, llm, { name: "PROTECTION" }), /has patches at \$8079/);
+  assert.throws(() => removeRelease(db, llm, { label: "V2" }), /is named by the switches FIX_LIVES, PROTECTION/);
+  assert.throws(() => removeRelease(db, llm, { label: "ORIGINAL" }), /decides the state of the program for the switches/);
+  assert.throws(() => setRelease(db, llm, { label: "ORIGINAL", file: "original/game.prg", sha256: "a".repeat(64), base: false }), /Remove them first \(unswitch\) to change the base release/);
+  assert.equal(switchNamed(db, "PROTECTION")?.comment, "The disk check.", "a write without a comment keeps it");
+  assert.deepEqual(historyOfSwitch(db, "PROTECTION").map((entry) => entry.entity), ["switch", "patch", "switch"]);
+
+  removePatch(db, llm, { start: 0x8079 });
+  removeSwitch(db, llm, { name: "PROTECTION" });
+  assert.throws(() => removeSwitch(db, llm, { name: "PROTECTION" }), failsWith("not-found"));
+  revert(db, llm, { revision: nth(db, 3) });
+  assert.deepEqual(listSwitches(db).map((row) => row.name), ["PROTECTION"], "a revert restores switches");
+});
 test("a macro and its uses: the use is whole instructions, its args are known names, and a rename follows", () => {
   const db = fresh();
   const context: WriteContext = { origin: "llm", image: sourceImage() };
@@ -591,6 +642,7 @@ test("a macro and its uses: the use is whole instructions, its args are known na
   assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "inc16", args: ["nowhere"] }), /nowhere is not a symbol of the knowledge or a platform name/);
   assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "add16", args: [] }), failsWith("not-found"));
   assert.throws(() => setMacroUse(db, context, { start: 0x8104, end: 0x8109, macro: "inc16", args: ["ptr"] }), /overlaps the use of inc16 at \$8100-\$8105/);
+  withSwitches(db, context.image!, "DEBUG");
   setPatch(db, context, { start: 0x8110, end: 0x8112, switch: "DEBUG", code: "" });
   assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "inc16", args: ["VICSCN"] }), /overlaps the patch of DEBUG/);
   assert.throws(() => setPatch(db, context, { start: 0x8104, end: 0x8105, switch: "DEBUG", code: "" }), /overlaps the use of the macro inc16 at \$8100-\$8105/);
@@ -619,6 +671,7 @@ test("a macro and its uses: the use is whole instructions, its args are known na
 test("a batch writes a macro and its uses in one revision, and a revert restores them", () => {
   const db = fresh();
   const context: WriteContext = { origin: "llm", image: sourceImage() };
+  withSwitches(db, context.image!, "DEBUG");
   const applied = applyBatch(db, context, [
     { op: "macro", name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+" },
     { op: "use", start: 0x8100, end: 0x8105, macro: "inc16", args: ["$fb"] },
@@ -699,15 +752,26 @@ test("a module and a comment start at an instruction: an operand byte of a code 
   assert.notEqual(setModule(db, llm, { start: 0x1bca, file: "table.asm" }).revision, null);
 });
 
-test("a patch at the start of a patch of another switch is a conflict; a patch of the same switch replaces it", () => {
+test("patches of two switches can have the same range as alternatives; any other overlap is a conflict", () => {
   const db = fresh();
   const context: WriteContext = { origin: "llm", image: sourceImage() };
-  setPatch(db, context, { start: 0x8079, end: 0x807b, switch: "NO_PROTECTION", code: "", comment: "Check 2." });
+  setRelease(db, llm, { label: "V1", file: "original/v1.prg", sha256: "a".repeat(64), base: true });
+  setRelease(db, llm, { label: "V2", file: "original/v2.prg", sha256: "b".repeat(64) });
+  setRelease(db, llm, { label: "V3", file: "original/v3.prg", sha256: "c".repeat(64) });
+  setSwitch(db, context, { name: "FIX_V2", kind: "fix", releases: ["V2"] });
+  setSwitch(db, context, { name: "FIX_V3", kind: "fix", default: 0, releases: ["V3"] });
+  setPatch(db, context, { start: 0x8079, end: 0x807b, switch: "FIX_V2", code: "", comment: "Check 2." });
   assert.throws(
-    () => setPatch(db, context, { start: 0x8079, end: 0x807a, switch: "TESTSW", code: "" }),
-    (error: unknown) => error instanceof Refusal && error.code === "conflict" && /^The patch \$8079-\$807a of TESTSW overlaps the patch of NO_PROTECTION at \$8079-\$807b\. A patch cannot overlap another patch/.test(error.message),
+    () => setPatch(db, context, { start: 0x8079, end: 0x807a, switch: "FIX_V3", code: "" }),
+    (error: unknown) => error instanceof Refusal && error.code === "conflict" && /^The patch \$8079-\$807a of FIX_V3 overlaps the patch of FIX_V2 at \$8079-\$807b\. Patches of different switches can have the same range/.test(error.message),
   );
-  assert.deepEqual(listPatches(db).map((row) => [row.start, row.end, row.switch]), [[0x8079, 0x807b, "NO_PROTECTION"]]);
-  const replaced = setPatch(db, context, { start: 0x8079, end: 0x807a, switch: "NO_PROTECTION", code: "nop" });
+  setPatch(db, context, { start: 0x8079, end: 0x807b, switch: "FIX_V3", code: "nop" });
+  assert.deepEqual(listPatches(db).map((row) => [row.start, row.end, row.switch]), [[0x8079, 0x807b, "FIX_V2"], [0x8079, 0x807b, "FIX_V3"]]);
+  // The default build can put in one alternative only.
+  assert.throws(() => setSwitch(db, context, { name: "FIX_V3", kind: "fix", default: 1 }), /FIX_V2 and FIX_V3 have alternative patches at \$8079-\$807b/);
+  assert.throws(() => setPatch(db, context, { start: 0x8079, end: 0x807a, switch: "FIX_V2", code: "nop" }), /overlaps the patch of FIX_V3/, "a patch of the same switch at the same start replaces it, but not across an alternative");
+  assert.throws(() => removePatch(db, llm, { start: 0x8079 }), /The patches of FIX_V2, FIX_V3 start at \$8079\. Give the switch/);
+  removePatch(db, llm, { start: 0x8079, switch: "FIX_V3" });
+  const replaced = setPatch(db, context, { start: 0x8079, end: 0x807a, switch: "FIX_V2", code: "nop" });
   assert.deepEqual([replaced.current.end, replaced.current.comment], [0x807a, "Check 2."]);
 });

@@ -11,12 +11,15 @@ import { transaction } from "./database.ts";
 import { labelProblem, MNEMONICS } from "../opcodes.ts";
 import { checkExpression, evaluate, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
 import {
+  baseValue,
   COMMENT_COLUMNS,
   commentsAt,
   currentRevision,
   listMacroUses,
   listOperands,
   listPatches,
+  listReleases,
+  listSwitches,
   listText,
   MACRO_COLUMNS,
   MACRO_USE_COLUMNS,
@@ -33,6 +36,10 @@ import {
   referencesFrom,
   REGION_COLUMNS,
   regionsOverlapping,
+  RELEASE_COLUMNS,
+  releaseLabeled,
+  SWITCH_COLUMNS,
+  switchNamed,
   coverageRuns,
   resolveRevision,
   SUPPRESSION_COLUMNS,
@@ -48,7 +55,9 @@ import {
   toPatch,
   toReference,
   toRegion,
+  toRelease,
   toSuppression,
+  toSwitch,
   toSymbol,
   type CommentRow,
   type CoverageRun,
@@ -59,10 +68,12 @@ import {
   type PatchRow,
   type ReferenceRow,
   type RegionRow,
+  type ReleaseRow,
   type SuppressionRow,
+  type SwitchRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName } from "./text.ts";
 
 /** What a change rests on: a coverage run, a test or another project file with its SHA-256, or a note. */
@@ -257,6 +268,18 @@ export class Change {
       .run(this.#rowId(), row.space, row.start, row.end, row.switch, row.code, row.comment ?? null, row.origin, this.id());
   }
 
+  insertSwitch(row: Omit<SwitchRow, "revision">): void {
+    this.#db
+      .prepare("INSERT INTO switches (id, space, name, kind, default_value, releases, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.name, row.kind, row.default, listText(row.releases), row.comment ?? null, row.origin, this.id());
+  }
+
+  insertRelease(row: Omit<ReleaseRow, "revision">): void {
+    this.#db
+      .prepare("INSERT INTO releases (id, space, label, file, sha256, base, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.label, row.file, row.sha256, row.base ? 1 : 0, row.comment ?? null, row.origin, this.id());
+  }
+
   insertMacro(row: Omit<MacroRow, "revision">): void {
     this.#db
       .prepare("INSERT INTO macros (id, space, name, params, body, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
@@ -298,7 +321,8 @@ export class Change {
 /** A conflict in words: its rule, its space and the addresses of its rows. */
 function describe(conflict: Conflict): string {
   const place = (entry: ConflictRow) => {
-    if (entry.entity === "macro") return entry.row.name;
+    if (entry.entity === "macro" || entry.entity === "switch") return entry.row.name;
+    if (entry.entity === "release") return entry.row.label;
     const row = entry.row as { address?: number; start?: number; end?: number; from?: number };
     if (row.address !== undefined) return formatC64Address(row.address);
     if (row.from !== undefined && entry.entity === "reference") return formatC64Address(row.from);
@@ -407,8 +431,9 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
   if (owner !== undefined && owner.address !== request.address) {
     throw new Refusal("conflict", `The name ${request.name} already belongs to ${formatC64Address(owner.address)}. Rename or remove that symbol first.`);
   }
-  const [patch] = listPatches(db, undefined, request.name, undefined, space);
-  if (patch !== undefined) throw new Refusal("conflict", `${request.name} is the switch of the patch at ${formatC64Address(patch.start)}-${formatC64Address(patch.end)}. Give the symbol another name.`);
+  if (switchNamed(db, request.name, space) !== undefined) throw new Refusal("conflict", `${request.name} is the name of a switch. Give the symbol another name.`);
+  const release = request.name.startsWith(RELEASE_DEFINE) ? releaseLabeled(db, request.name.slice(RELEASE_DEFINE.length), space) : undefined;
+  if (release !== undefined) throw new Refusal("conflict", `${request.name} builds the release ${release.label}. Give the symbol another name.`);
   if (existing !== undefined) change.close("symbols", "space = ? AND address = ?", space, request.address);
   change.insertSymbol({ space, address: request.address, name: request.name, kind, origin });
   if (existing !== undefined && existing.name !== request.name) {
@@ -777,11 +802,15 @@ function checkInImage(image: OperandImage, start: number, end: number, what: str
 
 type PatchRequest = InSpace & { start: number; end: number; switch: string; code: string; comment?: string };
 
+function checkSwitchName(name: unknown, what = "A switch name"): void {
+  if (typeof name !== "string" || !SWITCH_NAME.test(name)) {
+    throw new Refusal("invalid-input", `${what} is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example PROTECTION.`);
+  }
+}
+
 function checkPatch(request: PatchRequest): void {
   checkRange(request);
-  if (typeof request.switch !== "string" || !SWITCH_NAME.test(request.switch)) {
-    throw new Refusal("invalid-input", "A switch name is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example CRACK.");
-  }
+  checkSwitchName(request.switch, "The switch of a patch");
   if (typeof request.code !== "string" || request.code.length > MAX_CODE) throw new Refusal("invalid-input", `Patch code has at most ${MAX_CODE} characters; empty code fills the range with NOP.`);
   checkBraces(request.code, "The patch code");
   checkCommentText(request.comment, "A patch comment");
@@ -837,34 +866,183 @@ function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { 
   if (least !== undefined && least > length) {
     throw new Refusal("invalid-input", `The patch code is at least ${least} bytes, and the range ${range} has ${length}. Make the code shorter, or make the range larger.`);
   }
-  const symbol = symbolNamed(db, request.switch, space);
-  if (symbol !== undefined) throw new Refusal("conflict", `The switch name ${request.switch} is the name of the symbol at ${formatC64Address(symbol.address)}. Give the switch another name.`);
-  if (space === DEFAULT_SPACE && context.image.platform.has(request.switch)) throw new Refusal("conflict", `The switch name ${request.switch} is a C64 platform name. Give the switch another name.`);
-  // A write at the start of a patch of the same switch changes that patch; every other patch that it overlaps is a conflict.
-  const other = patchesOverlapping(db, request.start, request.end, space).find((row) => row.start !== request.start || row.switch !== request.switch);
+  const owner = switchNamed(db, request.switch, space);
+  if (owner === undefined) throw new Refusal("not-found", `There is no switch ${request.switch}. Write it first (switch ${request.switch} --kind <kind> --releases <labels>).`);
+  // A write at the start of a patch of the same switch changes that patch. Another switch can have the same range: an alternative.
+  const mine = (row: PatchRow) => row.start === request.start && row.switch === request.switch;
+  const other = patchesOverlapping(db, request.start, request.end, space).find((row) => !mine(row) && (row.start !== request.start || row.end !== request.end || row.switch === request.switch));
   if (other !== undefined) {
-    throw new Refusal("conflict", `The patch ${range} of ${request.switch} overlaps the patch of ${other.switch} at ${formatC64Address(other.start)}-${formatC64Address(other.end)}. A patch cannot overlap another patch, and only a patch of the same switch at the same start replaces it. Change or remove that patch first (unpatch).`);
+    throw new Refusal(
+      "conflict",
+      `The patch ${range} of ${request.switch} overlaps the patch of ${other.switch} at ${formatC64Address(other.start)}-${formatC64Address(other.end)}. Patches of different switches can have the same range, as alternatives; no other overlap is allowed. Change or remove that patch first (unpatch).`,
+    );
   }
   const [use] = macroUsesOverlapping(db, request.start, request.end, space);
   if (use !== undefined) {
     throw new Refusal("conflict", `The patch ${range} overlaps the use of the macro ${use.macro} at ${formatC64Address(use.start)}-${formatC64Address(use.end)}. Remove that use first (unuse).`);
   }
-  const existing = patchesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start);
+  const find = () => patchesOverlapping(db, request.start, request.start, space).find(mine);
+  const existing = find();
   const code = request.code.trimEnd();
   // A patch write without a comment keeps the comment it has, as a module keeps its title.
   const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
   const origin = context.origin as PatchRow["origin"];
-  if (existing !== undefined && existing.end === request.end && existing.switch === request.switch && existing.code === code && existing.comment === comment && !confirms(existing.origin, origin)) return { current: existing };
-  if (existing !== undefined) change.close("patches", "space = ? AND start_address = ?", space, request.start);
+  if (existing !== undefined && existing.end === request.end && existing.code === code && existing.comment === comment && !confirms(existing.origin, origin)) return { current: existing };
+  if (existing !== undefined) change.close("patches", "space = ? AND start_address = ? AND switch_name = ?", space, request.start, request.switch);
   change.insertPatch({ space, start: request.start, end: request.end, switch: request.switch, code, ...(comment === undefined ? {} : { comment }), origin });
-  const current = patchesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start)!;
+  checkAlternatives(db, space, [owner]);
+  const current = find()!;
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
-function unpatchStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
+function unpatchStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number; switch?: string }): Step<null> {
   const space = spaceOf(request);
-  if (!patchesOverlapping(db, request.start, request.start, space).some((row) => row.start === request.start)) throw new Refusal("not-found", `No patch starts at ${formatC64Address(request.start)}.`);
-  change.close("patches", "space = ? AND start_address = ?", space, request.start);
+  const found = patchesOverlapping(db, request.start, request.start, space).filter((row) => row.start === request.start && (request.switch === undefined || row.switch === request.switch));
+  if (found.length === 0) throw new Refusal("not-found", `No patch${request.switch === undefined ? "" : ` of ${request.switch}`} starts at ${formatC64Address(request.start)}.`);
+  if (found.length > 1) throw new Refusal("invalid-input", `The patches of ${found.map((row) => row.switch).join(", ")} start at ${formatC64Address(request.start)}. Give the switch of the patch to remove.`);
+  change.close("patches", "space = ? AND start_address = ? AND switch_name = ?", space, request.start, found[0]!.switch);
+  return { current: null };
+}
+
+/** The label of the base release of a space: its bytes are the program of the knowledge. */
+function baseLabel(db: DatabaseSync, space: Space): string | undefined {
+  return listReleases(db, undefined, space).find((release) => release.base)?.label;
+}
+
+/**
+ * Refuses alternatives that are both on in the default build: a patch is on
+ * when its switch does not have its base value. Two patches of one range can
+ * not both be on, so the default build must choose one.
+ */
+function checkAlternatives(db: DatabaseSync, space: Space, changed: readonly SwitchRow[]): void {
+  const base = baseLabel(db, space);
+  const switches = new Map(listSwitches(db, undefined, space).map((row) => [row.name, row]));
+  const names = new Set(changed.map((row) => row.name));
+  const ranges = new Map<string, PatchRow[]>();
+  for (const patch of listPatches(db, undefined, undefined, undefined, space)) ranges.set(`${patch.start}-${patch.end}`, [...(ranges.get(`${patch.start}-${patch.end}`) ?? []), patch]);
+  for (const patches of ranges.values()) {
+    if (patches.length < 2 || !patches.some((patch) => names.has(patch.switch))) continue;
+    const on = patches.filter((patch) => {
+      const owner = switches.get(patch.switch)!;
+      return owner.default !== baseValue(owner, base);
+    });
+    if (on.length < 2) continue;
+    const range = `${formatC64Address(patches[0]!.start)}-${formatC64Address(patches[0]!.end)}`;
+    throw new Refusal(
+      "conflict",
+      `The switches ${on.map((patch) => patch.switch).join(" and ")} have alternative patches at ${range}, and the default build puts in both of them. Give one of the switches the default of the base release (switch <name> --default).`,
+    );
+  }
+}
+
+type SwitchRequest = InSpace & { name: string; kind: SwitchKind; default?: 0 | 1; releases?: string[]; comment?: string };
+
+function checkSwitch(request: SwitchRequest): void {
+  checkSpace(request);
+  checkSwitchName(request.name);
+  if (request.name.startsWith(RELEASE_DEFINE)) throw new Refusal("invalid-input", `A switch name does not start with ${RELEASE_DEFINE}: the build of a release defines ${RELEASE_DEFINE}<label>.`);
+  checkOneOf(SWITCH_KINDS, request.kind, "kind");
+  if (request.default !== undefined && request.default !== 0 && request.default !== 1) throw new Refusal("invalid-input", "default must be 0 or 1.");
+  if (OFF_KINDS.includes(request.kind) && request.default === 1) {
+    throw new Refusal("invalid-input", `A ${request.kind} switch is off in the default build: the default build is the clean program. Build a release, or define the switch, to put it in.`);
+  }
+  for (const label of request.releases ?? []) if (typeof label !== "string" || !RELEASE_LABEL.test(label)) throw new Refusal("invalid-input", `${JSON.stringify(label)} is not a release label.`);
+  checkCommentText(request.comment, "A switch comment");
+}
+
+/** The default of a switch: a fix is on, the kinds of OFF_KINDS are off, and a change needs one. */
+function defaultOf(request: SwitchRequest, existing: SwitchRow | undefined): 0 | 1 {
+  if (request.default !== undefined) return request.default;
+  if (existing !== undefined && existing.kind === request.kind) return existing.default;
+  if (request.kind === "fix") return 1;
+  if (OFF_KINDS.includes(request.kind)) return 0;
+  throw new Refusal("invalid-input", `A ${request.kind} switch needs a default: give --default 0 or --default 1.`);
+}
+
+function switchStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: OperandImage }, request: SwitchRequest): Step<SwitchRow, SwitchRow> {
+  const space = spaceOf(request);
+  const base = baseLabel(db, space);
+  if (base === undefined) throw new Refusal("not-found", "The knowledge has no base release. Record the release whose bytes are the program first (release <label> --file <file> --base).");
+  const existing = switchNamed(db, request.name, space);
+  const releases = [...new Set(request.releases ?? existing?.releases ?? [])].sort();
+  for (const label of releases) if (releaseLabeled(db, label, space) === undefined) throw new Refusal("not-found", `There is no release ${label}. Record it first (release ${label} --file <file>).`);
+  const value = defaultOf(request, existing);
+  const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
+  const origin = context.origin as SwitchRow["origin"];
+  if (existing !== undefined && existing.kind === request.kind && existing.default === value && listText(existing.releases) === listText(releases) && existing.comment === comment && !confirms(existing.origin, origin)) return { current: existing };
+  const symbol = symbolNamed(db, request.name, space);
+  if (symbol !== undefined) throw new Refusal("conflict", `The switch name ${request.name} is the name of the symbol at ${formatC64Address(symbol.address)}. Give the switch another name.`);
+  if (space === DEFAULT_SPACE && context.image?.platform.has(request.name)) throw new Refusal("conflict", `The switch name ${request.name} is a C64 platform name. Give the switch another name.`);
+  // The patches hold the code of the value that the base release does not have: that value cannot change under them.
+  if (existing !== undefined && baseValue(existing, base) !== baseValue({ releases }, base)) {
+    const patches = listPatches(db, undefined, request.name, undefined, space);
+    if (patches.length > 0) {
+      throw new Refusal(
+        "conflict",
+        `The switch ${request.name} has patches at ${patches.map((row) => formatC64Address(row.start)).join(", ")}, and this write changes whether the base release ${base} has it on. The patches would then hold the wrong state. Remove them first (unpatch), then write them again.`,
+      );
+    }
+  }
+  if (existing !== undefined) change.close("switches", "space = ? AND name = ?", space, request.name);
+  change.insertSwitch({ space, name: request.name, kind: request.kind, default: value, releases, ...(comment === undefined ? {} : { comment }), origin });
+  const current = switchNamed(db, request.name, space)!;
+  checkAlternatives(db, space, [current]);
+  return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
+}
+
+function unswitchStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { name: string }): Step<null> {
+  const space = spaceOf(request);
+  if (switchNamed(db, request.name, space) === undefined) throw new Refusal("not-found", `There is no switch ${request.name}.`);
+  const patches = listPatches(db, undefined, request.name, undefined, space);
+  if (patches.length > 0) throw new Refusal("conflict", `The switch ${request.name} has patches at ${patches.map((row) => formatC64Address(row.start)).join(", ")}. Remove them first (unpatch).`);
+  change.close("switches", "space = ? AND name = ?", space, request.name);
+  return { current: null };
+}
+
+/** A release: `file` is a project path and `sha256` the hash of its bytes, both from the caller. */
+type ReleaseRequest = InSpace & { label: string; file: string; sha256: string; base?: boolean; comment?: string };
+
+function checkRelease(request: ReleaseRequest): void {
+  checkSpace(request);
+  if (typeof request.label !== "string" || !RELEASE_LABEL.test(request.label)) {
+    throw new Refusal("invalid-input", "A release label is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example ORIGINAL or FIRESTAR.");
+  }
+  if (typeof request.file !== "string" || request.file.trim().length === 0 || request.file.length > MAX_EVIDENCE_REF) throw new Refusal("invalid-input", `The file of a release has 1 to ${MAX_EVIDENCE_REF} characters.`);
+  if (!/^[0-9a-f]{64}$/.test(request.sha256)) throw new Refusal("invalid-input", "The sha256 of a release is 64 lowercase hex digits.");
+  checkCommentText(request.comment, "A release comment");
+}
+
+function releaseStep(db: DatabaseSync, change: Change, origin: Origin, request: ReleaseRequest): Step<ReleaseRow, ReleaseRow> {
+  const space = spaceOf(request);
+  const existing = releaseLabeled(db, request.label, space);
+  const base = request.base ?? existing?.base ?? false;
+  const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
+  if (existing !== undefined && existing.file === request.file && existing.sha256 === request.sha256 && existing.base === base && existing.comment === comment && !confirms(existing.origin, origin)) return { current: existing };
+  const other = baseLabel(db, space);
+  if (base && other !== undefined && other !== request.label) throw new Refusal("conflict", `The release ${other} is the base release. A space has one base release.`);
+  // Every switch takes its base value from the base release: it cannot change under them.
+  if ((existing?.base ?? false) !== base) {
+    const switches = listSwitches(db, undefined, space);
+    if (switches.length > 0) throw new Refusal("conflict", `The base release decides the state of the program for the switches ${switches.map((row) => row.name).join(", ")}. Remove them first (unswitch) to change the base release.`);
+  }
+  const symbol = symbolNamed(db, `${RELEASE_DEFINE}${request.label}`, space);
+  if (symbol !== undefined) throw new Refusal("conflict", `The build of the release defines ${RELEASE_DEFINE}${request.label}, and that is the name of the symbol at ${formatC64Address(symbol.address)}. Give the release another label.`);
+  if (existing !== undefined) change.close("releases", "space = ? AND label = ?", space, request.label);
+  change.insertRelease({ space, label: request.label, file: request.file, sha256: request.sha256, base, ...(comment === undefined ? {} : { comment }), origin: origin as ReleaseRow["origin"] });
+  const current = releaseLabeled(db, request.label, space)!;
+  return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
+}
+
+function unreleaseStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { label: string }): Step<null> {
+  const space = spaceOf(request);
+  const existing = releaseLabeled(db, request.label, space);
+  if (existing === undefined) throw new Refusal("not-found", `There is no release ${request.label}.`);
+  const switches = listSwitches(db, undefined, space).filter((row) => existing.base || row.releases.includes(request.label));
+  if (switches.length > 0) {
+    const why = existing.base ? "decides the state of the program for" : "is named by";
+    throw new Refusal("conflict", `The release ${request.label} ${why} the switches ${switches.map((row) => row.name).join(", ")}. Change or remove them first (switch, unswitch).`);
+  }
+  change.close("releases", "space = ? AND label = ?", space, request.label);
   return { current: null };
 }
 
@@ -1069,19 +1247,43 @@ export function removeOperand(db: DatabaseSync, context: WriteContext, request: 
 }
 
 /**
- * Writes code that replaces [start, end] when the build defines the switch
- *, after a check that the range is in the image and overlaps no other
- * patch or macro use.
+ * Writes code that replaces [start, end] when its switch does not have its
+ * base value, after a check that the switch exists, the range is in the image,
+ * and it overlaps no macro use and no patch other than an alternative.
  */
 export function setPatch(db: DatabaseSync, context: WriteContext, request: PatchRequest): WriteResult<PatchRow, PatchRow> {
   checkPatch(request);
   return result(write(db, context, "set-patch", (change) => patchStep(db, change, context, request)));
 }
 
-export function removePatch(db: DatabaseSync, context: WriteContext, request: InSpace & { start: number }): WriteResult<null> {
+export function removePatch(db: DatabaseSync, context: WriteContext, request: InSpace & { start: number; switch?: string }): WriteResult<null> {
   checkSpace(request);
   checkAddress(request.start, "start");
+  if (request.switch !== undefined) checkSwitchName(request.switch);
   return result(write(db, context, "remove-patch", (change) => unpatchStep(db, change, context.origin, request)));
+}
+
+/** Writes a switch: its kind, its default and the releases that have it on. The knowledge needs a base release first. */
+export function setSwitch(db: DatabaseSync, context: WriteContext, request: SwitchRequest): WriteResult<SwitchRow, SwitchRow> {
+  checkSwitch(request);
+  return result(write(db, context, "set-switch", (change) => switchStep(db, change, context, request)));
+}
+
+export function removeSwitch(db: DatabaseSync, context: WriteContext, request: InSpace & { name: string }): WriteResult<null> {
+  checkSpace(request);
+  checkSwitchName(request.name);
+  return result(write(db, context, "remove-switch", (change) => unswitchStep(db, change, context.origin, request)));
+}
+
+/** Writes a release of the program: its project file and the SHA-256 of it. The caller checks the file. */
+export function setRelease(db: DatabaseSync, context: WriteContext, request: ReleaseRequest): WriteResult<ReleaseRow, ReleaseRow> {
+  checkRelease(request);
+  return result(write(db, context, "set-release", (change) => releaseStep(db, change, context.origin, request)));
+}
+
+export function removeRelease(db: DatabaseSync, context: WriteContext, request: InSpace & { label: string }): WriteResult<null> {
+  checkSpace(request);
+  return result(write(db, context, "remove-release", (change) => unreleaseStep(db, change, context.origin, request)));
 }
 
 /** Writes a macro of the generated source. */
@@ -1123,7 +1325,7 @@ export type BatchOperation =
   | ({ op: "operand" } & OperandRequest)
   | ({ op: "unoperand" } & AddressRequest)
   | ({ op: "patch" } & PatchRequest)
-  | ({ op: "unpatch" } & InSpace & { start: number })
+  | ({ op: "unpatch" } & InSpace & { start: number; switch?: string })
   | ({ op: "macro" } & MacroRequest)
   | ({ op: "unmacro" } & InSpace & { name: string })
   | ({ op: "use" } & MacroUseRequest)
@@ -1175,6 +1377,9 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
         case "patch":
           return checkPatch(operation);
         case "unpatch":
+          if (operation.switch !== undefined) checkSwitchName(operation.switch);
+          checkSpace(operation);
+          return checkAddress(operation.start, "start");
         case "unuse":
           checkSpace(operation);
           return checkAddress(operation.start, "start");
@@ -1271,6 +1476,16 @@ const KEYS = {
     map: toPatch,
     key: (row: PatchRow) => `${row.space}|${row.start}|${row.end}|${row.switch}|${row.code}|${row.comment ?? ""}|${row.origin}`,
   },
+  switches: {
+    columns: SWITCH_COLUMNS,
+    map: toSwitch,
+    key: (row: SwitchRow) => `${row.space}|${row.name}|${row.kind}|${row.default}|${listText(row.releases)}|${row.comment ?? ""}|${row.origin}`,
+  },
+  releases: {
+    columns: RELEASE_COLUMNS,
+    map: toRelease,
+    key: (row: ReleaseRow) => `${row.space}|${row.label}|${row.file}|${row.sha256}|${row.base}|${row.comment ?? ""}|${row.origin}`,
+  },
   macros: { columns: MACRO_COLUMNS, map: toMacro, key: (row: MacroRow) => `${row.space}|${row.name}|${listText(row.params)}|${row.body}|${row.comment ?? ""}|${row.origin}` },
   macro_uses: { columns: MACRO_USE_COLUMNS, map: toMacroUse, key: (row: MacroUseRow) => `${row.space}|${row.start}|${row.end}|${row.macro}|${listText(row.args)}|${row.origin}` },
   suppressions: {
@@ -1326,6 +1541,14 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         }
         if (table === "macros") {
           change.insertMacro(spec.map(row as never) as MacroRow);
+          continue;
+        }
+        if (table === "switches") {
+          change.insertSwitch(spec.map(row as never) as SwitchRow);
+          continue;
+        }
+        if (table === "releases") {
+          change.insertRelease(spec.map(row as never) as ReleaseRow);
           continue;
         }
         if (table === "macro_uses") {

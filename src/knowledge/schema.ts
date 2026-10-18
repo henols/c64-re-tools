@@ -60,6 +60,19 @@ export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 export const MODULE_FILE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}\.asm$/;
 /** A switch of the generated source: upper case, so it reads as a build option and not as a label. */
 export const SWITCH_NAME = /^[A-Z][A-Z0-9_]{1,31}$/;
+/** A release label: the switch-name form. The build of a release defines RELEASE_<label>. */
+export const RELEASE_LABEL = SWITCH_NAME;
+/** The define that builds a release with its switch values. */
+export const RELEASE_DEFINE = "RELEASE_";
+/**
+ * What a switch changes. A copy protection, a trainer, a cheat and a change of
+ * a cracker are off by default; a fix is on by default; a change has the
+ * default that the writer gives.
+ */
+export const SWITCH_KINDS = ["protection", "trainer", "cheat", "crack", "fix", "change"] as const;
+export type SwitchKind = (typeof SWITCH_KINDS)[number];
+/** The kinds that are always off by default: the default build is the clean program. */
+export const OFF_KINDS: readonly SwitchKind[] = ["protection", "trainer", "cheat", "crack"];
 /** A macro name and a macro parameter. The body names a parameter with a dot in front: .dst. */
 export const MACRO_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
 export const MACRO_PARAM = /^[a-z_][a-z0-9_]{0,31}$/;
@@ -75,7 +88,7 @@ export type CoverageKind = (typeof COVERAGE_KINDS)[number];
 export const MEMORY_ROW = 64;
 
 /** Files that c64-source writes itself: no module can have these names. */
-export const GENERATED_FILES = ["main.asm", "loader.asm", "constants.asm", "macros.asm"] as const;
+export const GENERATED_FILES = ["main.asm", "loader.asm", "switches.asm", "constants.asm", "macros.asm"] as const;
 
 /** True for a generated file name in any letter case: the file systems of macOS and Windows ignore case. */
 export function isGeneratedFile(file: string): boolean {
@@ -244,6 +257,32 @@ function createSchema(db: DatabaseSync): void {
         valid_to_revision   TEXT REFERENCES revisions (id)
       );
       CREATE INDEX patches_start ON patches (space, start_address);
+      CREATE TABLE switches (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        name                TEXT NOT NULL CHECK (length(name) > 0),
+        kind                TEXT NOT NULL CHECK (kind IN (${list(SWITCH_KINDS)})),
+        default_value       INTEGER NOT NULL CHECK (default_value IN (0, 1)),
+        releases            TEXT NOT NULL,
+        comment             TEXT CHECK (comment IS NULL OR length(comment) > 0),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
+      CREATE INDEX switches_name ON switches (space, name);
+      CREATE TABLE releases (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        label               TEXT NOT NULL CHECK (length(label) > 0),
+        file                TEXT NOT NULL CHECK (length(file) > 0),
+        sha256              TEXT NOT NULL CHECK (length(sha256) = 64),
+        base                INTEGER NOT NULL CHECK (base IN (0, 1)),
+        comment             TEXT CHECK (comment IS NULL OR length(comment) > 0),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
+      CREATE INDEX releases_label ON releases (space, label);
       CREATE TABLE macros (
         id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
@@ -312,13 +351,15 @@ function createSchema(db: DatabaseSync): void {
       CREATE VIEW current_modules AS SELECT * FROM modules WHERE valid_to_revision IS NULL;
       CREATE VIEW current_operands AS SELECT * FROM operands WHERE valid_to_revision IS NULL;
       CREATE VIEW current_patches AS SELECT * FROM patches WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_switches AS SELECT * FROM switches WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_releases AS SELECT * FROM releases WHERE valid_to_revision IS NULL;
       CREATE VIEW current_macros AS SELECT * FROM macros WHERE valid_to_revision IS NULL;
       CREATE VIEW current_macro_uses AS SELECT * FROM macro_uses WHERE valid_to_revision IS NULL;
     `);
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 8;
+export const INDEX_VERSION = 9;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

@@ -42,6 +42,18 @@ One repository can hold several programs, with one project folder for each progr
 - Do not write a script that makes a deliverable again, for example a capture, copy or replay script. Commit the deliverable.
 - Write the knowledge only with the c64-knowledge script. Do not write or edit the files in `.c64-re-tools/knowledge/` yourself.
 
+## What a rebuild keeps
+
+These rules apply to each rebuild:
+
+- Do not keep a cracktro. The capture of the c64-unpacker skill starts at the last stage, so the code of a cracktro is not in the program. Cut the data of a cracktro that the program does not read with `capture --exclude`.
+- Keep all other bytes: unused bytes, dead code, old copies, texts and leftovers of the development. Record each one as a region with a comment. Do not remove them.
+- Keep a copy protection in the source, off by default. Record a `protection` switch and its patches.
+- Keep a trainer and a cheat in the source, off by default. Record a `trainer` or `cheat` switch and its patches.
+- When two or more releases have different corrections, record each release and one `fix` switch for each correction. The switch names the releases that have the correction. The default build has all corrections.
+- Record all switches with the c64-knowledge skill. Do not write a switch in a source file.
+- When a crack removed a copy protection and no release has its bytes, write this in a comment and in the answer.
+
 ## Workflow
 
 Select the path for the scope:
@@ -63,7 +75,7 @@ Select the path for the scope:
 | What the program does at run time: values, input, timing, screen | c64-emulator |
 | The routines, code, data and references of the program | c64-static-analysis |
 | The platform meaning of an address or a register | c64-memory-map |
-| Differences between releases of the program | c64-provenance `compare` |
+| Differences between releases of the program | c64-provenance `compare`, then c64-knowledge `release`, `switch` and `patch` |
 | Leftovers of the development, a crack or a recrack: texts, old copies, unused bytes, dead code | c64-provenance `leftovers` |
 | A routine that another program of the workspace has, for example a music driver | c64-provenance, with the library |
 | Source code from the knowledge | c64-source |
@@ -76,29 +88,31 @@ Select the path for the scope:
 
 ### The stages of a full rebuild
 
-Do the stages in this sequence. Go to the next stage only when its exit check is true, or when the user accepts an exception. Remember each exception for the answer of stage 11.
+Do the stages in this sequence. Go to the next stage only when its exit check is true, or when the user accepts an exception. Remember each exception for the answer of stage 12.
 
 | Stage | Work | Exit check |
 |---|---|---|
 | 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these: identical source, a verified loader, passed c64-testing scenarios, passed replays of the recordings, and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. | The user gave the criteria. |
 | 2. Get | c64-disk: list the disk. Extract the start file into `original/`. | The start file is in the project. |
 | 3. Start | c64-basic: find the SYS address of the BASIC start. | You have the entry address. |
-| 4. Unpack | c64-unpacker: examine the program with `unpacker.ts inspect`, `trace` and `stages`. Capture a packed program with `unpacker.ts capture` into `.c64-re-tools/local/`. Then c64-knowledge: put the capture, or the PRG of a program without a packer, into the knowledge with `knowledge.ts image`. | `program` of c64-knowledge shows the segments and the entry. |
+| 4. Unpack | c64-unpacker: examine the program with `unpacker.ts inspect`, `trace` and `stages`. Capture a packed program with `unpacker.ts capture` into `.c64-re-tools/local/`. When a segment is the data of a cracktro and the program does not read it, capture again with `--exclude` for that range. Then c64-knowledge: put the capture, or the PRG of a program without a packer, into the knowledge with `knowledge.ts image`. | `program` of c64-knowledge shows the segments and the entry. |
 | 5. Run | First record: ask the user to play each part that the scope names, with `testing.ts record --play` of c64-testing. Tell the user which parts. Record a part yourself only when the sessions of the user do not have it. Put the recordings in `tests/recordings/`. Then use c64-emulator and `testing.ts run` of c64-testing for the parts that a recording cannot have. Write a coverage map for each part into `.c64-re-tools/local/`. Then c64-knowledge: add the maps and the `coverage.bin` of each recording with `knowledge.ts coverage`. | `program` of c64-knowledge lists a coverage map for each part that the scope names. |
 | 6. Analyze | c64-static-analysis: `static-analysis.ts analyze`. It reads the program and the coverage from the knowledge. | No coverage conflict is open. |
 | 7. Name | c64-provenance: if the workspace has a library, find its routines with `provenance.ts match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
-| 8. Generate | c64-source: `source.ts generate --out src`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
-| 9. Build and test | c64-assembler: `assembler.ts build` with `--compare` into `build/`. c64-testing: `testing.ts test` with the scenarios in `tests/`. Replay each recording on the rebuild with `testing.ts replay`: give the checkpoint routine, the state and the random state (`--pin`) with the names of stage 7. | The criteria of stage 1 are true. |
-| 10. Document | When the criteria ask for documentation: c64-docs into `README.md` and `docs/`, with `docs.ts generate` and `docs.ts link`. | `docs.ts link --check` of c64-docs gives `result: "PASS"`. |
-| 11. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
+| 8. Releases and switches | c64-knowledge: record the base release with `knowledge.ts release <label> --file original/<file> --base`. For a capture, copy its folder to `original/<label>/` first, because git ignores `.c64-re-tools/local/`. Record each other release. c64-provenance: compare the releases with `provenance.ts compare`, and find leftovers with `provenance.ts leftovers`. c64-knowledge: record a switch for each copy protection, trainer, cheat, crack change and correction, and a patch for each of its ranges. Record each leftover as a region with a comment. | `knowledge.ts switches` lists each switch. Each difference between the releases is in a patch, or the answer gives it as an exception. |
+| 9. Generate | c64-source: `source.ts generate --out src`. For an unpacked program, add `--loader`. | `check.identical` is true. `default.result` is `fits`. Each item of `releases` is `identical`, or `layout differs` as an exception. For an unpacked program, `loader.verified` is true. |
+| 10. Build and test | c64-assembler: `assembler.ts build` with `--release <base label> --compare` into `build/`, and the default build without options. c64-testing: `testing.ts test` with the scenarios in `tests/`. Replay each recording on the rebuild with `testing.ts replay`: give the checkpoint routine, the state and the random state (`--pin`) with the names of stage 7. | The criteria of stage 1 are true. |
+| 11. Document | When the criteria ask for documentation: c64-docs into `README.md` and `docs/`, with `docs.ts generate` and `docs.ts link`. | `docs.ts link --check` of c64-docs gives `result: "PASS"`. |
+| 12. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
 
-In stage 5, make the recordings before you change the program. A recording needs no names, and its coverage gives the analysis of stage 6 more code. If you cannot get to a part of the program, ask the user how to get to it. Do stages 7 and 8 again until the source is clear. Each run of c64-source writes the source again.
+In stage 5, make the recordings before you change the program. A recording needs no names, and its coverage gives the analysis of stage 6 more code. If you cannot get to a part of the program, ask the user how to get to it. Do stages 7 to 9 again until the source is clear. Each run of c64-source writes the source again.
 
 After stage 7, save each routine that other programs can have to the library with `provenance.ts routine` of c64-provenance. Examples are a music driver, a decruncher and a loader. Ask the user before you make a library.
 
 ### Deliverables of a full rebuild
 
-- `.c64-re-tools/knowledge/` with the program, its entry state, the coverage, the names, the regions, the comments and the modules
+- `.c64-re-tools/knowledge/` with the program, its entry state, the coverage, the names, the regions, the comments, the modules, the releases, the switches and the patches
+- the file of each release in `original/`
 - the generated source
 - the built program and the loader
 - the c64-testing scenarios
@@ -107,7 +121,7 @@ After stage 7, save each routine that other programs can have to the library wit
 - the runs in `runs/` that the knowledge gives as evidence
 - the scripts in `tools/` for the formats of this program, when you wrote them.
 
-All other files that you made are not deliverables. Keep them in `.c64-re-tools/local/`. Do not delete a file that the user made.
+All other files that you made are not deliverables. Keep them in `.c64-re-tools/local/`. Do not remove a file that the user made.
 
 ### The answer
 
@@ -115,7 +129,8 @@ Give the user a short answer at the end. Do not write a report file. Write a rep
 
 1. Each criterion of stage 1 and its result, and each exception that the user accepted.
 2. The count of the code ranges that no run executed. The ranges are in the `not_executed.json` file of c64-source.
-3. Open questions: what the evidence does not explain.
+3. The switches: the name, the kind and the default of each, and the releases that have it on. Also a copy protection that a crack removed and that no release has.
+4. Open questions: what the evidence does not explain.
 
 Keep observed facts apart from your conclusions.
 
@@ -156,12 +171,12 @@ Record durable conclusions with the c64-knowledge skill. Do not store:
 
 ## Result
 
-A clear answer for the scope, with the durable conclusions in the project knowledge. For a full rebuild, the deliverables and the answer of stage 11, with the criteria of the user met or each exception in the answer.
+A clear answer for the scope, with the durable conclusions in the project knowledge. For a full rebuild, the deliverables and the answer of stage 12, with the criteria of the user met or each exception in the answer.
 
 ## Failure and conflicts
 
 - A skill reports `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
-- A tool gives a wrong result, and the exit check of a stage cannot be true. Tell the user the defect and the evidence, and wait for the user. Do not make a workaround, for example a change to a generated file. When the user accepts an exception, give the defect and the exception in the answer of stage 11.
+- A tool gives a wrong result, and the exit check of a stage cannot be true. Tell the user the defect and the evidence, and wait for the user. Do not make a workaround, for example a change to a generated file. When the user accepts an exception, give the defect and the exception in the answer of stage 12.
 - If the evidence does not support a conclusion, keep the unknown and get more evidence. Do not make up a meaning.
 - Before you replace current knowledge from the user or the LLM, read its history and the evidence for it.
 - A conflict from the static analysis: find the correct answer at run time with the c64-emulator skill.

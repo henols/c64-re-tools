@@ -18,7 +18,7 @@ import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
 import { ciaSection, copyOrder, loaderLimits, planLoader, loaderState, simulate, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
-import { entriesInData, entryOutsideImage, layout, render, type SourceInput } from "../../skills/c64-source/scripts/lib/source.ts";
+import { entriesInData, entryOutsideImage, layout, render, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 
 let acmeSkip: string | false = false;
@@ -788,11 +788,15 @@ async function assembleRendered(rendered: ReturnType<typeof render>, defines: Re
   return { ...(result.assembled ? { bytes: [...attachments![0]!.subarray(2)] } : {}), messages: result.diagnostics.map((diagnostic) => diagnostic.message) };
 }
 
+/** A switch that no release has on: off in the program and, by default, off in the build. */
+const offSwitch = (name: string): SourceSwitch => ({ name, kind: "change", default: 0, base: 0, releases: [] });
+
 /** $1000 LDA #$00; $1002 STA $d020; $1005 JMP $1000; $1008 eight data bytes; $1010 LDA $1003; $1013 RTS. */
 function patchInput(patches: NonNullable<SourceInput["patches"]>, overrides: Partial<SourceInput> = {}): SourceInput {
   const bytes = [0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x4c, 0x00, 0x10, 1, 2, 3, 4, 5, 6, 7, 8, 0xad, 0x03, 0x10, 0x60];
   const instructions = new Map([[0x1000, 2], [0x1002, 3], [0x1005, 3], [0x1010, 3], [0x1013, 1]]);
-  return input(bytes, 0x1000, { instructions, regions: [{ start: 0x1008, end: 0x100f, type: "bytes" }], symbols: [{ address: 0x1002, name: "store" }], patches, ...overrides });
+  const switches = [...new Set(patches.map((patch) => patch.switch))].map(offSwitch);
+  return input(bytes, 0x1000, { instructions, regions: [{ start: 0x1008, end: 0x100f, type: "bytes" }], symbols: [{ address: 0x1002, name: "store" }], patches, switches, ...overrides });
 }
 
 const CRACK = { start: 0x1000, end: 0x1004, switch: "CRACK", code: "        lda #1\n        sta $d021", comment: "A grey border." };
@@ -808,7 +812,9 @@ test("a patch is written as !if SWITCH { code, NOP } else { original }, with its
     /^l_1000\nstore = \* \+ 2\nl_1003 = \* \+ 3\n!zone patch_CRACK_1000 \{\n\.patch_start\n!if CRACK \{\n {8}; CRACK on: 5 bytes at \$1000-\$1004, NOP after the code\n {8}; A grey border\.\n {8}lda #1\n {8}sta \$d021\n {8}!if \* - \.patch_start > 5 \{ !error .*\} else \{ !fill 5 - \(\* - \.patch_start\), \$ea \}\n\} else \{\n {8}lda #\$00\n {8}sta \$d020\n\}\n\}\n {8}jmp l_1000\n/m,
   );
   assert.match(text, /!if DEBUG \{\n.*\n {8}!if \* - \.patch_start > 4 .*\n\} else \{\n {8}!byte \$01,\$02,\$03,\$04\n\}\n\}\n {8}!byte \$05,\$06,\$07,\$08\n/);
-  assert.match(textOf(rendered, "constants.asm"), /^; Switches: .*\n.*\n!ifndef CRACK \{ CRACK = 0 \} ; 1 patch: \$1000-\$1004\n!ifndef DEBUG \{ DEBUG = 0 \} ; 1 patch: \$1008-\$100b\n\n; Names/);
+  assert.match(textOf(rendered, "switches.asm"), /\n; Other changes\n!ifndef CRACK \{ CRACK = 0 \} ; on in no release\. \$1000-\$1004\n!ifndef DEBUG \{ DEBUG = 0 \} ; on in no release\. \$1008-\$100b\n$/);
+  assert.match(textOf(rendered, "main.asm"), /!source "switches\.asm"\n!source "constants\.asm"\n/);
+  assert.match(textOf(rendered, "constants.asm"), /^; Names/);
 });
 
 test("a patch that cuts an instruction, leaves its file or has the name of a label is not written", () => {
@@ -819,8 +825,9 @@ test("a patch that cuts an instruction, leaves its file or has the name of a lab
         { start: 0x1006, end: 0x1007, switch: "CUT", code: "" },
         { start: 0x1008, end: 0x1009, switch: "store", code: "" },
         { start: 0x100c, end: 0x1011, switch: "LONG", code: "" },
+        { start: 0x1013, end: 0x1013, switch: "GONE", code: "" },
       ],
-      { modules: [{ start: 0x1010, file: "tail.asm" }] },
+      { modules: [{ start: 0x1010, file: "tail.asm" }], switches: ["CUT", "store", "LONG"].map(offSwitch) },
     ),
   );
   assert.deepEqual(
@@ -830,6 +837,7 @@ test("a patch that cuts an instruction, leaves its file or has the name of a lab
       [0x1006, "The range cuts the instruction at $1005."],
       [0x1008, "The switch name store is also a name of the source."],
       [0x100c, "The range runs past the end of the file segment_1000.asm at $100f: a patch is in one file."],
+      [0x1013, "The switch GONE is not a switch of the knowledge."],
     ],
   );
   assert.equal(laid.patches.size, 0);
@@ -853,6 +861,102 @@ test("with real ACME, a switch off gives the image, on changes only its range, a
   assert.deepEqual(refused.messages, ["!error: The patch CRACK at $1000 has 6 (0x6) bytes; the range has 5."]);
 });
 
+/**
+ * The program of ORIGINAL has a protection call at $1000 and four data bytes
+ * at $1008. V2 has the protection and the fix A there, V3 has the fix B and
+ * no protection.
+ */
+function releaseInput(): SourceInput {
+  return patchInput(
+    [
+      { start: 0x1000, end: 0x1004, switch: "PROTECTION", code: "", comment: "No check." },
+      { start: 0x1008, end: 0x100b, switch: "FIX_A", code: "        !byte 9, 9, 9, 9" },
+      { start: 0x1008, end: 0x100b, switch: "FIX_B", code: "        !byte 7, 7, 7, 7" },
+    ],
+    {
+      switches: [
+        { name: "FIX_A", kind: "fix", default: 1, base: 0, releases: ["V2"], comment: "Fix A." },
+        { name: "FIX_B", kind: "fix", default: 0, base: 0, releases: ["V3"] },
+        { name: "PROTECTION", kind: "protection", default: 0, base: 1, releases: ["ORIGINAL", "V2"], comment: "The check." },
+      ],
+      releases: [
+        { label: "V3", file: "original/v3.prg", base: false },
+        { label: "ORIGINAL", file: "original/game.prg", base: true, comment: "The first release." },
+        { label: "V2", file: "original/v2.prg", base: false },
+      ],
+    },
+  );
+}
+
+test("switches.asm has every switch by kind and each release; a patch of a switch that the program has on holds its off state", () => {
+  const rendered = render(layout(releaseInput()), new Set(), []);
+  assert.equal(
+    textOf(rendered, "switches.asm"),
+    [
+      "; The switches of the patches. Each switch is 0 or 1.",
+      "; The default build is the clean program: copy protection, trainers, cheats",
+      "; and changes of a crack are off, and the fixes of the releases are on.",
+      "; Build a release with -DRELEASE_<label>=1 (c64-assembler --release <label>).",
+      "; Set one switch with -DNAME=0 or -DNAME=1 (c64-assembler --define NAME=1).",
+      "",
+      "; Releases",
+      "; ORIGINAL (the program of the knowledge): original/game.prg. The first release.",
+      "!ifdef RELEASE_ORIGINAL {",
+      "        !ifndef FIX_A { FIX_A = 0 }",
+      "        !ifndef FIX_B { FIX_B = 0 }",
+      "        !ifndef PROTECTION { PROTECTION = 1 }",
+      "}",
+      "; V2: original/v2.prg",
+      "!ifdef RELEASE_V2 {",
+      "        !ifndef FIX_A { FIX_A = 1 }",
+      "        !ifndef FIX_B { FIX_B = 0 }",
+      "        !ifndef PROTECTION { PROTECTION = 1 }",
+      "}",
+      "; V3: original/v3.prg",
+      "!ifdef RELEASE_V3 {",
+      "        !ifndef FIX_A { FIX_A = 0 }",
+      "        !ifndef FIX_B { FIX_B = 1 }",
+      "        !ifndef PROTECTION { PROTECTION = 0 }",
+      "}",
+      "",
+      "; Copy protection: off by default",
+      "!ifndef PROTECTION { PROTECTION = 0 } ; on in ORIGINAL, V2. $1000-$1004. The check.",
+      "",
+      "; Fixes of the releases: on by default",
+      "!ifndef FIX_A { FIX_A = 1 }           ; on in V2. $1008-$100b. Fix A.",
+      "!ifndef FIX_B { FIX_B = 0 }           ; on in V3. $1008-$100b",
+      "",
+    ].join("\n"),
+  );
+  const text = textOf(rendered, "segment_1000.asm");
+  assert.match(text, /^!zone patch_PROTECTION_1000 \{\n\.patch_start\n!if PROTECTION = 0 \{\n {8}; PROTECTION off: 5 bytes at \$1000-\$1004, NOP after the code\n {8}; No check\.\n {8}!if \* - \.patch_start > 5 .*\n\} else \{\n {8}lda #\$00\n {8}sta \$d020\n\}\n\}\n/m);
+  assert.match(
+    text,
+    /^!zone patch_FIX_A_1008 \{\n\.patch_start\n!if FIX_A \{ !if FIX_B \{ !error "FIX_A and FIX_B change \$1008-\$100b: turn on one of them\." \} \}\n!if FIX_A \{\n.*\n {8}!byte 9, 9, 9, 9\n.*\n\} else \{ !if FIX_B \{\n.*\n {8}!byte 7, 7, 7, 7\n.*\n\} else \{\n {8}!byte \$01,\$02,\$03,\$04\n\}\}\n\}\n/m,
+  );
+});
+
+test("with real ACME, each release builds its bytes, the default build is the clean program, and two alternatives stop ACME", { skip: acmeSkip }, async () => {
+  const source = releaseInput();
+  const image = Array.from({ length: 20 }, (_, offset) => source.byteAt(0x1000 + offset));
+  const rendered = render(layout(source), new Set(), []);
+  const bytes = (changes: Array<[number, number[]]>) => {
+    const out = [...image];
+    for (const [at, values] of changes) out.splice(at, values.length, ...values);
+    return out;
+  };
+  const nop = [0xea, 0xea, 0xea, 0xea, 0xea];
+  assert.deepEqual((await assembleRendered(rendered, { RELEASE_ORIGINAL: 1 })).bytes, image, "the base release is the program");
+  assert.deepEqual((await assembleRendered(rendered, { RELEASE_V2: 1 })).bytes, bytes([[8, [9, 9, 9, 9]]]));
+  assert.deepEqual((await assembleRendered(rendered, { RELEASE_V3: 1 })).bytes, bytes([[0, nop], [8, [7, 7, 7, 7]]]));
+  assert.deepEqual((await assembleRendered(rendered)).bytes, bytes([[0, nop], [8, [9, 9, 9, 9]]]), "the default: no protection, fix A");
+  assert.deepEqual((await assembleRendered(rendered, { RELEASE_ORIGINAL: 1, PROTECTION: 0 })).bytes, bytes([[0, nop]]), "a define wins over the release");
+  const both = await assembleRendered(rendered, { FIX_B: 1 });
+  assert.equal(both.bytes, undefined);
+  assert.deepEqual(both.messages, ["!error: FIX_A and FIX_B change $1008-$100b: turn on one of them."]);
+});
+
+
 test("with real Ghidra and ACME, the script builds each switch on and reports it; a patch too long fails the run", { skip: ghidraSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
@@ -861,17 +965,30 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
   const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
   assert.equal(knowledge("image", "test.prg").status, 0);
   assert.equal(knowledge("rename", "$1000", "start", "--kind", "routine").status, 0);
+  // V2 is the release with a grey border: its file is the program with the code of the CRACK patch.
+  writeFileSync(join(project, "v2.prg"), Uint8Array.from([0x00, 0x10, 0xa9, 0x01, 0x8d, 0x21, 0xd0, 0x4c, 0x00, 0x10]));
+  assert.equal(knowledge("release", "ORIGINAL", "--file", "test.prg", "--base").status, 0);
+  assert.equal(knowledge("release", "V2", "--file", "v2.prg").status, 0);
+  assert.equal(knowledge("switch", "CRACK", "--kind", "crack", "--releases", "V2").status, 0);
+  assert.equal(knowledge("switch", "BIG", "--kind", "change", "--default", "0").status, 0);
   assert.equal(knowledge("patch", "$1000-$1004", "CRACK", "--code", "        lda #1\n        sta $d021").status, 0);
   // Plain instructions that are longer than the range are refused at the write; code with a label is checked only by the build.
   assert.equal(knowledge("patch", "$1005-$1007", "BIG", "--code", "        nop\n        nop\n        nop\n        nop").status, 2);
   assert.equal(knowledge("patch", "$1005-$1007", "BIG", "--code", "        nop\n.more   nop\n        nop\n        nop").status, 0);
   const generate = () => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, encoding: "utf8" });
-  type Result = { check: { identical: boolean }; switches: Array<{ name: string; result: string; changedBytes?: number; overflow?: Array<{ start: string; message: string }> }> };
+  type Result = {
+    check: { identical: boolean };
+    switches: Array<{ name: string; result: string; define: string; changedBytes?: number; overflow?: Array<{ start: string; message: string }> }>;
+    default: { in: string[]; result: string; changedBytes?: number };
+    releases: Array<{ label: string; result: string }>;
+  };
   const first = generate();
   assert.equal(first.status, 1, first.stdout);
   const json = JSON.parse(first.stdout) as Result;
-  assert.equal(json.check.identical, true, "off, every switch gives the image");
-  assert.deepEqual(json.switches.map((item) => [item.name, item.result]), [["BIG", "overflow"], ["CRACK", "fits"]]);
+  assert.equal(json.check.identical, true, "the build of the base release gives the image");
+  assert.deepEqual(json.switches.map((item) => [item.name, item.result, item.define]), [["BIG", "overflow", "--define BIG=1"], ["CRACK", "fits", "--define CRACK=1"]]);
+  assert.deepEqual(json.default, { in: [], result: "fits", changedBytes: 0 });
+  assert.deepEqual(json.releases.map((item) => [item.label, item.result]), [["ORIGINAL", "identical"], ["V2", "identical"]], "each release builds to its file");
   assert.deepEqual(json.switches[0]!.overflow, [{ start: "$1005", message: "The patch BIG at $1005 has 4 (0x4) bytes; the range has 3." }]);
   assert.equal(json.switches[1]!.changedBytes, 2);
   assert.equal(knowledge("unpatch", "$1005").status, 0);

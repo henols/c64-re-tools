@@ -1,6 +1,6 @@
 ---
 name: c64-knowledge
-description: Use this skill to read, write, correct and review the durable knowledge of a C64 project in .c64-re-tools/knowledge/. The knowledge holds the program, its entry state and the coverage of the runs. It gives the knowledge at an address, and it names symbols, classifies memory regions, sets comments and records references. It records patches and macros for the generated source. It also shows the history of each change, and it can revert to an earlier revision. Do not use it for live emulator state or for static analysis.
+description: Use this skill to read, write, correct and review the durable knowledge of a C64 project in .c64-re-tools/knowledge/. The knowledge holds the program, its entry state and the coverage of the runs. It gives the knowledge at an address, and it names symbols, classifies memory regions, sets comments and records references. It records releases, switches, patches and macros for the generated source. It also shows the history of each change, and it can revert to an earlier revision. Do not use it for live emulator state or for static analysis.
 ---
 
 # c64-knowledge
@@ -55,14 +55,16 @@ A symbol is the name of an address from the user or the LLM. An analyzer name is
 | Start a file of generated source | `module '$2000' player.asm --title 'Player movement'` / `unmodule '$2000'` |
 | Write the operand of an instruction as an expression | `operand '$8079' --lo irq_handler` / `unoperand '$8079'` |
 | Operand expressions | `operands` with `--range` |
-| Replace a range with code when a switch is on | `patch '$100e-$1010' CRACK --code-file crack.asm` / `unpatch '$100e'` |
-| Patches and switches | `patches` with `--switch`, and `switches` |
+| Record a release of the program | `release ORIGINAL --file original/game.prg --base` / `unrelease V2` |
+| Write a switch | `switch PROTECTION --kind protection --releases ORIGINAL` / `unswitch PROTECTION` |
+| Write the code of a switch for a range | `patch '$100e-$1010' PROTECTION --code-file no-check.asm` / `unpatch '$100e'` |
+| Releases, switches and patches | `releases`, `switches`, and `patches` with `--switch` |
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` / `unmacro inc16` |
 | Write instructions as one use of a macro | `use '$1005-$100a' inc16 --args ptr` / `unuse '$1005'` |
 | Macros and their uses | `macros`, and `uses` with `--range` and `--macro` |
 | Files of generated source | `modules` |
 | The address spaces that hold knowledge | `spaces` |
-| History | `history '$2100'`, `history --name update_player`, `history --macro inc16`, `revisions`, `revision 20261015T2145` |
+| History | `history '$2100'`, `history --name update_player`, `history --macro inc16`, `history --switch PROTECTION`, `revisions`, `revision 20261015T2145` |
 | Go back to an earlier state | `revert 20261015T2145` for all spaces, or `revert 20261015T2145 --space bank3` for one space |
 | Decide the conflicts after a git merge | `merge --reason 'merge of two computers'` |
 
@@ -173,7 +175,8 @@ The ops and their fields:
 | `operand` | `address`, `select` (`lo`, `hi`, `value` or `expr`), `symbol` and `offset` (optional), or `expression` for `expr` |
 | `unoperand` | `address` |
 | `patch` | `start`, `end`, `switch`, `code` (empty for NOP only), `comment` (optional) |
-| `unpatch`, `unuse` | `start` |
+| `unpatch` | `start`, `switch` (optional) |
+| `unuse` | `start` |
 | `macro` | `name`, `params` (a list or a comma list), `body`, `comment` (optional) |
 | `unmacro` | `name` |
 | `use` | `start`, `end`, `macro`, `args` (a list or a comma list) |
@@ -205,7 +208,7 @@ Then apply the joined batch with the command in `apply`.
 
 ## Modules
 
-A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The c64-source skill writes `main.asm`, `loader.asm`, `constants.asm` and `macros.asm` itself. Thus a module cannot have one of these names, in upper or lower case. The title becomes the first line of the file. A `module` write without a title keeps the title that the module has. Modules have a history, and `revert` restores them.
+A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The c64-source skill writes `main.asm`, `loader.asm`, `switches.asm`, `constants.asm` and `macros.asm` itself. Thus a module cannot have one of these names, in upper or lower case. The title becomes the first line of the file. A `module` write without a title keeps the title that the module has. Modules have a history, and `revert` restores them.
 
 ## Operand expressions
 
@@ -230,21 +233,71 @@ Give one selector:
 
 Write an operand expression for each immediate that is a byte of an address. Also write one for each table read through the byte before the table. The pointer candidates of the c64-static-analysis skill show many of these places.
 
-## Code switches
+## Releases and switches
 
-A patch is ACME code that replaces a range of the program when the build defines its switch as 1. Use patches to change the program, for example for a crack, a trainer or a debug hook. The default build does not define the switch. Thus the c64-source skill still makes a source that is identical to the program.
+A rebuild keeps all of the program. It keeps unused bytes, dead code, old copies and leftovers of the development. It keeps a copy protection, a trainer and a cheat in the source. A switch puts each of them in or out of the build. Only a cracktro is not in the rebuild: see the c64-unpacker skill.
 
-- A switch name is upper case, for example `CRACK` or `TRAINER`. It cannot be the name of a symbol or a platform name.
-- Many patches can have the same switch. The c64-source skill builds each switch on its own. It does not build two switches together.
+### Releases
+
+A release is a PRG or a c64-unpacker `image.json` of the program, in a folder that git keeps, for example `original/`. `release` records its label, its file and the SHA-256 of the file.
+
+- The base release is the release whose bytes are the program of the knowledge. Record it with `--base`. The script refuses `--base` when the segments or the bytes of the file are not the program.
+- A space has one base release. Record the base release before the first switch.
+- The build of a release defines `RELEASE_<label>=1`. Then each switch has the value of that release. The c64-source skill checks that this build gives the bytes of the file.
+- A label is upper case, for example `ORIGINAL`, `FIRESTAR` or `V2`.
+- `unrelease` refuses a release that a switch names. It also refuses the base release while the knowledge has switches.
+
+### Switches
+
+All switches are in `switches.jsonl` of the knowledge, and the c64-source skill writes all of them to `switches.asm`. A switch has a kind, a default and the releases that have it on.
+
+| Kind | What it changes | Default |
+|---|---|---|
+| `protection` | A copy protection | 0 (off) |
+| `trainer` | A trainer, for example infinite lives | 0 (off) |
+| `cheat` | A cheat | 0 (off) |
+| `crack` | A change that a cracker made in the program, for example a credit text | 0 (off) |
+| `fix` | A correction that one or more releases have | 1 (on). Give `--default 0` only for an alternative (below). |
+| `change` | Another difference between releases | Give `--default 0` or `--default 1` |
+
+- The default build is the clean program. It has no copy protection, trainer, cheat or crack change, and it has all corrections. The script refuses `--default 1` for `protection`, `trainer`, `cheat` and `crack`.
+- `--releases` lists the labels of the releases that have the switch on. A switch that no release has on, for example a trainer of your own, has no `--releases`.
+- The base value of a switch is 1 when the base release has it on, else 0. The program of the knowledge has the base value of each switch.
+- A switch name is upper case, for example `PROTECTION`, `TRAINER` or `FIX_LIVES`. It cannot start with `RELEASE_`. It cannot be the name of a symbol or a platform name.
+- A `switch` write without `--releases` or `--comment` keeps the releases and the comment that the switch has.
+- The script refuses a change of the base value while the switch has patches. Remove the patches first, because they hold the other state.
+- `unswitch` refuses a switch that has patches.
+- `switches` gives each switch with `default`, `base`, `releases`, its patches, and the defines `on` and `off`. `releases` gives each release with its define.
+
+### Patches
+
+A patch is ACME code for a range of the program. The code is the bytes of the switch in the state that the base release does not have. Examples:
+
+- The base release has a copy protection. The switch `PROTECTION` names the base release. The code is the program without the protection, for example NOP in place of the `JSR` to the check.
+- The base release has the protection already removed, and another release has it: the code is the bytes of the protection from that release. When no release has these bytes, record in a comment that the crack removed the protection.
+- A correction is only in release `V2`: the switch `FIX_LIVES` names `V2`, and the code is the bytes of `V2`.
+- A correction is in the base release and not in `V1`. The switch names the base release, and the code is the bytes of `V1`.
+
+Rules:
+
+- Write the switch first. `patch` refuses a switch that the knowledge does not have.
+- Many patches can have the same switch.
 - The code must fit in the range. NOP ($EA) fills the bytes after the code. `--nop` gives a range of NOP only.
-- `patch` refuses code that is longer than the range when each line is a 6510 instruction, `!byte`, `!word`, `!fill` or a comment. `patch` does not check the length of other code, for example code with a label or a macro. It does not assemble the code. `generate` of the c64-source skill builds each switch and does these checks. `switches[].result` is `overflow` for code that is longer than its range, and `does not assemble` for code that ACME refuses.
+- `patch` refuses code that is longer than the range when each line is a 6510 instruction, `!byte`, `!word`, `!fill` or a comment. `patch` does not check the length of other code, for example code with a label or a macro. It does not assemble the code. `generate` of the c64-source skill does these checks.
 - `--code` gives the code as text. `--code-file` reads the code from a project file. The code can use the labels and the macros of the source, and local labels with a dot, for example `.skip`.
 - The braces in the code must be pairs, because the source puts the code inside `{ }`.
-- A patch cannot overlap another patch or a macro use. A patch with the same start and the same switch replaces the patch. A patch of another switch at the same start gives the error `conflict`.
+- Patches of different switches can have the same range. They are alternatives, for example two releases with two different corrections of one bug. The default build can put in only one of them. Thus `switch` refuses defaults that put in two alternatives.
+- The knowledge refuses all other overlaps of patches. A patch cannot overlap a macro use.
+- A patch with the same start and the same switch replaces the patch.
+- When patches of two switches start at one address, give `unpatch` the switch with `--switch`.
 - Each byte of the range must be in the program of the knowledge.
 - A `patch` write without `--comment` keeps the comment that the patch has.
 
-Build the program with a switch on with the c64-assembler skill: `--define CRACK=1`.
+Build with the c64-assembler skill:
+
+- The default build has no options.
+- A release: `--release ORIGINAL`.
+- One switch: `--define TRAINER=1`. A define overrides the release.
 
 ## Macros
 

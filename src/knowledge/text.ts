@@ -151,6 +151,28 @@ export const TABLES: readonly TableSpec[] = [
       origin,
     ],
   },
+  // Every switch of the patches in one place: its kind, its default and the releases that have it on.
+  {
+    table: "switches",
+    file: "switches.jsonl",
+    sort: "name",
+    fields: [
+      space,
+      field("name", "name", "text"),
+      field("kind", "kind", "text"),
+      field("default", "default_value", "integer"),
+      field("releases", "releases", "text"),
+      field("comment", "comment", "text", true),
+      origin,
+    ],
+  },
+  // The releases of the program: the file of each, and the one whose bytes are the program.
+  {
+    table: "releases",
+    file: "releases.jsonl",
+    sort: "label",
+    fields: [space, field("label", "label", "text"), field("file", "file", "text"), field("sha256", "sha256", "text"), field("base", "base", "integer"), field("comment", "comment", "text", true), origin],
+  },
   {
     table: "macros",
     file: "macros.jsonl",

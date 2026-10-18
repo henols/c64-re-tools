@@ -15,6 +15,8 @@ import {
   OPERAND_COLUMNS,
   PATCH_COLUMNS,
   REFERENCE_COLUMNS,
+  RELEASE_COLUMNS,
+  SWITCH_COLUMNS,
   REGION_COLUMNS,
   SUPPRESSION_COLUMNS,
   SYMBOL_COLUMNS,
@@ -25,6 +27,8 @@ import {
   toOperand,
   toPatch,
   toReference,
+  toRelease,
+  toSwitch,
   toRegion,
   toSuppression,
   toSymbol,
@@ -47,7 +51,11 @@ export const CONFLICT_RULES = {
   "suppression-symbol": "the same symbol suppression two times",
   "suppression-reference": "the same reference suppression two times",
   "suppression-region": "region suppressions that overlap",
-  patch: "patches that overlap",
+  patch: "patches that overlap and do not have the same range",
+  "patch-switch": "two patches of one switch at one range",
+  switch: "two switches with one name",
+  release: "two releases with one label",
+  "release-base": "two base releases",
   macro: "two macros with one name",
   "macro-use": "macro uses that overlap",
 } as const;
@@ -71,8 +79,11 @@ interface TableRule {
   entity: HistoryEntry["entity"];
   columns: string;
   map: (raw: Raw) => HistoryEntry["row"];
-  /** The columns that must differ between current rows, or "overlap" for address ranges. */
-  key: readonly string[] | "overlap";
+  /**
+   * The columns that must differ between current rows, "overlap" for address
+   * ranges, or "partial" for ranges that may only overlap when they are equal.
+   */
+  key: readonly string[] | "overlap" | "partial";
   /** Rows of the table that the rule is about. */
   where?: string;
 }
@@ -99,7 +110,12 @@ const RULES: readonly TableRule[] = [
     where: "entity = 'reference'",
   },
   { rule: "suppression-region", table: "suppressions", entity: "suppression", columns: SUPPRESSION_COLUMNS, map: toSuppression, key: "overlap", where: "entity = 'region'" },
-  { rule: "patch", table: "patches", entity: "patch", columns: PATCH_COLUMNS, map: toPatch, key: "overlap" },
+  // Patches of different switches at the same range are alternatives; any other overlap is a conflict.
+  { rule: "patch", table: "patches", entity: "patch", columns: PATCH_COLUMNS, map: toPatch, key: "partial" },
+  { rule: "patch-switch", table: "patches", entity: "patch", columns: PATCH_COLUMNS, map: toPatch, key: ["start_address", "end_address", "switch_name"] },
+  { rule: "switch", table: "switches", entity: "switch", columns: SWITCH_COLUMNS, map: toSwitch, key: ["name"] },
+  { rule: "release", table: "releases", entity: "release", columns: RELEASE_COLUMNS, map: toRelease, key: ["label"] },
+  { rule: "release-base", table: "releases", entity: "release", columns: RELEASE_COLUMNS, map: toRelease, key: ["base"], where: "base = 1" },
   { rule: "macro", table: "macros", entity: "macro", columns: MACRO_COLUMNS, map: toMacro, key: ["name"] },
   { rule: "macro-use", table: "macro_uses", entity: "macro-use", columns: MACRO_USE_COLUMNS, map: toMacroUse, key: "overlap" },
 ];
@@ -127,8 +143,12 @@ function sameKey(db: DatabaseSync, rule: TableRule, key: readonly string[]): Con
   return [...groups.values()];
 }
 
-/** The current rows of one rule whose address ranges overlap, in groups of rows that overlap in a chain. */
-function overlapping(db: DatabaseSync, rule: TableRule): Conflict[] {
+/**
+ * The current rows of one rule whose address ranges overlap, in groups of rows
+ * that overlap in a chain. With `sameRange`, a group whose rows all have one
+ * range is no conflict.
+ */
+function overlapping(db: DatabaseSync, rule: TableRule, sameRange = false): Conflict[] {
   const rows = db
     .prepare(`SELECT ${rule.columns}, id FROM ${sqlName(rule.table)} WHERE valid_to_revision IS NULL${rule.where === undefined ? "" : ` AND ${rule.where}`} ORDER BY space, start_address, end_address`)
     .all() as Raw[];
@@ -146,13 +166,17 @@ function overlapping(db: DatabaseSync, rule: TableRule): Conflict[] {
     end = raw.end_address as number;
   }
   if (group !== undefined && group.rows.length > 1) conflicts.push(group);
-  return conflicts;
+  if (!sameRange) return conflicts;
+  return conflicts.filter((conflict) => {
+    const [first, ...rest] = conflict.rows.map((entry) => entry.row as { start: number; end: number });
+    return rest.some((row) => row.start !== first!.start || row.end !== first!.end);
+  });
 }
 
 /** Every conflict of the knowledge, rule by rule; the rows of each, oldest first. */
 export function conflicts(db: DatabaseSync | undefined): Conflict[] {
   if (db === undefined) return [];
-  return RULES.flatMap((rule) => (rule.key === "overlap" ? overlapping(db, rule) : sameKey(db, rule, rule.key))).map((conflict) => ({ ...conflict, rows: conflict.rows.sort(byAge) }));
+  return RULES.flatMap((rule) => (rule.key === "overlap" || rule.key === "partial" ? overlapping(db, rule, rule.key === "partial") : sameKey(db, rule, rule.key))).map((conflict) => ({ ...conflict, rows: conflict.rows.sort(byAge) }));
 }
 
 /** The table of a conflict rule. */

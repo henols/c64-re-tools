@@ -14,8 +14,8 @@ import { conflicts, type Conflict } from "./conflicts.ts";
 import { openForRead, openForWrite, textPath, transaction, withWrite } from "./database.ts";
 import { importFindings } from "./import.ts";
 import { listRegions, operandAt, referencesFrom, symbolAt } from "./read.ts";
-import { listMacros, listMacroUses, listPatches } from "./read.ts";
-import { addReference, Change, classifyRegion, mergeConflicts, renameSymbol, setComment, setMacro, setMacroUse, setModule, setOperand, setPatch, unclassifyRegion, type OperandImage, type WriteContext } from "./write.ts";
+import { listMacros, listMacroUses, listPatches, listSwitches } from "./read.ts";
+import { addReference, Change, classifyRegion, mergeConflicts, renameSymbol, setComment, setMacro, setMacroUse, setModule, setOperand, setPatch, setRelease, setSwitch, unclassifyRegion, type OperandImage, type WriteContext } from "./write.ts";
 
 const roots: string[] = [];
 after(() => {
@@ -192,29 +192,37 @@ test("a write that would leave two current rows is refused before it commits", (
   assert.equal(read(root, (db) => symbolAt(db, 0x2100)?.name), "main");
 });
 
-test("patches, macros and macro uses have their conflicts, and merge keeps the newest", () => {
+test("patches, switches, macros and macro uses have their conflicts, and merge keeps the newest", () => {
   const bytes = new Map([[0x8100, 0xe6], [0x8101, 0xfb], [0x8102, 0xd0], [0x8103, 0x02], [0x8104, 0xe6], [0x8105, 0xfc], [0x8106, 0xea]]);
   const image: OperandImage = { byteAt: (address) => bytes.get(address), platform: new Map() };
   const root = computers(
-    nothing,
+    (base) =>
+      withWrite((db) => {
+        setRelease(db, llm, { label: "ORIGINAL", file: "original/game.prg", sha256: "a".repeat(64), base: true });
+        setSwitch(db, { ...llm, image }, { name: "CRACK", kind: "crack" });
+        return setSwitch(db, { ...llm, image }, { name: "TRAINER", kind: "trainer" });
+      }, base),
     (a) =>
       withWrite((db) => {
+        setSwitch(db, { ...llm, image }, { name: "LEVELS", kind: "change", default: 0 });
         setPatch(db, { ...llm, image }, { start: 0x8100, end: 0x8101, switch: "CRACK", code: "" });
         setMacro(db, llm, { name: "inc16", params: ["dst"], body: "inc .dst" });
         return setMacroUse(db, { ...llm, image }, { start: 0x8102, end: 0x8105, macro: "inc16", args: ["1"] });
       }, a),
     (b) =>
       withWrite((db) => {
+        setSwitch(db, { ...llm, image }, { name: "LEVELS", kind: "change", default: 1 });
         setPatch(db, { ...llm, image }, { start: 0x8101, end: 0x8101, switch: "TRAINER", code: "" });
         setMacro(db, llm, { name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+" });
         setMacro(db, llm, { name: "skip", body: "bne *+4" });
         return setMacroUse(db, { ...llm, image }, { start: 0x8104, end: 0x8106, macro: "skip" });
       }, b),
   );
-  assert.deepEqual(rules(read(root, conflicts)), ["patch", "macro", "macro-use"]);
+  assert.deepEqual(rules(read(root, conflicts)), ["patch", "switch", "macro", "macro-use"]);
   withWrite((db) => mergeConflicts(db, llm, platform), root);
   assert.deepEqual(read(root, conflicts), []);
   assert.deepEqual(read(root, (db) => listPatches(db).map((row) => row.switch)), ["TRAINER"]);
+  assert.deepEqual(read(root, (db) => listSwitches(db).map((row) => [row.name, row.default])), [["CRACK", 0], ["LEVELS", 1], ["TRAINER", 0]], "the newest LEVELS stays");
   assert.deepEqual(read(root, (db) => listMacros(db).map((row) => [row.name, row.body.split("\n").length])), [["inc16", 4], ["skip", 1]], "the newest inc16 stays");
   assert.deepEqual(read(root, (db) => listMacroUses(db).map((row) => row.macro)), ["skip"]);
 });

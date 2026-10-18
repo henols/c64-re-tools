@@ -5,13 +5,14 @@
 // generator forces operand sizes, and writes an opcode form that ACME
 // encodes differently as bytes (see the probe in source.ts). An operand
 // expression of the knowledge is written in place of its number. A
-// patch is written as !if SWITCH { code } else { original }, and a
-// macro use as one +name args line.
+// patch is written as !if SWITCH { code } else { original }, with the
+// condition of the state that the program does not have, and a macro use as
+// one +name args line. switches.asm holds every switch and release.
 
 import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
-import { type CommentPlacement, isAnalyzer, isGeneratedFile, type Origin, type RegionType } from "#src/knowledge/schema.ts";
+import { type CommentPlacement, isAnalyzer, isGeneratedFile, RELEASE_DEFINE, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
 import type { Area } from "#src/platform.ts";
 import { hasZeroPageForm, instructionWith, labelProblem, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type UseKind } from "#src/opcodes.ts";
 
@@ -42,8 +43,12 @@ export interface SourceInput {
   decode?: (register: number, value: number) => Record<string, unknown>;
   /** Operand expressions of the knowledge, by instruction address. */
   operands?: ReadonlyArray<OperandExpression & { address: number }>;
-  /** Patches of the knowledge: code that replaces a range when the build defines the switch. */
+  /** Patches of the knowledge: code for a range in the state of the switch that the program does not have. */
   patches?: ReadonlyArray<{ start: number; end: number; switch: string; code: string; comment?: string }>;
+  /** The switches of the knowledge, each with its value in the program. switches.asm holds them all. */
+  switches?: ReadonlyArray<SourceSwitch>;
+  /** The releases of the knowledge: switches.asm gives each one its switch values. */
+  releases?: ReadonlyArray<SourceRelease>;
   /** Macros of the knowledge, written to macros.asm. */
   macros?: ReadonlyArray<{ name: string; params: readonly string[]; body: string; comment?: string }>;
   /** Macro uses of the knowledge: the instructions of a range, written as one use of a macro. */
@@ -66,13 +71,41 @@ export interface MacroAsInstructions {
   reason: string;
 }
 
-/** A patch that the source writes, with the addresses inside it that have a name. */
-export interface PatchBlock {
-  start: number;
-  end: number;
+/** A switch: its kind, its default, its value in the program (`base`) and the releases that have it on. */
+export interface SourceSwitch {
+  name: string;
+  kind: SwitchKind;
+  default: 0 | 1;
+  base: 0 | 1;
+  releases: readonly string[];
+  comment?: string;
+}
+
+/** A release: the build with RELEASE_<label> gives each switch the value of this release. */
+export interface SourceRelease {
+  label: string;
+  file: string;
+  base: boolean;
+  comment?: string;
+}
+
+/** The code of one switch in a patch: it is in when the switch does not have its base value. */
+export interface PatchAlternative {
   switch: string;
   code: string;
   comment?: string;
+  base: 0 | 1;
+}
+
+/**
+ * A patch that the source writes, with the addresses inside it that have a
+ * name. Two or more alternatives are patches of different switches at the
+ * same range: at most one of them is in.
+ */
+export interface PatchBlock {
+  start: number;
+  end: number;
+  alternatives: PatchAlternative[];
   /** Named addresses after the start of the range: the source defines them before the patch, so both builds have them. */
   inner: number[];
 }
@@ -201,6 +234,9 @@ export interface Layout {
   /** The patches that the source writes, by start. */
   patches: Map<number, PatchBlock>;
   patchesNotWritten: PatchNotWritten[];
+  /** Every switch of the knowledge, by name, and the releases, the base release first. */
+  switches: SourceSwitch[];
+  releases: SourceRelease[];
   /** The macros, by name. */
   macros: NonNullable<SourceInput["macros"]>;
   /** The macro uses that the source can write, by start. */
@@ -481,12 +517,24 @@ export function layout(input: SourceInput): Layout {
     names.set(address, name);
     generatedLabels++;
   }
-  // A patch is written when its range is whole items of one file and its switch is no name of the source.
+  // A patch is written when its range is whole items of one file and its switch is a switch of the knowledge and no name of the source.
   const blocks = new Map<number, PatchBlock>();
   const patchesNotWritten: PatchNotWritten[] = [];
   const sourceNames = new Set([...names.values(), ...taken]);
-  for (const patch of patches) {
+  const switches = new Map((input.switches ?? []).map((row) => [row.name, row]));
+  for (const patch of [...patches].sort((a, b) => a.start - b.start || (a.switch < b.switch ? -1 : 1))) {
     const refuse = (reason: string) => patchesNotWritten.push({ start: patch.start, end: patch.end, switch: patch.switch, reason });
+    const owner = switches.get(patch.switch);
+    if (owner === undefined) {
+      refuse(`The switch ${patch.switch} is not a switch of the knowledge.`);
+      continue;
+    }
+    const known = blocks.get(patch.start);
+    if (known !== undefined) {
+      if (known.end !== patch.end) refuse(`The range overlaps the patch of ${known.alternatives[0]!.switch} at ${formatC64Address(known.start)}-${formatC64Address(known.end)}: alternatives have the same range.`);
+      else known.alternatives.push({ switch: patch.switch, code: patch.code, ...(patch.comment === undefined ? {} : { comment: patch.comment }), base: owner.base });
+      continue;
+    }
     const piece = pieces.find((row) => patch.start >= row.start && patch.start <= row.end);
     if (piece === undefined) {
       refuse("The range is not in the image.");
@@ -508,7 +556,7 @@ export function layout(input: SourceInput): Layout {
       continue;
     }
     const inner = [...names.keys()].filter((address) => address > patch.start && address <= patch.end).sort((a, b) => a - b);
-    blocks.set(patch.start, { start: patch.start, end: patch.end, switch: patch.switch, code: patch.code, ...(patch.comment === undefined ? {} : { comment: patch.comment }), inner });
+    blocks.set(patch.start, { start: patch.start, end: patch.end, alternatives: [{ switch: patch.switch, code: patch.code, ...(patch.comment === undefined ? {} : { comment: patch.comment }), base: owner.base }], inner });
   }
   // The high byte of a vector is NMINV+1. A zero-page entry keeps zero-page instructions: its constant has two digits.
   // An address inside a table keeps its own label when the source needs one there anyway, for example as the entry.
@@ -549,6 +597,8 @@ export function layout(input: SourceInput): Layout {
     operandsAsNumbers: operandsAsNumbers.sort((a, b) => a.address - b.address),
     patches: blocks,
     patchesNotWritten,
+    switches: [...(input.switches ?? [])].sort((a, b) => (a.name < b.name ? -1 : 1)),
+    releases: [...(input.releases ?? [])].sort((a, b) => Number(b.base) - Number(a.base) || (a.label < b.label ? -1 : 1)),
     macros: [...(input.macros ?? [])].sort((a, b) => (a.name < b.name ? -1 : 1)),
     macroUses: usesWritten,
     macrosAsInstructions: macrosAsInstructions.sort((a, b) => a.start - b.start),
@@ -772,23 +822,67 @@ function usageText(kinds: ReadonlyMap<UseKind, number> | undefined): string | un
   return parts.length === 0 ? undefined : `Used: ${parts.join(", ")}.`;
 }
 
-/** The switches of the patches, each 0 unless the build defines it, with the ranges of its patches. */
+/** The patches of each switch that has one, by switch name. */
 export function switchesOf(layout: Pick<Layout, "patches">): Map<string, PatchBlock[]> {
   const switches = new Map<string, PatchBlock[]>();
-  for (const patch of [...layout.patches.values()].sort((a, b) => a.start - b.start)) switches.set(patch.switch, [...(switches.get(patch.switch) ?? []), patch]);
+  for (const patch of [...layout.patches.values()].sort((a, b) => a.start - b.start)) {
+    for (const alternative of patch.alternatives) switches.set(alternative.switch, [...(switches.get(alternative.switch) ?? []), patch]);
+  }
   return new Map([...switches].sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
-function switchLines(layout: Layout): string[] {
-  const switches = switchesOf(layout);
-  if (switches.size === 0) return [];
-  const width = Math.max(...[...switches.keys()].map((name) => name.length));
-  const lines = ["; Switches: each is 0 unless the build defines it. Assemble with -DNAME=1", "; (c64-assembler --define NAME=1) to put in the patches of NAME."];
-  for (const [name, patches] of switches) {
-    const ranges = patches.map((patch) => `${formatC64Address(patch.start)}-${formatC64Address(patch.end)}`).join(", ");
-    lines.push(`!ifndef ${name} { ${name} = 0 }${" ".repeat(width - name.length)} ; ${patches.length} patch${patches.length === 1 ? "" : "es"}: ${ranges}`);
+/** The groups of switches.asm, in order, with the default of each group. */
+const SWITCH_GROUPS: ReadonlyArray<{ kind: SwitchKind; title: string }> = [
+  { kind: "protection", title: "Copy protection: off by default" },
+  { kind: "trainer", title: "Trainers: off by default" },
+  { kind: "cheat", title: "Cheats: off by default" },
+  { kind: "crack", title: "Changes of a crack: off by default" },
+  { kind: "fix", title: "Fixes of the releases: on by default" },
+  { kind: "change", title: "Other changes" },
+];
+
+/** True when the source has switches.asm: the knowledge has switches or releases. */
+export const hasSwitchFile = (layout: Pick<Layout, "switches" | "releases">) => layout.switches.length > 0 || layout.releases.length > 0;
+
+/**
+ * switches.asm: every switch of the knowledge in one place. A release block
+ * gives each switch the value of that release when the build defines
+ * RELEASE_<label>; then each switch gets its default unless the build defines
+ * it. A comment tells the releases that have the switch on, and its patches.
+ */
+function switchesText(layout: Layout): string {
+  const patches = switchesOf(layout);
+  const out = [
+    "; The switches of the patches. Each switch is 0 or 1.",
+    "; The default build is the clean program: copy protection, trainers, cheats",
+    "; and changes of a crack are off, and the fixes of the releases are on.",
+    `; Build a release with -D${RELEASE_DEFINE}<label>=1 (c64-assembler --release <label>).`,
+    "; Set one switch with -DNAME=0 or -DNAME=1 (c64-assembler --define NAME=1).",
+  ];
+  if (layout.releases.length > 0) out.push("", "; Releases");
+  for (const release of layout.releases) {
+    out.push(`; ${release.label}${release.base ? " (the program of the knowledge)" : ""}: ${release.file}${release.comment === undefined ? "" : `. ${release.comment.replace(/\s*\r?\n\s*/g, " ")}`}`);
+    out.push(`!ifdef ${RELEASE_DEFINE}${release.label} {`);
+    for (const row of layout.switches) out.push(`${INDENT}!ifndef ${row.name} { ${row.name} = ${row.releases.includes(release.label) ? 1 : 0} }`);
+    out.push("}");
   }
-  return [...lines, ""];
+  const line = (row: SourceSwitch) => `!ifndef ${row.name} { ${row.name} = ${row.default} }`;
+  const width = Math.max(0, ...layout.switches.map((row) => line(row).length));
+  for (const group of SWITCH_GROUPS) {
+    const rows = layout.switches.filter((row) => row.kind === group.kind);
+    if (rows.length === 0) continue;
+    out.push("", `; ${group.title}`);
+    for (const row of rows) {
+      const ranges = (patches.get(row.name) ?? []).map((patch) => `${formatC64Address(patch.start)}-${formatC64Address(patch.end)}`);
+      const parts = [
+        row.releases.length === 0 ? "on in no release" : `on in ${row.releases.join(", ")}`,
+        ranges.length === 0 ? "no patch" : ranges.join(", "),
+        ...(row.comment === undefined ? [] : [row.comment.replace(/\s*\r?\n\s*/g, " ")]),
+      ];
+      out.push(`${line(row).padEnd(width)} ; ${parts.join(". ")}`);
+    }
+  }
+  return `${out.join("\n")}\n`;
 }
 
 /** constants.asm: the names outside the image by platform area, each with what it is and how the source uses it. */
@@ -801,7 +895,7 @@ function constantsText(layout: Layout): { text: string; labels: SourceLabel[] } 
   });
   const nameColumn = Math.min(MAX_NAME_COLUMN, Math.max(0, ...rows.map((row) => row.name.length)));
   const valueColumn = Math.max(0, ...rows.map((row) => row.value.length));
-  const out = [...switchLines(layout)];
+  const out: string[] = [];
   out.push(
     describe === undefined ? "; Names of addresses outside the image." : "; Names of addresses outside the image, by memory area.",
     '; "Used" counts the instructions and table entries of this source that use the name.',
@@ -881,22 +975,41 @@ function macrosText(layout: Layout): { text: string; lines: Map<string, { first:
   return { text: `${out.join("\n")}\n`, lines };
 }
 
-/** The lines that open a patch: its zone, the switch, the code, and the guard that stops a patch longer than its range. */
+/** The condition that puts in the code of a switch: the switch has the value that the program does not have. */
+const patchCondition = (alternative: PatchAlternative) => (alternative.base === 0 ? alternative.switch : `${alternative.switch} = 0`);
+
+/**
+ * The lines that open a patch: its zone, a guard that stops two alternatives
+ * together, then for each switch its condition, its code and the guard that
+ * stops code longer than the range. The original code follows in the last
+ * else; the patch closes with closingBraces.
+ */
 function patchOpening(patch: PatchBlock): string[] {
   const bytes = patch.end - patch.start + 1;
   const range = `${formatC64Address(patch.start)}-${formatC64Address(patch.end)}`;
-  const comment = patch.comment === undefined ? [] : patch.comment.split(/\r?\n/).map((line) => `${INDENT}; ${line}`.trimEnd());
-  return [
-    `!zone patch_${patch.switch}_${patch.start.toString(16).padStart(4, "0")} {`,
-    ".patch_start",
-    `!if ${patch.switch} {`,
-    `${INDENT}; ${patch.switch} on: ${bytes} byte${bytes === 1 ? "" : "s"} at ${range}, NOP after the code`,
-    ...comment,
-    ...(patch.code === "" ? [] : patch.code.split(/\r?\n/)),
-    `${INDENT}!if * - .patch_start > ${bytes} { !error "The patch ${patch.switch} at ${formatC64Address(patch.start)} has ", * - .patch_start, " bytes; the range has ${bytes}." } else { !fill ${bytes} - (* - .patch_start), $ea }`,
-    "} else {",
-  ];
+  const out = [`!zone patch_${patch.alternatives[0]!.switch}_${patch.start.toString(16).padStart(4, "0")} {`, ".patch_start"];
+  patch.alternatives.forEach((first, index) => {
+    for (const second of patch.alternatives.slice(index + 1)) {
+      out.push(`!if ${patchCondition(first)} { !if ${patchCondition(second)} { !error "${first.switch} and ${second.switch} change ${range}: turn on one of them." } }`);
+    }
+  });
+  patch.alternatives.forEach((alternative, index) => {
+    const state = alternative.base === 0 ? "on" : "off";
+    const comment = alternative.comment === undefined ? [] : alternative.comment.split(/\r?\n/).map((line) => `${INDENT}; ${line}`.trimEnd());
+    out.push(
+      `${index === 0 ? "" : "} else { "}!if ${patchCondition(alternative)} {`,
+      `${INDENT}; ${alternative.switch} ${state}: ${bytes} byte${bytes === 1 ? "" : "s"} at ${range}, NOP after the code`,
+      ...comment,
+      ...(alternative.code === "" ? [] : alternative.code.split(/\r?\n/)),
+      `${INDENT}!if * - .patch_start > ${bytes} { !error "The patch ${alternative.switch} at ${formatC64Address(patch.start)} has ", * - .patch_start, " bytes; the range has ${bytes}." } else { !fill ${bytes} - (* - .patch_start), $ea }`,
+    );
+  });
+  out.push("} else {");
+  return out;
 }
+
+/** The braces that close a patch: one for each alternative, then the zone. */
+const closingBraces = (patch: PatchBlock) => ["}".repeat(patch.alternatives.length), "}"];
 
 const withSide = (text: string, side: string | undefined) => (side === undefined ? text : `${text.padEnd(SIDE_COLUMN - 1)} ; ${side}`);
 
@@ -996,7 +1109,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
       const close = () => {
         const itemEnd = item.kind === "instruction" ? item.address + item.length - 1 : item.end;
         if (patch === undefined || itemEnd !== patch.end) return;
-        out.push("}", "}");
+        out.push(...closingBraces(patch));
         patch = undefined;
       };
       if (item.kind === "instruction" && item.address <= useEnd) {
@@ -1084,6 +1197,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     result.files.push({ name: piece.file, text: `${out.join("\n")}\n` });
   }
 
+  if (hasSwitchFile(layout)) result.files.push({ name: "switches.asm", text: switchesText(layout) });
   const constants = constantsText(layout);
   result.files.push({ name: "constants.asm", text: constants.text });
   result.labels.push(...constants.labels);
@@ -1092,7 +1206,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     result.files.push({ name: "macros.asm", text: macros.text });
     result.macroLines = macros.lines;
   }
-  const main = [...header.map((line) => `; ${line}`), "", "!cpu 6510", '!source "constants.asm"', ...(layout.macros.length > 0 ? ['!source "macros.asm"'] : [])];
+  const main = [...header.map((line) => `; ${line}`), "", "!cpu 6510", ...(hasSwitchFile(layout) ? ['!source "switches.asm"'] : []), '!source "constants.asm"', ...(layout.macros.length > 0 ? ['!source "macros.asm"'] : [])];
   for (const piece of layout.pieces) {
     if (piece.segmentStart) main.push("", `* = ${formatC64Address(piece.start)}`);
     main.push(`!source "${piece.file}"`);

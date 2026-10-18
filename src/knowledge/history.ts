@@ -12,6 +12,8 @@ import {
   OPERAND_COLUMNS,
   PATCH_COLUMNS,
   REFERENCE_COLUMNS,
+  RELEASE_COLUMNS,
+  SWITCH_COLUMNS,
   REGION_COLUMNS,
   resolveRevision,
   SUPPRESSION_COLUMNS,
@@ -23,6 +25,8 @@ import {
   toOperand,
   toPatch,
   toReference,
+  toRelease,
+  toSwitch,
   toRegion,
   toSuppression,
   toSymbol,
@@ -33,6 +37,8 @@ import {
   type OperandRow,
   type PatchRow,
   type ReferenceRow,
+  type ReleaseRow,
+  type SwitchRow,
   type RegionRow,
   type SuppressionRow,
   type SymbolRow,
@@ -101,6 +107,8 @@ export type HistoryEntry =
   | { entity: "module"; row: ModuleRow; from: string; to?: string }
   | { entity: "operand"; row: OperandRow; from: string; to?: string }
   | { entity: "patch"; row: PatchRow; from: string; to?: string }
+  | { entity: "switch"; row: SwitchRow; from: string; to?: string }
+  | { entity: "release"; row: ReleaseRow; from: string; to?: string }
   | { entity: "macro"; row: MacroRow; from: string; to?: string }
   | { entity: "macro-use"; row: MacroUseRow; from: string; to?: string };
 
@@ -168,6 +176,14 @@ export function historyOfMacro(db: DatabaseSync | undefined, name: string, space
   const macros = (db.prepare(`SELECT ${MACRO_COLUMNS}, valid_to_revision FROM macros WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map((raw) => entry("macro", toMacro(raw), raw));
   const uses = (db.prepare(`SELECT ${MACRO_USE_COLUMNS}, valid_to_revision FROM macro_uses WHERE space = ? AND macro = ?`).all(space, name) as Raw[]).map((raw) => entry("macro-use", toMacroUse(raw), raw));
   return [...macros, ...uses].sort(bySequence);
+}
+
+/** Every row of a switch with this name and every patch of it, oldest first. */
+export function historyOfSwitch(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): HistoryEntry[] {
+  if (db === undefined) return [];
+  const switches = (db.prepare(`SELECT ${SWITCH_COLUMNS}, valid_to_revision FROM switches WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map((raw) => entry("switch", toSwitch(raw), raw));
+  const patches = (db.prepare(`SELECT ${PATCH_COLUMNS}, valid_to_revision FROM patches WHERE space = ? AND switch_name = ?`).all(space, name) as Raw[]).map((raw) => entry("patch", toPatch(raw), raw));
+  return [...switches, ...patches].sort(bySequence);
 }
 
 /** Every symbol row of a space that ever had this name, oldest first: a name can move between addresses. */
@@ -247,6 +263,8 @@ export function revision(db: DatabaseSync | undefined, text: string): RevisionCh
     ["module", "modules", MODULE_COLUMNS, toModule],
     ["operand", "operands", OPERAND_COLUMNS, toOperand],
     ["patch", "patches", PATCH_COLUMNS, toPatch],
+    ["switch", "switches", SWITCH_COLUMNS, toSwitch],
+    ["release", "releases", RELEASE_COLUMNS, toRelease],
     ["macro", "macros", MACRO_COLUMNS, toMacro],
     ["macro-use", "macro_uses", MACRO_USE_COLUMNS, toMacroUse],
   ] as const;

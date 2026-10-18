@@ -14,13 +14,14 @@ import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { operandText } from "#src/knowledge/expression.ts";
-import { historyAt, historyNamed, historyOfMacro, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
+import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { addCoverage, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
 import {
   analyzerNamesAt,
   at,
+  baseValue,
   commentsAt,
   coverageRuns,
   currentRevision,
@@ -33,7 +34,9 @@ import {
   listPatches,
   listReferences,
   listRegions,
+  listReleases,
   listSpaces,
+  listSwitches,
   listSuppressions,
   listSymbols,
   operandAt,
@@ -49,10 +52,12 @@ import {
   type PatchRow,
   type ReferenceRow,
   type RegionRow,
+  type ReleaseRow,
   type SuppressionRow,
+  type SwitchRow,
   type SymbolRow,
 } from "#src/knowledge/read.ts";
-import { ANALYZERS, COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, isSemantic, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, SEMANTIC_ORIGINS, SYMBOL_KINDS, type Origin, type OperandSelect } from "#src/knowledge/schema.ts";
+import { ANALYZERS, COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, isSemantic, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type OperandSelect, type SwitchKind } from "#src/knowledge/schema.ts";
 import {
   addReference,
   applyBatch,
@@ -65,6 +70,8 @@ import {
   removeOperand,
   removePatch,
   removeReference,
+  removeRelease,
+  removeSwitch,
   removeSymbol,
   renameSymbol,
   revert,
@@ -74,6 +81,8 @@ import {
   setModule,
   setOperand,
   setPatch,
+  setRelease,
+  setSwitch,
   unclassifyRegion,
   type BatchOperation,
   type BatchStep,
@@ -129,6 +138,32 @@ const patch = (row: PatchRow) => ({
   origin: row.origin,
   revision: row.revision,
 });
+/** A switch with its value in the program (`base`), the defines that put it on or off, and its patches when they are given. */
+const switchRow = (row: SwitchRow, base?: string, patches?: readonly PatchRow[]) => ({
+  ...spaceOf(row),
+  name: row.name,
+  kind: row.kind,
+  default: row.default,
+  base: baseValue(row, base),
+  releases: row.releases,
+  on: `--define ${row.name}=1`,
+  off: `--define ${row.name}=0`,
+  ...(row.comment === undefined ? {} : { comment: row.comment }),
+  ...(patches === undefined ? {} : { patches: patches.map((patch) => ({ start: formatC64Address(patch.start), end: formatC64Address(patch.end) })) }),
+  origin: row.origin,
+  revision: row.revision,
+});
+const release = (row: ReleaseRow) => ({
+  ...spaceOf(row),
+  label: row.label,
+  file: row.file,
+  sha256: row.sha256,
+  base: row.base,
+  define: `--define ${RELEASE_DEFINE}${row.label}=1`,
+  ...(row.comment === undefined ? {} : { comment: row.comment }),
+  origin: row.origin,
+  revision: row.revision,
+});
 const macro = (row: MacroRow) => ({ ...spaceOf(row), name: row.name, params: row.params, body: row.body, ...(row.comment === undefined ? {} : { comment: row.comment }), origin: row.origin, revision: row.revision });
 const macroUse = (row: MacroUseRow) => ({
   ...spaceOf(row),
@@ -176,6 +211,10 @@ function historyEntry(entry: HistoryEntry) {
                 ? operand(entry.row)
                 : entry.entity === "patch"
                   ? patch(entry.row)
+                  : entry.entity === "switch"
+                    ? switchRow(entry.row)
+                    : entry.entity === "release"
+                    ? release(entry.row)
                   : entry.entity === "macro"
                     ? macro(entry.row)
                     : entry.entity === "macro-use"
@@ -348,7 +387,7 @@ const BATCH_FIELDS: Record<BatchOperation["op"], string[]> = {
   operand: ["address", "select", "symbol", "offset", "expression"],
   unoperand: ["address"],
   patch: ["start", "end", "switch", "code", "comment"],
-  unpatch: ["start"],
+  unpatch: ["start", "switch"],
   macro: ["name", "params", "body", "comment"],
   unmacro: ["name"],
   use: ["start", "end", "macro", "args"],
@@ -524,12 +563,15 @@ const READ_COMMANDS: CommandSpec[] = [
   readCommand({ name: "patches", summary: "The code that a switch puts in.", options: { ...FILTER, switch: { kind: "text", value: "<switch>", help: "only the patches of this switch" }, ...LIST } }, (db, call) => ({
     patches: list(call, listPatches(db, rangeOf(call), call.string("switch"), originsOf(call), call.space), patch, RANGE_REST),
   })),
-  readCommand({ name: "switches", summary: "Each switch with the ranges of its patches.", options: LIST }, (db, call) => {
-    const switches = new Map<string, PatchRow[]>();
-    for (const row of listPatches(db, undefined, undefined, undefined, call.space)) switches.set(row.switch, [...(switches.get(row.switch) ?? []), row]);
-    const show = ([name, rows]: [string, PatchRow[]]) => ({ name, define: `--define ${name}=1`, patches: rows.map((row) => ({ start: formatC64Address(row.start), end: formatC64Address(row.end) })) });
-    return { switches: list(call, [...switches].sort(([a], [b]) => (a < b ? -1 : 1)), show, MORE) };
+  readCommand({ name: "switches", summary: "Each switch: its kind, its default, its value in the program (base), the releases that have it on and the ranges of its patches.", options: LIST }, (db, call) => {
+    const base = listReleases(db, undefined, call.space).find((row) => row.base)?.label;
+    const patches = listPatches(db, undefined, undefined, undefined, call.space);
+    const show = (row: SwitchRow) => switchRow(row, base, patches.filter((patch) => patch.switch === row.name));
+    return { switches: list(call, listSwitches(db, undefined, call.space), show, MORE) };
   }),
+  readCommand({ name: "releases", summary: "The releases of the program, the base release first, each with the define that builds it.", options: LIST }, (db, call) => ({
+    releases: list(call, listReleases(db, undefined, call.space), release, MORE),
+  })),
   readCommand({ name: "macros", summary: "The macros of the generated source.", options: { origin: OPTIONS.origin, ...LIST } }, (db, call) => ({ macros: list(call, listMacros(db, originsOf(call), call.space), macro, MORE) })),
   readCommand({ name: "uses", summary: "The instructions written as a macro.", options: { ...FILTER, macro: { kind: "text", value: "<name>", help: "only the uses of this macro" }, ...LIST } }, (db, call) => ({
     uses: list(call, listMacroUses(db, rangeOf(call), call.string("macro"), originsOf(call), call.space), macroUse, RANGE_REST),
@@ -558,14 +600,27 @@ const READ_COMMANDS: CommandSpec[] = [
       name: "history",
       summary: "The rows at an address, of a name or of a macro, through all revisions, each with the reason and the evidence of its revision.",
       subjects: [{ ...ADDRESS, optional: true }],
-      options: { name: { kind: "text", value: "<name>", help: "the history of a name in place of an address" }, macro: { kind: "text", value: "<name>", help: "the history of a macro in place of an address" }, ...LIST },
-      notes: "Give exactly one of <address>, --name and --macro.",
+      options: {
+        name: { kind: "text", value: "<name>", help: "the history of a name in place of an address" },
+        macro: { kind: "text", value: "<name>", help: "the history of a macro in place of an address" },
+        switch: { kind: "text", value: "<name>", help: "the history of a switch and its patches in place of an address" },
+        ...LIST,
+      },
+      notes: "Give exactly one of <address>, --name, --macro and --switch.",
     },
     (db, call) => {
       const name = call.string("name");
       const macroName = call.string("macro");
-      if ([call.subjects.length > 0, name !== undefined, macroName !== undefined].filter(Boolean).length !== 1) throw new UsageError("history needs exactly one of <address>, --name and --macro");
-      const entries = macroName !== undefined ? historyOfMacro(db, macroName, call.space) : name !== undefined ? historyNamed(db, name, call.space) : historyAt(db, call.parseAddress(call.subject(0), "<address>"), call.space);
+      const switchName = call.string("switch");
+      if ([call.subjects.length > 0, name !== undefined, macroName !== undefined, switchName !== undefined].filter(Boolean).length !== 1) throw new UsageError("history needs exactly one of <address>, --name, --macro and --switch");
+      const entries =
+        switchName !== undefined
+          ? historyOfSwitch(db, switchName, call.space)
+          : macroName !== undefined
+            ? historyOfMacro(db, macroName, call.space)
+            : name !== undefined
+              ? historyNamed(db, name, call.space)
+              : historyAt(db, call.parseAddress(call.subject(0), "<address>"), call.space);
       return { history: list(call, entries, (entry) => ({ ...historyEntry(entry), ...revisionNote(db, entry.from) }), MORE) };
     },
   ),
@@ -597,6 +652,8 @@ const READ_COMMANDS: CommandSpec[] = [
       modules: listModules(db, range, origins, space).map(module),
       operands: listOperands(db, range, origins, space).map(operand),
       patches: listPatches(db, range, undefined, origins, space).map(patch),
+      switches: listSwitches(db, origins, space).map((row) => switchRow(row, listReleases(db, undefined, space).find((item) => item.base)?.label)),
+      releases: listReleases(db, origins, space).map(release),
       macros: listMacros(db, origins, space).map(macro),
       macroUses: listMacroUses(db, range, undefined, origins, space).map(macroUse),
     };
@@ -739,15 +796,15 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "patch",
-      summary: "ACME code that replaces a range when the build defines the switch as 1 (c64-assembler --define SWITCH=1). NOP fills the rest of the range.",
-      subjects: [RANGE, { name: "<switch>", help: "the switch name" }],
+      summary: "ACME code for a range of the program in the state of the switch that the base release does not have. NOP fills the rest of the range.",
+      subjects: [RANGE, { name: "<switch>", help: "the name of a switch of the knowledge" }],
       options: {
         code: { kind: "text", value: "<text>", help: "the ACME code" },
         "code-file": { kind: "path", value: "<file>", help: "a project file with the ACME code" },
         nop: { kind: "flag", help: "put only NOP" },
         comment: { kind: "text", value: "<text>", help: "a comment for the patch" },
       },
-      notes: "Give exactly one of --code, --code-file and --nop.",
+      notes: "Give exactly one of --code, --code-file and --nop. Write the switch first (switch). The program holds the bytes of the base release: when the base release has the switch on, the code is the bytes with the switch off. Another switch can have a patch at the same range, as an alternative.",
     },
     (call) => {
       const context = contextOf(call);
@@ -758,10 +815,99 @@ const WRITE_COMMANDS: CommandSpec[] = [
       return (db) => shown(setPatch(db, { ...context, image: operandImage(db, call.space) }, request), "patch", patch);
     },
   ),
-  writeCommand({ name: "unpatch", summary: "Removes the patch that starts at an address.", subjects: [START] }, (call) => {
+  writeCommand(
+    {
+      name: "unpatch",
+      summary: "Removes the patch that starts at an address.",
+      subjects: [START],
+      options: { switch: { kind: "text", value: "<switch>", help: "the switch of the patch, when patches of more than one switch start there" } },
+    },
+    (call) => {
+      const context = contextOf(call);
+      const switchName = call.string("switch");
+      const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>"), ...(switchName === undefined ? {} : { switch: switchName }) };
+      return (db) => ({ revision: removePatch(db, context, request).revision });
+    },
+  ),
+  writeCommand(
+    {
+      name: "switch",
+      summary: "Writes a switch of the patches: what it changes, its default in the build, and the releases that have it on.",
+      subjects: [{ name: "<name>", help: "the switch name, for example PROTECTION or FIX_LIVES" }],
+      options: {
+        kind: { kind: "choice", value: "<kind>", choices: SWITCH_KINDS, help: `one of ${SWITCH_KINDS.join(", ")}`, required: true },
+        default: { kind: "choice", value: "<0|1>", choices: ["0", "1"], help: "the value in the default build. protection, trainer, cheat and crack are always 0; fix is 1 unless you give 0; change needs it" },
+        releases: { kind: "text", value: "<A,B>", help: "the labels of the releases that have the switch on, a comma list" },
+        comment: { kind: "text", value: "<text>", help: "what the switch changes" },
+      },
+      notes: "Record the base release first (release --base). A write keeps the releases and the comment that it does not give.",
+    },
+    (call) => {
+      const context = contextOf(call);
+      const given = call.string("default");
+      const releases = call.string("releases");
+      const commentText = call.string("comment");
+      const request = {
+        space: call.space,
+        name: call.subject(0),
+        kind: call.string("kind") as SwitchKind,
+        ...(given === undefined ? {} : { default: given === "1" ? (1 as const) : (0 as const) }),
+        ...(releases === undefined ? {} : { releases: commaList(releases) }),
+        ...(commentText === undefined ? {} : { comment: commentText }),
+      };
+      return (db) => {
+        const result = setSwitch(db, { ...context, image: operandImage(db, call.space) }, request);
+        const base = listReleases(db, undefined, call.space).find((row) => row.base)?.label;
+        return shown(result, "switch", (row: SwitchRow) => switchRow(row, base));
+      };
+    },
+  ),
+  writeCommand({ name: "unswitch", summary: "Removes a switch that has no patch.", subjects: [{ name: "<name>", help: "the switch name" }] }, (call) => {
     const context = contextOf(call);
-    const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>") };
-    return (db) => ({ revision: removePatch(db, context, request).revision });
+    const request = { space: call.space, name: call.subject(0) };
+    return (db) => ({ revision: removeSwitch(db, context, request).revision });
+  }),
+  writeCommand(
+    {
+      name: "release",
+      summary: "Records a release of the program: its PRG or c64-unpacker image.json in the project. The base release is the one whose bytes are the program of the knowledge.",
+      subjects: [{ name: "<label>", help: "the release label, for example ORIGINAL or FIRESTAR" }],
+      options: {
+        file: { kind: "path", value: "<file>", help: "the PRG or image.json of the release, in a folder that git keeps", required: true },
+        base: { kind: "flag", help: "this release is the program of the knowledge: its segments and bytes must be the same" },
+        comment: { kind: "text", value: "<text>", help: "what the release is, for example the group and the date" },
+      },
+      notes: "The build of a release defines RELEASE_<label>=1: each switch then has the value of that release. c64-source checks that this build gives the bytes of the file.",
+    },
+    (call) => {
+      const context = contextOf(call);
+      const file = knowledgePath(call.string("file")!, "--file");
+      const root = projectRoot();
+      if (isInside(join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY), resolveProjectPath(file, root))) {
+        throw new UsageError(`--file ${file} is in ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/, which git ignores: move the release to a folder that git keeps, for example original/`);
+      }
+      const image = readImage(file);
+      const sha256 = createHash("sha256").update(readProjectFile(file).bytes).digest("hex");
+      const commentText = call.string("comment");
+      const base = call.flag("base");
+      const request = { space: call.space, label: call.subject(0), file, sha256, ...(base ? { base } : {}), ...(commentText === undefined ? {} : { comment: commentText }) };
+      return (db) => {
+        if (base) {
+          const program = requireProgram(db, call.space);
+          const same = JSON.stringify(program.segments) === JSON.stringify(image.segments) && program.segments.every((segment) => {
+            for (let address = segment.start; address <= segment.end; address++) if (program.byteAt(address) !== image.byteAt(address)) return false;
+            return true;
+          });
+          if (!same) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge. The base release is the file that knowledge.ts image put in.`);
+        }
+        return shown(setRelease(db, context, request), "release", release);
+      };
+    },
+  ),
+  writeCommand({ name: "unrelease", summary: "Removes a release that no switch names.", subjects: [{ name: "<label>", help: "the release label" }] }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space, label: call.subject(0) };
+    return (db) => ({ revision: removeRelease(db, context, request).revision });
   }),
   writeCommand(
     {
@@ -1012,6 +1158,7 @@ function batchFields(fields: Record<string, unknown>, at: string, address: (text
     case "use":
       return { op, start: place("start"), end: place("end"), macro: text("macro"), args: list("args") };
     case "unpatch":
+      return { op, start: place("start"), ...optional("switch") };
     case "unuse":
       return { op, start: place("start") };
     case "reference":

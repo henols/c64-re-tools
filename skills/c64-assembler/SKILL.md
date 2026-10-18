@@ -31,7 +31,8 @@ node <skill>/scripts/assembler.ts build src main.a --out build/game.prg
 | `--include lib` | An include directory, relative to the source root. Use it again for more directories. |
 | `--define DEBUG=1` | An assembler symbol: an integer, also as `$` hex, or `true` or `false`. Use it again for more symbols. |
 | `--set-pc '$0801'` | The start address when the source does not set one. |
-| `--compare` | Check the program byte by byte against the program in the knowledge, each segment. Put it in with `image` of the c64-knowledge skill. `--space drive8` or `--space bank0` compares with the program of that space. The script refuses `--space` without `--compare`. |
+| `--release ORIGINAL` | Build a release of the knowledge. The script defines `RELEASE_ORIGINAL=1`, so each switch has the value of that release. With `--compare`, the script compares with the file of the release. A `--define` of a switch overrides the release. |
+| `--compare` | Check the program byte by byte against the program in the knowledge, each segment. Put it in with `image` of the c64-knowledge skill. `--space drive8` or `--space bank0` compares with the program of that space. The script refuses `--space` without `--compare` or `--release`. |
 | `--plain` | Write only the bytes of the program, without the 2-byte load address of a PRG. `loadRange` still tells where the bytes go. |
 | `--all-symbols` | List all symbols. Without it, the list does not include the constants that the source does not use. `unusedConstants` gives their count. |
 | `--max-listed 200` | Show at most 200 symbols in the result. The default is 50. `symbols.count` gives the count of all symbols. |
@@ -74,7 +75,7 @@ The target CPU is the 6510. The output is a C64 PRG, or the bytes only with `--p
 4. If `result` is `FAIL` and `assembled` is `false`, read `diagnostics`. Each one has a severity, a file, a line and a message. Correct the source and run the script again.
 5. To run the program, give the PRG path to the c64-emulator skill.
 
-The source of the c64-source skill has switches. Each switch is 0 when the build does not define it. `--define CRACK=1` puts in the patches of the switch `CRACK`. With `--compare`, only the bytes of those patches are different.
+The source of the c64-source skill has switches in `switches.asm`. Without an option, the build is the default build: the clean program without copy protection, trainers, cheats and crack changes, and with all corrections. This build can differ from the program in the knowledge, so `--compare` can give `FAIL`. Use `--release <label> --compare` to check the build of a release. `--define TRAINER=1` puts in the patches of the switch `TRAINER`.
 
 ## Knowledge
 
@@ -94,6 +95,7 @@ A symbol from the rebuilt source can give the address of a routine in the rebuil
 - `PASS`: the PRG is in the project at `out`, with its load range and symbols.
 - `FAIL` with `assembled: false`: the source has errors. `diagnostics` gives them.
 - `FAIL` with `assembled: true`: `--compare` found differences. The PRG is at `out`.
+- `not-found` with `--release`: the knowledge has no release with that label. The c64-knowledge skill records releases.
 
 With `--compare`, `compare` gives `identical` and `segments`: one check for each segment of the program in the knowledge. The `result` of a check is `identical`, `different` with `firstDifference`, or `not covered` when the build does not hold the segment. `firstDifference` gives the `address`, and the byte of the build (`built`) and of the knowledge (`reference`), each as `$` and two hex digits.
 

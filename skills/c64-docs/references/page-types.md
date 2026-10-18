@@ -13,7 +13,7 @@ One entry page for the program: `README.md` in the project folder. A large subsy
 5. **Findings.** A table of the facts that a reader does not expect, each with its evidence. Put a bug of the original program here.
 6. **The reference.** A link to `docs/reference/index.md`.
 7. **Still open.** What is not known yet, and which run can find it.
-8. **The release and the rebuild.** What the release holds, for example a crack with a cracktro and a mover. Which part is the clean program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. How the source assembles to the clean program, and which scenarios compare the original with the rebuild.
+8. **The releases and the rebuild.** What each release holds, for example a crack with a cracktro and a mover. Which release is the base release, the program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. A table of the switches from `knowledge.ts switches`: the name, the kind, the default and the releases that have the switch on. How to build the default program and each release. Which scenarios compare the original with the rebuild.
 
 ```markdown
 # <Program>: <subject>

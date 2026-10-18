@@ -368,6 +368,8 @@ export interface LoaderInput {
   /** The label of the entry in the source: the loader jumps to it, so the jump follows the code when it moves. */
   entryName?: string;
   header: string[];
+  /** The source has switches.asm: the loader includes it before the constants. */
+  switches?: boolean;
   /** The source has macros.asm: the loader includes it after the constants. */
   macros?: boolean;
 }
@@ -432,7 +434,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   const copyBlocks = order.map((index) => blockOf[index]!);
 
   const stackByte = 0x0100 + state.sp;
-  const lines: string[] = [...input.header.map((line) => `; ${line}`), "", "!cpu 6510", '!source "constants.asm"', ...(input.macros ? ['!source "macros.asm"'] : []), "", `* = ${formatC64Address(LOAD)}`];
+  const lines: string[] = [...input.header.map((line) => `; ${line}`), "", "!cpu 6510", ...(input.switches === true ? ['!source "switches.asm"'] : []), '!source "constants.asm"', ...(input.macros ? ['!source "macros.asm"'] : []), "", `* = ${formatC64Address(LOAD)}`];
   lines.push(`        !byte $0b,$08,$0a,$00,$9e,${[...String(STUB)].map((digit) => formatC64Byte(digit.charCodeAt(0))).join(",")},$00,$00,$00 ; 10 SYS ${STUB}`);
   lines.push(
     "!zone loader_stub {",
