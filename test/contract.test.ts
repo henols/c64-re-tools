@@ -172,7 +172,7 @@ test("every --out and --out-<name> is refused before the command does any work: 
       const refusedAt = async (path: string) => refused(await call(command.script, [command.name, ...subjects, ...others, option, path]), "invalid-input", `${what} ${path}`).message;
       const folder = value === "<dir>";
       assert.match(await refusedAt(folder ? ".c64-re-tools/knowledge" : ".c64-re-tools/knowledge/symbols.jsonl"), new RegExp(`^${option}: \\.c64-re-tools/knowledge.* is in \\.c64-re-tools/knowledge/, the knowledge of the project`), what);
-      if (folder) assert.equal(await refusedAt("README.md"), `${option}: README.md has a file where a folder must be. Give a path whose folders are folders.`, what);
+      if (folder) assert.equal(await refusedAt("README.md"), `${option}: README.md is a file, but ${option} needs a folder. Give the path of a folder, or a new path for the folder.`, what);
       else assert.equal(await refusedAt("afolder"), `${option}: afolder is a folder. Give the path of a file.`, what);
     }
   });

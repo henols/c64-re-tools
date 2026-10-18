@@ -127,7 +127,7 @@ test("a wrong command line is invalid-input with exit status 2", () => {
   assert.match(refused(["nothing"], "invalid-input").message, /^nothing is not a command of demo\.ts/);
   assert.match(refused(["echo"], "invalid-input").message, /^echo needs <word> <more>\.\.\./);
   assert.match(refused(["at", "$c000", "$c001"], "invalid-input").message, /^at takes <address>\. "\$c001" is one too many/);
-  assert.match(refused(["echo", "a", "--bogus"], "invalid-input").message, /^Unknown option '--bogus'/);
+  assert.match(refused(["echo", "a", "--bogus"], "invalid-input").message, /^echo has no option --bogus\. Its options are --out, --flag, --item and --max-listed\n/);
   assert.match(refused(["need"], "invalid-input").message, /^need needs --out <path>/);
   assert.match(refused(["need", "--out", "x", "--frames", "0"], "invalid-input").message, /^--frames must be a whole number from 1 to 1000000, not "0"/);
   assert.match(refused(["need", "--out", "x", "--frames", "$10"], "invalid-input").message, /^--frames must be a whole number/);
@@ -160,7 +160,34 @@ test("a range in two parts is refused with the range as one token", () => {
   assert.match(refused(["at", "$0", "--start", "$c000", "--end", "$cfff"], "invalid-input").message, /^at takes no --start or --end\. Give the range as one option: --range '\$c000-\$cfff'/);
   assert.match(refused(["at", "$0", "--start=$c000"], "invalid-input").message, /--range '\$c000-<end>'/);
   // A command without a range option keeps the message of an unknown option.
-  assert.match(refused(["echo", "a", "--start", "$c000"], "invalid-input").message, /^Unknown option '--start'/);
+  assert.match(refused(["echo", "a", "--start", "$c000"], "invalid-input").message, /^echo has no option --start\. Its options are/);
+  // A range option in two parts.
+  assert.match(refused(["at", "$0", "--range", "$1bc2", "$1c00"], "invalid-input").message, /^--range is one token <start>-<end>: give --range '\$1bc2-\$1c00', not '\$1bc2' '\$1c00'/);
+  assert.match(refused(["at", "$0", "--range=$1bc2", "$1c00"], "invalid-input").message, /^--range is one token <start>-<end>: give --range '\$1bc2-\$1c00'/);
+});
+
+test("a wrong option word gets a message of the toolkit that names the option and what to give", () => {
+  const messages = [
+    refused(["echo", "a", "--bogus"], "invalid-input").message,
+    refused(["echo", "a", "--max-listed", "-1"], "invalid-input").message,
+    refused(["echo", "a", "--item", "-x"], "invalid-input").message,
+    refused(["echo", "a", "--item"], "invalid-input").message,
+    refused(["echo", "a", "--flag=yes"], "invalid-input").message,
+    refused(["echo", "a", "-1"], "invalid-input").message,
+    refused(["check", "x", "--bogus"], "invalid-input").message,
+  ];
+  assert.match(messages[1]!, /^--max-listed must be a whole number from 0 to 100000, not "-1"/);
+  assert.match(messages[2]!, /^--item needs a value: give --item <text>, not -x\. Give a value that starts with - as --item=-x/);
+  assert.match(messages[3]!, /^--item needs a value: give --item <text>/);
+  assert.match(messages[4]!, /^--flag is a flag: give --flag without a value/);
+  assert.match(messages[5]!, /^-1 is not an option of echo: an option starts with --\..* Give a subject that starts with - after --, for example -- -1/);
+  assert.match(messages[6]!, /^check has no option --bogus\. It takes no options/);
+  // No text of Node parseArgs, and no unbalanced quote.
+  for (const message of messages) assert.doesNotMatch(message, /Unknown option|positional argument|ambiguous|Did you forget|'-- "/);
+  // A value with - is taken in the form --name=<value>, and a lone - is a subject.
+  assert.deepEqual(run(["echo", "a", "--item=-x", "-"]).json.items, ["-x"]);
+  assert.deepEqual(run(["echo", "a", "-"]).json.subjects, ["a", "-"]);
+  assert.deepEqual(run(["echo", "a", "--", "-1"]).json.subjects, ["a", "-1"]);
 });
 
 test("takeProject takes --project in both forms out of the command line, up to --", () => {
@@ -214,7 +241,7 @@ test("an output path is refused before the command runs: in the knowledge, a fol
     assert.match(error(["echo", "a", "--out", ".c64-re-tools/local/knowledge.db"]), /is in \.c64-re-tools\/local\/knowledge\.db, the knowledge/);
     assert.match(error(["need", "--out", ".c64-re-tools/knowledge"]), /is in \.c64-re-tools\/knowledge\//);
     assert.equal(error(["echo", "a", "--out", "results"]), "--out: results is a folder. Give the path of a file.");
-    assert.equal(error(["need", "--out", "README.md"]), "--out: README.md has a file where a folder must be. Give a path whose folders are folders.");
+    assert.equal(error(["need", "--out", "README.md"]), "--out: README.md is a file, but --out needs a folder. Give the path of a folder, or a new path for the folder.");
     assert.equal(error(["echo", "a", "--out", "README.md/page.md"]), "--out: README.md/page.md has a file where a folder must be. Give a path whose folders are folders.");
     if (process.platform !== "win32") {
       symlinkSync(join(sandbox, ".c64-re-tools", "knowledge"), join(sandbox, "linked"));

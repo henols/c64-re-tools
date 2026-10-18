@@ -428,6 +428,65 @@ function refuseSplitRange(command: CommandSpec, options: Readonly<Record<string,
   }
 }
 
+/** The options of a command for a message: --a, --b and --c, or a word that it has none. */
+function optionList(options: Readonly<Record<string, OptionSpec>>): string {
+  const names = Object.keys(options).map((name) => `--${name}`);
+  if (names.length === 0) return "It takes no options";
+  return `Its options are ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`}`;
+}
+
+/** True for a word that the command line reads as an option: - and one or more characters. A lone - is a subject (standard input). */
+const isOptionWord = (word: string) => word.length > 1 && word.startsWith("-");
+
+/**
+ * Refuses the words of a command line that parseArgs refuses, with a message
+ * that names the option and tells what to give: an option that the command
+ * does not have, a flag with a value, an option without its value, a value
+ * that starts with -, and a range option in two parts.
+ */
+function refuseOptionWords(command: CommandSpec, options: Readonly<Record<string, OptionSpec>>, argv: readonly string[]): void {
+  const end = argv.indexOf("--");
+  const words = end < 0 ? argv : argv.slice(0, end);
+  for (let index = 0; index < words.length; index++) {
+    const word = words[index]!;
+    if (!isOptionWord(word)) continue;
+    if (!word.startsWith("--")) {
+      throw new UsageError(`${word} is not an option of ${command.name}: an option starts with --. ${optionList(options)}. Give a subject that starts with - after --, for example -- ${word}`);
+    }
+    const equals = word.indexOf("=");
+    const name = equals < 0 ? word.slice(2) : word.slice(2, equals);
+    const spec = options[name];
+    if (spec === undefined) throw new UsageError(`${command.name} has no option --${name}. ${optionList(options)}`);
+    if (spec.kind === "flag") {
+      if (equals >= 0) throw new UsageError(`--${name} is a flag: give --${name} without a value`);
+      continue;
+    }
+    let value: string;
+    let valueIndex = index;
+    if (equals >= 0) {
+      value = word.slice(equals + 1);
+    } else {
+      valueIndex = index + 1;
+      const next = words[valueIndex];
+      if (next === undefined) throw new UsageError(`--${name} needs a value: give --${name} ${spec.value ?? "<value>"}`);
+      if (isOptionWord(next)) {
+        if ((spec.kind === "count" || spec.kind === "number") && /^-\d/.test(next)) {
+          const range = spec.kind === "count" ? `a whole number from ${spec.min ?? 0} to ${spec.max ?? Number.MAX_SAFE_INTEGER}` : `a number from ${spec.min ?? 0} to ${spec.max ?? 0xffff}`;
+          throw new UsageError(`--${name} must be ${range}, not ${JSON.stringify(next)}`);
+        }
+        throw new UsageError(`--${name} needs a value: give --${name} ${spec.value ?? "<value>"}, not ${next}. Give a value that starts with - as --${name}=${next}`);
+      }
+      value = next;
+      index++;
+    }
+    // A range option in two parts: --range '$1bc2' '$1c00'.
+    const second = words[valueIndex + 1];
+    if (spec.kind === "range" && rangeParts(value) === undefined && isAddressText(value) && second !== undefined && c64AddressOf(second) !== undefined) {
+      throw new UsageError(`--${name} is one token <start>-<end>: give --${name} '${value}-${second}', not '${value}' '${second}'`);
+    }
+  }
+}
+
 /**
  * Refuses an output path before the command does any work: a path that
  * leaves the project, a path in the knowledge, a folder where a file must be,
@@ -442,6 +501,7 @@ function checkOutput(text: string, what: string, kind: OutputKind): void {
 export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readonly string[]): Call {
   const options = commandOptions(command);
   refuseSplitRange(command, options, argv);
+  refuseOptionWords(command, options, argv);
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -450,8 +510,9 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
       allowPositionals: true,
       options: Object.fromEntries(Object.entries(options).map(([name, spec]) => [name, { type: spec.kind === "flag" ? "boolean" : "string", ...(spec.multiple ? { multiple: true } : {}) }])),
     });
-  } catch (error) {
-    throw new UsageError((error as Error).message);
+  } catch {
+    // refuseOptionWords gives a message of its own for each word that parseArgs refuses; this is the last guard.
+    throw new UsageError(`the command line of ${command.name} is not correct. Give each option as --name <value>, each flag as --name, and a subject that starts with - after --`);
   }
   const values = parsed.values as Record<string, string | boolean | string[] | undefined>;
   const subjects = parsed.positionals;

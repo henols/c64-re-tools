@@ -37,8 +37,13 @@ let chosen: string | undefined;
 /** The project that the project lookup found from a working directory, kept for the next call from the same directory. */
 let found: { cwd: string; root: string } | undefined;
 
+/** True when `folder` holds .c64-re-tools/. A folder that cannot be read (no permission) is not a project. */
 function isProject(folder: string): boolean {
-  return statSync(join(folder, PROJECT_DIRECTORY), { throwIfNoEntry: false })?.isDirectory() === true;
+  try {
+    return statSync(join(folder, PROJECT_DIRECTORY), { throwIfNoEntry: false })?.isDirectory() === true;
+  } catch {
+    return false;
+  }
 }
 
 /** `start` and each folder above it, nearest first, below the home folder when `start` is under it. */
@@ -277,6 +282,8 @@ export function checkOutputPath(path: string, kind: OutputKind, options: { root?
   const stat = statSync(real);
   if (existing === target && kind === "file") {
     if (stat.isDirectory()) throw problem({ code: "EISDIR" });
+  } else if (existing === target && !stat.isDirectory()) {
+    throw new Refusal("invalid-input", `${what === undefined ? "" : `${what}: `}${path} is a file, but ${what ?? "the path"} needs a folder. Give the path of a folder, or a new path for the folder.`);
   } else if (!stat.isDirectory()) {
     throw problem({ code: "ENOTDIR" });
   }

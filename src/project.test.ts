@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -93,6 +93,20 @@ test("a folder with projects below it refuses and lists them; a plain folder is 
     mkdirSync(join(plain, "src"), { recursive: true });
     assert.equal(findProject(plain), plain);
     assert.equal(resolveProject(undefined, plain), plain);
+  });
+});
+
+test("a folder below the working directory that cannot be read is not a project, and the lookup goes on", { skip: process.platform === "win32" || process.getuid?.() === 0 }, () => {
+  withHome((home) => {
+    const plain = join(home, "plain");
+    const closed = join(plain, "private");
+    mkdirSync(join(closed, "inner"), { recursive: true });
+    chmodSync(closed, 0o000);
+    try {
+      assert.equal(findProject(plain), plain);
+    } finally {
+      chmodSync(closed, 0o755);
+    }
   });
 });
 
