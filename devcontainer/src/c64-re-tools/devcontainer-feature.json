@@ -1,6 +1,6 @@
 {
   "id": "c64-re-tools",
-  "version": "0.0.0-development",
+  "version": "1.0.0",
   "name": "c64-re-tools",
   "description": "The c64-re-tools toolkit in the project and the native tools of its skills: ACME, dxa, Ghidra, Java 21 and c64run (the replay core, with the C64 ROMs). At image build and at each start it installs the toolkit version of the channel and the tools of that version. The Host Runtime with VICE runs on the graphical host.",
   "documentationURL": "https://github.com/henols/c64-re-tools#dev-container",

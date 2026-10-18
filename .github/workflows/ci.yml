@@ -188,17 +188,16 @@ jobs:
           fi
 
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
 
       # The dev container Feature, referenced by the https URL of this asset.
-      # The spec wants the name devcontainer-feature-<id>.tgz.
+      # The spec wants the name devcontainer-feature-<id>.tgz. The Feature has
+      # its own version, and the archive is the same bytes in every release
+      # while its files stay the same: devcontainer-lock.json keeps its digest,
+      # and a changed digest stops the build.
       - name: Attach the dev container Feature
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          node distribution/version.ts tag "$GITHUB_REF_NAME"
-          tar -czf "$RUNNER_TEMP/devcontainer-feature-c64-re-tools.tgz" -C devcontainer/src/c64-re-tools .
+          tar --sort=name --mtime="2026-01-01 00:00Z" --owner=0 --group=0 --numeric-owner -cf - -C devcontainer/src/c64-re-tools . | gzip -n > "$RUNNER_TEMP/devcontainer-feature-c64-re-tools.tgz"
           gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/devcontainer-feature-c64-re-tools.tgz" --clobber
