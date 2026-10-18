@@ -36,6 +36,8 @@ node <skill>/scripts/memory-map.ts export --out src/hw.asm
 
 Write a value for `decode` and `--bank` as `$` and hex digits, as a decimal number, or as `%` and binary digits. Put a `$` value in single quotes in a shell.
 
+`at` and `decode` also take a platform name, for example `SCROLY` or `CHROUT`, in upper or lower case. A platform name comes before a name of the knowledge. `list` and `export` show the platform names.
+
 ### Calling the script
 
 - Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.

@@ -6,6 +6,7 @@
 import { ProtocolError, WireFailure } from "../protocol/messages.ts";
 import { DISK_IMAGE_TYPES, validateToolResult, type C1541Result, type DiskAction, type DiskImageType, type PetcatResult, type ToolOperation, type ToolOperations, type HostInfo, type ToolStatus } from "../protocol/tools.ts";
 import { HostConnection } from "./connect.ts";
+import { readPrg } from "./image.ts";
 import { readProjectFile } from "./transfer.ts";
 
 export interface ToolCallOptions {
@@ -72,10 +73,10 @@ export async function inspectDisk(request: InspectDiskRequest, options: ToolCall
   return result.action === "read" && result.found ? { ...result, data: attachments[0]! } : result;
 }
 
-/** petcat.decode: the C64 BASIC V2 listing of a project program and its machine-code handoffs. */
+/** petcat.decode: the C64 BASIC V2 listing of a project program and its machine-code handoffs. Refuses a file that is no PRG as readPrg does. */
 export async function decodeBasic(request: { program: string }, options: ToolCallOptions = {}): Promise<PetcatResult> {
-  const file = readProjectFile(request.program);
-  return (await callTool("petcat.decode", {}, [file.bytes], options)).result;
+  const { bytes } = readPrg(request.program);
+  return (await callTool("petcat.decode", {}, [bytes], options)).result;
 }
 
 /** host.status: the Host Runtime, and each native tool on the host, found and run once. */

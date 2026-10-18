@@ -33,7 +33,8 @@ export interface Crt {
 
 export function parseCrt(bytes: Uint8Array): Crt {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (buffer.length < 0x40 || !hasSignature("crt", buffer)) throw new Refusal("media-error", "the file is not a CRT: it does not start with C64 CARTRIDGE");
+  if (!hasSignature("crt", buffer)) throw new Refusal("media-error", "the file is not a CRT: it does not start with C64 CARTRIDGE");
+  if (buffer.length < 0x40) throw new Refusal("media-error", `the CRT header is shorter than 64 bytes: the file has only ${buffer.length} bytes`);
   const headerLength = buffer.readUInt32BE(0x10);
   const type = buffer.readUInt16BE(0x16);
   const exrom = buffer[0x18]!;

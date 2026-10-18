@@ -3,12 +3,31 @@
 // writes the platform names to a project file as an ACME include.
 
 import { formatC64Address, formatC64Byte } from "#src/c64.ts";
+import { isRefusal, Refusal } from "#src/errors.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { decode, IO, lookup, platformNames, ROM, SYSTEM, type Entry } from "#src/platform.ts";
 import { listed, OPTIONS, runScript, UsageError } from "#src/script.ts";
 
 const show = (entry: Entry) => ({ start: formatC64Address(entry.start), ...(entry.end !== entry.start ? { end: formatC64Address(entry.end) } : {}), name: entry.name, meaning: entry.meaning });
+
+/** The platform names by name in upper case: memory-map knows them also outside a project. */
+const PLATFORM = new Map(platformNames().map((entry) => [entry.name.toUpperCase(), entry.address]));
+
+/**
+ * The address of a name: a platform name (a register, a KERNAL or BASIC entry,
+ * a system variable) in any letter case first, else a name of the knowledge.
+ */
+function names(name: string, space: string): number {
+  const platform = PLATFORM.get(name.toUpperCase());
+  if (platform !== undefined) return platform;
+  try {
+    return knowledgeNames(name, space);
+  } catch (error) {
+    if (!isRefusal(error) || error.code !== "not-found") throw error;
+    throw new Refusal("not-found", `${name} is not a C64 platform name and not a name in the knowledge. Give a $ address, a platform name that memory-map.ts list or export shows (for example SCROLY or CHROUT), or a name that knowledge.ts symbols lists.`);
+  }
+}
 
 const LISTS: Record<string, () => Entry[]> = {
   vic: () => IO[0]!.registers,
@@ -22,12 +41,12 @@ const LISTS: Record<string, () => Entry[]> = {
 await runScript({
   name: "memory-map",
   summary: "The platform meaning of C64 addresses and of values in platform registers.",
-  names: knowledgeNames,
+  names,
   commands: [
     {
       name: "at",
       summary: "The platform meaning of each address: its name, area and meaning.",
-      subjects: [{ name: "<address>", help: "an address or a name of the knowledge", list: true }],
+      subjects: [{ name: "<address>", help: "an address, a platform name such as SCROLY, or a name of the knowledge", list: true }],
       run: (call) => ({
         addresses: call.subjects.map((text) => {
           const found = lookup(call.parseAddress(text, "<address>"));
@@ -47,7 +66,7 @@ await runScript({
       name: "decode",
       summary: "The meaning of a value in a platform register.",
       subjects: [
-        { name: "<register>", help: "the register: $0001, $d011, $d016, $d018, $d010, $d015-$d01f, $dc0d, $dd00 or $dd0d" },
+        { name: "<register>", help: "the register, as an address or a platform name: $0001, $d011 (SCROLY), $d016, $d018, $d010, $d015-$d01f, $dc0d, $dd00 or $dd0d" },
         { name: "<value>", help: "the value of the register: $ and hex, decimal, or % and binary, 0 to 255" },
       ],
       options: { bank: { kind: "number", value: "<value>", help: "the value of $dd00, for the VIC-II bank of a $d018 value", max: 0xff } },

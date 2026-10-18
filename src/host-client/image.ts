@@ -36,21 +36,31 @@ const MEDIA_KINDS: Record<string, string> = {
 /** The remedy for a disk, tape or cartridge file where a PRG must be: get the PRG out of it. */
 export const MEDIA_REMEDY = "Get the PRG out of it with disk.ts read (or disk.ts crt for a cartridge) of the c64-disk skill";
 
-/** Refuses a disk, tape or cartridge file by its extension (`type`, lowercase, without the dot): invalid-input with `remedy`. */
-function refuseMedia(path: string, type: string, remedy: string): void {
+/**
+ * Refuses a file that is no PRG by its extension (`type`, lowercase, without
+ * the dot): invalid-input. A disk, tape or cartridge file gets `remedy`. A PRG
+ * ends in .prg in any letter case, or has no extension, as c1541 writes the
+ * names of the files that it reads from a disk; every other extension is
+ * refused. `accepted` names what the reader takes, for the message.
+ */
+export function refuseNotPrg(path: string, type: string, remedy = MEDIA_REMEDY, accepted = "a PRG"): void {
   const media = MEDIA_KINDS[type];
   if (media !== undefined) throw new Refusal("invalid-input", `${path} is ${media} (.${type}), not a PRG. ${remedy}.`);
+  if (type !== "prg" && type !== "") {
+    throw new Refusal("invalid-input", `${path} is not ${accepted}: a PRG has the extension .prg or no extension, not .${type}. Give the PRG of the program, or rename the file to .prg when it is a PRG.`);
+  }
 }
 
 /**
  * Reads a PRG of the project: a 2-byte load address, and bytes that end at
- * $ffff or before. Refuses a disk, tape or cartridge file and any other file
- * that is no PRG with invalid-input; `remedy` tells what to do in its place.
- * A file of fewer than 3 bytes is refused as too short: no remedy applies.
+ * $ffff or before. Refuses with invalid-input a file that is no PRG by its
+ * extension (refuseNotPrg) or by its bytes; `remedy` tells what to do in place
+ * of a disk, tape or cartridge file. A file of fewer than 3 bytes is refused
+ * as too short: no remedy applies.
  */
-export function readPrg(path: string, remedy = MEDIA_REMEDY): { bytes: Buffer; start: number; end: number; body: Uint8Array } {
+export function readPrg(path: string, remedy = MEDIA_REMEDY, accepted = "a PRG"): { bytes: Buffer; start: number; end: number; body: Uint8Array } {
   const { bytes, type } = readProjectFile(path);
-  refuseMedia(path, type, remedy);
+  refuseNotPrg(path, type, remedy, accepted);
   if (bytes.length < 3) {
     throw new Refusal("invalid-input", `${path} is too short for a PRG: it has ${bytes.length} ${bytes.length === 1 ? "byte" : "bytes"}, and a PRG has a 2-byte load address and at least one byte. Give the complete PRG file.`);
   }
@@ -62,10 +72,10 @@ export function readPrg(path: string, remedy = MEDIA_REMEDY): { bytes: Buffer; s
   }
 }
 
-/** Reads an image.json or a PRG, relative to the project folder. Refuses a disk, tape or cartridge file as readPrg does. */
+/** Reads an image.json or a PRG, relative to the project folder. Refuses every other file as readPrg does. */
 export function readImage(path: string): Image {
   if (!path.endsWith(".json")) {
-    const range = readPrg(path);
+    const range = readPrg(path, MEDIA_REMEDY, "an image.json of the c64-unpacker skill or a PRG");
     return { segments: [{ start: range.start, end: range.end }], byteAt: (address) => range.body[address - range.start]! };
   }
   const { bytes } = readProjectFile(path);

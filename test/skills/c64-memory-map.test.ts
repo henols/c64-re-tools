@@ -110,7 +110,12 @@ test("the script answers in JSON and refuses bad input", () => {
     assert.equal((JSON.parse(refused.stdout) as { error: { code: string } }).error.code, "invalid-input", address);
   }
   const unknown = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "at", "d020"], { encoding: "utf8" }).stdout) as { error: { message: string } };
-  assert.match(unknown.error.message, /^<address>: d020 is not a name in the knowledge\. Give a \$ address, or a name that knowledge\.ts symbols lists, with or without --analyzer\./);
+  assert.match(unknown.error.message, /^<address>: d020 is not a C64 platform name and not a name in the knowledge\. Give a \$ address, a platform name that memory-map\.ts list or export shows \(for example SCROLY or CHROUT\), or a name that knowledge\.ts symbols lists\./);
+  // The platform names of memory-map itself, in any letter case, for at and decode.
+  const named = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "at", "SCROLY", "chrout"], { encoding: "utf8" }).stdout) as { addresses: Array<{ address: string; name: string }> };
+  assert.deepEqual(named.addresses.map((address) => [address.address, address.name]), [["$d011", "SCROLY"], ["$ffd2", "CHROUT"]]);
+  const decoded = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "decode", "SCROLY", "$1b"], { encoding: "utf8" }).stdout) as { register: string; name: string };
+  assert.deepEqual([decoded.register, decoded.name], ["$d011", "SCROLY"]);
   const vic = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "list", "vic"], { encoding: "utf8" }).stdout) as { entries: { count: number; listed: Array<{ name: string }>; rest?: string } };
   assert.deepEqual([vic.entries.count, vic.entries.listed.length, vic.entries.listed[0]!.name, vic.entries.rest], [47, 47, "SP0X", undefined]);
   const system = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "list", "system", "--max-listed", "2"], { encoding: "utf8" }).stdout) as { entries: { count: number; listed: unknown[]; rest: string } };

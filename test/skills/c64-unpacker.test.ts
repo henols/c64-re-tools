@@ -70,7 +70,7 @@ test("a short program is unclear, and the script reports it", () => {
 test("inspect, trace, stages and capture take a PRG: a disk image and a file past $ffff are refused before an emulator starts", () => {
   writeFileSync(join(project, "packed.prg"), xorPackedPrg);
   writeFileSync(join(project, "game.d64"), Buffer.alloc(174848, 1));
-  writeFileSync(join(project, "long.bin"), Buffer.concat([Buffer.from([0x01, 0x08]), Buffer.alloc(0x10000)]));
+  writeFileSync(join(project, "long.prg"), Buffer.concat([Buffer.from([0x01, 0x08]), Buffer.alloc(0x10000)]));
   const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpacker.ts");
   // No host listens at port 1: a call that got to the emulator would fail with machine-unavailable.
   const refused = (...args: string[]) => {
@@ -82,7 +82,7 @@ test("inspect, trace, stages and capture take a PRG: a disk image and a file pas
   };
   const disk = "game.d64 is a disk image (.d64), not a PRG. Use loads, which runs a disk, tape or cartridge image, or get the PRG out of it with disk.ts read of the c64-disk skill.";
   for (const command of [["inspect"], ["trace"], ["stages"], ["capture", "--until", "$080d", "--out", "x"]]) assert.equal(refused(command[0]!, "game.d64", ...command.slice(1)), disk);
-  assert.match(refused("inspect", "long.bin"), /^long\.bin is not a PRG: The PRG runs past \$ffff\. Use loads/);
+  assert.match(refused("inspect", "long.prg"), /^long\.prg is not a PRG: The PRG runs past \$ffff\. Use loads/);
   assert.throws(() => inspect(new Uint8Array(0x10003)), /runs past \$ffff/);
   // A segment must hold the entry: refused before the emulator runs.
   assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--exclude", "$0800-$0900"), "--exclude $0800-$0900 holds the entry --until $080d. A segment must hold the entry: give an --exclude range without it");

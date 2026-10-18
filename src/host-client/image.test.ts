@@ -13,6 +13,9 @@ before(() => {
   writeFileSync(join(project, "game.d64"), Buffer.alloc(174848));
   writeFileSync(join(project, "game.TAP"), Buffer.alloc(64));
   writeFileSync(join(project, "game.prg"), Buffer.from([0x00, 0xc0, 0xea, 0x60]));
+  writeFileSync(join(project, "GAME.PRG"), Buffer.from([0x00, 0xc0, 0xea, 0x60]));
+  writeFileSync(join(project, "bruce lee"), Buffer.from([0x01, 0x08, 0x00, 0x00]));
+  writeFileSync(join(project, "README.md"), "# A game\n\nThe notes of the game.\n");
   process.chdir(project);
 });
 after(() => {
@@ -33,6 +36,14 @@ test("a file of one or two bytes is too short for a PRG, with no remedy for disk
   const short = (name: string, count: string) => `${name} is too short for a PRG: it has ${count}, and a PRG has a 2-byte load address and at least one byte. Give the complete PRG file.`;
   assert.throws(() => readPrg("one.prg", "Use loads"), { code: "invalid-input", message: short("one.prg", "1 byte") });
   assert.throws(() => readImage("two.prg"), { code: "invalid-input", message: short("two.prg", "2 bytes") });
+});
+
+test("a PRG has the extension .prg in any letter case or no extension; every other file is refused before its bytes are read", () => {
+  assert.equal(readPrg("GAME.PRG").start, 0xc000);
+  assert.equal(readPrg("bruce lee").start, 0x0801);
+  const message = "README.md is not a PRG: a PRG has the extension .prg or no extension, not .md. Give the PRG of the program, or rename the file to .prg when it is a PRG.";
+  assert.throws(() => readPrg("README.md"), { code: "invalid-input", message });
+  assert.throws(() => readImage("README.md"), { code: "invalid-input", message: /^README\.md is not an image\.json of the c64-unpacker skill or a PRG: a PRG has the extension \.prg or no extension, not \.md\./ });
 });
 
 test("readImage reads a PRG as one segment at its load address", () => {

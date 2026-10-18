@@ -27,6 +27,7 @@ const script = resolve(import.meta.dirname, "../../skills/c64-basic/scripts/basi
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-basic-"));
 writeFileSync(join(project, "loop.prg"), borderLoopPrg);
 writeFileSync(join(project, "code.prg"), Buffer.from([0x00, 0xc0, 0x0b, 0xc0, 0xff, 0xff, 0xa9, 0x00]));
+writeFileSync(join(project, "game.d64"), Buffer.alloc(174848, 1));
 let server: HostServer | undefined;
 after(async () => {
   await server?.close();
@@ -74,6 +75,9 @@ test("machine code is no BASIC program; every error exits 2", { skip }, async ()
   const code = await basic("list", "code.prg");
   assert.equal(code.status, 2);
   assert.deepEqual(code.json.error, { code: "invalid-input", message: "code.prg is no BASIC program: Line number 65535 is above 63999, so the bytes are no BASIC program." });
+  const disk = await basic("list", "game.d64");
+  assert.equal(disk.status, 2);
+  assert.deepEqual(disk.json.error, { code: "invalid-input", message: "game.d64 is a disk image (.d64), not a PRG. Get the PRG out of it with disk.ts read (or disk.ts crt for a cartridge) of the c64-disk skill." });
   const missing = await basic("list", "missing.prg");
   assert.equal((missing.json.error as { code: string }).code, "not-found");
   for (const args of [[], ["list"], ["loop.prg"], ["list", "loop.prg", "code.prg"], ["list", "--dialect", "70", "loop.prg"]]) {

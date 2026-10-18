@@ -110,6 +110,8 @@ test("a file of a kind that a command does not take is refused with every kind t
   writeFileSync(join(project, "bad.t64"), Buffer.alloc(0x50));
   assert.deepEqual(refused(["directory", "bad.crt"]), { code: "media-error", message: "bad.crt: the file is not a CRT: it does not start with C64 CARTRIDGE" });
   assert.deepEqual(refused(["crt", "bad.crt", "--out", "x"]).code, "media-error");
+  writeFileSync(join(project, "short.crt"), Buffer.from("C64 CARTRIDGE   \0\0\0\x40", "latin1"));
+  assert.deepEqual(refused(["directory", "short.crt"]), { code: "media-error", message: "short.crt: the CRT header is shorter than 64 bytes: the file has only 20 bytes" });
   assert.deepEqual(refused(["directory", "bad.t64"]), { code: "media-error", message: "bad.t64: the file is not a T64: it does not start with C64" });
   assert.deepEqual(refused(["read", "bad.t64", "GAME", "--out", "x.prg"]).code, "media-error");
   writeFileSync(join(project, "type1.crt"), crt(1, 0, 0, [{ bank: 0, address: 0x8000, data: [0] }]));
