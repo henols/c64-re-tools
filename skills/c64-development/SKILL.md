@@ -113,17 +113,22 @@ When the user must play or look at the program, use the window procedure of c64-
 
 ### C. A feature or a fix in a rebuilt program
 
-A rebuilt program gets its source from the knowledge. A change is a patch of the knowledge. A patch has a switch, so the default build stays identical to the original.
+A rebuilt program gets its source from the knowledge. A change is a switch and its patches in the knowledge. The build of the base release stays identical to the original. See the section "Releases and switches" of c64-knowledge.
 
-1. Give each feature and each fix its own switch, for example `HISCORE` or `FIX_FLICKER`. Then each one can be on or off alone.
-2. Find the code to change with c64-knowledge (`at`, `regions`) and c64-emulator.
-3. Write the code in a file in `.c64-re-tools/local/`. Write the patch with `knowledge.ts patch '<range>' <SWITCH> --code-file <file>` of c64-knowledge. The code must fit in the range.
-4. If the code does not fit, write a short patch with a `jsr` to the new code. Put the new code in a second patch of the same switch, in a range that the program does not use. The range must have evidence: `provenance.ts leftovers` of c64-provenance, or code that no run executed and that the program cannot reach. If no range has this evidence, stop and ask the user.
-5. Make the source again with `source.ts generate --out src` of c64-source. Each switch must have `switches[].result` with no `overflow` and no `does not assemble`.
-6. Build two programs with c64-assembler:
-   - the default build with `--compare`, which must be identical to the original
-   - the build with `--define <SWITCH>=1`.
-7. Test the build with the switch:
+1. Read the releases and the switches with `knowledge.ts releases` and `knowledge.ts switches` of c64-knowledge. If the knowledge has no base release, record it first, for example `knowledge.ts release ORIGINAL --file original/game.prg --base`.
+2. Give each feature and each fix its own switch. Then each one can be on or off alone. Write the switch with `knowledge.ts switch <SWITCH> --kind <kind>`. No release has your change, so do not give `--releases`. Select the kind:
+   - A fix: `fix`, for example `FIX_FLICKER`. The default build has it.
+   - A trainer or a cheat: `trainer` or `cheat`. The default build does not have it.
+   - Another feature: `change`, for example `HISCORE`. Ask the user if the default build must have it. Give `--default 1` or `--default 0`.
+3. Find the code to change with c64-knowledge (`at`, `regions`) and c64-emulator.
+4. Write the code in a file in `.c64-re-tools/local/`. Write the patch with `knowledge.ts patch '<range>' <SWITCH> --code-file <file>` of c64-knowledge. The code must fit in the range.
+5. If the code does not fit, write a short patch with a `jsr` to the new code. Put the new code in a second patch of the same switch, in a range that the program does not use. The range must have evidence: `provenance.ts leftovers` of c64-provenance, or code that no run executed and that the program cannot reach. If no range has this evidence, stop and ask the user.
+6. Make the source again with `source.ts generate --out src` of c64-source. The checks `check`, `switches`, `default` and `releases` must pass. A switch must not give `overflow` or `does not assemble`.
+7. Build with c64-assembler:
+   - `--release <base label> --compare`: this build must be identical to the original.
+   - The default build, with no option.
+   - A build with `--define <SWITCH>=1` when the default build does not have the switch.
+8. Test the build that has the switch:
    - Run the scenarios in `tests/` with `testing.ts test`, where the behavior must stay the same as the original.
    - Run a run file with `expect` steps that show the feature or the fix.
 
@@ -140,7 +145,7 @@ Give the user a short answer at the end:
 
 For a new program, the source is the truth. Record names and comments in the knowledge only when the user asks for the knowledge or for documentation. Then put the program in with `knowledge.ts image build/<name>.prg` of c64-knowledge first.
 
-For a rebuilt program, write each change as a patch with c64-knowledge.
+For a rebuilt program, write each change as a switch and its patches with c64-knowledge.
 
 Do not store:
 
@@ -150,7 +155,7 @@ Do not store:
 
 ## Result
 
-A program that builds, with a run file in `tests/` for each acceptance check, and each run gives PASS. For a rebuilt program: a switch for each change, a default build that is identical to the original, and a build for each switch.
+A program that builds, with a run file in `tests/` for each acceptance check, and each run gives PASS. For a rebuilt program: a switch for each change, and a build of the base release that is identical to the original.
 
 ## Failure and conflicts
 
