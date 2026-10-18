@@ -46,10 +46,14 @@ function refuseMedia(path: string, type: string, remedy: string): void {
  * Reads a PRG of the project: a 2-byte load address, and bytes that end at
  * $ffff or before. Refuses a disk, tape or cartridge file and any other file
  * that is no PRG with invalid-input; `remedy` tells what to do in its place.
+ * A file of fewer than 3 bytes is refused as too short: no remedy applies.
  */
 export function readPrg(path: string, remedy = MEDIA_REMEDY): { bytes: Buffer; start: number; end: number; body: Uint8Array } {
   const { bytes, type } = readProjectFile(path);
   refuseMedia(path, type, remedy);
+  if (bytes.length < 3) {
+    throw new Refusal("invalid-input", `${path} is too short for a PRG: it has ${bytes.length} ${bytes.length === 1 ? "byte" : "bytes"}, and a PRG has a 2-byte load address and at least one byte. Give the complete PRG file.`);
+  }
   try {
     return { bytes, ...prgRange(bytes) };
   } catch (error) {

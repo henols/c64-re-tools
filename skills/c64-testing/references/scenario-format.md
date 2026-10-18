@@ -47,7 +47,7 @@ Before the first step of each side, the script does a hard reset. The CPU stops 
 | `{ "type": { "mode": "text", "text": "RUN\n" } }` | Put at most 1024 keys into the keyboard queue of the KERNAL. A program that reads the keyboard hardware does not see them. |
 | `{ "type": { "mode": "petscii", "bytes": [147] } }` | Put PETSCII codes from 1 to 255 into the keyboard queue of the KERNAL. Use it for keys that mode `text` does not have. |
 | `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 600 } }` | Run until the CPU gets to an address. |
-| `{ "runUntil": { "target": { "kind": "memory", "address": "game_state", "operator": "eq", "value": 2 }, "timeoutFrames": 600 } }` | Run until a byte in memory compares true with `value`. `operator` is `eq`, `ne`, `lt`, `lte`, `gt` or `gte`. |
+| `{ "runUntil": { "target": { "kind": "memory", "address": "game_state", "operator": "eq", "value": 2 }, "timeoutFrames": 600 } }` | Run until a write to the byte makes the comparison with `value` true. `operator` is `eq`, `ne`, `lt`, `lte`, `gt` or `gte`. The run does not stop for a byte that is already true at the start. It also does not stop for a register that the hardware changes, for example `$d012`. For a raster line, use a `raster` target. |
 | `{ "runUntil": { "target": { "kind": "raster", "line": 250 }, "timeoutFrames": 5 } }` | Run until the raster beam gets to a line (0 to 311 for PAL, 0 to 262 for NTSC). Optional: `cycle` from 0 to 64. |
 | `{ "runUntil": { "target": { "kind": "address", "address": "irq_tick", "condition": { "kind": "raster", "line": 250 } }, "timeoutFrames": 600 } }` | Run until the CPU gets to an address while the condition is true. |
 | `{ "snapshot": "snapshots/start.vsf" }` | Restore a snapshot file. Usually with `side`: the snapshot of one program is not a state of the other. |
@@ -90,7 +90,7 @@ A run file (for `testing.ts run`) has:
 
 - `name`: a short name.
 - `start`: `{ "program": "game.prg" }` to autostart a program with a BASIC start line, `{ "program": "game.prg", "load": true }` to load it with the CPU stopped (set `pc` in a step), or `{ "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" }`.
-- `symbols`: optional, `knowledge`, `none` (default), or a JSON file as for a subject.
+- `symbols`: optional, `knowledge`, `none` (default), or a JSON file as for a subject. Without `symbols`, a run has no names: give `"symbols": "knowledge"` to use the names of the knowledge.
 - `videoStandard`: optional, `pal` (default) or `ntsc`.
 - `steps`: the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage`, `trace` and `observe`.
 
@@ -124,7 +124,9 @@ Example: visit two rooms from the same start.
 
 The script checks the scenario before it starts the emulator. A step with an unknown key or a wrong value stops the script with `invalid-input`. The message names the step.
 
-The script also examines each file before it starts the emulator: the program and the symbols of each side, and each snapshot file. A missing file stops the script with `not-found`. A program that is not a PRG, for example a disk image, stops the script with `invalid-input`.
+The script also examines each file before it starts the emulator: the program and the symbols of each side, and each snapshot file. A missing file stops the script with `not-found`. A program that is not a PRG, for example a disk image, stops the script with `invalid-input`. A snapshot file that does not start with the signature of a VICE snapshot file also stops the script with `invalid-input`. The message names the step and the file.
+
+A run also examines each name of its steps before it starts the emulator. An unknown name stops the run with `invalid-input`, and the message names the step. In a scenario, a side that does not have a name gives INCONCLUSIVE, and `reason` names the step.
 
 A step in the form of version 2.0 stops the script with `invalid-input`. The message names the old field and gives the step to write. For example, the script refuses `{ "runUntil": { "at": "main_loop" }, "timeoutFrames": 300 }` and gives `{"runUntil": {"target": {"kind": "address", "address": "main_loop"}, "timeoutFrames": 300}}`. A memory item with `at` gets the same refusal: write `address`.
 

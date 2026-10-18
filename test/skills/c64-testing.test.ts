@@ -14,7 +14,7 @@ import type { ViceSessionClient } from "../../src/host-client/vice-session.ts";
 import { changedRanges, diffStates } from "../../skills/c64-testing/scripts/lib/diff.ts";
 import { Refusal } from "../../src/errors.ts";
 import { compare, namesOf, readScenario, resolve, runScenario } from "../../skills/c64-testing/scripts/lib/scenario.ts";
-import { snapshotRam } from "../../skills/c64-testing/scripts/lib/diff-files.ts";
+import { snapshotCpuPort, snapshotRam } from "../../skills/c64-testing/scripts/lib/diff-files.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-testing-"));
 const home = process.cwd();
@@ -320,6 +320,7 @@ test("a snapshot file gives its RAM from the C64MEM module, and a file without i
   ram.write("sei", 0x0400, "latin1");
   const file = Buffer.concat([header, module("MAINCPU", Buffer.alloc(103)), module("C64MEM", Buffer.concat([Buffer.from([0x35, 0x2f, 0, 0]), ram, Buffer.alloc(15)]))]);
   assert.deepEqual(Buffer.from(snapshotRam(file)!), ram);
+  assert.deepEqual(snapshotCpuPort(file), { direction: 0x2f, data: 0x35 }, "the CPU port: the data register, then the direction register, before the RAM");
   assert.equal(snapshotRam(Buffer.concat([header, module("MAINCPU", Buffer.alloc(103))])), undefined);
   assert.equal(snapshotRam(Buffer.from("not a snapshot")), undefined);
 });
@@ -393,5 +394,138 @@ test("test and run check every file before the emulator: a missing file is not-f
   assert.equal(run("run-missing.json", { name: "r", start: { program: "nope.prg" }, steps: [{ frames: 1 }] }).code, "not-found");
   assert.match(run("run-disk.json", { name: "r", start: { program: "game.d64" }, steps: [{ frames: 1 }] }).message, /^run run-disk\.json: start\.program: game\.d64 is a disk image \(\.d64\), not a PRG\. A run starts a PRG/);
   assert.deepEqual(run("run-snapshot.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { snapshot: "nope.vsf" }] }), { code: "not-found", message: "run run-snapshot.json: step 2: snapshot: There is no file at nope.vsf in the project folder." });
-  assert.deepEqual(run("run-name.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { runUntil: { target: { kind: "address", address: "nonsense" } } }] }), { code: "invalid-input", message: "run run-name.json: step 2: the symbols have no nonsense" });
+  writeFileSync(join(project, "map.json"), JSON.stringify({ player_x: "$c300" }));
+  assert.deepEqual(run("run-name.json", { name: "r", start: { program: "game.prg" }, symbols: "map.json", steps: [{ frames: 1 }, { runUntil: { target: { kind: "address", address: "nonsense" } } }] }), { code: "invalid-input", message: "run run-name.json: step 2: the symbols map.json have no nonsense" });
+});
+
+test("a memory difference lists the differing bytes, at most --max-listed, and memory.json in --out keeps all bytes", () => {
+  const observation = (bytes: number[]) => ({ memory: [{ label: "$0400 (3320 bytes)", address: 0x0400, bytes, tolerance: 0, excluded: [] }], registers: {} });
+  const original = Array.from({ length: 3320 }, (_, index) => index & 0xff);
+  const rebuild = [...original];
+  rebuild[0x10] = 0xff;
+  const [one] = compare(new Map([["title", observation(original)]]), new Map([["title", observation(rebuild)]]));
+  assert.deepEqual(one, { checkpoint: "title", what: "memory $0400 (3320 bytes)", bytes: { count: 1, listed: [{ address: "$0410", original: "10", rebuild: "ff" }] } }, "one byte differs: the result gives that byte, not 2 x 6640 hex digits");
+  rebuild[0x20] = 0xee;
+  rebuild[0x30] = 0xdd;
+  const [three] = compare(new Map([["title", observation(original)]]), new Map([["title", observation(rebuild)]]), { max: 2, rest: "out/memory.json" });
+  assert.deepEqual(three!.bytes, { count: 3, listed: [{ address: "$0410", original: "10", rebuild: "ff" }, { address: "$0420", original: "20", rebuild: "ee" }], rest: "out/memory.json" });
+});
+
+test("a FAIL with --out writes memory.json with all bytes of the item and each differing byte", async () => {
+  // The rebuild side writes $01 to the observed bytes; the original side reads zeros.
+  let writes = 0;
+  const fake = {
+    reset: async () => ({ state: "stopped" }),
+    joystick: async (state: unknown) => state,
+    status: async () => ({ state: "stopped" }),
+    execution: async () => ({}),
+    memoryRead: async (params: { address: number; size: number }) => ({ data: Buffer.alloc(params.size, writes > 0 ? 1 : 0).toString("hex") }),
+    memoryWrite: async () => (writes++, {}),
+  };
+  const scenario = readScenario(
+    scenarioFile("fail.json", {
+      name: "fail",
+      original: { program: "original.prg", symbols: "none" },
+      rebuild: { program: "rebuild.prg", symbols: "none" },
+      steps: [{ write: { address: "$c000", data: "01" }, side: "rebuild" }, { observe: "x", memory: [{ address: "$c000", size: 3 }] }],
+    }),
+  );
+  const result = await runScenario(fake as unknown as ViceSessionClient, scenario, { out: "fail-out", max: 1 });
+  assert.equal(result.result, "FAIL");
+  assert.deepEqual(result.differences, [{ checkpoint: "x", what: "memory $c000 (3 bytes)", bytes: { count: 3, listed: [{ address: "$c000", original: "00", rebuild: "01" }], rest: "fail-out/memory.json" } }]);
+  const memory = JSON.parse(readFileSync(join(project, "fail-out", "memory.json"), "utf8")) as unknown;
+  assert.deepEqual(memory, [
+    {
+      checkpoint: "x",
+      what: "memory $c000 (3 bytes)",
+      address: "$c000",
+      original: "000000",
+      rebuild: "010101",
+      bytes: [
+        { address: "$c000", original: "00", rebuild: "01" },
+        { address: "$c001", original: "00", rebuild: "01" },
+        { address: "$c002", original: "00", rebuild: "01" },
+      ],
+    },
+  ]);
+});
+
+test("an unknown name in a scenario step gives INCONCLUSIVE with the step", async () => {
+  const fake = {
+    reset: async () => ({ state: "stopped" }),
+    joystick: async (state: unknown) => state,
+    status: async () => ({ state: "stopped" }),
+    execution: async () => ({}),
+  };
+  const scenario = readScenario(
+    scenarioFile("unknown-name.json", {
+      name: "unknown name",
+      original: { program: "original.prg", symbols: "none" },
+      rebuild: { program: "rebuild.prg", symbols: "none" },
+      steps: [{ frames: 10 }, { runUntil: { target: { kind: "address", address: "no_such_name" }, timeoutFrames: 30 } }, { observe: "x", memory: ["$c000"] }],
+    }),
+  );
+  const result = await runScenario(fake as unknown as ViceSessionClient, scenario);
+  assert.equal(result.result, "INCONCLUSIVE");
+  assert.equal(result.reason, "step 2 (runUntil): the original side has no symbol no_such_name");
+});
+
+test("test, run and diff refuse a snapshot file that is no VICE snapshot file before the emulator, with the file and the step", () => {
+  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
+  writeFileSync(join(project, "notes.txt"), "not a snapshot\n");
+  writeFileSync(join(project, "notes.vsf"), "not a snapshot\n");
+  const call = (...args: string[]) => {
+    const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+    assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
+    return (JSON.parse(run.stdout) as { error: { code: string; message: string } }).error;
+  };
+  const why = 'is not a VICE snapshot file (.vsf): it does not start with "VICE Snapshot File". Give a file that c64_snapshot save or a save step of a run wrote.';
+  writeFileSync(join(project, "snap-step.json"), JSON.stringify({ name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }] }));
+  assert.deepEqual(call("run", "snap-step.json", "--out", "out"), { code: "invalid-input", message: `run snap-step.json: step 2: snapshot: notes.txt ${why}` });
+  writeFileSync(join(project, "snap-start.json"), JSON.stringify({ name: "x", start: { snapshot: "notes.vsf" }, steps: [{ frames: 5 }] }));
+  assert.deepEqual(call("run", "snap-start.json", "--out", "out"), { code: "invalid-input", message: `run snap-start.json: start.snapshot: notes.vsf ${why}` });
+  writeFileSync(join(project, "snap-scenario.json"), JSON.stringify({ ...valid, original: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }, { observe: "x", memory: ["$0400"] }] }));
+  assert.deepEqual(call("test", "snap-scenario.json"), { code: "invalid-input", message: `step 2: snapshot: notes.txt ${why}` });
+  assert.deepEqual(call("diff", "notes.vsf", "notes.vsf"), { code: "invalid-input", message: `notes.vsf ${why}` });
+});
+
+test("a name in a run file without symbols says how to give symbols, and a name in an observe or trace step is checked before the run", () => {
+  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
+  const run = (value: unknown) => {
+    writeFileSync(join(project, "names.json"), JSON.stringify(value));
+    const done = spawnSync(process.execPath, [...process.execArgv, script, "run", "names.json", "--out", "out"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+    assert.equal(done.status, 2, done.stdout);
+    return (JSON.parse(done.stdout) as { error: { code: string; message: string } }).error.message.split("\n")[0];
+  };
+  const noSymbols = 'cold_start is a name, and the run file has no symbols. A run file has no symbols unless it gives "symbols": "knowledge" for the names of the knowledge, or "symbols": "<file>" for a JSON file of names. Give one of them, or a $ address';
+  assert.equal(run({ name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { runUntil: { target: { kind: "address", address: "cold_start" }, timeoutFrames: 10 } }] }), `run names.json: step 2: ${noSymbols}`);
+  assert.equal(run({ name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { observe: "o", memory: ["cold_start"] }] }), `run names.json: step 2: ${noSymbols}`);
+  assert.equal(run({ name: "x", start: { program: "game.prg" }, steps: [{ trace: "t", points: [{ kind: "exec", start: "$c000", end: "cold_start" }], frames: 5 }] }), `run names.json: step 1: ${noSymbols}`);
+});
+
+test("diff refuses --address for snapshots and observations, and --ntsc for memory files and observations", () => {
+  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+  writeFileSync(join(project, "part1.bin"), Buffer.alloc(16));
+  writeFileSync(join(project, "part2.bin"), Buffer.alloc(16, 1));
+  writeFileSync(join(project, "obs.json"), JSON.stringify({ observations: { a: { memory: { $c000: "00" } }, b: { memory: { $c000: "01" } } } }));
+  const differ = (...args: string[]) => {
+    const run = spawnSync(process.execPath, [...process.execArgv, script, "diff", ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+    assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
+    return (JSON.parse(run.stdout) as { error: { code: string; message: string } }).error.message.split("\n")[0];
+  };
+  assert.equal(differ("obs.json:a", "obs.json:b", "--address", "$0400"), "--address is only for two memory files (.bin). An observation gives the address of each item: leave out --address");
+  assert.equal(differ("a.vsf", "b.vsf", "--address", "$0400"), "--address is only for two memory files (.bin). A snapshot file holds all 64 KiB: leave out --address");
+  assert.equal(differ("part1.bin", "part2.bin", "--ntsc"), "--ntsc is only for two snapshot files (.vsf), which restore in an emulator. Memory files compare as they are: leave out --ntsc");
+  assert.equal(differ("obs.json:a", "obs.json:b", "--ntsc"), "--ntsc is only for two snapshot files (.vsf), which restore in an emulator. Observations compare as they are: leave out --ntsc");
+});
+
+test("a PRG of one or two bytes is too short, with no remedy for disk images", () => {
+  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+  writeFileSync(join(project, "one.prg"), Uint8Array.of(0x01));
+  writeFileSync(join(project, "short.json"), JSON.stringify({ name: "x", start: { program: "one.prg" }, steps: [{ frames: 5 }] }));
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "run", "short.json", "--out", "out"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  assert.equal(run.status, 2, run.stdout);
+  assert.deepEqual(JSON.parse(run.stdout).error, { code: "invalid-input", message: "run short.json: start.program: one.prg is too short for a PRG: it has 1 byte, and a PRG has a 2-byte load address and at least one byte. Give the complete PRG file." });
 });

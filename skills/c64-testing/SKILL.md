@@ -26,7 +26,7 @@ node <skill>/scripts/testing.ts test tests/moves-left.json --out .c64-re-tools/l
 node <skill>/scripts/testing.ts checklist tests/moves-left.json --item 'FIRE starts the game.'
 ```
 
-`testing.ts test` gives `result`: PASS, FAIL or INCONCLUSIVE. With `--out`, a FAIL writes files into that directory: both screens and the difference image for each screen difference, and `memory.json` with each byte that differs. `files` in the result names them. A PASS writes no files. To keep the screens of a PASS, use a run (below).
+`testing.ts test` gives `result`: PASS, FAIL or INCONCLUSIVE. With `--out`, a FAIL writes files into that directory: both screens and the difference image for each screen difference, and `memory.json`. `memory.json` has all bytes of each memory item that differs, and each byte that differs. `files` in the result names them. A PASS writes no files. To keep the screens of a PASS, use a run (below).
 
 `testing.ts checklist` gives a Markdown checklist for a human tester in `text`.
 
@@ -40,7 +40,7 @@ A run does steps on one program, with no comparison, and keeps the results as fi
 node <skill>/scripts/testing.ts run .c64-re-tools/local/runs/rooms/run.json --out .c64-re-tools/local/runs/rooms
 ```
 
-The run file gives where to start (a program, or a snapshot file), the steps, and optional symbols. To go on from the live emulator, save its state with `c64_snapshot` action `save` and `out`, and start the run from that file. A run has the action steps of a scenario: `write`, `registers`, `joystick`, `type`, `frames` and `runUntil`. It also has these steps:
+The run file gives where to start (a program, or a snapshot file), the steps, and optional symbols. A run file has no names unless it gives `"symbols": "knowledge"` or a JSON file of names. To go on from the live emulator, save its state with `c64_snapshot` action `save` and `out`, and start the run from that file. A run has the action steps of a scenario: `write`, `registers`, `joystick`, `type`, `frames` and `runUntil`. It also has these steps:
 
 | Step | Effect |
 |---|---|
@@ -122,6 +122,8 @@ node <skill>/scripts/testing.ts diff .c64-re-tools/local/runs/rooms/results.json
 - Two memory files of a run: the changed ranges. For a file of less than 64 KiB, `--address` gives the address of its first byte.
 - Two observations of runs, also of one run: the changed memory items and registers. `compared` gives the count of items that both observations have. With `compared: 0`, `reason` tells what each observation has. Then the diff compared nothing, and the observations are not equal.
 
+For two snapshot files, `$00` and `$01` are the CPU port of the snapshot: the direction register and the data register. They are not the RAM under the port. `--ntsc` is only for snapshot files, and `--address` is only for memory files. The script refuses these options for the other kinds.
+
 `registers` gives each changed register and chip value. `cpu.pc` is a `$` address. Each CPU flag is `cpu.flags.<flag>`, for example `cpu.flags.c`, with `true` or `false`.
 
 The script refuses a snapshot that does not restore in its emulator. An example is a PAL snapshot with `--ntsc`. Give `--ntsc` only for snapshots of an NTSC machine.
@@ -159,7 +161,7 @@ The script refuses a snapshot that does not restore in its emulator. An example 
 5. Run `testing.ts test`.
 6. Read the result:
    - `PASS`: all observations are equal, or the differences are in the allowed tolerance.
-   - `FAIL`: `differences` lists each difference with the checkpoint, the item, the original value and the rebuild value.
+   - `FAIL`: `differences` lists each difference with the checkpoint and the item. A memory item gives `bytes`: the count of the bytes that differ, and the first of these bytes. Each byte has the address, the original value and the rebuild value. `--max-listed` sets how many bytes it lists (default 50). `memory.json` in `--out` has all of them. Another item gives the original value and the rebuild value.
    - Each value has one form. The pc and each address are `$xxxx`. Memory is lowercase hex. Other register values and chip values are decimal numbers.
    - `INCONCLUSIVE`: `reason` tells why the script could not compare. This is not a failure of the program.
 7. For a FAIL, examine the first difference with the c64-emulator skill.
@@ -189,6 +191,7 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 ## Failure and conflicts
 
 - `invalid-input`: the scenario file has an error. The message names the step. Change the step and run the test again.
+- INCONCLUSIVE, `step N (kind): ...`: the step failed on one side. `reason` names the step and why.
 - `invalid-input` that names the 2.0 form: a step, a memory item or a recording has a form of version 2.0. An example is `"at"` in place of `"address"`. The message gives the form to write. Change the file. Record a recording of version 2.0 again.
 - `not-found` before the run: a file of the scenario or the run file is missing, for example the rebuild program. Build the rebuild, or change the path.
 - INCONCLUSIVE, "did not reach the checkpoint": one side did not reach the checkpoint in the frame limit. Find the reason with the c64-emulator skill. Do not report a FAIL.

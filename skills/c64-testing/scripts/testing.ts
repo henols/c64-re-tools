@@ -47,7 +47,7 @@ async function test(call: Call): Promise<ScenarioResult> {
     return { result: "INCONCLUSIVE", scenario: scenario.name, reason: `no emulator: ${error.message}`, checkpoints: [], differences: [] };
   }
   try {
-    return await runScenario(client, scenario, { names, ...(out === undefined ? {} : { out }) });
+    return await runScenario(client, scenario, { names, max: call.count("max-listed")!, ...(out === undefined ? {} : { out }) });
   } finally {
     await client.close();
   }
@@ -123,7 +123,10 @@ const COMMANDS: CommandSpec[] = [
     name: "test",
     summary: "Runs a scenario on the original and then on the rebuild in one emulator. result is PASS, FAIL with the differences, or INCONCLUSIVE with the reason.",
     subjects: [{ name: "<scenario.json>", help: "a scenario file, relative to the project folder. See references/scenario-format.md" }],
-    options: { out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write both screens, the difference image and memory.json with each differing byte into this folder" } },
+    options: {
+      out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write both screens, the difference image and memory.json into this folder: each differing memory item with all its bytes, and each byte that differs" },
+      "max-listed": { ...OPTIONS["max-listed"], help: "list at most n differing bytes of each memory item (default 50). The count is always given" },
+    },
     run: test,
   },
   {

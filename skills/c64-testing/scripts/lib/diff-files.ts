@@ -10,6 +10,7 @@ import { isObject } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { checkSnapshotFile, hasSignature, VSF_SIGNATURE } from "#src/media.ts";
 import { listed, UsageError } from "#src/script.ts";
 import { diffStates, type ChangedRange, type MachineState } from "./diff.ts";
 
@@ -59,28 +60,38 @@ function cpuValues(registers: Record<string, unknown>): Record<string, number | 
 
 /** The size of the header of a module in a VICE snapshot file: the name (16 bytes), the version (2 bytes) and the size (4 bytes). */
 const MODULE_HEADER = 22;
-const VSF_MAGIC = "VICE Snapshot File\x1a";
 const VSF_VERSION = "VICE Version\x1a";
 
 /**
- * The 64 KiB of C64 RAM that a VICE snapshot file holds: the C64MEM module,
- * after the CPU port and the cartridge lines (4 bytes). Undefined when the
- * file has no such module.
+ * The data of the C64MEM module of a VICE snapshot file: the data and the
+ * direction register of the CPU port, the cartridge lines (2 bytes), then
+ * the 64 KiB of RAM. Undefined when the file has no such module.
  */
-export function snapshotRam(file: Uint8Array): Uint8Array | undefined {
+function c64Memory(file: Uint8Array): Buffer | undefined {
   const bytes = Buffer.from(file);
-  if (bytes.subarray(0, VSF_MAGIC.length).toString("latin1") !== VSF_MAGIC) return undefined;
+  if (!hasSignature("vsf", bytes)) return undefined;
   // The magic, the version (2 bytes) and the machine name (16 bytes); a newer VICE adds its own version (8 bytes).
-  let at = VSF_MAGIC.length + 2 + 16;
+  let at = VSF_SIGNATURE.length + 2 + 16;
   if (bytes.subarray(at, at + VSF_VERSION.length).toString("latin1") === VSF_VERSION) at += VSF_VERSION.length + 8;
   while (at + MODULE_HEADER <= bytes.length) {
     const name = bytes.subarray(at, at + 16).toString("latin1").replace(/\0+$/, "");
     const size = bytes.readUInt32LE(at + 18);
     if (size < MODULE_HEADER) return undefined;
-    if (name === "C64MEM") return at + MODULE_HEADER + 4 + 0x10000 <= bytes.length ? bytes.subarray(at + MODULE_HEADER + 4, at + MODULE_HEADER + 4 + 0x10000) : undefined;
+    if (name === "C64MEM") return at + MODULE_HEADER + 4 + 0x10000 <= bytes.length ? bytes.subarray(at + MODULE_HEADER, at + MODULE_HEADER + 4 + 0x10000) : undefined;
     at += size;
   }
   return undefined;
+}
+
+/** The 64 KiB of C64 RAM that a VICE snapshot file holds, also the RAM under the CPU port at $00/$01. Undefined when the file has no C64MEM module. */
+export function snapshotRam(file: Uint8Array): Uint8Array | undefined {
+  return c64Memory(file)?.subarray(4);
+}
+
+/** The CPU port of a VICE snapshot file: the direction register ($00) and the data register ($01). Undefined when the file has no C64MEM module. */
+export function snapshotCpuPort(file: Uint8Array): { direction: number; data: number } | undefined {
+  const memory = c64Memory(file);
+  return memory === undefined ? undefined : { data: memory[0]!, direction: memory[1]! };
 }
 
 /**
@@ -101,6 +112,10 @@ async function snapshotState(client: ViceSessionClient, path: string, ntsc: bool
       `${path} did not restore: the RAM after the restore is not the RAM of the file. A snapshot restores only in a machine of the video standard that saved it. ${ntsc ? "Leave out --ntsc for a PAL snapshot" : "Give --ntsc for an NTSC snapshot"}, or use the emulator version that saved it.`,
     );
   }
+  // $00 and $01 are the CPU port of the file, not the RAM under it: a program reads and writes the port there.
+  const port = snapshotCpuPort(file)!;
+  memory[0] = port.direction;
+  memory[1] = port.data;
   const colorRam = Buffer.from((await client.ioRead(0xd800, 0x400)).data, "hex").map((value) => value & 0x0f);
   const vic = Buffer.from((await client.ioRead(0xd000, 0x2f)).data, "hex");
   const values: Record<string, number | boolean> = {};
@@ -134,6 +149,8 @@ export function comparedItems(what: string, a: readonly string[], b: readonly st
 export async function diffFiles(first: string, second: string, options: { gap: number; max: number; ntsc: boolean; at?: number; out?: string }): Promise<Record<string, unknown>> {
   const kind = kindOf(first);
   if (kindOf(second) !== kind) throw new UsageError("give two states of one kind: two snapshots, two memory files or two observations");
+  if (options.at !== undefined && kind !== "memory") throw new UsageError(`--address is only for two memory files (.bin). ${kind === "snapshot" ? "A snapshot file holds all 64 KiB" : "An observation gives the address of each item"}: leave out --address`);
+  if (options.ntsc && kind !== "snapshot") throw new UsageError(`--ntsc is only for two snapshot files (.vsf), which restore in an emulator. ${kind === "memory" ? "Memory files" : "Observations"} compare as they are: leave out --ntsc`);
   const { gap, max } = options;
   let a: MachineState;
   let b: MachineState;
@@ -149,6 +166,8 @@ export async function diffFiles(first: string, second: string, options: { gap: n
     a = { memory: { base, bytes: left } };
     b = { memory: { base, bytes: right } };
   } else {
+    // Both files are snapshot files before the emulator starts.
+    for (const path of [first, second]) checkSnapshotFile(path, readProjectFile(path).bytes);
     const client = await ViceSessionClient.open({ videoStandard: options.ntsc ? "ntsc" : "pal" });
     try {
       a = await snapshotState(client, first, options.ntsc);

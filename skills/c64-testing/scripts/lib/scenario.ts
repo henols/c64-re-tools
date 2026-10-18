@@ -12,10 +12,12 @@ import { applyEntryState, parseEntryState } from "#src/host-client/entry-state.t
 import { readPrg } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { checkSnapshotFile } from "#src/media.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { nameTable } from "#src/knowledge/names.ts";
 import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
 import { programImage } from "#src/knowledge/program.ts";
+import { listed } from "#src/script.ts";
 
 export type Side = "original" | "rebuild";
 export const SIDES: Side[] = ["original", "rebuild"];
@@ -70,11 +72,24 @@ export interface Scenario {
 
 export type Outcome = "PASS" | "FAIL" | "INCONCLUSIVE";
 
+/** A byte of a memory item that differs: its address, and its value on each side as two hex digits. */
+export interface DifferingByte {
+  address: string;
+  original: string;
+  rebuild: string;
+}
+
+/**
+ * A difference at a checkpoint. A memory item gives the bytes that differ
+ * (at most --max-listed of them, and their count); every other item gives
+ * its value on each side.
+ */
 export interface Difference {
   checkpoint: string;
   what: string;
-  original: unknown;
-  rebuild: unknown;
+  original?: unknown;
+  rebuild?: unknown;
+  bytes?: { count: number; listed: DifferingByte[]; rest?: string };
 }
 
 export interface ScenarioResult {
@@ -290,8 +305,9 @@ const PROGRAM_REMEDY = "A scenario program is a PRG. Get the PRG out of the disk
 /**
  * Checks each file that the scenario names before an emulator starts: the
  * program and the symbols of each side, and each snapshot file. A missing
- * file is not-found; a program that is no PRG and a symbols file with no
- * names are invalid-input. Gives the names of each side.
+ * file is not-found; a program that is no PRG, a symbols file with no names
+ * and a snapshot step whose file is no VICE snapshot file are invalid-input.
+ * A refusal names the field or the step. Gives the names of each side.
  */
 export function scenarioNames(scenario: Scenario): Map<Side, Map<string, number>> {
   const names = new Map<Side, Map<string, number>>();
@@ -307,7 +323,9 @@ export function scenarioNames(scenario: Scenario): Map<Side, Map<string, number>
     named(`${side}.program`, () => readPrg(scenario[side].program, PROGRAM_REMEDY));
     names.set(side, named(`${side}.symbols`, () => namesOf(scenario[side].symbols)));
   }
-  for (const step of scenario.steps) if ("snapshot" in step) readProjectFile(step.snapshot);
+  scenario.steps.forEach((step, index) => {
+    if ("snapshot" in step) named(`step ${index + 1}: snapshot`, () => checkSnapshotFile(step.snapshot, readProjectFile(step.snapshot).bytes));
+  });
   return names;
 }
 
@@ -368,7 +386,6 @@ async function startProgram(client: ViceSessionClient, program: string, side: Si
 }
 
 async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side, symbols: Map<string, number>, files: boolean): Promise<Map<string, Observation>> {
-  const subject = scenario[side];
   const observations = new Map<string, Observation>();
   const at = (location: Location) => resolve(location, symbols, side);
   // Each side starts from a hard reset, stopped at the reset vector, with the control ports released.
@@ -376,84 +393,117 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
   await client.joystick({ port: 1, direction: "center", fire: false });
   await client.joystick({ port: 2, direction: "center", fire: false });
   let checkpoint = 0;
-  for (const step of scenario.steps) {
+  for (const [index, step] of scenario.steps.entries()) {
     if (step.side !== undefined && step.side !== side) continue;
-    // Observe first: an observe step may also carry "registers" or "memory".
-    if ("observe" in step) {
-      checkpoint++;
-      const observation: Observation = { memory: [], registers: {} };
-      for (const item of step.memory ?? []) {
-        const spec: MemoryObservation = typeof item === "string" ? { address: item } : item;
-        const address = at(spec.address);
-        const size = spec.size ?? 1;
-        const read = { data: (await readMemoryInParts(client, address, size, spec.view ?? "cpu")).toString("hex") };
-        const excluded = (spec.exclude ?? []).map((exclude) => {
-          const offset = at(exclude.address) - address;
-          if (offset < 0 || offset >= size) throw new Refusal("invalid-input", `the exclude ${exclude.address} lies outside the observed ${spec.address} (${size} bytes)`);
-          return { offset, address: exclude.address, reason: exclude.reason };
-        });
-        observation.memory.push({ label: size > 1 ? `${spec.address} (${size} bytes)` : spec.address, address, bytes: [...Buffer.from(read.data, "hex")], tolerance: spec.tolerance ?? 0, excluded });
-      }
-      if (step.registers !== undefined) {
-        const registers = await client.registersGet("c64");
-        for (const name of step.registers) observation.registers[name] = name === "pc" ? formatC64Address(registers.pc) : registers[name];
-      }
-      if (step.vicii) {
-        // The raster line changes from one moment to the next; the comparison leaves it out.
-        const { rasterLine: _rasterLine, ...state } = await client.vicii();
-        observation.vicii = formatVicii(state);
-      }
-      if (step.sprites !== undefined) observation.sprites = (await client.sprites(step.sprites)).sprites.map(formatSprite);
-      if (step.screen !== undefined) {
-        const baseline = baselineName(checkpoint, step.observe);
-        if (side === "original") {
-          const shot = await client.screenCapture(baseline);
-          if (files) observation.png = shot.png;
-        } else {
-          const compared = await client.screenCompare({ baseline, maxMismatchRatio: step.screen.maxMismatchRatio ?? 0, mask: step.screen.mask ?? [], includeDiff: files });
-          observation.screen = { match: compared.match, mismatchingPixels: compared.mismatchingPixels, comparedPixels: compared.comparedPixels, mismatchRatio: compared.mismatchRatio, ...(compared.bounds === undefined ? {} : { bounds: compared.bounds }) };
-          if (files) {
-            observation.png = (await client.screenCapture()).png;
-            if (compared.diffPng !== undefined) observation.diffPng = compared.diffPng;
-          }
-          await client.screenDiscard(baseline);
-        }
-      }
-      observations.set(step.observe, observation);
-    } else if ("reset" in step) {
-      // Stopped at the reset vector, so frame counts from here are exact.
-      await client.reset({ mode: step.reset, run: false });
-    } else if ("load" in step) {
-      await client.programLoad({ path: subject.program });
-    } else if ("autostart" in step) {
-      await startProgram(client, subject.program, side);
-    } else if ("snapshot" in step) {
-      await client.snapshotRestore(readProjectFile(step.snapshot).bytes);
-    } else if ("normalize" in step) {
-      await normalize(client);
-    } else {
-      const { side: _side, ...action } = step;
-      const notReached = await runActionStep(client, action as ActionStep, at);
-      if (notReached !== undefined && "runUntil" in step) {
-        throw new Inconclusive(`the ${side} side did not reach the checkpoint before ${step.runUntil.timeoutFrames} frames (it stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)})`);
-      }
+    try {
+      checkpoint = await runStep(client, scenario, side, step, at, checkpoint, files, observations);
+    } catch (error) {
+      // The step in the reason or the message: the scenario file has many steps.
+      const where = `step ${index + 1} (${stepKindOf(step)})`;
+      if (error instanceof Inconclusive) throw new Inconclusive(`${where}: ${error.message}`);
+      if (error instanceof WireFailure) throw new WireFailure(error.code, `${where}: ${error.message}`);
+      if (error instanceof Refusal) throw new Refusal(error.code, `${where}: ${error.message}`);
+      throw error;
     }
   }
   return observations;
 }
 
-/** The differences between the two sides' observations at each checkpoint, under the scenario's rules. */
-export function compare(original: Map<string, Observation>, rebuild: Map<string, Observation>): Difference[] {
+/** The kind of a checked step: its one key from the step kinds. */
+const stepKindOf = (step: Step) => Object.keys(step).find((key) => STEP_KINDS.includes(key)) ?? "step";
+
+/** Runs one step of one side. Gives the number of the last checkpoint. */
+async function runStep(client: ViceSessionClient, scenario: Scenario, side: Side, step: Step, at: (location: Location) => number, last: number, files: boolean, observations: Map<string, Observation>): Promise<number> {
+  const subject = scenario[side];
+  let checkpoint = last;
+  // Observe first: an observe step may also carry "registers" or "memory".
+  if ("observe" in step) {
+    checkpoint++;
+    const observation: Observation = { memory: [], registers: {} };
+    for (const item of step.memory ?? []) {
+      const spec: MemoryObservation = typeof item === "string" ? { address: item } : item;
+      const address = at(spec.address);
+      const size = spec.size ?? 1;
+      const read = { data: (await readMemoryInParts(client, address, size, spec.view ?? "cpu")).toString("hex") };
+      const excluded = (spec.exclude ?? []).map((exclude) => {
+        const offset = at(exclude.address) - address;
+        if (offset < 0 || offset >= size) throw new Refusal("invalid-input", `the exclude ${exclude.address} lies outside the observed ${spec.address} (${size} bytes)`);
+        return { offset, address: exclude.address, reason: exclude.reason };
+      });
+      observation.memory.push({ label: size > 1 ? `${spec.address} (${size} bytes)` : spec.address, address, bytes: [...Buffer.from(read.data, "hex")], tolerance: spec.tolerance ?? 0, excluded });
+    }
+    if (step.registers !== undefined) {
+      const registers = await client.registersGet("c64");
+      for (const name of step.registers) observation.registers[name] = name === "pc" ? formatC64Address(registers.pc) : registers[name];
+    }
+    if (step.vicii) {
+      // The raster line changes from one moment to the next; the comparison leaves it out.
+      const { rasterLine: _rasterLine, ...state } = await client.vicii();
+      observation.vicii = formatVicii(state);
+    }
+    if (step.sprites !== undefined) observation.sprites = (await client.sprites(step.sprites)).sprites.map(formatSprite);
+    if (step.screen !== undefined) {
+      const baseline = baselineName(checkpoint, step.observe);
+      if (side === "original") {
+        const shot = await client.screenCapture(baseline);
+        if (files) observation.png = shot.png;
+      } else {
+        const compared = await client.screenCompare({ baseline, maxMismatchRatio: step.screen.maxMismatchRatio ?? 0, mask: step.screen.mask ?? [], includeDiff: files });
+        observation.screen = { match: compared.match, mismatchingPixels: compared.mismatchingPixels, comparedPixels: compared.comparedPixels, mismatchRatio: compared.mismatchRatio, ...(compared.bounds === undefined ? {} : { bounds: compared.bounds }) };
+        if (files) {
+          observation.png = (await client.screenCapture()).png;
+          if (compared.diffPng !== undefined) observation.diffPng = compared.diffPng;
+        }
+        await client.screenDiscard(baseline);
+      }
+    }
+    observations.set(step.observe, observation);
+  } else if ("reset" in step) {
+    // Stopped at the reset vector, so frame counts from here are exact.
+    await client.reset({ mode: step.reset, run: false });
+  } else if ("load" in step) {
+    await client.programLoad({ path: subject.program });
+  } else if ("autostart" in step) {
+    await startProgram(client, subject.program, side);
+  } else if ("snapshot" in step) {
+    await client.snapshotRestore(readProjectFile(step.snapshot).bytes);
+  } else if ("normalize" in step) {
+    await normalize(client);
+  } else {
+    const { side: _side, ...action } = step;
+    const notReached = await runActionStep(client, action as ActionStep, at);
+    if (notReached !== undefined && "runUntil" in step) {
+      throw new Inconclusive(`the ${side} side did not reach the checkpoint before ${step.runUntil.timeoutFrames} frames (it stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)})`);
+    }
+  }
+  return checkpoint;
+}
+
+type MemoryItem = Observation["memory"][number];
+
+/** The bytes of a memory item that differ by more than its tolerance, without the excluded bytes. */
+function differingBytes(item: MemoryItem, other: MemoryItem): DifferingByte[] {
+  const hex = (byte: number) => byte.toString(16).padStart(2, "0");
+  const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
+  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs(byte - other.bytes[offset]!) > item.tolerance ? [{ address: formatC64Address(item.address + offset), original: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
+}
+
+/** The most differing bytes of one memory item that a result lists when no --max-listed is given. */
+export const DEFAULT_LISTED_BYTES = 50;
+
+/**
+ * The differences between the two sides' observations at each checkpoint,
+ * under the scenario's rules. A memory item lists at most `max` differing
+ * bytes; `rest` tells where the others are.
+ */
+export function compare(original: Map<string, Observation>, rebuild: Map<string, Observation>, options: { max?: number; rest?: string } = {}): Difference[] {
   const differences: Difference[] = [];
+  const max = options.max ?? DEFAULT_LISTED_BYTES;
   for (const [checkpoint, left] of original) {
     const right = rebuild.get(checkpoint)!;
     left.memory.forEach((item, index) => {
-      const other = right.memory[index]!;
-      const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
-      if (item.bytes.some((byte, at) => !skipped.has(at) && Math.abs(byte - other.bytes[at]!) > item.tolerance)) {
-        const show = (bytes: number[]) => Buffer.from(bytes).toString("hex");
-        differences.push({ checkpoint, what: `memory ${item.label}`, original: show(item.bytes), rebuild: show(other.bytes) });
-      }
+      const bytes = differingBytes(item, right.memory[index]!);
+      if (bytes.length > 0) differences.push({ checkpoint, what: `memory ${item.label}`, bytes: listed(bytes, max, undefined, options.rest) });
     });
     for (const [name, value] of Object.entries(left.registers)) {
       const other = right.registers[name as ObservedRegister];
@@ -469,15 +519,15 @@ export function compare(original: Map<string, Observation>, rebuild: Map<string,
 
 /**
  * Writes the files of a FAIL into `out`: for a screen difference both
- * screens and the difference image, and memory.json with each differing byte.
+ * screens and the difference image, and memory.json with each differing
+ * memory item: all its bytes on each side, and each byte that differs.
  */
 function writeFailFiles(out: string, original: Map<string, Observation>, rebuild: Map<string, Observation>, differences: Difference[]): Written[] {
   const files: Written[] = [];
   const write = (name: string, bytes: Uint8Array) => {
     files.push(writeReported(`${out}/${name}`, bytes, { what: "--out" }));
   };
-  const memory: Array<{ checkpoint: string; what: string; bytes: Array<{ address: string; original: string; rebuild: string }> }> = [];
-  const hex = (byte: number) => byte.toString(16).padStart(2, "0");
+  const memory: Array<{ checkpoint: string; what: string; address: string; original: string; rebuild: string; bytes: DifferingByte[] }> = [];
   for (const difference of differences) {
     const left = original.get(difference.checkpoint)!;
     const right = rebuild.get(difference.checkpoint)!;
@@ -491,9 +541,8 @@ function writeFailFiles(out: string, original: Map<string, Observation>, rebuild
       const index = left.memory.findIndex((item) => `memory ${item.label}` === difference.what);
       const item = left.memory[index]!;
       const other = right.memory[index]!;
-      const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
-      const bytes = item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs(byte - other.bytes[offset]!) > item.tolerance ? [{ address: formatC64Address(item.address + offset), original: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
-      memory.push({ checkpoint: difference.checkpoint, what: difference.what, bytes });
+      const show = (bytes: number[]) => Buffer.from(bytes).toString("hex");
+      memory.push({ checkpoint: difference.checkpoint, what: difference.what, address: formatC64Address(item.address), original: show(item.bytes), rebuild: show(other.bytes), bytes: differingBytes(item, other) });
     }
   }
   if (memory.length > 0) write("memory.json", Buffer.from(`${JSON.stringify(memory, null, 2)}\n`));
@@ -501,7 +550,7 @@ function writeFailFiles(out: string, original: Map<string, Observation>, rebuild
 }
 
 /** Runs the scenario on the original, then on the rebuild, in one VICE session. With out, a FAIL leaves files there. */
-export async function runScenario(client: ViceSessionClient, scenario: Scenario, options: { out?: string; names?: Map<Side, Map<string, number>> } = {}): Promise<ScenarioResult> {
+export async function runScenario(client: ViceSessionClient, scenario: Scenario, options: { out?: string; names?: Map<Side, Map<string, number>>; max?: number } = {}): Promise<ScenarioResult> {
   const checkpoints = scenario.steps.flatMap((step) => ("observe" in step ? [step.observe] : []));
   const observed = new Map<Side, Map<string, Observation>>();
   // The names of both sides before either side runs: a bad symbols file is an error, not a result.
@@ -519,7 +568,7 @@ export async function runScenario(client: ViceSessionClient, scenario: Scenario,
   }
   const original = observed.get("original")!;
   const rebuild = observed.get("rebuild")!;
-  const differences = compare(original, rebuild);
+  const differences = compare(original, rebuild, { ...(options.max === undefined ? {} : { max: options.max }), rest: options.out === undefined ? "a larger --max-listed, or --out <dir> for memory.json with every byte" : `${options.out}/memory.json` });
   const excluded = [...original].flatMap(([checkpoint, observation]) => observation.memory.flatMap((item) => item.excluded.map((excluded) => ({ checkpoint, address: excluded.address, reason: excluded.reason }))));
   const files = differences.length > 0 && options.out !== undefined ? writeFailFiles(options.out, original, rebuild, differences) : [];
   return {

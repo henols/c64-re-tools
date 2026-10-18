@@ -4,6 +4,9 @@
 
 import { Refusal } from "./errors.ts";
 
+/** The signature at the start of every VICE snapshot file (.vsf). */
+export const VSF_SIGNATURE = "VICE Snapshot File\x1a";
+
 /** The signature at the start of each media type that has one. */
 const SIGNATURES: Readonly<Record<string, readonly string[]>> = {
   crt: ["C64 CARTRIDGE   "],
@@ -11,6 +14,7 @@ const SIGNATURES: Readonly<Record<string, readonly string[]>> = {
   tap: ["C64-TAPE-RAW"],
   g64: ["GCR-1541"],
   p00: ["C64File"],
+  vsf: [VSF_SIGNATURE],
 };
 
 /** True when `bytes` start with a signature of `type`, or `type` has none. */
@@ -29,6 +33,11 @@ const SIZES: Readonly<Record<string, readonly number[]>> = {
 
 /** The x64 header: 64 bytes that start with these four, then a d64 image. */
 const X64_MAGIC = Buffer.from([0x43, 0x15, 0x41, 0x64]);
+
+/** The refusal of a file that is no VICE snapshot file (.vsf): its signature is missing. `path` names the file. */
+export function checkSnapshotFile(path: string, bytes: Uint8Array): void {
+  if (!hasSignature("vsf", bytes)) throw new Refusal("invalid-input", `${path} is not a VICE snapshot file (.vsf): it does not start with "VICE Snapshot File". Give a file that c64_snapshot save or a save step of a run wrote.`);
+}
 
 /** Refuses a file whose bytes are not of `type` (its extension), with media-error. */
 export function checkMedia(type: string, bytes: Buffer): void {

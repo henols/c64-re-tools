@@ -27,6 +27,14 @@ test("readImage refuses a disk, tape or cartridge image by its extension, with t
   assert.throws(() => readImage("game.TAP"), { code: "invalid-input", message: /^game\.TAP is a tape file \(\.tap\), not a PRG\./ });
 });
 
+test("a file of one or two bytes is too short for a PRG, with no remedy for disk images", () => {
+  writeFileSync(join(project, "one.prg"), Buffer.from([0x01]));
+  writeFileSync(join(project, "two.prg"), Buffer.from([0x01, 0x08]));
+  const short = (name: string, count: string) => `${name} is too short for a PRG: it has ${count}, and a PRG has a 2-byte load address and at least one byte. Give the complete PRG file.`;
+  assert.throws(() => readPrg("one.prg", "Use loads"), { code: "invalid-input", message: short("one.prg", "1 byte") });
+  assert.throws(() => readImage("two.prg"), { code: "invalid-input", message: short("two.prg", "2 bytes") });
+});
+
 test("readImage reads a PRG as one segment at its load address", () => {
   const image = readImage("game.prg");
   assert.deepEqual(image.segments, [{ start: 0xc000, end: 0xc001 }]);

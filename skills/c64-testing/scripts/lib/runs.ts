@@ -12,6 +12,7 @@ import { readPrg } from "#src/host-client/image.ts";
 import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, WireFailure, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { checkSnapshotFile } from "#src/media.ts";
 import { UsageError } from "#src/script.ts";
 import { namesOf } from "./scenario.ts";
 
@@ -162,7 +163,7 @@ function readRun(path: string): Run {
 /** The remedy for a start program that is no PRG. */
 const PROGRAM_REMEDY = "A run starts a PRG. Get the PRG out of the disk, tape or cartridge with disk.ts read (or disk.ts crt) of the c64-disk skill";
 
-/** Checks each file that the run reads before the emulator starts: the start program or snapshot, and each snapshot step. A refusal names the run file and the step. */
+/** Checks each file that the run reads before the emulator starts: the start program, and the start snapshot and each snapshot step, which must be VICE snapshot files. A refusal names the run file and the step. */
 function checkRunFiles(path: string, run: Run): void {
   const named = (where: string, check: () => unknown) => {
     try {
@@ -177,10 +178,10 @@ function checkRunFiles(path: string, run: Run): void {
     named("start.program", () => readPrg(program, PROGRAM_REMEDY));
   } else {
     const { snapshot } = run.start;
-    named("start.snapshot", () => readProjectFile(snapshot));
+    named("start.snapshot", () => checkSnapshotFile(snapshot, readProjectFile(snapshot).bytes));
   }
   run.steps.forEach((step, index) => {
-    if ("snapshot" in step) named(`step ${index + 1}: snapshot`, () => readProjectFile(step.snapshot));
+    if ("snapshot" in step) named(`step ${index + 1}: snapshot`, () => checkSnapshotFile(step.snapshot, readProjectFile(step.snapshot).bytes));
   });
 }
 
@@ -197,12 +198,27 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
   const at = (location: string): number => {
     if (location.startsWith("$")) return parseC64Address(location);
     const address = symbols.get(location);
-    if (address === undefined) throw new UsageError(`the symbols have no ${location}`);
-    return address;
+    if (address !== undefined) return address;
+    if (run.symbols === undefined || run.symbols === "none") {
+      throw new UsageError(`${location} is a name, and the run file has no symbols. A run file has no symbols unless it gives "symbols": "knowledge" for the names of the knowledge, or "symbols": "<file>" for a JSON file of names. Give one of them, or a $ address`);
+    }
+    throw new UsageError(`the symbols ${run.symbols} have no ${location}`);
   };
-  // The names of the action steps resolve before the emulator starts.
+  // Every name of the steps resolves before the emulator starts. A refusal names the step.
   run.steps.forEach((step, index) => {
-    if ((ACTION_STEP_KINDS as readonly string[]).some((kind) => kind in step) && !("observe" in step) && !("trace" in step)) checkStepNames([step as ActionStep], at, `run ${path}`, index + 1);
+    if ("trace" in step || "observe" in step) {
+      const names = "trace" in step ? step.points.flatMap((point) => [point.start, ...(point.end === undefined ? [] : [point.end])]) : step.memory === undefined || step.memory === "all" ? [] : step.memory.map((item) => (typeof item === "string" ? item : item.address));
+      for (const name of names) {
+        try {
+          at(name);
+        } catch (error) {
+          if (isRefusal(error)) throw new Refusal("invalid-input", `run ${path}: step ${index + 1}: ${error.message}`);
+          throw error;
+        }
+      }
+    } else if ((ACTION_STEP_KINDS as readonly string[]).some((kind) => kind in step)) {
+      checkStepNames([step as ActionStep], at, `run ${path}`, index + 1);
+    }
   });
   const files: string[] = [];
   const written: Written[] = [];
