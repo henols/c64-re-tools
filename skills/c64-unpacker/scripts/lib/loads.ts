@@ -13,7 +13,7 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { UsageError } from "#src/script.ts";
-import { entryStateFile, json, machineState, readRam, readyState, vectorsOf } from "./machine.ts";
+import { entryStateFile, json, machineState, readRam, readyState, removeStaleFiles, vectorsOf } from "./machine.ts";
 import { FIRST_SEGMENT_ADDRESS } from "./stages.ts";
 
 
@@ -190,11 +190,14 @@ export async function loads(program: string, options: { out: string; steps: Load
       );
       const entry = entryStateFile(registers, state, vectors, clean);
       write("entry_state.json", entry.bytes);
+      // A capture again into the folder: the files of the earlier capture that image.json no longer lists go.
+      const removed = removeStaleFiles(directory, [...files, ...(drive === undefined ? [] : ["drive8.prg"])]);
       const keyWait = registers.pc >= KERNAL_KEY_WAIT.start && registers.pc <= KERNAL_KEY_WAIT.end;
       captures.push({
         capture: step.capture,
         out: directory,
         files: written,
+        ...(removed.length === 0 ? {} : { removed }),
         pc: formatC64Address(registers.pc),
         ...(keyWait ? { keyWait: true } : {}),
         segments: segments.map(showRange),

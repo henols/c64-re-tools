@@ -19,7 +19,7 @@ import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec, ty
 import { basicStart, inspect, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges } from "./lib/stages.ts";
-import { entryStateFile, machineState, readRam, readyState, vectorsOf } from "./lib/machine.ts";
+import { entryStateFile, machineState, readRam, readyState, removeStaleFiles, vectorsOf } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
@@ -537,12 +537,15 @@ async function capture(
     // A clean machine at the READY prompt shows what the loader and the stages changed.
     const entry = entryStateFile(registers, state, vectors, await readyState(client));
     write("entry_state.json", entry.bytes);
+    // A capture again into the folder: the segment PRGs of the earlier capture that image.json no longer lists go.
+    const removed = removeStaleFiles(options.out, files);
     return {
       output: {
         captured: true,
         pc: formatC64Address(registers.pc),
         out: options.out,
         files: written,
+        ...(removed.length === 0 ? {} : { removed }),
         segments: segments.map(showRange),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
         stages: followed.stages.length,

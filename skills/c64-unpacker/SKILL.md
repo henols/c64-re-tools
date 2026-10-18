@@ -109,7 +109,7 @@ The scripts refuse a step in the form of version 2.0, for example `{ "runUntil":
 4. Run `capture` with that address and a directory in `--out`. Give the same `--steps` as before. The directory gets:
    - `image.bin`: all 64 KiB of RAM at the entry.
    - `image.json`: the entry, the segments, the vectors and the stages. A segment is a block that a stage wrote, also a small block. A block is not a segment when it holds the entry of a later stage before the program, and no stage wrote over that entry. A block that a stage before the program wrote in such a block is also not a segment, for example a variable of a loader. A block that is fully in pages 0 to 3 is not a segment, because `entry_state.json` holds these pages. The block with the capture entry is always a segment. Segments do not overlap. `writtenBy` tells the last stage that wrote into the segment.
-   - One PRG for each segment.
+   - One PRG for each segment. A capture into a directory that has a capture removes the segment PRGs that the new `image.json` does not list. `removed` in the result names them. The capture keeps all other files.
    - `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, and the vectors. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
 5. Make sure that the result is the application: the code at the entry must not be the unpacker again. A segment can be data that a loader left, for example intro graphics. Keep it until other evidence shows that the program does not use it. Then capture again with `--exclude` for that range. Thus the source and the loader do not include the range.
 6. Put the capture into the knowledge with `image <out>/image.json` of the c64-knowledge skill. The knowledge keeps the segments, the entry, the entry state and the stages. The other skills read them there. The files in `<out>` are not necessary after that.
@@ -132,7 +132,7 @@ A multi-load program loads more parts from the disk while it runs, for example o
 ```
 
 2. Run `loads` with the steps file and a directory in `--out`. Add `--drive` when the program has its own drive code, for example a fast loader.
-3. Each capture writes `<out>/<name>/` with `image.bin`, `image.json`, `entry_state.json` and a PRG for each segment. A segment is a block of RAM from `$0400` that the program changed after the capture before. The first capture also has the program itself.
+3. Each capture writes `<out>/<name>/` with `image.bin`, `image.json`, `entry_state.json` and a PRG for each segment. It removes the segment PRGs and the `drive8.prg` of an earlier capture that the new `image.json` does not list. A segment is a block of RAM from `$0400` that the program changed after the capture before. The first capture also has the program itself.
 4. Put the part that you work on into the knowledge with `image <out>/<name>/image.json` of the c64-knowledge skill.
 5. With `--drive`, `drive8.prg` is the drive RAM at `$0000`-`$07ff`. Put it into the knowledge with `image <out>/<name>/drive8.prg --space drive8`. Then analyze it with c64-static-analysis and `--space drive8`.
 

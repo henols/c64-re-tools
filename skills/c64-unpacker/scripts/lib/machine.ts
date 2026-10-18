@@ -2,9 +2,14 @@
 // 0-3, the chip registers read without side effects, and the vectors. The
 // capture and loads commands of the unpacker share it.
 
+import { readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+
 import { formatC64Address } from "#src/c64.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
+import { writeRefusal } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { projectRoot, resolveProjectPath } from "#src/project.ts";
 
 type Registers = Awaited<ReturnType<ViceSessionClient["registersGet"]>>;
 
@@ -100,6 +105,32 @@ function entryState(registers: Registers, state: MachineState, vectors: ReturnTy
     vectors,
     differsFromReset,
   };
+}
+
+/** The names of the files that a capture writes for its content: a PRG for each segment, and the drive RAM. */
+const CAPTURE_FILE = /^(?:segment-[0-9a-f]{4}-[0-9a-f]{4}\.prg|drive8\.prg)$/;
+
+/**
+ * Removes from the capture folder `folder` (a project path) each file that an
+ * earlier capture wrote and this capture did not: a segment PRG of another
+ * range, or the drive RAM. image.json lists only the files of this capture.
+ * Every other file stays. Gives the removed files as project paths.
+ */
+export function removeStaleFiles(folder: string, written: readonly string[]): string[] {
+  const path = resolveProjectPath(folder, projectRoot());
+  const removed: string[] = [];
+  for (const entry of readdirSync(path, { withFileTypes: true })) {
+    // A symbolic link is not a file of a capture: it stays.
+    if (!entry.isFile() || !CAPTURE_FILE.test(entry.name) || written.includes(entry.name)) continue;
+    const file = `${folder}/${entry.name}`;
+    try {
+      rmSync(join(path, entry.name));
+    } catch (error) {
+      throw writeRefusal(error, file, "--out") ?? error;
+    }
+    removed.push(file);
+  }
+  return removed.sort();
 }
 
 export const json = (value: unknown) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);

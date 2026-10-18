@@ -2,12 +2,13 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { inspect, readMemoryMap, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
+import { removeStaleFiles } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
 import { callReturn, captureSegments, executedIn, stageCandidates, stagePoints, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
@@ -318,4 +319,22 @@ test("a block with the code of a later intermediate stage is a leftover; the blo
   assert.deepEqual(captureSegments([...moved.slice(0, 2), { entry: 0x0801, wrote: [] }], 0x0801), [{ start: 0x0723, end: 0x449d, writtenBy: 1 }]);
   // At the second $0801: the code at $0111 and $0340 is loader code that nothing wrote over.
   assert.deepEqual(captureSegments(moved, 0x0801), [{ start: 0x0723, end: 0x5fff, writtenBy: 3 }]);
+});
+
+test("a capture again into its folder removes the segment PRGs and the drive RAM of the earlier capture, and no other file", { skip: process.platform === "win32" ? "a symbolic link needs extra rights on Windows" : false }, () => {
+  const root = join(project, "recapture");
+  const folder = join(root, ".c64-re-tools", "local", "capture");
+  mkdirSync(folder, { recursive: true });
+  for (const name of ["image.bin", "image.json", "entry_state.json", "segment-0801-0fff.prg", "segment-1000-1fff.prg", "drive8.prg", "notes.txt", "segment-1000-1fff.prg.bak", "SEGMENT-2000-2FFF.PRG"]) writeFileSync(join(folder, name), "x");
+  writeFileSync(join(root, "elsewhere.prg"), "x");
+  symlinkSync(join(root, "elsewhere.prg"), join(folder, "segment-3000-3fff.prg"));
+  const cwd = process.cwd();
+  process.chdir(root);
+  try {
+    assert.deepEqual(removeStaleFiles(".c64-re-tools/local/capture", ["segment-1000-1fff.prg"]), [".c64-re-tools/local/capture/drive8.prg", ".c64-re-tools/local/capture/segment-0801-0fff.prg"]);
+    assert.deepEqual(removeStaleFiles(".c64-re-tools/local/capture", ["segment-1000-1fff.prg"]), [], "nothing more to remove");
+  } finally {
+    process.chdir(cwd);
+  }
+  assert.deepEqual(readdirSync(folder).sort(), ["SEGMENT-2000-2FFF.PRG", "entry_state.json", "image.bin", "image.json", "notes.txt", "segment-1000-1fff.prg", "segment-1000-1fff.prg.bak", "segment-3000-3fff.prg"]);
 });
