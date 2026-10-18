@@ -60,7 +60,7 @@ export interface GhidraParams {
 
 export interface GhidraInstruction {
   address: number;
-  /** Lowercase hex, 1 to 3 bytes. */
+  /** Lowercase hex, 1 to 3 bytes (6502) or 1 to 4 bytes (Z80). */
   bytes: string;
   mnemonic: string;
   /** The decoder's text of the operands, empty for an implied operand. */
@@ -133,7 +133,8 @@ const isList = (value: unknown): value is unknown[] => Array.isArray(value);
  * function, region and reference source inside the coverage, regions sorted
  * and without overlap. Throws an Error naming the first problem.
  */
-export function checkGhidraResult(value: unknown): GhidraResult {
+export function checkGhidraResult(value: unknown, maxInstructionLength = 3): GhidraResult {
+  const instructionBytes = new RegExp(`^(?:[0-9a-f]{2}){1,${maxInstructionLength}}$`);
   if (!isObject(value)) fail("not an object");
   const { coverage, functions, regions, references, decompilations, notDecompiled, completeness, toolVersion, instructions } = value;
   if (!isList(coverage) || coverage.length === 0) fail("no coverage");
@@ -164,7 +165,7 @@ export function checkGhidraResult(value: unknown): GhidraResult {
       !isObject(instruction) ||
       !isInteger(instruction.address, 0, 0xffff) ||
       typeof instruction.bytes !== "string" ||
-      !/^(?:[0-9a-f]{2}){1,3}$/.test(instruction.bytes) ||
+      !instructionBytes.test(instruction.bytes) ||
       typeof instruction.mnemonic !== "string" ||
       typeof instruction.operands !== "string" ||
       !isList(instruction.flows) ||

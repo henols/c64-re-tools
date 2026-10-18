@@ -71,6 +71,22 @@ export const C64RUN: ToolSpec = {
   remedy: INSTALL_STEPS,
 };
 
+export const ZXRUN: ToolSpec = {
+  name: "zxrun",
+  envVar: "C64RT_ZXRUN",
+  binaries: ["zxrun"],
+  where: "on this machine",
+  remedy: "Build it with tools/install-zxrun.sh, or set C64RT_ZXRUN to its full path.",
+};
+
+export const ZESARUX: ToolSpec = {
+  name: "ZEsarUX",
+  envVar: "C64RT_ZESARUX",
+  binaries: ["zesarux"],
+  where: "on this machine",
+  remedy: "Install ZEsarUX 13.0 or later so that zesarux is on PATH, or set C64RT_ZESARUX to its full path.",
+};
+
 export const VICE: ToolSpec = {
   name: "VICE (x64sc)",
   envVar: "C64RT_VICE",

@@ -16,10 +16,10 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["build-name", "c64", "c64-keys", "compare", "errors", "graphics", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
+      return ["build-name", "c64-keys", "c64", "compare", "cpu", "errors", "graphics", "machine", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
-    return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
+    return ["mcp", "host-client", "host", "knowledge", "cli", "cpu", "native", "protocol"].includes(dir) ? dir : undefined;
   }
   if (parts[0] === "skills" && parts.length > 2) return `skill:${parts[1]}`;
   // The one-off conversion of an old knowledge.db is no part of the package edge.
@@ -39,7 +39,11 @@ const ALLOWED: Record<string, readonly string[]> = {
   // The ACME spelling of each 6510 opcode: c64-source and the listing of c64-knowledge decode with one table.
   opcodes: ["c64"],
   // The platform memory map: names and meanings of C64 addresses.
-  platform: ["c64"],
+  platform: ["c64", "cpu"],
+  // The CPU of a machine for the analysis: instruction lengths, flow and text (6502, Z80), and the coverage flows.
+  cpu: ["c64", "opcodes"],
+  // A machine: its CPU and its Ghidra language.
+  machine: ["cpu"],
   // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images.
   graphics: [],
   // The one time format (ISO 8601 at +01:00).
@@ -66,13 +70,13 @@ const ALLOWED: Record<string, readonly string[]> = {
   // The call contract of the skill scripts: the command line, the values, the envelope.
   script: ["protocol", "project", "trace", "c64"],
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
-  native: ["protocol", "c64", "trace"],
+  native: ["protocol", "c64", "trace", "cpu", "machine"],
   // The installation and status edge: host tool status through the host-client, local tool status through native.
   cli: ["host-client", "native", "protocol", "script", "distribution", "trace", "package"],
   distribution: ["package"],
   convert: ["knowledge"],
 };
-const SKILL_ALLOWED = ["build-name", "host-client", "native", "knowledge", "project", "c64", "c64-keys", "compare", "graphics", "opcodes", "package", "platform", "script", "time", "media", "vsf", "zip"];
+const SKILL_ALLOWED = ["build-name", "c64-keys", "c64", "compare", "cpu", "graphics", "host-client", "knowledge", "machine", "media", "native", "opcodes", "package", "platform", "project", "script", "time", "vsf", "zip"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

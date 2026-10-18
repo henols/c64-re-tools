@@ -3,6 +3,7 @@
 // in, the structural result comes out, and the result is checked completely
 // before the script imports it.
 
+import { C64, type Machine } from "../../machine.ts";
 import { describeError, WireFailure } from "../../protocol/messages.ts";
 import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, seedsInside, type GhidraParams, type GhidraResult } from "../types.ts";
 import type { ToolContext } from "../run.ts";
@@ -16,6 +17,7 @@ export async function analyze(
   params: GhidraParams,
   image: Buffer,
   context: ToolContext,
+  machine: Machine = C64,
 ): Promise<{ result: GhidraResult }> {
   checkRequestBounds(params);
   const { start, end, body } = imageRange(params.imageKind, image);
@@ -39,7 +41,7 @@ export async function analyze(
 
   let result: GhidraResult;
   try {
-    result = checkGhidraResult({ ...walked, decompilations, notDecompiled, completeness: { functions: true, regions: true, references: true }, toolVersion: SLEIGH_VERSION });
+    result = checkGhidraResult({ ...walked, decompilations, notDecompiled, completeness: { functions: true, regions: true, references: true }, toolVersion: SLEIGH_VERSION }, machine.cpu.maxInstructionLength);
   } catch (error) {
     context.log?.(`Ghidra result rejected: ${describeError(error)}`);
     throw new WireFailure("operation-failed", `Ghidra returned an incomplete or inconsistent result. Nothing was imported. The check found: ${describeError(error)}.`);

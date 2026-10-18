@@ -3,7 +3,8 @@
 // Names follow "Mapping the Commodore 64". Only platform facts live here:
 // an address without one belongs to the application.
 
-import { type AddressRange, COVERAGE, d018Offsets, formatC64Address, romOnlyRanges, vicBankBase } from "./c64.ts";
+import { type AddressRange, COVERAGE, d018Offsets, formatC64Address, vicBankBase } from "./c64.ts";
+import { romOnlyRanges } from "./cpu/coverage.ts";
 import { Refusal } from "./errors.ts";
 
 export interface Entry {
