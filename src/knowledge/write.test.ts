@@ -32,6 +32,7 @@ import {
   setModule,
   setOperand,
   setPatch,
+  leastPatchBytes,
   unclassifyRegion,
   type OperandImage,
   type WriteContext,
@@ -559,6 +560,14 @@ test("a patch puts code in a range of the image under a switch", () => {
   // c64-source writes the code inside { }: braces must pair, except in comments and strings.
   for (const code of ["!if X {", "}"]) assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code }), /The patch code has a/, code);
   for (const code of ["lda #0 ; }", 'lda #"{"', "!if X { nop }"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
+  // Code whose length the lines give is refused when it is longer than the range; other code is checked by the build of the switch.
+  assert.throws(
+    () => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code: "lda #$01\nlda #$02\nlda #$03\nlda #$04" }),
+    (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && error.message === "The patch code is at least 8 bytes, and the range $8a85-$8a87 has 3. Make the code shorter, or make the range larger.",
+  );
+  assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code: "!byte $ea, $ea\n!word $1234" }), /at least 4 bytes/);
+  for (const code of ["!fill 3, $ea", "nop\nasl a\nrts ; done", "jsr $1234", "+inc16 ptr\nlda #1\nlda #2", "loop lda #1\nlda #2"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
+  assert.deepEqual(["lda+2 $12", "!fill $10", "bne .skip\n.skip", "!text \"ab\""].map(leastPatchBytes), [3, 16, undefined, undefined]);
 
   removePatch(db, llm, { start: 0x807e });
   assert.throws(() => removePatch(db, llm, { start: 0x807e }), failsWith("not-found"));

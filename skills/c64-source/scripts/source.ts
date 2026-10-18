@@ -504,7 +504,6 @@ const NOT_EXECUTED_FILE = "not_executed.json";
 /** The line of each name and address in the source, for links from the documentation. */
 const SOURCE_MAP_FILE = "source-map.json";
 
-/** Removes the .asm files of an earlier run that this run does not write, and an earlier loader.prg and not_executed.json; other files stay. */
 /**
  * source-map.json: the line of each name and of each address that the
  * files write, after the mark line. One entry per line of the file, so a diff
@@ -517,19 +516,33 @@ function sourceMapText(rendered: Rendered, space: string, revision: string | nul
   return `${head},\n"labels": [\n${labels.join(",\n")}\n],\n"items": [\n${items.join(",\n")}\n]}\n`;
 }
 
-function removeOldFiles(out: string, keep: ReadonlySet<string>): void {
+/** The files of the loader. Only a run with --loader writes them, so only such a run removes them. */
+const LOADER_FILES: ReadonlySet<string> = new Set(["loader.asm", "loader.prg"]);
+
+/**
+ * Removes the generated .asm files of an earlier run that this run does not
+ * write, and an earlier not_executed.json and source-map.json. An earlier
+ * loader.asm and loader.prg stay unless this run has --loader: a source of the
+ * user can include loader.asm. Other files stay. Gives the names it removed.
+ */
+function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boolean): string[] {
   const directory = resolveProjectPath(out);
-  if (!existsSync(directory)) return;
+  if (!existsSync(directory)) return [];
+  const removed: string[] = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const name = entry.name;
     const path = join(directory, name);
-    if (name === "loader.prg" || name === NOT_EXECUTED_FILE || name === SOURCE_MAP_FILE) rmSync(path, { force: true });
-    else if (name.endsWith(".asm") && !keep.has(name) && readFileSync(path, "utf8").startsWith(GENERATED_MARK)) rmSync(path, { force: true });
+    if (LOADER_FILES.has(name) && !loaderRun) continue;
+    const old = name === "loader.prg" || name === NOT_EXECUTED_FILE || name === SOURCE_MAP_FILE || (name.endsWith(".asm") && !keep.has(name) && readFileSync(path, "utf8").startsWith(GENERATED_MARK));
+    if (!old) continue;
+    rmSync(path, { force: true });
+    removed.push(name);
   }
+  return removed;
 }
 
-async function generate(call: Call): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+async function generate(call: Call): Promise<{ output: Record<string, unknown>; failed: boolean; removed: string[] }> {
   const out = call.string("out")!;
   const entries = call.addresses("entry");
   const max = call.count("max-listed")!;
@@ -603,7 +616,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     files = marked([...rendered.files, ...loaderFiles]);
     built = await assembleFiles(files, "main.asm");
   }
-  removeOldFiles(out, new Set(files.map((file) => file.name)));
+  const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), loaderWanted).map((name) => `${out}/${name}`);
   const written: Written[] = files.map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
   written.push(writeReported(`${out}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.revision, files), { what: "--out" }));
   const showRange = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
@@ -671,21 +684,21 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   // The loader includes the source, so it is built only from a source that is identical to the image.
   const notBuilt = (reason: string) => (state === undefined ? {} : { loader: { verified: false, reason: loaderRefused ?? reason } });
   if (built.program === undefined) {
-    return { output: { ...output, check: { identical: false, diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS) }, ...notBuilt("The source does not assemble, and the loader includes it.") }, failed: true };
+    return { output: { ...output, check: { identical: false, diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS) }, ...notBuilt("The source does not assemble, and the loader includes it.") }, removed, failed: true };
   }
   const checked = check(built.program, built.start!, image);
   output.check = checked;
-  if (!checked.identical) return { output: { ...output, ...notBuilt("The source does not assemble to the image, and the loader includes it.") }, failed: true };
+  if (!checked.identical) return { output: { ...output, ...notBuilt("The source does not assemble to the image, and the loader includes it.") }, removed, failed: true };
   // Each switch on alone, against the default build; combinations are not built.
   const switches: SwitchCheck[] = [];
   for (const [name, patches] of switchesOf(laid)) switches.push(await checkSwitch(name, patches, files, { program: built.program, start: built.start! }, laid.names));
   if (switches.length > 0) output.switches = switches;
   const sourceFailed = laid.patchesNotWritten.length > 0 || switches.some((item) => item.result !== "fits");
-  if (loaderRefused !== undefined) return { output: { ...output, loader: { verified: false, reason: loaderRefused } }, failed: true };
-  if (loader === undefined || state === undefined) return { output, failed: missingEntry !== undefined || sourceFailed };
+  if (loaderRefused !== undefined) return { output: { ...output, loader: { verified: false, reason: loaderRefused } }, removed, failed: true };
+  if (loader === undefined || state === undefined) return { output, removed, failed: missingEntry !== undefined || sourceFailed };
 
   const loaderBuilt = await assembleFiles(files, "loader.asm");
-  if (loaderBuilt.program === undefined) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics.slice(0, MAX_DIAGNOSTICS) } }, failed: true };
+  if (loaderBuilt.program === undefined) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics.slice(0, MAX_DIAGNOSTICS) } }, removed, failed: true };
   const program = loaderBuilt.program;
   // The simulation: the loader in memory as it loads, then every copy in its order, byte by byte.
   const memory = new Int16Array(0x10000).fill(-1);
@@ -718,7 +731,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     // What the loader cannot set as it was at the entry.
     ...(loaderLimits(loader).length === 0 ? {} : { limits: loaderLimits(loader) }),
   };
-  return { output, failed: !ran.verified || sourceFailed };
+  return { output, removed, failed: !ran.verified || sourceFailed };
 }
 
 await runScript({
@@ -739,8 +752,11 @@ await runScript({
       },
       notes: "The program, its entry state and the coverage come from the knowledge: put them in with knowledge.ts image and coverage of the c64-knowledge skill. Code that no imported run executed is marked and listed, and <dir>/not_executed.json has all of its ranges. Without --analyzer-names, an address without a name gets a name of the source, for example l_17e2.",
       run: async (call) => {
-        const { output, failed } = await generate(call);
-        return { result: failed ? "FAIL" : "PASS", ...output };
+        const { output, failed, removed } = await generate(call);
+        // A file of an earlier run that this run removed and did not write again.
+        const written = new Set((output.files as Written[]).map((file) => file.out));
+        const gone = removed.filter((path) => !written.has(path));
+        return { result: failed ? "FAIL" : "PASS", ...output, ...(gone.length === 0 ? {} : { removed: gone }) };
       },
     },
   ],

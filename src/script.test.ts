@@ -238,7 +238,11 @@ test("an output path is refused before the command runs: in the knowledge, a fol
     };
     assert.match(error(["echo", "a", "--out", ".c64-re-tools/knowledge/symbols.jsonl"]), /^--out: \.c64-re-tools\/knowledge\/symbols\.jsonl is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the c64-knowledge skill writes it/);
     assert.match(error(["echo", "a", "--out", "./.C64-RE-TOOLS/Knowledge/new.jsonl"]), /is in \.c64-re-tools\/knowledge\//);
-    assert.match(error(["echo", "a", "--out", ".c64-re-tools/local/knowledge.db"]), /is in \.c64-re-tools\/local\/knowledge\.db, the knowledge/);
+    assert.equal(
+      error(["echo", "a", "--out", ".c64-re-tools/local/knowledge.db"]),
+      "--out: .c64-re-tools/local/knowledge.db is the index of the knowledge. Only the c64-knowledge skill writes it: a write there destroys the index. Give another file name, for example .c64-re-tools/local/<other name>.",
+    );
+    assert.match(error(["need", "--out", ".c64-re-tools/knowledge/pages"]), /, for example \.c64-re-tools\/local\/<folder>\.$/);
     assert.match(error(["need", "--out", ".c64-re-tools/knowledge"]), /is in \.c64-re-tools\/knowledge\//);
     assert.equal(error(["echo", "a", "--out", "results"]), "--out: results is a folder. Give the path of a file.");
     assert.equal(error(["need", "--out", "README.md"]), "--out: README.md is a file, but --out needs a folder. Give the path of a folder, or a new path for the folder.");

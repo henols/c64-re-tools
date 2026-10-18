@@ -31,7 +31,7 @@ node <skill>/scripts/source.ts generate --out src --loader
 
 | Option | Meaning |
 |---|---|
-| `--out src` | The directory for the source files. The script writes over the files that it generated before. |
+| `--out src` | The directory for the source files. The script writes over the files that it generated before. It removes a generated `.asm` file that this run does not write. A run without `--loader` keeps `loader.asm` and `loader.prg` of an earlier run. |
 | `--entry '$080d'` | An entry point for Ghidra. Use it again for more entry points. The entry of the program, the routines and the code regions in the knowledge are entry points too. |
 | `--analyzer-names` | Name an address that has no symbol and no platform name with its analyzer name, for example `FUN_17e2`. The order is heuristic, Ghidra, then DXA. Without it, the source makes its own names, for example `l_17e2`. |
 | `--space drive8` | Generate the source of drive code or a cartridge bank from the knowledge of that space. The coverage, `--loader` and the platform names are only for `c64`. |
@@ -143,6 +143,7 @@ Do not store:
 
 - `result`: `PASS` when every check passes, else `FAIL`.
 - `files`: the files that the script wrote in `--out`, each with `out`, `bytes` and `sha256`. `sourceMap` names `source-map.json`.
+- `removed`: the files of an earlier run that the script removed from `--out` and did not write again.
 - `instructions`, `dataBytes` and `undecodedBytes`.
 - `labels`: `named` labels from the knowledge and `generated` labels `l_xxxx`.
 - `entriesInData`: each `--entry` in a data region of the knowledge, with the `region` and its `origin`. Ghidra does not decode an entry in a data region.

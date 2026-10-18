@@ -237,6 +237,7 @@ A patch is ACME code that replaces a range of the program when the build defines
 - A switch name is upper case, for example `CRACK` or `TRAINER`. It cannot be the name of a symbol or a platform name.
 - Many patches can have the same switch. The c64-source skill builds each switch on its own. It does not build two switches together.
 - The code must fit in the range. NOP ($EA) fills the bytes after the code. `--nop` gives a range of NOP only.
+- `patch` refuses code that is longer than the range when each line is a 6510 instruction, `!byte`, `!word`, `!fill` or a comment. `patch` does not check the length of other code, for example code with a label or a macro. It does not assemble the code. `generate` of the c64-source skill builds each switch and does these checks. `switches[].result` is `overflow` for code that is longer than its range, and `does not assemble` for code that ACME refuses.
 - `--code` gives the code as text. `--code-file` reads the code from a project file. The code can use the labels and the macros of the source, and local labels with a dot, for example `.skip`.
 - The braces in the code must be pairs, because the source puts the code inside `{ }`.
 - A patch cannot overlap another patch or a macro use. A patch with the same start and the same switch replaces the patch. A patch of another switch at the same start gives the error `conflict`.

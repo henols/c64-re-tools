@@ -54,15 +54,18 @@ test("the script writes the program into the project and reports symbols", { ski
   assert.equal(json.unusedConstants, 1);
 });
 
-test("--max-listed limits the symbols in the result, and --out-symbols writes all of them", { skip: acmeSkip }, async () => {
+test("--max-listed limits the symbols in the result, and --out-symbols writes the whole list, without the unused constants", { skip: acmeSkip }, async () => {
   const { status, json } = await assembleScript("build", "src", "main.a", "--include", "lib", "--out", "build/counter.prg", "--max-listed", "1", "--out-symbols", "build/counter.json");
   assert.equal(status, 0, JSON.stringify(json));
   const symbols = json.symbols as { count: number; listed: unknown[]; rest: string };
   assert.equal(symbols.listed.length, 1);
   assert.ok(symbols.count > 1);
-  assert.equal(symbols.rest, "a larger --max-listed, or --out-symbols <file.json> for all symbols");
+  assert.equal(symbols.rest, "a larger --max-listed, or --out-symbols <file.json> for the whole list");
   const file = JSON.parse(readFileSync(join(project, "build", "counter.json"), "utf8")) as { symbols: Array<{ name: string }> };
   assert.equal(file.symbols.length, symbols.count);
+  assert.equal(file.symbols.find((symbol) => symbol.name === "UNUSED_CONSTANT"), undefined, "the file has no unused constant without --all-symbols");
+  const help = await assembleScript("build", "--help");
+  assert.match(String(help.json.text), /--out-symbols <file\.json> +write the listed symbols .* Without --all-symbols, the file does not have the constants that the source does not use/);
   assert.equal((json.symbolsFile as { out: string }).out, "build/counter.json");
 });
 

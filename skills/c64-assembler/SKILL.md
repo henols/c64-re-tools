@@ -35,7 +35,7 @@ node <skill>/scripts/assembler.ts build src main.a --out build/game.prg
 | `--plain` | Write only the bytes of the program, without the 2-byte load address of a PRG. `loadRange` still tells where the bytes go. |
 | `--all-symbols` | List all symbols. Without it, the list does not include the constants that the source does not use. `unusedConstants` gives their count. |
 | `--max-listed 200` | Show at most 200 symbols in the result. The default is 50. `symbols.count` gives the count of all symbols. |
-| `--out-symbols build/game.json` | Write all symbols to this file as `{"symbols": [...]}`. Give this file to the c64-testing skill as the symbols of the rebuild. |
+| `--out-symbols build/game.json` | Write the symbols to this file as `{"symbols": [...]}`. Without `--all-symbols`, the file does not have the constants that the source does not use. Give this file to the c64-testing skill as the symbols of the rebuild. |
 
 The script copies the full source root. Put all files that the program includes under it. Version control directories stay out.
 

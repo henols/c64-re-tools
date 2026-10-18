@@ -251,9 +251,13 @@ export function checkOutputPath(path: string, kind: OutputKind, options: { root?
   };
   const inKnowledge = (fromRoot: string) => {
     const part = knowledgePart(fromRoot);
-    if (part !== undefined) {
-      throw new Refusal("invalid-input", `${what === undefined ? "" : `${what}: `}${path} is in ${part}, the knowledge of the project. Only the c64-knowledge skill writes it: a write there destroys the knowledge. Give a path outside ${PROJECT_DIRECTORY}/${KNOWLEDGE_TEXT_DIRECTORY}/, for example ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/<file>.`);
+    if (part === undefined) return;
+    const prefix = `${what === undefined ? "" : `${what}: `}${path}`;
+    // The index is one file in the folder for local files: another name in that folder is good.
+    if (!part.endsWith("/")) {
+      throw new Refusal("invalid-input", `${prefix} is the index of the knowledge${path === part ? "" : ` (${part})`}. Only the c64-knowledge skill writes it: a write there destroys the index. Give another file name, for example ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/<other name>.`);
     }
+    throw new Refusal("invalid-input", `${prefix} is in ${part}, the knowledge of the project. Only the c64-knowledge skill writes it: a write there destroys the knowledge. Give a path outside ${part}, for example ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/<${kind === "folder" ? "folder" : "file"}>.`);
   };
   let target: string;
   try {

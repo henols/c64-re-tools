@@ -141,6 +141,41 @@ test("a generated name that Ghidra gives to two functions gets each function's a
   );
 });
 
+test("a (zp),y or (zp,x) instruction keeps only its reference to the pointer, never a computed target", () => {
+  const findings = ghidraFindings({
+    coverage: [{ start: 0x26ce, end: 0x26d9 }],
+    functions: [],
+    regions: [],
+    references: [
+      { from: 0x26ce, to: 0x000e, type: "read" },
+      { from: 0x26ce, to: 0x0403, type: "write" },
+      { from: 0x26ce, to: 0x0404, type: "write" },
+      { from: 0x26d0, to: 0x00fc, type: "read" },
+      { from: 0x26d0, to: 0x1234, type: "read" },
+      { from: 0x26d2, to: 0x00fb, type: "read" },
+      { from: 0x26d2, to: 0x0400, type: "read" },
+      { from: 0x26d4, to: 0x0403, type: "write" },
+      { from: 0x26d7, to: 0x00fb, type: "write" },
+    ],
+    decompilations: [],
+    instructions: [
+      { address: 0x26ce, bytes: "910e", mnemonic: "sta", operands: "(0x0e),Y", flows: [] },
+      { address: 0x26d0, bytes: "a1fb", mnemonic: "lda", operands: "(0xfb,X)", flows: [] },
+      { address: 0x26d2, bytes: "b3fb", mnemonic: "lax", operands: "(0xfb),Y", flows: [] },
+      { address: 0x26d4, bytes: "8d0304", mnemonic: "sta", operands: "0x0403", flows: [] },
+      { address: 0x26d7, bytes: "85fb", mnemonic: "sta", operands: "0xfb", flows: [] },
+    ],
+    completeness: { functions: true, regions: true, references: true },
+  });
+  assert.deepEqual(findings.references, [
+    { from: 0x26ce, to: 0x000e, kind: "read" },
+    { from: 0x26d0, to: 0x00fc, kind: "read" },
+    { from: 0x26d2, to: 0x00fb, kind: "read" },
+    { from: 0x26d4, to: 0x0403, kind: "write" },
+    { from: 0x26d7, to: 0x00fb, kind: "write" },
+  ]);
+});
+
 test("an echoed seed stays with its semantic owner, and a code/data disagreement is reported", () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-echo-"));
   const own = openForWrite(project);

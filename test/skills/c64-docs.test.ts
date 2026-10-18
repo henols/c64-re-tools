@@ -279,6 +279,11 @@ test("docs.ts link takes the entry page in the project folder beside the docs di
   assert.deepEqual(linked.json.linked, { links: 2, pages: ["README.md", "docs/notes.md"] });
   assert.equal(readFileSync(join(root, "README.md"), "utf8"), "[`main`](src/main_code.asm#L5) [`$1000`](docs/reference/modules/main_code.md#main), see [notes](docs/notes.md).\n");
   assert.equal(link(root, "README.md", "docs", "README.md", "--source", "src", "--check").status, 0);
+  // A page given as a file finds the reference folder beside it.
+  const page = link(root, "docs/notes.md", "--source", "src", "--check");
+  assert.equal(page.status, 0);
+  assert.equal(page.json.reference, "docs/reference", "the reference beside the page");
+  assert.match(link(root, "README.md", "--source", "src", "--check").json.reference as string, /^none: .*Give --reference <dir>/);
   writeFileSync(join(root, "notes.txt"), "text\n");
   assert.equal(link(root, "notes.txt", "--source", "src").status, 2);
   assert.equal(link(root, "MISSING.md", "--source", "src").status, 2);

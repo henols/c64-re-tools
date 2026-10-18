@@ -38,7 +38,7 @@ node <skill>/scripts/docs.ts link README.md docs --source src --check
 | `--source src` | `docs.ts link`: the source directory of c64-source. The command reads `src/source-map.json`. |
 | `--out docs/reference` | The directory of the reference. `docs.ts generate` writes only there. It refuses to start when the directory holds a page that it did not write. |
 | `README.md docs` | The pages of the documentation: `.md` files and directories. `docs.ts link` reads each file and every `.md` file below each directory. It changes only the pages that you wrote. It checks the pages of the reference. |
-| `--reference <dir>` | The directory of the reference for `docs.ts link`. The default is the `reference` directory of the first directory that has one, for example `docs/reference`. |
+| `--reference <dir>` | The directory of the reference for `docs.ts link`. The default is the first `reference` directory in a given directory or beside a given page, for example `docs/reference`. |
 | `--check` | `docs.ts link` writes nothing. `result` is `FAIL` when a link is not up to date or a page has a problem. |
 | `--max-listed 20` | List at most this number of items in each list. The default is 50. |
 

@@ -69,11 +69,13 @@ await runScript({
         { name: "<register>", help: "the register, as an address or a platform name: $0001, $d011 (SCROLY), $d016, $d018, $d010, $d015-$d01f, $dc0d, $dd00 or $dd0d" },
         { name: "<value>", help: "the value of the register: $ and hex, decimal, or % and binary, 0 to 255" },
       ],
-      options: { bank: { kind: "number", value: "<value>", help: "the value of $dd00, for the VIC-II bank of a $d018 value", max: 0xff } },
+      options: { bank: { kind: "number", value: "<value>", help: "the value of $dd00, for the VIC-II bank of a $d018 value. Only for $d018", max: 0xff } },
       run: (call) => {
         const register = call.parseAddress(call.subject(0), "<register>");
         const value = call.parseNumber(call.subject(1), "<value>", 0, 0xff);
-        return { register: formatC64Address(register), value: formatC64Byte(value), name: lookup(register).name, ...decode(register, value, call.count("bank")) };
+        const bank = call.count("bank");
+        if (bank !== undefined && register !== 0xd018) throw new UsageError(`--bank works only with $d018 (VMCSB), not with ${formatC64Address(register)}. Remove --bank`);
+        return { register: formatC64Address(register), value: formatC64Byte(value), name: lookup(register).name, ...decode(register, value, bank) };
       },
     },
     {

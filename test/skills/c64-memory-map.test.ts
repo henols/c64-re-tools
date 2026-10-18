@@ -125,6 +125,11 @@ test("the script answers in JSON and refuses bad input", () => {
   const bad = spawnSync(process.execPath, [...process.execArgv, script, "decode", "$d020", "1"], { encoding: "utf8" });
   assert.equal(bad.status, 2);
   assert.equal((JSON.parse(bad.stdout) as { error: { code: string } }).error.code, "invalid-input");
+  // --bank is only for $d018: another register refuses it, and does not ignore it.
+  const bank = spawnSync(process.execPath, [...process.execArgv, script, "decode", "$d011", "$1b", "--bank", "$97"], { encoding: "utf8" });
+  assert.equal(bank.status, 2, bank.stdout);
+  assert.match((JSON.parse(bank.stdout) as { error: { message: string } }).error.message, /^--bank works only with \$d018 \(VMCSB\), not with \$d011\. Remove --bank/);
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "decode", "VMCSB", "$15", "--bank", "$97"], { encoding: "utf8" }).status, 0);
 });
 
 test("every address in $d000-$dfff says that it is visible only while $01 maps I/O in", () => {

@@ -169,7 +169,9 @@ function link(call: Call): Record<string, unknown> {
   const directories = given.filter((path) => !path.endsWith(".md") || isDirectory(path));
   const map = readSourceMap(call.string("source")!);
   const givenReference = call.string("reference");
-  const reference = givenReference === undefined ? directories.map((path) => posix.join(path, "reference")).find((path) => isDirectory(path)) : posix.normalize(givenReference);
+  // The default reference: the reference/ folder in a given folder, or beside a given page.
+  const besides = given.map((path) => (directories.includes(path) ? path : posix.dirname(path)));
+  const reference = givenReference === undefined ? besides.map((path) => posix.join(path, "reference")).find((path) => isDirectory(path)) : posix.normalize(givenReference);
   const problems: Problem[] = [];
   const db = openForRead();
   let symbols;
@@ -279,7 +281,7 @@ function link(call: Call): Record<string, unknown> {
   for (const problem of problems) byKind[problem.kind] = (byKind[problem.kind] ?? 0) + 1;
   const output: Record<string, unknown> = {
     pages: pages.length,
-    ...(reference === undefined ? { reference: "none: run docs.ts generate for links to the entries" } : { reference }),
+    ...(reference === undefined ? { reference: "none: no reference/ folder is in or beside the given pages. Give --reference <dir>, or run docs.ts generate for links to the entries" } : { reference }),
     ...(check ? { notUpToDate: { links, pages: changedPages } } : { linked: { links, pages: changedPages } }),
     problems: { byKind, ...listed(problems, call.count("max-listed")!, (problem) => ({ at: `${problem.page}:${problem.line}`, kind: problem.kind, message: problem.message })) },
   };
@@ -312,7 +314,7 @@ await runScript({
       subjects: [{ name: "<page>", help: ".md files and folders of the documentation, relative to the project folder, for example README.md docs. link reads each file and every .md file below each folder", list: true }],
       options: {
         source: { ...SOURCE, required: true },
-        reference: { kind: "path", value: "<dir>", help: "the reference pages of docs.ts generate. The default is the reference/ folder of the first folder that has one" },
+        reference: { kind: "path", value: "<dir>", help: "the reference pages of docs.ts generate. The default is the first reference/ folder in a given folder or beside a given page" },
         check: { kind: "flag", help: "write nothing. FAIL when a link is not up to date or a page has a problem" },
         "max-listed": OPTIONS["max-listed"],
       },

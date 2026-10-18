@@ -48,7 +48,28 @@ export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoint
 }
 
 /**
- * Ghidra's result as normalized findings. A function named by an echoed seed
+ * The 6510 opcodes with a low nibble of 1 or 3 use (zp,x) or (zp),y, also the
+ * undocumented ones. Ghidra gives such an instruction a reference to the target
+ * that it computes from the pointer value at the entry state: a guess, because
+ * the program sets the pointer at run time. Only the reference to the pointer
+ * itself (zp or zp+1) is a fact.
+ */
+function guessedIndirectTarget(instructions: GhidraResult["instructions"]): (reference: { from: number; to: number }) => boolean {
+  const pointers = new Map<number, number>();
+  for (const instruction of instructions) {
+    const opcode = Number.parseInt(instruction.bytes.slice(0, 2), 16);
+    if (instruction.bytes.length === 4 && ((opcode & 0x0f) === 0x01 || (opcode & 0x0f) === 0x03)) pointers.set(instruction.address, Number.parseInt(instruction.bytes.slice(2, 4), 16));
+  }
+  return (reference) => {
+    const pointer = pointers.get(reference.from);
+    return pointer !== undefined && reference.to !== pointer && reference.to !== ((pointer + 1) & 0xff);
+  };
+}
+
+/**
+ * Ghidra's result as normalized findings. A reference from a (zp,x) or (zp),y
+ * instruction to a computed target is not a finding (see guessedIndirectTarget).
+ * A function named by an echoed seed
  * stays in the snapshot: its address holds the seed's semantic symbol, which
  * the importer never replaces, so the name keeps its owner,
  * and a code/data disagreement with that symbol is still reported.
@@ -64,6 +85,7 @@ export function ghidraFindings(result: GhidraResult): NormalizedFindings {
   // A function that branches and jumps reach, and no call, is a place in a routine: a label.
   const called = new Set(result.references.filter((reference) => reference.type === "call").map((reference) => reference.to));
   const jumped = new Set(result.references.filter((reference) => reference.type === "jump").map((reference) => reference.to));
+  const guessed = guessedIndirectTarget(result.instructions);
   const kindOf = (fn: GhidraResult["functions"][number]) => (jumped.has(fn.entry) && !called.has(fn.entry) ? ("label" as const) : ("routine" as const));
   return {
     analyzer: "ghidra",
@@ -71,7 +93,7 @@ export function ghidraFindings(result: GhidraResult): NormalizedFindings {
     authoritative: { symbols: result.completeness.functions, regions: result.completeness.regions, references: result.completeness.references },
     symbols: result.functions.map((fn) => ({ address: fn.entry, name: nameOf(fn), kind: kindOf(fn) })),
     regions: result.regions.map((region) => ({ start: region.start, end: region.end, type: region.classification === "code" ? ("code" as const) : ("bytes" as const) })),
-    references: result.references.map((reference) => ({ from: reference.from, to: reference.to, kind: reference.type })),
+    references: result.references.filter((reference) => !guessed(reference)).map((reference) => ({ from: reference.from, to: reference.to, kind: reference.type })),
   };
 }
 

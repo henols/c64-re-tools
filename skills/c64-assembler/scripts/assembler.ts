@@ -54,7 +54,7 @@ await runScript({
         plain: { kind: "flag", help: "write the bytes only, without the 2-byte load address of a PRG" },
         "all-symbols": { kind: "flag", help: "list also the constants that the source does not use" },
         "max-listed": { ...OPTIONS["max-listed"], help: "list at most n symbols (default 50). The count is always given" },
-        "out-symbols": { kind: "path", output: "file", value: "<file.json>", help: "write all symbols to this project file as {\"symbols\": [...]}: the names of the rebuild for c64-testing" },
+        "out-symbols": { kind: "path", output: "file", value: "<file.json>", help: "write the listed symbols to this project file as {\"symbols\": [...]}: the names of the rebuild for c64-testing. Without --all-symbols, the file does not have the constants that the source does not use" },
       },
       notes: "Symbol values are $ and at least four hex digits. Put the program into the knowledge with knowledge.ts image of the c64-knowledge skill before --compare.",
       run: async (call) => {
@@ -101,7 +101,7 @@ await runScript({
           ...written,
           ...(plain ? { plain: true } : {}),
           loadRange: { start: formatC64Address(range.start), end: formatC64Address(range.end), bytes: range.bytes },
-          symbols: listedItems(shown, call.count("max-listed")!, showSymbol, "a larger --max-listed, or --out-symbols <file.json> for all symbols"),
+          symbols: listedItems(shown, call.count("max-listed")!, showSymbol, "a larger --max-listed, or --out-symbols <file.json> for the whole list"),
           ...(symbolsPath === undefined ? {} : { symbolsFile: writeReported(symbolsPath, `${JSON.stringify({ symbols: shown.map(showSymbol) }, null, 1)}\n`, { what: "--out-symbols" }) }),
           ...(all ? {} : { unusedConstants: result.symbols!.length - shown.length }),
           diagnostics: result.diagnostics,
