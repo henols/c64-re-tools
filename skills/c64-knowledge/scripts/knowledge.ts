@@ -328,6 +328,9 @@ function shownPrevious(row: NonNullable<BatchStep["previous"]>) {
   if ("switch" in row) return patch(row);
   if ("body" in row) return macro(row);
   if ("macro" in row) return macroUse(row);
+  if ("placement" in row) return comment(row);
+  if ("from" in row) return reference(row);
+  if ("file" in row) return module(row);
   return symbol(row);
 }
 
@@ -659,10 +662,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
     (call) => {
       const context = contextOf(call);
       const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>"), placement: oneOf(COMMENT_PLACEMENTS, call.subject(1), "<placement>"), text: call.rest(2).join(" ") };
-      return (db) => {
-        const result = setComment(db, context, request);
-        return { revision: result.revision, comment: comment(result.current) };
-      };
+      return (db) => shown(setComment(db, context, request), "comment", comment);
     },
   ),
   writeCommand({ name: "uncomment", summary: "Removes a comment.", subjects: [ADDRESS, { name: "<placement>", help: `one of ${COMMENT_PLACEMENTS.join(", ")}` }] }, (call) => {
@@ -681,10 +681,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
         const context = contextOf(call);
         const request = { space: call.space, from: call.parseAddress(call.subject(0), "<from>"), to: call.parseAddress(call.subject(1), "<to>"), kind: oneOf(REFERENCE_KINDS, call.subject(2), "<kind>") };
         return name === "reference"
-          ? (db) => {
-              const result = addReference(db, context, request);
-              return { revision: result.revision, reference: reference(result.current) };
-            }
+          ? (db) => shown(addReference(db, context, request), "reference", reference)
           : (db) => ({ revision: removeReference(db, context, request).revision });
       },
     ),
@@ -695,10 +692,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       const context = contextOf(call);
       const title = call.string("title");
       const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>"), file: call.subject(1), ...(title === undefined ? {} : { title }) };
-      return (db) => {
-        const result = setModule(db, context, request);
-        return { revision: result.revision, module: module(result.current) };
-      };
+      return (db) => shown(setModule(db, context, request), "module", module);
     },
   ),
   writeCommand({ name: "unmodule", summary: "Removes the module that starts at an address.", subjects: [START] }, (call) => {

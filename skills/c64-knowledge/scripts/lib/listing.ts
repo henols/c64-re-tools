@@ -68,7 +68,14 @@ export function listing(source: ListingSource, start: number, end: number): List
     const bytes = Array.from({ length }, (_, offset) => source.byteAt(address + offset)!.toString(16).padStart(2, "0")).join(" ");
     const label = source.nameOf(address);
     const second = source.secondNames(address).filter((name) => name !== label);
-    const { line: lineComments, side } = source.comments(address);
+    const { line: lineComments, side: own } = source.comments(address);
+    // A comment inside the line (knowledge of an older version) shows with its address, as in the source of c64-source.
+    const inner: string[] = [];
+    for (let offset = 1; offset < length; offset++) {
+      const found = source.comments(address + offset);
+      for (const text of [...found.line, ...(found.side === undefined ? [] : [found.side])]) inner.push(`${formatC64Address(address + offset)}: ${text}`);
+    }
+    const side = own === undefined && inner.length === 0 ? undefined : [...(own === undefined ? [] : [own]), ...inner].join(" ");
     const references = source.references(address);
     const access = accessOf(source.coverage, address, length);
     return {

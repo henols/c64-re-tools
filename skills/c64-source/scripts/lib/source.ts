@@ -34,6 +34,8 @@ export interface SourceInput {
   coverage?: Uint8Array;
   /** Platform names: the name of an address that knowledge does not name, the last address of its entry, and what it is. */
   platform?: ReadonlyArray<{ address: number; end: number; name: string; meaning?: string }>;
+  /** The platform names that `platform` leaves out, because the program does not use their ROM: the reason of an expression that names one tells it. */
+  platformLeftOut?: ReadonlySet<string>;
   /** The platform area of an address, and the register that an I/O mirror repeats: constants.asm groups and describes its names with them. */
   describe?: (address: number) => { area: Area; mirrorOf?: number };
   /** What a value in a platform register means (c64-memory-map): an immediate stored to such a register gets it as a side comment. Throws for a register without a decoder. */
@@ -355,6 +357,17 @@ export function layout(input: SourceInput): Layout {
   for (const row of input.platform ?? []) if (!byName.has(row.name)) byName.set(row.name, row.address);
   for (const symbol of input.symbols) byName.set(symbol.name, symbol.address);
   const instructionAt = new Map(pieces.flatMap((piece) => piece.items.flatMap((item) => (item.kind === "instruction" ? [[item.address, item] as const] : []))));
+  /** Why names of an expression are not names of the source: not known, or platform names of a ROM that the program does not use. */
+  const unknownNames = (missing: readonly string[], remedy: string) => {
+    const leftOut = missing.filter((name) => input.platformLeftOut?.has(name) === true);
+    const unknown = missing.filter((name) => !leftOut.includes(name));
+    const are = (names: readonly string[]) => `${names.join(", ")} ${names.length === 1 ? "is" : "are"}`;
+    return [
+      ...(unknown.length === 0 ? [] : [`${are(unknown)} not a symbol of the knowledge or a platform name.`]),
+      ...(leftOut.length === 0 ? [] : [`${are(leftOut)} a platform name of a ROM that the program does not use, so the source leaves ${leftOut.length === 1 ? "it" : "them"} out (romNamesLeftOut).`]),
+      remedy,
+    ].join(" ");
+  };
   // A macro use is a run of whole instructions of one file, of a macro with one param for each arg, whose args name known names.
   const macrosByName = new Map((input.macros ?? []).map((macro) => [macro.name, macro]));
   const macrosAsInstructions: MacroAsInstructions[] = [];
@@ -384,7 +397,7 @@ export function layout(input: SourceInput): Layout {
     }
     const missing = [...new Set(use.args.flatMap((arg) => identifiers(arg)))].filter((name) => !byName.has(name));
     if (missing.length > 0) {
-      fallBack(`${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not a symbol of the knowledge or a platform name. Name the address with knowledge.ts rename, or give other args with knowledge.ts use.`);
+      fallBack(unknownNames(missing, "Name the address with knowledge.ts rename, or give other args with knowledge.ts use."));
       continue;
     }
     candidates.push({ use, items: run as InstructionItem[] });
@@ -403,7 +416,7 @@ export function layout(input: SourceInput): Layout {
     }
     const missing = identifiers(expression).filter((name) => !byName.has(name));
     if (missing.length > 0) {
-      operandsAsNumbers.push({ address: operand.address, expression, reason: `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not a symbol of the knowledge or a platform name. Name the address with knowledge.ts rename, or write the operand again with knowledge.ts operand.` });
+      operandsAsNumbers.push({ address: operand.address, expression, reason: unknownNames(missing, "Name the address with knowledge.ts rename, or write the operand again with knowledge.ts operand.") });
       continue;
     }
     // An immediate operand builds the address of a name; any other operand uses the address as the instruction does.
@@ -1020,8 +1033,9 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
             out.push(`${label} = * + ${offset}`);
             result.labels.push({ address: inside, name: label, file: piece.file, line: out.length });
           }
-          for (const text of lineComments.get(inside) ?? []) sides.push(text);
-          if (sideComments.has(inside)) sides.push(sideComments.get(inside)!);
+          // A comment at an operand byte (knowledge of an older version) shows with its address, as in the listing of c64-knowledge.
+          for (const text of lineComments.get(inside) ?? []) sides.push(`${formatC64Address(inside)}: ${text}`);
+          if (sideComments.has(inside)) sides.push(`${formatC64Address(inside)}: ${sideComments.get(inside)!}`);
         }
         const form = formOf(layout, item);
         const { mode } = OPCODES[item.opcode]!;

@@ -62,7 +62,7 @@ import {
   type SuppressionRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, MACRO_NAME, MACRO_PARAM, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName } from "./text.ts";
 
 /** What a change rests on: a coverage run, a test or another project file with its SHA-256, or a note. */
@@ -353,6 +353,27 @@ const result = <T, P>(written: { revision: string | null; current: Step<T, P> })
 // Each write has a check, which refuses bad input before anything opens, and a
 // step, which runs inside a change. A single write and a batch share both.
 
+/**
+ * True when a write of `origin` over a current row with the same content
+ * records a decision, so it replaces the row: over a row of an analyzer (the
+ * next run of the analyzer can retire its own rows, never a decision), and the
+ * user over the LLM. The LLM over the user changes nothing.
+ */
+function confirms(existing: Origin, origin: Origin): boolean {
+  return existing !== origin && (!isSemantic(existing) || origin === "user");
+}
+
+/**
+ * The bytes of the program of a space in the knowledge, by address: undefined
+ * outside it. A module and a comment are checked against them.
+ */
+function programBytes(db: DatabaseSync, space: Space): (address: number) => number | undefined {
+  const rows = db.prepare("SELECT address, bytes FROM current_memory WHERE space = ?").all(space) as Array<{ address: number; bytes: string }>;
+  const memory = new Map<number, number>();
+  for (const row of rows) Buffer.from(row.bytes, "hex").forEach((byte, offset) => memory.set(row.address + offset, byte));
+  return (address) => memory.get(address);
+}
+
 /** Every request names its space; without one it is the C64. */
 type InSpace = { space?: Space };
 type SymbolRequest = InSpace & { address: number; name: string; kind?: SymbolKind };
@@ -381,7 +402,7 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
   const space = spaceOf(request);
   const existing = symbolAt(db, request.address, space);
   const kind = request.kind ?? existing?.kind ?? "label";
-  if (existing !== undefined && existing.name === request.name && existing.kind === kind) return { current: existing };
+  if (existing !== undefined && existing.name === request.name && existing.kind === kind && !confirms(existing.origin, origin)) return { current: existing };
   const owner = symbolNamed(db, request.name, space);
   if (owner !== undefined && owner.address !== request.address) {
     throw new Refusal("conflict", `The name ${request.name} already belongs to ${formatC64Address(owner.address)}. Rename or remove that symbol first.`);
@@ -459,7 +480,7 @@ function classifyStep(db: DatabaseSync, change: Change, origin: Origin, request:
   const overlapping = regionsOverlapping(db, request.start, request.end, space);
   const [only] = overlapping;
   const same = overlapping.length === 1 && only!.start === request.start && only!.end === request.end && only!.type === request.type && only!.element === request.element;
-  if (same) return { current: overlapping };
+  if (same && !confirms(only!.origin, origin)) return { current: overlapping };
   clearRange(db, change, request.start, request.end, space);
   change.insertRegion({ space, start: request.start, end: request.end, type: request.type, ...(request.element === undefined ? {} : { element: request.element }), origin });
   liftRegionSuppressions(db, change, request.start, request.end, space);
@@ -490,14 +511,17 @@ function checkComment(request: CommentRequest): string {
   return text;
 }
 
-function commentStep(db: DatabaseSync, change: Change, origin: Origin, request: CommentRequest): Step<CommentRow> {
+function commentStep(db: DatabaseSync, change: Change, origin: Origin, request: CommentRequest): Step<CommentRow, CommentRow> {
   const space = spaceOf(request);
   const text = request.text.trim();
   const existing = commentsAt(db, request.address, space).find((comment) => comment.placement === request.placement);
-  if (existing?.text === text) return { current: existing };
+  if (existing?.text === text && !confirms(existing.origin, origin)) return { current: existing };
+  // A comment belongs to an instruction: the listing and the source show it at the start of the instruction only.
+  checkInstructionStart(db, space, programBytes(db, space), request.address, "comment");
   if (existing !== undefined) change.close("comments", "space = ? AND address = ? AND placement = ?", space, request.address, request.placement);
   change.insertComment({ space, address: request.address, placement: request.placement, text, origin });
-  return { current: commentsAt(db, request.address, space).find((comment) => comment.placement === request.placement)! };
+  const current = commentsAt(db, request.address, space).find((comment) => comment.placement === request.placement)!;
+  return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
 function checkPlacement(request: PlacementRequest): void {
@@ -523,14 +547,16 @@ function checkReference(request: ReferenceRequest): void {
   if (request.kind === POINTER_KIND) throw new Refusal("invalid-input", "Only an operand expression writes a pointer reference: use operand and unoperand.");
 }
 
-function referenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<ReferenceRow> {
+function referenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<ReferenceRow, ReferenceRow> {
   const space = spaceOf(request);
   const find = () => referencesFrom(db, request.from, space).find((reference) => reference.to === request.to && reference.kind === request.kind);
   const existing = find();
-  if (existing !== undefined) return { current: existing };
+  if (existing !== undefined && !confirms(existing.origin, origin)) return { current: existing };
+  // A confirmation of a reference of an analyzer makes it a reference of the writer: the next run of the analyzer keeps it.
+  if (existing !== undefined) change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.from, request.to, request.kind);
   change.insertReference({ space, from: request.from, to: request.to, kind: request.kind, origin });
   change.close("suppressions", "space = ? AND entity = 'reference' AND start_address = ? AND to_address = ? AND kind = ?", space, request.from, request.to, request.kind);
-  return { current: find()! };
+  return existing !== undefined ? { current: find()!, previous: existing } : { current: find()! };
 }
 
 function unreferenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<null> {
@@ -581,26 +607,32 @@ const shown = (value: number, size: number) => (value < 0 ? String(value) : `$${
 /**
  * Refuses an address that is not the start of an instruction. The code
  * regions of the knowledge give the instructions: they are decoded from the
- * start of the region, as the listing and the source decode them.
+ * start of the region, as the listing and the source decode them. An operand
+ * expression needs an instruction, so it is refused also outside the code
+ * regions and where the program has no byte. A module and a comment are
+ * refused only at an operand byte of a known instruction: they can start data.
  */
-function checkInstructionStart(db: DatabaseSync, space: Space, image: OperandImage, address: number): void {
+function checkInstructionStart(db: DatabaseSync, space: Space, byteAt: (address: number) => number | undefined, address: number, write: "operand" | "module" | "comment"): void {
   const where = formatC64Address(address);
   const code = regionsOverlapping(db, address, address, space).find((region) => CODE_REGION_TYPES.includes(region.type));
   if (code === undefined) {
+    if (write !== "operand") return;
     throw new Refusal("invalid-input", `${where} is in no code region, so the knowledge does not know an instruction that starts there. Classify the code that holds the instruction first (classify <range> code), then write the operand.`);
   }
   let start = code.start;
   let next = code.start;
   while (next < address) {
-    const opcode = image.byteAt(next);
+    const opcode = byteAt(next);
     if (opcode === undefined) {
+      if (write !== "operand") return;
       throw new Refusal("invalid-input", `The code region ${formatC64Address(code.start)}-${formatC64Address(code.end)} has no program byte at ${formatC64Address(next)}, so its instructions up to ${where} are not known. Correct the region (classify), then write the operand.`);
     }
     start = next;
     next += instructionLength(opcode);
   }
   if (next !== address) {
-    throw new Refusal("invalid-input", `${where} is not the start of an instruction. It is an operand byte of the instruction at ${formatC64Address(start)}, decoded from the start of the code region at ${formatC64Address(code.start)}. Give ${formatC64Address(start)}.`);
+    const what = write === "operand" ? "" : ` A ${write} is at the start of an instruction, as the listing and the source show it.`;
+    throw new Refusal("invalid-input", `${where} is not the start of an instruction. It is an operand byte of the instruction at ${formatC64Address(start)}, decoded from the start of the code region at ${formatC64Address(code.start)}.${what} Give ${formatC64Address(start)}.`);
   }
 }
 
@@ -613,7 +645,7 @@ function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, 
   const where = formatC64Address(request.address);
   const opcode = image.byteAt(request.address);
   if (opcode === undefined) throw new Refusal("invalid-input", `${where} is outside the image.`);
-  checkInstructionStart(db, space, image, request.address);
+  checkInstructionStart(db, space, (at) => image.byteAt(at), request.address, "operand");
   const length = instructionLength(opcode);
   if (length === 1) throw new Refusal("invalid-input", `The instruction at ${where} (opcode ${shown(opcode, 0x100)}) has no operand.`);
   if ((opcode & 0x1f) === 0x10) throw new Refusal("invalid-input", `The instruction at ${where} is a branch: its operand is a distance, not a value.`);
@@ -646,10 +678,10 @@ function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & 
   if (request.expression !== undefined) wanted.expression = request.expression.trim();
   const targets = new Set(checkOperandValue(db, space, context.image, request, operandText(wanted)));
   const existing = operandAt(db, request.address, space);
-  if (existing !== undefined && existing.select === wanted.select && existing.symbol === wanted.symbol && existing.offset === wanted.offset && existing.expression === wanted.expression) {
+  const origin = context.origin as OperandRow["origin"];
+  if (existing !== undefined && existing.select === wanted.select && existing.symbol === wanted.symbol && existing.offset === wanted.offset && existing.expression === wanted.expression && !confirms(existing.origin, origin)) {
     return { current: existing };
   }
-  const origin = context.origin as OperandRow["origin"];
   if (existing !== undefined) change.close("operands", "space = ? AND address = ?", space, request.address);
   change.insertOperand({ space, address: request.address, ...wanted, origin });
   const pointers = referencesFrom(db, request.address, space).filter((reference) => reference.kind === POINTER_KIND);
@@ -683,19 +715,22 @@ function checkModule(request: ModuleRequest): void {
   if (request.title !== undefined && (request.title.trim().length === 0 || request.title.length > MAX_COMMENT)) throw new Refusal("invalid-input", `A module title has 1 to ${MAX_COMMENT} characters.`);
 }
 
-function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: ModuleRequest): Step<ModuleRow> {
+function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: ModuleRequest): Step<ModuleRow, ModuleRow> {
   const space = spaceOf(request);
   const existing = moduleAt(db, request.start, space);
   // A module write without a title keeps the title it has.
   const title = request.title === undefined ? existing?.title : request.title.trim();
-  if (existing !== undefined && existing.file === request.file && existing.title === title) return { current: existing };
+  if (existing !== undefined && existing.file === request.file && existing.title === title && !confirms(existing.origin, origin)) return { current: existing };
+  // A file of the source starts at an instruction: a start inside one splits it into bytes.
+  checkInstructionStart(db, space, programBytes(db, space), request.start, "module");
   const owner = moduleWithFile(db, request.file, space);
   if (owner !== undefined && owner.start !== request.start) {
     throw new Refusal("conflict", `The file ${request.file} already belongs to the module at ${formatC64Address(owner.start)}. Give this module another file, or remove that module first.`);
   }
   if (existing !== undefined) change.close("modules", "space = ? AND start_address = ?", space, request.start);
   change.insertModule({ space, start: request.start, file: request.file, ...(title === undefined ? {} : { title }), origin: origin as ModuleRow["origin"] });
-  return { current: moduleAt(db, request.start, space)! };
+  const current = moduleAt(db, request.start, space)!;
+  return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
 function unmoduleStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
@@ -760,9 +795,10 @@ function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { 
   const symbol = symbolNamed(db, request.switch, space);
   if (symbol !== undefined) throw new Refusal("conflict", `The switch name ${request.switch} is the name of the symbol at ${formatC64Address(symbol.address)}. Give the switch another name.`);
   if (space === DEFAULT_SPACE && context.image.platform.has(request.switch)) throw new Refusal("conflict", `The switch name ${request.switch} is a C64 platform name. Give the switch another name.`);
-  const other = patchesOverlapping(db, request.start, request.end, space).find((row) => row.start !== request.start);
+  // A write at the start of a patch of the same switch changes that patch; every other patch that it overlaps is a conflict.
+  const other = patchesOverlapping(db, request.start, request.end, space).find((row) => row.start !== request.start || row.switch !== request.switch);
   if (other !== undefined) {
-    throw new Refusal("conflict", `The patch ${range} overlaps the patch of ${other.switch} at ${formatC64Address(other.start)}-${formatC64Address(other.end)}. Change or remove that patch first (unpatch).`);
+    throw new Refusal("conflict", `The patch ${range} of ${request.switch} overlaps the patch of ${other.switch} at ${formatC64Address(other.start)}-${formatC64Address(other.end)}. A patch cannot overlap another patch, and only a patch of the same switch at the same start replaces it. Change or remove that patch first (unpatch).`);
   }
   const [use] = macroUsesOverlapping(db, request.start, request.end, space);
   if (use !== undefined) {
@@ -772,8 +808,8 @@ function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { 
   const code = request.code.trimEnd();
   // A patch write without a comment keeps the comment it has, as a module keeps its title.
   const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
-  if (existing !== undefined && existing.end === request.end && existing.switch === request.switch && existing.code === code && existing.comment === comment) return { current: existing };
   const origin = context.origin as PatchRow["origin"];
+  if (existing !== undefined && existing.end === request.end && existing.switch === request.switch && existing.code === code && existing.comment === comment && !confirms(existing.origin, origin)) return { current: existing };
   if (existing !== undefined) change.close("patches", "space = ? AND start_address = ?", space, request.start);
   change.insertPatch({ space, start: request.start, end: request.end, switch: request.switch, code, ...(comment === undefined ? {} : { comment }), origin });
   const current = patchesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start)!;
@@ -815,7 +851,7 @@ function macroStep(db: DatabaseSync, change: Change, origin: Origin, request: Ma
   const params = request.params ?? [];
   const body = request.body.trimEnd();
   const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
-  if (existing !== undefined && listText(existing.params) === listText(params) && existing.body === body && existing.comment === comment) return { current: existing };
+  if (existing !== undefined && listText(existing.params) === listText(params) && existing.body === body && existing.comment === comment && !confirms(existing.origin, origin)) return { current: existing };
   if (existing !== undefined && existing.params.length !== params.length) {
     const uses = listMacroUses(db, undefined, request.name, undefined, space);
     if (uses.length > 0) {
@@ -901,8 +937,8 @@ function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { im
     throw new Refusal("conflict", `The macro use ${range} overlaps the use of ${other.macro} at ${formatC64Address(other.start)}-${formatC64Address(other.end)}. Remove that use first (unuse).`);
   }
   const existing = macroUsesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start);
-  if (existing !== undefined && existing.end === request.end && existing.macro === request.macro && listText(existing.args) === listText(args)) return { current: existing };
   const origin = context.origin as MacroUseRow["origin"];
+  if (existing !== undefined && existing.end === request.end && existing.macro === request.macro && listText(existing.args) === listText(args) && !confirms(existing.origin, origin)) return { current: existing };
   if (existing !== undefined) change.close("macro_uses", "space = ? AND start_address = ?", space, request.start);
   change.insertMacroUse({ space, start: request.start, end: request.end, macro: request.macro, args, origin });
   const current = macroUsesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start)!;
@@ -940,7 +976,7 @@ export function unclassifyRegion(db: DatabaseSync, context: WriteContext, reques
   return result(write(db, context, "unclassify-region", (change) => unclassifyStep(db, change, context.origin, request)));
 }
 
-export function setComment(db: DatabaseSync, context: WriteContext, request: CommentRequest): WriteResult<CommentRow> {
+export function setComment(db: DatabaseSync, context: WriteContext, request: CommentRequest): WriteResult<CommentRow, CommentRow> {
   checkComment(request);
   return result(write(db, context, "set-comment", (change) => commentStep(db, change, context.origin, request)));
 }
@@ -950,7 +986,7 @@ export function removeComment(db: DatabaseSync, context: WriteContext, request: 
   return result(write(db, context, "remove-comment", (change) => uncommentStep(db, change, context.origin, request)));
 }
 
-export function addReference(db: DatabaseSync, context: WriteContext, request: ReferenceRequest): WriteResult<ReferenceRow> {
+export function addReference(db: DatabaseSync, context: WriteContext, request: ReferenceRequest): WriteResult<ReferenceRow, ReferenceRow> {
   checkReference(request);
   return result(write(db, context, "add-reference", (change) => referenceStep(db, change, context.origin, request)));
 }
@@ -961,7 +997,7 @@ export function removeReference(db: DatabaseSync, context: WriteContext, request
 }
 
 /** Starts a file of the generated source at an address; one module per address and per file. */
-export function setModule(db: DatabaseSync, context: WriteContext, request: ModuleRequest): WriteResult<ModuleRow> {
+export function setModule(db: DatabaseSync, context: WriteContext, request: ModuleRequest): WriteResult<ModuleRow, ModuleRow> {
   checkModule(request);
   return result(write(db, context, "set-module", (change) => moduleStep(db, change, context.origin, request)));
 }
@@ -1053,7 +1089,7 @@ export const MAX_BATCH = 10_000;
 /** The result of each write of a batch, in order. */
 export type BatchStep = Step<
   SymbolRow | RegionRow[] | CommentRow | ReferenceRow | ModuleRow | OperandRow | PatchRow | MacroRow | MacroUseRow | null,
-  SymbolRow | RegionRow[] | OperandRow | PatchRow | MacroRow | MacroUseRow
+  SymbolRow | RegionRow[] | CommentRow | ReferenceRow | ModuleRow | OperandRow | PatchRow | MacroRow | MacroUseRow
 >;
 
 /**

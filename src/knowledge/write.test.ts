@@ -5,13 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import { formatC64Address } from "../c64.ts";
 import { Refusal } from "../errors.ts";
-import { openForWrite } from "./database.ts";
+import { openForWrite, transaction } from "./database.ts";
+import { setImage } from "./program.ts";
 import { at, commentsAt, currentRevision, listMacroUses, listModules, listPatches, listSuppressions, listSymbols, macroNamed, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
 import { historyAt, historyOfMacro, revision as revisionChanges } from "./history.ts";
 import {
   addReference,
   applyBatch,
+  Change,
   classifyRegion,
   removeComment,
   removeMacro,
@@ -619,4 +622,83 @@ test("a batch writes a macro and its uses in one revision, and a revert restores
   assert.deepEqual(listMacroUses(db).map((row) => [row.start, row.macro, row.args]), [[0x8100, "inc16", ["$fb"]]]);
   assert.equal(listPatches(db)[0]?.code, "jsr $ffd2");
   assert.throws(() => applyBatch(db, llm, [{ op: "use", start: 0x8106, end: 0x810b, macro: "inc16", args: ["$fd"] }]), /Write 1: A macro use is checked against the image/);
+});
+
+/** Rows of an analyzer, as an import of it writes them: one revision of `origin`. */
+function analyzerRows(db: DatabaseSync, origin: "dxa" | "ghidra", work: (change: Change) => void): void {
+  transaction(db, () => work(new Change(db, { origin }, "import")));
+}
+
+test("a user or LLM write that confirms a row of an analyzer makes it a row of the writer, with the analyzer row as previous", () => {
+  const db = fresh();
+  const user: WriteContext = { origin: "user" };
+  analyzerRows(db, "ghidra", (change) => {
+    change.insertReference({ space: "c64", from: 0x1bc9, to: 0x0104, kind: "read", origin: "ghidra" });
+    change.insertSymbol({ space: "c64", address: 0x1bc2, name: "main_loop", kind: "label", origin: "ghidra" });
+    change.insertComment({ space: "c64", address: 0x1bc2, placement: "side", text: "the loop", origin: "ghidra" });
+  });
+  analyzerRows(db, "dxa", (change) => change.insertRegion({ space: "c64", start: 0x1bc2, end: 0x1bff, type: "code", origin: "dxa" }));
+  const before = currentRevision(db);
+
+  const reference = addReference(db, user, { from: 0x1bc9, to: 0x0104, kind: "read" });
+  assert.notEqual(reference.revision, null);
+  assert.equal(reference.current.origin, "user");
+  assert.equal(reference.previous?.origin, "ghidra");
+  assert.deepEqual(referencesFrom(db, 0x1bc9).map((row) => row.origin), ["user"], "one reference, of the user");
+
+  const named = renameSymbol(db, llm, { address: 0x1bc2, name: "main_loop", kind: "label" });
+  assert.deepEqual([named.current.origin, named.previous?.origin], ["llm", "ghidra"]);
+  const commented = setComment(db, llm, { address: 0x1bc2, placement: "side", text: "the loop" });
+  assert.deepEqual([commented.current.origin, commented.previous?.origin], ["llm", "ghidra"]);
+  const classified = classifyRegion(db, llm, { start: 0x1bc2, end: 0x1bff, type: "code" });
+  assert.deepEqual([classified.current.map((row) => row.origin), classified.previous?.map((row) => row.origin)], [["llm"], ["dxa"]]);
+  assert.notEqual(currentRevision(db), before);
+
+  // The LLM over the user is no decision: nothing changes. The user over the LLM is one.
+  assert.equal(addReference(db, llm, { from: 0x1bc9, to: 0x0104, kind: "read" }).revision, null);
+  assert.equal(addReference(db, user, { from: 0x1bc9, to: 0x0104, kind: "read" }).revision, null, "the same origin changes nothing");
+  const confirmed = renameSymbol(db, user, { address: 0x1bc2, name: "main_loop" });
+  assert.deepEqual([confirmed.current.origin, confirmed.previous?.origin], ["user", "llm"]);
+  assert.equal(renameSymbol(db, llm, { address: 0x1bc2, name: "main_loop" }).revision, null);
+  // In a batch too, and the batch gives the replaced rows.
+  const batch = applyBatch(db, user, [{ op: "comment", address: 0x1bc2, placement: "side", text: "the loop" }, { op: "classify", start: 0x1bc2, end: 0x1bff, type: "code" }]);
+  assert.deepEqual(batch.steps.map((step) => (Array.isArray(step.previous) ? step.previous.map((row) => row.origin) : (step.previous as { origin: string } | undefined)?.origin)), ["llm", ["llm"]]);
+});
+
+/** A program in the knowledge: $1bc2 LDA #$03, $1bc4 STA $0104, $1bc7 RTS, then data $1bc8-$1bcf; $1bc2-$1bc7 is code. */
+function programWithCode(): DatabaseSync {
+  const db = fresh();
+  const bytes = [0xa9, 0x03, 0x8d, 0x04, 0x01, 0x60, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
+  setImage(db, llm, { segments: [{ start: 0x1bc2, end: 0x1bc2 + bytes.length - 1 }], byteAt: (address) => bytes[address - 0x1bc2]! });
+  classifyRegion(db, llm, { start: 0x1bc2, end: 0x1bc7, type: "code" });
+  classifyRegion(db, llm, { start: 0x1bc8, end: 0x1bcf, type: "bytes" });
+  return db;
+}
+
+test("a module and a comment start at an instruction: an operand byte of a code region is refused, as for an operand", () => {
+  const db = programWithCode();
+  const before = currentRevision(db);
+  const inside = (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /^\$1bc3 is not the start of an instruction\. It is an operand byte of the instruction at \$1bc2, decoded from the start of the code region at \$1bc2\. A (module|comment) is at the start of an instruction, as the listing and the source show it\. Give \$1bc2\.$/.test(error.message);
+  assert.throws(() => setModule(db, llm, { start: 0x1bc3, file: "mid_module.asm" }), inside);
+  assert.throws(() => setComment(db, llm, { address: 0x1bc3, placement: "side", text: "inside" }), inside);
+  assert.throws(() => setComment(db, llm, { address: 0x1bc6 - 1, placement: "line", text: "inside" }), /\$1bc5 is not the start of an instruction\. It is an operand byte of the instruction at \$1bc4/);
+  assert.throws(() => applyBatch(db, llm, [{ op: "module", start: 0x1bc3, file: "mid_module.asm" }]), /^Refusal: Write 1: \$1bc3 is not the start of an instruction/);
+  assert.equal(currentRevision(db), before, "a refused write leaves no revision");
+  // At an instruction, in data, and where the knowledge has no program, they are written.
+  for (const address of [0x1bc2, 0x1bc4, 0x1bc9, 0x2000]) assert.notEqual(setComment(db, llm, { address, placement: "side", text: "here" }).revision, null, formatC64Address(address));
+  assert.notEqual(setModule(db, llm, { start: 0x1bc4, file: "store.asm" }).revision, null);
+  assert.notEqual(setModule(db, llm, { start: 0x1bca, file: "table.asm" }).revision, null);
+});
+
+test("a patch at the start of a patch of another switch is a conflict; a patch of the same switch replaces it", () => {
+  const db = fresh();
+  const context: WriteContext = { origin: "llm", image: sourceImage() };
+  setPatch(db, context, { start: 0x8079, end: 0x807b, switch: "NO_PROTECTION", code: "", comment: "Check 2." });
+  assert.throws(
+    () => setPatch(db, context, { start: 0x8079, end: 0x807a, switch: "TESTSW", code: "" }),
+    (error: unknown) => error instanceof Refusal && error.code === "conflict" && /^The patch \$8079-\$807a of TESTSW overlaps the patch of NO_PROTECTION at \$8079-\$807b\. A patch cannot overlap another patch/.test(error.message),
+  );
+  assert.deepEqual(listPatches(db).map((row) => [row.start, row.end, row.switch]), [[0x8079, 0x807b, "NO_PROTECTION"]]);
+  const replaced = setPatch(db, context, { start: 0x8079, end: 0x807a, switch: "NO_PROTECTION", code: "nop" });
+  assert.deepEqual([replaced.current.end, replaced.current.comment], [0x807a, "Check 2."]);
 });

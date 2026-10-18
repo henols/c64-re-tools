@@ -129,12 +129,16 @@ Write:
 
 Each write is one revision. A classification inside a region splits that region, so regions never overlap.
 
+A write can give the same fact that an analyzer gave. Then the fact gets the origin of the write, and `previous` in the result shows the row of the analyzer. The next analysis does not remove the fact. This is true for a symbol, a region, a comment and a reference. A `--by user` write over the same fact of `llm` also changes the origin to `user`. A `--by llm` write over the same fact of `user` changes nothing.
+
+A comment and a module are at the start of an instruction. In a code region, the script refuses an address that is an operand byte of an instruction. The error gives the start of that instruction. In data, each address is correct.
+
 ## The program and the coverage
 
 The knowledge holds the program, so a project needs no image or coverage files. The other skills read them from the knowledge and take no path to them.
 
 1. Capture a packed program with the c64-unpacker skill into `.c64-re-tools/local/`. Then put it in with `image .c64-re-tools/local/capture/image.json`. The script reads `image.bin`, `entry_state.json` and the stages next to it.
-2. For a program without a packer, drive code or a cartridge bank, put the PRG in with `image <file.prg>`. Give `--space drive8` or `--space bank0` for drive code or a bank.
+2. For a program without a packer, drive code or a cartridge bank, put the PRG in with `image <file.prg>`. Give `--space drive8` or `--space bank0` for drive code or a bank. A PRG has the extension `.prg` or no extension. The script refuses a file with another extension.
 3. Write each coverage map of a run into `.c64-re-tools/local/`. Then add it with `coverage <map.bin> ...`.
 4. Read what the knowledge holds with `program`: the segments, the entry, and the coverage maps that it has.
 
@@ -235,7 +239,7 @@ A patch is ACME code that replaces a range of the program when the build defines
 - The code must fit in the range. NOP ($EA) fills the bytes after the code. `--nop` gives a range of NOP only.
 - `--code` gives the code as text. `--code-file` reads the code from a project file. The code can use the labels and the macros of the source, and local labels with a dot, for example `.skip`.
 - The braces in the code must be pairs, because the source puts the code inside `{ }`.
-- A patch cannot overlap another patch or a macro use.
+- A patch cannot overlap another patch or a macro use. A patch with the same start and the same switch replaces the patch. A patch of another switch at the same start gives the error `conflict`.
 - Each byte of the range must be in the program of the knowledge.
 - A `patch` write without `--comment` keeps the comment that the patch has.
 

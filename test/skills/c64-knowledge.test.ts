@@ -558,6 +558,25 @@ test("listing writes an operand expression in the syntax of the addressing mode,
   );
 });
 
+test("listing shows a comment at an operand byte (knowledge of an older version) with its address, as c64-source does", () => {
+  // $1bc9 LDA $0104, $1bcc RTS; a side comment at $1bc9 and one at the operand byte $1bca.
+  const bytes = new Map([0xad, 0x04, 0x01, 0x60].map((value, offset) => [0x1bc9 + offset, value]));
+  const comments = new Map<number, { line: string[]; side?: string }>([[0x1bc9, { line: [], side: "the mode" }], [0x1bca, { line: [], side: "mid-instruction comment" }]]);
+  const source: ListingSource = {
+    byteAt: (address) => bytes.get(address),
+    nameOf: () => undefined,
+    secondNames: () => [],
+    regions: [{ start: 0x1bc9, end: 0x1bcc, type: "code" }],
+    comments: (address) => comments.get(address) ?? { line: [] },
+    operand: () => undefined,
+    references: () => ({ in: 0, out: 0 }),
+  };
+  assert.deepEqual(
+    listing(source, 0x1bc9, 0x1bcc).map((line) => [line.text, line.comment]),
+    [["lda $0104", "the mode $1bca: mid-instruction comment"], ["rts", undefined]],
+  );
+});
+
 test("a batch write with an unknown field names every field that the write takes, space too", () => {
   const root = project();
   writeFileSync(join(root, "batch.json"), JSON.stringify([{ op: "classify", range: "$1000-$10ff", type: "code" }]));

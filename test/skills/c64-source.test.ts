@@ -105,6 +105,15 @@ test("a charset is written one character of 8 bytes to a line, without !fill", (
   assert.doesNotMatch(text, /!fill/);
 });
 
+test("a comment at an operand byte (knowledge of an older version) shows with its address in the side comment, as in the listing", () => {
+  // $1bc9 LDA $0104, $1bcc RTS.
+  const bytes = [0xad, 0x04, 0x01, 0x60];
+  const instructions = new Map([[0x1bc9, 3], [0x1bcc, 1]]);
+  const comments: SourceInput["comments"] = [{ address: 0x1bc9, placement: "side", text: "the mode" }, { address: 0x1bca, placement: "side", text: "mid-instruction comment" }];
+  const text = textOf(render(layout(input(bytes, 0x1bc9, { instructions, comments })), new Set(), []), "segment_1bc9.asm");
+  assert.match(text, /lda \$0104 +; the mode \$1bca: mid-instruction comment\n/);
+});
+
 test("the source map gives the line of each name and of each address that the source writes", () => {
   // $1000: LDA $d020; STA $1007 (into the next instruction); LDA #0; RTS; then a table of two words.
   const bytes = [0xad, 0x20, 0xd0, 0x8d, 0x07, 0x10, 0xa9, 0x00, 0x60, 0x00, 0x10, 0x06, 0x10];
@@ -889,6 +898,19 @@ test("a macro use is one +name args line, and macros.asm holds the macros", () =
   assert.deepEqual(rendered.uses.map((use) => [use.start, use.line]), [[0x1000, 5], [0x1006, 6]]);
   const without = render(layout(macroInput([], { macros: [] })), new Set(), []);
   assert.equal(without.files.some((file) => file.name === "macros.asm"), false, "no macros, no macros.asm");
+});
+
+test("a macro arg that is a platform name of a ROM that the program does not use gets that reason, not that it is no platform name", () => {
+  const laid = layout(
+    macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["CHRGET"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["nowhere"] }], {
+      platform: [{ address: 0xd020, end: 0xd020, name: "EXTCOL" }],
+      platformLeftOut: new Set(["CHRGET"]),
+    }),
+  );
+  assert.deepEqual(laid.macrosAsInstructions.map((row) => [row.start, row.reason]), [
+    [0x1000, "CHRGET is a platform name of a ROM that the program does not use, so the source leaves it out (romNamesLeftOut). Name the address with knowledge.ts rename, or give other args with knowledge.ts use."],
+    [0x1006, "nowhere is not a symbol of the knowledge or a platform name. Name the address with knowledge.ts rename, or give other args with knowledge.ts use."],
+  ]);
 });
 
 test("a macro use with a label inside it, in a patch, of a missing macro or not of whole instructions is written as its instructions", () => {
