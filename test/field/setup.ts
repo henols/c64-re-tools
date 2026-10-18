@@ -1,7 +1,10 @@
 // The field test on one machine, from this checkout: packs it, makes a fresh
 // project and runs the kit's install.ts there with the tarball. The host and
 // Claude Code then share the project's trace directory. For a dev container,
-// use the kit from a git clone of the release tag instead (see docs/debug-install.md).
+// use the kit from a git clone of the release tag instead, in the project:
+//
+//   git clone -q --depth 1 --branch "v$(npm view @henols/c64-re-tools version)" https://github.com/henols/c64-re-tools ~/.cache/c64-field-kit
+//   node ~/.cache/c64-field-kit/test/field/kit/install.ts
 //
 //   node test/field/setup.ts <project-dir>
 

@@ -57,8 +57,6 @@ Start the Host Runtime, and leave it running:
 npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host
 ```
 
-`--log-console` prints each call, and `--log-dir <directory>` writes them to a file.
-
 ### Dev container
 
 You need Docker or Podman. Copy the example into your project:
@@ -118,7 +116,23 @@ Set the host variables where the Host Runtime starts, and the others in
 | `C64RT_VICE`, `C64RT_C1541`, `C64RT_PETCAT` | Full path of the VICE tool, when it is not on `PATH` (host). |
 | `C64RT_HOST` | `host:port` of the Host Runtime, when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at port 6464. |
 | `C64RT_VIDEO` | `pal` (default) or `ntsc`. |
-| `C64RT_TRACE` | A directory for a trace of a run. See [docs/debug-install.md](docs/debug-install.md). |
+| `C64RT_TRACE` | A directory for the trace of the MCP server and the skill scripts. See [Trace](#trace). |
+
+## Trace
+
+Turn on the trace when a tool fails and its error does not tell why. Each
+program then writes what it does to a directory, as JSON lines. The Host
+Runtime also keeps a copy of the VICE log. The agent does not see the trace.
+
+On the host, `--log-dir` names the directory, and `--log-console` prints the
+same events:
+
+```
+npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host --log-dir $HOME/c64-trace --log-console
+```
+
+For the MCP server and the skill scripts, set `C64RT_TRACE` to an absolute
+directory in `containerEnv` of the `devcontainer.json`.
 
 ## License
 
