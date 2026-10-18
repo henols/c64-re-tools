@@ -55,7 +55,7 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
 ## Conventions that bite
 
 - **TypeScript only.** No `.js`/`.mjs` anywhere, also not installed: nothing is built, there is no `dist/`. Users run everything through `npx -y @henols/c64-re-tools@latest` (the MCP declaration too), so it updates itself; never link (`npm link`, `npm install -g <dir>`). Node never strips types under `node_modules`, so the bins are `.ts` with a `#!/usr/bin/env tsx` shebang, and every spawn of node on our own `.ts` passes `process.execArgv`. Skill scripts import `src/` as `#src/...`. npx exits on SIGTERM without passing it on: signal the process group.
-- The Host Runtime runs only VICE, c1541 and petcat. Skill scripts run ACME, DXA and Ghidra through `src/native/` (supervisor, staging, bounded `runTool`); never a bare `spawnSync`. Never auto-install external tools: detect, refuse by name, print the remedy.
+- The Host Runtime runs only VICE, c1541 and petcat. Skill scripts run ACME, DXA and Ghidra through `src/native/` (supervisor, staging, bounded `runTool`); never a bare `spawnSync`. The toolkit never installs external tools: it detects them, refuses by name and prints the remedy. The one installer is the dev container Feature: at image build and at each start it installs the tools in `tools/` of the toolkit version that it puts into the project.
 - The host refuses to start unless VICE starts (ROMs present); the host is started by hand only.
 - Tools take client paths and stream bytes; never a fixed file list or a path over the socket.
 - Stopping the Host Runtime or a skill script must stop every emulator, tool and descendant it started.

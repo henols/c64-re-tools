@@ -1,5 +1,5 @@
 // The c64run session: one replay core (a C64 emulator, see
-// devcontainer/src/c64-re-tools/c64run.c) for the life of a skill script,
+// tools/c64run.c) for the life of a skill script,
 // driven by one command line and one answer line at a time over its stdin and
 // stdout. It is started through the supervisor like every native tool, so it
 // stops with the script.

@@ -2,7 +2,7 @@
   "id": "c64-re-tools",
   "version": "0.0.0-development",
   "name": "c64-re-tools",
-  "description": "ACME, dxa, Ghidra, Java 21 and c64run (the replay core, with the C64 ROMs) for the c64-re-tools skills, and the toolkit installed into the project. The Host Runtime with VICE runs on the graphical host.",
+  "description": "The c64-re-tools toolkit in the project and the native tools of its skills: ACME, dxa, Ghidra, Java 21 and c64run (the replay core, with the C64 ROMs). At image build and at each start it installs the toolkit version of the channel and the tools of that version. The Host Runtime with VICE runs on the graphical host.",
   "documentationURL": "https://github.com/henols/c64-re-tools#dev-container",
   "licenseURL": "https://github.com/henols/c64-re-tools/blob/main/LICENSE",
   "options": {
@@ -16,7 +16,7 @@
       "type": "string",
       "default": "latest",
       "enum": ["latest", "next"],
-      "description": "The npm channel of the toolkit: latest for the release, next for the prerelease. The container gets the newest version of the channel, not the version of this Feature."
+      "description": "The npm channel of the toolkit: latest for the release, next for the prerelease. The container gets the newest version of the channel and its tools at each start, not the version of this Feature."
     }
   },
   "dependsOn": {
@@ -24,7 +24,7 @@
     "ghcr.io/devcontainers/features/java:1": { "version": "21" }
   },
   "containerEnv": {
-    "C64RT_GHIDRA": "/opt/ghidra_12.1.3_PUBLIC"
+    "C64RT_GHIDRA": "/opt/ghidra"
   },
   "postCreateCommand": "/usr/local/share/c64-re-tools/project.sh install",
   "postStartCommand": "/usr/local/share/c64-re-tools/project.sh update"

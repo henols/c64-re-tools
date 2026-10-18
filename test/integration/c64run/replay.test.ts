@@ -1,5 +1,5 @@
 // Live record and replay in the replay core: c64run must be installed (the
-// dev container has it, or C64RT_C64RUN). The subject is the joystick counter:
+// dev container installs it, or C64RT_C64RUN). The subject is the joystick counter:
 // each frame it counts frames, and the frames with joystick 2 held left.
 // A relocated copy replays the same; a copy that counts right instead fails
 // at the first checkpoint after the left frames start.

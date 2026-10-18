@@ -8,7 +8,7 @@ import { isAbsolute, join, posix, win32 } from "node:path";
 import { WireFailure } from "../protocol/messages.ts";
 
 /** Where the user finds the install steps of the native tools for each system. */
-export const INSTALL_STEPS = "Steps for each system: https://github.com/henols/c64-re-tools/blob/main/docs/install-tools.md";
+export const INSTALL_STEPS = "Steps for each system: https://github.com/henols/c64-re-tools/blob/main/docs/install-tools.md. In the dev container of c64-re-tools, restart the container: each start installs the tools of the toolkit version.";
 
 export interface ToolSpec {
   /** Human name, for messages. */
@@ -60,7 +60,7 @@ export const C64RUN: ToolSpec = {
   envVar: "C64RT_C64RUN",
   binaries: ["c64run"],
   where: "on this machine",
-  remedy: `Install c64run (the replay core of c64-testing, with its C64 ROMs) on the machine that runs the skill scripts so that c64run is on PATH, or set C64RT_C64RUN to its full path. The dev container has it. ${INSTALL_STEPS}`,
+  remedy: `Install c64run (the replay core of c64-testing, with its C64 ROMs) on the machine that runs the skill scripts so that c64run is on PATH, or set C64RT_C64RUN to its full path. ${INSTALL_STEPS}`,
 };
 
 export const VICE: ToolSpec = {

@@ -16,7 +16,7 @@ Debian 12 has no OpenJDK 21: install [Temurin 21](https://adoptium.net/installat
 
 ```
 sudo apt-get install acme openjdk-21-jdk-headless unzip curl
-curl -fsSLO https://raw.githubusercontent.com/henols/c64-re-tools/main/devcontainer/src/c64-re-tools/install-dxa.sh
+curl -fsSLO https://raw.githubusercontent.com/henols/c64-re-tools/main/tools/install-dxa.sh
 bash install-dxa.sh
 curl -fsSLO https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
 echo "93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54  ghidra_12.1.3_PUBLIC_20260817.zip" | sha256sum -c -
@@ -27,7 +27,7 @@ echo 'export C64RT_GHIDRA="$HOME/.local/share/ghidra_12.1.3_PUBLIC"' >> ~/.profi
 c64run:
 
 ```
-base=https://raw.githubusercontent.com/henols/c64-re-tools/main/devcontainer/src/c64-re-tools
+base=https://raw.githubusercontent.com/henols/c64-re-tools/main/tools
 curl -fsSLO $base/install-chips.sh && curl -fsSLO $base/c64run.c
 bash install-chips.sh
 ```
@@ -55,7 +55,7 @@ Then set `C64RT_GHIDRA=$HOME/ghidra_12.1.3_PUBLIC` and `JAVA_HOME` (the line abo
 c64run, into the Homebrew prefix:
 
 ```
-base=https://raw.githubusercontent.com/henols/c64-re-tools/main/devcontainer/src/c64-re-tools
+base=https://raw.githubusercontent.com/henols/c64-re-tools/main/tools
 curl -fsSLO $base/install-chips.sh && curl -fsSLO $base/c64run.c
 PREFIX="$(brew --prefix)" bash install-chips.sh
 ```
@@ -66,7 +66,7 @@ PREFIX="$(brew --prefix)" bash install-chips.sh
 2. ACME: unzip [acme0.97win.zip](https://sourceforge.net/projects/acme-crossass/files/win32/) and put `acme.exe` on `PATH`, or set `C64RT_ACME` to its full path.
 3. dxa has no Windows release. Build [dxa-0.1.5.tar.gz](https://sources.voidlinux.org/dxa-0.1.5/dxa-0.1.5.tar.gz) with MinGW-w64: `make CC=gcc LDFLAGS=-static`. Put `dxa.exe` on `PATH`, or set `C64RT_DXA`.
 4. Ghidra: unzip [ghidra_12.1.3_PUBLIC_20260817.zip](https://github.com/NationalSecurityAgency/ghidra/releases/tag/Ghidra_12.1.3_build) (SHA-256 `93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54`), then `setx C64RT_GHIDRA C:\path\to\ghidra_12.1.3_PUBLIC`.
-5. c64run: unpack [chips at 9e88298](https://codeload.github.com/floooh/chips/tar.gz/9e88298ce56319953ac7a43213a1120359f7a3a6) next to [c64run.c](https://raw.githubusercontent.com/henols/c64-re-tools/main/devcontainer/src/c64-re-tools/c64run.c) and build it with MinGW-w64: `gcc -O2 -I chips-9e88298ce56319953ac7a43213a1120359f7a3a6 -o c64run.exe c64run.c`. Put `c64run.exe` on `PATH`, or set `C64RT_C64RUN`. Set `C64RT_C64_ROMS` to the `C64` folder of VICE, or to a folder with the [zimmers.net](https://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/) ROMs renamed to `kernal-901227-03.bin`, `basic-901226-01.bin` and `chargen-901225-01.bin`.
+5. c64run: unpack [chips at 9e88298](https://codeload.github.com/floooh/chips/tar.gz/9e88298ce56319953ac7a43213a1120359f7a3a6) next to [c64run.c](https://raw.githubusercontent.com/henols/c64-re-tools/main/tools/c64run.c) and build it with MinGW-w64: `gcc -O2 -I chips-9e88298ce56319953ac7a43213a1120359f7a3a6 -o c64run.exe c64run.c`. Put `c64run.exe` on `PATH`, or set `C64RT_C64RUN`. Set `C64RT_C64_ROMS` to the `C64` folder of VICE, or to a folder with the [zimmers.net](https://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/) ROMs renamed to `kernal-901227-03.bin`, `basic-901226-01.bin` and `chargen-901225-01.bin`.
 
 ## Settings
 

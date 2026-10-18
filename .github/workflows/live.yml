@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@v4
       # The replay core of c64-testing, as the dev container Feature builds it.
       - name: Install c64run
-        run: bash devcontainer/src/c64-re-tools/install-chips.sh
+        run: bash tools/install-chips.sh
       # In a container, Node.js must come first: the pnpm installer runs on it.
       - uses: actions/setup-node@v4
         with:

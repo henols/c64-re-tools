@@ -23,6 +23,7 @@
     "!src/**/*.test.ts",
     "!src/**/*.testkit.ts",
     "skills/",
+    "tools/",
     "distribution/package.ts",
     "distribution/plugin.ts",
     "LICENSE",
