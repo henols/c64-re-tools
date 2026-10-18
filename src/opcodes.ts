@@ -76,6 +76,34 @@ export type UseKind = (typeof USE_KINDS)[number];
 const WRITES = new Set(["sta", "stx", "sty", "sax", "sha", "shx", "shy", "tas"]);
 const MODIFIES = new Set(["inc", "dec", "asl", "lsr", "rol", "ror", "slo", "rla", "sre", "rra", "dcp", "isc"]);
 
+/**
+ * The byte that an instruction wrote to or read from its operand address:
+ * a store gives its register, a load the register after it. For another
+ * access the byte at the address now (`memoryNow`) is the byte, when the
+ * caller can read it back. Undefined when it is not known.
+ */
+export function accessedValue(opcode: number, before: { a: number; x: number; y: number }, after: { a: number; x: number; y: number }, memoryNow: number | undefined): number | undefined {
+  switch (OPCODES[opcode]!.mnemonic) {
+    case "sta":
+      return before.a;
+    case "stx":
+      return before.x;
+    case "sty":
+      return before.y;
+    case "sax":
+      return before.a & before.x;
+    case "lda":
+    case "lax":
+      return after.a;
+    case "ldx":
+      return after.x;
+    case "ldy":
+      return after.y;
+    default:
+      return memoryNow;
+  }
+}
+
 /** The use of the operand address of an instruction that takes an address. Through (zp),y and (zp,x) the address is a pointer. */
 export function useKind(opcode: number): UseKind {
   const { mnemonic, mode } = OPCODES[opcode]!;
@@ -130,7 +158,9 @@ export function operandNumber(bytes: readonly number[], pc: number): string {
 /** The text of the instruction in `bytes` at `pc` as the monitor shows it, for example "STA $d011" or "BNE $c002". */
 export function instructionText(bytes: readonly number[], pc: number): string {
   const { mnemonic } = OPCODES[bytes[0]!]!;
-  return `${mnemonic.toUpperCase()}${instructionWith(bytes[0]!, operandNumber(bytes, pc)).slice(mnemonic.length)}`;
+  const operand = instructionWith(bytes[0]!, operandNumber(bytes, pc)).slice(mnemonic.length);
+  // The monitor writes the index register in capitals: LDA ($c1),Y.
+  return `${mnemonic.toUpperCase()}${operand.replace(/,([xy])\b/g, (_, index: string) => `,${index.toUpperCase()}`)}`;
 }
 
 /**

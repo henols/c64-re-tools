@@ -44,6 +44,10 @@ export const c64Autostart = defineTool({
   }),
   readOnly: false,
   async run(input, session) {
+    const type = extname(input.path).slice(1).toLowerCase();
+    if (input.index !== undefined && !(DISK_TYPES as readonly string[]).includes(type)) {
+      throw new WireFailure("invalid-input", `index selects an entry of a disk image (${list(DISK_TYPES)}). A .${type} file has no directory: leave out index.`);
+    }
     // VICE numbers the directory entries from 1, and its 0 loads "*".
     return session.autostart({ path: input.path, index: input.index === undefined ? 0 : input.index + 1, run: input.run, root: projectFolder(input.project) });
   },
@@ -131,7 +135,7 @@ export const c64Snapshot = defineTool({
     }
     if (action === "restore" && fields.file !== undefined) {
       requireFields(action, fields, ["file", "project"], ["file"]);
-      return session.snapshotRestore(readProjectFile(fields.file, { root: projectFolder(fields.project) }).bytes);
+      return session.snapshotRestore(readProjectFile(fields.file, { root: projectFolder(fields.project), what: "file" }).bytes);
     }
     if (action === "save") {
       requireOut(fields);

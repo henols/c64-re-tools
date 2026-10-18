@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { projectFolder, writeReported, type Written } from "../host-client/transfer.ts";
 
-export const OutInput = z.string().min(1).describe("write the result to this file, relative to the project folder, in place of returning it. An existing file is overwritten");
+export const OutInput = z.string().min(1).describe("write the data to this file, relative to the project folder. An existing file is overwritten. The tool description tells what the result then gives");
 
 /** The project of a tool with a path. */
 export const ProjectInput = z

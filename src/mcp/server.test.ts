@@ -765,6 +765,9 @@ test("refusals name the rule that the call broke", async () => {
   assert.match(await message("c64_program_load", { path: "original/game.d64" }), /is a \.d64 image, not a PRG\. Use c64_autostart/);
   assert.match(await message("c64_sid", { voice: 1 }), /Unrecognized key.*The tool takes no fields$/);
   assert.match(await message("c64_joystick", { port: 3, direction: "up" }), /port must be the number 1 or 2/);
+  assert.match(await message("c64_autostart", { path: "original/game.prg", index: 0 }), /A \.prg file has no directory: leave out index/);
+  assert.equal(await message("c64_registers", { action: "write", values: { flags: { q: true } } }), 'values.flags: Unrecognized key: "q"');
+  assert.match(await message("c64_snapshot", { action: "restore", file: "/etc/passwd" }), /^file: give a path relative to the project folder/);
   await client.close();
 });
 

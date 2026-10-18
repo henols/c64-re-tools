@@ -134,3 +134,26 @@ test("after a drive8 stop the computer's registers, frames and stopwatch behave 
   const [instruction] = (await session.handle("disassemble", { address: 0xc000, count: 1, space: "c64", view: "cpu" })).instructions;
   assert.equal(instruction!.text, "LDA #$00");
 });
+
+test("a breakpoint that stops next or until-return is in the result, and the next run is not disturbed", { skip: liveSkip, timeout: 120_000 }, async () => {
+  await session.handle("execution", { action: "pause", space: "c64" });
+  // $c000 SEI, JSR $c010, JMP $c001; $c010 NOP, NOP, RTS.
+  await session.handle("memoryWrite", { address: 0xc000, data: "782010c04c01c0", space: "c64", view: "cpu" });
+  await session.handle("memoryWrite", { address: 0xc010, data: "eaea60", space: "c64", view: "cpu" });
+  await session.handle("registersSet", { space: "c64", values: { pc: 0xc001 } });
+  const point = await session.handle("breakpoint", { action: "add", address: 0xc011, space: "c64" });
+  const next = await session.handle("execution", { action: "next", count: 1, space: "c64" });
+  assert.deepEqual({ pc: next.pc, stopReason: next.stopReason, pointId: next.pointId }, { pc: 0xc011, stopReason: "breakpoint", pointId: (point as { id: number }).id });
+  await session.handle("breakpoint", { action: "remove", id: (point as { id: number }).id });
+  // VICE still has the rest of the next: the run takes that stop as its end and goes on.
+  const run = await session.handle("execution", { action: "advance-frames", count: 3, space: "c64" });
+  assert.deepEqual({ stopReason: run.stopReason, advancedFrames: run.advancedFrames }, { stopReason: "frames", advancedFrames: 3 });
+
+  await session.handle("registersSet", { space: "c64", values: { pc: 0xc010 } });
+  const again = await session.handle("breakpoint", { action: "add", address: 0xc011, space: "c64" });
+  const back = await session.handle("execution", { action: "until-return", space: "c64" });
+  assert.deepEqual({ pc: back.pc, stopReason: back.stopReason }, { pc: 0xc011, stopReason: "breakpoint" });
+  await session.handle("breakpoint", { action: "remove", id: (again as { id: number }).id });
+  const after = await session.handle("execution", { action: "advance-frames", count: 3, space: "c64" });
+  assert.equal(after.stopReason, "frames");
+});

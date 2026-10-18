@@ -10,6 +10,7 @@ import { z } from "zod";
 import { formatC64Address } from "../c64.ts";
 import { Byte, TOOL_INPUTS } from "./inputs.ts";
 import { LostBeforeAnswer, type ViceSessionClient } from "../host-client/vice-session.ts";
+import { checkOut } from "../host-client/transfer.ts";
 import { isRefusal } from "../errors.ts";
 import { shownMessage, WireFailure, type WireError } from "../protocol/messages.ts";
 import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, type Condition } from "../protocol/vice.ts";
@@ -179,7 +180,10 @@ function errorResult(error: WireError): CallToolResult {
  * An unknown field of the tool input also gets the fields that the tool takes.
  */
 function describeIssues(error: z.ZodError, input?: z.ZodObject): string {
+  // An unknown field also breaks the rules that look at the whole object: name only the field.
+  const unknown = error.issues.some((issue) => issue.code === "unrecognized_keys");
   return error.issues
+    .filter((issue) => !unknown || issue.code !== "custom")
     .map((issue) => {
       const where = issue.path.length === 0 ? "input" : issue.path.join(".");
       const names = input === undefined ? [] : Object.keys(input.shape);
@@ -229,6 +233,9 @@ async function runCall(
   const parsed = tool.inputSchema.safeParse(args ?? {});
   if (!parsed.success) return errorResult({ code: "invalid-input", message: describeIssues(parsed.error, tool.inputSchema) });
   try {
+    // An out path is checked before the tool runs: a refused path must not lose the work or leave its side effects.
+    const fields = parsed.data as { out?: unknown; project?: unknown };
+    if (typeof fields.out === "string") checkOut(fields.out, typeof fields.project === "string" ? fields.project : undefined);
     let output: unknown;
     try {
       output = await tool.run(parsed.data, await session());

@@ -20,6 +20,11 @@ export function projectFolder(project: string | undefined): string {
   return resolveProject(project, process.cwd(), { remedy: "Give project: <folder>" });
 }
 
+/** Refuses an MCP `out` before the tool does any work, with the checks that every --out of a script gets. */
+export function checkOut(path: string, project: string | undefined): void {
+  checkOutputPath(path, "file", { root: projectFolder(project), what: "out" });
+}
+
 /** The project folder of this process (--project or the project lookup), or a WireFailure. */
 function currentProject(): string {
   return projectRoot();
@@ -36,17 +41,17 @@ export interface ProjectFile {
  * project rules refuse, not-found when nothing is there, limit-exceeded when
  * the file is too large to transfer.
  */
-export function readProjectFile(path: string, options: { root?: string } = {}): ProjectFile {
+export function readProjectFile(path: string, options: { root?: string; what?: string } = {}): ProjectFile {
   const root = options.root ?? currentProject();
   let real: string;
   try {
     real = resolveProjectFile(path, root);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new WireFailure("not-found", `There is no file at ${path} in the project folder.`);
+      throw new WireFailure("not-found", `${options.what === undefined ? "" : `${options.what}: `}There is no file at ${path} in the project folder.`);
     }
     if (isRefusal(error) && error.code === "invalid-input") {
-      throw new WireFailure("invalid-input", `${path}: give a path relative to the project folder that stays inside it.`);
+      throw new WireFailure("invalid-input", `${options.what ?? path}: give a path relative to the project folder that stays inside it, not ${path}.`);
     }
     throw error;
   }

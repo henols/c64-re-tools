@@ -13,7 +13,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { formatC64Address, instructionLength } from "../../c64.ts";
 import { encodePng, type IndexedFrame } from "../../graphics.ts";
-import { instructionText, operandAddress } from "../../opcodes.ts";
+import { accessedValue, instructionText, operandAddress } from "../../opcodes.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
 import { trace } from "../../trace.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
@@ -202,6 +202,21 @@ export class ViceSession implements ViceSessionHandle {
   #autostarting = false;
   /** The C64 clock just after the last snapshot restore: VICE keeps the history of before it. */
   #historySince: bigint | undefined;
+  /**
+   * A breakpoint or watchpoint stopped a step, next or until-return early. VICE
+   * keeps the rest of that step and stops the machine once more when it ends.
+   * No monitor command ends it without running the CPU, so the session takes
+   * that one stop as the end of the step and lets the machine run on.
+   */
+  #pendingStep = false;
+  /**
+   * The CPU stands at the stop of a reset without run, and nothing ran since. VICE
+   * (3.9, 3.10) stops answering at the restore of a snapshot saved here while the
+   * disk drive was busy, so a save here is refused.
+   */
+  #atResetStop = false;
+  /** The CPU that the last run stopped in, when it was the drive: status then gives the drive's pc. */
+  #stopSpace: "c64" | "drive8" = "c64";
   /** VICE records no CPU history after a JAM until the next reset. */
   #historyStopped = false;
   /** The CPU ran again after a JAM without a reset: the CPU history that VICE gives is old. */
@@ -558,7 +573,7 @@ export class ViceSession implements ViceSessionHandle {
       if (stop !== undefined) Object.assign(status, stop);
       // A point in the drive stopped it: the pc is the drive's, as advance-frames and run-until give it.
       const point = status.pointId === undefined ? undefined : (status.stopReason === "watchpoint" ? this.#watchpoints : this.#breakpoints).get(status.pointId);
-      status.space = point?.space === "drive8" ? "drive8" : "c64";
+      status.space = point?.space === "drive8" || this.#stopSpace === "drive8" ? "drive8" : "c64";
       if (status.space === "drive8") status.pc = (await this.#machine.readRegisters("drive8")).pc;
     }
     return status;
@@ -572,6 +587,7 @@ export class ViceSession implements ViceSessionHandle {
       if (this.#state === "stopped") {
         await this.#refuseJammed("resume");
         await this.#resume();
+        if (this.#pendingStep) await this.#endPendingStep();
       }
       return { state: "running" };
     }
@@ -600,6 +616,7 @@ export class ViceSession implements ViceSessionHandle {
         throw new WireFailure("invalid-input", `The anchor is outside the frame: a ${this.#videoStandard} frame has lines 0-${raster.lines - 1} and cycles 0-${raster.cycles - 1}.`);
       }
       const outcome = await this.#runFrames(params.count, undefined, params.anchor);
+      this.#stopSpace = outcome.space;
       return {
         state: "stopped",
         // A stop event carries the computer's PC; a stop in the drive reports the drive's.
@@ -612,6 +629,8 @@ export class ViceSession implements ViceSessionHandle {
     }
     await this.#stop();
     await this.#refuseJammed(params.action);
+    // A new step replaces the rest of an earlier one in VICE.
+    this.#pendingStep = false;
     if (params.action === "until-return") {
       const stopped = this.#nextStop(this.#untilReturnLimitMs);
       await this.#resumingCommand(() => this.#machine.untilReturn());
@@ -623,18 +642,39 @@ export class ViceSession implements ViceSessionHandle {
           `The routine did not return within ${this.#untilReturnLimitMs / 1000} seconds. The machine is stopped at ${formatC64Address(await this.#pc())}.`,
         );
       }
-      return { state: "stopped", pc: stop.pc };
+      return { state: "stopped", pc: stop.pc, ...this.#stepStoppedByPoint() };
     }
     const count = params.count ?? 1;
+    this.#atResetStop = false;
     try {
       await this.#machine.step(count, params.action === "next", this.#stepLimitMs);
     } catch (error) {
       if (error instanceof MonitorTimeoutError) throw new StepTimeout(stepNotEnded(params.action, count, this.#stepLimitMs), error);
       throw error;
     }
-    // VICE answers a step only after the machine stopped again.
+    // VICE answers a step only after the machine stopped again; a ping reads the events of that stop (a hit point).
+    await this.#machine.stop();
     this.#state = "stopped";
-    return { state: "stopped", pc: await this.#pc(), executed: count };
+    const point = this.#stepStoppedByPoint();
+    // A point stops the step early: VICE does not tell how many instructions ran.
+    return { state: "stopped", pc: await this.#pc(), ...(point.pointId === undefined ? { executed: count } : point) };
+  }
+
+  /** The breakpoint or watchpoint that stopped a step, next or until-return early; VICE then keeps the rest of the step. */
+  #stepStoppedByPoint(): { stopReason?: PointStopReason; pointId?: number } {
+    const stop = this.#lastStop;
+    if (stop?.pointId === undefined) return {};
+    this.#pendingStep = true;
+    return { stopReason: stop.stopReason, pointId: stop.pointId };
+  }
+
+  /** After a resume: waits for the stop that ends the rest of an earlier step, and runs on. */
+  async #endPendingStep(): Promise<void> {
+    const stop = await this.#nextStop(HALF_FRAME_LIMIT_MS);
+    if (stop === undefined) return;
+    this.#pendingStep = false;
+    // A user point or a JAM stopped the machine: it stays stopped and status tells why.
+    if (stop.hits.length === 0 && this.#lastStop === undefined) await this.#resume();
   }
 
   async #reset(params: { mode: "soft" | "hard"; run: boolean }): Promise<{ state: RunState; pc?: number }> {
@@ -659,6 +699,7 @@ export class ViceSession implements ViceSessionHandle {
     if (!reached) await this.#stop();
     await this.#machine.deleteCheckpoint(checkpoint);
     if (!reached) throw new WireFailure("operation-failed", "The C64 did not reach its reset vector after the reset.");
+    this.#atResetStop = true;
     return { state: "stopped", pc: vector };
   }
 
@@ -715,6 +756,11 @@ export class ViceSession implements ViceSessionHandle {
         }
         if (end === "unknown") {
           if (await this.#jamAt(stop.pc)) return { end: "jam", frames, pc: stop.pc, space: "c64" };
+          if (this.#pendingStep) {
+            // The rest of an earlier step ended: run on.
+            this.#pendingStep = false;
+            continue;
+          }
           throw new WireFailure("operation-failed", "The emulator stopped the machine for a reason outside this run.");
         }
         // A drive stop is completed before the result names the computer's pc; `space` says which CPU stopped.
@@ -783,6 +829,10 @@ export class ViceSession implements ViceSessionHandle {
         const point = this.#userPoint(stop.hits);
         if (point !== undefined) return { hits, frames, end: point.stopReason, pc: stop.pc };
         if (await this.#jamAt(stop.pc)) return { hits, frames, end: "jam", pc: stop.pc };
+        if (this.#pendingStep) {
+          this.#pendingStep = false;
+          continue;
+        }
         throw new WireFailure("operation-failed", "The emulator stopped the machine for a reason outside this trace.");
       }
     } finally {
@@ -841,8 +891,20 @@ export class ViceSession implements ViceSessionHandle {
       frame,
       rasterLine: Math.floor(at / cycles),
       rasterCycle: at % cycles,
-      ...(address === undefined ? {} : { address, value: await byteAt(address) }),
+      ...(address === undefined ? {} : { address, ...(await this.#accessed(bytes[0]!, entry, address, byteAt)) }),
     };
+  }
+
+  /**
+   * The byte of a read or write hit. A read of an I/O register after the
+   * access can give another byte than the access did (raster bits, cleared
+   * flags), so for $D000-$DFFF only a load or a store gives a value.
+   */
+  async #accessed(opcode: number, before: { a: number; x: number; y: number }, address: number, byteAt: (address: number) => Promise<number>): Promise<{ value?: number }> {
+    const after = await this.#machine.readRegisters("c64");
+    const io = address >= 0xd000 && address <= 0xdfff;
+    const value = accessedValue(opcode, before, after, io ? undefined : await byteAt(address));
+    return value === undefined ? {} : { value };
   }
 
   /**
@@ -975,6 +1037,7 @@ export class ViceSession implements ViceSessionHandle {
       const stopReason = outcome.end === "frames" ? "timeout" : outcome.end;
       // A stop event carries the computer's PC; a stop in the drive reports the drive's.
       const pc = outcome.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc;
+      this.#stopSpace = outcome.space;
       return { reached: stopReason === "target", stopReason, state: "stopped", pc, space: outcome.space, ...(outcome.pointId === undefined ? {} : { pointId: outcome.pointId }) };
     } finally {
       await this.#machine.deleteCheckpoint(checkpoint);
@@ -1030,7 +1093,10 @@ export class ViceSession implements ViceSessionHandle {
 
   #point<T>(registry: Map<number, T>, kind: string, id: number): T {
     const point = registry.get(id);
-    if (point === undefined) throw new WireFailure("not-found", `There is no ${kind} with id ${id}.`);
+    if (point === undefined) {
+      const other = kind === "breakpoint" ? (this.#watchpoints.has(id) ? "watchpoint" : undefined) : this.#breakpoints.has(id) ? "breakpoint" : undefined;
+      throw new WireFailure("not-found", `There is no ${kind} with id ${id}.${other === undefined ? "" : ` Id ${id} is a ${other}: use c64_${other}.`}`);
+    }
     return point;
   }
 
@@ -1145,7 +1211,11 @@ export class ViceSession implements ViceSessionHandle {
     }
     return this.#observe(async () => {
       const all = await this.#machine.history(params.limit, params.space);
-      if (params.space === "drive8") return { entries: all.map(({ clock: _clock, ...entry }) => entry) };
+      if (params.space === "drive8") {
+        // VICE records a wrong third byte for a 3-byte drive instruction ("JSR $00a6" for 20 a6 d5): the drive memory gives the bytes.
+        const memory = await this.#machine.readAll("drive8");
+        return { entries: all.map(({ clock: _clock, ...entry }) => driveEntry(entry, memory)) };
+      }
       const now = await this.#machine.clock();
       const raw = entriesSince(all, this.#historySince, now);
       const position = await this.#machine.rasterPosition();
@@ -1221,6 +1291,13 @@ export class ViceSession implements ViceSessionHandle {
     if (params.action === "list") return { snapshots: [...this.#snapshots.keys()] };
     const existing = this.#snapshots.get(params.name);
     if (params.action === "save") {
+      if (this.#atResetStop) {
+        throw new WireFailure(
+          "operation-failed",
+          "The CPU stands at the reset stop of c64_reset with run false. The emulator stops answering at the restore of a snapshot saved here when the disk drive was busy. " +
+            "Step one instruction with c64_execution, then save the snapshot.",
+        );
+      }
       if (existing === undefined && this.#snapshots.size >= MAX_SNAPSHOTS) {
         throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_SNAPSHOTS} snapshots. Remove one first with action remove.`);
       }
@@ -1452,6 +1529,8 @@ export class ViceSession implements ViceSessionHandle {
    * arrive together, and those events must have the last word.
    */
   async #resumingCommand(send: () => Promise<void>): Promise<void> {
+    this.#atResetStop = false;
+    this.#stopSpace = "c64";
     this.#state = "running";
     this.#lastStop = undefined;
     try {
@@ -1641,6 +1720,15 @@ export class ViceSession implements ViceSessionHandle {
       this.#state = "running";
     }
   }
+}
+
+/** A drive history entry with its bytes and text from drive memory, when the opcode there is still the one that ran. */
+export function driveEntry<T extends { address: number; bytes: string; text: string }>(entry: T, memory: Uint8Array): T {
+  const opcode = Number.parseInt(entry.bytes.slice(0, 2), 16);
+  if (memory[entry.address] !== opcode) return entry;
+  const length = instructionLength(opcode);
+  const bytes = Array.from({ length }, (_, offset) => memory[(entry.address + offset) & 0xffff]!);
+  return { ...entry, bytes: Buffer.from(bytes).toString("hex"), text: instructionText(bytes, entry.address) };
 }
 
 /**

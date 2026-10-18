@@ -186,7 +186,8 @@ export const c64Trace = defineTool({
     "Each hit gives the instruction (pc, bytes, text) and the registers a, x, y and sp before it. " +
     "point in a hit is the number of its point in points, 0 for the first. " +
     "It also gives the frame from 0, and the raster line and cycle where the instruction started. " +
-    "A read or write hit also gives the address that the instruction used, and the byte there after the access. " +
+    "A read or write hit also gives the address that the instruction used, and value, the byte that it read or wrote. " +
+    "At $D000-$DFFF only a load or a store gives value: a read after the access can give another byte. " +
     `The trace ends after frames frames (1 to ${MAX_TRACE_FRAMES}), at maxHits hits (at most ${MAX_TRACE_HITS}), or at a breakpoint, a watchpoint or a JAM. ` +
     `The result lists the first ${TRACE_LISTED} hits. With out, it writes all hits as JSON lines to that project file. ` +
     "Each hit stops the machine for a short time. Thus a point with many hits in each frame makes the trace slow. Use a small range and a maxHits. " +

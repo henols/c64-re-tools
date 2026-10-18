@@ -35,6 +35,12 @@ export function checkMedia(type: string, bytes: Buffer): void {
   const refuse = (why: string) => {
     throw new Refusal("media-error", `The file is not a valid .${type} file: ${why}. Give a file of that type.`);
   };
+  if (type === "crt" && hasSignature(type, bytes)) {
+    // The header gives its own length; a CHIP packet with the ROM data follows it.
+    const header = bytes.length >= 0x40 ? bytes.readUInt32BE(0x10) : 0;
+    if (bytes.length < 0x40) refuse("the header is shorter than 64 bytes");
+    if (bytes.toString("latin1", header, header + 4) !== "CHIP") refuse("it has no CHIP packet with ROM data after the header");
+  }
   if (!hasSignature(type, bytes)) refuse(`it does not start with ${SIGNATURES[type]!.map((signature) => `"${signature.trimEnd()}"`).join(" or ")}`);
   const sizes = SIZES[type];
   if (sizes !== undefined && !sizes.includes(bytes.length)) refuse(`it has ${bytes.length} bytes, and a .${type} image has ${sizes.join(", ")}`);

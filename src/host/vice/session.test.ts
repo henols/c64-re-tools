@@ -6,7 +6,7 @@ import { WireFailure } from "../../protocol/messages.ts";
 import { Command } from "./binary-monitor.ts";
 import { FakeVice } from "./fake-vice.testkit.ts";
 import { readPng } from "../../graphics.testkit.ts";
-import { entriesSince, ViceSession, type SessionOptions } from "./session.ts";
+import { driveEntry, entriesSince, ViceSession, type SessionOptions } from "./session.ts";
 
 const fakes: FakeVice[] = [];
 const processes: Array<{ stop(): Promise<void> }> = [];
@@ -25,6 +25,19 @@ async function startSession(options: SessionOptions = {}) {
   fake.commands.length = 0;
   fake.textCommands.length = 0;
   return { fake, session, process };
+}
+
+/** The smallest CRT that the media check takes: a 64-byte header, then a CHIP packet. */
+function minimalCrt(): Buffer {
+  const header = Buffer.alloc(0x40);
+  header.write("C64 CARTRIDGE   ", 0, "latin1");
+  header.writeUInt32BE(0x40, 0x10);
+  const chip = Buffer.alloc(0x10 + 0x2000);
+  chip.write("CHIP", 0, "latin1");
+  chip.writeUInt32BE(chip.length, 4);
+  chip.writeUInt16BE(0x8000, 0x0c);
+  chip.writeUInt16BE(0x2000, 0x0e);
+  return Buffer.concat([header, chip]);
 }
 
 const failsWith = (code: string, message?: RegExp) => (error: unknown) =>
@@ -460,7 +473,7 @@ test("an autostart of another file detaches the cartridge that an autostart atta
   const { fake, session } = await startSession();
   await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
   assert.equal(fake.cartridgeDetaches, 0, "no cartridge, no detach");
-  await session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.from("C64 CARTRIDGE   ")]);
+  await session.handle("autostart", { type: "crt", index: 0, run: true }, [minimalCrt()]);
   assert.equal((await session.handle("status", {})).cartridge, true);
   await session.handle("reset", { mode: "hard", run: true });
   assert.equal((await session.handle("status", {})).cartridge, true, "a reset keeps the cartridge");
@@ -571,7 +584,7 @@ test("a staged program, disk or autostart file is removed once VICE no longer re
   await session.handle("autostart", { type: "d64", index: 0, run: true }, [Buffer.alloc(174848)]);
   const disk = fake.autostarts.at(-1)!.file;
   assert.equal(existsSync(second), false, "the autostarted disk replaces the attached one in drive 8");
-  await session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.from("C64 CARTRIDGE   ")]);
+  await session.handle("autostart", { type: "crt", index: 0, run: true }, [minimalCrt()]);
   const cartridge = fake.autostarts.at(-1)!.file;
   assert.deepEqual([existsSync(disk), existsSync(cartridge)], [true, true]);
   await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
@@ -1209,5 +1222,30 @@ test("pause and resume act on the whole machine and refuse space drive8", async 
   for (const action of ["pause", "resume"] as const) {
     await assert.rejects(session.handle("execution", { action, space: "drive8" }), /stops or runs the whole machine/);
   }
+  await session.close();
+});
+
+test("a drive history entry gets its bytes and text from drive memory while the opcode there is the same", () => {
+  const memory = new Uint8Array(0x10000);
+  memory.set([0x20, 0xa6, 0xd5], 0xd599);
+  const entry = { address: 0xd599, bytes: "20a600", text: "JSR $00a6", a: 0, x: 0, y: 0, sp: 0 };
+  assert.deepEqual(driveEntry(entry, memory), { ...entry, bytes: "20a6d5", text: "JSR $d5a6" });
+  memory[0xd599] = 0xea;
+  assert.deepEqual(driveEntry(entry, memory), entry, "changed code keeps what the emulator recorded");
+});
+
+test("a snapshot save at the reset stop is refused until an instruction ran", async () => {
+  const { session } = await startSession();
+  await session.handle("reset", { mode: "hard", run: false });
+  await assert.rejects(session.handle("snapshot", { action: "save", name: "at-reset" }), failsWith("operation-failed", /Step one instruction/));
+  await session.handle("execution", { action: "step", count: 1, space: "c64" });
+  assert.deepEqual(await session.handle("snapshot", { action: "save", name: "at-reset" }), { saved: true, name: "at-reset" });
+  await session.close();
+});
+
+test("removing a point names the other kind when the id is of a watchpoint", async () => {
+  const { session } = await startSession();
+  const watch = await session.handle("watchpoint", { action: "add", address: 0xd020, size: 1, access: "write", space: "c64" });
+  await assert.rejects(session.handle("breakpoint", { action: "remove", id: (watch as { id: number }).id }), failsWith("not-found", /is a watchpoint: use c64_watchpoint/));
   await session.close();
 });
