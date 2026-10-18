@@ -65,9 +65,14 @@ with the tools of that version, so the tools and the skills always match. Add to
 "runArgs": ["--add-host=host.docker.internal:host-gateway"]
 ```
 
-`target` is the harness, or a comma list such as `claude,codex`. `channel` is
-`latest` (the default) or `next` (prereleases). The Feature needs a Debian or
-Ubuntu image. `runArgs` is for Docker on Linux.
+`target` is the harness, or a comma list such as `claude,codex`. The Feature
+needs a Debian or Ubuntu image. `runArgs` is for Docker on Linux.
+
+To use prereleases, add `"channel": "next"` next to `target`, then rebuild the
+container. To go back to releases, remove `channel` (or set `"latest"`) and
+rebuild. The Feature reads its options only when the container is built.
+`next` moves only when a prerelease is tagged, so it can be older than
+`latest`: `npm view @henols/c64-re-tools dist-tags` shows both.
 
 ### Without a container
 
@@ -77,6 +82,8 @@ Then, in your project:
 ```
 npx -y @henols/c64-re-tools@latest install --target claude
 ```
+
+For a prerelease, use `@next` in place of `@latest`.
 
 `--target` is `claude`, `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor`
 or `windsurf`. Without it, `install` installs for all of them.
