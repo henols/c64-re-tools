@@ -31,7 +31,7 @@ import { decodeProgramCounter, MonitorConnectionError, MonitorError, MonitorTime
 import { decodeCia, decodeSid, decodeSprite, decodeVicii } from "./chips.ts";
 import { compareFrames, differenceImage } from "./screen.ts";
 import { isRefusal } from "../../errors.ts";
-import { checkMedia } from "../../media.ts";
+import { checkMedia, hasSignature } from "../../media.ts";
 import { launchVice, startErrorLines, type ViceMode, type ViceProcess } from "./process.ts";
 import { TextMonitorError, TextMonitorTimeoutError } from "./text-monitor.ts";
 
@@ -80,7 +80,6 @@ const WINDOW_CLOSED =
 
 /** Emulator state that a move to another VICE cannot carry. */
 /** The first bytes of every VICE snapshot file. */
-const VSF_MAGIC = Buffer.from("VICE Snapshot File\x1a", "latin1");
 const NOT_CARRIED = ["cpu history", "memory map", "profile", "keyboard input not yet typed"];
 
 /** Starts another VICE for this session; `log` also gets that launch's lines. */
@@ -1343,7 +1342,7 @@ export class ViceSession implements ViceSessionHandle {
     }
     const bytes = onlyAttachment(attachments);
     // Checked before the machine stops: VICE gives no reason for a file that is no snapshot.
-    if (!bytes.subarray(0, VSF_MAGIC.length).equals(VSF_MAGIC)) throw new WireFailure("invalid-input", "The file is not a VICE snapshot file (.vsf). Give a file that c64_snapshot save wrote.");
+    if (!hasSignature("vsf", bytes)) throw new WireFailure("invalid-input", "The file is not a VICE snapshot file (.vsf). Give a file that c64_snapshot save wrote.");
     const file = this.#stage(bytes, "vsf");
     // VICE resets the machine after a snapshot file that it cannot read: a backup keeps the state before the restore.
     const backup = join(this.#workDir, "before-restore.vsf");
