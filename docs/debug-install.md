@@ -22,7 +22,7 @@ For the MCP server and the skill scripts, set `C64RT_TRACE` in the project's `.c
 
 ## Dev container
 
-`status` in the container must show the Host Runtime as reachable. The Host Runtime listens on every address, and `runArgs` in the README lets the container reach it as `host.docker.internal`.
+`status` in the container must show the Host Runtime as reachable. The Host Runtime listens on every address, and `runArgs` in `devcontainer.json` lets the container reach it as `host.docker.internal`.
 
 Each start installs the toolkit and its tools again, but only what changed. To do it now and see the output:
 

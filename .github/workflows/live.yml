@@ -2,6 +2,8 @@ name: Live
 
 # The live suites with a real VICE on Linux, macOS and Windows. CI installs
 # VICE itself; the product never does (it refuses by name with the remedy).
+# The skill scripts run only in the Linux dev container, so only Linux gets
+# ACME, dxa, c64run and Ghidra; on macOS and Windows their tests skip.
 # c64-re-tools needs VICE 3.9 or later and supports the latest release:
 # Linux runs in Debian 13, whose package is VICE 3.9, the minimum (Ubuntu
 # 24.04 has 3.7.1). Windows and macOS (Homebrew), which run the latest release, are off for now.
@@ -48,24 +50,13 @@ jobs:
           echo "C64RT_LIVE_VICE=$(command -v x64sc)" >> "$GITHUB_ENV"
           x64sc -version || true
 
-      # The native tools of the skill scripts: ACME from Debian, dxa 0.1.5 from its upstream source
-      # (checked against its published MD5), Ghidra 12.1.3 with JDK 21.
-      - name: Install ACME, dxa and Ghidra
-        run: |
-          apt-get install -y --no-install-recommends unzip build-essential acme openjdk-21-jdk-headless
-          curl -fsSL -o /tmp/dxa.tgz https://sources.voidlinux.org/dxa-0.1.5/dxa-0.1.5.tar.gz
-          echo "6d69ae1772ed58de97b0180e480dfe0c  /tmp/dxa.tgz" | md5sum -c -
-          tar -xzf /tmp/dxa.tgz -C /tmp
-          make -C /tmp/dxa-0.1.5 CC=gcc
-          install -m 0755 /tmp/dxa-0.1.5/dxa /usr/local/bin/dxa
-          curl -fsSL -o /tmp/ghidra.zip https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
-          unzip -q /tmp/ghidra.zip -d /opt
-          rm /tmp/ghidra.zip
-          echo "C64RT_GHIDRA=/opt/ghidra_12.1.3_PUBLIC" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
-      # The replay core of c64-testing, as the dev container Feature builds it.
-      - name: Install c64run
-        run: bash tools/install-chips.sh
+      # The native tools of the skill scripts, as the dev container Feature installs them.
+      - name: Install ACME, dxa, c64run and Ghidra
+        run: |
+          apt-get install -y --no-install-recommends openjdk-21-jdk-headless
+          bash tools/install-container.sh
+          echo "C64RT_GHIDRA=/opt/ghidra" >> "$GITHUB_ENV"
       # In a container, Node.js must come first: the pnpm installer runs on it.
       - uses: actions/setup-node@v4
         with:
@@ -113,27 +104,6 @@ jobs:
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
           "$(brew --prefix)/bin/x64sc" -version || true
 
-      # The native tools of the skill scripts on macOS: ACME and JDK 21 from Homebrew, dxa 0.1.5 from its
-      # upstream source, Ghidra 12.1.3.
-      - name: Install ACME, dxa and Ghidra (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install acme openjdk@21 gradle
-          jdk="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
-          echo "JAVA_HOME=$jdk" >> "$GITHUB_ENV"
-          echo "$jdk/bin" >> "$GITHUB_PATH"
-          curl -fsSL -o "$RUNNER_TEMP/dxa.tgz" https://sources.voidlinux.org/dxa-0.1.5/dxa-0.1.5.tar.gz
-          test "$(md5 -q "$RUNNER_TEMP/dxa.tgz")" = 6d69ae1772ed58de97b0180e480dfe0c
-          tar -xzf "$RUNNER_TEMP/dxa.tgz" -C "$RUNNER_TEMP"
-          make -C "$RUNNER_TEMP/dxa-0.1.5" CC=clang
-          mkdir -p "$HOME/bin" && install -m 0755 "$RUNNER_TEMP/dxa-0.1.5/dxa" "$HOME/bin/dxa"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-          curl -fsSL -o "$RUNNER_TEMP/ghidra.zip" https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
-          unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$HOME"
-          # Ghidra ships no native decompiler for macOS; its Gradle wrapper builds it (GettingStarted.md).
-          (cd "$HOME/ghidra_12.1.3_PUBLIC/support/gradle" && JAVA_HOME="$jdk" PATH="$jdk/bin:$PATH" ./gradlew buildNatives)
-          echo "C64RT_GHIDRA=$HOME/ghidra_12.1.3_PUBLIC" >> "$GITHUB_ENV"
-
       - name: Install VICE (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -144,60 +114,6 @@ jobs:
           $bin = (Get-ChildItem -Path "$env:RUNNER_TEMP\vice" -Recurse -Filter x64sc.exe | Select-Object -First 1).DirectoryName
           "C64RT_LIVE_VICE=$bin\x64sc.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           $bin | Out-File -FilePath $env:GITHUB_PATH -Append
-
-      # Ghidra 12.1.3 on the runner's JDK 21. A failed download or unzip fails the job.
-      - name: Install Ghidra (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          T="$(cygpath -u "$RUNNER_TEMP")"
-          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
-          curl -fsSL -o "$T/ghidra.zip" https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
-          unzip -q "$T/ghidra.zip" -d "$T"
-          rm "$T/ghidra.zip"
-          test -f "$T/ghidra_12.1.3_PUBLIC/support/analyzeHeadless.bat"
-          echo "C64RT_GHIDRA=$(cygpath -w "$T/ghidra_12.1.3_PUBLIC")" >> "$GITHUB_ENV"
-          mkdir -p "$T/bin"
-          cygpath -w "$T/bin" >> "$GITHUB_PATH"
-
-      # dxa and ACME built with MinGW from their sources. A tool that does not build stays missing,
-      # and its tests skip by name; the next step names it.
-      - name: Build dxa and ACME (Windows)
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -x
-          # Unix-style paths: Git Bash tar reads "D:\\..." as a remote host.
-          T="$(cygpath -u "$RUNNER_TEMP")"
-          MAKE="$(command -v make || command -v mingw32-make)"
-          curl -fsSL -o "$T/dxa.tgz" https://sources.voidlinux.org/dxa-0.1.5/dxa-0.1.5.tar.gz
-          echo "6d69ae1772ed58de97b0180e480dfe0c  $T/dxa.tgz" | md5sum -c -
-          tar -xzf "$T/dxa.tgz" -C "$T"
-          # A build is installed only when it runs.
-          "$MAKE" -C "$T/dxa-0.1.5" CC=gcc LDFLAGS=-static || true
-          ls -la "$T/dxa-0.1.5" | grep -i dxa || true
-          # dxa -h exits non-zero and names itself by its full path on Windows.
-          out="$("$T/dxa-0.1.5/dxa.exe" -h 2>&1 || true)"; echo "dxa -h: $out"
-          if echo "$out" | grep -q "v0.1.5 -- symbolic"; then cp "$T/dxa-0.1.5/dxa.exe" "$T/bin/"; else echo "dxa does not run"; fi
-          git clone --depth 1 https://github.com/meonwax/acme.git "$T/acme" && "$MAKE" -C "$T/acme/src" CC=gcc LDFLAGS=-static || true
-          ls -la "$T/acme/src" | grep -i "acme\b\|\.exe" || true
-          out="$("$T/acme/src/acme.exe" --version 2>&1 || true)"; echo "acme --version: $out"
-          if echo "$out" | grep -q "This is ACME"; then cp "$T/acme/src/acme.exe" "$T/bin/"; else echo "ACME does not run"; fi
-
-      # The tool set of the Windows run: VICE and Ghidra must be there; a missing dxa or ACME is a warning.
-      - name: Native tool set (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          T="$(cygpath -u "$RUNNER_TEMP")"
-          test -f "$(cygpath -u "$C64RT_LIVE_VICE")"
-          echo "VICE: $C64RT_LIVE_VICE"
-          test -f "$(cygpath -u "$C64RT_GHIDRA")/support/analyzeHeadless.bat"
-          echo "Ghidra: $C64RT_GHIDRA"
-          for tool in dxa acme; do
-            if [ -f "$T/bin/$tool.exe" ]; then echo "$tool: $T/bin/$tool.exe"; else echo "::warning::$tool did not build on Windows; its tests skip"; fi
-          done
 
       # macOS and Windows runners have a display for the c64_window tests. A step limit keeps the log of a hang.
       - name: Live suites

@@ -48,7 +48,7 @@ test("analyzeHeadless on PATH finds its installation", () => {
 });
 
 test("a missing or wrong Ghidra is refused by name with the remedy", () => {
-  assert.throws(() => findGhidra({ PATH: "" }), (error: unknown) => failsWith("installation-incomplete")(error) && /Ghidra is not installed.*C64RT_GHIDRA/.test((error as Error).message));
+  assert.throws(() => findGhidra({ PATH: "" }), (error: unknown) => failsWith("installation-incomplete")(error) && /Ghidra is not installed.*dev container of c64-re-tools/.test((error as Error).message));
   assert.throws(() => findGhidra({ C64RT_GHIDRA: scratch, PATH: "" }), failsWith("installation-incomplete"));
   assert.throws(() => findGhidra({ C64RT_GHIDRA: "relative/ghidra", PATH: "" }), failsWith("installation-incomplete"));
 });

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Installs Ghidra in $DEST/ghidra_<version>_PUBLIC (DEST: /opt) and points
-# $DEST/ghidra at it, so that C64RT_GHIDRA=$DEST/ghidra stays the same when
-# the version changes. Removes the Ghidra versions that it installed before.
-# Ghidra needs Java 21. Debian and Ubuntu.
+# Installs Ghidra in /opt/ghidra_<version>_PUBLIC and points /opt/ghidra at
+# it, so that C64RT_GHIDRA=/opt/ghidra stays the same when the version
+# changes. Removes the Ghidra versions that it installed before. Ghidra needs
+# Java 21. install-container.sh runs it as root.
 
 set -Eeuo pipefail
 
@@ -10,7 +10,7 @@ GHIDRA_VERSION="12.1.3"
 GHIDRA_ZIP="ghidra_${GHIDRA_VERSION}_PUBLIC_20260817.zip"
 GHIDRA_URL="https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/${GHIDRA_ZIP}"
 GHIDRA_SHA256="93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54"
-DEST="${DEST:-/opt}"
+DEST="/opt"
 GHIDRA_DIR="${DEST}/ghidra_${GHIDRA_VERSION}_PUBLIC"
 
 fail() {
@@ -18,7 +18,7 @@ fail() {
     exit 1
 }
 
-[[ "$(id -u)" -eq 0 || -w "${DEST}" ]] || fail "run as root, or set DEST to a folder that you can write."
+[[ "$(id -u)" -eq 0 ]] || fail "run as root."
 
 if [[ ! -d "${GHIDRA_DIR}" ]]; then
     BUILD_DIR="$(mktemp -d -t ghidra-XXXXXXXX)"

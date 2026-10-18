@@ -29,14 +29,14 @@ Harnesses: claude, codex, pi, opencode, gemini, copilot, cursor, windsurf
 (comma-separated; default: all). Without --global the files go into the
 current folder; with --global into your home directory.
 
-Run it once at the root of the repository:
-npx -y ${PACKAGE.name}@${PACKAGE.tag} install. Each project folder below
-the root uses that install; a project is a folder with .c64-re-tools/. The
-VICE MCP declaration starts the latest c64-re-tools-mcp through npx. The Host
-Runtime runs on the machine with VICE: start it there with
-npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host.
+The dev container Feature of c64-re-tools runs install at the root of the
+repository when it creates the container, and update at each start. Each
+project folder below the root uses that install; a project is a folder with
+.c64-re-tools/. The VICE MCP declaration starts the latest c64-re-tools-mcp
+through npx. The Host Runtime runs on the machine with VICE: start it there
+with npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host.
 It runs VICE and the tools that come with it (c1541, petcat). The skill
-scripts run ACME, DXA and Ghidra themselves, on the machine of the agent.`;
+scripts run ACME, DXA, Ghidra and c64run in the dev container.`;
 
 const here = dirname(fileURLToPath(import.meta.url));
 

@@ -7,8 +7,8 @@ import { isAbsolute, join, posix, win32 } from "node:path";
 
 import { WireFailure } from "../protocol/messages.ts";
 
-/** Where the user finds the install steps of the native tools for each system. */
-export const INSTALL_STEPS = "Steps for each system: https://github.com/henols/c64-re-tools/blob/main/docs/install-tools.md. In the dev container of c64-re-tools, restart the container: each start installs the tools of the toolkit version.";
+/** The remedy for a missing native tool: the dev container of c64-re-tools installs every one. */
+export const INSTALL_STEPS = "The dev container of c64-re-tools installs it at each start: restart the container, or rebuild it. Without that dev container, set it up as https://github.com/henols/c64-re-tools#dev-container tells.";
 
 export interface ToolSpec {
   /** Human name, for messages. */
@@ -28,7 +28,7 @@ export const ACME: ToolSpec = {
   envVar: "C64RT_ACME",
   binaries: ["acme"],
   where: "on this machine",
-  remedy: `Install the ACME cross-assembler on the machine that runs the skill scripts so that acme is on PATH, or set C64RT_ACME to its full path. ${INSTALL_STEPS}`,
+  remedy: INSTALL_STEPS,
 };
 
 export const C1541: ToolSpec = {
@@ -52,7 +52,7 @@ export const DXA: ToolSpec = {
   envVar: "C64RT_DXA",
   binaries: ["dxa"],
   where: "on this machine",
-  remedy: `Install dxa 0.1.5 on the machine that runs the skill scripts so that dxa is on PATH, or set C64RT_DXA to its full path. ${INSTALL_STEPS}`,
+  remedy: INSTALL_STEPS,
 };
 
 export const C64RUN: ToolSpec = {
@@ -60,7 +60,7 @@ export const C64RUN: ToolSpec = {
   envVar: "C64RT_C64RUN",
   binaries: ["c64run"],
   where: "on this machine",
-  remedy: `Install c64run (the replay core of c64-testing, with its C64 ROMs) on the machine that runs the skill scripts so that c64run is on PATH, or set C64RT_C64RUN to its full path. ${INSTALL_STEPS}`,
+  remedy: INSTALL_STEPS,
 };
 
 export const VICE: ToolSpec = {

@@ -21,10 +21,6 @@ export const GHIDRA_LANGUAGE = "C64RT_6510:LE:16:nmos";
 export const LANGUAGE_DIRECTORY = fileURLToPath(new URL("./language/", import.meta.url));
 export const SCRIPT_DIRECTORY = fileURLToPath(new URL("./scripts/", import.meta.url));
 
-const REMEDY =
-  "Install Ghidra on the machine that runs the skill scripts and set C64RT_GHIDRA to its installation directory " +
-  `(the directory that holds support/analyzeHeadless), or put analyzeHeadless on PATH. ${INSTALL_STEPS}`;
-
 export interface GhidraInstallation {
   /** The installation directory. */
   root: string;
@@ -46,12 +42,12 @@ function installationAt(root: string, source: string): GhidraInstallation {
     if (!isExecutableFile(analyzeHeadless)) throw new Refusal("operation-failed", "no analyzeHeadless");
     properties = readFileSync(join(root, "Ghidra", "application.properties"), "utf8");
   } catch {
-    throw new WireFailure("installation-incomplete", `${source} does not point to a Ghidra installation. ${REMEDY}`);
+    throw new WireFailure("installation-incomplete", `${source} does not point to a Ghidra installation. ${INSTALL_STEPS}`);
   }
   const value = (key: string) => new RegExp(`^${key.replace(/\./g, "\\.")}=(.*)$`, "m").exec(properties)?.[1]?.trim();
   const version = value("application.version");
   const release = value("application.release.name");
-  if (version === undefined || release === undefined) throw new WireFailure("installation-incomplete", `The Ghidra installation at ${source} has no version. ${REMEDY}`);
+  if (version === undefined || release === undefined) throw new WireFailure("installation-incomplete", `The Ghidra installation at ${source} has no version. ${INSTALL_STEPS}`);
   const javaMin = value("application.java.min");
   return { root, analyzeHeadless, settingsName: `ghidra_${version}_${release}`, version, ...(javaMin === undefined || javaMin === "" ? {} : { javaMin }) };
 }
@@ -65,12 +61,12 @@ export function ghidraVersion(ghidra: GhidraInstallation): string {
 export function findGhidra(env: NodeJS.ProcessEnv = process.env): GhidraInstallation {
   const configured = env.C64RT_GHIDRA;
   if (configured !== undefined && configured !== "") {
-    if (!isAbsolute(configured)) throw new WireFailure("installation-incomplete", `C64RT_GHIDRA on this machine is not an absolute path. ${REMEDY}`);
+    if (!isAbsolute(configured)) throw new WireFailure("installation-incomplete", `C64RT_GHIDRA on this machine is not an absolute path. ${INSTALL_STEPS}`);
     return installationAt(configured, "C64RT_GHIDRA");
   }
   const found = findOnPath(["analyzeHeadless"], env, [LAUNCHER_SUFFIX]);
   if (found !== undefined) return installationAt(resolve(dirname(realpathSync(found)), ".."), "analyzeHeadless on PATH");
-  throw new WireFailure("installation-incomplete", `Ghidra is not installed on this machine. ${REMEDY}`);
+  throw new WireFailure("installation-incomplete", `Ghidra is not installed on this machine. ${INSTALL_STEPS}`);
 }
 
 /**
@@ -135,7 +131,7 @@ export function noJdk(ghidra: GhidraInstallation): WireFailure {
   const java = ghidra.javaMin === undefined ? "a JDK" : `JDK ${ghidra.javaMin} or later`;
   return new WireFailure(
     "installation-incomplete",
-    `${ghidraVersion(ghidra)} found no Java that it can use. It needs ${java}. Install it on the machine that runs the skill scripts and put its java on PATH, or set JAVA_HOME to it. ${INSTALL_STEPS}`,
+    `${ghidraVersion(ghidra)} found no Java that it can use. It needs ${java}. ${INSTALL_STEPS}`,
   );
 }
 

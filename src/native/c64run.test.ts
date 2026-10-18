@@ -68,7 +68,7 @@ test("a missing c64run, another protocol or missing ROMs refuse with installatio
   await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-1", { protocol: 1 }) })), refused(/protocol 1; c64-re-tools needs protocol 2/));
   const session = await C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-no-roms", { roms: false }) }));
   try {
-    await assert.rejects(session.init(), refused(/no ROM .*C64RT_C64_ROMS/));
+    await assert.rejects(session.init(), refused(/no ROM .*dev container of c64-re-tools/));
   } finally {
     await session.close();
   }

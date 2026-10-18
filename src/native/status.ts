@@ -114,7 +114,7 @@ export async function probeC64run(context: ToolContext): Promise<ToolStatus> {
       context,
       (output) => {
         const missing = /^roms=missing (.*)$/m.exec(output)?.[1];
-        return missing === undefined ? undefined : `It has no C64 ROMs: ${missing}. Set C64RT_C64_ROMS to a folder with kernal-901227-03.bin, basic-901226-01.bin and chargen-901225-01.bin (the C64 folder of VICE has them). ${INSTALL_STEPS}`;
+        return missing === undefined ? undefined : `It has no C64 ROMs: ${missing}. ${INSTALL_STEPS}`;
       },
     );
   } catch (error) {

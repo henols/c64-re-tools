@@ -67,7 +67,7 @@ test("the local tools are reported as running, missing, or found but not running
   assert.match(dxa!.problem!, /C64RT_DXA/);
   assert.equal(ghidraStatus?.found, false);
   assert.deepEqual([c64run?.found, c64run?.runs], [true, false]);
-  assert.match(c64run!.problem!, /^It has no C64 ROMs: \/opt\/roms has no kernal-901227-03\.bin\. Set C64RT_C64_ROMS/);
+  assert.match(c64run!.problem!, /^It has no C64 ROMs: \/opt\/roms has no kernal-901227-03\.bin\. The dev container of c64-re-tools installs it/);
 });
 
 test("a Ghidra without a usable JDK is reported with the Java it needs", { skip, timeout: 30_000 }, async () => {

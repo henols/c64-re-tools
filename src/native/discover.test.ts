@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../protocol/messages.ts";
-import { ACME, environmentValue, findOnPath, findTool, pathSuffixes } from "./discover.ts";
+import { ACME, environmentValue, findOnPath, findTool, INSTALL_STEPS, pathSuffixes } from "./discover.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-discover-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -18,7 +18,7 @@ function executable(name: string): string {
 }
 
 const refused = (error: unknown) =>
-  error instanceof WireFailure && error.code === "installation-incomplete" && /ACME/.test(error.message) && /C64RT_ACME/.test(error.message);
+  error instanceof WireFailure && error.code === "installation-incomplete" && /ACME/.test(error.message) && error.message.includes(INSTALL_STEPS);
 
 test("a tool is found through its variable, else on PATH", () => {
   // Windows starts only a file with a startable extension; elsewhere the bare name is the program.

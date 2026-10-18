@@ -3,7 +3,8 @@
 set -Eeuo pipefail
 
 # ------------------------------------------------------------
-# dxa installer for Debian / Ubuntu
+# dxa installer. install-container.sh runs it as root, with build-essential
+# and curl.
 #
 # Installs:
 #   /usr/local/bin/dxa
@@ -59,39 +60,10 @@ trap cleanup EXIT
 
 
 # ------------------------------------------------------------
-# Check platform
+# Check user
 # ------------------------------------------------------------
 
-if [[ ! -f /etc/os-release ]]; then
-    error "This script is intended for Debian/Ubuntu-style Linux systems."
-fi
-
-# shellcheck disable=SC1091
-source /etc/os-release
-
-case "${ID:-}" in
-    debian|ubuntu)
-        ;;
-    *)
-        if [[ "${ID_LIKE:-}" != *debian* ]]; then
-            error "Unsupported distribution: ${ID:-unknown}. This script expects Debian or Ubuntu."
-        fi
-        ;;
-esac
-
-
-# ------------------------------------------------------------
-# Determine sudo command
-# ------------------------------------------------------------
-
-if [[ "$(id -u)" -eq 0 ]]; then
-    SUDO=""
-else
-    command -v sudo >/dev/null 2>&1 ||
-        error "sudo is required when the script is not run as root."
-
-    SUDO="sudo"
-fi
+[[ "$(id -u)" -eq 0 ]] || error "Run as root."
 
 
 # ------------------------------------------------------------
@@ -110,20 +82,6 @@ This script installs dxa only.
 It will NOT install xa or xa65.
 
 EOF
-
-
-# ------------------------------------------------------------
-# Install build requirements
-# ------------------------------------------------------------
-
-info "Installing build requirements"
-
-${SUDO} apt-get update
-
-${SUDO} apt-get install -y --no-install-recommends \
-    build-essential \
-    ca-certificates \
-    curl
 
 
 # ------------------------------------------------------------
@@ -260,9 +218,9 @@ echo "Compiled dxa binary runs."
 
 info "Installing dxa"
 
-${SUDO} install -d -m 0755 "${BIN_DIR}"
+install -d -m 0755 "${BIN_DIR}"
 
-${SUDO} install \
+install \
     -m 0755 \
     "${DXA_BINARY}" \
     "${BIN_DIR}/dxa"
@@ -284,15 +242,15 @@ if [[ -n "${DXA_MANPAGE}" ]]; then
 
     info "Installing dxa manual page"
 
-    ${SUDO} install -d -m 0755 "${MAN_DIR}"
+    install -d -m 0755 "${MAN_DIR}"
 
-    ${SUDO} install \
+    install \
         -m 0644 \
         "${DXA_MANPAGE}" \
         "${MAN_DIR}/dxa.1"
 
     if command -v mandb >/dev/null 2>&1; then
-        ${SUDO} mandb -q || true
+        mandb -q || true
     fi
 else
     echo

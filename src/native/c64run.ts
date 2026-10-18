@@ -127,7 +127,7 @@ export class C64RunSession {
       if (error instanceof WireFailure && /no ROM/.test(error.message)) {
         throw new WireFailure(
           "installation-incomplete",
-          `${error.message}. c64run needs the C64 ROMs kernal-901227-03.bin, basic-901226-01.bin and chargen-901225-01.bin: set C64RT_C64_ROMS to a folder with them (the C64 folder of VICE has them). ${INSTALL_STEPS}`,
+          `${error.message}. c64run needs the C64 ROMs kernal-901227-03.bin, basic-901226-01.bin and chargen-901225-01.bin. ${INSTALL_STEPS}`,
         );
       }
       throw error;

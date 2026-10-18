@@ -36,15 +36,17 @@ Windsurf.
 ## How it works
 
 VICE and the Host Runtime run on your computer, where VICE can open a window.
-The agent runs in your project, preferably in a dev container. It reaches VICE
-through an MCP server, and it runs ACME, DXA and Ghidra through its skills.
+The agent runs in a dev container in your project. It reaches VICE through an
+MCP server, and it runs ACME, DXA, Ghidra and c64run through its skills.
 
 ## Install
 
-You need Node.js 24 or newer and VICE 3.9 or later (`x64sc`, `c1541`, `petcat`)
-with its ROM files on the host. Use the latest VICE release.
+### Host
 
-Start the Host Runtime on the host, and leave it running:
+You need Node.js 24 or newer and VICE 3.9 or later (`x64sc`, `c1541`, `petcat`)
+with its ROM files. Use the latest VICE release.
+
+Start the Host Runtime, and leave it running:
 
 ```
 npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host
@@ -54,42 +56,25 @@ npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host
 
 ### Dev container
 
-This is the preferred way. The container gets Node.js 24, ACME, dxa, Java 21, Ghidra and c64run.
-At each start it installs the newest toolkit of the channel into the project,
-with the tools of that version, so the tools and the skills always match. Add to `.devcontainer/devcontainer.json`:
-
-```json
-"features": {
-  "https://github.com/henols/c64-re-tools/releases/latest/download/devcontainer-feature-c64-re-tools.tgz": { "target": "claude" }
-},
-"runArgs": ["--add-host=host.docker.internal:host-gateway"]
-```
-
-`target` is the harness, or a comma list such as `claude,codex`. The Feature
-needs a Debian or Ubuntu image. `runArgs` is for Docker on Linux.
-
-To use prereleases, add `"channel": "next"` next to `target`, then rebuild the
-container. To go back to releases, remove `channel` (or set `"latest"`) and
-rebuild. The Feature reads its options only when the container is built.
-With `next`, the container gets the newer of the prerelease and the release,
-so it is never older than `latest`.
-
-### Without a container
-
-Install ACME, dxa, Ghidra and c64run as in [docs/install-tools.md](docs/install-tools.md).
-Then, in your project:
+You need Docker or Podman. Copy the example into your project:
 
 ```
-npx -y @henols/c64-re-tools@latest install --target claude
+mkdir -p .devcontainer
+curl -fsSL -o .devcontainer/devcontainer.json https://raw.githubusercontent.com/henols/c64-re-tools/main/devcontainer/example/devcontainer.json
 ```
 
-For a prerelease, use `@next` in place of `@latest`. npm moves `next` only when
-a prerelease is tagged, so after a release `@next` can be older than `@latest`.
+Its comments tell what to change: the harness, the release channel, the image
+and the address of the Host Runtime. If the project already has a
+`devcontainer.json`, copy the c64-re-tools Feature and `runArgs` into it.
 
-`--target` is `claude`, `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor`
-or `windsurf`. Without it, `install` installs for all of them.
+Open the project in the container, for example with "Reopen in Container" in
+VS Code, or with `npx -y @devcontainers/cli up --workspace-folder .`. The
+Feature gives the container ACME, dxa, Java 21, Ghidra and c64run. At each
+start it installs the newest toolkit of its channel into the project, with the
+tools of that version. It reads its options only when the container is built:
+rebuild after a change.
 
-Check what works:
+Check what works, in the container:
 
 ```
 npx -y @henols/c64-re-tools@latest status
@@ -115,8 +100,8 @@ The agent keeps what it learns about a program as text in
 `.c64-re-tools/knowledge/`. Commit that folder with the project. If a command
 reports conflicts after a `git pull`, run `knowledge.ts merge`.
 
-Several programs in one repository: install once at the root and give each
-program its own folder. A folder with `.c64-re-tools/` is a project.
+Several programs in one repository: open the repository root in the dev
+container and give each program its own folder. A folder with `.c64-re-tools/` is a project.
 
 ## Skills
 
@@ -139,12 +124,12 @@ program its own folder. A folder with `.c64-re-tools/` is a project.
 
 ## Settings
 
+Set the host variables where the Host Runtime starts, and the others in
+`containerEnv` of the `devcontainer.json`.
+
 | Variable | Meaning |
 | --- | --- |
 | `C64RT_VICE`, `C64RT_C1541`, `C64RT_PETCAT` | Full path of the VICE tool, when it is not on `PATH` (host). |
-| `C64RT_ACME`, `C64RT_DXA`, `C64RT_C64RUN` | Full path of the tool, when it is not on `PATH`. |
-| `C64RT_C64_ROMS` | The C64 ROM folder of c64run, when it is not `share/c64-re-tools/roms` next to its `bin`. |
-| `C64RT_GHIDRA` | The Ghidra installation directory, when `analyzeHeadless` is not on `PATH`. |
 | `C64RT_HOST` | `host:port` of the Host Runtime, when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at port 6464. |
 | `C64RT_VIDEO` | `pal` (default) or `ntsc`. |
 | `C64RT_TRACE` | A directory for a trace of a run. See [docs/debug-install.md](docs/debug-install.md). |
@@ -160,7 +145,9 @@ pnpm test
 pnpm host          # the Host Runtime from this checkout
 ```
 
-Tests that need real tools are skipped unless you turn them on:
+Tests that need real tools are skipped unless you turn them on. On Debian or
+Ubuntu, `sudo bash tools/install-container.sh` installs ACME, dxa, c64run and
+Ghidra (in `/opt/ghidra`, with Java 21 from you), as the dev container does:
 
 ```
 C64RT_LIVE_VICE=/usr/bin/x64sc C64RT_GHIDRA=/opt/ghidra pnpm test
