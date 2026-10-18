@@ -31,7 +31,7 @@ node <skill>/scripts/assembler.ts build src main.a --out build/game.prg
 | `--include lib` | An include directory, relative to the source root. Use it again for more directories. |
 | `--define DEBUG=1` | An assembler symbol: an integer, also as `$` hex, or `true` or `false`. Use it again for more symbols. |
 | `--set-pc '$0801'` | The start address when the source does not set one. |
-| `--release ORIGINAL` | Build a release of the knowledge. The script defines `RELEASE_ORIGINAL=1`, so each switch has the value of that release. With `--compare`, the script compares with the file of the release. A `--define` of a switch overrides the release. |
+| `--release ORIGINAL` | Build a release of the knowledge. The script defines `RELEASE_ORIGINAL=1`, so each switch has the value of that release. With `--compare`, the script compares with the file of the release. A release build does not read `config.asm`. |
 | `--compare` | Check the program byte by byte against the program in the knowledge, each segment. Put it in with `image` of the c64-knowledge skill. `--space drive8` or `--space bank0` compares with the program of that space. The script refuses `--space` without `--compare` or `--release`. |
 | `--plain` | Write only the bytes of the program, without the 2-byte load address of a PRG. `loadRange` still tells where the bytes go. |
 | `--all-symbols` | List all symbols. Without it, the list does not include the constants that the source does not use. `unusedConstants` gives their count. |
@@ -75,7 +75,7 @@ The target CPU is the 6510. The output is a C64 PRG, or the bytes only with `--p
 4. If `result` is `FAIL` and `assembled` is `false`, read `diagnostics`. Each one has a severity, a file, a line and a message. Correct the source and run the script again.
 5. To run the program, give the PRG path to the c64-emulator skill.
 
-The source of the c64-source skill has switches in `switches.asm`. Without an option, the build is the default build: the clean program without copy protection, trainers, cheats and crack changes, and with all corrections. This build can differ from the program in the knowledge, so `--compare` can give `FAIL`. Use `--release <label> --compare` to check the build of a release. `--define TRAINER=1` puts in the patches of the switch `TRAINER`.
+The source of the c64-source skill has switches in `config.asm`. Without an option, the build uses the values in `config.asm`. With the defaults, this is the clean program without copy protection, trainers, cheats and crack changes, and with all corrections. This build can differ from the program in the knowledge, so `--compare` can give `FAIL`. Use `--release <label> --compare` to check the build of a release. To put in the patches of the switch `TRAINER`, set `TRAINER = 1` in `config.asm`. Do not use `--define` for a switch: ACME stops with `Symbol already defined`.
 
 ## Knowledge
 

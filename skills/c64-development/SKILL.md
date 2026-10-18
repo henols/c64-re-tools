@@ -127,7 +127,7 @@ A rebuilt program gets its source from the knowledge. A change is a switch and i
 7. Build with c64-assembler:
    - `--release <base label> --compare`: this build must be identical to the original.
    - The default build, with no option.
-   - A build with `--define <SWITCH>=1` when the default build does not have the switch.
+   - When the default build does not have the switch: set the switch to 1 in `src/config.asm`, then build with no option. After the test, set the value back to the default if the user did not ask for the change.
 8. Test the build that has the switch:
    - Run the scenarios in `tests/` with `testing.ts test`, where the behavior must stay the same as the original.
    - Run a run file with `expect` steps that show the feature or the fix.

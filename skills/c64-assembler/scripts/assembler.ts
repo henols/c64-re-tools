@@ -53,7 +53,7 @@ await runScript({
         "max-listed": { ...OPTIONS["max-listed"], help: "list at most n symbols (default 50). The count is always given" },
         "out-symbols": { kind: "path", output: "file", value: "<file.json>", help: "write the listed symbols to this project file as {\"symbols\": [...]}: the names of the rebuild for c64-testing. Without --all-symbols, the file does not have the constants that the source does not use" },
       },
-      notes: "Symbol values are $ and at least four hex digits. Put the program into the knowledge with knowledge.ts image of the c64-knowledge skill before --compare. Without --release and --define, the build is the default build of switches.asm: the clean program, which is not the bytes of a release when a switch has a default that the base release does not have.",
+      notes: "Symbol values are $ and at least four hex digits. Put the program into the knowledge with knowledge.ts image of the c64-knowledge skill before --compare. Without --release, the build has the switch values of config.asm. With the defaults, this is the clean program, which is not the bytes of a release when a switch has a default that the base release does not have. Set a switch in config.asm, not with --define: ACME stops with Symbol already defined.",
       run: async (call) => {
         const [sourceRoot, entry] = [call.subject(0), call.subject(1)];
         const out = call.string("out")!;

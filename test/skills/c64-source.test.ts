@@ -18,7 +18,7 @@ import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
 import { ciaSection, copyOrder, loaderLimits, planLoader, loaderState, simulate, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
-import { entriesInData, entryOutsideImage, layout, render, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
+import { configValues, entriesInData, entryOutsideImage, layout, render, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 
 let acmeSkip: string | false = false;
@@ -777,6 +777,12 @@ test("a CIA timer that the loader cannot set as it was is a named limit", () => 
   assert.equal(ciaSection({ ...ciaState(KERNAL_CIA2(), KERNAL_CIA2()), cia: undefined } as unknown as EntryState), undefined);
 });
 
+/** The rendered files with each value set in config.asm, as a user edits it. */
+function withConfig(rendered: ReturnType<typeof render>, values: Record<string, number>): ReturnType<typeof render> {
+  const set = (text: string) => Object.entries(values).reduce((out, [name, value]) => out.replace(new RegExp(`^(${name} *= )[01]`, "m"), `$1${value}`), text);
+  return { ...rendered, files: rendered.files.map((file) => (file.name === "config.asm" ? { ...file, text: set(file.text) } : file)) };
+}
+
 /** Assembles rendered files with ACME; the program bytes after the load address, or the diagnostics. */
 async function assembleRendered(rendered: ReturnType<typeof render>, defines: Record<string, number> = {}): Promise<{ bytes?: number[]; messages: string[] }> {
   const contents = rendered.files.map((file) => Buffer.from(file.text));
@@ -812,7 +818,8 @@ test("a patch is written as !if SWITCH { code, NOP } else { original }, with its
     /^l_1000\nstore = \* \+ 2\nl_1003 = \* \+ 3\n!zone patch_CRACK_1000 \{\n\.patch_start\n!if CRACK \{\n {8}; CRACK on: 5 bytes at \$1000-\$1004, NOP after the code\n {8}; A grey border\.\n {8}lda #1\n {8}sta \$d021\n {8}!if \* - \.patch_start > 5 \{ !error .*\} else \{ !fill 5 - \(\* - \.patch_start\), \$ea \}\n\} else \{\n {8}lda #\$00\n {8}sta \$d020\n\}\n\}\n {8}jmp l_1000\n/m,
   );
   assert.match(text, /!if DEBUG \{\n.*\n {8}!if \* - \.patch_start > 4 .*\n\} else \{\n {8}!byte \$01,\$02,\$03,\$04\n\}\n\}\n {8}!byte \$05,\$06,\$07,\$08\n/);
-  assert.match(textOf(rendered, "switches.asm"), /\n; Other changes\n!ifndef CRACK \{ CRACK = 0 \} ; on in no release\. \$1000-\$1004\n!ifndef DEBUG \{ DEBUG = 0 \} ; on in no release\. \$1008-\$100b\n$/);
+  assert.match(textOf(rendered, "config.asm"), /\n; Other changes\nCRACK = 0 ; on in no release\. \$1000-\$1004\nDEBUG = 0 ; on in no release\. \$1008-\$100b\n$/);
+  assert.match(textOf(rendered, "switches.asm"), /\n\n!source "config\.asm"\n$/, "without releases, every build reads config.asm");
   assert.match(textOf(rendered, "main.asm"), /!source "switches\.asm"\n!source "constants\.asm"\n/);
   assert.match(textOf(rendered, "constants.asm"), /^; Names/);
 });
@@ -850,13 +857,13 @@ test("with real ACME, a switch off gives the image, on changes only its range, a
   assert.deepEqual((await assembleRendered(rendered)).bytes, image);
   const on = [...image];
   on.splice(0, 5, 0xa9, 0x01, 0x8d, 0x21, 0xd0);
-  assert.deepEqual((await assembleRendered(rendered, { CRACK: 1 })).bytes, on);
+  assert.deepEqual((await assembleRendered(withConfig(rendered, { CRACK: 1 }))).bytes, on);
   const nop = [...image];
   nop.splice(8, 4, 0xea, 0xea, 0xea, 0xea);
-  assert.deepEqual((await assembleRendered(rendered, { DEBUG: 1 })).bytes, nop, "empty code is only NOP");
+  assert.deepEqual((await assembleRendered(withConfig(rendered, { DEBUG: 1 }))).bytes, nop, "empty code is only NOP");
   const long = render(layout(patchInput([{ ...CRACK, code: "        lda #1\n        sta $d021\n        rts" }])), new Set(), []);
   assert.deepEqual((await assembleRendered(long)).bytes, image, "off, the code is not assembled");
-  const refused = await assembleRendered(long, { CRACK: 1 });
+  const refused = await assembleRendered(withConfig(long, { CRACK: 1 }));
   assert.equal(refused.bytes, undefined);
   assert.deepEqual(refused.messages, ["!error: The patch CRACK at $1000 has 6 (0x6) bytes; the range has 5."]);
 });
@@ -888,43 +895,57 @@ function releaseInput(): SourceInput {
   );
 }
 
-test("switches.asm has every switch by kind and each release; a patch of a switch that the program has on holds its off state", () => {
+test("config.asm has the value of every switch by kind, switches.asm each release; a patch of a switch that the program has on holds its off state", () => {
   const rendered = render(layout(releaseInput()), new Set(), []);
+  assert.equal(
+    textOf(rendered, "config.asm"),
+    [
+      "; Generated by c64-source. Edit the values here: generate keeps them.",
+      "; The switches of the build. Each switch is 0 or 1: change a value, then build again.",
+      "; The defaults give the clean program: copy protection, trainers, cheats and",
+      "; changes of a crack are 0, and the fixes of the releases are 1.",
+      "; generate adds a new switch with its default and removes a switch that the",
+      "; knowledge does not have. The build of a release does not read this file.",
+      "",
+      "; Copy protection: off by default",
+      "PROTECTION = 0 ; on in ORIGINAL, V2. $1000-$1004. The check.",
+      "",
+      "; Fixes of the releases: on by default",
+      "FIX_A      = 1 ; on in V2. $1008-$100b. Fix A.",
+      "FIX_B      = 0 ; on in V3. $1008-$100b",
+      "",
+    ].join("\n"),
+  );
+  assert.deepEqual([...configValues(textOf(rendered, "config.asm"))], [["PROTECTION", 0], ["FIX_A", 1], ["FIX_B", 0]]);
   assert.equal(
     textOf(rendered, "switches.asm"),
     [
-      "; The switches of the patches. Each switch is 0 or 1.",
-      "; The default build is the clean program: copy protection, trainers, cheats",
-      "; and changes of a crack are off, and the fixes of the releases are on.",
-      "; Build a release with -DRELEASE_<label>=1 (c64-assembler --release <label>).",
-      "; Set one switch with -DNAME=0 or -DNAME=1 (c64-assembler --define NAME=1).",
+      "; The releases of the knowledge. config.asm holds the value of each switch.",
+      "; Build a release with -DRELEASE_<label>=1 (c64-assembler --release <label>):",
+      "; then each switch has the value of that release, and the build does not read config.asm.",
       "",
-      "; Releases",
       "; ORIGINAL (the program of the knowledge): original/game.prg. The first release.",
       "!ifdef RELEASE_ORIGINAL {",
-      "        !ifndef FIX_A { FIX_A = 0 }",
-      "        !ifndef FIX_B { FIX_B = 0 }",
-      "        !ifndef PROTECTION { PROTECTION = 1 }",
+      "        FIX_A = 0",
+      "        FIX_B = 0",
+      "        PROTECTION = 1",
       "}",
+      "",
       "; V2: original/v2.prg",
       "!ifdef RELEASE_V2 {",
-      "        !ifndef FIX_A { FIX_A = 1 }",
-      "        !ifndef FIX_B { FIX_B = 0 }",
-      "        !ifndef PROTECTION { PROTECTION = 1 }",
+      "        FIX_A = 1",
+      "        FIX_B = 0",
+      "        PROTECTION = 1",
       "}",
+      "",
       "; V3: original/v3.prg",
       "!ifdef RELEASE_V3 {",
-      "        !ifndef FIX_A { FIX_A = 0 }",
-      "        !ifndef FIX_B { FIX_B = 1 }",
-      "        !ifndef PROTECTION { PROTECTION = 0 }",
+      "        FIX_A = 0",
+      "        FIX_B = 1",
+      "        PROTECTION = 0",
       "}",
       "",
-      "; Copy protection: off by default",
-      "!ifndef PROTECTION { PROTECTION = 0 } ; on in ORIGINAL, V2. $1000-$1004. The check.",
-      "",
-      "; Fixes of the releases: on by default",
-      "!ifndef FIX_A { FIX_A = 1 }           ; on in V2. $1008-$100b. Fix A.",
-      "!ifndef FIX_B { FIX_B = 0 }           ; on in V3. $1008-$100b",
+      '!ifndef RELEASE_ORIGINAL { !ifndef RELEASE_V2 { !ifndef RELEASE_V3 { !source "config.asm" } } }',
       "",
     ].join("\n"),
   );
@@ -936,7 +957,7 @@ test("switches.asm has every switch by kind and each release; a patch of a switc
   );
 });
 
-test("with real ACME, each release builds its bytes, the default build is the clean program, and two alternatives stop ACME", { skip: acmeSkip }, async () => {
+test("with real ACME, each release builds its bytes, the default build is the clean program, config.asm sets the switches, and two alternatives stop ACME", { skip: acmeSkip }, async () => {
   const source = releaseInput();
   const image = Array.from({ length: 20 }, (_, offset) => source.byteAt(0x1000 + offset));
   const rendered = render(layout(source), new Set(), []);
@@ -950,8 +971,10 @@ test("with real ACME, each release builds its bytes, the default build is the cl
   assert.deepEqual((await assembleRendered(rendered, { RELEASE_V2: 1 })).bytes, bytes([[8, [9, 9, 9, 9]]]));
   assert.deepEqual((await assembleRendered(rendered, { RELEASE_V3: 1 })).bytes, bytes([[0, nop], [8, [7, 7, 7, 7]]]));
   assert.deepEqual((await assembleRendered(rendered)).bytes, bytes([[0, nop], [8, [9, 9, 9, 9]]]), "the default: no protection, fix A");
-  assert.deepEqual((await assembleRendered(rendered, { RELEASE_ORIGINAL: 1, PROTECTION: 0 })).bytes, bytes([[0, nop]]), "a define wins over the release");
-  const both = await assembleRendered(rendered, { FIX_B: 1 });
+  assert.deepEqual((await assembleRendered(withConfig(rendered, { PROTECTION: 1, FIX_A: 0 }))).bytes, image, "the values of config.asm");
+  assert.deepEqual((await assembleRendered(withConfig(rendered, { PROTECTION: 1 }), { RELEASE_V3: 1 })).bytes, bytes([[0, nop], [8, [7, 7, 7, 7]]]), "a release does not read config.asm");
+  assert.match((await assembleRendered(rendered, { PROTECTION: 1 })).messages.join(), /Symbol already defined/, "config.asm sets the switches, not a define");
+  const both = await assembleRendered(withConfig(rendered, { FIX_B: 1 }));
   assert.equal(both.bytes, undefined);
   assert.deepEqual(both.messages, ["!error: FIX_A and FIX_B change $1008-$100b: turn on one of them."]);
 });
@@ -978,7 +1001,8 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
   const generate = () => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, encoding: "utf8" });
   type Result = {
     check: { identical: boolean };
-    switches: Array<{ name: string; result: string; define: string; changedBytes?: number; overflow?: Array<{ start: string; message: string }> }>;
+    switches: Array<{ name: string; result: string; changedBytes?: number; overflow?: Array<{ start: string; message: string }> }>;
+    config?: { file: string; notDefault: Array<{ name: string; value: number; default: number }> };
     default: { in: string[]; result: string; changedBytes?: number };
     releases: Array<{ label: string; result: string }>;
   };
@@ -986,7 +1010,7 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
   assert.equal(first.status, 1, first.stdout);
   const json = JSON.parse(first.stdout) as Result;
   assert.equal(json.check.identical, true, "the build of the base release gives the image");
-  assert.deepEqual(json.switches.map((item) => [item.name, item.result, item.define]), [["BIG", "overflow", "--define BIG=1"], ["CRACK", "fits", "--define CRACK=1"]]);
+  assert.deepEqual(json.switches.map((item) => [item.name, item.result]), [["BIG", "overflow"], ["CRACK", "fits"]]);
   assert.deepEqual(json.default, { in: [], result: "fits", changedBytes: 0 });
   assert.deepEqual(json.releases.map((item) => [item.label, item.result]), [["ORIGINAL", "identical"], ["V2", "identical"]], "each release builds to its file");
   assert.deepEqual(json.switches[0]!.overflow, [{ start: "$1005", message: "The patch BIG at $1005 has 4 (0x4) bytes; the range has 3." }]);
@@ -995,6 +1019,13 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
   const second = generate();
   assert.equal(second.status, 0, second.stdout);
   assert.deepEqual((JSON.parse(second.stdout) as Result).switches.map((item) => [item.name, item.result]), [["CRACK", "fits"]]);
+  // The user turns CRACK on in config.asm: generate keeps the value and says so, and the checks still build from the knowledge.
+  const config = join(project, "src", "config.asm");
+  writeFileSync(config, readFileSync(config, "utf8").replace(/^CRACK = 0/m, "CRACK = 1"));
+  const third = generate();
+  assert.equal(third.status, 0, third.stdout);
+  assert.deepEqual((JSON.parse(third.stdout) as Result).config, { file: "src/config.asm", notDefault: [{ name: "CRACK", value: 1, default: 0 }] });
+  assert.match(readFileSync(config, "utf8"), /^CRACK = 1 ; on in V2\. \$1000-\$1004$/m);
 });
 
 const INC16 = { name: "inc16", params: ["dst"], body: "        inc .dst\n        bne +\n        inc .dst+1\n+", comment: "Adds 1 to a 16-bit value." };

@@ -445,9 +445,9 @@ test("release, switch, patch, macro and use write the source knowledge, and rele
   assert.equal(knowledge(root, "patch", "$8100-$8101", "DEBUG", "--nop").status, 0);
   const shownSwitches = items<Record<string, unknown>>(knowledge(root, "switches").json.switches).map(({ origin: _origin, revision: _revision, ...row }) => row);
   assert.deepEqual(shownSwitches, [
-    { name: "CRACK", kind: "crack", default: 0, base: 0, releases: [], on: "--define CRACK=1", off: "--define CRACK=0", comment: "A white border.", patches: [{ start: "$8106", end: "$810a" }] },
-    { name: "DEBUG", kind: "change", default: 0, base: 0, releases: [], on: "--define DEBUG=1", off: "--define DEBUG=0", patches: [{ start: "$8100", end: "$8101" }] },
-    { name: "FIX_BORDER", kind: "fix", default: 1, base: 0, releases: ["V2"], on: "--define FIX_BORDER=1", off: "--define FIX_BORDER=0", patches: [{ start: "$8106", end: "$810a" }] },
+    { name: "CRACK", kind: "crack", default: 0, base: 0, releases: [], comment: "A white border.", patches: [{ start: "$8106", end: "$810a" }] },
+    { name: "DEBUG", kind: "change", default: 0, base: 0, releases: [], patches: [{ start: "$8100", end: "$8101" }] },
+    { name: "FIX_BORDER", kind: "fix", default: 1, base: 0, releases: ["V2"], patches: [{ start: "$8106", end: "$810a" }] },
   ]);
   assert.deepEqual(items<{ code: string }>(knowledge(root, "patches", "--switch", "DEBUG").json.patches).map((row) => row.code), [""]);
   assert.equal(knowledge(root, "unpatch", "$8106").status, 2, "two patches start there: give the switch");

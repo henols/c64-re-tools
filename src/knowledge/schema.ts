@@ -88,7 +88,7 @@ export type CoverageKind = (typeof COVERAGE_KINDS)[number];
 export const MEMORY_ROW = 64;
 
 /** Files that c64-source writes itself: no module can have these names. */
-export const GENERATED_FILES = ["main.asm", "loader.asm", "switches.asm", "constants.asm", "macros.asm"] as const;
+export const GENERATED_FILES = ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm"] as const;
 
 /** True for a generated file name in any letter case: the file systems of macOS and Windows ignore case. */
 export function isGeneratedFile(file: string): boolean {

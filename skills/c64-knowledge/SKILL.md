@@ -208,7 +208,7 @@ Then apply the joined batch with the command in `apply`.
 
 ## Modules
 
-A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The c64-source skill writes `main.asm`, `loader.asm`, `switches.asm`, `constants.asm` and `macros.asm` itself. Thus a module cannot have one of these names, in upper or lower case. The title becomes the first line of the file. A `module` write without a title keeps the title that the module has. Modules have a history, and `revert` restores them.
+A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The c64-source skill writes `main.asm`, `loader.asm`, `switches.asm`, `config.asm`, `constants.asm` and `macros.asm` itself. Thus a module cannot have one of these names, in upper or lower case. The title becomes the first line of the file. A `module` write without a title keeps the title that the module has. Modules have a history, and `revert` restores them.
 
 ## Operand expressions
 
@@ -249,7 +249,7 @@ A release is a PRG or a c64-unpacker `image.json` of the program, in a folder th
 
 ### Switches
 
-All switches are in `switches.jsonl` of the knowledge, and the c64-source skill writes all of them to `switches.asm`. A switch has a kind, a default and the releases that have it on.
+All switches are in `switches.jsonl` of the knowledge, and the c64-source skill writes all of them to `config.asm` with their defaults. A switch has a kind, a default and the releases that have it on.
 
 | Kind | What it changes | Default |
 |---|---|---|
@@ -267,7 +267,7 @@ All switches are in `switches.jsonl` of the knowledge, and the c64-source skill 
 - A `switch` write without `--releases` or `--comment` keeps the releases and the comment that the switch has.
 - The script refuses a change of the base value while the switch has patches. Remove the patches first, because they hold the other state.
 - `unswitch` refuses a switch that has patches.
-- `switches` gives each switch with `default`, `base`, `releases`, its patches, and the defines `on` and `off`. `releases` gives each release with its define.
+- `switches` gives each switch with `default`, `base`, `releases` and its patches. `releases` gives each release with its define.
 
 ### Patches
 
@@ -295,9 +295,9 @@ Rules:
 
 Build with the c64-assembler skill:
 
-- The default build has no options.
-- A release: `--release ORIGINAL`.
-- One switch: `--define TRAINER=1`. A define overrides the release.
+- The build of `config.asm` has no options. With the defaults, this is the default build.
+- A release: `--release ORIGINAL`. A release build does not read `config.asm`.
+- One switch: set its value in `config.asm` of the source, for example `TRAINER = 1`.
 
 ## Macros
 

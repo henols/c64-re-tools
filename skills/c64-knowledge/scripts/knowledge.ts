@@ -138,7 +138,7 @@ const patch = (row: PatchRow) => ({
   origin: row.origin,
   revision: row.revision,
 });
-/** A switch with its value in the program (`base`), the defines that put it on or off, and its patches when they are given. */
+/** A switch with its value in the program (`base`), and its patches when they are given. */
 const switchRow = (row: SwitchRow, base?: string, patches?: readonly PatchRow[]) => ({
   ...spaceOf(row),
   name: row.name,
@@ -146,8 +146,6 @@ const switchRow = (row: SwitchRow, base?: string, patches?: readonly PatchRow[])
   default: row.default,
   base: baseValue(row, base),
   releases: row.releases,
-  on: `--define ${row.name}=1`,
-  off: `--define ${row.name}=0`,
   ...(row.comment === undefined ? {} : { comment: row.comment }),
   ...(patches === undefined ? {} : { patches: patches.map((patch) => ({ start: formatC64Address(patch.start), end: formatC64Address(patch.end) })) }),
   origin: row.origin,

@@ -78,7 +78,8 @@ When the knowledge has coverage, code that no run executed gets the line `; not 
 - `main.asm` sets the address of each segment and includes the files in address order.
 - Each module in the knowledge is one file. A module starts at its address and stops at the next module or at the end of its segment. Without modules, each segment is one file, `segment_xxxx.asm`.
 - `constants.asm` holds the names of addresses outside the program, for example `EXTCOL = $d020`. The file puts the names in groups by memory area, for example zero page, VIC-II registers or CIA 1 registers. Each group is in address order. Drive code and banks have one group only. The side comment of a name tells what the address is. This text is the knowledge comment of the address. Without a comment, the text is the platform meaning. When the knowledge name is not the platform name, the platform name comes first. For an I/O mirror without a meaning, the text gives the register that the mirror repeats. Then `Used:` counts how the source uses the name. The kinds are `read`, `written`, `modified`, `called`, `jumped to`, `jumped through`, `branched to`, `pointer`, `address`, `table` and `macro argument`. `address` is an immediate operand expression. `table` is an entry in a table of addresses.
-- `switches.asm` holds every switch and every release of the knowledge. `main.asm` and `loader.asm` include it first. The script writes it only when the knowledge has switches or releases. For each release, a block `!ifdef RELEASE_<label>` gives each switch the value of that release. Then each switch gets its default, for example `!ifndef PROTECTION { PROTECTION = 0 }`. The switches are in groups by kind. The side comment gives the releases that have the switch on, the ranges of its patches and the comment of the switch.
+- `config.asm` holds the value of each switch, for example `PROTECTION = 0`. The first value of a switch is its default. The switches are in groups by kind. The side comment gives the releases that have the switch on, the ranges of its patches and the comment of the switch. The user can change a value to 0 or 1. The next run keeps the values of the file. It adds a new switch with its default and removes a switch that the knowledge does not have.
+- `switches.asm` holds every release of the knowledge. `main.asm` and `loader.asm` include it first. The script writes it only when the knowledge has switches or releases. For each release, a block `!ifdef RELEASE_<label>` gives each switch the value of that release. A build without a release reads the values from `config.asm`.
 - A label or a constant gets the name of the address in the knowledge. Without a knowledge name, it gets the platform name of the c64-memory-map skill, for example `EXTCOL` or `CHROUT`. A platform name wins over a name from an analyzer (`dxa`, `ghidra` or `heuristic`), for example `EXTCOL` over `ld020`. A `user` or `llm` name wins over a platform name. An address in the program without a name gets `l_xxxx`.
 - The source uses the names of a ROM only when the program uses that ROM. When the knowledge has coverage, a ROM is in use when a run executed code of it. A read of ROM bytes as data does not count. Without coverage, `$01` of the entry state tells which ROMs are in. When the program uses neither ROM, the zero page and pages 2 and 3 get no system names. `romNamesLeftOut` gives the ROMs that the source did not name, and the evidence. An operand expression or a macro use with such a name gets that reason.
 - `sta $d011  ; $d011: yScroll 3, rows 25, displayEnabled` is a store of an immediate to a register that the c64-memory-map skill decodes. The side comment gives the decoded value. A side comment in the knowledge replaces it.
@@ -97,7 +98,7 @@ When the knowledge has coverage, code that no run executed gets the line `; not 
 - `!zone patch_PROTECTION_100e` starts a patch of the knowledge. The condition is the state that the program does not have. It is `!if TRAINER` when the base release has the switch off. It is `!if PROTECTION = 0` when the base release has it on. The block has the code of the patch and NOP to the end of the range. `else` has the original code. The labels inside the range come before the zone as `name = * + n`. Thus all builds have them.
 - Alternatives are patches of two or more switches at one range. They follow as `} else { !if FIX_B {`. A line before them stops the build with `!error` when two of them are in.
 
-Do not edit the generated files. The next run writes over them.
+Do not edit the generated files. The next run writes over them. The values in `config.asm` are the one exception.
 
 ## Switches and macros
 
@@ -108,11 +109,13 @@ The program of the knowledge is the base release. The default build is the clean
 3. `default`: the default build must have the same length. It can change bytes only in the patches of the switches in `default.in`. These are the switches whose default is not their base value.
 4. `releases`: the script builds each release with `RELEASE_<label>=1` and compares it with the file of the release.
 
+The checks use the defaults and the values of the knowledge. They do not use the values in `config.asm`. When `config.asm` has a value that is not the default, `config.notDefault` gives the switch, its value and its default.
+
 Build the program with the c64-assembler skill:
 
-- The default build: no option.
+- The build of `config.asm`: no option. With the defaults, this is the default build.
 - A release: `--release ORIGINAL`.
-- One switch: `--define TRAINER=1`.
+- One switch: set its value in `config.asm`, for example `TRAINER = 1`. Do not use `--define` for a switch. ACME stops with `Symbol already defined`, because `config.asm` also gives the switch a value.
 
 The script writes a patch only when its range is complete items of one file. A patch cannot cut an instruction. Its switch name cannot be a name of the source.
 
@@ -196,7 +199,7 @@ tests/                     the tests of the project, changed for the new program
 .c64-re-tools/knowledge/   the knowledge of the new program
 ```
 
-- The source has no mark line, no `switches.asm`, no patch zones and no `; not executed` lines. It keeps the names, the comments, the operand expressions and the macros. A line comment at each changed patch gives the switch, its kind, its value and the comments of the switch and the patch.
+- The source has no mark line, no `switches.asm` or `config.asm`, no patch zones and no `; not executed` lines. It keeps the names, the comments, the operand expressions and the macros. A line comment at each changed patch gives the switch, its kind, its value and the comments of the switch and the patch.
 - The knowledge has one revision `export`. It holds the program, the entry and its state, the names, the comments, the regions and the modules. It has no history, analyzer names, references, operand expressions, macros, patches, switches, releases or coverage.
 - The tests come from the JSON files in `tests/`:
   - A scenario compares the build of the new project with the baseline. Both sides are the same program, so a step of the original side alone goes. A step of the rebuild side alone runs on both sides.

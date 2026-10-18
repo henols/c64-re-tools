@@ -41,7 +41,7 @@ import { knowledgeNames } from "#src/knowledge/names.ts";
 import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, loaderState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
 import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
-import { entriesInData, entryOutsideImage, hasSwitchFile, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
+import { CONFIG_FILE, configText, configValues, entriesInData, entryOutsideImage, hasSwitchFile, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
 
 /** At most this many diagnostics or differences of one check. */
 const MAX_DIAGNOSTICS = 20;
@@ -401,9 +401,18 @@ function compareBuilds(built: Assembled, ranges: readonly AddressRange[], base: 
   return outside === undefined ? { result: "fits", changedBytes: changed } : { result: "changes outside", changedBytes: changed, outside };
 }
 
-/** Builds the source with the defines and compares it with the build of the base release (compareBuilds). */
-async function checkBuild(files: Array<{ name: string; text: string }>, defines: Record<string, number>, ranges: readonly AddressRange[], base: { program: Buffer; start: number }): Promise<BuildCheck> {
-  return compareBuilds(await assembleFiles(files, "main.asm", defines), ranges, base);
+/**
+ * The files with config.asm at the switch values. A build takes the switches
+ * from config.asm: a define of a switch is an error, because config.asm also
+ * gives it a value. A switch without a value has its default.
+ */
+function withValues(files: Array<{ name: string; text: string }>, laid: Pick<Layout, "switches" | "patches">, values: ReadonlyMap<string, number>): Array<{ name: string; text: string }> {
+  return files.map((file) => (file.name === CONFIG_FILE ? { ...file, text: configText(laid, values) } : file));
+}
+
+/** Builds the source and compares it with the build of the base release (compareBuilds). */
+async function checkBuild(files: Array<{ name: string; text: string }>, ranges: readonly AddressRange[], base: { program: Buffer; start: number }): Promise<BuildCheck> {
+  return compareBuilds(await assembleFiles(files, "main.asm"), ranges, base);
 }
 
 /** What a build with one switch at the value that the base release does not have gives. */
@@ -412,22 +421,19 @@ type SwitchCheck = BuildCheck & {
   kind: string;
   default: number;
   base: number;
-  define: string;
   patches: Array<{ start: string; end: string; bytes: number; insideNames?: string[] }>;
 };
 
 /** Builds the source with one switch changed from its base value; only the ranges of its patches may change. */
-async function checkSwitch(row: SourceSwitch, patches: PatchBlock[], files: Array<{ name: string; text: string }>, defines: Record<string, number>, base: { program: Buffer; start: number }, names: Layout["names"]): Promise<SwitchCheck> {
-  const value = 1 - row.base;
-  const built = await checkBuild(files, { ...defines, [row.name]: value }, patches, base);
+async function checkSwitch(row: SourceSwitch, patches: PatchBlock[], files: Array<{ name: string; text: string }>, laid: Layout, baseValues: ReadonlyMap<string, number>, base: { program: Buffer; start: number }): Promise<SwitchCheck> {
+  const built = await checkBuild(withValues(files, laid, new Map([...baseValues, [row.name, 1 - row.base]])), patches, base);
   return {
     name: row.name,
     kind: row.kind,
     default: row.default,
     base: row.base,
-    define: `--define ${row.name}=${value}`,
     patches: patches.map((patch) => {
-      const inside = patch.inner.map((address) => names.get(address)!);
+      const inside = patch.inner.map((address) => laid.names.get(address)!);
       return { start: formatC64Address(patch.start), end: formatC64Address(patch.end), bytes: patch.end - patch.start + 1, ...(inside.length === 0 ? {} : { insideNames: inside }) };
     }),
     ...built,
@@ -633,7 +639,7 @@ interface SourceOptions {
   /** The first line of each file, or none. */
   mark?: string;
   /** The switch values of the build that must give the program. */
-  defines: Record<string, number>;
+  values: ReadonlyMap<string, number>;
   /** The instructions of an earlier decode: then Ghidra does not run again. */
   decoded?: DecodedProgram;
   /** Mark the code that no run executed. Without the marks, the coverage only gives the seeds of Ghidra and the ROM use. */
@@ -645,7 +651,7 @@ interface SourceOptions {
 
 /**
  * The source of a knowledge: the layout, the rendered files and the build
- * with the defines. An operand expression that ACME refuses or assembles to
+ * with the switch values. An operand expression that ACME refuses or assembles to
  * other bytes is written as its number, and a macro use as its instructions;
  * then the source is assembled again.
  */
@@ -696,7 +702,7 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
   }
   // With a mark, every file starts with it.
   const { mark } = options;
-  const marked = (list: Array<{ name: string; text: string }>) => (mark === undefined ? list : list.map((file) => ({ ...file, text: `${mark}\n${file.text}` })));
+  const marked = (list: Array<{ name: string; text: string }>) => (mark === undefined ? list : list.map((file) => (file.name === CONFIG_FILE ? file : { ...file, text: `${mark}\n${file.text}` })));
   const markLines = mark === undefined ? 0 : 1;
   const loaderFiles = loader === undefined ? [] : [{ name: "loader.asm", text: loader.text }];
   const numbers = new Map<number, string>();
@@ -705,7 +711,7 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
   if (laid.macroUses.size > 0) for (const [start, reason] of await probeUses(laid, rendered, image)) asInstructions.set(start, reason);
   if (asInstructions.size > 0) rendered = render(laid, asBytes, header, numbers, asInstructions);
   let files = marked([...rendered.files, ...loaderFiles]);
-  let built = await assembleFiles(files, "main.asm", options.defines);
+  let built = await assembleFiles(withValues(files, laid, options.values), "main.asm");
   for (let round = 0; round < ROUNDS && (rendered.expressions.length > 0 || rendered.uses.length > 0); round++) {
     const blamed = blame(rendered, built, image, markLines);
     if (blamed.numbers.size === 0 && blamed.uses.size === 0) break;
@@ -713,18 +719,18 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
     for (const [start, reason] of blamed.uses) asInstructions.set(start, reason);
     rendered = render(laid, asBytes, header, numbers, asInstructions);
     files = marked([...rendered.files, ...loaderFiles]);
-    built = await assembleFiles(files, "main.asm", options.defines);
+    built = await assembleFiles(withValues(files, laid, options.values), "main.asm");
   }
   return { romUse, instructions, dataOnly, laid, rendered, files, built, loader, missingEntry, loaderRefused };
 }
 
 /**
- * Assembles loader.asm with the defines and simulates its copies: the
+ * Assembles loader.asm with the switch values and simulates its copies: the
  * loader as it loads, then every copy in its order, byte by byte. A layout
  * other than the plan is a defect of the script.
  */
-async function buildLoader(files: Array<{ name: string; text: string }>, loader: LoaderPlan, image: ProgramImage, state: EntryState, defines: Record<string, number>): Promise<{ program: Buffer; symbols: AssembledSymbol[]; jump: number; copierSource: number; expected: (address: number) => number } | { diagnostics: Diagnostic[] }> {
-  const loaderBuilt = await assembleFiles(files, "loader.asm", defines);
+async function buildLoader(files: Array<{ name: string; text: string }>, laid: Layout, loader: LoaderPlan, image: ProgramImage, state: EntryState, values: ReadonlyMap<string, number>): Promise<{ program: Buffer; symbols: AssembledSymbol[]; jump: number; copierSource: number; expected: (address: number) => number } | { diagnostics: Diagnostic[] }> {
+  const loaderBuilt = await assembleFiles(withValues(files, laid, values), "loader.asm");
   if (loaderBuilt.program === undefined) return { diagnostics: loaderBuilt.diagnostics.slice(0, MAX_DIAGNOSTICS) };
   const program = loaderBuilt.program;
   const memory = new Int16Array(0x10000).fill(-1);
@@ -766,7 +772,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   // Read the entry state before the long steps, so a bad state stops the run at once.
   const state = loaderWanted ? loaderState(image.state, "the entry state of the knowledge") : undefined;
   // Every build that is compared with the program is the build of the base release: each switch at its base value.
-  const baseDefines = Object.fromEntries(knowledge.switches.map((row) => [row.name, row.base]));
+  const baseValues = new Map(knowledge.switches.map((row) => [row.name, row.base]));
   const header = [`Generated by c64-source from knowledge revision ${knowledge.revision}${space === DEFAULT_SPACE ? "" : ` in space ${space}`}.`, "Change names, comments, regions and modules in knowledge, then generate again."];
   const loaderHeader = [`Loader generated by c64-source from knowledge revision ${knowledge.revision}.`, "It copies the segments into place, sets the entry state and jumps to the entry."];
   const { romUse, dataOnly, laid, rendered, files, built, loader, missingEntry, loaderRefused } = await buildSource(knowledge, {
@@ -774,12 +780,17 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     entries,
     header,
     mark: GENERATED_LINE,
-    defines: baseDefines,
+    values: baseValues,
     notExecutedMarks: true,
     ...(state === undefined ? {} : { state, loaderHeader }),
   });
+  // config.asm keeps the value of each switch that it already has: the user sets the switches there.
+  const configPath = resolveProjectPath(`${out}/${CONFIG_FILE}`);
+  const given = existsSync(configPath) ? configValues(readFileSync(configPath, "utf8")) : new Map<string, 0 | 1>();
+  const kept = new Map(laid.switches.flatMap((row) => (given.has(row.name) ? [[row.name, given.get(row.name)!] as const] : [])));
+  const notDefault = laid.switches.flatMap((row) => (kept.has(row.name) && kept.get(row.name) !== row.default ? [{ name: row.name, value: kept.get(row.name)!, default: row.default }] : []));
   const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), loaderWanted).map((name) => `${out}/${name}`);
-  const written: Written[] = files.map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
+  const written: Written[] = withValues(files, laid, kept).map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
   written.push(writeReported(`${out}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.revision, files), { what: "--out" }));
   const showRange = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
@@ -801,6 +812,8 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     out,
     files: written,
     sourceMap: `${out}/${SOURCE_MAP_FILE}`,
+    // The values that config.asm keeps and that are not the default: a build of the source is not the default build.
+    ...(notDefault.length === 0 ? {} : { config: { file: `${out}/${CONFIG_FILE}`, notDefault } }),
     revision: knowledge.revision,
     instructions: rendered.instructions,
     dataBytes: rendered.dataBytes,
@@ -857,7 +870,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const withPatches = switchesOf(laid);
   for (const row of laid.switches) {
     const patches = withPatches.get(row.name);
-    if (patches !== undefined) switches.push(await checkSwitch(row, patches, files, baseDefines, baseBuild, laid.names));
+    if (patches !== undefined) switches.push(await checkSwitch(row, patches, files, laid, baseValues, baseBuild));
   }
   if (switches.length > 0) output.switches = switches;
   // The default build: the patches of each switch whose default is not its base value are in, and nothing else changes.
@@ -865,7 +878,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   if (laid.switches.length > 0) {
     const changed = laid.switches.filter((row) => row.default !== row.base);
     const ranges = changed.flatMap((row) => withPatches.get(row.name) ?? []);
-    const built = await checkBuild(files, {}, ranges, baseBuild);
+    const built = await checkBuild(withValues(files, laid, new Map()), ranges, baseBuild);
     output.default = { in: changed.map((row) => row.name), ...built };
     defaultFailed = built.result !== "fits";
   }
@@ -879,7 +892,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   if (loader === undefined || state === undefined) return { output, removed, failed: missingEntry !== undefined || sourceFailed };
 
   // The entry state is the state of the base release: the loader is built and checked with it.
-  const loaderBuilt = await buildLoader(files, loader, image, state, baseDefines);
+  const loaderBuilt = await buildLoader(files, laid, loader, image, state, baseValues);
   if ("diagnostics" in loaderBuilt) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics } }, removed, failed: true };
   const { program, jump, copierSource, expected } = loaderBuilt;
   const loaderPath = `${out}/loader.prg`;
@@ -977,8 +990,8 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   const state = image.state === undefined || image.entry === undefined ? undefined : loaderState(image.state, "the entry state of the knowledge");
 
   // 1. The source of the knowledge must give the base release byte for byte, with every patch in it.
-  const baseDefines = Object.fromEntries(knowledge.switches.map((row) => [row.name, row.base]));
-  const original = await buildSource(knowledge, { space: DEFAULT_SPACE, entries: [], header: [], defines: baseDefines, notExecutedMarks: false });
+  const baseValues = new Map(knowledge.switches.map((row) => [row.name, row.base]));
+  const original = await buildSource(knowledge, { space: DEFAULT_SPACE, entries: [], header: [], values: baseValues, notExecutedMarks: false });
   const fix = "Run source.ts generate, correct the knowledge until generate gives PASS, then export again.";
   if (original.built.program === undefined) return { result: "FAIL", stage: "original", reason: `The source of the knowledge does not assemble. ${fix}`, diagnostics: original.built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
   const checked = check(original.built.program, original.built.start!, image);
@@ -996,11 +1009,10 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
       throw new Refusal("invalid-input", `The switches ${both.map((item) => item.switch).join(" and ")} change ${formatC64Address(patch.start)}-${formatC64Address(patch.end)} in different ways, and the export puts both in. Give all but one of them the kind change with --default and the value of the base release (knowledge.ts switch), then export again.`);
     }
   }
-  const exportDefines = Object.fromEntries(values);
   const withPatches = switchesOf(original.laid);
   const changedSwitches = knowledge.switches.filter((row) => values.get(row.name) !== row.base);
   const patchesIn = changedSwitches.flatMap((row) => withPatches.get(row.name) ?? []);
-  const baked = await assembleFiles(original.files, "main.asm", exportDefines);
+  const baked = await assembleFiles(withValues(original.files, original.laid, values), "main.asm");
   const bakedCheck = compareBuilds(baked, patchesIn, { program: original.built.program, start: original.built.start! });
   const switches = knowledge.switches.map((row) => ({ name: row.name, kind: row.kind, base: row.base, value: values.get(row.name)! }));
   if (bakedCheck.result !== "fits" || baked.program === undefined) return { result: "FAIL", stage: "switches", reason: "The build with the export values of the switches does not fit. Build each switch alone with source.ts generate and correct its patches.", switches, build: bakedCheck };
@@ -1086,7 +1098,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
     space: DEFAULT_SPACE,
     entries: [],
     header,
-    defines: {},
+    values: new Map(),
     decoded: { instructions, dataOnly: decoded.dataOnly },
     notExecutedMarks: false,
     ...(state === undefined ? {} : { state, loaderHeader: [`The loader of ${name}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] }),
@@ -1100,7 +1112,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   let loaderOutput: Record<string, unknown> | undefined;
   if (state !== undefined) {
     if (exported.loader === undefined) return { result: "FAIL", stage: "loader", reason: exported.loaderRefused ?? "The loader could not be planned." };
-    const loaderBuilt = await buildLoader(exported.files, exported.loader, derived.program, state, {});
+    const loaderBuilt = await buildLoader(exported.files, exported.laid, exported.loader, derived.program, state, new Map());
     if ("diagnostics" in loaderBuilt) return { result: "FAIL", stage: "loader", reason: "loader.asm does not assemble. This is a defect of the c64-source script.", diagnostics: loaderBuilt.diagnostics };
     baseline = { program: loaderBuilt.program, symbols: loaderBuilt.symbols, entryFile: "loader.asm" };
     loaderOutput = {
