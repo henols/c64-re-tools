@@ -37,7 +37,7 @@ import {
   type SuppressionRow,
   type SymbolRow,
 } from "./read.ts";
-import { DEFAULT_SPACE, type EvidenceKind, type Origin, type Space } from "./schema.ts";
+import { DEFAULT_SPACE, type CoverageKind, type EvidenceKind, type Origin, type Space } from "./schema.ts";
 import { compareText, NO_REVISION } from "./text.ts";
 import type { Evidence } from "./write.ts";
 
@@ -51,12 +51,47 @@ export interface Revision {
   toolVersion?: string;
   /** A revert: the revision whose knowledge it restored. */
   restores?: string;
+  /** A revert of one space: that space. A revert without it restored every space. */
+  restoresSpace?: Space;
   /** What the change rests on. */
   evidence?: Evidence[];
 }
 
+/** A memory row of the program: the bytes from an address. */
+export interface MemoryRow {
+  space: Space;
+  address: number;
+  /** The count of bytes in the row. */
+  bytes: number;
+  origin: Origin;
+  revision: string;
+}
+
+/** The entry of the program, and whether it has a machine state and stages. */
+export interface EntryRow {
+  space: Space;
+  address: number;
+  state: boolean;
+  stages: number;
+  origin: Origin;
+  revision: string;
+}
+
+/** A coverage range of one kind. */
+export interface CoverageRow {
+  space: Space;
+  kind: CoverageKind;
+  start: number;
+  end: number;
+  origin: Origin;
+  revision: string;
+}
+
 /** One knowledge row with its validity: from its first revision until the revision that closed it. */
 export type HistoryEntry =
+  | { entity: "memory"; row: MemoryRow; from: string; to?: string }
+  | { entity: "entry"; row: EntryRow; from: string; to?: string }
+  | { entity: "coverage"; row: CoverageRow; from: string; to?: string }
   | { entity: "symbol"; row: SymbolRow; from: string; to?: string }
   | { entity: "analyzer-name"; row: SymbolRow; from: string; to?: string }
   | { entity: "region"; row: RegionRow; from: string; to?: string }
@@ -82,6 +117,7 @@ function toRevision(row: Raw): Revision {
   if (row.input_hash !== null) revision.inputHash = row.input_hash as string;
   if (row.tool_version !== null) revision.toolVersion = row.tool_version as string;
   if (row.restored_revision !== null) revision.restores = row.restored_revision as string;
+  if (row.restored_space !== null && row.restored_space !== undefined) revision.restoresSpace = row.restored_space as Space;
   return revision;
 }
 
@@ -183,6 +219,7 @@ export interface InitialRevision {
   inputHash?: undefined;
   toolVersion?: undefined;
   restores?: undefined;
+  restoresSpace?: undefined;
   evidence?: undefined;
 }
 
@@ -213,9 +250,25 @@ export function revision(db: DatabaseSync | undefined, text: string): RevisionCh
     ["macro", "macros", MACRO_COLUMNS, toMacro],
     ["macro-use", "macro_uses", MACRO_USE_COLUMNS, toMacroUse],
   ] as const;
+  // The program: its memory, its entry and its coverage.
+  const program = [
+    ["memory", "memory", "space, address, length(bytes) / 2 AS bytes, origin, valid_from_revision", (row: Raw): MemoryRow => ({ space: row.space as Space, address: row.address as number, bytes: row.bytes as number, origin: row.origin as Origin, revision: row.valid_from_revision as string })],
+    [
+      "entry",
+      "entries",
+      "space, address, state IS NOT NULL AS has_state, json_array_length(coalesce(stages, '[]')) AS stage_count, origin, valid_from_revision",
+      (row: Raw): EntryRow => ({ space: row.space as Space, address: row.address as number, state: row.has_state === 1, stages: row.stage_count as number, origin: row.origin as Origin, revision: row.valid_from_revision as string }),
+    ],
+    [
+      "coverage",
+      "coverage",
+      "space, kind, start_address, end_address, origin, valid_from_revision",
+      (row: Raw): CoverageRow => ({ space: row.space as Space, kind: row.kind as CoverageKind, start: row.start_address as number, end: row.end_address as number, origin: row.origin as Origin, revision: row.valid_from_revision as string }),
+    ],
+  ] as const;
   const added: HistoryEntry[] = [];
   const closed: HistoryEntry[] = [];
-  for (const [entity, table, columns, map] of tables) {
+  for (const [entity, table, columns, map] of [...tables, ...program]) {
     for (const row of db.prepare(`SELECT ${columns}, valid_to_revision FROM ${table} WHERE valid_from_revision = ?`).all(id) as Raw[]) {
       added.push(entry(entity, map(row), row));
     }

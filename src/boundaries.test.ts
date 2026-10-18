@@ -51,7 +51,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   "host-client": ["protocol", "c64", "project", "trace", "package"],
   mcp: ["host-client", "protocol", "c64", "trace", "package"],
   host: ["native", "protocol", "c64", "graphics", "opcodes", "trace", "package", "media"],
-  knowledge: ["c64", "project", "time"],
+  // opcodes: one rule for a name that ACME can take as a label.
+  knowledge: ["c64", "project", "time", "opcodes"],
   // The call contract of the skill scripts: the command line, the values, the envelope.
   script: ["protocol", "project", "trace", "c64"],
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.

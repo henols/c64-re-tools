@@ -27,7 +27,7 @@ One of these:
 node <skill>/scripts/knowledge.ts <command> [subjects] [options]
 ```
 
-A symbol is the name of an address from the user or the LLM. An analyzer name is a second name from DXA, Ghidra or an idiom, for example `FUN_17e2`. Each analyzer keeps its own name at an address. `at`, `search` and `export` show the analyzer names. The generated source uses only the symbols, unless c64-source gets `--analyzer-names`. To use an analyzer name in the source, `rename` the address with it.
+A symbol is the name of an address from the user or the LLM. An analyzer name is a second name from DXA, Ghidra or an idiom, for example `FUN_17e2`. Each analyzer keeps its own name at an address. `at`, `search` and `export` show the analyzer names. The generated source uses only the symbols, unless c64-source gets `--analyzer-names`. To use an analyzer name in the source, `rename` the address with it. A symbol name is a label for ACME: a letter or underscore, then letters, digits or underscores. The knowledge refuses the name of a 6502 instruction, for example `lda`, in upper or lower case.
 
 | Need | Command |
 |---|---|
@@ -42,6 +42,7 @@ A symbol is the name of an address from the user or the LLM. An analyzer name is
 | What the knowledge holds of the program | `program` |
 | The code of a range with names, comments, access and references | `listing '$0400-$04ff'` |
 | Name the symbol at an address | `rename '$2100' update_player --kind routine` |
+| The rows that one revision added and closed, also memory, entry and coverage rows | `revision 20261015T2145` |
 | Remove a symbol | `remove-symbol '$2100'` |
 | Classify memory | `classify '$3000-$303f' sprite` |
 | Classify a table of records | `classify '$3000-$303b' bytes --element 6` |
@@ -62,12 +63,12 @@ A symbol is the name of an address from the user or the LLM. An analyzer name is
 | Files of generated source | `modules` |
 | The address spaces that hold knowledge | `spaces` |
 | History | `history '$2100'`, `history --name update_player`, `history --macro inc16`, `revisions`, `revision 20261015T2145` |
-| Go back to an earlier state | `revert 20261015T2145` |
+| Go back to an earlier state | `revert 20261015T2145` for all spaces, or `revert 20261015T2145 --space bank3` for one space |
 | Decide the conflicts after a git merge | `merge --reason 'merge of two computers'` |
 
 A revision has an id such as `20261015T214501.123-k3f9qz`. The id starts with the date and time. A command takes the full id, or a start of the id that only one revision has. The revision `0` is the knowledge before the first revision.
 
-Every command takes `--space`: `c64` (the default), `drive8` for code in the 1541 drive, or `bank0` to `bank255` for cartridge banks. Drive code and banks use the same addresses as the C64, so each space has its own knowledge. A name is unique inside one space. In a batch, a write can name its own `space`.
+Every command takes `--space`: `c64` (the default), `drive8` for code in the 1541 drive, or `bank0` to `bank255` for cartridge banks. `revert` is different: without `--space`, it reverts all spaces. With `--space`, it reverts only that space. Drive code and banks use the same addresses as the C64, so each space has its own knowledge. A name is unique inside one space. In a batch, a write can name its own `space`.
 
 Symbol kinds are `label`, `routine`, `variable`, `data` and `vector`. Reference kinds are `call`, `jump`, `read`, `write`, `reference` and `pointer`. Only an operand expression writes a `pointer` reference.
 
@@ -172,7 +173,7 @@ The ops and their fields:
 | `unmacro` | `name` |
 | `use` | `start`, `end`, `macro`, `args` (a list or a comma list) |
 
-A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. The script checks an `operand`, `patch` or `use` write against the program of the knowledge in the space of `--space`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
+Each write can also have `space`. A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. The script checks an `operand`, `patch` or `use` write against the program of the knowledge in the space of `--space`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
 
 The c64-provenance skill writes a batch with `match --out`. The batch holds the names of library routines at their addresses in this program. Read the `batch.leftOut` of its result first. Then apply the batch with the command in its `apply`.
 

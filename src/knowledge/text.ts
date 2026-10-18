@@ -188,6 +188,7 @@ const REVISION_FIELDS: readonly Field[] = [
   field("inputHash", "input_hash", "text", true),
   field("toolVersion", "tool_version", "text", true),
   field("restores", "restored_revision", "text", true),
+  field("restoresSpace", "restored_space", "text", true),
 ];
 
 /** The SQL name of a table: "references" is a keyword. */

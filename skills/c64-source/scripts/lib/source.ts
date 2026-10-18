@@ -13,7 +13,7 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
 import { type CommentPlacement, isAnalyzer, isGeneratedFile, type Origin, type RegionType } from "#src/knowledge/schema.ts";
 import type { Area } from "#src/platform.ts";
-import { hasZeroPageForm, MNEMONICS, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type Mode, type UseKind } from "#src/opcodes.ts";
+import { hasZeroPageForm, instructionWith, labelProblem, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type UseKind } from "#src/opcodes.ts";
 
 export interface SourceInput {
   /** In address order, without overlap. */
@@ -319,7 +319,7 @@ export function layout(input: SourceInput): Layout {
   const outside = new Set<number>();
   // A platform name that knowledge gives to another address, or that reads as an instruction, is not used.
   const knowledgeNames = new Set(input.symbols.map((symbol) => symbol.name));
-  const platform = new Map((input.platform ?? []).filter(({ name }) => !knowledgeNames.has(name) && !MNEMONICS.has(name.toLowerCase())).map(({ address, name }) => [address, name]));
+  const platform = new Map((input.platform ?? []).filter(({ name }) => !knowledgeNames.has(name) && labelProblem(name) === undefined).map(({ address, name }) => [address, name]));
   // An analyzer name (DXA's ld020) gives way to the platform name (EXTCOL); a user or LLM name wins.
   const symbols = new Map(input.symbols.filter((symbol) => !(isAnalyzer(symbol.origin) && platform.has(symbol.address))).map((symbol) => [symbol.address, symbol.name]));
   /** Addresses outside the image without a name of their own, inside a named platform entry of more bytes: the start of that entry. */
@@ -450,7 +450,8 @@ export function layout(input: SourceInput): Layout {
   for (const address of [...wanted, ...outside].sort((a, b) => a - b)) {
     const known = symbols.get(address);
     if (known !== undefined) {
-      if (MNEMONICS.has(known.toLowerCase())) throw new WireFailure("invalid-input", `The symbol ${known} at ${formatC64Address(address)} has the name of an instruction, which ACME cannot read as a label. Rename the symbol with c64-knowledge.`);
+      const problem = labelProblem(known);
+      if (problem !== undefined) throw new WireFailure("invalid-input", `The symbol ${known} at ${formatC64Address(address)}: ${problem} Rename the symbol with c64-knowledge.`);
       names.set(address, known);
       if (inImage(address)) namedLabels++;
       continue;
@@ -572,27 +573,6 @@ export function formOf(layout: Pick<Layout, "inImage" | "byteAt">, item: Instruc
   if ((mode === "abs" || mode === "abx" || mode === "aby") && value < 0x100 && hasZeroPageForm(mnemonic, mode)) suffix = "+2";
   if ((mode === "zp" || mode === "zpx" || mode === "zpy") && layout.inImage(value)) suffix = "+1";
   return { key: `${item.opcode.toString(16).padStart(2, "0")}${suffix}`, opcode: item.opcode, suffix };
-}
-
-/** The instruction text with an operand expression; the expression is a name or a $ number. */
-export function instructionText(opcode: number, suffix: string, expression: string): string {
-  const { mnemonic, mode } = OPCODES[opcode]!;
-  const operand: Record<Mode, string> = {
-    imp: "",
-    imm: `#${expression}`,
-    zp: expression,
-    zpx: `${expression},x`,
-    zpy: `${expression},y`,
-    abs: expression,
-    abx: `${expression},x`,
-    aby: `${expression},y`,
-    ind: `(${expression})`,
-    izx: `(${expression},x)`,
-    izy: `(${expression}),y`,
-    rel: expression,
-  };
-  const text = operand[mode];
-  return text === "" ? `${mnemonic}${suffix}` : `${mnemonic}${suffix} ${text}`;
 }
 
 /** The plain number of an operand: what the probe assembles, and what a comment shows. */
@@ -1046,7 +1026,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         const form = formOf(layout, item);
         const { mode } = OPCODES[item.opcode]!;
         const value = mode === "imp" ? 0 : operandValue(item.address, item.opcode, layout.byteAt)!;
-        const literal = instructionText(item.opcode, "", literalOperand(item.opcode, value));
+        const literal = instructionWith(item.opcode, literalOperand(item.opcode, value));
         let written = layout.operands.get(item.address);
         // An expression that is not written stays visible as a side comment.
         const asNumber = (expression: string, reason: string) => {
@@ -1062,13 +1042,11 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
           out.push(withSide(`${INDENT}!byte ${bytes.join(",")}`, [literal, ...sides].join(" ")));
           result.asBytes.push({ address: item.address, text: literal });
         } else if (written !== undefined) {
-          // ACME reads an operand in brackets as indirect, so a non-immediate expression does not start with one.
-          const expression = mode !== "imm" && written.startsWith("(") ? `0+${written}` : written;
-          out.push(withSide(`${INDENT}${instructionText(item.opcode, form.suffix, expression)}`, sides.length === 0 ? undefined : sides.join(" ")));
+          out.push(withSide(`${INDENT}${instructionWith(item.opcode, written, form.suffix)}`, sides.length === 0 ? undefined : sides.join(" ")));
           result.expressions.push({ address: item.address, length: item.length, file: piece.file, line: out.length });
         } else {
           const expression = takesAddress(mode) ? (layout.names.get(value) ?? literalOperand(item.opcode, value)) : literalOperand(item.opcode, value);
-          out.push(withSide(`${INDENT}${instructionText(item.opcode, form.suffix, expression)}`, sides.length === 0 ? undefined : sides.join(" ")));
+          out.push(withSide(`${INDENT}${instructionWith(item.opcode, expression, form.suffix)}`, sides.length === 0 ? undefined : sides.join(" ")));
         }
         mapLine(item.address, item.address + item.length - 1);
         result.instructions++;

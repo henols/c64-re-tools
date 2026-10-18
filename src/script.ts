@@ -157,7 +157,7 @@ export class Call {
 
   /** The knowledge space of the command: --space, else c64. */
   get space(): string {
-    return "space" in this.#options ? this.string("space")! : "c64";
+    return ("space" in this.#options ? this.string("space") : undefined) ?? "c64";
   }
 
   /** Subject `index` as text. */
@@ -391,9 +391,39 @@ function checkPath(text: string, what: string): void {
   }
 }
 
+/**
+ * Refuses a range in two parts: two subjects '$1bc2' '$1bd0' where the command
+ * takes one <range>, or --start and --end where it takes a range option. The
+ * message gives the range as one token.
+ */
+function refuseSplitRange(command: CommandSpec, options: Readonly<Record<string, OptionSpec>>, argv: readonly string[], subjects?: readonly string[]): void {
+  if (subjects === undefined) {
+    const end = argv.indexOf("--");
+    const words = end < 0 ? argv : argv.slice(0, end);
+    const valueOf = (name: string) => {
+      const index = words.findIndex((word) => word === `--${name}` || word.startsWith(`--${name}=`));
+      if (index < 0) return undefined;
+      const word = words[index]!;
+      return word.includes("=") ? word.slice(word.indexOf("=") + 1) : (words[index + 1] ?? "");
+    };
+    const [start, last] = [valueOf("start"), valueOf("end")];
+    const range = Object.entries(options).find(([, spec]) => spec.kind === "range")?.[0];
+    if ((start === undefined && last === undefined) || range === undefined || "start" in options || "end" in options) return;
+    throw new UsageError(`${command.name} takes no --start or --end. Give the range as one option: --${range} '${start || "<start>"}-${last || "<end>"}'`);
+  }
+  const specs = command.subjects ?? [];
+  for (let index = 0; index + 1 < subjects.length; index++) {
+    const spec = specs[Math.min(index, specs.length - 1)];
+    const [first, second] = [subjects[index]!, subjects[index + 1]!];
+    if (spec === undefined || !spec.name.includes("range") || rangeParts(first) !== undefined || !isAddressText(first) || c64AddressOf(second) === undefined) continue;
+    throw new UsageError(`${spec.name} is one token <start>-<end>: give '${first}-${second}', not '${first}' '${second}'`);
+  }
+}
+
 /** Parses the command line of one command. Refuses a wrong count of subjects, an unknown option, a missing required option or a value of the wrong form. */
 export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readonly string[]): Call {
   const options = commandOptions(command);
+  refuseSplitRange(command, options, argv);
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -407,6 +437,7 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
   }
   const values = parsed.values as Record<string, string | boolean | string[] | undefined>;
   const subjects = parsed.positionals;
+  refuseSplitRange(command, options, argv, subjects);
   const specs = command.subjects ?? [];
   const last = specs.at(-1);
   const least = specs.filter((subject) => !subject.optional).length;

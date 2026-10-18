@@ -9,6 +9,7 @@ import { COVERAGE } from "../c64.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
 import { coverageRuns, listSpaces } from "./read.ts";
 import { addCoverage, analyzedBytes, programCoverage, programImage, setImage, type ImageRequest } from "./program.ts";
+import { revision as revisionChanges } from "./history.ts";
 import { revert } from "./write.ts";
 
 const projects: string[] = [];
@@ -111,6 +112,22 @@ test("analyzed bytes are a PRG for one segment without a state, else the 64 KiB"
   assert.equal(flat.bytes.length, 0x10000);
 });
 
+test("analyzed bytes hold the entry-state pages below the segments, without the CPU port", () => {
+  const root = project();
+  // $0080 holds an RTS in the entry state; $03ff is in the segment and keeps the byte of the program.
+  const zeroPage = Array.from({ length: 0x100 }, (_, offset) => (offset === 0x80 ? "60" : offset < 2 ? "ff" : "00")).join("");
+  const page3 = "ab".repeat(0x100);
+  const state = { registers: { pc: "$0400" }, pages: { $0000: zeroPage, $0100: "00".repeat(0x100), $0200: "00".repeat(0x100), $0300: page3 } };
+  withWrite((db) => setImage(db, llm, image([{ start: 0x03ff, end: 0x0410 }], 0, { entry: 0x0400, state })), root);
+  const { bytes, kind } = analyzedBytes(fromText(root).image!);
+  assert.equal(kind, "flat64k");
+  assert.equal(bytes[0x0080], 0x60, "the RTS of the entry state");
+  assert.deepEqual([bytes[0x0000], bytes[0x0001]], [0, 0], "the CPU port is no memory");
+  assert.equal(bytes[0x03fe], 0xab);
+  assert.equal(bytes[0x03ff], 0xff, "the segment byte wins");
+  assert.equal(bytes[0x0400], 0x00);
+});
+
 /** A coverage map with `flags` at each address of the ranges. */
 function map(...ranges: Array<[number, number, number]>): Uint8Array {
   const bytes = new Uint8Array(0x10000);
@@ -171,6 +188,29 @@ test("revert takes the image and the coverage back too", () => {
   assert.equal(read.coverage, undefined);
 });
 
+test("a revert of one space takes back only the program, the coverage and the maps of that space", () => {
+  const root = project();
+  withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x103f }])), root);
+  const first = withWrite((db) => setImage(db, llm, { ...image([{ start: 0x8000, end: 0x803f }]), space: "bank1" }), root);
+  const bytes = map([0x1000, 0x1002, COVERAGE.ramExecute]);
+  withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
+  withWrite((db) => addCoverage(db, llm, { space: "bank1", maps: [{ name: "a.bin", bytes }] }), root);
+  withWrite((db) => setImage(db, llm, { ...image([{ start: 0x8000, end: 0x80ff }], 7), space: "bank1" }), root);
+  withWrite((db) => revert(db, llm, { revision: first.revision!, space: "bank1" }), root);
+  // From the text only: the revision keeps the space of the revert.
+  rmSync(indexPath(root), { force: true });
+  const db = openForRead(root)!;
+  try {
+    assert.deepEqual(coverageRuns(db).map((run) => [run.name, run.space]), [["a.bin", "c64"]]);
+    assert.notEqual(programCoverage(db), undefined, "the C64 keeps its coverage");
+    assert.equal(programCoverage(db, "bank1"), undefined);
+    assert.deepEqual(programImage(db, "bank1")!.segments, [{ start: 0x8000, end: 0x803f }]);
+    assert.deepEqual(programImage(db)!.segments, [{ start: 0x1000, end: 0x103f }]);
+  } finally {
+    db.close();
+  }
+});
+
 test("the coverage maps that the knowledge has follow a revert, so a reverted map can be imported again", () => {
   const root = project();
   const first = withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x103f }])), root);
@@ -222,6 +262,31 @@ test("a coverage map is known only in the space that it went into, and the runs 
     assert.deepEqual(runs.map((run) => run.space), ["c64", "drive8", "c64"]);
     assert.deepEqual([...runs].sort((a, b) => a.revision.localeCompare(b.revision)), runs);
     assert.equal(runs.filter((run) => run.space === "c64").at(-1)!.sha256, runs[2]!.sha256);
+  } finally {
+    db.close();
+  }
+});
+
+test("a revision of an image or of coverage lists the memory, entry and coverage rows that it added and closed", () => {
+  const root = project();
+  const first = withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x107f }], 0, { entry: 0x1000, state: { registers: {} }, stages: [{}, {}] })), root);
+  const second = withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x107f }], 1, { entry: 0x1001 })), root);
+  const covered = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes: map([0x1000, 0x1002, COVERAGE.ramExecute]) }] }), root);
+  const db = openForRead(root)!;
+  try {
+    const shown = (id: string) => {
+      const changes = revisionChanges(db, id);
+      return { added: changes.added.map((entry) => [entry.entity, entry.row]), closed: changes.closed.map((entry) => [entry.entity, entry.row]) };
+    };
+    const one = shown(first.revision!);
+    assert.deepEqual(one.added, [
+      ["memory", { space: "c64", address: 0x1000, bytes: 64, origin: "llm", revision: first.revision }],
+      ["memory", { space: "c64", address: 0x1040, bytes: 64, origin: "llm", revision: first.revision }],
+      ["entry", { space: "c64", address: 0x1000, state: true, stages: 2, origin: "llm", revision: first.revision }],
+    ]);
+    const two = shown(second.revision!);
+    assert.deepEqual([two.added.length, two.closed.length], [3, 3], "the new bytes and entry, and the old ones closed");
+    assert.deepEqual(shown(covered.revision!).added, [["coverage", { space: "c64", kind: "x", start: 0x1000, end: 0x1002, origin: "llm", revision: covered.revision }]]);
   } finally {
     db.close();
   }

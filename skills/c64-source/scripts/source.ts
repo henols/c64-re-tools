@@ -31,8 +31,8 @@ import { resolveProjectPath } from "#src/project.ts";
 import { listed, OPTIONS, runScript, UsageError, type Call } from "#src/script.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, loaderState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
-import { OPCODES } from "#src/opcodes.ts";
-import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered } from "./lib/source.ts";
+import { instructionWith, OPCODES } from "#src/opcodes.ts";
+import { entriesInData, entryOutsideImage, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered } from "./lib/source.ts";
 
 /** At most this many diagnostics or differences of one check. */
 const MAX_DIAGNOSTICS = 20;
@@ -182,7 +182,7 @@ async function probe(laid: Layout): Promise<Set<string>> {
             ? formatC64Address((slot + 2 + (item.bytes[1]! < 0x80 ? item.bytes[1]! : item.bytes[1]! - 0x100)) & 0xffff)
             : literalOperand(item.form.opcode, item.bytes.length === 3 ? item.bytes[1]! | (item.bytes[2]! << 8) : item.bytes[1]!);
       lines.push(`* = ${formatC64Address(slot)}`);
-      lines.push(`        ${instructionText(item.form.opcode, item.form.suffix, operand)}`);
+      lines.push(`        ${instructionWith(item.form.opcode, operand, item.form.suffix)}`);
       lineOf.set(lines.length, item.form.key);
     });
     const built = await assembleFiles([{ name: "probe.asm", text: `${lines.join("\n")}\n` }], "probe.asm");

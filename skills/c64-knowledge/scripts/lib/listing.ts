@@ -4,7 +4,7 @@
 // reads files: knowledge.ts gives the lookups.
 
 import { COVERAGE, formatC64Address, formatC64Byte } from "#src/c64.ts";
-import { MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
+import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
   /** The image byte at an address, or undefined outside the image. */
@@ -52,36 +52,13 @@ function accessOf(coverage: Uint8Array | undefined, start: number, length: numbe
   return text === "" ? "-" : text;
 }
 
-/** The operand of an instruction in ACME syntax, with the name of its target where one exists. */
+/** The operand value of an instruction as an expression: the name of its target where one exists, else the number. Empty for no operand. */
 function operandOf(mode: Mode, address: number, low: number, high: number, nameOf: ListingSource["nameOf"]): string {
-  const word = low | (high << 8);
   const named = (target: number, digits: 2 | 4) => nameOf(target) ?? (digits === 2 ? formatC64Byte(target) : formatC64Address(target));
-  switch (mode) {
-    case "imp":
-      return "";
-    case "imm":
-      return `#${formatC64Byte(low)}`;
-    case "zp":
-      return named(low, 2);
-    case "zpx":
-      return `${named(low, 2)},x`;
-    case "zpy":
-      return `${named(low, 2)},y`;
-    case "abs":
-      return named(word, 4);
-    case "abx":
-      return `${named(word, 4)},x`;
-    case "aby":
-      return `${named(word, 4)},y`;
-    case "ind":
-      return `(${named(word, 4)})`;
-    case "izx":
-      return `(${named(low, 2)},x)`;
-    case "izy":
-      return `(${named(low, 2)}),y`;
-    case "rel":
-      return named((address + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff, 4);
-  }
+  if (mode === "imp") return "";
+  if (mode === "imm") return formatC64Byte(low);
+  if (mode === "rel") return named((address + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff, 4);
+  return MODE_LENGTH[mode] === 3 ? named(low | (high << 8), 4) : named(low, 2);
 }
 
 /** The lines of start..end: instructions in code regions, decoded from the region start, and bytes elsewhere. */
@@ -123,8 +100,9 @@ export function listing(source: ListingSource, start: number, end: number): List
       const length = MODE_LENGTH[opcode.mode];
       const bytes = Array.from({ length: length - 1 }, (_, offset) => source.byteAt(address + 1 + offset));
       if (address + length - 1 <= region.end && bytes.every((value) => value !== undefined)) {
+        // The operand expression of the knowledge in the syntax of the addressing mode, as c64-source writes it.
         const operand = source.operand(address) ?? operandOf(opcode.mode, address, bytes[0] ?? 0, bytes[1] ?? 0, source.nameOf);
-        if (address >= start) lines.push(line(address, length, operand === "" ? opcode.mnemonic : `${opcode.mnemonic} ${operand}`));
+        if (address >= start) lines.push(line(address, length, instructionWith(byte, operand)));
         address += length;
         continue;
       }

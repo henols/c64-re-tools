@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
+import { listing, type ListingSource } from "../../skills/c64-knowledge/scripts/lib/listing.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
 const projects: string[] = [];
@@ -400,7 +401,8 @@ test("a command takes a start of a revision id that only one revision has, and 0
   // A revert keeps the revision that it restored.
   assert.equal((knowledge(root, "revision", rev(root, 4)).json.revision as { restores: string }).restores, "0");
   const help = String(knowledge(root, "revert", "--help").json.text);
-  assert.match(help, /Makes the knowledge the same as at one revision\. The revert is a new revision/);
+  assert.match(help, /Makes the knowledge the same as at one revision: all spaces, or with --space only that space\. The revert is a new revision/);
+  assert.match(help, /Without --space, every space reverts/);
   assert.doesNotMatch(help, /Undoes one revision/);
 });
 
@@ -529,4 +531,37 @@ test("listing reads the program and the coverage in the knowledge", () => {
   const cut = knowledge(root, "listing", "$1000-$1021", "--max-listed", "1").json.lines as { count: number; listed: unknown[]; rest: string };
   assert.deepEqual([cut.count, cut.listed.length, cut.rest], [listed.length, 1, "a larger --max-listed, a smaller <range>, or --out <file> for all lines"]);
 
+});
+
+test("listing writes an operand expression in the syntax of the addressing mode, as c64-source does", () => {
+  // $047e LDA #$00, $0480 LDA $d000,X, $0483 LDA ($fb),Y, $0485 JMP ($0300), $0488 LDA $1000.
+  const bytes = new Map([0xa9, 0x00, 0xbd, 0x00, 0xd0, 0xb1, 0xfb, 0x6c, 0x00, 0x03, 0xad, 0x00, 0x10].map((value, offset) => [0x047e + offset, value]));
+  const expressions = new Map([
+    [0x047e, "<room_charset_a"],
+    [0x0480, "$d000"],
+    [0x0483, "pointer"],
+    [0x0485, "vector"],
+    [0x0488, "(table+1)"],
+  ]);
+  const source: ListingSource = {
+    byteAt: (address) => bytes.get(address),
+    nameOf: () => undefined,
+    secondNames: () => [],
+    regions: [{ start: 0x047e, end: 0x048a, type: "code" }],
+    comments: () => ({ line: [] }),
+    operand: (address) => expressions.get(address),
+    references: () => ({ in: 0, out: 0 }),
+  };
+  assert.deepEqual(
+    listing(source, 0x047e, 0x048a).map((line) => line.text),
+    ["lda #<room_charset_a", "lda $d000,x", "lda (pointer),y", "jmp (vector)", "lda 0+(table+1)"],
+  );
+});
+
+test("a batch write with an unknown field names every field that the write takes, space too", () => {
+  const root = project();
+  writeFileSync(join(root, "batch.json"), JSON.stringify([{ op: "classify", range: "$1000-$10ff", type: "code" }]));
+  const refused = knowledge(root, "apply", "batch.json");
+  assert.equal(refused.status, 2);
+  assert.match((refused.json.error as { message: string }).message, /^write 1: classify takes start, end, type, element, space, not range/);
 });

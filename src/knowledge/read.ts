@@ -255,18 +255,19 @@ export interface CoverageRun {
  * The imports of coverage maps that the knowledge has, by name and then oldest
  * first: the last import of a name is the latest. A revert gives back the maps
  * of the revision that it restores, so a map that a revert removed is not known.
+ * A revert of one space gives back only the maps of that space.
  * With `at`, the maps of the knowledge at that revision.
  */
 export function coverageRuns(db: DatabaseSync | undefined, at?: string): CoverageRun[] {
   if (db === undefined || at === NO_REVISION) return [];
   const rows = db
     .prepare(
-      `SELECT r.id AS id, r.operation AS operation, r.restored_revision AS restored, e.ref AS name, e.sha256 AS sha256, coalesce(e.space, '${DEFAULT_SPACE}') AS space
+      `SELECT r.id AS id, r.operation AS operation, r.restored_revision AS restored, r.restored_space AS restoredSpace, e.ref AS name, e.sha256 AS sha256, coalesce(e.space, '${DEFAULT_SPACE}') AS space
        FROM revisions r LEFT JOIN evidence e ON e.revision = r.id AND e.kind = 'coverage'
        WHERE (r.operation = 'coverage' AND e.id IS NOT NULL) OR (r.operation = 'revert' AND r.restored_revision IS NOT NULL)
        ORDER BY r.id, e.id`,
     )
-    .all() as Array<{ id: string; operation: string; restored: string | null; name: string | null; sha256: string | null; space: Space }>;
+    .all() as Array<{ id: string; operation: string; restored: string | null; restoredSpace: Space | null; name: string | null; sha256: string | null; space: Space }>;
   // The maps after each revision that changed them, oldest first.
   const after: Array<{ id: string; runs: CoverageRun[] }> = [];
   let runs: CoverageRun[] = [];
@@ -274,8 +275,10 @@ export function coverageRuns(db: DatabaseSync | undefined, at?: string): Coverag
     if (at !== undefined && row.id > at) break;
     if (row.operation === "revert") {
       const restored = row.restored!;
-      runs = [];
-      for (const item of after) if (item.id <= restored) runs = item.runs;
+      let then: CoverageRun[] = [];
+      for (const item of after) if (item.id <= restored) then = item.runs;
+      const only = row.restoredSpace;
+      runs = only === null ? then : [...runs.filter((run) => run.space !== only), ...then.filter((run) => run.space === only)];
     } else {
       const run: CoverageRun = { name: row.name!, sha256: row.sha256!, space: row.space, revision: row.id };
       if (!runs.some((item) => item.name === run.name && item.sha256 === run.sha256 && item.space === run.space && item.revision === run.revision)) runs = [...runs, run];

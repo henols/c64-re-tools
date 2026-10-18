@@ -4,7 +4,7 @@
 // spelling, ACME writes only one of them: the generator finds those with a
 // probe and writes the others as bytes.
 
-import { formatC64Byte, formatC64Address } from "./c64.ts";
+import { formatC64Byte, formatC64Address, SYMBOL_NAME } from "./c64.ts";
 
 export type Mode = "imp" | "imm" | "zp" | "zpx" | "zpy" | "abs" | "abx" | "aby" | "ind" | "izx" | "izy" | "rel";
 
@@ -45,6 +45,17 @@ export const MODE_LENGTH: Record<Mode, 1 | 2 | 3> = { imp: 1, imm: 2, zp: 2, zpx
 /** Every mnemonic in the table: a symbol with one of these names would read as an instruction. */
 export const MNEMONICS: ReadonlySet<string> = new Set(OPCODES.map((opcode) => opcode.mnemonic));
 
+/**
+ * Why ACME cannot take a name as a label, or undefined when it can. A label
+ * has label syntax (SYMBOL_NAME) and is no mnemonic in upper or lower case.
+ * The one rule for a symbol of the knowledge and a label of c64-source.
+ */
+export function labelProblem(name: string): string | undefined {
+  if (!SYMBOL_NAME.test(name)) return "A symbol name is a letter or underscore, then letters, digits or underscores (at most 64), with an optional leading dot.";
+  if (MNEMONICS.has(name.toLowerCase())) return `${name} is the name of a 6502 instruction, which ACME cannot read as a label. Give another name.`;
+  return undefined;
+}
+
 const ZERO_PAGE_OF: Partial<Record<Mode, Mode>> = { abs: "zp", abx: "zpx", aby: "zpy" };
 
 /** True when the mnemonic also has the zero-page form of an absolute mode: ACME would pick it for a small operand. */
@@ -78,27 +89,48 @@ export function useKind(opcode: number): UseKind {
 }
 
 
-/** The text of the instruction in `bytes` at `pc` as the monitor shows it, for example "STA $d011" or "BNE $c002". */
-export function instructionText(bytes: readonly number[], pc: number): string {
-  const { mnemonic, mode } = OPCODES[bytes[0]!]!;
-  const low = bytes[1] ?? 0;
-  const word = low | ((bytes[2] ?? 0) << 8);
+/**
+ * The ACME text of an instruction with its operand as an expression: the
+ * mnemonic, the size suffix (+1 or +2, or none) and the operand in the syntax
+ * of its addressing mode, for example "lda #<table", "sta screen,x" or
+ * "lda (pointer),y". ACME reads an operand in brackets as indirect, so a
+ * non-immediate expression that starts with a bracket gets 0+ in front.
+ * The one place that writes an instruction: the generated source, the
+ * listing of the knowledge and the disassembly of the emulator use it.
+ */
+export function instructionWith(opcode: number, expression: string, suffix = ""): string {
+  const { mnemonic, mode } = OPCODES[opcode]!;
+  const value = mode !== "imm" && expression.startsWith("(") ? `0+${expression}` : expression;
   const operand: Record<Mode, string> = {
     imp: "",
-    imm: `#${formatC64Byte(low)}`,
-    zp: formatC64Byte(low),
-    zpx: `${formatC64Byte(low)},x`,
-    zpy: `${formatC64Byte(low)},y`,
-    abs: formatC64Address(word),
-    abx: `${formatC64Address(word)},x`,
-    aby: `${formatC64Address(word)},y`,
-    ind: `(${formatC64Address(word)})`,
-    izx: `(${formatC64Byte(low)},x)`,
-    izy: `(${formatC64Byte(low)}),y`,
-    rel: formatC64Address((pc + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff),
+    imm: `#${value}`,
+    zp: value,
+    zpx: `${value},x`,
+    zpy: `${value},y`,
+    abs: value,
+    abx: `${value},x`,
+    aby: `${value},y`,
+    ind: `(${value})`,
+    izx: `(${value},x)`,
+    izy: `(${value}),y`,
+    rel: value,
   };
-  const name = mnemonic.toUpperCase();
-  return operand[mode] === "" ? name : `${name} ${operand[mode]}`;
+  return operand[mode] === "" ? `${mnemonic}${suffix}` : `${mnemonic}${suffix} ${operand[mode]}`;
+}
+
+/** The value of the operand of the instruction in `bytes` at `pc` as a number: a byte, a word, or the target of a branch. Empty for no operand. */
+export function operandNumber(bytes: readonly number[], pc: number): string {
+  const { mode } = OPCODES[bytes[0]!]!;
+  const low = bytes[1] ?? 0;
+  if (mode === "imp") return "";
+  if (mode === "rel") return formatC64Address((pc + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff);
+  return MODE_LENGTH[mode] === 3 ? formatC64Address(low | ((bytes[2] ?? 0) << 8)) : formatC64Byte(low);
+}
+
+/** The text of the instruction in `bytes` at `pc` as the monitor shows it, for example "STA $d011" or "BNE $c002". */
+export function instructionText(bytes: readonly number[], pc: number): string {
+  const { mnemonic } = OPCODES[bytes[0]!]!;
+  return `${mnemonic.toUpperCase()}${instructionWith(bytes[0]!, operandNumber(bytes, pc)).slice(mnemonic.length)}`;
 }
 
 /**

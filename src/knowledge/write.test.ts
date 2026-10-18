@@ -380,6 +380,35 @@ test("each space has its own rows and names", () => {
   assert.equal(symbolAt(db, 0x8000, "bank3"), undefined);
 });
 
+test("a name that ACME cannot take as a label is refused at write time", () => {
+  const db = fresh();
+  for (const name of ["lda", "LDA", "Jmp", "1st", "a-b"]) {
+    assert.throws(() => renameSymbol(db, llm, { address: 0x1bc2, name }), failsWith("invalid-input"), name);
+  }
+  assert.throws(() => renameSymbol(db, llm, { address: 0x1bc2, name: "lda" }), /lda is the name of a 6502 instruction, which ACME cannot read as a label/);
+  assert.throws(() => applyBatch(db, llm, [{ op: "rename", address: 0x1bc2, name: "sta" }]), failsWith("invalid-input"));
+  assert.equal(symbolAt(db, 0x1bc2), undefined);
+  assert.equal(renameSymbol(db, llm, { address: 0x1bc2, name: "load_a" }).current.name, "load_a");
+});
+
+test("a revert with a space changes only the rows of that space", () => {
+  const db = fresh();
+  renameSymbol(db, llm, { address: 0x0500, name: "loop" });
+  renameSymbol(db, llm, { space: "bank3", address: 0x8000, name: "cold" });
+  classifyRegion(db, llm, { space: "bank3", start: 0x8000, end: 0x80ff, type: "code" });
+  renameSymbol(db, llm, { address: 0x0600, name: "later" });
+  const reverted = revert(db, llm, { revision: "0", space: "bank3" });
+  assert.notEqual(reverted.revision, null);
+  assert.equal(symbolAt(db, 0x8000, "bank3"), undefined);
+  assert.deepEqual(regionsOverlapping(db, 0x8000, 0x8000, "bank3"), []);
+  assert.equal(symbolAt(db, 0x0500)?.name, "loop", "the C64 keeps its rows");
+  assert.equal(symbolAt(db, 0x0600)?.name, "later", "also the rows after the restored revision");
+  assert.equal(revisionChanges(db, reverted.revision!).revision.restoresSpace, "bank3");
+  // A second revert of the same space changes nothing.
+  assert.equal(revert(db, llm, { revision: "0", space: "bank3" }).revision, null);
+  assert.throws(() => revert(db, llm, { revision: "0", space: "bank256" }), failsWith("invalid-input"));
+});
+
 /**
  * $8079 LDA #$c0, $807b STA $0314, $807e LDA #$80, $8a85 LDA $8a97,X,
  * $82aa LDA #$18, $8000 BNE, $8005 NOP, and $9100 LDA #$00 outside the code.

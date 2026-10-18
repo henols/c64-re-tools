@@ -8,6 +8,7 @@ import { type AddressRange, formatC64Address, instructionLength, SPACE_PATTERN, 
 import { isoCet } from "../time.ts";
 import { CONFLICT_RULES, conflicts, conflictTable, type Conflict, type ConflictRow } from "./conflicts.ts";
 import { transaction } from "./database.ts";
+import { labelProblem } from "../opcodes.ts";
 import { checkExpression, evaluate, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
 import {
   COMMENT_COLUMNS,
@@ -140,6 +141,8 @@ export interface ChangeContext {
   evidence?: Evidence[];
   /** A revert: the revision whose knowledge it restores. */
   restores?: string;
+  /** A revert of one space: the space whose knowledge it restores. Without it, a revert restores every space. */
+  restoresSpace?: Space;
 }
 
 /**
@@ -181,8 +184,8 @@ export class Change {
     const now = new Date();
     const id = newRevisionId(currentRevision(this.#db), now);
     this.#db
-      .prepare("INSERT INTO revisions (id, created_at, origin, operation, input_hash, tool_version, description, restored_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(id, isoCet(now), this.#context.origin, this.#operation, this.#context.inputHash ?? null, this.#context.toolVersion ?? null, this.#context.description ?? null, this.#context.restores ?? null);
+      .prepare("INSERT INTO revisions (id, created_at, origin, operation, input_hash, tool_version, description, restored_revision, restored_space) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(id, isoCet(now), this.#context.origin, this.#operation, this.#context.inputHash ?? null, this.#context.toolVersion ?? null, this.#context.description ?? null, this.#context.restores ?? null, this.#context.restoresSpace ?? null);
     this.revision = id;
     const evidence = this.#db.prepare("INSERT INTO evidence (revision, kind, ref, sha256, space) VALUES (?, ?, ?, ?, ?)");
     for (const item of this.#context.evidence ?? []) evidence.run(id, item.kind, item.ref, item.sha256 ?? null, item.space ?? null);
@@ -369,9 +372,8 @@ export function checkSpace(request: InSpace): void {
 function checkSymbol(request: SymbolRequest): void {
   checkSpace(request);
   checkAddress(request.address);
-  if (!SYMBOL_NAME.test(request.name)) {
-    throw new Refusal("invalid-input", "A symbol name is a letter or underscore, then letters, digits or underscores (at most 64), with an optional leading dot.");
-  }
+  const problem = labelProblem(request.name);
+  if (problem !== undefined) throw new Refusal("invalid-input", problem);
   if (request.kind !== undefined) checkOneOf(SYMBOL_KINDS, request.kind, "kind");
 }
 
@@ -1199,19 +1201,25 @@ const KEYS = {
 
 /**
  * Makes the current knowledge equal to what it was at `revision`, as a new
- * revision. History is never erased; restored rows keep their origin.
+ * revision. With `space`, only the rows of that space change; without it,
+ * every space changes. History is never erased; restored rows keep their origin.
  */
-export function revert(db: DatabaseSync, context: WriteContext, request: { revision: string }): WriteResult<{ restoredRevision: string }> {
+export function revert(db: DatabaseSync, context: WriteContext, request: { revision: string; space?: Space }): WriteResult<{ restoredRevision: string }> {
+  checkSpace(request);
   const restored = resolveRevision(db, request.revision);
-  return write(db, { ...context, restores: restored }, "revert", (change) => {
+  const only = request.space;
+  return write(db, { ...context, restores: restored, ...(only === undefined ? {} : { restoresSpace: only }) }, "revert", (change) => {
     // The coverage maps that the knowledge has follow the revert, also when no coverage range changes.
-    const maps = (runs: CoverageRun[]) => JSON.stringify(runs.map((run) => [run.name, run.sha256, run.space, run.revision]));
+    const maps = (runs: CoverageRun[]) => JSON.stringify(runs.filter((run) => only === undefined || run.space === only).map((run) => [run.name, run.sha256, run.space, run.revision]));
     if (maps(coverageRuns(db, restored)) !== maps(coverageRuns(db))) change.id();
-    const at = "valid_from_revision <= ? AND (valid_to_revision IS NULL OR valid_to_revision > ?)";
+    const inSpace = only === undefined ? "" : " AND space = ?";
+    const spaceArgs = only === undefined ? [] : [only];
+    const at = `valid_from_revision <= ? AND (valid_to_revision IS NULL OR valid_to_revision > ?)${inSpace}`;
+    const current = `valid_to_revision IS NULL${inSpace}`;
     for (const [table, spec] of Object.entries(KEYS)) {
       const name = table === "references" ? '"references"' : table;
-      const then = db.prepare(`SELECT ${spec.columns}, id FROM ${name} WHERE ${at}`).all(restored, restored) as Array<Record<string, unknown>>;
-      const now = db.prepare(`SELECT ${spec.columns}, id FROM ${name} WHERE valid_to_revision IS NULL`).all() as Array<Record<string, unknown>>;
+      const then = db.prepare(`SELECT ${spec.columns}, id FROM ${name} WHERE ${at}`).all(restored, restored, ...spaceArgs) as Array<Record<string, unknown>>;
+      const now = db.prepare(`SELECT ${spec.columns}, id FROM ${name} WHERE ${current}`).all(...spaceArgs) as Array<Record<string, unknown>>;
       const key = (row: Record<string, unknown>) => (spec.key as (row: unknown) => string)(spec.map(row as never));
       const thenKeys = new Set(then.map(key));
       const nowKeys = new Set(now.map(key));
@@ -1253,8 +1261,8 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
     }
     // The program: a row is the same when all its values are the same.
     for (const [table, columns] of PROGRAM_TABLES) {
-      const then = db.prepare(`SELECT ${columns}, id FROM ${table} WHERE ${at}`).all(restored, restored) as Array<Record<string, unknown>>;
-      const now = db.prepare(`SELECT ${columns}, id FROM ${table} WHERE valid_to_revision IS NULL`).all() as Array<Record<string, unknown>>;
+      const then = db.prepare(`SELECT ${columns}, id FROM ${table} WHERE ${at}`).all(restored, restored, ...spaceArgs) as Array<Record<string, unknown>>;
+      const now = db.prepare(`SELECT ${columns}, id FROM ${table} WHERE ${current}`).all(...spaceArgs) as Array<Record<string, unknown>>;
       const key = (row: Record<string, unknown>) => JSON.stringify(columns.split(", ").map((column) => row[column]));
       const thenKeys = new Set(then.map(key));
       const nowKeys = new Set(now.map(key));

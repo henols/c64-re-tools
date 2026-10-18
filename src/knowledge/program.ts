@@ -224,13 +224,42 @@ export function requireProgram(db: DatabaseSync | undefined, space: Space = DEFA
   throw new Refusal("not-found", `The knowledge has no program${where}. Put it in with knowledge.ts image <image.json|prg>${option} of the c64-knowledge skill.`);
 }
 
-/** The bytes for an analyzer: a PRG for one segment without an entry state, else the 64 KiB. */
+/** The pages of an entry state: $0000-$03ff as the capture wrote them, 256 bytes as hex for each page. */
+const STATE_PAGES = ["$0000", "$0100", "$0200", "$0300"] as const;
+
+/**
+ * The memory that the program has at its entry: the segments, and below them
+ * $0002-$03ff of the entry state (the zero page, the stack and the system
+ * pages hold code and data that the loader left). $0000 and $0001 are the
+ * CPU port, not memory. A segment byte wins over a state byte.
+ */
+export function entryMemory(image: ProgramImage): Uint8Array {
+  const memory = new Uint8Array(image.memory);
+  const pages = image.state?.pages;
+  if (typeof pages !== "object" || pages === null) return memory;
+  const inSegment = (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end);
+  STATE_PAGES.forEach((page, index) => {
+    const hex = (pages as Record<string, unknown>)[page];
+    if (typeof hex !== "string" || !/^(?:[0-9a-fA-F]{2}){1,256}$/.test(hex)) return;
+    Buffer.from(hex, "hex").forEach((byte, offset) => {
+      const address = index * 0x100 + offset;
+      if (address >= 2 && !inSegment(address)) memory[address] = byte;
+    });
+  });
+  return memory;
+}
+
+/**
+ * The bytes for an analyzer: a PRG for one segment without an entry state,
+ * else the 64 KiB with the entry-state pages (entryMemory). DXA, Ghidra and
+ * c64-source get the same bytes.
+ */
 export function analyzedBytes(image: ProgramImage): { bytes: Buffer; kind: "prg" | "flat64k" } {
   if (image.segments.length === 1 && image.state === undefined) {
     const [segment] = image.segments;
     return { bytes: Buffer.concat([Buffer.from([segment!.start & 0xff, segment!.start >> 8]), Buffer.from(image.memory.subarray(segment!.start, segment!.end + 1))]), kind: "prg" };
   }
-  return { bytes: Buffer.from(image.memory), kind: "flat64k" };
+  return { bytes: Buffer.from(entryMemory(image)), kind: "flat64k" };
 }
 
 /**

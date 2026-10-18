@@ -131,7 +131,7 @@ test("the source map gives the line of each name and of each address that the so
 
 test("knowledge that ACME cannot use is refused by name", () => {
   const bytes = [0x60];
-  assert.throws(() => layout(input(bytes, 0x1000, { symbols: [{ address: 0x1000, name: "inc" }] })), /The symbol inc at \$1000 has the name of an instruction/);
+  assert.throws(() => layout(input(bytes, 0x1000, { symbols: [{ address: 0x1000, name: "inc" }] })), /The symbol inc at \$1000: inc is the name of a 6502 instruction, which ACME cannot read as a label/);
   assert.throws(() => layout(input(bytes, 0x1000, { modules: [{ start: 0x1000, file: "main.asm" }] })), /which the generator writes itself/);
   const unused = layout(input(bytes, 0x1000, { modules: [{ start: 0x2000, file: "far.asm" }] })).unusedModules;
   assert.deepEqual(unused, [{ start: 0x2000, file: "far.asm" }]);

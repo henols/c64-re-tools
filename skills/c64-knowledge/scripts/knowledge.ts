@@ -151,9 +151,18 @@ function suppression(row: SuppressionRow) {
   return { ...spaceOf(row), suppresses: row.entity, ...place, origin: row.origin, revision: row.revision };
 }
 
+/** A row of the program in a revision: memory bytes, the entry, or a coverage range. */
+function programRow(entry: Extract<HistoryEntry, { entity: "memory" | "entry" | "coverage" }>) {
+  if (entry.entity === "memory") return { ...spaceOf(entry.row), start: formatC64Address(entry.row.address), end: formatC64Address(entry.row.address + entry.row.bytes - 1), bytes: entry.row.bytes, origin: entry.row.origin, revision: entry.row.revision };
+  if (entry.entity === "entry") return { ...spaceOf(entry.row), address: formatC64Address(entry.row.address), state: entry.row.state, stages: entry.row.stages, origin: entry.row.origin, revision: entry.row.revision };
+  return { ...spaceOf(entry.row), kind: entry.row.kind, start: formatC64Address(entry.row.start), end: formatC64Address(entry.row.end), origin: entry.row.origin, revision: entry.row.revision };
+}
+
 function historyEntry(entry: HistoryEntry) {
   const shown =
-    entry.entity === "symbol" || entry.entity === "analyzer-name"
+    entry.entity === "memory" || entry.entity === "entry" || entry.entity === "coverage"
+      ? programRow(entry)
+      : entry.entity === "symbol" || entry.entity === "analyzer-name"
       ? symbol(entry.row)
       : entry.entity === "region"
         ? region(entry.row)
@@ -420,7 +429,8 @@ function writeCommand(spec: Omit<CommandSpec, "run">, prepare: (call: Call) => W
   return {
     ...spec,
     notes: [spec.notes, "A write is one revision. It makes .c64-re-tools/knowledge/ when it is not there."].filter((note) => note !== undefined).join("\n"),
-    options: { ...spec.options, ...WRITE },
+    // A command can give a WRITE option its own help or default, for example --space of revert.
+    options: Object.fromEntries(Object.entries({ ...spec.options, ...WRITE }).map(([name, option]) => [name, spec.options?.[name] ?? option])),
     run: (call) => withWrite(prepare(call)),
   };
 }
@@ -564,7 +574,7 @@ const READ_COMMANDS: CommandSpec[] = [
       return { revisions: list(call, rows, (row) => row, "a larger --max-listed, or --before <revision> with the oldest revision in listed") };
     },
   ),
-  readCommand({ name: "revision", summary: "The rows that one revision added and closed.", subjects: [REVISION], options: LIST }, (db, call) => {
+  readCommand({ name: "revision", summary: "The rows that one revision added and closed: knowledge rows, and memory, entry and coverage rows of the program.", subjects: [REVISION], options: LIST }, (db, call) => {
     const changes = revision(db, call.subject(0));
     return { revision: changes.revision, added: list(call, changes.added, historyEntry, MORE), closed: list(call, changes.closed, historyEntry, MORE) };
   }),
@@ -837,11 +847,23 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
     },
   ),
-  writeCommand({ name: "revert", summary: "Makes the knowledge the same as at one revision. The revert is a new revision: the history stays complete.", subjects: [REVISION] }, (call) => {
-    const context = contextOf(call);
-    const request = { revision: call.subject(0) };
-    return (db) => ({ revision: revert(db, context, request).revision });
-  }),
+  writeCommand(
+    {
+      name: "revert",
+      summary: "Makes the knowledge the same as at one revision: all spaces, or with --space only that space. The revert is a new revision: the history stays complete.",
+      subjects: [REVISION],
+      options: { space: { kind: "space", value: "<space>", help: "revert only this space: c64, drive8, or bank0 to bank255. The other spaces do not change. Without --space, every space reverts" } },
+    },
+    (call) => {
+      const context = contextOf(call);
+      const space = call.string("space");
+      const request = { revision: call.subject(0), ...(space === undefined ? {} : { space }) };
+      return (db) => {
+        const result = revert(db, context, request);
+        return { revision: result.revision, restores: result.current.restoredRevision, ...(space === undefined ? { spaces: "all" } : { space }) };
+      };
+    },
+  ),
   writeCommand({ name: "merge", summary: "Decides the conflicts that a git merge of two computers' work left: of the rows of one conflict, the newest stays. One revision for all." }, (call) => {
     const context = contextOf(call);
     const platform = new Map(platformNames().map((entry) => [entry.name, entry.address]));
@@ -940,7 +962,7 @@ function batchOperation(call: Call, item: unknown, at: string): BatchOperation {
 function batchFields(fields: Record<string, unknown>, at: string, address: (text: string, what: string) => number): BatchOperation {
   const op = oneOf(Object.keys(BATCH_FIELDS) as Array<BatchOperation["op"]>, String(fields.op), `${at}: op`);
   const unknown = Object.keys(fields).filter((key) => key !== "op" && key !== "space" && !BATCH_FIELDS[op].includes(key));
-  if (unknown.length > 0) throw new Refusal("invalid-input", `${at}: ${op} takes ${BATCH_FIELDS[op].join(", ")}, not ${unknown.join(", ")}`);
+  if (unknown.length > 0) throw new Refusal("invalid-input", `${at}: ${op} takes ${[...BATCH_FIELDS[op], "space"].join(", ")}, not ${unknown.join(", ")}`);
   const text = (key: string) => {
     if (typeof fields[key] !== "string") throw new Refusal("invalid-input", `${at}: ${key} must be a string`);
     return fields[key] as string;
@@ -1006,7 +1028,7 @@ function batchFields(fields: Record<string, unknown>, at: string, address: (text
 
 await runScript({
   name: "knowledge",
-  summary: "Reads and writes the knowledge of the project: names, regions, comments, references, the program and its coverage, and the source knowledge. A read needs no knowledge folder. Every command takes --space: c64 (the default), drive8 for 1541 drive code, or bank0 to bank255 for cartridge banks.",
+  summary: "Reads and writes the knowledge of the project: names, regions, comments, references, the program and its coverage, and the source knowledge. A read needs no knowledge folder. Every command takes --space: c64 (the default), drive8 for 1541 drive code, or bank0 to bank255 for cartridge banks. revert without --space reverts all spaces.",
   names: knowledgeNames,
   commands: [...READ_COMMANDS, ...WRITE_COMMANDS, JOIN],
 });

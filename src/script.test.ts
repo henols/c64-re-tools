@@ -43,6 +43,7 @@ await runScript({
     { name: "reject", summary: "A rejection that nothing catches.", run: () => { Promise.reject(new Error("lost")); return new Promise(() => {}); } },
     { name: "wrong", summary: "A shared option with another kind.", options: { out: { kind: "flag", help: "wrong" } }, run: () => ({}) },
     { name: "where", summary: "The project.", run: () => ({ root: projectRoot() }) },
+    { name: "span", summary: "A range subject.", subjects: [{ name: "<range>", help: "a range" }, { name: "<type>", help: "a type", optional: true }], run: (call) => ({ range: call.parseRange(call.subject(0), "<range>") }) },
   ],
 });
 `;
@@ -147,6 +148,17 @@ test("a range is <start>-<end>, each an address, and does not end before its sta
   assert.deepEqual(run(["at", "$0", "--range", "$0800-main_loop"]).json.range, { start: 0x800, end: 0x810 });
   assert.match(refused(["at", "$0", "--range", "$c000"], "invalid-input").message, /^--range must be <start>-<end>/);
   assert.match(refused(["at", "$0", "--range", "$cfff-$c000"], "invalid-input").message, /^--range ends at \$c000, before its start \$cfff/);
+});
+
+test("a range in two parts is refused with the range as one token", () => {
+  assert.deepEqual(run(["span", "$1bc2-$1bd0"]).json.range, { start: 0x1bc2, end: 0x1bd0 });
+  assert.match(refused(["span", "$1bc2", "$1bd0"], "invalid-input").message, /^<range> is one token <start>-<end>: give '\$1bc2-\$1bd0', not '\$1bc2' '\$1bd0'/);
+  assert.match(refused(["span", "$fb", "$fe", "workspace"], "invalid-input").message, /^<range> is one token <start>-<end>: give '\$fb-\$fe'/);
+  assert.match(refused(["span", "main_loop", "$0820"], "invalid-input").message, /give 'main_loop-\$0820'/);
+  assert.match(refused(["at", "$0", "--start", "$c000", "--end", "$cfff"], "invalid-input").message, /^at takes no --start or --end\. Give the range as one option: --range '\$c000-\$cfff'/);
+  assert.match(refused(["at", "$0", "--start=$c000"], "invalid-input").message, /--range '\$c000-<end>'/);
+  // A command without a range option keeps the message of an unknown option.
+  assert.match(refused(["echo", "a", "--start", "$c000"], "invalid-input").message, /^Unknown option '--start'/);
 });
 
 test("takeProject takes --project in both forms out of the command line, up to --", () => {
