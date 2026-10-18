@@ -4,7 +4,7 @@
 
 ## Trace
 
-Each program writes what it does to a directory, as JSON lines. The Host Runtime also keeps a copy of VICE's log. Nothing of the trace reaches the agent.
+Use this when a tool fails and its error does not tell why. Each program writes what it does to a directory, as JSON lines. The Host Runtime also keeps a copy of VICE's log. Nothing of the trace reaches the agent.
 
 On the host, `--log-dir` names the directory, and `--log-console` prints the same events:
 
@@ -20,28 +20,32 @@ For the MCP server and the skill scripts, set `C64RT_TRACE` in the project's `.c
 { "env": { "C64RT_TRACE": "/absolute/path/to/trace" } }
 ```
 
-## Dev container
+## The container does not work
 
-`status` in the container must show the Host Runtime as reachable. The Host Runtime listens on every address, and `runArgs` in `devcontainer.json` lets the container reach it as `host.docker.internal`.
+Use this when `npx -y @henols/c64-re-tools@latest status` in the container shows a problem.
 
-Each start installs the toolkit and its tools again, but only what changed. To do it now and see the output:
+**The Host Runtime is not reachable.** Make sure that the Host Runtime runs on the host. The container finds it as `host.docker.internal` through `runArgs` in `devcontainer.json`. If the host has another address, set `C64RT_HOST`.
+
+**The toolkit or its tools are old.** Each container start installs the newest toolkit and its tools. A new release is on npm some minutes after it is made; until then the container keeps the earlier one. To install now and see the output:
 
 ```
 /usr/local/share/c64-re-tools/project.sh update
 cat /usr/local/share/c64-re-tools/tools.version
 ```
 
-`tools.version` is the toolkit version of the installed tools. A new release is on npm some minutes after its tag; until then the start keeps the earlier version.
+`tools.version` shows the version of the installed tools.
 
-If the build stops with `Digest did not match` for the Feature, remove its entry from `.devcontainer/devcontainer-lock.json` and rebuild.
+**The build stops with `Digest did not match`.** Remove the c64-re-tools entry from `.devcontainer/devcontainer-lock.json` and rebuild the container.
 
-## Field test
+## Report a problem with a field test
 
-Tests c64-re-tools with an agent and brings back one report. In the project:
+Use this when the agent fails or does the wrong thing with the toolkit, and you want to tell the c64-re-tools developers why. An agent works on one of your programs with a set of prompts. Each time a tool fails or a description is unclear, it writes a note. At the end you get one report to send with an issue.
+
+In an empty project folder:
 
 ```
 git clone -q --depth 1 --branch "v$(npm view @henols/c64-re-tools version)" https://github.com/henols/c64-re-tools ~/.cache/c64-field-kit
 node ~/.cache/c64-field-kit/test/field/kit/install.ts
 ```
 
-It prints the next steps.
+It prints the next steps: start the Host Runtime, add your program, give the prompts to the agent, and make the report.

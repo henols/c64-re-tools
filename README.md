@@ -12,6 +12,8 @@ Windsurf.
 
 ## What it can do
 
+Ask for what you want in plain words. The agent picks the skill for each step.
+
 **Build new apps and games**
 
 - Assemble 6510 source with ACME, with errors by file and line, and symbols.
@@ -22,6 +24,8 @@ Windsurf.
 - Count cycles, profile the code, and wait for a raster line.
 - Run many steps in one go and keep screens, snapshots and coverage as files.
 - Tell what any address or register value means on the C64.
+- Add features and fixes to a program. Each change has a switch, so you can build the program with it or without it.
+- Test a program with scenarios: steps with expected values that give PASS or FAIL.
 
 **Reverse engineer existing programs**
 
@@ -32,6 +36,7 @@ Windsurf.
 - Compare releases, and find routines that several programs share.
 - Generate ACME source that rebuilds the program byte for byte, and its documentation.
 - Test that a rebuild behaves as the original: PASS, FAIL or INCONCLUSIVE.
+- Export a rebuild as the start of a new program: one value for each switch, unused code removed, as a zip file.
 
 ## How it works
 
@@ -103,26 +108,6 @@ reports conflicts after a `git pull`, run `knowledge.ts merge`.
 Several programs in one repository: open the repository root in the dev
 container and give each program its own folder. A folder with `.c64-re-tools/` is a project.
 
-## Skills
-
-| Skill | Use |
-| --- | --- |
-| c64-assembler | Builds ACME source, with errors and symbols. |
-| c64-emulator | Runs, debugs and observes the program in VICE. |
-| c64-memory-map | What an address or a register value means. |
-| c64-development | Writes new programs, and adds features and fixes, with tests that give PASS or FAIL. |
-| c64-export | Exports a rebuilt program as the start of a new program: one value per switch, no unused code, a zip file. |
-| c64-testing | Runs scenarios: original against rebuild, or many steps on one program with expected values. |
-| c64-disk | Directory, BAM, entries, sector chains and extraction of disk images. |
-| c64-basic | BASIC V2 listings and the SYS/USR handoff to machine code. |
-| c64-unpacker | Packing evidence, and capture of the unpacked program. |
-| c64-static-analysis | Analysis with DXA and Ghidra into the knowledge. |
-| c64-knowledge | Symbols, regions, comments and references, with history. |
-| c64-provenance | Compares releases, finds leftovers of the development and of cracks, and keeps a library of shared routines. |
-| c64-source | ACME source from the knowledge, checked byte for byte. |
-| c64-docs | Documentation of a program from its knowledge and source. |
-| c64-reverse-engineering | Leads an investigation and picks the next skill. |
-
 ## Settings
 
 Set the host variables where the Host Runtime starts, and the others in
@@ -134,25 +119,6 @@ Set the host variables where the Host Runtime starts, and the others in
 | `C64RT_HOST` | `host:port` of the Host Runtime, when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at port 6464. |
 | `C64RT_VIDEO` | `pal` (default) or `ntsc`. |
 | `C64RT_TRACE` | A directory for a trace of a run. See [docs/debug-install.md](docs/debug-install.md). |
-
-## Developing
-
-To work on the toolkit itself you need Node 24 or newer and pnpm.
-
-```
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm test
-pnpm host          # the Host Runtime from this checkout
-```
-
-Tests that need real tools are skipped unless you turn them on. On Debian or
-Ubuntu, `sudo bash tools/install-container.sh` installs ACME, dxa, c64run and
-Ghidra (in `/opt/ghidra`, with Java 21 from you), as the dev container does:
-
-```
-C64RT_LIVE_VICE=/usr/bin/x64sc C64RT_GHIDRA=/opt/ghidra pnpm test
-```
 
 ## License
 
