@@ -49,6 +49,9 @@ export function checkMedia(type: string, bytes: Buffer): void {
     const header = bytes.length >= 0x40 ? bytes.readUInt32BE(0x10) : 0;
     if (bytes.length < 0x40) refuse("the header is shorter than 64 bytes");
     if (bytes.toString("latin1", header, header + 4) !== "CHIP") refuse("it has no CHIP packet with ROM data after the header");
+    const packet = bytes.length >= header + 0x10 ? bytes.readUInt32BE(header + 4) : 0;
+    const size = bytes.length >= header + 0x10 ? bytes.readUInt16BE(header + 0x0e) : 0;
+    if (packet < 0x10 || header + packet > bytes.length || size > packet - 0x10) refuse(`the CHIP packet at offset ${header} runs past the end of the file`);
   }
   if (!hasSignature(type, bytes)) refuse(`it does not start with ${SIGNATURES[type]!.map((signature) => `"${signature.trimEnd()}"`).join(" or ")}`);
   const sizes = SIZES[type];

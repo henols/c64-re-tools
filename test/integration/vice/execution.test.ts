@@ -157,3 +157,18 @@ test("a breakpoint that stops next or until-return is in the result, and the nex
   const after = await session.handle("execution", { action: "advance-frames", count: 3, space: "c64" });
   assert.equal(after.stopReason, "frames");
 });
+
+test("a long step in warp ends before the result, so the next run is not disturbed", { skip: liveSkip, timeout: 120_000 }, async () => {
+  await session.handle("reset", { mode: "hard", run: true });
+  await session.handle("execution", { action: "advance-frames", count: 150, space: "c64" });
+  await session.handle("warp", { enabled: true });
+  try {
+    for (const action of ["step", "next", "step", "next"] as const) {
+      assert.equal((await session.handle("execution", { action, count: 3000, space: "c64" })).executed, 3000);
+      const run = await session.handle("execution", { action: "advance-frames", count: 3, space: "c64" });
+      assert.deepEqual({ stopReason: run.stopReason, advancedFrames: run.advancedFrames }, { stopReason: "frames", advancedFrames: 3 });
+    }
+  } finally {
+    await session.handle("warp", { enabled: false });
+  }
+});

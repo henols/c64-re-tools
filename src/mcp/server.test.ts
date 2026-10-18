@@ -762,7 +762,8 @@ test("refusals name the rule that the call broke", async () => {
   assert.equal(await message("c64_snapshot", { action: "save", name: "a", project: "." }), "project is used only with out.");
   assert.equal(await message("c64_snapshot", { action: "restore", name: "a", file: "a.vsf" }), "Action restore takes name or file, not both.");
   assert.match(await message("c64_snapshot", { action: "restore" }), /needs name .* or file/);
-  assert.match(await message("c64_program_load", { path: "original/game.d64" }), /is a \.d64 image, not a PRG\. Use c64_autostart/);
+  assert.match(await message("c64_program_load", { path: "original/game.d64" }), /is a disk image \(\.d64\), not a PRG\. Use c64_autostart/);
+  assert.match(await message("c64_program_load", { path: "README.md" }), /a PRG has the extension \.prg or no extension, not \.md/);
   assert.match(await message("c64_sid", { voice: 1 }), /Unrecognized key.*The tool takes no fields$/);
   assert.match(await message("c64_joystick", { port: 3, direction: "up" }), /port must be the number 1 or 2/);
   assert.match(await message("c64_autostart", { path: "original/game.prg", index: 0 }), /A \.prg file has no directory: leave out index/);

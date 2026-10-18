@@ -7,6 +7,7 @@ import { extname } from "node:path";
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
+import { refuseNotPrg } from "../../host-client/image.ts";
 import { projectFolder, readProjectFile } from "../../host-client/transfer.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { AUTOSTART_TYPES, DISK_TYPES, MAX_SNAPSHOTS, RUN_STATES } from "../../protocol/vice.ts";
@@ -70,10 +71,8 @@ export const c64ProgramLoad = defineTool({
   outputSchema: z.object({ state: z.enum(RUN_STATES), loadAddress: AddressOutput, size: z.number().int().min(1).max(0x10000) }),
   readOnly: false,
   async run(input, session) {
-    const type = extname(input.path).slice(1).toLowerCase();
-    if (type !== "prg" && (AUTOSTART_TYPES as readonly string[]).includes(type)) {
-      throw new WireFailure("invalid-input", `${input.path} is a .${type} image, not a PRG. Use c64_autostart, or c64_disk_attach for a disk image.`);
-    }
+    // The same rule as every PRG reader of the scripts: .prg or no extension.
+    refuseNotPrg(input.path, extname(input.path).slice(1).toLowerCase(), "Use c64_autostart, or c64_disk_attach for a disk image");
     const root = projectFolder(input.project);
     const result = await session.programLoad(input.address === undefined ? { path: input.path, root } : { path: input.path, address: input.address, root });
     return { state: result.state, loadAddress: formatC64Address(result.loadAddress), size: result.size };

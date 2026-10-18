@@ -112,3 +112,14 @@ test("a snapshot restore stops an autostart that still loads, and a broken cartr
   );
   assert.equal((await session.handle("status", {})).cartridge, false);
 });
+
+test("a key while the autostart still loads is refused, and taken once the program runs", { skip: liveSkip, timeout: 120_000 }, async () => {
+  await session.handle("reset", { mode: "hard", run: true });
+  await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from(borderLoopPrg)]);
+  // The emulator turns warp on while it autostarts; with warp off the autostart already ended.
+  if ((await session.handle("status", {})).warp) {
+    await assert.rejects(session.handle("keyboard", { data: "20" }), (error: unknown) => error instanceof WireFailure && /autostart still loads/.test(error.message));
+  }
+  for (let wait = 0; wait < 40 && (await session.handle("status", {})).warp; wait++) await session.handle("execution", { action: "advance-frames", count: 25, space: "c64" });
+  assert.deepEqual(await session.handle("keyboard", { data: "20" }), { queuedBytes: 1 });
+});

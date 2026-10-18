@@ -81,6 +81,8 @@ Write operations need a stopped CPU. Stop the CPU with `c64_execution` action `p
 
 A cartridge from `c64_autostart` stays in the C64 through every reset, as on a real C64. `c64_status` gives `cartridge: true` while the C64 has it, and `cartridge: false` when it does not. `c64_autostart` of a file that is not a cartridge removes the cartridge first. `c64_autostart` also sets both joysticks to the center first. `joysticksCentred` gives the ports that it changed.
 
+`c64_autostart` returns while the load continues. The emulator turns warp on until it types RUN. A key in that time stops the autostart, so `c64_keyboard` refuses it. Run frames with `advance-frames` until `c64_status` gives `warp: false`. Then type.
+
 Step, next and until-return work only in space `c64`. The emulator cannot stop the disk drive CPU after one instruction. To find when the drive executes an address, use `c64_run_until` with an address target in space `drive8`, or a breakpoint in space `drive8`. The drive can execute a few more instructions before it stops. The computer completes its current instruction. The `pc` in the result is the drive address where it stopped. `space` in the result is `drive8`. A breakpoint or a watchpoint in space `drive8` that stops `advance-frames` gives the same `pc` and `space`. `c64_status` also gives them. A memory target or a memory condition tests only space `c64`.
 
 `c64_keyboard` puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard matrix directly does not see them. Many games do this. No MCP tool presses a key of the keyboard matrix. For such a program:

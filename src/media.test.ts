@@ -11,9 +11,13 @@ const crt = (body: Buffer) => {
 };
 
 test("a CRT needs its signature, a full header and a CHIP packet", () => {
-  const chip = Buffer.alloc(0x10);
+  const chip = Buffer.alloc(0x10 + 0x2000);
   chip.write("CHIP", 0, "latin1");
+  chip.writeUInt32BE(chip.length, 4);
+  chip.writeUInt16BE(0x2000, 0x0e);
   checkMedia("crt", crt(chip));
+  // A CHIP header for $2000 bytes, with only 256 of them in the file.
+  assert.throws(() => checkMedia("crt", crt(chip.subarray(0, 0x110))), /CHIP packet at offset 64 runs past the end of the file/);
   assert.throws(() => checkMedia("crt", Buffer.from("C64 CARTRIDGE   ")), /header is shorter than 64 bytes/);
   assert.throws(() => checkMedia("crt", crt(Buffer.alloc(104))), /no CHIP packet/);
   assert.throws(() => checkMedia("crt", Buffer.alloc(100, 0x55)), /does not start with "C64 CARTRIDGE"/);

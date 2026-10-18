@@ -214,6 +214,8 @@ export class ViceSession implements ViceSessionHandle {
    * disk drive was busy, so a save here is refused.
    */
   #atResetStop = false;
+  /** Warp as the user set it: VICE also turns warp on by itself while an autostart loads. */
+  #userWarp = false;
   /** The CPU that the last run stopped in, when it was the drive: status then gives the drive's pc. */
   #stopSpace: "c64" | "drive8" = "c64";
   /** VICE records no CPU history after a JAM until the next reset. */
@@ -459,6 +461,13 @@ export class ViceSession implements ViceSessionHandle {
         return this.#reset(params as ViceOperations["reset"]["params"]);
       case "keyboard": {
         const bytes = Buffer.from((params as ViceOperations["keyboard"]["params"]).data, "hex");
+        // VICE turns warp on for an autostart and off when it types RUN. A key in between ends the autostart with no message.
+        if (this.#autostarting && !this.#userWarp && (await this.#observe(() => this.#machine.warp()))) {
+          throw new WireFailure(
+            "operation-failed",
+            "The autostart still loads the program, and a key now stops it before RUN. Run frames with c64_execution advance-frames until c64_status gives warp false, then type.",
+          );
+        }
         await this.#observe(() => this.#machine.feedKeyboard(bytes));
         return { queuedBytes: bytes.length, ...(this.#inputFlaw === undefined ? {} : { emulatorFlaw: this.#inputFlaw }) };
       }
@@ -553,6 +562,7 @@ export class ViceSession implements ViceSessionHandle {
       case "warp": {
         const { enabled } = params as ViceOperations["warp"]["params"];
         await this.#observe(() => this.#machine.setWarp(enabled));
+        this.#userWarp = enabled;
         return { enabled };
       }
       case "window":
@@ -645,14 +655,16 @@ export class ViceSession implements ViceSessionHandle {
     }
     const count = params.count ?? 1;
     this.#atResetStop = false;
+    // The stop event of the step tells that it ended, and which point stopped it. A long step
+    // in warp can answer before it ends; a ping then would stop it early and leave the rest in VICE.
+    const stopped = this.#nextStop(this.#stepLimitMs);
     try {
       await this.#machine.step(count, params.action === "next", this.#stepLimitMs);
     } catch (error) {
       if (error instanceof MonitorTimeoutError) throw new StepTimeout(stepNotEnded(params.action, count, this.#stepLimitMs), error);
       throw error;
     }
-    // VICE answers a step only after the machine stopped again; a ping reads the events of that stop (a hit point).
-    await this.#machine.stop();
+    if ((await stopped) === undefined) await this.#machine.stop();
     this.#state = "stopped";
     const point = this.#stepStoppedByPoint();
     // A point stops the step early: VICE does not tell how many instructions ran.
@@ -793,6 +805,14 @@ export class ViceSession implements ViceSessionHandle {
     let frames = 0;
     const startPc = await this.#pc();
     if (await this.#jamAt(startPc)) return { hits, frames, end: "jam", pc: startPc };
+    // VICE checks no checkpoint at the pc that it resumes from: an exec point there gets its first hit here.
+    for (const [index, point] of params.points.entries()) {
+      if (point.kind === "exec" && point.start <= startPc && startPc <= point.end) {
+        hits.push(await this.#traceHit(index, "exec", 0));
+        if (hits.length >= params.maxHits) return { hits, frames, end: "hits", pc: startPc };
+        break;
+      }
+    }
     let clockPc = startPc;
     const clock = await this.#machine.addCheckpoint({ start: 0x0000, end: 0xffff, operation: 0x04, space: "c64" });
     try {

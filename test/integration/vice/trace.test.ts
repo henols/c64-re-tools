@@ -40,6 +40,11 @@ test("a trace records the writes to a register with the instruction and the rast
     }
     assert.ok(new Set(writes.hits.map((hit) => hit.rasterLine * 63 + hit.rasterCycle)).size > 1, "each hit has its own raster position");
 
+    // An exec point at the pc where the trace starts gets that first instruction too.
+    await client.registersSet("c64", { pc: 0xc000, flags: { i: false } });
+    const first = await client.trace({ points: [{ kind: "exec", start: 0xc000, end: 0xc000 }], frames: 1, maxHits: 2 });
+    assert.deepEqual(first.hits.map((hit) => [hit.pc, hit.frame]), [[0xc000, 0], [0xc000, 0]], JSON.stringify(first.hits));
+
     // The KERNAL IRQ handler at $ea31 runs once in each frame.
     const irqs = await client.trace({ points: [{ kind: "exec", start: 0xea31, end: 0xea31 }], frames: 5, maxHits: 100 });
     assert.equal(irqs.end, "frames");
