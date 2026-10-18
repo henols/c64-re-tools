@@ -3,12 +3,14 @@
 // that moves the address needs an operand expression there. They are only
 // reported, never written: the LLM records the expressions with c64-knowledge.
 //
-// The scan reads short straight runs of instructions: LDA/LDX/LDY #imm and
-// STA/STX/STY to zero page or absolute, plus SEI, CLI, CLC, SEC and NOP. Any
-// other instruction ends the run, so no register value is guessed across it.
+// The scan reads the instructions of the code regions, decoded from the start
+// of each region: bytes of data are never read as an instruction. It reads
+// short straight runs: LDA/LDX/LDY #imm and STA/STX/STY to zero page or
+// absolute, plus SEI, CLI, CLC, SEC and NOP. Any other instruction ends the
+// run, so no register value is guessed across it.
 
-import { instructionLength } from "#src/c64.ts";
 import type { ImageByte } from "./coverage.ts";
+import { instructionAt, type Instruction } from "./macros.ts";
 
 const LOADS: Record<number, "a" | "x" | "y"> = { 0xa9: "a", 0xa2: "x", 0xa0: "y" };
 const STORES: Record<number, "a" | "x" | "y"> = { 0x85: "a", 0x8d: "a", 0x86: "x", 0x8e: "x", 0x84: "y", 0x8c: "y" };
@@ -50,46 +52,57 @@ interface Store {
   to: number;
 }
 
-/** The stores of immediates in the straight run that starts at `start`. */
-function storesFrom(byteAt: ImageByte, start: number, range: { start: number; end: number }): Store[] {
+/** The stores of immediates in the straight run of decoded instructions that starts at `start`. */
+function storesFrom(run: ReadonlyArray<Instruction & { at: number }>, start: number): Store[] {
   const last: Partial<Record<"a" | "x" | "y", { load: number; value: number }>> = {};
   const stores: Store[] = [];
-  let at = start;
-  for (let count = 0; count < MAX_RUN; count++) {
-    const opcode = byteAt(at);
-    if (opcode === undefined) break;
-    const length = instructionLength(opcode);
-    if (at + length - 1 > range.end) break;
-    const operand = length === 2 ? byteAt(at + 1)! : length === 3 ? byteAt(at + 1)! | (byteAt(at + 2)! << 8) : 0;
-    if (LOADS[opcode] !== undefined) last[LOADS[opcode]] = { load: at, value: operand };
+  for (const { opcode, value, at } of run.slice(start, start + MAX_RUN)) {
+    if (LOADS[opcode] !== undefined) last[LOADS[opcode]] = { load: at, value };
     else if (STORES[opcode] !== undefined) {
       const loaded = last[STORES[opcode]];
       if (loaded === undefined) break;
-      stores.push({ ...loaded, to: operand });
+      stores.push({ ...loaded, to: value });
     } else if (!NEUTRAL.has(opcode)) break;
-    at += length;
   }
   return stores;
 }
 
+/** The instructions of each code region, decoded from its start, up to a byte that is no instruction. */
+function decoded(byteAt: ImageByte, code: ReadonlyArray<{ start: number; end: number }>): Array<Array<Instruction & { at: number }>> {
+  return [...code]
+    .sort((a, b) => a.start - b.start)
+    .map((region) => {
+      const run: Array<Instruction & { at: number }> = [];
+      for (let at = region.start; at <= region.end; ) {
+        const instruction = instructionAt(byteAt, at, region.end);
+        if (instruction === undefined) break;
+        run.push({ ...instruction, at });
+        at += instruction.length;
+      }
+      return run;
+    });
+}
+
 /**
- * Finds the pointer candidates in the image: an immediate pair stored to a
- * vector or to a zero-page pair that (zp),y uses, where the pair makes an
- * address in the image or a platform name; and an immediate stored to a sprite
- * pointer of the default screen whose sprite data is in a sprite region.
+ * Finds the pointer candidates in the code regions of the image: an immediate
+ * pair stored to a vector or to a zero-page pair that a (zp),y instruction of
+ * the code uses, where the pair makes an address in the image or a platform
+ * name; and an immediate stored to a sprite pointer of the default screen whose
+ * sprite data is in a sprite region.
  */
 export function findPointers(
   byteAt: ImageByte,
   range: { start: number; end: number },
+  code: ReadonlyArray<{ start: number; end: number }>,
   known: { platform: (address: number) => boolean; sprites: ReadonlyArray<{ start: number; end: number }> },
 ): PointerCandidate[] {
-  const indirect = new Set<number>();
-  for (let at = range.start; at < range.end; at++) if (INDIRECT_Y.has(byteAt(at)!)) indirect.add(byteAt(at + 1)!);
+  const runs = decoded(byteAt, code);
+  const indirect = new Set(runs.flatMap((run) => run.filter((instruction) => INDIRECT_Y.has(instruction.opcode)).map((instruction) => instruction.value)));
   const inImage = (address: number) => address >= range.start && address <= range.end && byteAt(address) !== undefined;
   const found = new Map<string, PointerCandidate>();
-  for (let at = range.start; at <= range.end; at++) {
-    if (LOADS[byteAt(at)!] === undefined) continue;
-    const stores = storesFrom(byteAt, at, range);
+  for (const [run, index] of runs.flatMap((run) => run.map((_, index) => [run, index] as const))) {
+    if (LOADS[run[index]!.opcode] === undefined) continue;
+    const stores = storesFrom(run, index);
     for (const low of stores) {
       const high = stores.find((store) => store.to === low.to + 1);
       const target = high === undefined ? undefined : low.value | (high.value << 8);

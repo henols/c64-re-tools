@@ -13,7 +13,8 @@ import { after, test } from "node:test";
 
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { classifyRegion } from "../../src/knowledge/write.ts";
-import { setImage } from "../../src/knowledge/program.ts";
+import { addCoverage, setImage } from "../../src/knowledge/program.ts";
+import { COVERAGE } from "../../src/c64.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
@@ -137,4 +138,29 @@ test("--space imports the findings into that space and leaves the C64 alone", { 
     db.close();
   }
   assert.equal((await analyze(root, dxa, "--space", "drive9")).status, 2);
+});
+
+test("a macro candidate names no platform name of a ROM that the program does not use, as c64-source does", { timeout: 60_000 }, async () => {
+  // $2000: LDA #$00, STA $7a, LDA #$30, STA $7b, RTS: set16 of TXTPTR ($7a), a name of the BASIC workspace.
+  const bytes = [0xa9, 0x00, 0x85, 0x7a, 0xa9, 0x30, 0x85, 0x7b, 0x60];
+  const listing = ["2000 start:", "2000 a9 00 \tlda #$00", "2002 85 7a \tsta $7a", "2004 a9 30 \tlda #$30", "2006 85 7b \tsta $7b", "2008 60 \trts", ""];
+  const dxa = fakeDxa("dxa-set16", listing);
+  const argsOf = async (covered: boolean) => {
+    const root = join(scratch, `set16-${covered}`);
+    mkdirSync(root);
+    const db = openForWrite(root);
+    setImage(db, { origin: "user" }, { segments: [{ start: 0x2000, end: 0x2008 }], byteAt: (address) => bytes[address - 0x2000]! });
+    // A coverage map where only the program executed: no ROM is in use.
+    const map = new Uint8Array(0x10000).fill(COVERAGE.ramExecute, 0x2000, 0x2009);
+    if (covered) addCoverage(db, { origin: "user" }, { maps: [{ name: "runs/a/coverage.bin", bytes: map }] });
+    db.close();
+    const { status, json } = await analyze(root, dxa);
+    assert.equal(status, 0, JSON.stringify(json));
+    const found = JSON.stringify(json).match(/"macro":"set16","start":"\$2000","end":"\$2007","args":(\[[^\]]*\])/);
+    return found === null ? undefined : (JSON.parse(found[1]!) as string[]);
+  };
+  // Without coverage or entry state, the program uses both ROMs: TXTPTR names the address.
+  assert.deepEqual(await argsOf(false), ["TXTPTR", "$3000"]);
+  // The coverage shows no ROM code executed: c64-source leaves TXTPTR out, so the candidate has the number.
+  assert.deepEqual(await argsOf(true), ["$7a", "$3000"]);
 });

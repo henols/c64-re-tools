@@ -148,7 +148,7 @@ test("an RTS table at the end of a segment ends there: the bytes after the progr
   }
 });
 
-test("pointer candidates: immediate pairs stored to a vector or a (zp),y pair, and sprite pointers in a sprite region", () => {
+test("pointer candidates: immediate pairs stored to a vector or a (zp),y pair, and sprite pointers in a sprite region, all in code", () => {
   const { byteAt } = image({
     // $1000: SEI / LDA #$c0 / STA $0314 / LDA #$10 / STA $0315: CINV gets $10c0.
     0x1000: [0x78, 0xa9, 0xc0, 0x8d, 0x14, 0x03, 0xa9, 0x10, 0x8d, 0x15, 0x03],
@@ -161,8 +161,14 @@ test("pointer candidates: immediate pairs stored to a vector or a (zp),y pair, a
     0x1050: [0xa9, 0xc5, 0x8d, 0xf9, 0x07, 0xa9, 0x02, 0x8d, 0xfa, 0x07],
     // $1060: LDA #$00 / JSR / STA $0318: the run ends at the JSR.
     0x1060: [0xa9, 0x00, 0x20, 0x00, 0x10, 0x8d, 0x18, 0x03, 0xa9, 0x10, 0x8d, 0x19, 0x03],
+    // $1070: LDA #$00 / STA $f7 / LDA #$10 / STA $f8 in code; LDA ($f7),Y only in the data at $1080: $f7 is no (zp),y pair.
+    0x1070: [0xa9, 0x00, 0x85, 0xf7, 0xa9, 0x10, 0x85, 0xf8],
+    0x1080: [0x00, 0xb1, 0xf7, 0x00],
+    // $1090, data: LDA #$c0 / STA $0316 / LDA #$10 / STA $0317, bytes that are no code.
+    0x1090: [0xa9, 0xc0, 0x8d, 0x16, 0x03, 0xa9, 0x10, 0x8d, 0x17, 0x03],
   });
-  const found = findPointers(byteAt, RANGE, { platform: (address) => address >= 0x0400 && address <= 0x07e7, sprites: [{ start: 0x3000, end: 0x3fff }] });
+  const code = [{ start: 0x1000, end: 0x107f }];
+  const found = findPointers(byteAt, RANGE, code, { platform: (address: number) => address >= 0x0400 && address <= 0x07e7, sprites: [{ start: 0x3000, end: 0x3fff }] });
   assert.deepEqual(found, [
     { kind: "vector", to: 0x0314, target: 0x10c0, low: 0x1001, high: 0x1006 },
     { kind: "zero-page pointer", to: 0xfb, target: 0x0400, low: 0x1020, high: 0x1022 },

@@ -15,19 +15,34 @@ const semantic = (row: { origin: string }) => isSemantic(row.origin);
 /**
  * Seeds from current semantic knowledge: routines from the user or
  * the LLM are entry points, their non-code regions are data, and their names
- * are labels. Analyzer facts are never seeds: fed back, an analyzer's own
- * earlier guess would force the same answer again, and a re-analysis could
- * not retire it.
+ * are labels. Analyzer facts are never seeds alone: fed back, an analyzer's
+ * own earlier guess would force the same answer again, and a re-analysis
+ * could not retire it. A data or variable symbol of the user or the LLM is a
+ * decision that its address is data: the non-code region that holds it is
+ * data, also a region of an analyzer, else the byte of the symbol. Where a
+ * code region holds the symbol (a variable in the operand of self-modifying
+ * code) or the address executed, the symbol gives no data. A region with an
+ * executed address or an entry point in it gives only the byte of the symbol.
  */
-export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoints: number[] = [], space: Space = DEFAULT_SPACE): Seeds {
+export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoints: number[] = [], space: Space = DEFAULT_SPACE, executed: (address: number) => boolean = () => false): Seeds {
   const symbols = listSymbols(db, undefined, undefined, undefined, space).filter(semantic);
   const entryPoints = [...new Set([...extraEntryPoints, ...symbols.filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address)])].sort((a, b) => a - b);
+  const regions = listRegions(db, undefined, undefined, undefined, space);
+  // A JMP table is code and dual-use bytes are both: neither is a data range.
+  const isData = (region: { type: string }) => !CODE_REGION_TYPES.includes(region.type as never) && region.type !== "dual-use";
+  const dataRanges = regions.filter((region) => semantic(region) && isData(region)).map((region) => ({ start: region.start, end: region.end }));
+  const covered = (range: { start: number; end: number }) => dataRanges.some((seed) => seed.start <= range.end && range.start <= seed.end);
+  const holdsCode = (range: { start: number; end: number }) => entryPoints.some((entry) => entry >= range.start && entry <= range.end) || Array.from({ length: range.end - range.start + 1 }, (_, offset) => range.start + offset).some(executed);
+  for (const symbol of symbols.filter((row) => row.kind === "data" || row.kind === "variable").sort((a, b) => a.address - b.address)) {
+    const own = { start: symbol.address, end: symbol.address };
+    const region = regions.find((row) => row.start <= symbol.address && symbol.address <= row.end);
+    if ((region !== undefined && !isData(region)) || holdsCode(own) || covered(own)) continue;
+    const range = region !== undefined && !holdsCode(region) ? { start: region.start, end: region.end } : own;
+    dataRanges.push(range);
+  }
   return {
     entryPoints,
-    dataRanges: listRegions(db, undefined, undefined, undefined, space)
-      // A JMP table is code and dual-use bytes are both: neither is a data range.
-      .filter((region) => semantic(region) && !CODE_REGION_TYPES.includes(region.type) && region.type !== "dual-use")
-      .map((region) => ({ start: region.start, end: region.end })),
+    dataRanges: dataRanges.sort((a, b) => a.start - b.start),
     labels: symbols.map((symbol) => ({ address: symbol.address, name: symbol.name })),
   };
 }

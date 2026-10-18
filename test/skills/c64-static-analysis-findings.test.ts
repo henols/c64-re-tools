@@ -42,14 +42,49 @@ test("seeds come from current semantic knowledge only: routines, non-code region
     references: [],
   });
   // Ghidra's FUN_2200 and DXA's data region are no seeds: a re-analysis must be free to drop them.
+  // The variable player_x is data: its own byte, as no region holds it.
   assert.deepEqual(seedsFromKnowledge(db, [0x080d, 0x2100]), {
     entryPoints: [0x080d, 0x2100],
-    dataRanges: [{ start: 0x4000, end: 0x403f }],
+    dataRanges: [{ start: 0x3000, end: 0x3000 }, { start: 0x4000, end: 0x403f }],
     labels: [
       { address: 0x2100, name: "update_player" },
       { address: 0x3000, name: "player_x" },
     ],
   });
+});
+
+test("a data or variable symbol of the user or the LLM makes its non-code region data for the analyzer, also a region of DXA; code and executed addresses stay free", () => {
+  const own = openForWrite(mkdtempSync(join(root, "symbols-")));
+  try {
+    importFindings(own, {
+      analyzer: "dxa",
+      coverage: [{ start: 0x4700, end: 0x47ff }],
+      authoritative: { symbols: false, regions: true, references: false },
+      symbols: [],
+      regions: [
+        { start: 0x4700, end: 0x4706, type: "code" },
+        { start: 0x4707, end: 0x471f, type: "bytes" },
+        { start: 0x4720, end: 0x473f, type: "bytes" },
+        { start: 0x4740, end: 0x47ff, type: "bytes" },
+      ],
+      references: [],
+    });
+    renameSymbol(own, { origin: "llm" }, { address: 0x4707, name: "version_banner", kind: "data" });
+    renameSymbol(own, { origin: "llm" }, { address: 0x4703, name: "self_mod_operand", kind: "variable" });
+    renameSymbol(own, { origin: "llm" }, { address: 0x4728, name: "executed_byte", kind: "variable" });
+    renameSymbol(own, { origin: "llm" }, { address: 0x4750, name: "frame_counter", kind: "variable" });
+    renameSymbol(own, { origin: "llm" }, { address: 0x0041, name: "score", kind: "variable" });
+    renameSymbol(own, { origin: "llm" }, { address: 0x4760, name: "a_label", kind: "label" });
+    const executed = (address: number) => address === 0x4728 || address === 0x4745;
+    assert.deepEqual(seedsFromKnowledge(own, [], "c64", executed).dataRanges, [
+      { start: 0x0041, end: 0x0041 },
+      { start: 0x4707, end: 0x471f },
+      // $4750 is in a region with an executed byte: only its own byte.
+      { start: 0x4750, end: 0x4750 },
+    ]);
+  } finally {
+    own.close();
+  }
 });
 
 test("functions become routine symbols, code is code and data is bytes", () => {

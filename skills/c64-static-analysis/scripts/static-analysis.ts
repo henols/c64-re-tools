@@ -17,7 +17,7 @@ import { analyzedBytes, programCoverage, requireProgram } from "#src/knowledge/p
 import { importFindings, runProvenance, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
-import { platformNames } from "#src/platform.ts";
+import { platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, runScript, UsageError, type Call } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.ts";
@@ -52,17 +52,19 @@ function showMacro(candidate: MacroCandidate) {
 
 /**
  * The macro candidates in the current code regions of every origin,
- * with the names of the knowledge in their args. A candidate is left out when
+ * with the names of the knowledge in their args, else the platform names of
+ * the ROMs that the program uses, as c64-source names them. A candidate is left out when
  * a name or a reference target is inside it, or a patch or a use overlaps it:
  * c64-source would write its instructions. The same use in the knowledge is
  * known. With `batchPath`, the candidates go to an apply batch with the
  * macros they need; a macro of the catalogue that the knowledge has with
  * another body leaves its candidates out of the batch.
  */
-function macroCandidates(space: string, byteAt: ImageByte, batchPath: string | undefined) {
+function macroCandidates(space: string, byteAt: ImageByte, batchPath: string | undefined, romUse: RomUse) {
   const db = openForRead();
   try {
-    const platform = space === DEFAULT_SPACE ? new Map(platformNames().map((entry) => [entry.address, entry.name])) : new Map<number, string>();
+    // The platform names that c64-source uses: a name of a ROM that the program does not use is no arg.
+    const platform = space === DEFAULT_SPACE ? new Map(platformNamesFor(romUse).map((entry) => [entry.address, entry.name])) : new Map<number, string>();
     const semantic = new Map(listSymbols(db, undefined, undefined, [...SEMANTIC_ORIGINS], space).map((symbol) => [symbol.address, symbol.name]));
     const code = listRegions(db, undefined, "code", undefined, space);
     const found = findMacroUses(byteAt, code, (address) => semantic.get(address) ?? platform.get(address));
@@ -197,7 +199,7 @@ async function analyze(call: Call): Promise<unknown> {
   const idioms = findIdioms(inProgram, { start: loaded.start, end: loaded.end }, covered);
 
   const revision = currentRevision(reader);
-  const seeds = seedsFromKnowledge(reader, entries, space);
+  const seeds = seedsFromKnowledge(reader, entries, space, executed.executed);
   // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound.
   const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, inProgram);
   const known = [...seeds.entryPoints, ...codeEntries(reader, byteAt, space)];
@@ -216,20 +218,21 @@ async function analyze(call: Call): Promise<unknown> {
   const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry)).length;
   // Platform names are C64 names: drive code and banks get none.
   const platform = space === DEFAULT_SPACE ? platformNames() : [];
-  const pointers = findPointers(byteAt, { start: loaded.start, end: loaded.end }, {
-    platform: (address) => platform.some((entry) => address >= entry.address && address <= entry.end),
-    sprites: listRegions(reader, undefined, "sprite", undefined, space),
-  });
   reader?.close();
   /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
   const idiomsResult = () => {
     const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: "Idioms in the program" }));
     // The macro candidates read the code regions after both imports.
-    const macros = macroCandidates(space, byteAt, batchPath);
-    // Platform pitfalls are C64 facts: drive code and banks get none.
-    const pitfallDb = openForRead();
-    const pitfalls = space === DEFAULT_SPACE ? findPitfalls(byteAt, listRegions(pitfallDb, undefined, "code", undefined, space)) : [];
-    pitfallDb?.close();
+    const macros = macroCandidates(space, byteAt, batchPath, romUseOfProgram(coverage, program.state));
+    // Platform pitfalls are C64 facts: drive code and banks get none. Pitfalls and pointers read the code regions after both imports.
+    const codeDb = openForRead();
+    const code = listRegions(codeDb, undefined, "code", undefined, space);
+    const pitfalls = space === DEFAULT_SPACE ? findPitfalls(byteAt, code) : [];
+    const pointers = findPointers(byteAt, { start: loaded.start, end: loaded.end }, code, {
+      platform: (address) => platform.some((entry) => address >= entry.address && address <= entry.end),
+      sprites: listRegions(codeDb, undefined, "sprite", undefined, space),
+    });
+    codeDb?.close();
     return {
       idioms: {
         ...idioms.counts,

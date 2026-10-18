@@ -3,7 +3,7 @@
 // Names follow "Mapping the Commodore 64". Only platform facts live here:
 // an address without one belongs to the application.
 
-import { d018Offsets, formatC64Address, vicBankBase } from "./c64.ts";
+import { COVERAGE, d018Offsets, formatC64Address, vicBankBase } from "./c64.ts";
 import { Refusal } from "./errors.ts";
 
 export interface Entry {
@@ -418,6 +418,19 @@ export function romUseOf(coverage: Uint8Array, romExecute: number): RomUse {
 /** The ROMs that a value of $01 switches in: HIRAM for the KERNAL, LORAM and HIRAM for BASIC. */
 export function romUseOfPort(port: number): RomUse {
   return { basic: (port & 0x03) === 0x03, kernal: (port & 0x02) !== 0 };
+}
+
+/**
+ * The ROMs that a program uses, and what tells it: the coverage when the
+ * knowledge has it, else $01 of the entry state, else both ROMs. c64-source and
+ * c64-static-analysis give the platform names of platformNamesFor of it, so
+ * they use the same names.
+ */
+export function romUseOfProgram(coverage: Uint8Array | undefined, state: Record<string, unknown> | undefined): RomUse & { from: "coverage" | "entry state" | "none" } {
+  if (coverage !== undefined) return { ...romUseOf(coverage, COVERAGE.romExecute), from: "coverage" };
+  const port = (state?.cpuPort as Record<string, unknown> | undefined)?.$01;
+  if (typeof port === "number") return { ...romUseOfPort(port), from: "entry state" };
+  return { basic: true, kernal: true, from: "none" };
 }
 
 export type Decoded = Record<string, unknown>;
