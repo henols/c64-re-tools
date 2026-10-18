@@ -147,7 +147,7 @@ test("a trace step writes each write to the counter with the instruction and ras
   const traced = JSON.parse(readFileSync(join(project, "runs", "traced", "counter.json"), "utf8")) as { hits: Array<{ pc: string; text: string; rasterLine: number; address: string }> };
   assert.ok(traced.hits.length >= 4 && traced.hits.length <= 6, `${traced.hits.length} writes in 5 frames`);
   for (const hit of traced.hits) {
-    assert.deepEqual([hit.pc, hit.text, hit.address], ["$c015", "inc $c100", "$c100"]);
+    assert.deepEqual([hit.pc, hit.text, hit.address], ["$c015", "INC $c100", "$c100"]);
     assert.equal(hit.rasterLine, 128, "the loop waits for line 128");
   }
 });
