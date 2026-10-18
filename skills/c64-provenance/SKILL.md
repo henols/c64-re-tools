@@ -193,7 +193,7 @@ Record a confirmed conclusion as a normal comment, region or symbol with the c64
 
 ## Result
 
-The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes. `common` gives the ranges where all releases have bytes. `releases` gives the segments and the `shift` of each release. With `--frames`, each difference also has `runtime`, and `run` tells if each release started, or why not.
+The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes. `identicalShare` has 3 decimals. It is 1 only when no byte differs. `identicalBytes` and `differingBytes` give the counts. `common` gives the ranges where all releases have bytes. `releases` gives the segments and the `shift` of each release. With `--frames`, each difference also has `runtime`, and `run` tells if each release started, or why not.
 
 For `leftovers`: the lists of findings, with `entry`, `roots` and the number of `stages`. `noStages` and `noCoverage` tell which knowledge is missing. Without a root, `roots` tells why `deadCode` is empty.
 

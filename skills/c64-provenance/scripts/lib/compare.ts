@@ -39,6 +39,18 @@ const JOIN_GAP = 4;
 
 export const covers = (release: Release, address: number) => release.segments.some((segment) => address >= segment.start && address <= segment.end);
 
+/**
+ * The share of identical bytes with 3 decimals. It is 1 only when no byte
+ * differs, and 0 only when no byte is identical: a rounded share must not hide
+ * one differing or one identical byte.
+ */
+export function identicalShare(identical: number, differing: number): number {
+  const compared = identical + differing;
+  if (compared === 0 || identical === 0) return 0;
+  if (differing === 0) return 1;
+  return Math.min(0.999, Math.max(0.001, Number((identical / compared).toFixed(3))));
+}
+
 /** The ranges where every release has bytes, inside from..to. */
 export function commonRanges(releases: Release[], from = 0x0000, to = 0xffff): AddressRange[] {
   const ranges: AddressRange[] = [];

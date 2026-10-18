@@ -117,7 +117,7 @@ The scripts refuse a step in the form of version 2.0, for example `{ "runUntil":
 
 ## Multi-load programs
 
-A multi-load program loads more parts from the disk while it runs, for example one part for each level. Use `loads` to capture each part. The program can be a PRG, or a disk, tape or cartridge image that VICE starts.
+A multi-load program loads more parts from the disk while it runs, for example one part for each level. Use `loads` to capture each part. The program can be a PRG, or a disk, tape or cartridge image that VICE starts. `loads` starts a PRG with RUN. Thus the PRG must have a BASIC start line. For a PRG without a BASIC start line, use `capture` with `--entry`.
 
 1. Write a steps file. Put a `capture` step after each point where a part is in memory, for example:
 
@@ -161,7 +161,8 @@ For `loads`: `captures`, with the name, the PC, the segments, `differsFromReset`
 - `traced: false` or `followed: false` with `stopReason`: the CPU stopped before the frames ran, for example at a JAM instruction. `pc` gives the address. Make sure that `--entry` is the start of the code that the file holds at that time, and that the steps are correct.
 - `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the c64-emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step.
 - A step did not reach its target: the reason names the step. Change the step or give it more frames.
-- `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited at READY. or at an INPUT statement. For a tape image, read `emulatorFlaw`. A known VICE flaw can stop a tape load. Tell the user to install the latest VICE.
+- `loaded: false` with an empty `captures` and the reason `BASIC ran no program line`: the PRG has no BASIC start line. Use `capture` with `--entry`.
+- `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited for a key at the READY prompt or at an INPUT statement. For a tape image, read `emulatorFlaw`. A known VICE flaw can stop a tape load. Tell the user to install the latest VICE.
 - Do not name a packer from weak evidence. The script never names one.
 - Some programs unpack in more than one stage. Run `stages` to find each stage. Capture at the entry of the last stage. Make sure that it is the application and not a second unpacker.
 - `not-found` or `invalid-input`: a path or an argument is wrong. Read the message.

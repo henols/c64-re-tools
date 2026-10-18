@@ -290,7 +290,7 @@ test("the library is a plain folder: routine refuses a name that exists, and a p
 test("routine refuses a library in the knowledge of the project, also through a symbolic link, and makes no folder there", () => {
   const project = join(scratch, "project");
   mkdirSync(join(project, ".c64-re-tools", "knowledge"), { recursive: true });
-  const knowledge = /--library: \.c64-re-tools\/knowledge(\/x3)? is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the c64-knowledge skill writes it/;
+  const knowledge = /--library: \.c64-re-tools\/knowledge(\/x3)? is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the c64-knowledge skill writes it: a write there destroys the knowledge\. Give a library folder beside the projects, for example \.\.\/library\.$/;
   assert.throws(() => libraryFolder(".c64-re-tools/knowledge", { create: true, cwd: project }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && knowledge.test(error.message));
   assert.throws(() => libraryFolder(".c64-re-tools/knowledge/x3", { create: true, cwd: project }), knowledge);
   assert.equal(existsSync(join(project, ".c64-re-tools", "knowledge", "x3")), false);

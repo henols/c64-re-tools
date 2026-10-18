@@ -38,7 +38,7 @@ async function test(call: Call): Promise<ScenarioResult> {
   const scenario = readScenario(call.subject(0));
   const out = call.string("out");
   // Every file of the scenario is checked before the emulator starts.
-  const names = scenarioNames(scenario);
+  const names = scenarioNames(scenario, call.subject(0));
   let client: ViceSessionClient;
   try {
     client = await ViceSessionClient.open({ videoStandard: scenario.videoStandard ?? "pal" });

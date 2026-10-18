@@ -65,6 +65,12 @@ export interface OptionSpec {
    * --out and --out-<name> has it.
    */
   output?: OutputKind;
+  /**
+   * An option whose value has a form: an example of that form for a value
+   * that is missing or starts with -, made from that value when it fits.
+   * The message then gives the form, not --<name>=<value>.
+   */
+  example?: (given: string | undefined) => string;
 }
 
 /** The options that have one meaning in every script. A command can change the help, the value and whether it is required, never the kind. */
@@ -468,8 +474,10 @@ function refuseOptionWords(command: CommandSpec, options: Readonly<Record<string
     } else {
       valueIndex = index + 1;
       const next = words[valueIndex];
-      if (next === undefined) throw new UsageError(`--${name} needs a value: give --${name} ${spec.value ?? "<value>"}`);
+      const form = (given: string | undefined) => (spec.example === undefined ? "" : `, for example --${name} ${spec.example(given)}`);
+      if (next === undefined) throw new UsageError(`--${name} needs a value: give --${name} ${spec.value ?? "<value>"}${form(undefined)}`);
       if (isOptionWord(next)) {
+        if (spec.example !== undefined) throw new UsageError(`--${name} needs a value of the form ${spec.value ?? "<value>"}: give --${name} ${spec.value ?? "<value>"}${form(next)}, not ${next}`);
         if ((spec.kind === "count" || spec.kind === "number") && /^-\d/.test(next)) {
           const range = spec.kind === "count" ? `a whole number from ${spec.min ?? 0} to ${spec.max ?? Number.MAX_SAFE_INTEGER}` : `a number from ${spec.min ?? 0} to ${spec.max ?? 0xffff}`;
           throw new UsageError(`--${name} must be ${range}, not ${JSON.stringify(next)}`);

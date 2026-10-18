@@ -111,7 +111,7 @@ export async function loads(program: string, options: { out: string; steps: Load
     let emulatorFlaw: string | undefined;
     if (program.toLowerCase().endsWith(".prg")) {
       const { bytes } = readProjectFile(program);
-      if (!(await autostartLoaded(client, program, bytes))) return { output: { loaded: false, reason: `The program was not in memory after ${LOAD_LIMIT_FRAMES} frames.` }, failed: true };
+      if (!(await autostartLoaded(client, program, bytes))) return { output: { loaded: false, reason: `The program was not in memory after ${LOAD_LIMIT_FRAMES} frames.`, captures: [] }, failed: true };
       // The RAM before RUN, without the program, so the first capture holds the program too.
       previous = await readRam(client, 0x0000, 0x10000);
       const load = bytes[0]! | (bytes[1]! << 8);
@@ -119,7 +119,10 @@ export async function loads(program: string, options: { out: string; steps: Load
       loadedProgram = bytes;
       await client.memmap({ action: "clear" });
       // RUN as c64-testing types it: the steps start at the same time as a scenario's.
-      if (!(await typeRun(client))) return { output: { loaded: false, reason: `After RUN, BASIC ran no program line in ${RUN_LIMIT_FRAMES} frames.` }, failed: true };
+      if (!(await typeRun(client))) {
+        const reason = `After RUN, BASIC ran no program line in ${RUN_LIMIT_FRAMES} frames. loads starts a PRG with RUN, so it needs a program with a BASIC start line, for example 10 SYS 2061. For a PRG without a BASIC start, use capture with --entry.`;
+        return { output: { loaded: false, reason, captures: [] }, failed: true };
+      }
     } else {
       // A disk, tape or cartridge: VICE loads and starts it. The RAM test of the KERNAL puts back what it writes.
       previous = await readRam(client, 0x0000, 0x10000);

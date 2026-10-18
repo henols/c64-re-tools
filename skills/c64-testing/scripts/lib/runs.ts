@@ -152,7 +152,7 @@ function readRun(path: string): Run {
     if (step.memory !== undefined && step.memory !== "all" && (!Array.isArray(step.memory) || !step.memory.every(memoryItem))) {
       fail(`${at}: memory is "all", or a list of names, $ addresses, or objects with address, size (1 to 65536) and view (cpu or ram)`);
     }
-    if (step.registers !== undefined && typeof step.registers !== "boolean") fail(`${at}: registers must be true or false`);
+    if (step.registers !== undefined && typeof step.registers !== "boolean") fail(`${at}: registers must be true or false in a run. true gives all registers. A list of register names is for a scenario`);
     if (step.vicii !== undefined && typeof step.vicii !== "boolean") fail(`${at}: vicii must be true or false`);
     if (step.sprites !== undefined && (!Array.isArray(step.sprites) || !step.sprites.every((sprite) => isInteger(sprite, 0, 7)))) fail(`${at}: sprites is a list of numbers from 0 to 7`);
   });

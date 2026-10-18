@@ -96,6 +96,8 @@ A run file (for `testing.ts run`) has:
 
 A `trace` step has a name, `points` (1 to 8), `frames` (1 to 3000) and an optional `maxHits` (at most 20000). A point has `kind` (`exec`, `read` or `write`), `start` and an optional `end`. The step writes `<name>.json` with each hit. `results.json` gives the file, the count of hits, the frames and why the trace ended. A trace that a breakpoint, a watchpoint or a JAM ends also ends the run.
 
+In a run, an `observe` step can have `memory`, `registers`, `vicii` and `sprites`. `registers` and `vicii` are `true` or `false`, not a list. `"registers": true` gives all registers. A scenario takes a list of register names, a run does not. `sprites` is a list of sprite numbers from 0 to 7.
+
 In a run, a memory item has `address`, `size` (1 to 65536) and `view`. An item larger than 4096 bytes goes into the file `<observe>-<address>.bin`, without the `$`. `"memory": "all"` writes all 64 KiB of RAM to `<observe>.bin`.
 
 A name in `save`, `screen`, `coverage` and `observe` has 1 to 64 letters, digits, dots, underscores or hyphens. The files go into the `--out` directory, with `results.json`. It has the observations, the files and the steps done. If a `runUntil` step did not reach its target, it also tells why the run stopped.

@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
-import { compareReleases, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
+import { compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
 import { separate } from "../../skills/c64-provenance/scripts/lib/separate.ts";
 import { seededBytes } from "../kit.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
@@ -116,7 +116,9 @@ test("the script compares PRG files and applies a shift", () => {
   const third = refused(["release.prg", "moved.prg", "--shift", "3:-1280"]);
   assert.equal(third.code, "invalid-input");
   assert.match(third.message, /^--shift 3:-1280: there is no release 3\. This compare has 2 releases: give a release number from 1 to 2\n/);
-  assert.match(refused(["release.prg", "moved.prg", "--shift", "2-256"]).message, /^--shift must be <release number>:<bytes>, for example 2:-256, not 2-256\n/);
+  assert.match(refused(["release.prg", "moved.prg", "--shift", "2-256"]).message, /^--shift must be <release>:<bytes>, for example 2:-256, not 2-256\n/);
+  // A bare negative number is not taken as an option: the message gives the form with that number, not --shift=-1280.
+  assert.match(refused(["release.prg", "moved.prg", "--shift", "-1280"]).message, /^--shift needs a value of the form <release>:<bytes>: give --shift <release>:<bytes>, for example --shift 2:-1280, not -1280\n/);
 });
 
 test("compare refuses a disk, tape or cartridge image with the remedy, as the unpacker does", () => {
@@ -371,4 +373,11 @@ test("the separate command names the roots of the reachability in the result and
   ];
   assert.deepEqual((JSON.parse(run.stdout) as { roots: unknown }).roots, roots);
   assert.deepEqual((JSON.parse(readFileSync(join(root, "separate.json"), "utf8")) as { roots: unknown }).roots, roots);
+});
+
+test("the identical share is 1 only when no byte differs, and 0 only when no byte is identical", () => {
+  assert.deepEqual(
+    [identicalShare(35974, 1), identicalShare(10, 0), identicalShare(0, 10), identicalShare(0, 0), identicalShare(1, 35974), identicalShare(29, 71)],
+    [0.999, 1, 0, 0, 0.001, 0.29],
+  );
 });

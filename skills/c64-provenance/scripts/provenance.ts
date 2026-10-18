@@ -43,7 +43,7 @@ import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
-import { compareReleases, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
+import { compareReleases, identicalShare, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
 import { findRoutine, libraryFolder, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
 import { watchRelease, type Start } from "./lib/runtime.ts";
 import { findLeftovers } from "./lib/leftovers.ts";
@@ -107,7 +107,7 @@ async function compare(call: Call): Promise<unknown> {
   const shifts = new Map<number, number>();
   for (const text of call.strings("shift")) {
     const match = /^(\d+):([+-]?\d+)$/.exec(text);
-    if (match === null) throw new UsageError(`--shift must be <release number>:<bytes>, for example 2:-256, not ${text}`);
+    if (match === null) throw new UsageError(`--shift must be <release>:<bytes>, for example 2:-256, not ${text}`);
     if (Number(match[1]) < 1 || Number(match[1]) > positionals.length) {
       throw new UsageError(`--shift ${text}: there is no release ${match[1]}. This compare has ${positionals.length} releases: give a release number from 1 to ${positionals.length}`);
     }
@@ -122,13 +122,12 @@ async function compare(call: Call): Promise<unknown> {
   const releases = loaded.map((item) => item.release);
   const range = call.range("range");
   const comparison = compareReleases(releases, range === undefined ? {} : { from: range.start, to: range.end });
-  const compared = comparison.identicalBytes + comparison.differingBytes;
-  const identicalShare = compared === 0 ? 0 : comparison.identicalBytes / compared;
+  const share = identicalShare(comparison.identicalBytes, comparison.differingBytes);
   // A poor match at the load addresses can mean that the releases are placed differently.
   // Each release gets its best shifts: data that stayed can outvote code that moved, so one is not enough.
   const applied = loaded.map((item) => item.shift);
   const suggestions =
-    identicalShare < 0.5
+    share < 0.5
       ? releases.slice(1).flatMap((release, index) =>
           suggestShifts(releases[0]!, release).map((found) => {
             const suggestion = shiftSuggestion(releases, applied, index + 1, found);
@@ -170,7 +169,7 @@ async function compare(call: Call): Promise<unknown> {
     common: comparison.common.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     identicalBytes: comparison.identicalBytes,
     differingBytes: comparison.differingBytes,
-    identicalShare: Number(identicalShare.toFixed(3)),
+    identicalShare: share,
     differences: comparison.differences.map((difference, index) => ({
       start: formatC64Address(difference.start),
       end: formatC64Address(difference.end),
@@ -464,7 +463,14 @@ const COMMANDS: CommandSpec[] = [
     summary: "Compares releases byte by byte, in their common ranges, and suggests shifts when they are placed differently.",
     subjects: [{ name: "<release>", help: "knowledge (the program in the knowledge), a PRG at its load address, or an image.json of the c64-unpacker skill with the entry_state.json beside it. Two or more", list: true }],
     options: {
-      shift: { kind: "text", value: "<n>:<bytes>", multiple: true, help: "move release n (1 is the first) by a number of bytes, for example 2:-256" },
+      shift: {
+        kind: "text",
+        value: "<release>:<bytes>",
+        multiple: true,
+        help: "move a release (1 is the first) by a number of bytes, for example 2:-256",
+        // A bare number is the bytes: the example puts it after a release.
+        example: (given) => `2:${given !== undefined && /^-\d+$/.test(given) ? given : "-256"}`,
+      },
       range: { ...OPTIONS.range, help: "compare only the addresses from start to end" },
       frames: { ...OPTIONS.frames, max: MAX_EXECUTION_COUNT, help: "run each release in its own emulator for n frames, and give each listed difference its first access and whether it changed" },
       steps: { ...OPTIONS.steps, help: "with --frames: action steps (JSON) to run before the frames" },

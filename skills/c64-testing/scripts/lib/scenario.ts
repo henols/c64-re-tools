@@ -307,15 +307,16 @@ const PROGRAM_REMEDY = "A scenario program is a PRG. Get the PRG out of the disk
  * program and the symbols of each side, and each snapshot file. A missing
  * file is not-found; a program that is no PRG, a symbols file with no names
  * and a snapshot step whose file is no VICE snapshot file are invalid-input.
- * A refusal names the field or the step. Gives the names of each side.
+ * A refusal starts with the scenario file, as the other scenario errors do,
+ * and names the field or the step. Gives the names of each side.
  */
-export function scenarioNames(scenario: Scenario): Map<Side, Map<string, number>> {
+export function scenarioNames(scenario: Scenario, path: string): Map<Side, Map<string, number>> {
   const names = new Map<Side, Map<string, number>>();
   const named = <T>(field: string, read: () => T): T => {
     try {
       return read();
     } catch (error) {
-      if (isRefusal(error)) throw new Refusal(error.code, `${field}: ${error.message}`);
+      if (isRefusal(error)) throw new Refusal(error.code, `scenario ${path}: ${field}: ${error.message}`);
       throw error;
     }
   };

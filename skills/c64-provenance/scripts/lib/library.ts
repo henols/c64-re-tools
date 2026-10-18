@@ -14,7 +14,7 @@ import { formatC64Address, instructionLength } from "#src/c64.ts";
 import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
 import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, OPERAND_SELECTS, type OperandSelect, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
-import { checkOutputPath, isInside, PROJECT_DIRECTORY } from "#src/project.ts";
+import { checkOutputPath, isInside, knowledgePart, PROJECT_DIRECTORY } from "#src/project.ts";
 
 /** A routine shorter than this is not saved and not searched: its bytes occur by chance. */
 export const MIN_ROUTINE = 16;
@@ -305,7 +305,12 @@ function checkLibraryOutput(path: string, root: string): void {
   for (const [base, target] of [[root, path], [realRoot, real]] as const) {
     if (isInside(base, target)) {
       // A project path shows with "/" on every system, as the messages give it.
-      checkOutputPath(relative(base, target).split(sep).join("/") || ".", "folder", { root: base, what: "--library" });
+      const shown = relative(base, target).split(sep).join("/") || ".";
+      const part = knowledgePart(shown);
+      if (part !== undefined) {
+        throw new Refusal("invalid-input", `--library: ${shown} is in ${part}, the knowledge of the project. Only the c64-knowledge skill writes it: a write there destroys the knowledge. Give a library folder beside the projects, for example ../library.`);
+      }
+      checkOutputPath(shown, "folder", { root: base, what: "--library" });
       return;
     }
   }

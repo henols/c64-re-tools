@@ -381,11 +381,11 @@ test("test and run check every file before the emulator: a missing file is not-f
     writeFileSync(join(project, name), JSON.stringify({ name: "files", original: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, ...sides, steps }));
     return name;
   };
-  assert.deepEqual(call("test", scenario("no-rebuild.json", { rebuild: { program: "build/nope.prg", symbols: "none" } })), { code: "not-found", message: "rebuild.program: There is no file at build/nope.prg in the project folder." });
-  assert.deepEqual(call("test", scenario("no-symbols.json", { rebuild: { program: "game.prg", symbols: "build/nope.json" } })), { code: "not-found", message: "rebuild.symbols: There is no file at build/nope.json in the project folder." });
+  assert.deepEqual(call("test", scenario("no-rebuild.json", { rebuild: { program: "build/nope.prg", symbols: "none" } })), { code: "not-found", message: "scenario no-rebuild.json: rebuild.program: There is no file at build/nope.prg in the project folder." });
+  assert.deepEqual(call("test", scenario("no-symbols.json", { rebuild: { program: "game.prg", symbols: "build/nope.json" } })), { code: "not-found", message: "scenario no-symbols.json: rebuild.symbols: There is no file at build/nope.json in the project folder." });
   const disk = call("test", scenario("disk.json", { original: { program: "game.d64", symbols: "none" } }));
   assert.equal(disk.code, "invalid-input");
-  assert.equal(disk.message, "original.program: game.d64 is a disk image (.d64), not a PRG. A scenario program is a PRG. Get the PRG out of the disk, tape or cartridge with disk.ts read (or disk.ts crt) of the c64-disk skill.");
+  assert.equal(disk.message, "scenario disk.json: original.program: game.d64 is a disk image (.d64), not a PRG. A scenario program is a PRG. Get the PRG out of the disk, tape or cartridge with disk.ts read (or disk.ts crt) of the c64-disk skill.");
   assert.equal(call("test", scenario("no-snapshot.json", {}, [{ snapshot: "nope.vsf" }, { observe: "x", memory: ["$0400"] }])).code, "not-found");
   const run = (name: string, value: unknown) => {
     writeFileSync(join(project, name), JSON.stringify(value));
@@ -394,6 +394,11 @@ test("test and run check every file before the emulator: a missing file is not-f
   assert.equal(run("run-missing.json", { name: "r", start: { program: "nope.prg" }, steps: [{ frames: 1 }] }).code, "not-found");
   assert.match(run("run-disk.json", { name: "r", start: { program: "game.d64" }, steps: [{ frames: 1 }] }).message, /^run run-disk\.json: start\.program: game\.d64 is a disk image \(\.d64\), not a PRG\. A run starts a PRG/);
   assert.deepEqual(run("run-snapshot.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { snapshot: "nope.vsf" }] }), { code: "not-found", message: "run run-snapshot.json: step 2: snapshot: There is no file at nope.vsf in the project folder." });
+  // A run observes all registers or none: a list of names is the form of a scenario.
+  assert.match(
+    run("run-registers.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { observe: "x", registers: ["a"] }] }).message,
+    /^run run-registers\.json: step 2: registers must be true or false in a run\. true gives all registers\. A list of register names is for a scenario\n/,
+  );
   writeFileSync(join(project, "map.json"), JSON.stringify({ player_x: "$c300" }));
   assert.deepEqual(run("run-name.json", { name: "r", start: { program: "game.prg" }, symbols: "map.json", steps: [{ frames: 1 }, { runUntil: { target: { kind: "address", address: "nonsense" } } }] }), { code: "invalid-input", message: "run run-name.json: step 2: the symbols map.json have no nonsense" });
 });
@@ -486,7 +491,7 @@ test("test, run and diff refuse a snapshot file that is no VICE snapshot file be
   writeFileSync(join(project, "snap-start.json"), JSON.stringify({ name: "x", start: { snapshot: "notes.vsf" }, steps: [{ frames: 5 }] }));
   assert.deepEqual(call("run", "snap-start.json", "--out", "out"), { code: "invalid-input", message: `run snap-start.json: start.snapshot: notes.vsf ${why}` });
   writeFileSync(join(project, "snap-scenario.json"), JSON.stringify({ ...valid, original: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }, { observe: "x", memory: ["$0400"] }] }));
-  assert.deepEqual(call("test", "snap-scenario.json"), { code: "invalid-input", message: `step 2: snapshot: notes.txt ${why}` });
+  assert.deepEqual(call("test", "snap-scenario.json"), { code: "invalid-input", message: `scenario snap-scenario.json: step 2: snapshot: notes.txt ${why}` });
   assert.deepEqual(call("diff", "notes.vsf", "notes.vsf"), { code: "invalid-input", message: `notes.vsf ${why}` });
 });
 

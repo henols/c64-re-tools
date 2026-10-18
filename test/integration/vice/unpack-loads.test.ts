@@ -102,3 +102,24 @@ test("loads that capture no segment give loaded false, and a capture at READY. t
   assert.match(json.reason, /No capture has a segment/);
   assert.equal(json.captures[0]!.keyWait, true, stdout);
 });
+
+test("loads of a PRG without a BASIC start line gives loaded false, an empty captures list and the remedy", { skip: liveSkip, timeout: 300_000 }, async () => {
+  const supervisor = new ProcessSupervisor();
+  supervisor.installExitGuard();
+  server ??= await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  // Code at $c000 and no BASIC line: RUN runs no program line.
+  writeFileSync(join(project, "c000.prg"), part);
+  writeFileSync(join(project, "c000.json"), JSON.stringify([{ frames: 10 }, { capture: "start" }]));
+  const child = spawn(process.execPath, [...process.execArgv, script, "loads", "c000.prg", "--steps", "c000.json", "--out", "c000"], {
+    cwd: project,
+    env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  let stdout = "";
+  child.stdout.on("data", (chunk) => (stdout += chunk));
+  const [status] = (await once(child, "exit")) as [number | null];
+  assert.equal(status, 1, stdout);
+  const json = JSON.parse(stdout) as { result: string; loaded: boolean; reason: string; captures: unknown[] };
+  assert.deepEqual([json.result, json.loaded, json.captures], ["FAIL", false, []]);
+  assert.match(json.reason, /^After RUN, BASIC ran no program line in \d+ frames\. loads starts a PRG with RUN, so it needs a program with a BASIC start line, for example 10 SYS 2061\. For a PRG without a BASIC start, use capture with --entry\.$/);
+});
