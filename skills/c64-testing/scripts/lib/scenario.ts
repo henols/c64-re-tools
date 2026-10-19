@@ -3,6 +3,7 @@
 // Observations name semantic symbols that resolve per side, comparisons are
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
+
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { formatSprite, formatVicii } from "#src/c64.ts";
 import { addressOf, formatAddress, parseAddress } from "#src/address.ts";
@@ -16,7 +17,6 @@ import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice
 import { checkSnapshotFile } from "#src/media.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { nameTable } from "#src/knowledge/names.ts";
-import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
 import { programImage } from "#src/knowledge/program.ts";
 import { listed } from "#src/script.ts";
 
@@ -283,7 +283,7 @@ export function namesOf(source: string, kinds: "code" | "all" = "all"): Map<stri
   if (source === "knowledge") {
     const db = openForRead();
     try {
-      return nameTable(db, DEFAULT_SPACE, kinds === "code" ? ["label", "routine"] : undefined);
+      return nameTable(db, undefined, kinds === "code" ? ["label", "routine"] : undefined);
     } finally {
       db?.close();
     }

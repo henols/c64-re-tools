@@ -3,11 +3,7 @@ import { test } from "node:test";
 
 import { Refusal } from "./errors.ts";
 
-import { basicLineText, constantExpression, findHandoffs, formatSprite, formatVicii, parseTokenized, petsciiNameToText, textToPetscii, textToPetsciiName, SPACE_PATTERN, type TokenizedLine, vicBankBase } from "./c64.ts";
-
-test("the C64 spaces are c64, drive8, loading and bank0 to bank255", () => {
-  assert.ok(SPACE_PATTERN.test("bank255") && SPACE_PATTERN.test("drive8") && SPACE_PATTERN.test("loading") && !SPACE_PATTERN.test("bank256") && !SPACE_PATTERN.test("drive9"));
-});
+import { basicLineText, constantExpression, findHandoffs, formatSprite, formatVicii, parseTokenized, petsciiNameToText, textToPetscii, textToPetsciiName, type TokenizedLine, vicBankBase } from "./c64.ts";
 
 test("text becomes the PETSCII the keyboard types", () => {
   assert.deepEqual([...textToPetscii("RUN\n")], [0x52, 0x55, 0x4e, 0x0d]);

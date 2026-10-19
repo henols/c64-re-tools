@@ -16,7 +16,7 @@ import { join, resolve } from "node:path";
 import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { coverageSeedKinds } from "../../src/cpu/coverage.ts";
 import { Z80 } from "../../src/cpu/z80.ts";
-import { ZX48 } from "../../src/machine.ts";
+import { MACHINES } from "../../src/machine.ts";
 import { findTool, ZESARUX } from "../../src/native/discover.ts";
 import { analyze } from "../../src/native/ghidra/analyze.ts";
 import { localToolContext } from "../../src/native/local.ts";
@@ -106,7 +106,7 @@ async function analyzeRecording(dir: string) {
   const map = readFileSync(join(dir, "coverage.bin"));
   const byteAt = (address: number) => (address >= 0 && address < image.length ? image[address] : undefined);
   const { routines, codeStarts } = coverageSeedKinds(map, byteAt, Z80);
-  const { result } = await analyze({ imageKind: "flat64k", entryPoints: routines, codeStarts, dataRanges: [], labels: [], decompile: routines.slice(0, 2) }, image, localToolContext(), ZX48);
+  const { result } = await analyze({ imageKind: "flat64k", entryPoints: routines, codeStarts, dataRanges: [], labels: [], decompile: routines.slice(0, 2) }, image, localToolContext(), MACHINES.spectrum48);
   // Our decoder against Ghidra's: the same length and the same text for each instruction in RAM.
   const ram = result.instructions.filter((instruction) => instruction.address >= 0x4000);
   let sameLength = 0;

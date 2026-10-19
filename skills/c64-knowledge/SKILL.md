@@ -34,6 +34,8 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Show the code of a range with names, comments, access and references | `listing '$0400-$04ff'` |
 | Write all knowledge to one file | `export --out .c64-re-tools/local/knowledge.json` |
 | Find what the knowledge holds of the program | `program` |
+| Find the machine of the project and its spaces | `machine` |
+| Set the machine of the project | `set-machine spectrum48` |
 | Put a captured program into the knowledge | `image .c64-re-tools/local/capture/image.json` |
 | Put a PRG into the knowledge | `image original/game.prg` |
 | Put drive code into the knowledge | `image drive.prg --space drive8` |
@@ -103,7 +105,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 | Flag | Command | Effect |
 |---|---|---|
-| `--space <space>` | All commands | The space of the command: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. The default is `c64`. Without `--space`, `revert` reverts all spaces. |
+| `--space <space>` | All commands | The space of the command. On the C64: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. On the ZX Spectrum: `spectrum`, and `ram0` to `ram7` on the 128K. The default is the space of the CPU: `c64` or `spectrum`. Without `--space`, `revert` reverts all spaces. |
 | `--by <user\|llm>` | All commands in "Change the knowledge" | Who decided the change. The default is `llm`. Give `user` only when the user decided the change. |
 | `--reason <text>` | All commands in "Change the knowledge" | Why you make the change. The revision keeps it, and `history` shows it. |
 | `--evidence <kind:ref>` | All commands in "Change the knowledge" | One thing that the change rests on: `coverage:<map>`, `test:<file>`, `file:<file>` or `note:<text>`. You can give it more than one time. |
@@ -239,6 +241,11 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 
 - `body.spaces` lists the spaces that hold knowledge.
 
+### `machine`
+
+- `body.machine` is the machine of the project: `c64`, `spectrum48` or `spectrum128`. A project whose knowledge names no machine is a C64.
+- `body.mainSpace` is the space of the CPU. It is the default of `--space`. `body.spaces` gives the spaces of the machine.
+
 ### `program`
 
 - `body.image` is `null` when the knowledge has no program in the space. Then put the program in with `image`.
@@ -300,6 +307,11 @@ Errors of this group:
 - `stale-revision`: the knowledge changed after the revision of `--expect-revision`. Read the knowledge again. Then decide again.
 - `not-found`: there is nothing to remove, no such revision, or no such file.
 - `invalid-database` or `unsupported-schema`: give `error` and `hint` to the user. Do not edit the knowledge files.
+
+### `set-machine <machine>`
+
+- Give `c64`, `spectrum48` or `spectrum128`. `body.machine` gives the row after the write.
+- The script refuses a machine that has no space for the current knowledge.
 
 ### `rename <address> <name>`
 

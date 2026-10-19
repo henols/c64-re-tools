@@ -6,6 +6,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { Refusal } from "../errors.ts";
 import {
   COMMENT_COLUMNS,
+  MACHINE_COLUMNS,
   MACRO_COLUMNS,
   MACRO_USE_COLUMNS,
   MODULE_COLUMNS,
@@ -19,6 +20,7 @@ import {
   SUPPRESSION_COLUMNS,
   SYMBOL_COLUMNS,
   toComment,
+  toMachine,
   toMacro,
   toMacroUse,
   toModule,
@@ -33,6 +35,7 @@ import {
   toSuppression,
   toSymbol,
   type CommentRow,
+  type MachineRow,
   type MacroRow,
   type MacroUseRow,
   type ModuleRow,
@@ -46,7 +49,8 @@ import {
   type SuppressionRow,
   type SymbolRow,
 } from "./read.ts";
-import { DEFAULT_SPACE, type CoverageKind, type EvidenceKind, type Origin, type Space } from "./schema.ts";
+import { type CoverageKind, type EvidenceKind, type Origin, type Space } from "./schema.ts";
+import { mainSpaceOf } from "./project-machine.ts";
 import { compareText, NO_REVISION } from "./text.ts";
 import type { Evidence } from "./write.ts";
 
@@ -113,6 +117,7 @@ export type HistoryEntry =
   | { entity: "switch"; row: SwitchRow; from: string; to?: string }
   | { entity: "release"; row: ReleaseRow; from: string; to?: string }
   | { entity: "start-screen"; row: StartScreenRow; from: string; to?: string }
+  | { entity: "machine"; row: MachineRow; from: string; to?: string }
   | { entity: "macro"; row: MacroRow; from: string; to?: string }
   | { entity: "macro-use"; row: MacroUseRow; from: string; to?: string };
 
@@ -145,7 +150,7 @@ function bySequence(a: HistoryEntry, b: HistoryEntry): number {
 }
 
 /** Every row, current or closed, that concerns one address of a space, oldest first. */
-export function historyAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): HistoryEntry[] {
+export function historyAt(db: DatabaseSync | undefined, address: number, space: Space = mainSpaceOf(db)): HistoryEntry[] {
   if (db === undefined) return [];
   const validity = ", valid_to_revision";
   const entries: HistoryEntry[] = [];
@@ -175,7 +180,7 @@ export function historyAt(db: DatabaseSync | undefined, address: number, space: 
 }
 
 /** Every row of a macro with this name, and every use of it, oldest first. */
-export function historyOfMacro(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): HistoryEntry[] {
+export function historyOfMacro(db: DatabaseSync | undefined, name: string, space: Space = mainSpaceOf(db)): HistoryEntry[] {
   if (db === undefined) return [];
   const macros = (db.prepare(`SELECT ${MACRO_COLUMNS}, valid_to_revision FROM macros WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map((raw) => entry("macro", toMacro(raw), raw));
   const uses = (db.prepare(`SELECT ${MACRO_USE_COLUMNS}, valid_to_revision FROM macro_uses WHERE space = ? AND macro = ?`).all(space, name) as Raw[]).map((raw) => entry("macro-use", toMacroUse(raw), raw));
@@ -183,7 +188,7 @@ export function historyOfMacro(db: DatabaseSync | undefined, name: string, space
 }
 
 /** Every row of a switch with this name and every patch of it, oldest first. */
-export function historyOfSwitch(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): HistoryEntry[] {
+export function historyOfSwitch(db: DatabaseSync | undefined, name: string, space: Space = mainSpaceOf(db)): HistoryEntry[] {
   if (db === undefined) return [];
   const switches = (db.prepare(`SELECT ${SWITCH_COLUMNS}, valid_to_revision FROM switches WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map((raw) => entry("switch", toSwitch(raw), raw));
   const patches = (db.prepare(`SELECT ${PATCH_COLUMNS}, valid_to_revision FROM patches WHERE space = ? AND switch_name = ?`).all(space, name) as Raw[]).map((raw) => entry("patch", toPatch(raw), raw));
@@ -191,7 +196,7 @@ export function historyOfSwitch(db: DatabaseSync | undefined, name: string, spac
 }
 
 /** Every symbol row of a space that ever had this name, oldest first: a name can move between addresses. */
-export function historyNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): HistoryEntry[] {
+export function historyNamed(db: DatabaseSync | undefined, name: string, space: Space = mainSpaceOf(db)): HistoryEntry[] {
   if (db === undefined) return [];
   return (db.prepare(`SELECT ${SYMBOL_COLUMNS}, valid_to_revision FROM symbols WHERE space = ? AND name = ?`).all(space, name) as Raw[])
     .map((raw) => entry("symbol", toSymbol(raw), raw))
@@ -270,6 +275,7 @@ export function revision(db: DatabaseSync | undefined, text: string): RevisionCh
     ["switch", "switches", SWITCH_COLUMNS, toSwitch],
     ["release", "releases", RELEASE_COLUMNS, toRelease],
     ["start-screen", "start_screens", START_SCREEN_COLUMNS, toStartScreen],
+    ["machine", "machine", MACHINE_COLUMNS, toMachine],
     ["macro", "macros", MACRO_COLUMNS, toMacro],
     ["macro-use", "macro_uses", MACRO_USE_COLUMNS, toMacroUse],
   ] as const;

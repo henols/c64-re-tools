@@ -5,6 +5,8 @@
 // computers line by line (merge=union). The index in local/ is made from
 // this text.
 
+import { forgetMachine } from "./project-machine.ts";
+import { spaceOrder } from "../machine.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
@@ -173,6 +175,8 @@ export const TABLES: readonly TableSpec[] = [
     sort: "label",
     fields: [space, field("label", "label", "text"), field("base", "base", "integer"), field("comment", "comment", "text", true), origin],
   },
+  // The machine of the program: one row; without it the project is a C64.
+  { table: "machine", file: "machine.jsonl", sort: "machine", fields: [space, field("machine", "machine", "text"), origin] },
   {
     table: "macros",
     file: "macros.jsonl",
@@ -257,7 +261,6 @@ function lineOf(raw: Raw, fields: readonly Field[], extra: Raw): string {
   return JSON.stringify({ ...line, ...extra });
 }
 
-const spaceOrder = (space: string) => (space === "c64" ? -2 : space === "drive8" ? -1 : Number(space.slice(4)));
 
 /** The sort key of a row: space, address (or name), the revision that added it, its order in that revision. */
 function compareRows(spec: TableSpec) {
@@ -436,6 +439,7 @@ function parseRows(spec: TableSpec, text: string): RowLine[] {
  * with its file and row.
  */
 export function loadText(db: DatabaseSync, files: ReadonlyMap<string, { text: string }>): void {
+  forgetMachine(db);
   const insertRevision = db.prepare(`INSERT INTO revisions (${REVISION_FIELDS.map((item) => item.column).join(", ")}) VALUES (${REVISION_FIELDS.map(() => "?").join(", ")})`);
   const insertEvidence = db.prepare("INSERT INTO evidence (revision, kind, ref, sha256, space) VALUES (?, ?, ?, ?, ?)");
   const revisions = parseRevisions(files.get(REVISIONS_FILE)?.text ?? "").sort((a, b) => compareText(a.id, b.id));

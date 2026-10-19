@@ -10,7 +10,8 @@ import { Refusal } from "../errors.ts";
 import { COVERAGE } from "../cpu/coverage.ts";
 import { type AddressRange, formatAddress } from "../address.ts";
 
-import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
+import { COVERAGE_KINDS, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
+import { mainSpaceOf } from "./project-machine.ts";
 import { coverageRuns } from "./read.ts";
 import { checkSpace, write, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
 
@@ -107,7 +108,7 @@ export function setImage(db: DatabaseSync, context: WriteContext, request: Image
   checkSegments(request.segments);
   if (request.entry !== undefined && (!Number.isInteger(request.entry) || request.entry < 0 || request.entry > 0xffff)) throw new Refusal("invalid-input", "The entry must be from $0000 to $ffff.");
   if (request.entry === undefined && (request.state !== undefined || request.stages !== undefined)) throw new Refusal("invalid-input", "A machine state or stages need an entry.");
-  const space = request.space ?? DEFAULT_SPACE;
+  const space = request.space ?? mainSpaceOf(db);
   const wanted = memoryRows(request.segments, request.byteAt);
   return write(db, context, "image", (change) => {
     const current = db.prepare("SELECT id, address, bytes FROM current_memory WHERE space = ?").all(space) as Array<{ id: string; address: number; bytes: string }>;
@@ -162,14 +163,14 @@ export function addCoverage(
   request: { space?: Space; maps: CoverageMap[] },
 ): { revision: string | null; current: { space: Space; imported: string[]; known: string[]; ranges: number } } {
   checkSpace(request);
-  const space = request.space ?? DEFAULT_SPACE;
+  const space = request.space ?? mainSpaceOf(db);
   for (const map of request.maps) {
     if (map.bytes.length !== SIZE) throw new Refusal("invalid-input", `${map.name} has ${map.bytes.length} bytes; a coverage map has 65536, one for each address.`);
   }
   const hashed = request.maps.map((map) => ({ ...map, sha256: createHash("sha256").update(map.bytes).digest("hex") }));
   const known = new Set(coverageRuns(db).filter((run) => run.space === space).map((run) => `${run.name}\n${run.sha256}`));
   const fresh = hashed.filter((map) => !known.has(`${map.name}\n${map.sha256}`));
-  const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256, ...(space === DEFAULT_SPACE ? {} : { space }) }))];
+  const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256, ...(space === mainSpaceOf(db) ? {} : { space }) }))];
   return write(db, { ...context, evidence }, "coverage", (change) => {
     const result = { space, imported: fresh.map((map) => map.name), known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name), ranges: 0 };
     if (fresh.length === 0) return result;
@@ -192,7 +193,7 @@ export function addCoverage(
 }
 
 /** The program of a space, or undefined when the knowledge has no bytes for it. */
-export function programImage(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage | undefined {
+export function programImage(db: DatabaseSync | undefined, space: Space = mainSpaceOf(db)): ProgramImage | undefined {
   if (db === undefined) return undefined;
   const rows = db.prepare("SELECT address, bytes FROM current_memory WHERE space = ? ORDER BY address").all(space) as Array<{ address: number; bytes: string }>;
   if (rows.length === 0) return undefined;
@@ -217,10 +218,10 @@ export function programImage(db: DatabaseSync | undefined, space: Space = DEFAUL
 }
 
 /** The program of a space for a tool; refused with the way to put it in when the knowledge has none. */
-export function requireProgram(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage {
+export function requireProgram(db: DatabaseSync | undefined, space: Space = mainSpaceOf(db)): ProgramImage {
   const image = programImage(db, space);
   if (image !== undefined) return image;
-  const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
+  const where = space === mainSpaceOf(db) ? "" : ` in ${space}`;
   throw new Refusal("not-found", `The knowledge has no program${where}. Put the program into the project knowledge${where}: a PRG, or the image.json of a capture.`);
 }
 
@@ -267,7 +268,7 @@ export function analyzedBytes(image: ProgramImage): { bytes: Buffer; kind: "prg"
  * c64.ts), and the addresses that one run both wrote and executed; undefined
  * when the knowledge has no coverage for the space.
  */
-export function programCoverage(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): { map: Uint8Array; selfModified: Uint8Array } | undefined {
+export function programCoverage(db: DatabaseSync | undefined, space: Space = mainSpaceOf(db)): { map: Uint8Array; selfModified: Uint8Array } | undefined {
   if (db === undefined) return undefined;
   const rows = db.prepare("SELECT kind, start_address, end_address FROM current_coverage WHERE space = ?").all(space) as Array<{ kind: CoverageKind; start_address: number; end_address: number }>;
   if (rows.length === 0) return undefined;
@@ -304,7 +305,7 @@ export function operandImages(db: DatabaseSync, platform: ReadonlyMap<string, nu
  * that the knowledge keeps for the release. Undefined when the space has no
  * release with this label.
  */
-export function releaseImage(db: DatabaseSync | undefined, label: string, space: Space = DEFAULT_SPACE): Pick<ProgramImage, "segments" | "byteAt"> | undefined {
+export function releaseImage(db: DatabaseSync | undefined, label: string, space: Space = mainSpaceOf(db)): Pick<ProgramImage, "segments" | "byteAt"> | undefined {
   if (db === undefined) return undefined;
   const release = db.prepare("SELECT base FROM current_releases WHERE space = ? AND label = ?").get(space, label) as { base: number } | undefined;
   if (release === undefined) return undefined;

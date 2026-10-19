@@ -19,9 +19,9 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import { SPACE_PATTERN } from "./c64.ts";
 import { addressOf, formatAddress, SYMBOL_NAME, type AddressRange } from "./address.ts";
 import { isRefusal, Refusal, splitMessage, type ErrorCode } from "./errors.ts";
+import { ANY_SPACE, DEFAULT_MACHINE } from "./machine.ts";
 import { checkOutputPath, projectRoot, resolveProjectPath, resolveReadPath, useProject, type OutputKind } from "./project.ts";
 import { STOP_AND_ASK } from "./protocol/messages.ts";
 import { elapsedMs, startTrace, trace, type TraceFields } from "./trace.ts";
@@ -89,7 +89,7 @@ export type OptionKind =
   | "number" // a value: $ and hex digits, decimal, or % and binary digits
   | "address" // $ and 1 to 4 hex digits, or a name
   | "range" // <start>-<end>, each an address
-  | "space" // c64, drive8, loading, or bank0 to bank255
+  | "space" // a space of a machine: c64, drive8, loading, bankN, spectrum, ramN
   | "choice"; // one of `choices`
 
 export interface OptionSpec {
@@ -122,7 +122,11 @@ export interface OptionSpec {
 /** The options that have one meaning in every script. A command can change the help, the value and whether it is required, never the kind. */
 export const OPTIONS = {
   out: { kind: "path", value: "<path>", help: "write the output here, relative to the project folder" },
-  space: { kind: "space", value: "<space>", help: "the knowledge space: c64 (the default), drive8 for 1541 drive code, loading for a captured stage of the loading, or bank0 to bank255 for a cartridge bank or another memory image of the program", default: "c64" },
+  space: {
+    kind: "space",
+    value: "<space>",
+    help: "the knowledge space. The default is the CPU view of the project's machine: c64 or spectrum. Other spaces: drive8 for 1541 drive code, loading for a captured stage of the loading, and bank0 to bank255 for a cartridge bank on the C64, ram0 to ram7 for a 128K RAM bank on the Spectrum",
+  },
   range: { kind: "range", value: "<start>-<end>", help: "only the addresses from start to end, for example '$c000-$cfff'" },
   entry: { kind: "address", value: "<address>", help: "an entry point of the program" },
   steps: { kind: "path", value: "<file>", help: "a JSON file of action steps that run after the start" },
@@ -166,6 +170,8 @@ export interface ScriptSpec {
   commands: readonly CommandSpec[];
   /** Resolves names in addresses and ranges. Without it, a name is refused. */
   names?: NameResolver;
+  /** The space of a command without --space: the main space of the project's machine. Without it, the C64's. */
+  mainSpace?: () => string;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,14 +209,25 @@ export class Call {
   readonly #options: Readonly<Record<string, OptionSpec>>;
   readonly #values: Readonly<Record<string, string | boolean | string[] | undefined>>;
   readonly #names: NameResolver | undefined;
+  readonly #mainSpace: (() => string) | undefined;
+  #main: string | undefined;
 
-  constructor(script: string, command: string, subjects: readonly string[], options: Readonly<Record<string, OptionSpec>>, values: Readonly<Record<string, string | boolean | string[] | undefined>>, names: NameResolver | undefined) {
+  constructor(
+    script: string,
+    command: string,
+    subjects: readonly string[],
+    options: Readonly<Record<string, OptionSpec>>,
+    values: Readonly<Record<string, string | boolean | string[] | undefined>>,
+    names: NameResolver | undefined,
+    mainSpace?: () => string,
+  ) {
     this.script = script;
     this.command = command;
     this.subjects = subjects;
     this.#options = options;
     this.#values = values;
     this.#names = names;
+    this.#mainSpace = mainSpace;
   }
 
   /** The full command line of `command` of this script with `args`, for nextAction. */
@@ -218,9 +235,12 @@ export class Call {
     return commandLine([command, ...args]);
   }
 
-  /** The knowledge space of the command: --space, else c64. */
+  /** The knowledge space of the command: --space, else the main space of the project's machine. */
   get space(): string {
-    return ("space" in this.#options ? this.string("space") : undefined) ?? "c64";
+    const given = "space" in this.#options ? this.string("space") : undefined;
+    if (given !== undefined) return given;
+    this.#main ??= this.#mainSpace?.() ?? DEFAULT_MACHINE.spaces.main;
+    return this.#main;
   }
 
   /** Subject `index` as text. */
@@ -609,7 +629,7 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
       if (text === "") throw new UsageError(`--${name} needs a value`);
       if (spec.kind === "address" && !isAddressText(text)) throw new UsageError(`--${name} must be ${ADDRESS_FORM}, not ${JSON.stringify(text)}`);
       if (spec.kind === "range" && rangeParts(text) === undefined) throw new UsageError(`--${name} must be <start>-<end>, each ${ADDRESS_FORM}, for example '$c000-$cfff', not ${JSON.stringify(text)}`);
-      if (spec.kind === "space" && !SPACE_PATTERN.test(text)) throw new UsageError(`--${name} must be c64, drive8, loading, or bank0 to bank255, not ${JSON.stringify(text)}`);
+      if (spec.kind === "space" && !ANY_SPACE.test(text)) throw new UsageError(`--${name} must be a space: c64, drive8, loading or bank0 to bank255 on the C64, spectrum or ram0 to ram7 on the Spectrum, not ${JSON.stringify(text)}`);
       if (spec.kind === "choice" && !(spec.choices ?? []).includes(text)) throw new UsageError(`--${name} must be one of ${(spec.choices ?? []).join(", ")}, not ${JSON.stringify(text)}`);
       if (spec.kind === "path") {
         if (spec.output === undefined) checkPath(text, `--${name}`, true);
@@ -617,7 +637,7 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
       }
     }
   }
-  const call = new Call(script.name, command.name, subjects, options, values, script.names);
+  const call = new Call(script.name, command.name, subjects, options, values, script.names, script.mainSpace);
   // Counts and numbers have no names: check them now, so that a wrong one is refused before the command starts.
   for (const [name, spec] of Object.entries(options)) if ((spec.kind === "count" || spec.kind === "number") && values[name] !== undefined) call.counts(name);
   return call;

@@ -4,6 +4,7 @@
 // compare the rebuild with it; diff shows what changed between two states;
 // checklist gives the Markdown list for a human tester.
 
+import { projectMainSpace } from "#src/knowledge/names.ts";
 import { COVERAGE } from "#src/cpu/coverage.ts";
 import { formatAddress } from "#src/address.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
@@ -230,5 +231,6 @@ await runScript({
   name: "testing",
   summary: "Tests a rebuild against the original: scenarios in an emulator, runs, recorded play sessions, state differences, and a checklist for a human tester.",
   names: knowledgeNames,
+  mainSpace: projectMainSpace,
   commands: COMMANDS,
 });

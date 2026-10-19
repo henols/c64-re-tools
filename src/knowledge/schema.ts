@@ -5,6 +5,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { REFERENCE_KINDS, type ReferenceKind } from "../address.ts";
+import { MACHINE_IDS } from "../machine.ts";
 import { OPERAND_SELECTS } from "./expression.ts";
 
 /** heuristic: 6502 idioms that the static analysis finds by pattern; an analyzer origin. */
@@ -123,12 +124,12 @@ export function isGeneratedFile(file: string): boolean {
 }
 
 /**
- * The address space of a knowledge row: a name that SPACE_PATTERN of c64.ts
- * accepts. Drive code and banks reuse C64 addresses.
+ * The address space of a knowledge row. The index takes the space names of
+ * every machine; a write checks each row against the project machine.
  */
-export type Space = string;
-export const DEFAULT_SPACE: Space = "c64";
-const SPACE_CHECK = "space IN ('c64', 'drive8', 'loading') OR space GLOB 'bank[0-9]' OR space GLOB 'bank[1-9][0-9]' OR space GLOB 'bank[12][0-9][0-9]'";
+export type { Space } from "../machine.ts";
+const SPACE_CHECK =
+  "space IN ('c64', 'drive8', 'loading', 'spectrum') OR space GLOB 'bank[0-9]' OR space GLOB 'bank[1-9][0-9]' OR space GLOB 'bank[12][0-9][0-9]' OR space GLOB 'ram[0-7]'";
 
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 
@@ -159,7 +160,7 @@ function createSchema(db: DatabaseSync): void {
       );
       CREATE TABLE symbols (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         name                TEXT NOT NULL CHECK (length(name) > 0),
         kind                TEXT NOT NULL CHECK (kind IN (${list(SYMBOL_KINDS)})),
@@ -172,7 +173,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX symbols_address ON symbols (space, address);
       CREATE TABLE analyzer_names (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         name                TEXT NOT NULL CHECK (length(name) > 0),
         kind                TEXT NOT NULL CHECK (kind IN (${list(SYMBOL_KINDS)})),
@@ -184,7 +185,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX analyzer_names_name ON analyzer_names (space, name);
       CREATE TABLE regions (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
         type                TEXT NOT NULL CHECK (type IN (${list(REGION_TYPES)})),
@@ -205,7 +206,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX evidence_revision ON evidence (revision);
       CREATE TABLE comments (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         placement           TEXT NOT NULL CHECK (placement IN (${list(COMMENT_PLACEMENTS)})),
         text                TEXT NOT NULL CHECK (length(text) > 0),
@@ -217,7 +218,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX comments_address ON comments (space, address);
       CREATE TABLE "references" (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         from_address        INTEGER NOT NULL CHECK (from_address BETWEEN 0 AND 65535),
         to_address          INTEGER NOT NULL CHECK (to_address BETWEEN 0 AND 65535),
         kind                TEXT NOT NULL CHECK (kind IN (${list(REFERENCE_KINDS)})),
@@ -230,7 +231,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX references_to ON "references" (space, to_address);
       CREATE TABLE suppressions (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         entity              TEXT NOT NULL CHECK (entity IN (${list(SUPPRESSION_ENTITIES)})),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
@@ -245,7 +246,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX suppressions_start ON suppressions (space, start_address);
       CREATE TABLE modules (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         file                TEXT NOT NULL CHECK (length(file) > 0),
         title               TEXT CHECK (title IS NULL OR length(title) > 0),
@@ -257,7 +258,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX modules_current_file ON modules (space, file) WHERE valid_to_revision IS NULL;
       CREATE TABLE operands (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         selector            TEXT NOT NULL CHECK (selector IN (${list(OPERAND_SELECTS)})),
         symbol              TEXT CHECK (symbol IS NULL OR length(symbol) > 0),
@@ -273,7 +274,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX operands_address ON operands (space, address);
       CREATE TABLE patches (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
         switch_name         TEXT NOT NULL CHECK (length(switch_name) > 0),
@@ -286,7 +287,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX patches_start ON patches (space, start_address);
       CREATE TABLE switches (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         name                TEXT NOT NULL CHECK (length(name) > 0),
         kind                TEXT NOT NULL CHECK (kind IN (${list(SWITCH_KINDS)})),
         default_value       INTEGER NOT NULL CHECK (default_value IN (0, 1)),
@@ -299,7 +300,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX switches_name ON switches (space, name);
       CREATE TABLE releases (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         label               TEXT NOT NULL CHECK (length(label) > 0),
         base                INTEGER NOT NULL CHECK (base IN (0, 1)),
         comment             TEXT CHECK (comment IS NULL OR length(comment) > 0),
@@ -308,9 +309,17 @@ function createSchema(db: DatabaseSync): void {
         valid_to_revision   TEXT REFERENCES revisions (id)
       );
       CREATE INDEX releases_label ON releases (space, label);
+      CREATE TABLE machine (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
+        machine             TEXT NOT NULL CHECK (machine IN (${list(MACHINE_IDS)})),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
       CREATE TABLE macros (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         name                TEXT NOT NULL CHECK (length(name) > 0),
         params              TEXT NOT NULL,
         body                TEXT NOT NULL CHECK (length(body) > 0),
@@ -322,7 +331,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX macros_name ON macros (space, name);
       CREATE TABLE start_screens (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (space = 'c64'),
+        space               TEXT NOT NULL CHECK (space = 'c64'),
         mode                TEXT NOT NULL CHECK (mode IN (${list(START_SCREEN_MODES)})),
         screen              INTEGER NOT NULL CHECK (screen BETWEEN 0 AND 65535),
         bitmap              INTEGER CHECK (bitmap BETWEEN 0 AND 65535),
@@ -348,7 +357,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX start_screens_space ON start_screens (space);
       CREATE TABLE macro_uses (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
         macro               TEXT NOT NULL CHECK (length(macro) > 0),
@@ -360,7 +369,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX macro_uses_start ON macro_uses (space, start_address);
       CREATE TABLE memory (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         bytes               TEXT NOT NULL CHECK (length(bytes) BETWEEN 2 AND ${MEMORY_ROW * 2} AND length(bytes) % 2 = 0 AND address + length(bytes) / 2 <= 65536),
         origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
@@ -370,7 +379,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX memory_current ON memory (space, address) WHERE valid_to_revision IS NULL;
       CREATE TABLE release_memory (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         label               TEXT NOT NULL CHECK (length(label) > 0),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         bytes               TEXT NOT NULL CHECK (length(bytes) BETWEEN 2 AND ${MEMORY_ROW * 2} AND length(bytes) % 2 = 0 AND address + length(bytes) / 2 <= 65536),
@@ -381,7 +390,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX release_memory_current ON release_memory (space, label, address) WHERE valid_to_revision IS NULL;
       CREATE TABLE entries (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         state               TEXT,
         stages              TEXT,
@@ -392,7 +401,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX entries_current ON entries (space) WHERE valid_to_revision IS NULL;
       CREATE TABLE coverage (
         id                  TEXT PRIMARY KEY,
-        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        space               TEXT NOT NULL CHECK (${SPACE_CHECK}),
         kind                TEXT NOT NULL CHECK (kind IN (${list(COVERAGE_KINDS)})),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
@@ -416,6 +425,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE VIEW current_patches AS SELECT * FROM patches WHERE valid_to_revision IS NULL;
       CREATE VIEW current_switches AS SELECT * FROM switches WHERE valid_to_revision IS NULL;
       CREATE VIEW current_releases AS SELECT * FROM releases WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_machine AS SELECT * FROM machine WHERE valid_to_revision IS NULL;
       CREATE VIEW current_macros AS SELECT * FROM macros WHERE valid_to_revision IS NULL;
       CREATE VIEW current_macro_uses AS SELECT * FROM macro_uses WHERE valid_to_revision IS NULL;
       CREATE VIEW current_start_screens AS SELECT * FROM start_screens WHERE valid_to_revision IS NULL;
@@ -423,7 +433,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 14;
+export const INDEX_VERSION = 15;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

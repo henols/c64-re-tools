@@ -3,6 +3,9 @@
 // from current knowledge and the coverage of the knowledge, and imports the
 // structural findings into .c64-re-tools/knowledge/.
 
+import { projectMainSpace } from "#src/knowledge/names.ts";
+import { C64 } from "#src/machine.ts";
+import { mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import { prgRange } from "#src/c64.ts";
 import { COVERAGE } from "#src/cpu/coverage.ts";
 import { formatAddress } from "#src/address.ts";
@@ -19,7 +22,7 @@ import { analyzedBytes, operandImages, programCoverage, requireProgram } from "#
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import { importFindings, runProvenance, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
+import { SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
@@ -85,7 +88,7 @@ function macroCandidates(space: string, byteAt: ImageByte, romUse: RomUse, skip:
   const db = openForRead();
   try {
     // The platform names that c64-source uses: a name of a ROM that the program does not use is no arg.
-    const platform = space === DEFAULT_SPACE ? new Map(platformNamesFor(romUse).map((entry) => [entry.address, entry.name])) : new Map<number, string>();
+    const platform = space === C64.spaces.main ? new Map(platformNamesFor(romUse).map((entry) => [entry.address, entry.name])) : new Map<number, string>();
     const semantic = new Map(listSymbols(db, undefined, undefined, [...SEMANTIC_ORIGINS], space).map((symbol) => [symbol.address, symbol.name]));
     const code = listRegions(db, undefined, "code", undefined, space);
     const found = findMacroUses(byteAt, code, (address) => semantic.get(address) ?? platform.get(address));
@@ -190,7 +193,7 @@ async function analyze(call: Call): Promise<unknown> {
   const reader = openForRead();
   const program = requireProgram(reader, space);
   // A coverage map is of the C64 CPU: VICE keeps none for the drive.
-  const covered = space === DEFAULT_SPACE ? programCoverage(reader) : undefined;
+  const covered = space === mainSpaceOf(reader) ? programCoverage(reader) : undefined;
   const coverage = covered?.map;
   const { bytes, kind: imageKind } = analyzedBytes(program);
   // The analyzer sees all bytes it gets; the coverage seeds only the program, as c64-source does.
@@ -223,7 +226,7 @@ async function analyze(call: Call): Promise<unknown> {
   const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
   const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry)).length;
   // Platform names are C64 names: drive code and banks get none.
-  const platform = space === DEFAULT_SPACE ? platformNames() : [];
+  const platform = space === C64.spaces.main ? platformNames() : [];
   reader?.close();
   /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
   const idiomsResult = () => {
@@ -236,7 +239,7 @@ async function analyze(call: Call): Promise<unknown> {
     // Platform pitfalls are C64 facts: drive code and banks get none. Pitfalls and pointers read the code regions after both imports.
     const codeDb = openForRead();
     const code = listRegions(codeDb, undefined, "code", undefined, space);
-    const pitfalls = space === DEFAULT_SPACE ? findPitfalls(byteAt, code) : [];
+    const pitfalls = space === C64.spaces.main ? findPitfalls(byteAt, code) : [];
     const pointers = findPointers(byteAt, { start: loaded.start, end: loaded.end }, code, {
       platform: (address) => platform.some((entry) => address >= entry.address && address <= entry.end),
       sprites: listRegions(codeDb, undefined, "sprite", undefined, space),
@@ -300,7 +303,7 @@ async function analyze(call: Call): Promise<unknown> {
     const found = idiomsResult();
     const body = {
       analyzer: "dxa",
-      ...(space === DEFAULT_SPACE ? {} : { space }),
+      ...(space === C64.spaces.main ? {} : { space }),
       ...found,
       ...coverageResult(),
       coverage: result.coverage.map((range) => ({ start: formatAddress(range.start), end: formatAddress(range.end) })),
@@ -330,7 +333,7 @@ async function analyze(call: Call): Promise<unknown> {
   }
   const body = {
     analyzer: "ghidra",
-    ...(space === DEFAULT_SPACE ? {} : { space }),
+    ...(space === C64.spaces.main ? {} : { space }),
     ...(instructions === undefined ? {} : { instructions }),
     ...found,
     ...coverageResult(),
@@ -350,6 +353,7 @@ await runScript({
   name: "static-analysis",
   summary: "Analyzes the program in the knowledge with DXA or Ghidra, seeded from the knowledge and its coverage, and imports the structural findings into the knowledge.",
   names: knowledgeNames,
+  mainSpace: projectMainSpace,
   commands: [
     {
       name: "analyze",

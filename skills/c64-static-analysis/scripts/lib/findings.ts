@@ -1,11 +1,12 @@
 // Knowledge seeds for an analyzer, and the mapping of a Ghidra result to the
 // common normalized findings.
 
+import { mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import type { DatabaseSync } from "node:sqlite";
 
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
 import { listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, type Space } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, isSemantic, type Space } from "#src/knowledge/schema.ts";
 import type { DxaResult, GhidraParams, GhidraResult } from "#src/native/types.ts";
 
 export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
@@ -24,7 +25,7 @@ const semantic = (row: { origin: string }) => isSemantic(row.origin);
  * code) or the address executed, the symbol gives no data. A region with an
  * executed address or an entry point in it gives only the byte of the symbol.
  */
-export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoints: number[] = [], space: Space = DEFAULT_SPACE, executed: (address: number) => boolean = () => false): Seeds {
+export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoints: number[] = [], space: Space = mainSpaceOf(db), executed: (address: number) => boolean = () => false): Seeds {
   const symbols = listSymbols(db, undefined, undefined, undefined, space).filter(semantic);
   const entryPoints = [...new Set([...extraEntryPoints, ...symbols.filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address)])].sort((a, b) => a - b);
   const regions = listRegions(db, undefined, undefined, undefined, space);

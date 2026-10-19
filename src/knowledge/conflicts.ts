@@ -9,6 +9,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { HistoryEntry } from "./history.ts";
 import {
   COMMENT_COLUMNS,
+  MACHINE_COLUMNS,
   MACRO_COLUMNS,
   MACRO_USE_COLUMNS,
   MODULE_COLUMNS,
@@ -22,6 +23,7 @@ import {
   SUPPRESSION_COLUMNS,
   SYMBOL_COLUMNS,
   toComment,
+  toMachine,
   toMacro,
   toMacroUse,
   toModule,
@@ -59,6 +61,7 @@ export const CONFLICT_RULES = {
   release: "two releases with one label",
   "release-base": "two base releases",
   "start-screen": "two start screens",
+  machine: "two machines",
   macro: "two macros with one name",
   "macro-use": "macro uses that overlap",
 } as const;
@@ -120,6 +123,7 @@ const RULES: readonly TableRule[] = [
   { rule: "release", table: "releases", entity: "release", columns: RELEASE_COLUMNS, map: toRelease, key: ["label"] },
   { rule: "release-base", table: "releases", entity: "release", columns: RELEASE_COLUMNS, map: toRelease, key: ["base"], where: "base = 1" },
   { rule: "start-screen", table: "start_screens", entity: "start-screen", columns: START_SCREEN_COLUMNS, map: toStartScreen, key: [] },
+  { rule: "machine", table: "machine", entity: "machine", columns: MACHINE_COLUMNS, map: toMachine, key: [] },
   { rule: "macro", table: "macros", entity: "macro", columns: MACRO_COLUMNS, map: toMacro, key: ["name"] },
   { rule: "macro-use", table: "macro_uses", entity: "macro-use", columns: MACRO_USE_COLUMNS, map: toMacroUse, key: "overlap" },
 ];

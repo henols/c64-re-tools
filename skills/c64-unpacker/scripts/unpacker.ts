@@ -6,6 +6,7 @@
 // writes the memory into the project. "loads" captures each part of a
 // multi-load program. No native unpack tool is used.
 
+import { projectMainSpace } from "#src/knowledge/names.ts";
 import { COVERAGE, EXECUTE, READ, WRITE } from "#src/cpu/coverage.ts";
 import { type AddressRange, formatAddress } from "#src/address.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
@@ -722,5 +723,6 @@ await runScript({
   name: "unpacker",
   summary: "Packing evidence of a program, and captures of the program after it unpacked itself. It never names a packer and runs no native unpack tool.",
   names: knowledgeNames,
+  mainSpace: projectMainSpace,
   commands: COMMANDS,
 });

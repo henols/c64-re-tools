@@ -2,6 +2,7 @@
 // user/LLM code regions and JMP tables as entry points, and the check that
 // shows analyzer data over executed code.
 
+import { mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import type { DatabaseSync } from "node:sqlite";
 
 import { COVERAGE } from "#src/cpu/coverage.ts";
@@ -9,7 +10,7 @@ import { coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges } fro
 
 export { coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges };
 import { listRegions, type RegionRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, isAnalyzer, isSemantic, type Space } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, isAnalyzer, isSemantic, type Space } from "#src/knowledge/schema.ts";
 
 /** The byte at an address of the analyzed image, or undefined outside it. */
 export type ImageByte = (address: number) => number | undefined;
@@ -21,7 +22,7 @@ export function imageReader(bytes: Uint8Array, kind: "prg" | "flat64k"): ImageBy
 }
 
 /** Entry points from semantic knowledge beyond routines: the start of each code region, and each entry of a JMP table with its target. */
-export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, space: Space = DEFAULT_SPACE): number[] {
+export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, space: Space = mainSpaceOf(db)): number[] {
   const entries: number[] = [];
   for (const region of listRegions(db, undefined, undefined, undefined, space).filter((row) => isSemantic(row.origin))) {
     if (region.type === "code") entries.push(region.start);

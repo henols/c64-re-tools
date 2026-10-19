@@ -30,7 +30,8 @@ import {
   type RegionRow,
   type SymbolRow,
 } from "./read.ts";
-import { ANALYZERS, CODE_REGION_TYPES, DEFAULT_SPACE, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SEMANTIC_ORIGINS, SYMBOL_KINDS, type Analyzer, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
+import { ANALYZERS, CODE_REGION_TYPES, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SEMANTIC_ORIGINS, SYMBOL_KINDS, type Analyzer, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
+import { mainSpaceOf } from "./project-machine.ts";
 import { Change, checkAddress, checkSpace, subtract, SYMBOL_NAME, type Evidence } from "./write.ts";
 
 
@@ -214,7 +215,7 @@ function ownNames(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, spa
  */
 function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
-  const space = findings.space ?? DEFAULT_SPACE;
+  const space = findings.space ?? mainSpaceOf(db);
   for (const range of coverage) {
     for (const own of ownSymbols(db, analyzer, range, space)) {
       change.close("symbols", "space = ? AND address = ? AND origin = ?", space, own.address, analyzer);
@@ -308,7 +309,7 @@ function contradictedData(db: DatabaseSync, findings: NormalizedFindings, space:
 
 function importRegions(db: DatabaseSync, change: Change, given: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = given;
-  const space = given.space ?? DEFAULT_SPACE;
+  const space = given.space ?? mainSpaceOf(db);
   // Data findings over code evidence are conflicts, not facts.
   const contradicted = contradictedData(db, given, space);
   result.conflicts.push(...contradicted);
@@ -451,7 +452,7 @@ function inDataRegion(db: DatabaseSync, analyzer: Analyzer, coverage: AddressRan
  */
 function importReferences(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
-  const space = findings.space ?? DEFAULT_SPACE;
+  const space = findings.space ?? mainSpaceOf(db);
   const key = (reference: { from: number; to: number; kind: ReferenceKind }) => `${reference.from}|${reference.to}|${reference.kind}`;
   const inData = inDataRegion(db, analyzer, coverage, space);
   const kept = findings.references.filter((reference) => !inData(reference.from));

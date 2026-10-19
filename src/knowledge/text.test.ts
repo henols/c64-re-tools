@@ -10,7 +10,7 @@ import { openForWrite, textPath } from "./database.ts";
 import { ensureSchema } from "./schema.ts";
 import { loadText, newRevisionId, REVISION_ID, REVISIONS_FILE, revisionsText, TABLES, tableText } from "./text.ts";
 import { importFindings } from "./import.ts";
-import { applyBatch, renameSymbol, setRelease, setStartScreen, setSwitch, unclassifyRegion } from "./write.ts";
+import { applyBatch, renameSymbol, setRelease, setStartScreen, setSwitch, unclassifyRegion, writeMachine } from "./write.ts";
 import { addCoverage, setImage } from "./program.ts";
 import { COVERAGE } from "../cpu/coverage.ts";
 
@@ -58,6 +58,7 @@ function fullProject(): { folder: string; db: DatabaseSync } {
   ]);
   setRelease(db, { origin: "user" }, { label: "ORIGINAL", base: true, comment: "The first release." });
   setRelease(db, { origin: "user" }, { label: "CRACKED", rows: new Map([[0x8079, "a900"]]) });
+  writeMachine(db, { origin: "user" }, { machine: "c64" });
   setSwitch(db, { origin: "user", image }, { name: "CRACK", kind: "crack", comment: "The crack skips the check." });
   applyBatch(db, { origin: "user", image }, [
     { op: "operand", address: 0x8079, select: "lo", symbol: "irq_handler" },

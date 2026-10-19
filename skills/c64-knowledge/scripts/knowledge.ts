@@ -2,6 +2,9 @@
 // project folder (--project, or the one found from the working directory).
 // Each command prints one JSON result.
 
+import { projectMainSpace } from "#src/knowledge/names.ts";
+import { C64 } from "#src/machine.ts";
+import { machineOf, mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -60,7 +63,7 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "#src/knowledge/read.ts";
-import { ANALYZERS, COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, isSemantic, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, START_SCREEN_MODES, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type OperandSelect, type StartScreenMode, type SwitchKind } from "#src/knowledge/schema.ts";
+import { ANALYZERS, COMMENT_PLACEMENTS, EVIDENCE_KINDS, isSemantic, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, START_SCREEN_MODES, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type OperandSelect, type StartScreenMode, type SwitchKind } from "#src/knowledge/schema.ts";
 import {
   addReference,
   applyBatch,
@@ -89,6 +92,7 @@ import {
   setRelease,
   setSwitch,
   unclassifyRegion,
+  writeMachine,
   type BatchOperation,
   type BatchStep,
   type Evidence,
@@ -238,7 +242,9 @@ function historyEntry(entry: HistoryEntry) {
                     ? macro(entry.row)
                     : entry.entity === "macro-use"
                       ? macroUse(entry.row)
-                      : suppression(entry.row);
+                      : entry.entity === "machine"
+                        ? { space: entry.row.space, machine: entry.row.machine, origin: entry.row.origin, revision: entry.row.revision }
+                        : suppression(entry.row);
   const { revision: _revision, ...row } = shown;
   return { entity: entry.entity, ...row, fromRevision: entry.from, ...(entry.to === undefined ? {} : { toRevision: entry.to }) };
 }
@@ -270,8 +276,8 @@ function listingSource(db: DatabaseSync | undefined, space: string): ListingSour
   const image = requireProgram(db, space);
   const coverage = programCoverage(db, space)?.map;
   const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
-  const platform = new Map(space === DEFAULT_SPACE ? platformNames().map((entry) => [entry.address, entry.name]) : []);
-  const entries = space === DEFAULT_SPACE ? platformNames().filter((entry) => entry.end > entry.address) : [];
+  const platform = new Map(space === C64.spaces.main ? platformNames().map((entry) => [entry.address, entry.name]) : []);
+  const entries = space === C64.spaces.main ? platformNames().filter((entry) => entry.end > entry.address) : [];
   return {
     byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined),
     entryStart: (at) => (inside(at) ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),
@@ -336,9 +342,9 @@ function evidenceOf(value: string, space: string): Evidence {
     const db = openForRead();
     try {
       const run = coverageRuns(db).filter((item) => item.name === ref && item.space === space).at(-1);
-      const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
-      if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${where}. Import the map with coverage${space === DEFAULT_SPACE ? "" : ` --space ${space}`} first.`);
-      return { kind, ref, sha256: run.sha256, ...(run.space === DEFAULT_SPACE ? {} : { space: run.space }) };
+      const where = space === mainSpaceOf(db) ? "" : ` in ${space}`;
+      if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${where}. Import the map with coverage${space === mainSpaceOf(db) ? "" : ` --space ${space}`} first.`);
+      return { kind, ref, sha256: run.sha256, ...(run.space === mainSpaceOf(db) ? {} : { space: run.space }) };
     } finally {
       db?.close();
     }
@@ -413,7 +419,7 @@ const BATCH_FIELDS: Record<BatchOperation["op"], string[]> = {
 function batchJson(write: BatchOperation): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(write)) {
-    if (key === "space" && value === DEFAULT_SPACE) continue;
+    if (key === "space" && value === C64.spaces.main) continue;
     out[key] = ["address", "start", "end", "from", "to"].includes(key) && typeof value === "number" ? formatAddress(value) : value;
   }
   return out;
@@ -529,7 +535,7 @@ const READ_COMMANDS: CommandSpec[] = [
   readCommand({ name: "at", summary: "Everything known at one address.", subjects: [ADDRESS] }, (db, call) => {
     const known = at(db, call.parseAddress(call.subject(0), "<address>"), call.space);
     return {
-      ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }),
+      ...(call.space === mainSpaceOf(db) ? {} : { space: call.space }),
       address: formatAddress(known.address),
       ...(known.symbol === undefined ? {} : { symbol: symbol(known.symbol) }),
       ...(known.analyzerNames.length === 0 ? {} : { analyzerNames: known.analyzerNames.map(symbol) }),
@@ -596,11 +602,15 @@ const READ_COMMANDS: CommandSpec[] = [
     uses: list(call, listMacroUses(db, rangeOf(call), call.string("macro"), originsOf(call), call.space), macroUse, RANGE_REST),
   })),
   readCommand({ name: "spaces", summary: "The address spaces that hold knowledge.", options: LIST }, (db, call) => ({ spaces: list(call, listSpaces(db), (space) => space, MORE) })),
+  readCommand({ name: "machine", summary: "The machine of the project and its spaces. A project whose knowledge names no machine is a C64." }, (db) => {
+    const machine = machineOf(db);
+    return { machine: machine.id, name: machine.name, family: machine.family, mainSpace: machine.spaces.main, spaces: machine.spaces.names };
+  }),
   readCommand({ name: "program", summary: "The program in the knowledge: its segments and entry, and the coverage maps that coverage imported, with the ranges." }, (db, call) => {
     const image = programImage(db, call.space);
     const ranges = db === undefined ? [] : (db.prepare("SELECT kind, count(*) AS count FROM current_coverage WHERE space = ? GROUP BY kind ORDER BY kind").all(call.space) as Array<{ kind: string; count: number }>);
     return {
-      ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }),
+      ...(call.space === mainSpaceOf(db) ? {} : { space: call.space }),
       image:
         image === undefined
           ? null
@@ -662,7 +672,7 @@ const READ_COMMANDS: CommandSpec[] = [
     const space = call.space;
     const exported = {
       revision: currentRevision(db),
-      ...(space === DEFAULT_SPACE ? {} : { space }),
+      ...(space === mainSpaceOf(db) ? {} : { space }),
       symbols: listSymbols(db, range, undefined, origins, space).map(symbol),
       analyzerNames: listAnalyzerNames(db, range, undefined, origins, space).map(symbol),
       regions: listRegions(db, range, undefined, origins, space).map(region),
@@ -699,6 +709,18 @@ const READ_COMMANDS: CommandSpec[] = [
 ];
 
 const WRITE_COMMANDS: CommandSpec[] = [
+  writeCommand(
+    {
+      name: "set-machine",
+      summary: "Sets the machine of the project: c64, spectrum48 or spectrum128. The knowledge of a project without a machine is the C64's.",
+      subjects: [{ name: "<machine>", help: "c64, spectrum48 or spectrum128" }],
+      notes: "A machine that has no space for the current knowledge is refused.",
+    },
+    (call) => {
+      const context = contextOf(call);
+      return (db) => shown(writeMachine(db, context, { machine: call.subject(0) }), "machine", (row) => row);
+    },
+  ),
   writeCommand({ name: "rename", summary: "Gives an address a name.", subjects: [ADDRESS, { name: "<name>", help: "the new name: assembler label syntax" }], options: { kind: SYMBOL_KIND } }, (call) => {
     const context = contextOf(call);
     const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>"), name: call.subject(1), ...(call.string("kind") === undefined ? {} : { kind: call.string("kind") as (typeof SYMBOL_KINDS)[number] }) };
@@ -1167,9 +1189,9 @@ const JOIN: CommandSpec = {
       if (other !== undefined) throw new Refusal("invalid-input", `The owner ranges of ${batch.file} and ${other.file} overlap. Give each address one owner.`);
     }
     const joined = joinBatches(batches);
-    const choice = (item: JoinChoice) => ({ ...item, at: typeof item.at === "number" ? formatAddress(item.at) : item.at, ...(item.space === DEFAULT_SPACE ? { space: undefined } : {}) });
+    const choice = (item: JoinChoice) => ({ ...item, at: typeof item.at === "number" ? formatAddress(item.at) : item.at, ...(item.space === C64.spaces.main ? { space: undefined } : {}) });
     if (joined.clashes.length > 0) {
-      const clash = (item: JoinClash) => `${item.what} ${item.value} at ${item.places.map((place) => `${formatAddress(place.address)} (${place.file})`).join(" and ")}${item.space === DEFAULT_SPACE ? "" : ` in ${item.space}`}`;
+      const clash = (item: JoinClash) => `${item.what} ${item.value} at ${item.places.map((place) => `${formatAddress(place.address)} (${place.file})`).join(" and ")}${item.space === C64.spaces.main ? "" : ` in ${item.space}`}`;
       throw new Refusal("conflict", `The batches give one ${joined.clashes.map(clash).join(", one ")}. Nothing was written. Give each name and each module file one address in the batches, then join again.`);
     }
     const shown = { repeated: joined.repeated, choices: joined.choices.map(choice) };
@@ -1261,5 +1283,6 @@ await runScript({
   name: "knowledge",
   summary: "Reads and writes the knowledge of the project: names, regions, comments, references, the program and its coverage, and the source knowledge. A read needs no knowledge folder. Every command takes --space: c64 (the default), drive8 for 1541 drive code, loading for a captured stage of the loading, or bank0 to bank255 for cartridge banks. revert without --space reverts all spaces.",
   names: knowledgeNames,
+  mainSpace: projectMainSpace,
   commands: [...READ_COMMANDS, ...WRITE_COMMANDS, JOIN],
 });

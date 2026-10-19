@@ -8,6 +8,7 @@
 // routines that several programs share in a library folder and find them in the
 // program (D71).
 
+import { projectMainSpace } from "#src/knowledge/names.ts";
 import { basename } from "node:path";
 
 import { type AddressRange, addressOf, formatAddress, parseAddress } from "#src/address.ts";
@@ -39,7 +40,8 @@ import {
   symbolNamed,
   symbolSuppressed,
 } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
+import { C64 } from "#src/machine.ts";
 import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
@@ -537,7 +539,7 @@ function matchCommand(call: Call): unknown {
 
 /** A change of match as a write of the knowledge: its addresses as numbers, in the C64 space. */
 function toOperation(write: BatchWrite): BatchOperation {
-  const parsed: Record<string, unknown> = { ...write, space: DEFAULT_SPACE };
+  const parsed: Record<string, unknown> = { ...write, space: C64.spaces.main };
   for (const key of ["address", "start", "end", "from", "to"]) if (typeof write[key] === "string") parsed[key] = parseAddress(write[key]);
   return parsed as unknown as BatchOperation;
 }
@@ -610,5 +612,6 @@ await runScript({
   name: "provenance",
   summary: "Where the parts of a program come from: a comparison of releases, the separation of the program in the knowledge, its leftovers, and a library of known routines.",
   names: knowledgeNames,
+  mainSpace: projectMainSpace,
   commands: COMMANDS,
 });
