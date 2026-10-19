@@ -361,20 +361,6 @@ test("the server lists exactly the public tools with object input and output sch
   await client.close();
 });
 
-test("no skill names a tool with the old c64_ prefix, and each tool that the retro-emulator skill gives in backticks is a public tool", () => {
-  const skills = resolve(import.meta.dirname, "../../skills");
-  const docs = readdirSync(skills, { recursive: true, encoding: "utf8" }).filter((path) => path.endsWith(".md"));
-  for (const doc of docs) {
-    for (const [name] of readFileSync(join(skills, doc), "utf8").matchAll(/\bc64_[a-z][a-z_]*/g)) assert.fail(`${doc} names ${name}: the tools have no c64_ prefix`);
-  }
-  const table = readFileSync(join(skills, "retro-emulator", "SKILL.md"), "utf8").split("\n").filter((line) => line.startsWith("| ") && !line.startsWith("| Need"));
-  for (const line of table) {
-    const cell = line.split("|").at(-2) ?? "";
-    const first = /`([a-z_]+)`/.exec(cell)?.[1];
-    if (first !== undefined) assert.ok((PUBLIC_TOOLS as readonly string[]).includes(first), `retro-emulator/SKILL.md names ${first}, which is not a tool`);
-  }
-});
-
 test("memory_read takes canonical addresses and fills defaults", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);

@@ -17,7 +17,7 @@ The MCP server knows the machine and the emulator. Its instructions, its tool de
 
 - The machine action or the runtime question.
 - The target address, state or condition, when the question needs one.
-- The project path of the program or disk to load, when the question needs one.
+- The project path of the program or the media to load, when the question needs one.
 
 A tool takes addresses, not names. The server instructions give the address format. Get the address of a name from the project knowledge.
 
@@ -25,13 +25,13 @@ A tool takes addresses, not names. The server instructions give the address form
 
 Use only the MCP tools. Each MCP session has its own machine. Nothing else can change that machine.
 
-| Need | C64 tool |
+| Need | Tool |
 |---|---|
 | Reset, power cycle | `reset` |
 | Fast emulation | `warp` |
 | Show the machine to the user in a window, hide it again | `window` |
 | Stop, start, step, step over, step out, exact frames | `execution` |
-| Run until an address, a memory value or a raster position | `run_until` |
+| Run until an address, a memory value or a beam position | `run_until` |
 | Run to a place and read the machine there in one call | `run_until` with `observe` and `history` |
 | Each access or routine entry over many frames | `trace` |
 | Stop on an instruction address, stop on a memory access | `breakpoint`, `watchpoint` |
