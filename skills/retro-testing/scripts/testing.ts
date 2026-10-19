@@ -13,6 +13,11 @@ import { readPrg } from "#src/host-client/image.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { C64RunSession, PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
+import { ZX_FRAME_CYCLES, ZxRunSession } from "#src/native/zxrun.ts";
+import { openForRead } from "#src/knowledge/database.ts";
+import { machineOf } from "#src/knowledge/project-machine.ts";
+import { readProjectFile } from "#src/host-client/transfer.ts";
+import { readZxRecordFile, readZxRecording, ZX_RECORDING_FILES, zxRecord, zxReplay, zxVerdict } from "./lib/zx-recording.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
@@ -62,7 +67,81 @@ async function test(call: Call): Promise<ScenarioResult | Reply> {
   }
 }
 
+/** True when the project machine is a ZX Spectrum: record and replay then run in zxrun. */
+function spectrumProject(): boolean {
+  const db = openForRead();
+  try {
+    return machineOf(db).family === "spectrum";
+  } finally {
+    db?.close();
+  }
+}
+
+/** record for a ZX Spectrum program: the steps on its snapshot in zxrun. */
+async function zxRecordCommand(call: Call): Promise<Record<string, unknown>> {
+  if (call.flag("play") || call.count("joystick") !== undefined || call.count("http-port") !== undefined) throw new UsageError("--play, --joystick and --http-port are for a C64 program");
+  const out = call.string("out")!;
+  const file = readZxRecordFile(call.subject(0));
+  const context = localToolContext();
+  const core = await ZxRunSession.open(context);
+  const workspace = Workspace.create(context.supervisor, "c64-re-tools-record-");
+  try {
+    const outcome = await zxRecord(core, file, workspace);
+    const files = [
+      writeReported(`${out}/${ZX_RECORDING_FILES.recording}`, `${JSON.stringify(outcome.recording, null, 2)}\n`, { what: "--out" }),
+      writeReported(`${out}/${ZX_RECORDING_FILES.reads}`, outcome.reads, { what: "--out" }),
+      writeReported(`${out}/${ZX_RECORDING_FILES.coverage}`, outcome.coverage, { what: "--out" }),
+      writeReported(`${out}/${ZX_RECORDING_FILES.program}`, outcome.program, { what: "--out" }),
+    ];
+    return {
+      result: "PASS",
+      recorded: true,
+      out,
+      name: file.name,
+      frames: Math.round(outcome.recording.ticks / ZX_FRAME_CYCLES[outcome.recording.machine === "spectrum128" ? "128k" : "48k"]),
+      inputSites: outcome.recording.sites.length,
+      executed: outcome.coverage.reduce((count, byte) => count + ((byte & COVERAGE.ramExecute) === 0 ? 0 : 1), 0),
+      files,
+    };
+  } finally {
+    await core.close();
+    workspace.remove();
+  }
+}
+
+/** replay for a ZX Spectrum program: the original, and the rebuild over the snapshot, must end with the recorded tick and RAM. */
+async function zxReplayCommand(call: Call): Promise<Record<string, unknown>> {
+  for (const option of ["checkpoint", "state", "pin", "symbols", "out"]) {
+    if (call.strings(option).length > 0) throw new UsageError(`--${option} is for a C64 program. A ZX Spectrum replay compares the tick and the RAM at the end`);
+  }
+  const rebuildPath = call.string("rebuild");
+  const at = call.address("rebuild-at");
+  if ((rebuildPath === undefined) !== (at === undefined)) throw new UsageError("give --rebuild and --rebuild-at together: the bytes of the rebuild and the address of their first byte");
+  const folder = call.subject(0).replace(/\/+$/, "");
+  const recording = readZxRecording(folder);
+  const rebuild = rebuildPath === undefined ? undefined : { bytes: readProjectFile(rebuildPath, { what: "--rebuild" }).bytes, at: at! };
+  const context = localToolContext();
+  const sides: Array<{ side: "original" | "rebuild"; problem?: string; ticks: number; hash: string }> = [];
+  for (const side of rebuild === undefined ? (["original"] as const) : (["original", "rebuild"] as const)) {
+    const core = await ZxRunSession.open(context);
+    const workspace = Workspace.create(context.supervisor, "c64-re-tools-replay-");
+    try {
+      const outcome = await zxReplay(core, folder, recording, workspace, side === "rebuild" ? rebuild : undefined);
+      const problem = zxVerdict(recording, outcome);
+      sides.push({ side, ticks: outcome.ticks, hash: outcome.hash, ...(problem === undefined ? {} : { problem }) });
+    } finally {
+      await core.close();
+      workspace.remove();
+    }
+  }
+  const original = sides[0]!;
+  // An original that does not end as recorded makes the recording no reference.
+  const result = original.problem !== undefined ? "INCONCLUSIVE" : sides.some((side) => side.problem !== undefined) ? "FAIL" : "PASS";
+  return { result, recording: folder, sides };
+}
+
 async function recordCommand(call: Call): Promise<Reply> {
+  if (spectrumProject()) return reply(await zxRecordCommand(call), { hint: "Run nextAction to replay the recording on the original. Give --rebuild and --rebuild-at to compare a rebuild.", nextAction: call.next("replay", call.string("out")!) });
   const playing = call.flag("play");
   if (!playing && (call.count("joystick") !== undefined || call.count("http-port") !== undefined)) throw new UsageError("--joystick and --http-port need --play. Give --play, or leave out these flags.");
   const joystick = (call.count("joystick") ?? 2) as 1 | 2;
@@ -181,12 +260,20 @@ const COMMANDS: CommandSpec[] = [
       checkpoint: { kind: "text", value: "<routine>", help: "the name or $ address of a routine: each entry is a checkpoint. Without it, the comparison of the record file" },
       state: { kind: "text", value: "<item>", multiple: true, help: `the state to compare at each checkpoint: ${STATE_ITEM}` },
       pin: { kind: "text", value: "<item>", multiple: true, help: `random state in RAM, in the form of --state: at each checkpoint the rebuild gets the original's values there` },
-      rebuild: { kind: "path", value: "<prg>", help: "the rebuild to compare with the original" },
+      rebuild: { kind: "path", value: "<file>", help: "the rebuild to compare with the original: a PRG, or for a ZX Spectrum program the bytes of its build, with --rebuild-at" },
+      "rebuild-at": { kind: "address", value: "<address>", help: "ZX Spectrum: the address of the first byte of --rebuild, as the range of its build gives it" },
       symbols: { ...OPTIONS.symbols, help: "the names of the rebuild: the symbol file of its build (default: the symbols of the recording)" },
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder" },
     },
     notes: "A recording without names takes the names of the knowledge for the original. A $ address is an address of the original: on the rebuild it moves with the name before it.",
     run: async (call) => {
+      if (spectrumProject()) {
+        const verdict = await zxReplayCommand(call);
+        if (verdict.result === "INCONCLUSIVE") return reply(verdict, { hint: "The original does not end with the tick and the RAM of the recording, so the recording is no reference. Record again." });
+        if (verdict.result === "FAIL") return reply(verdict, { hint: "The rebuild does not end with the tick and the RAM of the original. Compare the bytes of the rebuild with the program, then examine the rebuild in the emulator." });
+        return verdict;
+      }
+      if (call.address("rebuild-at") !== undefined) throw new UsageError("--rebuild-at is for a ZX Spectrum program: a PRG gives its load address");
       const [checkpoint, rebuild, symbols, out] = [call.string("checkpoint"), call.string("rebuild"), call.string("symbols"), call.string("out")];
       const result = await replay({ folder: call.subject(0), state: call.strings("state"), pin: call.strings("pin"), ...(checkpoint === undefined ? {} : { checkpoint }), ...(rebuild === undefined ? {} : { rebuild }), ...(symbols === undefined ? {} : { symbols }), ...(out === undefined ? {} : { out }) });
       if (result.result === "INCONCLUSIVE") return reply(result, { hint: INCONCLUSIVE_HINT });

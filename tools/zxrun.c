@@ -413,6 +413,8 @@ static const char* init(const char* romdir, int want128) {
         });
     }
     free(rom);
+    // CAPS SHIFT alone: zx.h knows it only as the shift of another key.
+    kbd_register_key(&sys.kbd, 0x0E, 0, 0, 0);
     // One line less than zx.h sets: its frame counter counts frame_scan_lines + 1 lines.
     sys.frame_scan_lines -= 1;
     is128 = want128;
@@ -636,7 +638,7 @@ int main(int argc, char** argv) {
             printf("ok\n");
         } else if (!strcmp(cmd, "key")) {
             // key <code hex> down|up: a key as chips maps it (a-z, 0-9, space 20,
-            // enter 0d, symbol shift 0f; capitals press CAPS SHIFT)
+            // enter 0d, symbol shift 0f, caps shift 0e; capitals press CAPS SHIFT)
             unsigned code;
             if (sscanf(a1, "%x", &code) != 1 || (strcmp(a2, "down") && strcmp(a2, "up"))) { printf("err key: give a code and down or up\n"); continue; }
             if (!strcmp(a2, "down")) kbd_key_down(&sys.kbd, (int)code);

@@ -123,6 +123,27 @@ A site is the address of the instruction that reads. The values are hex. `<from>
 
 `replay` examines `recording.json` before the replay starts. A recording of version 2.0 can have events or a comparison in the old form, for example `"at"` in place of `"address"`. The script refuses it with `invalid-input`. The message names the event, the old field and the form to write. Record the session again.
 
+## A ZX Spectrum program
+
+In a ZX Spectrum project, the record file is:
+
+```json
+{ "name": "start", "program": "original/game.z80", "steps": [
+  { "frames": 50 },
+  { "press": ["space"], "frames": 5 },
+  { "joystick": { "right": true, "fire": true } },
+  { "frames": 100 },
+  { "joystick": null }
+] }
+```
+
+- `program`: a `.z80` or `.sna` snapshot, relative to the project folder. The run starts at the PC of the snapshot.
+- `frames`: the CPU runs that number of frames.
+- `press`: the keys stay down for `frames` frames (default 3), then come up. A key is a-z, 0-9, `space`, `enter`, `caps` (CAPS SHIFT) or `symbol` (SYMBOL SHIFT). Give `caps` with a letter for a capital.
+- `joystick`: the Kempston joystick from now on: `up`, `down`, `left`, `right` and `fire`. `null` releases it.
+
+The inputs are the keyboard (each port `$xxFE`) and the Kempston port (`$xx1F`). The recording folder holds `recording.json` (the machine, the steps, the end tick, the RAM hash and the input sites), `reads.txt`, `coverage.bin` and `program.z80`.
+
 ## Replay
 
 `replay` replays the recording on the original program first. The session must end with the recorded cycles and state hash. Else the result is INCONCLUSIVE. With `--rebuild`, `replay` then replays the recording on the rebuild. At each checkpoint, the rebuild first gets the pinned values of the original. Then the script compares the state. The cycles can be different.

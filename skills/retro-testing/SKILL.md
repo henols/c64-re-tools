@@ -1,6 +1,6 @@
 ---
 name: retro-testing
-description: Tests if a rebuilt or changed C64 program behaves as the original, or if a program has the expected values. It runs a scenario on the original and on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. Use it when you must show that a rebuild or a correction keeps the behavior of the original. Use it to do many steps on one program and keep the screens, coverage maps, traces and snapshots as files. Use it to test a new program or a correction with expected values. Use it to record a play session of the original and replay it on each rebuild. Use it to find what changed between two machine states, and to make a checklist for a human playtest. It does not find the cause of a difference. It does not build the program.
+description: Tests if a rebuilt or changed C64 or ZX Spectrum program behaves as the original, or if a program has the expected values. It runs a scenario on the original and on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. Use it when you must show that a rebuild or a correction keeps the behavior of the original. Use it to do many steps on one program and keep the screens, coverage maps, traces and snapshots as files. Use it to test a new program or a correction with expected values. Use it to record a play session of the original and replay it on each rebuild. Use it to find what changed between two machine states, and to make a checklist for a human playtest. It does not find the cause of a difference. It does not build the program.
 ---
 
 # C64 testing
@@ -83,7 +83,8 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--checkpoint <routine>` | `replay` | The routine of the checkpoints. Each entry of the routine is a checkpoint. The default is the comparison of the record file. |
 | `--state <item>` | `replay` | A memory item to compare at each checkpoint. Give it again for each item. |
 | `--pin <item>` | `replay` | Random state in RAM. At each checkpoint, the rebuild gets the values of the original there. Give it again for each item. |
-| `--rebuild <prg>` | `replay` | The rebuild to compare with the original. Without it, the script replays only on the original. |
+| `--rebuild <file>` | `replay` | The rebuild to compare with the original: a PRG, or for a ZX Spectrum program the bytes of its build. Without it, the script replays only on the original. |
+| `--rebuild-at <address>` | `replay` | ZX Spectrum only: the address of the first byte of `--rebuild`. The build gives it in its range. |
 | `--symbols <file>` | `replay` | The symbol file of the rebuild. The default is the symbols of the recording. |
 | `--out <dir>` | `replay` | With a FAIL, write the RAM of each side at the first different checkpoint into this folder. |
 | `--gap <n>` | `diff` | Join changed ranges across at most n equal bytes. The default is 0. |
@@ -253,6 +254,17 @@ Traps:
 
 - `idleReads` counts the input reads of the rebuild that the recording had no value for. On the original, such a read makes the result INCONCLUSIVE. The rebuild can read input where the original does not, for example in its loader before the start screen. Such reads do not change a PASS of the rebuild.
 - The script refuses a recording of version 2.0 with `invalid-input`. Record the session again.
+
+### A ZX Spectrum program
+
+In a ZX Spectrum project, `record` and `replay` run the snapshot of the program. `test`, `run` and `diff` are for a C64 program.
+
+- The record file gives `program`: the `.z80` or `.sna` snapshot of the program, for example the snapshot in the project knowledge. The steps are `frames`, `press` and `joystick` (the Kempston joystick). See references/recording-format.md.
+- The recording keeps each read of the keyboard and of the Kempston port. The recording folder also holds `program.z80`.
+- `replay` replays the recording on the snapshot. The original must end at the tick and with the RAM of the recording.
+- For a rebuild, give the bytes of its build with `--rebuild`, and the address of their first byte with `--rebuild-at`. The script puts the bytes over the snapshot. The rebuild must end at the same tick and with the same RAM.
+- `body.sides` gives the end `ticks` and the RAM `hash` of each side, and `problem` for a side that does not end as recorded.
+- `--checkpoint`, `--state`, `--pin`, `--symbols`, `--out` and `--play` are for a C64 program.
 
 ---
 
