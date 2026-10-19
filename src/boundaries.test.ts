@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["c64", "errors", "graphics", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "zip"].includes(leaf) ? leaf : undefined;
+      return ["c64", "compare", "errors", "graphics", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -32,6 +32,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   // The error codes and the refusal class import nothing.
   errors: [],
   c64: [],
+  // The byte check of a PRG against a reference: the build of c64-assembler and the unpack of c64-packer.
+  compare: ["c64"],
   // The ACME spelling of each 6510 opcode: c64-source and the listing of c64-knowledge decode with one table.
   opcodes: ["c64"],
   // The platform memory map: names and meanings of C64 addresses.
@@ -64,7 +66,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   distribution: ["package"],
   convert: ["knowledge"],
 };
-const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "graphics", "opcodes", "platform", "script", "time", "media", "zip"];
+const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "compare", "graphics", "opcodes", "platform", "script", "time", "media", "zip"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

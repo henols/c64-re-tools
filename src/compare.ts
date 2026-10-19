@@ -1,7 +1,7 @@
-// The byte check of a build: the assembled program against the program
-// in the knowledge, segment by segment.
+// The byte check of a program: a PRG against a reference program, for example
+// the program in the knowledge, segment by segment.
 
-import { formatC64Address, formatC64Byte, prgRange } from "#src/c64.ts";
+import { formatC64Address, formatC64Byte, prgRange } from "./c64.ts";
 
 export interface SegmentCheck {
   start: string;

@@ -1,14 +1,14 @@
 // Tool status: finds each native tool the way its operations do and runs it
 // once with a version option, so a user can see in advance which tools work.
 // The Host Runtime reports VICE and its tools (host.status); the CLI reports
-// the tools that skill scripts run themselves (ACME, DXA, Ghidra).
+// the tools that skill scripts run themselves (ACME, DXA, Exomizer, Ghidra).
 
 import { tmpdir } from "node:os";
 import { stripVTControlCharacters } from "node:util";
 
 import { isRefusal } from "../errors.ts";
 import { type ToolStatus } from "../protocol/tools.ts";
-import { ACME, C64RUN, DXA, findTool, INSTALL_STEPS } from "./discover.ts";
+import { ACME, C64RUN, DXA, EXOMIZER, findTool, INSTALL_STEPS } from "./discover.ts";
 import { findGhidra, ghidraVersion, NO_USABLE_JDK, noJdk } from "./ghidra/index.ts";
 import { runTool, type ToolContext } from "./run.ts";
 import { Workspace } from "./staging.ts";
@@ -129,6 +129,7 @@ export async function localToolStatus(context: ToolContext): Promise<ToolStatus[
     // dxa -V prints its version and exits with status 1. It names itself by argv[0], without the
     // directory only where that uses "/": on Windows the line starts with the full path.
     { name: "dxa", find: (env) => findTool(DXA, env), args: ["-V"], pattern: DXA_VERSION },
+    { name: "Exomizer", find: (env) => findTool(EXOMIZER, env), args: ["-v"], pattern: /^Exomizer v\d/ },
   ];
   return [...(await probeTools(probes, context)), await probeGhidra(context), await probeC64run(context)];
 }

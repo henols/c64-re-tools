@@ -36,7 +36,7 @@ project folder below the root uses that install; a project is a folder with
 through npx. The Host Runtime runs on the machine with VICE: start it there
 with npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host.
 It runs VICE and the tools that come with it (c1541, petcat). The skill
-scripts run ACME, DXA, Ghidra and c64run in the dev container.`;
+scripts run ACME, DXA, Exomizer, Ghidra and c64run in the dev container.`;
 
 const here = dirname(fileURLToPath(import.meta.url));
 

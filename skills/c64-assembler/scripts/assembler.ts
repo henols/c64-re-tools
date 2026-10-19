@@ -16,7 +16,7 @@ import { assemble, showSymbol, symbolsFileText } from "#src/native/acme.ts";
 import { localToolContext } from "#src/native/local.ts";
 import type { AcmeParams, AssembledSymbol } from "#src/native/types.ts";
 import { listed as listedItems, OPTIONS, runScript, UsageError } from "#src/script.ts";
-import { compareBuild, type Reference } from "./lib/compare.ts";
+import { compareBuild, type Reference } from "#src/compare.ts";
 
 function parseDefine(text: string): [string, number | boolean] {
   const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.+)$/.exec(text);

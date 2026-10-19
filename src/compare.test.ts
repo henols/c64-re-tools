@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { compareBuild, type Reference } from "../../skills/c64-assembler/scripts/lib/compare.ts";
+import { compareBuild, type Reference } from "./compare.ts";
 
 const prg = (start: number, bytes: number[]) => Uint8Array.from([start & 0xff, start >> 8, ...bytes]);
 

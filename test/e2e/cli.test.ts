@@ -84,7 +84,7 @@ test("status reports the version, the package, the tools here and a Host Runtime
   assert.equal(status.status, 1, "a host that does not answer is a setup that is not ready");
   assert.match(status.stdout, /^c64-re-tools \S+\nPackage: .+\nNode: v\d+/);
   // Found or missing, each tool that skill scripts run here has a line.
-  assert.match(status.stdout, /Tools here:\n {2}ACME: .+\n {2}dxa: .+\n {2}Ghidra: .+\n/);
+  assert.match(status.stdout, /Tools here:\n {2}ACME: .+\n {2}dxa: .+\n {2}Exomizer: .+\n {2}Ghidra: .+\n/);
   assert.match(status.stdout, /Host Runtime: not reachable/);
 });
 

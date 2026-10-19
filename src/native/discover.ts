@@ -55,6 +55,14 @@ export const DXA: ToolSpec = {
   remedy: INSTALL_STEPS,
 };
 
+export const EXOMIZER: ToolSpec = {
+  name: "Exomizer",
+  envVar: "C64RT_EXOMIZER",
+  binaries: ["exomizer"],
+  where: "on this machine",
+  remedy: INSTALL_STEPS,
+};
+
 export const C64RUN: ToolSpec = {
   name: "c64run",
   envVar: "C64RT_C64RUN",

@@ -4,7 +4,7 @@
 
 
 Let an AI agent work on Commodore 64 programs. The agent drives a real VICE
-emulator and runs ACME, DXA and Ghidra. Use it to build new C64 apps and games,
+emulator and runs ACME, DXA, Ghidra and Exomizer. Use it to build new C64 apps and games,
 and to reverse engineer old ones.
 
 It works with Claude Code, Codex, pi, opencode, Gemini, Copilot, Cursor and
@@ -17,6 +17,7 @@ Ask for what you want in plain words. The agent picks the skill for each step.
 **Build new apps and games**
 
 - Assemble 6510 source with ACME, with errors by file and line, and symbols.
+- Pack and crunch a program with Exomizer into one PRG that unpacks itself, checked byte for byte before it is written.
 - Load and run the program in VICE. Set breakpoints and watchpoints, step, and read the CPU history and the call stack.
 - Read, write, search and compare memory, and disassemble it.
 - Show the VIC-II, sprite, SID and CIA state, and capture the screen.
@@ -42,7 +43,7 @@ Ask for what you want in plain words. The agent picks the skill for each step.
 
 VICE and the Host Runtime run on your computer, where VICE can open a window.
 The agent runs in a dev container in your project. It reaches VICE through an
-MCP server, and it runs ACME, DXA, Ghidra and c64run through its skills.
+MCP server, and it runs ACME, DXA, Ghidra, Exomizer and c64run through its skills.
 
 ## Install
 
@@ -72,7 +73,7 @@ and the address of the Host Runtime. If the project already has a
 
 Open the project in the container, for example with "Reopen in Container" in
 VS Code, or with `npx -y @devcontainers/cli up --workspace-folder .`. The
-Feature gives the container ACME, dxa, Java 21, Ghidra and c64run. At each
+Feature gives the container ACME, dxa, Exomizer, Java 21, Ghidra and c64run. At each
 start it installs the newest toolkit of its channel into the project, with the
 tools of that version. It reads its options only when the container is built:
 rebuild after a change.
