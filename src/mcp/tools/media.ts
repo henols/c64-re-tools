@@ -1,5 +1,5 @@
-// Media tools: c64_autostart, c64_program_load, c64_disk_attach and
-// c64_snapshot. Paths are relative to the project folder; the host-client
+// Media tools: autostart, program_load, media_attach and
+// snapshot. Paths are relative to the project folder; the host-client
 // reads the file and the Host Runtime receives only its bytes.
 
 import { extname } from "node:path";
@@ -20,7 +20,7 @@ const ProjectPath = z.string().min(1).describe("path relative to the project fol
 const list = (types: readonly string[]) => types.map((type) => `.${type}`).join(", ");
 
 export const c64Autostart = defineTool({
-  name: "c64_autostart",
+  name: "autostart",
   title: "Autostart a program or image",
   description:
     `Start a program, or a disk, tape or cartridge image, from the project (${list(AUTOSTART_TYPES)}). ` +
@@ -30,8 +30,8 @@ export const c64Autostart = defineTool({
     "Without index, a disk image loads like LOAD\"*\",8,1. index selects one directory entry by its number in the directory list of the disk (0 is the first entry). " +
       "The tool refuses an index of a DEL entry, or an index after the last entry. " +
     "The machine runs when this tool returns, and the load continues. The emulator keeps warp mode on until it types RUN. " +
-    "A key in that time stops the autostart, so c64_keyboard refuses keys until then. Run frames with c64_execution advance-frames, then type again. " +
-    "The c64_timing stopwatch starts again from zero.",
+    "A key in that time stops the autostart, so keyboard refuses keys until then. Run frames with execution advance-frames, then type again. " +
+    "The timing stopwatch starts again from zero.",
   inputSchema: z
     .object({
       path: ProjectPath,
@@ -56,7 +56,7 @@ export const c64Autostart = defineTool({
 });
 
 export const c64ProgramLoad = defineTool({
-  name: "c64_program_load",
+  name: "program_load",
   title: "Load a PRG into memory",
   description:
     "Load a PRG file from the project into memory, with no reset and no start. The CPU stops and stays stopped. " +
@@ -73,7 +73,7 @@ export const c64ProgramLoad = defineTool({
   readOnly: false,
   async run(input, session) {
     // The same rule as every PRG reader of the scripts: .prg or no extension.
-    refuseNotPrg(input.path, extname(input.path).slice(1).toLowerCase(), "Use c64_autostart, or c64_disk_attach for a disk image");
+    refuseNotPrg(input.path, extname(input.path).slice(1).toLowerCase(), "Use autostart, or media_attach for a disk image");
     const root = projectFolder(input.project);
     const result = await session.programLoad(input.address === undefined ? { path: input.path, root } : { path: input.path, address: input.address, root });
     return { state: result.state, loadAddress: formatAddress(result.loadAddress), size: result.size };
@@ -81,11 +81,11 @@ export const c64ProgramLoad = defineTool({
 });
 
 export const c64DiskAttach = defineTool({
-  name: "c64_disk_attach",
+  name: "media_attach",
   title: "Attach a disk image",
   description:
     `Put a disk image from the project into drive 8 (${list(DISK_TYPES)}). ` +
-    "Nothing loads or runs. To load from the disk, type LOAD on the C64 or use c64_autostart. " +
+    "Nothing loads or runs. To load from the disk, type LOAD on the C64 or use autostart. " +
     "This does not change the run state of the machine.",
   inputSchema: z.object({ path: ProjectPath, project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({ attached: z.boolean() }),
@@ -96,13 +96,13 @@ export const c64DiskAttach = defineTool({
 });
 
 export const c64Snapshot = defineTool({
-  name: "c64_snapshot",
+  name: "snapshot",
   title: "Machine snapshots",
   description:
     "Save and restore the whole machine state, attached disks included. Action save keeps a snapshot under a name you choose. " +
     "With out, save also writes it to that project file as a snapshot file (.vsf), so a later session can use it. " +
     "Action restore puts the machine back in that state and stops the CPU. Give name for a snapshot of this session, or file for a .vsf in the project. " +
-    "A file restores only in the emulator version and with the machine settings that saved it. The c64_timing stopwatch keeps its reading. " +
+    "A file restores only in the emulator version and with the machine settings that saved it. The timing stopwatch keeps its reading. " +
     `Action list gives the names, and action remove removes one. A session keeps at most ${MAX_SNAPSHOTS} snapshots until it ends.`,
   inputSchema: z
     .object({

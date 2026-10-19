@@ -7,6 +7,7 @@
 //   directories, and leaves each MCP configuration file with an empty server
 //   list. Only empty directories and files with nothing else in them go.
 
+import { FAMILIES } from "../machine.ts";
 import { existsSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -85,7 +86,7 @@ export function windsurfBefore(): WindsurfBefore {
   } catch {
     bytes = undefined;
   }
-  return { bytes, hadServer: servers !== undefined && PLUGIN_ID in servers };
+  return { bytes, hadServer: servers !== undefined && FAMILIES.some((family) => family in servers) };
 }
 
 /**
@@ -109,7 +110,7 @@ export function undoWindsurfProjectMcp(before: WindsurfBefore, cwd = process.cwd
     const root = readJson(path);
     const servers = root?.[WINDSURF_KEY] as Record<string, unknown> | undefined;
     if (root !== undefined && servers !== undefined) {
-      delete servers[PLUGIN_ID];
+      for (const family of FAMILIES) delete servers[family];
       if (isEmptyConfig(root, WINDSURF_KEY)) {
         unlinkSync(path);
         removeEmptyDirectories(dirname(path), homedir());

@@ -27,25 +27,25 @@ Use only the MCP tools. Each MCP session has its own machine. Nothing else can c
 
 | Need | C64 tool |
 |---|---|
-| Reset, power cycle | `c64_reset` |
-| Fast emulation | `c64_warp` |
-| Show the machine to the user in a window, hide it again | `c64_window` |
-| Stop, start, step, step over, step out, exact frames | `c64_execution` |
-| Run until an address, a memory value or a raster position | `c64_run_until` |
-| Run to a place and read the machine there in one call | `c64_run_until` with `observe` and `history` |
-| Each access or routine entry over many frames | `c64_trace` |
-| Stop on an instruction address, stop on a memory access | `c64_breakpoint`, `c64_watchpoint` |
-| Memory | `c64_memory_read`, `c64_memory_write`, `c64_memory_search`, `c64_memory_compare` |
-| CPU registers | `c64_registers` |
-| Code as it is in memory now | `c64_disassemble` |
-| Executed instructions, call chain | `c64_cpu_history`, `c64_backtrace` |
-| Cycles of each routine, memory use, cycles between two points | `c64_profile`, `c64_memmap`, `c64_timing` |
-| Chips of the machine | `c64_vicii`, `c64_sprite`, `c64_cia`, `c64_sid` |
-| Screen image, screen compare | `c64_screen` |
-| Several of these from one moment | `c64_observe` |
-| Keyboard, joystick | `c64_keyboard`, `c64_press`, `c64_joystick` |
-| Program and disk media | `c64_autostart`, `c64_program_load`, `c64_disk_attach` |
-| Machine state to go back to, also in a later session | `c64_snapshot` |
+| Reset, power cycle | `reset` |
+| Fast emulation | `warp` |
+| Show the machine to the user in a window, hide it again | `window` |
+| Stop, start, step, step over, step out, exact frames | `execution` |
+| Run until an address, a memory value or a raster position | `run_until` |
+| Run to a place and read the machine there in one call | `run_until` with `observe` and `history` |
+| Each access or routine entry over many frames | `trace` |
+| Stop on an instruction address, stop on a memory access | `breakpoint`, `watchpoint` |
+| Memory | `memory_read`, `memory_write`, `memory_search`, `memory_compare` |
+| CPU registers | `registers` |
+| Code as it is in memory now | `disassemble` |
+| Executed instructions, call chain | `cpu_history`, `backtrace` |
+| Cycles of each routine, memory use, cycles between two points | `profile`, `memmap`, `timing` |
+| Chips of the machine | `vicii`, `sprite`, `cia`, `sid` |
+| Screen image, screen compare | `screen` |
+| Several of these from one moment | `observe` |
+| Keyboard, joystick | `keyboard`, `press`, `joystick` |
+| Program and disk media | `autostart`, `program_load`, `media_attach` |
+| Machine state to go back to, also in a later session | `snapshot` |
 
 Read the description of a tool before you use it for the first time. It gives the limits of the tool and the facts of the machine that change the result.
 
@@ -55,21 +55,21 @@ For a large result, give `out`. Write a file that is only for your work in `.c64
 
 To keep a coverage run:
 
-1. Clear the memory map with `c64_memmap` action `clear`.
+1. Clear the memory map with `memmap` action `clear`.
 2. Run the part of the program that you want to keep.
-3. Read the map with `c64_memmap` action `read` and `out`, for example to `.c64-re-tools/local/attract.bin`.
+3. Read the map with `memmap` action `read` and `out`, for example to `.c64-re-tools/local/attract.bin`.
 4. Add the file to the coverage of the project knowledge.
 
 ## Workflow
 
 1. Read the project knowledge for the addresses in the question.
-2. Load the subject if it is not loaded. Use `c64_autostart` to start it as a user does. Use `c64_program_load` to put a program in memory with no start.
-3. Set the stop condition. Use a breakpoint, a watchpoint or a `c64_run_until` target. Add a condition when the stop must occur only in one state.
-4. Run, step or give input. Prefer `c64_run_until` and `advance-frames` to waits. They stop at the same emulated time on every run.
-5. Read only the state that answers the question. To read several things from one moment, use `c64_observe`.
+2. Load the subject if it is not loaded. Use `autostart` to start it as a user does. Use `program_load` to put a program in memory with no start.
+3. Set the stop condition. Use a breakpoint, a watchpoint or a `run_until` target. Add a condition when the stop must occur only in one state.
+4. Run, step or give input. Prefer `run_until` and `advance-frames` to waits. They stop at the same emulated time on every run.
+5. Read only the state that answers the question. To read several things from one moment, use `observe`.
 6. Interpret the evidence. Keep the observed facts apart from your conclusions.
 
-Before a risky experiment, save the state with `c64_snapshot`. Restore it to try again from the same point.
+Before a risky experiment, save the state with `snapshot`. Restore it to try again from the same point.
 
 ### Input that the tools cannot give
 
@@ -81,10 +81,10 @@ Do not change the program to make it accept the input.
 
 The emulator has no window. When the user must type, play or look at the machine, do these steps:
 
-1. Open the window with `c64_window` action `open`.
+1. Open the window with `window` action `open`.
 2. Tell the user that the window is open and what to do in it.
 3. Wait until the user tells you that they finished.
-4. Close the window with `c64_window` action `close`.
+4. Close the window with `window` action `close`.
 
 The result field `notCarried` names the data that the open or the close cleared.
 

@@ -1,4 +1,4 @@
-// Execution tools: c64_execution and c64_run_until.
+// Execution tools: execution and run_until.
 
 import { z } from "zod";
 
@@ -10,7 +10,7 @@ import { AddressOutput, defineTool, toCondition, ToolOutput, type ViceSessionApi
 import { c64Observe } from "./video.ts";
 
 export const c64Execution = defineTool({
-  name: "c64_execution",
+  name: "execution",
   title: "Control C64 execution",
   description:
     "Control the CPU. pause stops the CPU and gives the program counter (pc). resume lets the CPU run. " +
@@ -21,10 +21,10 @@ export const c64Execution = defineTool({
     "A breakpoint, a watchpoint or a JAM opcode can stop it before that. advancedFrames tells how many frames ran. " +
     "stopReason tells why it stopped: frames (all frames ran), breakpoint, watchpoint or jam. pointId gives the id of the breakpoint or watchpoint. " +
     "space tells which CPU stopped: c64, or drive8 for a breakpoint or watchpoint in the disk drive. pc is the address in that space. " +
-    "A CPU that a JAM stopped runs again only after c64_reset, a snapshot restore or c64_autostart. " +
+    "A CPU that a JAM stopped runs again only after reset, a snapshot restore or autostart. " +
     "To wait for a breakpoint or watchpoint after resume, use advance-frames with a large count. " +
     "step, next, until-return and advance-frames first stop a running CPU. Use count only with step, next and advance-frames. " +
-    "step, next and until-return work only in space c64. For the drive, use c64_run_until with an address in space drive8.",
+    "step, next and until-return work only in space c64. For the drive, use run_until with an address in space drive8.",
   inputSchema: z
     .object({
       action: z.enum(EXECUTION_ACTIONS),
@@ -64,7 +64,7 @@ export const c64Execution = defineTool({
 });
 
 export const c64RunUntil = defineTool({
-  name: "c64_run_until",
+  name: "run_until",
   title: "Run the C64 until a target",
   description:
     "Run the CPU until a target occurs, then stop. " +
@@ -76,15 +76,15 @@ export const c64RunUntil = defineTool({
     "pointId gives the id of the breakpoint or watchpoint that stopped the CPU. " +
     "space tells which CPU stopped: c64, or drive8 for a stop in the disk drive. pc is the address in that space. " +
     "The drive can execute a few more instructions before it stops. " +
-    "With observe, the result also gives what c64_observe gives at the stop, in observed. " +
-    `With history (1 to ${MAX_HISTORY}), it also gives the last instructions before the stop, as c64_cpu_history gives them. ` +
+    "With observe, the result also gives what observe gives at the stop, in observed. " +
+    `With history (1 to ${MAX_HISTORY}), it also gives the last instructions before the stop, as cpu_history gives them. ` +
     "Thus one call runs to a place and reads the machine there. " +
     "The CPU is always stopped after this tool.",
   inputSchema: z
     .object({
       target: TOOL_INPUTS.runTarget,
       timeoutFrames: TOOL_INPUTS.timeoutFrames,
-      observe: c64Observe.inputSchema.optional().describe("what to read at the stop, as for c64_observe"),
+      observe: c64Observe.inputSchema.optional().describe("what to read at the stop, as for observe"),
       history: z.number().int().min(1).max(MAX_HISTORY).optional().describe("the number of instructions before the stop to give"),
     })
     .strict(),
@@ -117,7 +117,7 @@ export const c64RunUntil = defineTool({
     const answer = { ...result, pc: formatAddress(result.pc) };
     const history = input.history === undefined ? {} : await runHistory(session, input.history, result.space);
     if (input.observe === undefined) return { ...answer, ...history };
-    // The observation at the stop: an image of the screen comes with the result as c64_observe gives it.
+    // The observation at the stop: an image of the screen comes with the result as observe gives it.
     const observed = await c64Observe.run(input.observe, session);
     if (observed instanceof ToolOutput) return new ToolOutput({ ...answer, ...history, observed: observed.structured }, observed.content);
     return { ...answer, ...history, observed };

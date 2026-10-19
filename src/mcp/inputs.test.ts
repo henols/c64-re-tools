@@ -27,7 +27,7 @@ test("each step input has the fields of its tool input", () => {
   assert.deepEqual([fieldsOf(address!), fieldsOf(memory!), fieldsOf(raster!)], [sorted(STEP_FIELDS.addressTarget), sorted(STEP_FIELDS.memoryTarget), sorted(STEP_FIELDS.rasterTarget)]);
   const [register, memoryCondition, rasterCondition] = optionsOf(TOOL_INPUTS.condition);
   assert.deepEqual([fieldsOf(register!), fieldsOf(memoryCondition!), fieldsOf(rasterCondition!)], [sorted(STEP_FIELDS.registerCondition), sorted(STEP_FIELDS.memoryCondition), sorted(STEP_FIELDS.rasterCondition)]);
-  // A runUntil step has the target and the wait of c64_run_until; observe and history are for a tool call alone.
+  // A runUntil step has the target and the wait of run_until; observe and history are for a tool call alone.
   for (const field of STEP_FIELDS.runUntil) assert.ok(fieldsOf(c64RunUntil.inputSchema).includes(field), field);
 });
 

@@ -51,7 +51,7 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
 - Live suites: the full suite on VICE 3.10, `C64RT_LIVE_VICE=/usr/local/bin/x64sc pnpm test`.
   VICE 3.9 runs only the tests of what a VICE flaw breaks:
   `C64RT_LIVE_VICE=/usr/bin/x64sc pnpm test $(grep -rl viceFlaws test/integration)`.
-  Every VICE runs headless. The c64_window tests open real windows and also
+  Every VICE runs headless. The window tests open real windows and also
   need `C64RT_LIVE_WINDOW=1`.
 - Real VICE is given by absolute path. `-default` must precede
   `-binarymonitor`, and autostart needs `-autostartprgmode 1`.

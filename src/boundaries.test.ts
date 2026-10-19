@@ -67,7 +67,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   // The modules of a VICE snapshot file, and the changes that press keys in it.
   vsf: ["media"],
   "host-client": ["protocol", "c64", "c64-keys", "cpu", "project", "trace", "package", "machine"],
-  mcp: ["host-client", "protocol", "c64", "c64-keys", "cpu", "trace", "package"],
+  mcp: ["host-client", "protocol", "c64", "c64-keys", "cpu", "trace", "package", "machine"],
   host: ["native", "protocol", "c64", "c64-keys", "cpu", "graphics", "opcodes", "trace", "package", "media", "vsf", "machine"],
   // opcodes: one rule for a name that ACME can take as a label.
   knowledge: ["c64", "cpu", "machine", "project", "time", "opcodes"],
@@ -76,8 +76,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
   native: ["protocol", "c64", "trace", "cpu", "machine"],
   // The installation and status edge: host tool status through the host-client, local tool status through native.
-  cli: ["host-client", "native", "protocol", "script", "distribution", "trace", "package"],
-  distribution: ["package"],
+  cli: ["host-client", "native", "protocol", "script", "distribution", "trace", "package", "machine"],
+  distribution: ["package", "machine"],
   convert: ["knowledge"],
 };
 const SKILL_ALLOWED = ["build-name", "c64-keys", "c64", "compare", "cpu", "graphics", "host-client", "knowledge", "machine", "media", "native", "opcodes", "package", "platform", "project", "script", "time", "vsf", "zip"];

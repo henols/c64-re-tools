@@ -1,4 +1,4 @@
-// Source → c64-assembler → ACME → PRG → c64_program_load → VICE reaches a
+// Source → c64-assembler → ACME → PRG → program_load → VICE reaches a
 // known state. The skill script runs ACME itself; ACME never enters the MCP.
 // Opt-in with C64RT_LIVE_VICE; also needs ACME.
 
@@ -60,14 +60,14 @@ test("assembled source loads into VICE and reaches its known end state", { skip,
   // 2. The MCP loads it from the same project and runs it to the known state.
   const { client } = await startMcp(hostAddress, { cwd: project });
   try {
-    const loaded = await tool(client, "c64_program_load", { path: "build/counter.prg" });
+    const loaded = await tool(client, "program_load", { path: "build/counter.prg" });
     assert.equal(loaded.loadAddress, "$0801");
-    await tool(client, "c64_registers", { action: "write", values: { pc: symbol("start").address } });
-    const reached = await tool(client, "c64_run_until", { target: { kind: "address", address: symbol("done").address }, timeoutFrames: 50 });
+    await tool(client, "registers", { action: "write", values: { pc: symbol("start").address } });
+    const reached = await tool(client, "run_until", { target: { kind: "address", address: symbol("done").address }, timeoutFrames: 50 });
     assert.equal(reached.stopReason, "target");
-    const result = await tool(client, "c64_memory_read", { address: symbol("RESULT").value!, size: 1 });
+    const result = await tool(client, "memory_read", { address: symbol("RESULT").value!, size: 1 });
     assert.equal(Number.parseInt(result.data as string, 16), valueOf("MAX"), "the counter reached MAX");
-    const border = await tool(client, "c64_memory_read", { address: "$d020", size: 1 });
+    const border = await tool(client, "memory_read", { address: "$d020", size: 1 });
     assert.equal(Number.parseInt(border.data as string, 16) & 0x0f, valueOf("DONE_COLOR"));
   } finally {
     await client.close();

@@ -78,7 +78,7 @@ const WINDOW_CLOSING =
   "The VICE window closed. The session starts a headless emulator again from the machine state of when the window opened. Try again in a few seconds.";
 
 const WINDOW_CLOSED =
-  "The VICE window closed before c64_window close (the user closed it, or that emulator stopped). " +
+  "The VICE window closed before window close (the user closed it, or that emulator stopped). " +
   "The machine is headless again, in the state it had when the window opened; what changed in the window is lost. " +
   "Breakpoints and watchpoints are kept. Check the machine state before you continue.";
 
@@ -94,7 +94,7 @@ interface Handover {
   file: string;
   running: boolean;
   warp: boolean;
-  /** Cycles on the session stopwatch (c64_timing) at the save. */
+  /** Cycles on the session stopwatch (timing) at the save. */
   elapsed: bigint;
 }
 
@@ -125,7 +125,7 @@ export interface SessionOptions {
   untilReturnLimitMs?: number;
   /** Upper bound for a step or next; tests shorten it. */
   stepLimitMs?: number;
-  /** Starts another VICE, for c64_window. Without it the session cannot open a window. */
+  /** Starts another VICE, for window. Without it the session cannot open a window. */
   launch?: ViceLauncher;
   /** Makes the host remove a path if it dies; returns the release. */
   ownPath?: (path: string) => () => void;
@@ -245,7 +245,7 @@ export class ViceSession implements ViceSessionHandle {
   #snapshotFiles = 0;
   /** Session-local screen baselines, lost with the session. */
   readonly #baselines = new Map<string, { frame: IndexedFrame; palette: Array<[number, number, number]> }>();
-  /** The CPU clock when the session stopwatch last started (c64_timing). */
+  /** The CPU clock when the session stopwatch last started (timing). */
   #timingStart = 0n;
   /** Counts staged media files, for unique names. */
   #staged = 0;
@@ -349,7 +349,7 @@ export class ViceSession implements ViceSessionHandle {
         session.#observe(async () => {
           session.#adapter = await ViceAdapter.create(vice.monitor, vice.text);
           session.#timingStart = await session.#adapter.clock();
-          // c64_profile reports what ran since the session started.
+          // profile reports what ran since the session started.
           await session.#adapter.startProfiler();
           // In VICE 3.10 and older the control-port lines start all pressed; release them before the C64 reads them.
           for (const joystick of session.#joysticks.values()) await session.#adapter.setJoystick(joystick);
@@ -434,7 +434,7 @@ export class ViceSession implements ViceSessionHandle {
         return this.#programLoad(params as ViceOperations["programLoad"]["params"], onlyAttachment(attachments));
       case "autostart": {
         const { type, index, run } = params as ViceOperations["autostart"]["params"];
-        if (type === "tap") this.#refuseBroken("tape", "c64_autostart of a tape image");
+        if (type === "tap") this.#refuseBroken("tape", "autostart of a tape image");
         const bytes = onlyAttachment(attachments);
         checkMedia(type, bytes);
         if (index > 0 && this.#directory !== undefined && isOneOf(DISK_IMAGE_TYPES, type)) checkDirectoryEntry(await this.#directory(type, bytes), index);
@@ -489,7 +489,7 @@ export class ViceSession implements ViceSessionHandle {
       case "screenCapture": {
         const { baseline } = params as ViceOperations["screenCapture"]["params"];
         if (baseline !== undefined && !this.#baselines.has(baseline) && this.#baselines.size >= MAX_BASELINES) {
-          throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_BASELINES} baselines. Remove one first with c64_screen action remove.`);
+          throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_BASELINES} baselines. Remove one first with screen action remove.`);
         }
         const shot = await this.#observe(() => this.#machine.captureFrame(this.#videoStandard));
         if (baseline !== undefined) this.#baselines.set(baseline, shot);
@@ -569,7 +569,7 @@ export class ViceSession implements ViceSessionHandle {
       case "observe":
         return this.#observeAll(params as ObserveParams);
       case "joystick": {
-        this.#refuseBroken("joystick", "c64_joystick");
+        this.#refuseBroken("joystick", "joystick");
         const joystick = params as JoystickState;
         await this.#observe(() => this.#machine.setJoystick(joystick));
         this.#joysticks.set(joystick.port, joystick);
@@ -1028,7 +1028,7 @@ export class ViceSession implements ViceSessionHandle {
     throw new WireFailure(
       "operation-failed",
       `The CPU is jammed by the JAM opcode at ${formatAddress(this.#jammed ?? pc)}, so ${action} cannot execute an instruction. ` +
-        "The CPU runs again only after c64_reset, a snapshot restore or c64_autostart.",
+        "The CPU runs again only after reset, a snapshot restore or autostart.",
     );
   }
 
@@ -1130,7 +1130,7 @@ export class ViceSession implements ViceSessionHandle {
     const point = registry.get(id);
     if (point === undefined) {
       const other = kind === "breakpoint" ? (this.#watchpoints.has(id) ? "watchpoint" : undefined) : this.#breakpoints.has(id) ? "breakpoint" : undefined;
-      throw new WireFailure("not-found", `There is no ${kind} with id ${id}.${other === undefined ? "" : ` Id ${id} is a ${other}: use c64_${other}.`}`);
+      throw new WireFailure("not-found", `There is no ${kind} with id ${id}.${other === undefined ? "" : ` Id ${id} is a ${other}: use the ${other} tool.`}`);
     }
     return point;
   }
@@ -1190,7 +1190,7 @@ export class ViceSession implements ViceSessionHandle {
     if (this.#autostarting && !this.#userWarp && (await this.#observe(() => this.#machine.warp()))) {
       throw new WireFailure(
         "operation-failed",
-        `The autostart still loads the program, and a key now stops it before RUN. Run frames with c64_execution advance-frames, then ${verb} again.`,
+        `The autostart still loads the program, and a key now stops it before RUN. Run frames with execution advance-frames, then ${verb} again.`,
       );
     }
   }
@@ -1204,13 +1204,13 @@ export class ViceSession implements ViceSessionHandle {
    * stopped; else it runs again when it ran before. All keys are up at the end.
    */
   async #press(params: ViceOperations["press"]["params"]): Promise<PressResult> {
-    this.#refuseBroken("keyboard", "c64_press");
+    this.#refuseBroken("keyboard", "press");
     await this.#refuseWhileAutostartLoads("press the keys");
     if (this.#atResetStop) {
       throw new WireFailure(
         "operation-failed",
-        "The CPU stands at the reset stop of c64_reset with run false. The emulator stops answering when keys are pressed here while the disk drive is busy. " +
-          "Step one instruction with c64_execution, then press the keys.",
+        "The CPU stands at the reset stop of reset with run false. The emulator stops answering when keys are pressed here while the disk drive is busy. " +
+          "Step one instruction with execution, then press the keys.",
       );
     }
     const running = this.#state === "running";
@@ -1247,7 +1247,7 @@ export class ViceSession implements ViceSessionHandle {
       const bytes = readFileSync(file);
       const why = setSnapshotMatrix(bytes, rows) ?? (restore ? pressSnapshotRestore(bytes) : undefined);
       if (why !== undefined) {
-        this.#log(`c64_press was used, and this VICE writes snapshots that c64-re-tools does not know: ${why}.`);
+        this.#log(`press was used, and this VICE writes snapshots that c64-re-tools does not know: ${why}.`);
         throw new WireFailure("not-implemented", BROKEN_MESSAGES.keyboard);
       }
       writeFileSync(file, bytes);
@@ -1327,7 +1327,7 @@ export class ViceSession implements ViceSessionHandle {
       throw new WireFailure(
         "operation-failed",
         "VICE records no CPU history after a JAM until the next reset, and the CPU ran after the JAM. The history would show old instructions. " +
-          "Use c64_reset to record again, or use c64_trace.",
+          "Use reset to record again, or use trace.",
       );
     }
     return this.#observe(async () => {
@@ -1415,8 +1415,8 @@ export class ViceSession implements ViceSessionHandle {
       if (this.#atResetStop) {
         throw new WireFailure(
           "operation-failed",
-          "The CPU stands at the reset stop of c64_reset with run false. The emulator stops answering at the restore of a snapshot saved here when the disk drive was busy. " +
-            "Step one instruction with c64_execution, then save the snapshot.",
+          "The CPU stands at the reset stop of reset with run false. The emulator stops answering at the restore of a snapshot saved here when the disk drive was busy. " +
+            "Step one instruction with execution, then save the snapshot.",
         );
       }
       if (existing === undefined && this.#snapshots.size >= MAX_SNAPSHOTS) {
@@ -1464,7 +1464,7 @@ export class ViceSession implements ViceSessionHandle {
     }
     const bytes = onlyAttachment(attachments);
     // Checked before the machine stops: VICE gives no reason for a file that is no snapshot.
-    if (!hasSignature("vsf", bytes)) throw new WireFailure("invalid-input", "The file is not a VICE snapshot file (.vsf). Give a file that c64_snapshot save wrote.");
+    if (!hasSignature("vsf", bytes)) throw new WireFailure("invalid-input", "The file is not a VICE snapshot file (.vsf). Give a file that snapshot save wrote.");
     const file = this.#stage(bytes, "vsf");
     // VICE resets the machine after a snapshot file that it cannot read: a backup keeps the state before the restore.
     const backup = join(this.#workDir, "before-restore.vsf");
@@ -1631,7 +1631,7 @@ export class ViceSession implements ViceSessionHandle {
   /** Direct CPU-state writes need a stopped CPU; they never pause it themselves. */
   #requireStopped(): void {
     if (this.#state === "running") {
-      throw new WireFailure("machine-running", "The CPU is running. Stop it with c64_execution action pause first.");
+      throw new WireFailure("machine-running", "The CPU is running. Stop it with execution action pause first.");
     }
   }
 

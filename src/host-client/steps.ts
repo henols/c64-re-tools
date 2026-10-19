@@ -1,13 +1,13 @@
 // The action steps of the scripts. A step is { "<kind>": <input> }, and the
 // input has the fields, ranges and defaults of the MCP tool that does the same:
 //
-//   write     c64_memory_write   { address, data, space?, view? }
-//   registers c64_registers      the values of action write: { pc?, a?, x?, y?, sp?, flags? }
-//   joystick  c64_joystick       { port, direction, fire? }
-//   type      c64_keyboard       { mode: "text", text } or { mode: "petscii", bytes }: the KERNAL keyboard queue
-//   frames    c64_execution      the count of advance-frames
-//   runUntil  c64_run_until      { target, timeoutFrames? }
-//   press     c64_press          { keys, frames? }: keys of the keyboard matrix and RESTORE
+//   write     memory_write   { address, data, space?, view? }
+//   registers registers      the values of action write: { pc?, a?, x?, y?, sp?, flags? }
+//   joystick  joystick       { port, direction, fire? }
+//   type      keyboard       { mode: "text", text } or { mode: "petscii", bytes }: the KERNAL keyboard queue
+//   frames    execution      the count of advance-frames
+//   runUntil  run_until      { target, timeoutFrames? }
+//   press     press          { keys, frames? }: keys of the keyboard matrix and RESTORE
 //
 // An address in a step is $ and 1 to 4 hex digits, or a name that the script resolves.
 // The scripts install without packages, so this checker has no zod: the MCP
@@ -85,7 +85,7 @@ export const STEP_FIELDS = {
 
 /** The highest raster line of a PAL frame; an NTSC frame has fewer, which the emulator checks. */
 export const MAX_RASTER_LINE = 311;
-/** The wait of a runUntil step without timeoutFrames, as c64_run_until has it. */
+/** The wait of a runUntil step without timeoutFrames, as run_until has it. */
 export const DEFAULT_TIMEOUT_FRAMES = 3000;
 
 export const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);

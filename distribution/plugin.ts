@@ -14,7 +14,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { definePlugin, defineSkill, type Skill } from "@jalco/ap-sdk";
 
 import { PACKAGE } from "../src/package.ts";
-import { MCP_SERVER } from "./package.ts";
+import { mcpServers } from "./package.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const SOURCE = join(root, "src");
@@ -115,7 +115,7 @@ function c64Plugin() {
     homepage: "https://github.com/henols/c64-re-tools",
     license: "MIT",
     skills,
-    mcpServers: { "c64-re-tools": MCP_SERVER },
+    mcpServers: mcpServers(),
   });
 }
 

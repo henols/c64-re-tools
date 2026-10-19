@@ -1,5 +1,5 @@
-// Memory and CPU tools: c64_memory_read, c64_memory_write, c64_memory_search,
-// c64_memory_compare, c64_registers and c64_disassemble.
+// Memory and CPU tools: memory_read, memory_write, memory_search,
+// memory_compare, registers and disassemble.
 
 import { z } from "zod";
 
@@ -17,7 +17,7 @@ const MAX_DISASSEMBLE_OUT = 32768;
 const HexByte = z.string().regex(/^[0-9a-f]{2}$/);
 
 export const c64MemoryRead = defineTool({
-  name: "c64_memory_read",
+  name: "memory_read",
   title: "Read C64 memory",
   description:
     `Read 1 to ${MAX_MEMORY_READ} bytes of memory, starting at an address. ` +
@@ -55,10 +55,10 @@ export const c64MemoryRead = defineTool({
 });
 
 export const c64MemoryWrite = defineTool({
-  name: "c64_memory_write",
+  name: "memory_write",
   title: "Write C64 memory",
   description:
-    `Write 1 to ${MAX_MEMORY_WRITE} bytes to memory, starting at an address. First stop the CPU with c64_execution action pause. ` +
+    `Write 1 to ${MAX_MEMORY_WRITE} bytes to memory, starting at an address. First stop the CPU with execution action pause. ` +
     "The range must not go past $ffff. With view cpu, the write goes where the CPU writes now. " +
     "A write to a ROM address goes to the RAM under it, and a write to I/O goes to the chip. " +
     "With view ram, the write goes to RAM (c64 only).",
@@ -72,7 +72,7 @@ export const c64MemoryWrite = defineTool({
 });
 
 export const c64Registers = defineTool({
-  name: "c64_registers",
+  name: "registers",
   title: "C64 CPU registers",
   description:
     "Read or write the CPU registers: pc, a, x, y, sp and the status flags n, v, b, d, i, z and c. " +
@@ -119,7 +119,7 @@ const SearchPattern = z
   .describe("hex bytes and ?? (any byte), separated by spaces, for example a9 ?? 8d 20 d0");
 
 export const c64MemorySearch = defineTool({
-  name: "c64_memory_search",
+  name: "memory_search",
   title: "Search C64 memory",
   description:
     `Find a byte pattern of 1 to ${MAX_SEARCH_PATTERN} bytes in memory from start to end. ?? matches any byte. ` +
@@ -157,7 +157,7 @@ const Location = z
   .strict();
 
 export const c64MemoryCompare = defineTool({
-  name: "c64_memory_compare",
+  name: "memory_compare",
   title: "Compare C64 memory",
   description:
     `Compare two memory ranges of size bytes (1 to ${MAX_COMPARE_SIZE}). Each range has its own address, space and view. ` +
@@ -181,7 +181,7 @@ export const c64MemoryCompare = defineTool({
 });
 
 export const c64Disassemble = defineTool({
-  name: "c64_disassemble",
+  name: "disassemble",
   title: "Disassemble live C64 memory",
   description:
     `Disassemble count instructions (1 to ${MAX_DISASSEMBLE}) from an address, as the bytes are in the live machine now. ` +

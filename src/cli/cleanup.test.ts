@@ -100,7 +100,7 @@ function installLikeApSdk(home: string, project: string): string {
   } catch {
     existing = {};
   }
-  const servers = { ...((existing.mcpServers as Record<string, unknown> | undefined) ?? {}), "c64-re-tools": { command: "npx", args: ["-y", "new"] } };
+  const servers = { ...((existing.mcpServers as Record<string, unknown> | undefined) ?? {}), c64: { command: "npx", args: ["-y", "new"] } };
   writeFileSync(file, JSON.stringify({ ...existing, mcpServers: servers }, null, 2));
   mkdirSync(join(project, ".ap-sdk"), { recursive: true });
   const item = { harness: "windsurf", kind: "mcp", name: "c64-re-tools", files: [file], detail: { mergeKey: "mcpServers", names: ["c64-re-tools"] } };
@@ -109,7 +109,7 @@ function installLikeApSdk(home: string, project: string): string {
 }
 
 test("a project install puts a Windsurf home file back byte for byte, also one with a global declaration", () => {
-  for (const original of ['{"theme":"dark"}', '{"mcpServers":{"other":{"command":"x"}}}\r\n', '{ "mcpServers": { "c64-re-tools": { "command": "old" } } }']) {
+  for (const original of ['{"theme":"dark"}', '{"mcpServers":{"other":{"command":"x"}}}\r\n', '{ "mcpServers": { "c64": { "command": "old" } } }']) {
     withHomeAndProject((home, project) => {
       const file = join(home, ".codeium", "windsurf", "mcp_config.json");
       mkdirSync(dirname(file), { recursive: true });

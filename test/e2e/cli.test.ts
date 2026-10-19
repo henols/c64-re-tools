@@ -22,13 +22,31 @@ test("install puts the skills and the MCP declaration into the project; uninstal
   assert.ok(existsSync(join(project, ".claude", "skills", "emulator", "SKILL.md")));
   const disk = join(project, ".claude", "skills", "c64-disk");
   for (const file of ["scripts/disk.ts", "src/host-client/tools.ts", "package.json"]) assert.ok(existsSync(join(disk, file)), file);
-  assert.deepEqual(JSON.parse(readFileSync(join(project, ".mcp.json"), "utf8")), { mcpServers: { "c64-re-tools": mcpServerFor(process.platform) } });
+  assert.deepEqual(JSON.parse(readFileSync(join(project, ".mcp.json"), "utf8")), { mcpServers: { c64: mcpServerFor(process.platform, "c64") } });
 
   assert.equal(run("update", "--target", "claude").status, 0, "an update installs again over the old files");
 
   const removed = run("uninstall", "--target", "claude");
   assert.equal(removed.status, 0, removed.stdout + removed.stderr);
   assert.equal(existsSync(join(project, ".claude", "skills", "emulator")), false);
+});
+
+test("install --machines declares one MCP server per family, and an update without it keeps them", () => {
+  const fresh = mkdtempSync(join(tmpdir(), "c64-re-tools-cli-machines-"));
+  try {
+    const at = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, cli, ...args], { cwd: fresh, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+    const servers = () => (JSON.parse(readFileSync(join(fresh, ".mcp.json"), "utf8")) as { mcpServers: Record<string, unknown> }).mcpServers;
+    const installed = at("install", "--target", "claude", "--machines", "spectrum,c64");
+    assert.equal(installed.status, 0, installed.stdout + installed.stderr);
+    assert.deepEqual(servers(), { spectrum: mcpServerFor(process.platform, "spectrum"), c64: mcpServerFor(process.platform, "c64") });
+    assert.equal(at("update", "--target", "claude").status, 0);
+    assert.deepEqual(Object.keys(servers()).sort(), ["c64", "spectrum"], "an update keeps the installed families");
+    const refused = at("install", "--target", "claude", "--machines", "c128");
+    assert.equal(refused.status, 2);
+    assert.match(refused.stderr, /--machines takes c64, spectrum/);
+  } finally {
+    rmSync(fresh, { recursive: true, force: true });
+  }
 });
 
 test("a project install for every harness leaves the home directory alone; uninstall leaves nothing behind", () => {

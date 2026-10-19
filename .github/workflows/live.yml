@@ -17,7 +17,7 @@ on:
         required: false
         default: ""
 
-# The c64_window tests open real VICE windows; CI has a display for them.
+# The window tests open real VICE windows; CI has a display for them.
 env:
   C64RT_LIVE_WINDOW: "1"
 
@@ -60,7 +60,7 @@ jobs:
           node-version: "24"
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
-      # The c64_window tests need a display.
+      # The window tests need a display.
       - name: Live suites
         timeout-minutes: 20
         env:
@@ -112,7 +112,7 @@ jobs:
           "C64RT_LIVE_VICE=$bin\x64sc.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           $bin | Out-File -FilePath $env:GITHUB_PATH -Append
 
-      # macOS and Windows runners have a display for the c64_window tests. A step limit keeps the log of a hang.
+      # macOS and Windows runners have a display for the window tests. A step limit keeps the log of a hang.
       - name: Live suites
         if: runner.os == 'macOS'
         timeout-minutes: 20

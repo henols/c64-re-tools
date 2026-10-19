@@ -20,9 +20,9 @@
     "mcp"
   ],
   "mcpServers": {
-    "c64-re-tools": {
+    "c64": {
       "command": "npx",
-      "args": ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"]
+      "args": ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp", "--machine", "c64"]
     }
   },
   "defaultEnabled": false

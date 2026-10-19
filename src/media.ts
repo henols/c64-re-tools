@@ -36,7 +36,7 @@ const X64_MAGIC = Buffer.from([0x43, 0x15, 0x41, 0x64]);
 
 /** The refusal of a file that is no VICE snapshot file (.vsf): its signature is missing. `path` names the file. */
 export function checkSnapshotFile(path: string, bytes: Uint8Array): void {
-  if (!hasSignature("vsf", bytes)) throw new Refusal("invalid-input", `${path} is not a VICE snapshot file (.vsf): it does not start with "VICE Snapshot File". Give a file that c64_snapshot save or a save step of a run wrote.`);
+  if (!hasSignature("vsf", bytes)) throw new Refusal("invalid-input", `${path} is not a VICE snapshot file (.vsf): it does not start with "VICE Snapshot File". Give a file that snapshot save or a save step of a run wrote.`);
 }
 
 /** Refuses a file whose bytes are not of `type` (its extension), with media-error. */

@@ -505,7 +505,7 @@ test("test, run and diff refuse a snapshot file that is no VICE snapshot file be
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   writeFileSync(join(project, "notes.txt"), "not a snapshot\n");
   writeFileSync(join(project, "notes.vsf"), "not a snapshot\n");
-  const why = 'is not a VICE snapshot file (.vsf): it does not start with "VICE Snapshot File". Give a file that c64_snapshot save or a save step of a run wrote.';
+  const why = 'is not a VICE snapshot file (.vsf): it does not start with "VICE Snapshot File". Give a file that snapshot save or a save step of a run wrote.';
   assert.deepEqual(await runRefusal("snap-step.json", { name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }] }), { code: "invalid-input", message: `run snap-step.json: step 2: snapshot: notes.txt ${why}` });
   assert.deepEqual(await runRefusal("snap-start.json", { name: "x", start: { snapshot: "notes.vsf" }, steps: [{ frames: 5 }] }), { code: "invalid-input", message: `run snap-start.json: start.snapshot: notes.vsf ${why}` });
   scenarioFile("snap-scenario.json", { ...valid, original: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }, { observe: "x", memory: ["$0400"] }] });

@@ -1,4 +1,4 @@
-// Input tools: c64_keyboard, c64_press and c64_joystick.
+// Input tools: keyboard, press and joystick.
 
 import { z } from "zod";
 
@@ -11,15 +11,15 @@ import { AddressOutput, defineTool } from "../server.ts";
 
 
 export const c64Keyboard = defineTool({
-  name: "c64_keyboard",
+  name: "keyboard",
   title: "Type on the C64 keyboard",
   description:
     `Type up to ${MAX_KEYBOARD_BYTES} keys into the C64 keyboard queue. The C64 reads them while it runs. ` +
     "Only a program that reads keys through the KERNAL sees them. A program that reads the keyboard hardware directly does not see them. Many games do that. " +
-    "For keys that a program reads from the keyboard hardware, use c64_press. " +
+    "For keys that a program reads from the keyboard hardware, use press. " +
     'Mode text types text, for example "RUN\\n". Letters of either case type the normal (unshifted) key. A line break types RETURN. ' +
     "Mode petscii types PETSCII codes 1 to 255 in bytes, for example [147] to clear the screen. " +
-    "While c64_autostart loads a program, this tool refuses keys: see c64_autostart. " +
+    "While autostart loads a program, this tool refuses keys: see autostart. " +
     "This does not change the run state of the machine.",
   inputSchema: TOOL_INPUTS.keyboard,
   outputSchema: z.object({ queuedBytes: z.number().int().min(1).max(MAX_KEYBOARD_BYTES) }),
@@ -32,7 +32,7 @@ export const c64Keyboard = defineTool({
 });
 
 export const c64Press = defineTool({
-  name: "c64_press",
+  name: "press",
   title: "Press keys of the C64 keyboard",
   description:
     "Press keys of the C64 keyboard matrix, and RESTORE. A program that reads the keyboard hardware directly sees these keys. Many games do that. " +
@@ -44,7 +44,7 @@ export const c64Press = defineTool({
     `Each tap holds its keys for frames frames (default ${PRESS_FRAMES}). Then all keys are up for frames frames. The machine runs during the taps, and it runs again after them when it ran before. ` +
     "A breakpoint, watchpoint or JAM stops the taps early. Then stopReason tells why, taps tells how many taps were complete, and the machine stays stopped. All keys are up at the end. " +
     "The CPU history starts again at each tap. " +
-    "To type text through the KERNAL keyboard queue, use c64_keyboard.",
+    "To type text through the KERNAL keyboard queue, use keyboard.",
   inputSchema: TOOL_INPUTS.press,
   outputSchema: z.object({
     taps: z.number().int().min(0).max(MAX_PRESS_TAPS).describe("the taps that were complete"),
@@ -63,7 +63,7 @@ export const c64Press = defineTool({
 });
 
 export const c64Joystick = defineTool({
-  name: "c64_joystick",
+  name: "joystick",
   title: "Move a joystick",
   description:
     "Set the joystick in control port 1 or 2: a direction (or center) and the fire button. " +

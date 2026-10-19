@@ -120,10 +120,11 @@ test("every installed script runs without the repository", async () => {
 
 test("the agent starts the newest MCP server of the installed channel through npx", () => {
   const spec = `--package=@henols/c64-re-tools@${channelOf(PACKAGE.version)}`;
-  assert.deepEqual(plugin.mcpServers, { "c64-re-tools": mcpServerFor(process.platform) });
-  assert.deepEqual(mcpServerFor("linux"), { command: "npx", args: ["-y", spec, "c64-re-tools-mcp"] });
+  assert.deepEqual(plugin.mcpServers, { c64: mcpServerFor(process.platform, "c64") });
+  assert.deepEqual(mcpServerFor("linux"), { command: "npx", args: ["-y", spec, "c64-re-tools-mcp", "--machine", "c64"] });
+  assert.deepEqual(mcpServerFor("linux", "spectrum").args.slice(-2), ["--machine", "spectrum"]);
   assert.deepEqual(mcpServerFor("darwin"), mcpServerFor("linux"));
-  assert.deepEqual(mcpServerFor("win32"), { command: "cmd", args: ["/c", "npx", "-y", spec, "c64-re-tools-mcp"] }, "npx is a .cmd shim on Windows");
+  assert.deepEqual(mcpServerFor("win32"), { command: "cmd", args: ["/c", "npx", "-y", spec, "c64-re-tools-mcp", "--machine", "c64"] }, "npx is a .cmd shim on Windows");
 });
 
 test("a prerelease goes to the next channel and a release to latest", () => {

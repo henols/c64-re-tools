@@ -1,6 +1,7 @@
 // MCP server creation, tool registration and the one place where failures
 // become MCP results. Tool groups live in tools/; nothing here knows VICE.
 
+import type { Family } from "../machine.ts";
 import { createRequire } from "node:module";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -271,7 +272,9 @@ function packageVersion(): string {
   return version;
 }
 
-const INSTRUCTIONS =
+/** A short primer of the machine: it loads in every session where the server is configured. */
+const INSTRUCTIONS: Partial<Record<Family, string>> = {
+  c64:
   "These tools control one live Commodore 64 emulator that belongs to this session. " +
   "An address is a dollar sign and 1 to 4 hex digits, for example $c000 or $fb. A result gives four hex digits. " +
   "An error is {\"error\": {\"code\", \"message\"}}. The message tells what is wrong and what to do. " +
@@ -280,16 +283,18 @@ const INSTRUCTIONS =
   "A read does not change the run state of the machine. " +
   "Space c64 is the computer. Space drive8 is the CPU of the 1541 disk drive. " +
   "Memory view cpu gives what the CPU sees now, with ROM and I/O where the memory configuration puts them. Memory view ram gives the RAM under them. " +
-  "A write to memory or registers needs a stopped CPU: stop it with c64_execution action pause. " +
+  "A write to memory or registers needs a stopped CPU: stop it with execution action pause. " +
   "Paths are relative to the project folder, the folder that holds .c64-re-tools/. " +
-  "With out, a tool writes a large result to a project file in place of the result.";
+  "With out, a tool writes a large result to a project file in place of the result.",
+};
 
-export function createMcpServer(options: { tools: readonly ToolDefinition[]; session: SessionSource; log?: (line: string) => void }): Server {
+/** The families whose MCP server has tools in this build. */
+export const MCP_FAMILIES = (Object.keys(INSTRUCTIONS) as Family[]).filter((family) => INSTRUCTIONS[family] !== undefined);
+
+export function createMcpServer(options: { family?: Family; tools: readonly ToolDefinition[]; session: SessionSource; log?: (line: string) => void }): Server {
+  const family = options.family ?? "c64";
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));
-  const server = new Server(
-    { name: "c64-re-tools", version: packageVersion() },
-    { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
-  );
+  const server = new Server({ name: family, version: packageVersion() }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS[family] ?? "" });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: options.tools.map(toolListing) }));
   server.setRequestHandler(CallToolRequestSchema, async (request) =>
     callTool(tools, request.params.name, request.params.arguments, options.session, options.log),

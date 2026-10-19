@@ -1,6 +1,6 @@
 // Live VICE tests are opt-in: set C64RT_LIVE_VICE to the absolute path of x64sc.
 // Without it every live test is reported as skipped, never as passed. Every
-// live VICE is headless, except in the c64_window tests: they open real
+// live VICE is headless, except in the window tests: they open real
 // windows, so they also need C64RT_LIVE_WINDOW=1.
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";

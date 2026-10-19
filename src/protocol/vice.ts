@@ -12,7 +12,7 @@ export type MemoryView = (typeof MEMORY_VIEWS)[number];
 export const RUN_STATES = ["running", "stopped"] as const;
 export type RunState = (typeof RUN_STATES)[number];
 
-/** Bounds of c64_memory_search, c64_memory_compare and c64_disassemble. */
+/** Bounds of memory_search, memory_compare and disassemble. */
 export const MAX_SEARCH_PATTERN = 256;
 export const MAX_SEARCH_RESULTS = 1000;
 export const MAX_COMPARE_SIZE = 4096;
@@ -33,20 +33,20 @@ export interface Instruction {
   text: string;
 }
 
-/** Bounds of c64_memory_read and c64_memory_write. */
+/** Bounds of memory_read and memory_write. */
 export const MAX_MEMORY_READ = 4096;
 export const MAX_MEMORY_WRITE = 4096;
 
 export const EXECUTION_ACTIONS = ["pause", "resume", "step", "next", "until-return", "advance-frames"] as const;
 export type ExecutionAction = (typeof EXECUTION_ACTIONS)[number];
-/** Bounds of c64_execution counts. */
+/** Bounds of execution counts. */
 export const MAX_EXECUTION_COUNT = 10_000;
 
 /** File types each media operation accepts, by lowercase extension. */
 export const AUTOSTART_TYPES = ["prg", "p00", "t64", "tap", "d64", "d71", "d81", "g64", "x64", "crt"] as const;
 export const DISK_TYPES = ["d64", "d71", "d81", "g64", "x64"] as const;
 
-/** Most bytes c64_keyboard queues in one call. */
+/** Most bytes keyboard queues in one call. */
 export const MAX_KEYBOARD_BYTES = 1024;
 
 export const JOYSTICK_DIRECTIONS = [
@@ -195,7 +195,7 @@ export const MAX_HISTORY = 200;
 export const MAX_BACKTRACE = 64;
 export const TIMING_ACTIONS = ["start", "read"] as const;
 
-/** c64_window: open moves the machine into a VICE with a window, close back into a headless one. */
+/** window: open moves the machine into a VICE with a window, close back into a headless one. */
 export const WINDOW_ACTIONS = ["open", "close"] as const;
 
 export interface WindowResult {
@@ -343,7 +343,7 @@ export interface ScreenComparison {
   diffPng?: string;
 }
 
-// c64_observe
+// observe
 
 export const MAX_OBSERVE_RANGES = 16;
 export const MAX_OBSERVE_BYTES = 4096;
@@ -490,7 +490,7 @@ export interface PressResult {
   space?: "c64" | "drive8";
 }
 
-/** c64_run_until targets. */
+/** run_until targets. */
 export type RunTarget =
   | { kind: "address"; address: number; space: Space; condition?: Condition }
   | { kind: "memory"; address: number; operator: Comparison; value: number; space: Space; view: MemoryView }
