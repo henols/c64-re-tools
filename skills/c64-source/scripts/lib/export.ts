@@ -9,7 +9,7 @@
 // a run executed, at --keep and at the patches that the export changed: it
 // tells what stays. Without coverage nothing becomes free by itself.
 
-import { COVERAGE } from "#src/c64.ts";
+import { COVERAGE } from "#src/cpu/coverage.ts";
 import { type AddressRange, formatAddress, pointerTableEntries, POINTER_TABLE_TYPES, type PointerTableType } from "#src/address.ts";
 import { symbolsPath } from "#src/build-name.ts";
 import { Refusal } from "#src/errors.ts";

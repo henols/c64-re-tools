@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE } from "../../src/c64.ts";
+import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { instructionList, modeOf } from "../../skills/c64-static-analysis/scripts/lib/instructions.ts";
 import { vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importPrg } from "../fixtures/program.ts";

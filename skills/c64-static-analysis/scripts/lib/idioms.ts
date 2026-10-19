@@ -7,7 +7,7 @@
 // a copier's writes in one run and their execution in another do not count. A table's length is not known statically: entries
 // count while each target is a plausible instruction in the program.
 
-import { COVERAGE } from "#src/c64.ts";
+import { COVERAGE } from "#src/cpu/coverage.ts";
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
 import type { ImageByte } from "./coverage.ts";
 

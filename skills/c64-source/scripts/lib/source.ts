@@ -15,7 +15,7 @@
 // loads it.
 
 import { CONFIG_FILE, configValues } from "#src/build-name.ts";
-import { COVERAGE } from "#src/c64.ts";
+import { COVERAGE } from "#src/cpu/coverage.ts";
 import { type AddressRange, formatAddress, formatByte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/address.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";

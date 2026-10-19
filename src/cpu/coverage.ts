@@ -1,10 +1,50 @@
-// Coverage flows: the seeds that a coverage map gives a static analysis, for
-// any CPU (the 6502 when none is given).
+// Execution coverage: the byte format of a coverage map (VICE marks only the
+// opcode byte of an executed instruction as executed), the executed code it
+// gives, and the seeds that it gives a static analysis, for any CPU (the 6502
+// when none is given).
 
-import { COVERAGE } from "../c64.ts";
 import { type AddressRange } from "../address.ts";
 import type { Cpu } from "../cpu.ts";
 import { MOS6502 } from "./mos6502.ts";
+
+/** One byte per address: the access flags as VICE reports them, RAM, ROM and I/O apart. */
+export const COVERAGE = {
+  ramRead: 1 << 0,
+  ramWrite: 1 << 1,
+  ramExecute: 1 << 2,
+  romRead: 1 << 3,
+  romExecute: 1 << 4,
+  ioRead: 1 << 5,
+  ioWrite: 1 << 6,
+  ioExecute: 1 << 7,
+} as const;
+
+export const EXECUTE = COVERAGE.ramExecute | COVERAGE.romExecute | COVERAGE.ioExecute;
+export const READ = COVERAGE.ramRead | COVERAGE.romRead | COVERAGE.ioRead;
+export const WRITE = COVERAGE.ramWrite | COVERAGE.ioWrite;
+
+export interface CodeRange {
+  start: number;
+  end: number;
+}
+
+/**
+ * The executed code in RAM as ranges: each RAM instruction start in `map`
+ * with its operand bytes, by the opcode in `memory` (64 KiB from $0000).
+ * `map` starts at `base`. Adjacent and overlapping instructions merge.
+ */
+export function executedRamCode(map: Uint8Array, base: number, memory: Uint8Array, cpu: Cpu = MOS6502): CodeRange[] {
+  const ranges: CodeRange[] = [];
+  for (let offset = 0; offset < map.length; offset++) {
+    if ((map[offset]! & COVERAGE.ramExecute) === 0) continue;
+    const start = base + offset;
+    const end = Math.min(0xffff, start + (cpu.decode((address) => memory[address], start)?.length ?? 1) - 1);
+    const last = ranges.at(-1);
+    if (last !== undefined && start <= last.end + 1) last.end = Math.max(last.end, end);
+    else ranges.push({ start, end });
+  }
+  return ranges;
+}
 
 /**
  * The executed instruction starts in RAM that begin a flow: the first after

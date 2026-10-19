@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE } from "../../../src/c64.ts";
+import { COVERAGE } from "../../../src/cpu/coverage.ts";
 import { findTool, ZXRUN } from "../../../src/native/discover.ts";
 import { COUNT, COUNTER_START, keyboardCounterSnapshot } from "../../fixtures/z80/keyboard-counter.ts";
 

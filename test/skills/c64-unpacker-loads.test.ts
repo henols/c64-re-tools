@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { COVERAGE } from "../../src/c64.ts";
+import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { captureBlocks, changedBlocks, readLoadSteps } from "../../skills/c64-unpacker/scripts/lib/loads.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";

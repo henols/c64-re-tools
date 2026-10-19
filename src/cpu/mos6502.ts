@@ -1,9 +1,28 @@
 // The NMOS 6502/6510 as a Cpu: the lengths of src/c64.ts and the text of
 // src/opcodes.ts, with the flow of each opcode.
 
-import { instructionLength } from "../c64.ts";
 import type { Cpu, Instruction } from "../cpu.ts";
 import { instructionText } from "../opcodes.ts";
+
+/**
+ * The length in bytes of the NMOS 6502/6510 instruction with this opcode, for
+ * all 256 opcodes with the undocumented ones. The opcode is aaabbbcc: bbb
+ * selects the addressing mode within a group cc. JAM (KIL) and BRK count one byte.
+ */
+export function instructionLength(opcode: number): 1 | 2 | 3 {
+  const group = opcode & 0b11;
+  const mode = (opcode >> 2) & 0b111;
+  if (group === 0b00) {
+    if (mode === 0b000) return opcode === 0x20 ? 3 : opcode === 0x00 || opcode === 0x40 || opcode === 0x60 ? 1 : 2;
+    return ([2, 2, 1, 3, 2, 2, 1, 3] as const)[mode]!;
+  }
+  if (group === 0b10) {
+    if (mode === 0b000) return opcode === 0x02 || opcode === 0x22 || opcode === 0x42 || opcode === 0x62 ? 1 : 2;
+    return ([2, 2, 1, 3, 1, 2, 1, 3] as const)[mode]!;
+  }
+  // Groups 01 and 11 share their addressing modes.
+  return ([2, 2, 2, 3, 2, 2, 3, 3] as const)[mode]!;
+}
 
 const BRANCHES = new Set([0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xf0]);
 

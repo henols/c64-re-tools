@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { Refusal } from "../errors.ts";
-import { COVERAGE } from "../c64.ts";
+import { COVERAGE } from "../cpu/coverage.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
 import { coverageRuns, listSpaces } from "./read.ts";
 import { addCoverage, analyzedBytes, programCoverage, programImage, setImage, type ImageRequest } from "./program.ts";

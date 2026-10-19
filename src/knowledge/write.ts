@@ -4,7 +4,8 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
-import { instructionLength, SPACE_PATTERN } from "../c64.ts";
+import { SPACE_PATTERN } from "../c64.ts";
+import { instructionLength } from "../cpu/mos6502.ts";
 import { type AddressRange, formatAddress, SYMBOL_NAME } from "../address.ts";
 import { isoCet } from "../time.ts";
 import { CONFLICT_RULES, conflicts, conflictTable, type Conflict, type ConflictRow } from "./conflicts.ts";

@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
-import { COVERAGE } from "../c64.ts";
+import { COVERAGE } from "../cpu/coverage.ts";
 import { type AddressRange, formatAddress } from "../address.ts";
 
 import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";

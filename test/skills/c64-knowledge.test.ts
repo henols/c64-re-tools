@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE } from "../../src/c64.ts";
+import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 import { listing, type ListingSource } from "../../skills/c64-knowledge/scripts/lib/listing.ts";
 

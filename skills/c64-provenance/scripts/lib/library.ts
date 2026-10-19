@@ -10,7 +10,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
 import { writeRefusal, type Written } from "#src/host-client/transfer.ts";
-import { instructionLength } from "#src/c64.ts";
+import { instructionLength } from "#src/cpu/mos6502.ts";
 import { formatAddress } from "#src/address.ts";
 import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";

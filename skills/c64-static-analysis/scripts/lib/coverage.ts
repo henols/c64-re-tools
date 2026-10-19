@@ -4,7 +4,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { COVERAGE } from "#src/c64.ts";
+import { COVERAGE } from "#src/cpu/coverage.ts";
 import { coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges } from "#src/cpu/coverage.ts";
 
 export { coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges };

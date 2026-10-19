@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 
-import { COVERAGE, executedRamCode, EXECUTE, READ, WRITE, type CodeRange } from "../../c64.ts";
+import { COVERAGE, executedRamCode, EXECUTE, READ, WRITE, type CodeRange } from "../../cpu/coverage.ts";
 import { formatAddress } from "../../address.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";

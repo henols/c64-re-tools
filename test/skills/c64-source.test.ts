@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE, instructionLength } from "../../src/c64.ts";
+import { COVERAGE } from "../../src/cpu/coverage.ts";
+import { instructionLength } from "../../src/cpu/mos6502.ts";
 import { assemble } from "../../src/native/acme.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";

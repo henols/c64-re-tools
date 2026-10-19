@@ -2,7 +2,7 @@
 // the addressing mode, the operand in 6502 syntax, the flow target and,
 // with a coverage file, whether the instruction ran.
 
-import { COVERAGE } from "#src/c64.ts";
+import { COVERAGE } from "#src/cpu/coverage.ts";
 import { formatAddress } from "#src/address.ts";
 import { OPCODES, type Mode as OpcodeMode } from "#src/opcodes.ts";
 import type { GhidraInstruction } from "#src/native/types.ts";

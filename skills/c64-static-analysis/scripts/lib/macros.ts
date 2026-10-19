@@ -8,7 +8,7 @@
 // known to be correct. A search for any repeated sequence was weighed and not
 // chosen: it gives many candidates without a name.
 
-import { instructionLength } from "#src/c64.ts";
+import { instructionLength } from "#src/cpu/mos6502.ts";
 import { formatAddress, formatByte } from "#src/address.ts";
 import type { ImageByte } from "./coverage.ts";
 

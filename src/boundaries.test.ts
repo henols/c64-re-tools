@@ -43,7 +43,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   // The platform memory map: names and meanings of C64 addresses.
   platform: ["c64", "cpu"],
   // The CPU of a machine for the analysis: instruction lengths, flow and text (6502, Z80), and the coverage flows.
-  cpu: ["c64", "opcodes"],
+  cpu: ["opcodes"],
   // A machine: its CPU and its Ghidra language.
   machine: ["cpu"],
   // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images.
@@ -64,11 +64,11 @@ const ALLOWED: Record<string, readonly string[]> = {
   "c64-keys": [],
   // The modules of a VICE snapshot file, and the changes that press keys in it.
   vsf: ["media"],
-  "host-client": ["protocol", "c64", "c64-keys", "project", "trace", "package"],
-  mcp: ["host-client", "protocol", "c64", "c64-keys", "trace", "package"],
-  host: ["native", "protocol", "c64", "c64-keys", "graphics", "opcodes", "trace", "package", "media", "vsf"],
+  "host-client": ["protocol", "c64", "c64-keys", "cpu", "project", "trace", "package"],
+  mcp: ["host-client", "protocol", "c64", "c64-keys", "cpu", "trace", "package"],
+  host: ["native", "protocol", "c64", "c64-keys", "cpu", "graphics", "opcodes", "trace", "package", "media", "vsf"],
   // opcodes: one rule for a name that ACME can take as a label.
-  knowledge: ["c64", "project", "time", "opcodes"],
+  knowledge: ["c64", "cpu", "project", "time", "opcodes"],
   // The call contract of the skill scripts: the command line, the values, the envelope.
   script: ["protocol", "project", "trace", "c64"],
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.

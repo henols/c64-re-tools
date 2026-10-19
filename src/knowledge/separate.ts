@@ -6,7 +6,8 @@
 // or executes outside the image. Evidence only: nothing here decides what is
 // original.
 
-import { COVERAGE, executedRamCode, instructionLength } from "../c64.ts";
+import { COVERAGE, executedRamCode } from "../cpu/coverage.ts";
+import { instructionLength } from "../cpu/mos6502.ts";
 import { type AddressRange } from "../address.ts";
 
 export type Access = "executed" | "read" | "written" | "read-written" | "untouched";

@@ -3,7 +3,8 @@
 // from current knowledge and the coverage of the knowledge, and imports the
 // structural findings into .c64-re-tools/knowledge/.
 
-import { COVERAGE, prgRange } from "#src/c64.ts";
+import { prgRange } from "#src/c64.ts";
+import { COVERAGE } from "#src/cpu/coverage.ts";
 import { formatAddress } from "#src/address.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";

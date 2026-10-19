@@ -4,7 +4,7 @@
 // compare the rebuild with it; diff shows what changed between two states;
 // checklist gives the Markdown list for a human tester.
 
-import { COVERAGE } from "#src/c64.ts";
+import { COVERAGE } from "#src/cpu/coverage.ts";
 import { formatAddress } from "#src/address.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";

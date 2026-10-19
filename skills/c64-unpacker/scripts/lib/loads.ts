@@ -6,7 +6,7 @@
 // snapshot file, which a run can start from. No tool guesses where a load
 // ends: the steps decide.
 
-import { COVERAGE } from "#src/c64.ts";
+import { COVERAGE } from "#src/cpu/coverage.ts";
 import { type AddressRange, formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";

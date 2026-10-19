@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE } from "../../src/c64.ts";
+import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { findBasic, findCopies, findFills, findLeftovers, findText } from "../../skills/c64-provenance/scripts/lib/leftovers.ts";
 import { separate } from "../../src/knowledge/separate.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";

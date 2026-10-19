@@ -1,7 +1,8 @@
 // Local evidence of packing for the c64-unpacker script: where BASIC hands
 // over and how compressed the bytes look. It never names a packer.
 
-import { basicLineText, findHandoffs, instructionLength, parseTokenized, prgRange } from "#src/c64.ts";
+import { basicLineText, findHandoffs, parseTokenized, prgRange } from "#src/c64.ts";
+import { instructionLength } from "#src/cpu/mos6502.ts";
 import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 

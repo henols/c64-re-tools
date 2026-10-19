@@ -3,7 +3,7 @@
 
 import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
 import { type Comparison, type Condition, type BacktraceFrame, type HistoryEntry, type Instruction, type MemmapRange, type ProfileEntry, type JoystickState, type MemoryView, type RegisterValues, type Registers, type Space } from "../../protocol/vice.ts";
-import { COVERAGE } from "../../c64.ts";
+import { COVERAGE } from "../../cpu/coverage.ts";
 import { formatAddress, formatByte } from "../../address.ts";
 import type { IndexedFrame } from "../../graphics.ts";
 import { decodeDisplay, decodePalette, visibleFrame } from "./screen.ts";

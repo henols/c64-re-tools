@@ -3,7 +3,7 @@
 // the bytes from coverage files, and the references in and out. Nothing here
 // reads files: knowledge.ts gives the lookups.
 
-import { COVERAGE } from "#src/c64.ts";
+import { COVERAGE } from "#src/cpu/coverage.ts";
 import { formatAddress, formatByte } from "#src/address.ts";
 import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 

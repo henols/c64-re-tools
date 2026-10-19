@@ -13,7 +13,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { COVERAGE } from "../../src/c64.ts";
+import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { coverageSeedKinds } from "../../src/cpu/coverage.ts";
 import { Z80 } from "../../src/cpu/z80.ts";
 import { ZX48 } from "../../src/machine.ts";

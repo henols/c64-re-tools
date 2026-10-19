@@ -12,7 +12,7 @@ import { loadText, newRevisionId, REVISION_ID, REVISIONS_FILE, revisionsText, TA
 import { importFindings } from "./import.ts";
 import { applyBatch, renameSymbol, setRelease, setStartScreen, setSwitch, unclassifyRegion } from "./write.ts";
 import { addCoverage, setImage } from "./program.ts";
-import { COVERAGE } from "../c64.ts";
+import { COVERAGE } from "../cpu/coverage.ts";
 
 const roots: string[] = [];
 after(() => {

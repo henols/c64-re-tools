@@ -4,7 +4,8 @@
 // Watchpoints and range breakpoints stop the run at an access; the coverage
 // map then tells which range and which access it was.
 
-import { COVERAGE, instructionLength } from "#src/c64.ts";
+import { COVERAGE } from "#src/cpu/coverage.ts";
+import { instructionLength } from "#src/cpu/mos6502.ts";
 import { type AddressRange, formatAddress } from "#src/address.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";

@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { instructionLength } from "../../c64.ts";
+import { instructionLength } from "../../cpu/mos6502.ts";
 import { formatAddress } from "../../address.ts";
 import { matrixRows } from "../../c64-keys.ts";
 import { encodePng, type IndexedFrame } from "../../graphics.ts";

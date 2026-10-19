@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { COVERAGE } from "../../c64.ts";
+import { COVERAGE } from "../../cpu/coverage.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import {
   conditionExpression,

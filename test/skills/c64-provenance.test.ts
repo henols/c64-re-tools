@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE } from "../../src/c64.ts";
+import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { formatAddress } from "../../src/address.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
 import { separate } from "../../src/knowledge/separate.ts";

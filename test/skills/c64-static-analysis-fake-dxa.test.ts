@@ -14,7 +14,7 @@ import { after, test } from "node:test";
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { classifyRegion } from "../../src/knowledge/write.ts";
 import { addCoverage, setImage } from "../../src/knowledge/program.ts";
-import { COVERAGE } from "../../src/c64.ts";
+import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 

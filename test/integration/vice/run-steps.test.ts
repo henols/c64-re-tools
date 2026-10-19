@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE } from "../../../src/c64.ts";
+import { COVERAGE } from "../../../src/cpu/coverage.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";

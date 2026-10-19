@@ -6,7 +6,7 @@
 // writes the memory into the project. "loads" captures each part of a
 // multi-load program. No native unpack tool is used.
 
-import { COVERAGE, EXECUTE, READ, WRITE } from "#src/c64.ts";
+import { COVERAGE, EXECUTE, READ, WRITE } from "#src/cpu/coverage.ts";
 import { type AddressRange, formatAddress } from "#src/address.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";

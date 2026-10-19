@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { instructionLength } from "../c64.ts";
+import { instructionLength } from "./mos6502.ts";
 import { instructionText } from "../opcodes.ts";
 import { MOS6502 } from "./mos6502.ts";
 
