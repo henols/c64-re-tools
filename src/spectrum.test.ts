@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { Refusal } from "./errors.ts";
-import { cpuRam, readSna, readTap, readTzx, readZ80, writeSna, writeZ80, type SpectrumSnapshot } from "./spectrum.ts";
+import { cpuRam, findSinclairHandoffs, parseSinclairBasic, readSna, readTap, readTzx, readZ80, sinclairLineText, sinclairNumber, writeSna, writeZ80, type SpectrumSnapshot } from "./spectrum.ts";
 
 function snapshot(model: "48k" | "128k"): SpectrumSnapshot {
   const banks = Array.from({ length: 8 }, (_, bank) => Uint8Array.from({ length: 0x4000 }, (_, offset) => (offset * 7 + bank * 31) & 0xff));
@@ -101,4 +101,70 @@ test("a TZX file gives its data blocks, turbo and pure data too, and the text of
   assert.deepEqual([...blocks[2]!.bytes!], turbo);
   assert.throws(() => readTzx(tzx.subarray(0, tzx.length - 2)), Refusal);
   assert.throws(() => readTzx(Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])), Refusal);
+});
+
+/** A program line as the ROM keeps it: number (high byte first), length, bytes, ENTER. */
+function basicLine(number: number, bytes: number[]): number[] {
+  const size = bytes.length + 1;
+  return [number >> 8, number & 0xff, size & 0xff, size >> 8, ...bytes, 0x0d];
+}
+const text = (value: string) => [...value].map((char) => char.charCodeAt(0));
+/** A number in the text: its digits and the hidden 5-byte small integer form of `hidden`. */
+const literal = (digits: string, hidden = Number(digits)) => [...text(digits), 0x0e, 0, 0, hidden & 0xff, hidden >> 8, 0];
+
+test("a Sinclair BASIC program lists with its keywords, and the handoffs come from the hidden numbers", () => {
+  const program = Uint8Array.from([
+    // 10 CLEAR 24999: LOAD "" CODE : RANDOMIZE USR 25000
+    ...basicLine(10, [0xfd, ...literal("24999"), 0x3a, 0xef, 0x22, 0x22, 0xaf, 0x3a, 0xf9, 0xc0, ...literal("25000")]),
+    // 20 RANDOMIZE USR 0, with 32768 hidden behind the 0
+    ...basicLine(20, [0xf9, 0xc0, ...literal("0", 32768)]),
+    // 30 RANDOMIZE USR VAL "23760": LOAD "" SCREEN$
+    ...basicLine(30, [0xf9, 0xc0, 0xb0, ...text('"23760"'), 0x3a, 0xef, 0x22, 0x22, 0xaa]),
+    // 40 PRINT {INK 2}{AT 3,4}"£{UDG A}": REM, then machine code: $0e and 5 bytes, and $c9
+    ...basicLine(40, [0xf5, 0x10, 2, 0x16, 3, 4, 0x22, 0x60, 0x90, 0x22, 0x3a, 0xea, 0x0e, 1, 2, 3, 4, 5, 0xc9]),
+    // the variables: A = 1
+    0x61, 0, 0, 1, 0, 0, 0x80,
+  ]);
+  const parsed = parseSinclairBasic(program);
+  assert.ok("lines" in parsed, JSON.stringify(parsed));
+  assert.equal(parsed.variablesAt, program.length - 7);
+  assert.deepEqual(
+    parsed.lines.map((line) => sinclairLineText(line)),
+    [
+      '10 CLEAR 24999: LOAD "" CODE : RANDOMIZE USR 25000',
+      "20 RANDOMIZE USR 0{=32768}",
+      '30 RANDOMIZE USR VAL "23760": LOAD "" SCREEN$',
+      // LIST prints tokens in REM too: $c9 is <>.
+      '40 PRINT {INK 2}{AT 3,4}"£{UDG A}": REM <>',
+    ],
+  );
+  assert.deepEqual(findSinclairHandoffs(parsed.lines), [
+    { kind: "clear", line: 10, address: 24999 },
+    { kind: "load-code", line: 10 },
+    { kind: "usr", line: 10, address: 25000 },
+    { kind: "usr", line: 20, address: 32768 },
+    { kind: "usr", line: 30, address: 23760 },
+    { kind: "load-screen", line: 30 },
+  ]);
+});
+
+test("the tokens $a3 and $a4 are SPECTRUM and PLAY on the 128K and the graphics T and U on the 48K", () => {
+  const parsed = parseSinclairBasic(Uint8Array.from(basicLine(1, [0xa4, 0x22, 0x22])));
+  assert.ok("lines" in parsed);
+  assert.equal(sinclairLineText(parsed.lines[0]!, "128k"), '1 PLAY ""');
+  assert.equal(sinclairLineText(parsed.lines[0]!, "48k"), '1 {UDG U}""');
+});
+
+test("the 5-byte numbers: the small integer form and the floating point form", () => {
+  assert.equal(sinclairNumber(Uint8Array.of(0, 0, 0x39, 0x30, 0)), 12345);
+  assert.equal(sinclairNumber(Uint8Array.of(0, 0xff, 0xff, 0xff, 0)), -1);
+  assert.equal(sinclairNumber(Uint8Array.of(0x80, 0, 0, 0, 0)), 0.5);
+  assert.equal(sinclairNumber(Uint8Array.of(0x81, 0x80, 0, 0, 0)), -1);
+  assert.equal(sinclairNumber(Uint8Array.of(0x91, 0, 0, 0, 0)), 65536);
+});
+
+test("bytes that are no program are refused with the reason", () => {
+  assert.match((parseSinclairBasic(Uint8Array.of(0x27, 0x10, 2, 0, 0xf5, 0x0d)) as { reason: string }).reason, /Line number 10000 is above 9999/);
+  assert.match((parseSinclairBasic(Uint8Array.of(0, 10, 9, 0, 0xf5, 0x0d)) as { reason: string }).reason, /Line 10 has 9 bytes/);
+  assert.match((parseSinclairBasic(Uint8Array.of(0x61, 0, 0)) as { reason: string }).reason, /no BASIC line/);
 });

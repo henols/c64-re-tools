@@ -100,7 +100,7 @@ import {
   type OperandImage,
   type WriteContext,
 } from "#src/knowledge/write.ts";
-import { platformNames } from "#src/platform.ts";
+import { platformNames, platformNamesOfSpace } from "#src/platform.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
@@ -271,13 +271,14 @@ function reasonsOf(db: DatabaseSync | undefined, rows: SuppressionRow[]): Map<st
   return reasons;
 }
 
-/** The lookups of a listing: the program and the coverage in the knowledge, the knowledge of the space and the platform names of the C64. */
+/** The lookups of a listing: the program and the coverage in the knowledge, the knowledge of the space and the platform names of its machine. */
 function listingSource(db: DatabaseSync | undefined, space: string): ListingSource {
   const image = requireProgram(db, space);
   const coverage = programCoverage(db, space)?.map;
   const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
-  const platform = new Map(space === C64.spaces.main ? platformNames().map((entry) => [entry.address, entry.name]) : []);
-  const entries = space === C64.spaces.main ? platformNames().filter((entry) => entry.end > entry.address) : [];
+  const names = platformNamesOfSpace(space);
+  const platform = new Map(names.map((entry) => [entry.address, entry.name]));
+  const entries = names.filter((entry) => entry.end > entry.address);
   return {
     byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined),
     entryStart: (at) => (inside(at) ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),

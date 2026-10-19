@@ -468,3 +468,213 @@ export function readTzx(bytes: Uint8Array): TapeBlock[] {
   if (at !== bytes.length) throw new Refusal("invalid-input", "The last TZX block runs past the end of the file.");
   return blocks;
 }
+
+// ---------------------------------------------------------------------------
+// Sinclair BASIC
+
+/** One line of a Sinclair BASIC program: its number and its bytes, without the ENTER at the end. */
+export interface SinclairLine {
+  number: number;
+  bytes: Uint8Array;
+}
+
+/** The lines of a program, and the offset where its variables start (the end of the lines). */
+export type SinclairProgram = { lines: SinclairLine[]; variablesAt: number } | { reason: string };
+
+const ENTER = 0x0d;
+const NUMBER_MARK = 0x0e;
+const MAX_SINCLAIR_LINE = 9999;
+
+/**
+ * Splits the bytes of a program as the ROM keeps them: each line is its number
+ * (2 bytes, high byte first), the length of the rest (2 bytes, low byte first)
+ * and the rest, which ends with ENTER. The lines end at `length` (the program
+ * length of a tape header, without the variables) or at the first byte that
+ * starts no line: a variable name has bit 6 set, and a line number never has.
+ */
+export function parseSinclairBasic(bytes: Uint8Array, length = bytes.length): SinclairProgram {
+  const end = Math.min(length, bytes.length);
+  const lines: SinclairLine[] = [];
+  let at = 0;
+  while (at < end && bytes[at]! < 0x40) {
+    if (at + 4 > end) return { reason: `The program ends inside the start of a line at offset ${at}.` };
+    const number = (bytes[at]! << 8) | bytes[at + 1]!;
+    const size = bytes[at + 2]! | (bytes[at + 3]! << 8);
+    if (number > MAX_SINCLAIR_LINE) return { reason: `Line number ${number} is above ${MAX_SINCLAIR_LINE}, so the bytes are no BASIC program.` };
+    if (size === 0 || at + 4 + size > end) return { reason: `Line ${number} has ${size} bytes, and the program ends before them.` };
+    if (bytes[at + 4 + size - 1] !== ENTER) return { reason: `Line ${number} does not end with ENTER.` };
+    lines.push({ number, bytes: bytes.subarray(at + 4, at + 4 + size - 1) });
+    at += 4 + size;
+  }
+  if (lines.length === 0) return { reason: "The bytes hold no BASIC line." };
+  return { lines, variablesAt: at };
+}
+
+/** The keywords of the tokens $a3 to $ff; $a3 and $a4 are keywords only on the 128K (on the 48K they are the graphics T and U). */
+const SINCLAIR_KEYWORDS = [
+  "SPECTRUM", "PLAY", "RND", "INKEY$", "PI", "FN", "POINT", "SCREEN$", "ATTR", "AT", "TAB", "VAL$", "CODE",
+  "VAL", "LEN", "SIN", "COS", "TAN", "ASN", "ACS", "ATN", "LN", "EXP", "INT", "SQR", "SGN", "ABS", "PEEK", "IN",
+  "USR", "STR$", "CHR$", "NOT", "BIN", "OR", "AND", "<=", ">=", "<>", "LINE", "THEN", "TO", "STEP", "DEF FN", "CAT",
+  "FORMAT", "MOVE", "ERASE", "OPEN #", "CLOSE #", "MERGE", "VERIFY", "BEEP", "CIRCLE", "INK", "PAPER", "FLASH", "BRIGHT", "INVERSE", "OVER", "OUT",
+  "LPRINT", "LLIST", "STOP", "READ", "DATA", "RESTORE", "NEW", "BORDER", "CONTINUE", "DIM", "REM", "FOR", "GO TO", "GO SUB", "INPUT", "LOAD",
+  "LIST", "LET", "PAUSE", "NEXT", "POKE", "PRINT", "PLOT", "RUN", "SAVE", "RANDOMIZE", "IF", "CLS", "DRAW", "CLEAR", "RETURN", "COPY",
+] as const;
+
+const TOKEN_BIN = 0xc4;
+const TOKEN_REM = 0xea;
+const TOKEN_USR = 0xc0;
+const TOKEN_VAL = 0xb0;
+const TOKEN_CLEAR = 0xfd;
+const TOKEN_LOAD = 0xef;
+const TOKEN_CODE = 0xaf;
+const TOKEN_SCREEN = 0xaa;
+
+/** The colour and position codes that take parameters: their name and the number of parameter bytes. */
+const CONTROL_CODES: Record<number, [name: string, parameters: number]> = {
+  0x10: ["INK", 1], 0x11: ["PAPER", 1], 0x12: ["FLASH", 1], 0x13: ["BRIGHT", 1], 0x14: ["INVERSE", 1], 0x15: ["OVER", 1], 0x16: ["AT", 2], 0x17: ["TAB", 2],
+};
+
+/**
+ * The value of a number in the 5-byte form of the ROM: the small integer form
+ * (0, sign, low byte, high byte, 0) or a floating point number (exponent with a
+ * bias of 128, then a 32-bit mantissa whose top bit is the sign).
+ */
+export function sinclairNumber(bytes: Uint8Array): number {
+  if (bytes[0] === 0) {
+    const value = bytes[2]! | (bytes[3]! << 8);
+    return bytes[1] === 0xff ? value - 0x10000 : value;
+  }
+  const mantissa = (((bytes[1]! | 0x80) << 24) >>> 0) + bytes[2]! * 0x10000 + bytes[3]! * 0x100 + bytes[4]!;
+  const value = (mantissa / 2 ** 32) * 2 ** (bytes[0]! - 128);
+  return bytes[1]! & 0x80 ? -value : value;
+}
+
+function sameNumber(text: string, bin: boolean, value: number): boolean {
+  const shown = bin ? Number.parseInt(text || "0", 2) : Number(text);
+  return Number.isFinite(shown) && Math.abs(shown - value) <= Math.abs(value) * 1e-9;
+}
+
+/**
+ * One line as text, for evidence: keywords for tokens, as LIST prints them
+ * also in strings and REM; {INK 2}, {AT 3,4} and the like for colour and
+ * position codes; {UDG A} for a user graphic; {$xx} for other bytes that are no
+ * character. The 5-byte form after a number in the text is hidden, as LIST
+ * hides it; when it holds another value than the text, {=value} after the
+ * text shows it, because then that value is what the program uses.
+ */
+export function sinclairLineText(line: SinclairLine, model: SpectrumModel = "48k"): string {
+  const { bytes } = line;
+  let text = `${line.number} `;
+  let digits = "";
+  let bin = false;
+  let quoted = false;
+  let rem = false;
+  for (let at = 0; at < bytes.length; at++) {
+    const byte = bytes[at]!;
+    if (byte === NUMBER_MARK && at + 5 < bytes.length + 1) {
+      const value = sinclairNumber(bytes.subarray(at + 1, at + 6));
+      if (!quoted && !rem && !sameNumber(digits, bin, value)) text += `{=${value}}`;
+      digits = "";
+      bin = false;
+      at += 5;
+      continue;
+    }
+    const control = CONTROL_CODES[byte];
+    if (control !== undefined) {
+      const [name, count] = control;
+      text += `{${name} ${[...bytes.subarray(at + 1, at + 1 + count)].join(",")}}`;
+      at += count;
+      continue;
+    }
+    if (byte >= 0xa3 && (byte >= 0xa5 || model === "128k")) {
+      const keyword = SINCLAIR_KEYWORDS[byte - 0xa3]!;
+      text += `${text.endsWith(" ") ? "" : " "}${keyword} `;
+      if (byte === TOKEN_REM) rem = true;
+      bin = byte === TOKEN_BIN;
+      digits = "";
+      continue;
+    }
+    if (byte === 0x22) quoted = !quoted;
+    if (byte >= 0x90 && byte <= 0xa4) text += `{UDG ${String.fromCharCode(0x41 + byte - 0x90)}}`;
+    else if (byte === 0x60) text += "£";
+    else if (byte === 0x7f) text += "©";
+    else if (byte === 0x5e) text += "↑";
+    else if (byte === 0x06) text += ",";
+    else if (byte >= 0x20 && byte < 0x80) text += String.fromCharCode(byte);
+    else text += `{$${byte.toString(16).padStart(2, "0")}}`;
+    if ((byte >= 0x30 && byte <= 0x39) || byte === 0x2e || byte === 0x45 || byte === 0x65) digits += String.fromCharCode(byte);
+    else if (byte !== 0x20) {
+      digits = "";
+      if (!(bin && (byte === 0x30 || byte === 0x31))) bin = false;
+    }
+  }
+  return text.replace(/ +$/, "");
+}
+
+/**
+ * What a program hands over to machine code or memory: USR with a value that
+ * the text gives (a number, or VAL with a string of digits), USR with another
+ * argument, CLEAR with a value (the top of BASIC), and LOAD "" CODE or SCREEN$
+ * (with the address when the text gives one). Not in strings or REM.
+ */
+export type SinclairHandoff =
+  | { kind: "usr"; line: number; address: number }
+  | { kind: "usr"; line: number; computed: true }
+  | { kind: "clear"; line: number; address: number }
+  | { kind: "load-code"; line: number; address?: number }
+  | { kind: "load-screen"; line: number };
+
+/** The value of the argument at `at`: a number with its 5-byte form, VAL "digits", in brackets or not. */
+function constantArgument(bytes: Uint8Array, at: number): number | undefined {
+  while (bytes[at] === 0x20 || bytes[at] === 0x28) at++;
+  if (bytes[at] === TOKEN_VAL) {
+    at++;
+    while (bytes[at] === 0x20) at++;
+    if (bytes[at] !== 0x22) return undefined;
+    const close = bytes.indexOf(0x22, at + 1);
+    if (close < 0) return undefined;
+    const value = Number(String.fromCharCode(...bytes.subarray(at + 1, close)).trim());
+    return Number.isFinite(value) ? value : undefined;
+  }
+  const start = at;
+  while (at < bytes.length && ((bytes[at]! >= 0x30 && bytes[at]! <= 0x39) || bytes[at] === 0x2e)) at++;
+  if (at === start || bytes[at] !== NUMBER_MARK || at + 6 > bytes.length) return undefined;
+  return sinclairNumber(bytes.subarray(at + 1, at + 6));
+}
+
+export function findSinclairHandoffs(lines: SinclairLine[]): SinclairHandoff[] {
+  const handoffs: SinclairHandoff[] = [];
+  const address = (value: number | undefined) => (value !== undefined && Math.trunc(value) >= 0 && Math.trunc(value) <= 0xffff ? Math.trunc(value) : undefined);
+  for (const { number, bytes } of lines) {
+    let quoted = false;
+    for (let at = 0; at < bytes.length; at++) {
+      const byte = bytes[at]!;
+      if (byte === NUMBER_MARK) {
+        at += 5;
+        continue;
+      }
+      if (byte === 0x22) quoted = !quoted;
+      if (quoted) continue;
+      if (byte === TOKEN_REM) break;
+      if (byte === TOKEN_USR) {
+        const value = address(constantArgument(bytes, at + 1));
+        handoffs.push(value === undefined ? { kind: "usr", line: number, computed: true } : { kind: "usr", line: number, address: value });
+      } else if (byte === TOKEN_CLEAR) {
+        const value = address(constantArgument(bytes, at + 1));
+        if (value !== undefined) handoffs.push({ kind: "clear", line: number, address: value });
+      } else if (byte === TOKEN_LOAD) {
+        // LOAD "name" CODE [address[,length]] or LOAD "name" SCREEN$, up to the end of the statement.
+        let end = at + 1;
+        while (end < bytes.length && bytes[end] !== 0x3a) end += bytes[end] === NUMBER_MARK ? 6 : 1;
+        const statement = bytes.subarray(at + 1, end);
+        const code = statement.indexOf(TOKEN_CODE);
+        if (statement.includes(TOKEN_SCREEN)) handoffs.push({ kind: "load-screen", line: number });
+        else if (code >= 0) {
+          const value = address(constantArgument(statement, code + 1));
+          handoffs.push(value === undefined ? { kind: "load-code", line: number } : { kind: "load-code", line: number, address: value });
+        }
+      }
+    }
+  }
+  return handoffs;
+}

@@ -19,7 +19,7 @@ function areaOf(path: string): string | undefined {
       return ["address", "assembler", "build-name", "c64-keys", "c64", "compare", "cpu", "errors", "graphics", "machine", "media", "opcodes", "package", "platform", "project", "script", "spectrum", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
-    return ["mcp", "host-client", "host", "knowledge", "cli", "assembler", "cpu", "native", "protocol"].includes(dir) ? dir : undefined;
+    return ["mcp", "host-client", "host", "knowledge", "cli", "assembler", "cpu", "native", "platform", "protocol"].includes(dir) ? dir : undefined;
   }
   if (parts[0] === "skills" && parts.length > 2) return `skill:${parts[1]}`;
   // The one-off conversion of an old knowledge.db is no part of the package edge.
@@ -40,8 +40,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   compare: ["c64"],
   // The ACME spelling of each 6510 opcode: retro-source and the listing of retro-knowledge decode with one table.
   opcodes: ["c64"],
-  // The platform memory map: names and meanings of C64 addresses.
-  platform: ["c64", "cpu"],
+  // The platform memory maps: names and meanings of the addresses of each machine.
+  platform: ["c64", "cpu", "machine"],
   // The CPU of a machine for the analysis: instruction lengths, flow and text (6502, Z80), and the coverage flows.
   cpu: ["opcodes"],
   // The assembler of a machine: the rules for patch code and macro bodies in its syntax.
@@ -82,7 +82,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   distribution: ["package", "machine"],
   convert: ["knowledge"],
 };
-const SKILL_ALLOWED = ["build-name", "c64-keys", "c64", "compare", "cpu", "graphics", "host-client", "knowledge", "machine", "media", "native", "opcodes", "package", "platform", "project", "script", "time", "vsf", "zip"];
+const SKILL_ALLOWED = ["build-name", "c64-keys", "c64", "compare", "cpu", "graphics", "host-client", "knowledge", "machine", "media", "native", "opcodes", "package", "platform", "project", "script", "spectrum", "time", "vsf", "zip"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

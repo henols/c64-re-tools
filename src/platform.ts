@@ -8,6 +8,8 @@ import { COVERAGE } from "./cpu/coverage.ts";
 import { type AddressRange, formatAddress } from "./address.ts";
 import { romOnlyRanges } from "./cpu/coverage.ts";
 import { Refusal } from "./errors.ts";
+import { C64, MACHINES } from "./machine.ts";
+import { spectrumPlatformNames } from "./platform/spectrum.ts";
 
 export interface Entry {
   start: number;
@@ -402,6 +404,17 @@ export function platformNamesFor(use: RomUse): ReturnType<typeof platformNames> 
     if (entry.address >= 0x0002 && entry.address <= 0x03ff) return use.basic || use.kernal;
     return true;
   });
+}
+
+/**
+ * The platform names of a space: the C64 names in the main space of the C64
+ * (only those of the ROMs in use, when `use` is given), the Spectrum names in
+ * the main space of the Spectrum, none in drive code and banks.
+ */
+export function platformNamesOfSpace(space: string, use?: RomUse): ReturnType<typeof platformNames> {
+  if (space === C64.spaces.main) return use === undefined ? platformNames() : platformNamesFor(use);
+  if (space === MACHINES.spectrum48.spaces.main) return spectrumPlatformNames();
+  return [];
 }
 
 /**
