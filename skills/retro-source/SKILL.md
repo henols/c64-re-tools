@@ -1,6 +1,6 @@
 ---
 name: retro-source
-description: Generates ACME source code for a C64 program from the project knowledge. It checks that the source assembles to the same bytes as the program. It can also write a loader that sets the entry state of an unpacked program. It can also export the program as the start of a new program. The export is a new project with one value for each switch and without unused code. Use it to make a rebuild of a program. Use it when the source must show new names, comments, regions, modules, macros or patches of the knowledge. Use it to start a new program from a rebuild. It does not change the project knowledge. It does not build or test the program.
+description: Generates source code from the project knowledge: ACME source for a C64 program, sjasmplus source for a ZX Spectrum program. It checks that the source assembles to the same bytes as the program. It can also write a loader that sets the entry state of an unpacked program. It can also export the program as the start of a new program. The export is a new project with one value for each switch and without unused code. Use it to make a rebuild of a program. Use it when the source must show new names, comments, regions, modules, macros or patches of the knowledge. Use it to start a new program from a rebuild. It does not change the project knowledge. It does not build or test the program.
 ---
 
 # Generate source
@@ -339,6 +339,20 @@ To make the packed loader for other switch values, do these steps:
 3. Pack the two files into `build/custom_trainer_packed.prg`. The start address is the copier address in the comment at the start of `loader.asm`. The memory configuration at the exit is `$34`.
 
 These steps do not work when a segment starts below $0400. They also do not work when a patch is between the free ranges of `loader.asm`. In these cases, use `generate --loader` for the base release.
+
+---
+
+## A ZX Spectrum program
+
+For a ZX Spectrum project, `generate` writes `main.asm` in the syntax of sjasmplus:
+
+- `ORG` for each segment, a label for each name, and `EQU` for each platform name that the program uses.
+- The instructions of the code regions of the project knowledge. Analyze the program first. Without code regions, the source holds only data, and `body.note` tells this.
+- A target of a jump, a branch or a call without a name gets a name of the source, for example `l_8015`.
+- `db` for the other bytes. A run of 16 or more equal bytes is one `ds` line.
+- Some Z80 instructions have two encodings, and sjasmplus writes only one of them. The script writes such an instruction as `db`, with the instruction as the comment. `body.asBytes` lists their addresses.
+
+The script assembles the source and compares each byte with the program of the project knowledge. `body.check.identical` is `true` when the source gives each byte again. `body.check.segments` gives the first difference of each segment. The source has no patches, switches, macros or loader. The script refuses `--loader`, and it refuses a project knowledge that has patches, switches or macro uses.
 
 ---
 
