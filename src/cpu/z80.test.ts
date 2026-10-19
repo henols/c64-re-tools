@@ -79,13 +79,13 @@ test("the Z80 decoder gives the length and text of each prefix group", () => {
 });
 
 test("the Z80 decoder gives the flow: jumps, branches, calls and returns", () => {
-  assert.deepEqual(decode([0xc3, 0x0b, 0x80]), { length: 3, fallsThrough: false, call: false, jump: 0x800b, text: "jp $800b" });
-  assert.deepEqual(decode([0x18, 0xfe]), { length: 2, fallsThrough: false, call: false, jump: 0x8000, text: "jr $8000" });
-  assert.deepEqual(decode([0x38, 0x03], 0x8010), { length: 2, fallsThrough: true, call: false, branch: 0x8015, text: "jr c,$8015" });
-  assert.deepEqual(decode([0x10, 0xfe]), { length: 2, fallsThrough: true, call: false, branch: 0x8000, text: "djnz $8000" });
-  assert.deepEqual(decode([0xca, 0x00, 0x90]), { length: 3, fallsThrough: true, call: false, branch: 0x9000, text: "jp z,$9000" });
-  assert.deepEqual(decode([0xcd, 0x30, 0x80]), { length: 3, fallsThrough: true, call: true, callTarget: 0x8030, text: "call $8030" });
-  assert.deepEqual(decode([0xcc, 0x30, 0x80]), { length: 3, fallsThrough: true, call: true, callTarget: 0x8030, text: "call z,$8030" });
+  assert.deepEqual(decode([0xc3, 0x0b, 0x80]), { length: 3, fallsThrough: false, call: false, jump: 0x800b, operand: { offset: 1, size: 2 }, text: "jp $800b" });
+  assert.deepEqual(decode([0x18, 0xfe]), { length: 2, fallsThrough: false, call: false, jump: 0x8000, operand: { offset: 1, size: 1, relative: true }, text: "jr $8000" });
+  assert.deepEqual(decode([0x38, 0x03], 0x8010), { length: 2, fallsThrough: true, call: false, branch: 0x8015, operand: { offset: 1, size: 1, relative: true }, text: "jr c,$8015" });
+  assert.deepEqual(decode([0x10, 0xfe]), { length: 2, fallsThrough: true, call: false, branch: 0x8000, operand: { offset: 1, size: 1, relative: true }, text: "djnz $8000" });
+  assert.deepEqual(decode([0xca, 0x00, 0x90]), { length: 3, fallsThrough: true, call: false, branch: 0x9000, operand: { offset: 1, size: 2 }, text: "jp z,$9000" });
+  assert.deepEqual(decode([0xcd, 0x30, 0x80]), { length: 3, fallsThrough: true, call: true, callTarget: 0x8030, operand: { offset: 1, size: 2 }, text: "call $8030" });
+  assert.deepEqual(decode([0xcc, 0x30, 0x80]), { length: 3, fallsThrough: true, call: true, callTarget: 0x8030, operand: { offset: 1, size: 2 }, text: "call z,$8030" });
   assert.deepEqual(decode([0xd7]), { length: 1, fallsThrough: true, call: true, callTarget: 0x10, text: "rst $10" });
   assert.equal(decode([0xc9])!.fallsThrough, false);
   assert.equal(decode([0xc8])!.fallsThrough, true);
@@ -95,7 +95,7 @@ test("the Z80 decoder gives the flow: jumps, branches, calls and returns", () =>
 });
 
 test("an operand outside the image keeps the length and drops the text and the targets", () => {
-  assert.deepEqual(decode([0xc3, 0x00]), { length: 3, fallsThrough: false, call: false });
+  assert.deepEqual(decode([0xc3, 0x00]), { length: 3, fallsThrough: false, call: false, operand: { offset: 1, size: 2 } });
   assert.equal(Z80.decode(() => undefined, 0), undefined);
 });
 
@@ -107,4 +107,22 @@ test("every opcode of every prefix decodes to 1 to 4 bytes with text", () => {
       assert.ok(instruction.text !== undefined && instruction.text !== "" && !instruction.text.includes("undefined"), `${prefix} ${opcode}: ${instruction.text}`);
     }
   }
+});
+
+test("the operand of an instruction is after its opcode, its DD or FD prefix and its displacement", () => {
+  const operand = (bytes: number[]) => decode(bytes)!.operand;
+  assert.deepEqual(operand([0x3e, 0x05]), { offset: 1, size: 1 });
+  assert.deepEqual(operand([0x21, 0x00, 0x90]), { offset: 1, size: 2 });
+  assert.deepEqual(operand([0x32, 0x00, 0x90]), { offset: 1, size: 2 });
+  assert.deepEqual(operand([0xdd, 0x21, 0x00, 0x90]), { offset: 2, size: 2 });
+  assert.deepEqual(operand([0xdd, 0x36, 0x02, 0x55]), { offset: 3, size: 1 });
+  assert.deepEqual(operand([0xed, 0x43, 0x00, 0x90]), { offset: 2, size: 2 });
+  assert.equal(operand([0x7e]), undefined);
+  assert.equal(operand([0xdd, 0x34, 0x01]), undefined, "a displacement alone is no operand value");
+  assert.equal(operand([0xcd, 0x30, 0x80]) !== undefined && operand([0xff]) === undefined, true, "RST has no operand byte");
+});
+
+test("Z80 mnemonics, registers and conditions are no labels", () => {
+  assert.ok(["ld", "jp", "hl", "ix", "a", "nz", "pe"].every((word) => Z80.reserved.has(word)));
+  assert.ok(!Z80.reserved.has("main") && !Z80.reserved.has("lda"));
 });

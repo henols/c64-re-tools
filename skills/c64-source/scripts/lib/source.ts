@@ -15,13 +15,15 @@
 // loads it.
 
 import { CONFIG_FILE, configValues } from "#src/build-name.ts";
+import { labelProblem } from "#src/cpu.ts";
+import { MOS6502 } from "#src/cpu/mos6502.ts";
 import { COVERAGE } from "#src/cpu/coverage.ts";
 import { type AddressRange, formatAddress, formatByte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/address.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
 import { type CommentPlacement, isAnalyzer, isGeneratedFile, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, SEGMENT_FOLDER, RELEASE_DEFINE, START_SCREEN_SWITCH, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
 import type { Area } from "#src/platform.ts";
-import { hasZeroPageForm, instructionWith, labelProblem, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type UseKind } from "#src/opcodes.ts";
+import { hasZeroPageForm, instructionWith, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type UseKind } from "#src/opcodes.ts";
 
 export interface SourceInput {
   /** The knowledge has a start screen: config.asm gets START_SCREEN. */
@@ -393,7 +395,7 @@ export function layout(input: SourceInput): Layout {
   const outside = new Set<number>();
   // A platform name that knowledge gives to another address, or that reads as an instruction, is not used.
   const knowledgeNames = new Set(input.symbols.map((symbol) => symbol.name));
-  const platform = new Map((input.platform ?? []).filter(({ name }) => !knowledgeNames.has(name) && labelProblem(name) === undefined).map(({ address, name }) => [address, name]));
+  const platform = new Map((input.platform ?? []).filter(({ name }) => !knowledgeNames.has(name) && labelProblem(name, MOS6502) === undefined).map(({ address, name }) => [address, name]));
   // An analyzer name (DXA's ld020) gives way to the platform name (EXTCOL); a user or LLM name wins.
   const symbols = new Map(input.symbols.filter((symbol) => !(isAnalyzer(symbol.origin) && platform.has(symbol.address))).map((symbol) => [symbol.address, symbol.name]));
   /** Addresses outside the image without a name of their own, inside a named platform entry of more bytes: the start of that entry. */
@@ -570,7 +572,7 @@ export function layout(input: SourceInput): Layout {
   for (const address of [...wanted, ...outside].sort((a, b) => a - b)) {
     const known = symbols.get(address);
     if (known !== undefined) {
-      const problem = labelProblem(known);
+      const problem = labelProblem(known, MOS6502);
       if (problem !== undefined) throw new WireFailure("invalid-input", `The symbol ${known} at ${formatAddress(address)}: ${problem} Rename the symbol in the project knowledge.`);
       names.set(address, known);
       if (inImage(address)) namedLabels++;

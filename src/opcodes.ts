@@ -45,17 +45,6 @@ export const MODE_LENGTH: Record<Mode, 1 | 2 | 3> = { imp: 1, imm: 2, zp: 2, zpx
 /** Every mnemonic in the table: a symbol with one of these names would read as an instruction. */
 export const MNEMONICS: ReadonlySet<string> = new Set(OPCODES.map((opcode) => opcode.mnemonic));
 
-/**
- * Why ACME cannot take a name as a label, or undefined when it can. A label
- * has label syntax (SYMBOL_NAME) and is no mnemonic in upper or lower case.
- * The one rule for a symbol of the knowledge and a label of c64-source.
- */
-export function labelProblem(name: string): string | undefined {
-  if (!SYMBOL_NAME.test(name)) return "A symbol name is a letter or underscore, then letters, digits or underscores (at most 64), with an optional leading dot.";
-  if (MNEMONICS.has(name.toLowerCase())) return `${name} is the name of a 6502 instruction, which ACME cannot read as a label. Give another name.`;
-  return undefined;
-}
-
 const ZERO_PAGE_OF: Partial<Record<Mode, Mode>> = { abs: "zp", abx: "zpx", aby: "zpy" };
 
 /** True when the mnemonic also has the zero-page form of an absolute mode: ACME would pick it for a small operand. */

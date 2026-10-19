@@ -7,7 +7,8 @@
 // original.
 
 import { COVERAGE, executedRamCode } from "../cpu/coverage.ts";
-import { instructionLength } from "../cpu/mos6502.ts";
+import type { Cpu } from "../cpu.ts";
+import { MOS6502 } from "../cpu/mos6502.ts";
 import { type AddressRange } from "../address.ts";
 
 export type Access = "executed" | "read" | "written" | "read-written" | "untouched";
@@ -25,6 +26,10 @@ export interface SeparationInput {
   references: Array<{ from: number; to: number; kind: string }>;
   /** More roots after the entry and the hardware vectors, for example code that a run executed. */
   roots?: Root[];
+  /** The CPU of the program: the 6502 when none is given. */
+  cpu?: Cpu;
+  /** The last address of the machine's system area, which the outside ranges leave out: pages 0-3 of the C64 when none is given. */
+  systemEnd?: number;
 }
 
 export interface EvidenceRange extends AddressRange {
@@ -44,7 +49,8 @@ export interface CodeRegionEvidence extends AddressRange {
 /** An address where the reachability starts, and why: the entry, a hardware vector in the image, or a root that the caller gives. */
 export interface Root {
   address: number;
-  from: "entry" | "NMI vector $fffa" | "RESET vector $fffc" | "IRQ vector $fffe" | "executed code" | "kept range" | "table entry";
+  /** The entry, a vector of the CPU (for example "IRQ vector $fffe"), "executed code", "kept range" or "table entry". */
+  from: string;
 }
 
 export interface Separation {
@@ -63,21 +69,14 @@ export interface Separation {
 
 const SYSTEM_PAGES_END = 0x03ff;
 
-/** The hardware vectors of the 6510: the CPU reads them from $fffa-$ffff, the RAM when the KERNAL is banked out. */
-const HARDWARE_VECTORS = [
-  { at: 0xfffa, from: "NMI vector $fffa" },
-  { at: 0xfffc, from: "RESET vector $fffc" },
-  { at: 0xfffe, from: "IRQ vector $fffe" },
-] as const;
-
 /**
  * The roots of the reachability: the entry, and each hardware vector whose
  * two bytes are in the image. An interrupt handler runs by its vector, and
  * no call or jump reference reaches it.
  */
-export function reachabilityRoots(segments: readonly AddressRange[], memory: Uint8Array, entry?: number): Root[] {
+export function reachabilityRoots(segments: readonly AddressRange[], memory: Uint8Array, entry?: number, cpu: Cpu = MOS6502): Root[] {
   const inImage = (address: number) => segments.some((segment) => address >= segment.start && address <= segment.end);
-  const vectors = HARDWARE_VECTORS.filter((vector) => inImage(vector.at) && inImage(vector.at + 1)).map((vector): Root => ({ address: memory[vector.at]! | (memory[vector.at + 1]! << 8), from: vector.from }));
+  const vectors = cpu.vectors.filter((vector) => inImage(vector.at) && inImage(vector.at + 1)).map((vector): Root => ({ address: memory[vector.at]! | (memory[vector.at + 1]! << 8), from: vector.from }));
   return [...(entry === undefined ? [] : [{ address: entry, from: "entry" as const }]), ...vectors];
 }
 
@@ -89,14 +88,21 @@ export const NO_FALL_THROUGH = new Set([0x00, 0x4c, 0x40, 0x60, 0x6c, 0x02, 0x12
  * its last instruction does not run on (RTS, RTI, JMP, BRK, JAM). The
  * instructions follow one another from the start of the region.
  */
-export function fallThrough(region: AddressRange, memory: Uint8Array): number | undefined {
+export function fallThrough(region: AddressRange, memory: Uint8Array, cpu: Cpu = MOS6502): number | undefined {
+  const byteAt = (address: number) => memory[address];
   let at = region.start;
   let last = at;
   while (at <= region.end) {
     last = at;
-    at += instructionLength(memory[at]!);
+    at += cpu.decode(byteAt, at)?.length ?? 1;
   }
-  return NO_FALL_THROUGH.has(memory[last]!) || at > 0xffff ? undefined : at;
+  return stops(cpu, byteAt, last) || at > 0xffff ? undefined : at;
+}
+
+/** True when the CPU does not run on after the instruction at `address`: a jump, a return, a stop. */
+function stops(cpu: Cpu, byteAt: (address: number) => number | undefined, address: number): boolean {
+  const instruction = cpu.decode(byteAt, address);
+  return instruction === undefined || !instruction.fallsThrough || instruction.halts === true;
 }
 
 /** The most instructions outside the code regions that the run on from a region goes through, for example an instruction in a dual-use region. */
@@ -116,7 +122,8 @@ function merge(addresses: number[], gap = 0, joins: (from: number, to: number) =
 export function separate(input: SeparationInput): Separation {
   const inImage = (address: number) => input.segments.some((segment) => address >= segment.start && address <= segment.end);
   const executed = new Uint8Array(0x10000);
-  if (input.coverage !== undefined) for (const range of executedRamCode(input.coverage, 0, input.memory)) executed.fill(1, range.start, range.end + 1);
+  const cpu = input.cpu ?? MOS6502;
+  if (input.coverage !== undefined) for (const range of executedRamCode(input.coverage, 0, input.memory, cpu)) executed.fill(1, range.start, range.end + 1);
   const accessAt = (address: number): Access | undefined => {
     if (input.coverage === undefined) return undefined;
     if (executed[address] === 1) return "executed";
@@ -152,20 +159,20 @@ export function separate(input: SeparationInput): Separation {
     for (let address = Math.max(region.start, 0); address <= Math.min(region.end, 0xffff); address++) if (owner[address] === -1) owner[address] = index;
   });
   const holding = (address: number) => (address >= 0 && address <= 0xffff ? owner[address]! : -1);
-  const roots = [...reachabilityRoots(input.segments, input.memory, input.entry), ...(input.roots ?? [])];
+  const roots = [...reachabilityRoots(input.segments, input.memory, input.entry, cpu), ...(input.roots ?? [])];
   // The CPU runs the bytes after the region as instructions: through bytes of no code region (a dual-use
   // instruction, for example) into the next code region, unless one of them does not run on.
   const runOn = (from: number): number | undefined => {
     let at = from;
     for (let count = 0; count <= MAX_RUN_ON && at <= 0xffff && inImage(at); count++) {
       if (holding(at) >= 0) return at;
-      if (NO_FALL_THROUGH.has(input.memory[at]!)) return undefined;
-      at += instructionLength(input.memory[at]!);
+      if (stops(cpu, (address) => input.memory[address], at)) return undefined;
+      at += cpu.decode((address) => input.memory[address], at)?.length ?? 1;
     }
     return undefined;
   };
   const runsOn = regions.flatMap((region) => {
-    const next = fallThrough(region, input.memory);
+    const next = fallThrough(region, input.memory, cpu);
     const to = next === undefined ? undefined : runOn(next);
     return to === undefined ? [] : [{ from: region.end, to }];
   });
@@ -205,7 +212,7 @@ export function separate(input: SeparationInput): Separation {
   const ranOutside: number[] = [];
   const generated: number[] = [];
   if (input.coverage !== undefined) {
-    for (let address = SYSTEM_PAGES_END + 1; address < 0x10000; address++) {
+    for (let address = (input.systemEnd ?? SYSTEM_PAGES_END) + 1; address < 0x10000; address++) {
       if (inImage(address)) continue;
       const written = (input.coverage[address]! & COVERAGE.ramWrite) !== 0;
       if (executed[address] === 1) (written ? generated : ranOutside).push(address);

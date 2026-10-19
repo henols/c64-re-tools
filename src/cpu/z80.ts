@@ -54,9 +54,20 @@ function usesMemoryHl(opcode: number): boolean {
   return false;
 }
 
+/** The mnemonics, registers and conditions of the Z80: an assembler reads none of them as a label. */
+const RESERVED = new Set([
+  ...["adc", "add", "and", "bit", "call", "ccf", "cp", "cpd", "cpdr", "cpi", "cpir", "cpl", "daa", "dec", "di", "djnz", "ei", "ex", "exx", "halt", "im", "in", "inc", "ind", "indr", "ini", "inir", "jp", "jr", "ld", "ldd", "lddr", "ldi", "ldir", "neg", "nop", "or", "otdr", "otir", "out", "outd", "outi", "pop", "push", "res", "ret", "reti", "retn", "rl", "rla", "rlc", "rlca", "rld", "rr", "rra", "rrc", "rrca", "rrd", "rst", "sbc", "scf", "set", "sla", "sll", "sra", "srl", "sub", "xor"],
+  ...["a", "b", "c", "d", "e", "h", "l", "i", "r", "af", "bc", "de", "hl", "sp", "ix", "iy", "ixh", "ixl", "iyh", "iyl"],
+  ...["nz", "z", "nc", "po", "pe", "p", "m"],
+]);
+
 export const Z80: Cpu = {
   id: "z80",
   maxInstructionLength: 4,
+  reserved: RESERVED,
+  reservedReason: "the name of a Z80 instruction, register or condition, which an assembler cannot read as a label",
+  // The Z80's own entry points ($0000, $0038, $0066) are in the ROM of a Spectrum; an IM 2 table is found by the analysis.
+  vectors: [],
   decode(byteAt: ByteAt, address: number): Instruction | undefined {
     const first = byteAt(address);
     if (first === undefined) return undefined;
@@ -103,6 +114,10 @@ function main(opcode: number, operand: (offset: number) => number, address: numb
   const p = y >> 1;
   const q = y & 1;
   const plain = (length: number, text: string, more: Partial<Instruction> = {}): Instruction => ({ length: length + extra, fallsThrough: true, call: false, text, ...more });
+  // The first operand byte: after the opcode, a DD or FD prefix and a displacement.
+  const byteOperand = { offset: 1 + extra, size: 1 as const };
+  const wordOperand = { offset: 1 + extra, size: 2 as const };
+  const distance = { offset: 1 + extra, size: 1 as const, relative: true };
   const nn = () => operand(1) | (operand(2) << 8);
   const relative = () => (address + extra + 2 + signed(operand(1))) & 0xffff;
   if (x === 0) {
@@ -110,16 +125,16 @@ function main(opcode: number, operand: (offset: number) => number, address: numb
       case 0:
         if (y === 0) return plain(1, "nop");
         if (y === 1) return plain(1, "ex af,af'");
-        if (y === 2) return plain(2, `djnz ${word(relative())}`, { branch: relative() });
-        if (y === 3) return plain(2, `jr ${word(relative())}`, { jump: relative(), fallsThrough: false });
-        return plain(2, `jr ${CC[y - 4]},${word(relative())}`, { branch: relative() });
+        if (y === 2) return plain(2, `djnz ${word(relative())}`, { branch: relative(), operand: distance });
+        if (y === 3) return plain(2, `jr ${word(relative())}`, { jump: relative(), fallsThrough: false, operand: distance });
+        return plain(2, `jr ${CC[y - 4]},${word(relative())}`, { branch: relative(), operand: distance });
       case 1:
-        return q === 0 ? plain(3, `ld ${n.rp(p)},${word(nn())}`) : plain(1, `add ${n.hl},${n.rp(p)}`);
+        return q === 0 ? plain(3, `ld ${n.rp(p)},${word(nn())}`, { operand: wordOperand }) : plain(1, `add ${n.hl},${n.rp(p)}`);
       case 2: {
         const target = ["(bc)", "(de)", `(${word(nn())})`, `(${word(nn())})`][p]!;
         const register = p === 2 ? n.hl : "a";
         const length = p >= 2 ? 3 : 1;
-        return plain(length, q === 0 ? `ld ${target},${register}` : `ld ${register},${target}`);
+        return plain(length, q === 0 ? `ld ${target},${register}` : `ld ${register},${target}`, length === 3 ? { operand: wordOperand } : {});
       }
       case 3:
         return plain(1, `${q === 0 ? "inc" : "dec"} ${n.rp(p)}`);
@@ -128,7 +143,7 @@ function main(opcode: number, operand: (offset: number) => number, address: numb
       case 5:
         return plain(1, `dec ${n.r(y)}`);
       case 6:
-        return plain(2, `ld ${n.r(y)},${byte(operand(1))}`);
+        return plain(2, `ld ${n.r(y)},${byte(operand(1))}`, { operand: byteOperand });
       default:
         return plain(1, LOAD_ACC[y]!);
     }
@@ -148,19 +163,19 @@ function main(opcode: number, operand: (offset: number) => number, address: numb
       if (p === 2) return plain(1, `jp (${n.hl})`, { fallsThrough: false });
       return plain(1, `ld sp,${n.hl}`);
     case 2:
-      return plain(3, `jp ${CC[y]},${word(nn())}`, { branch: nn() });
+      return plain(3, `jp ${CC[y]},${word(nn())}`, { branch: nn(), operand: wordOperand });
     case 3:
-      if (y === 0) return plain(3, `jp ${word(nn())}`, { jump: nn(), fallsThrough: false });
-      if (y === 2) return plain(2, `out (${byte(operand(1))}),a`);
-      if (y === 3) return plain(2, `in a,(${byte(operand(1))})`);
+      if (y === 0) return plain(3, `jp ${word(nn())}`, { jump: nn(), fallsThrough: false, operand: wordOperand });
+      if (y === 2) return plain(2, `out (${byte(operand(1))}),a`, { operand: byteOperand });
+      if (y === 3) return plain(2, `in a,(${byte(operand(1))})`, { operand: byteOperand });
       return plain(1, ["", "", "", "", `ex (sp),${n.hl}`, "ex de,hl", "di", "ei"][y]!);
     case 4:
-      return plain(3, `call ${CC[y]},${word(nn())}`, { call: true, callTarget: nn() });
+      return plain(3, `call ${CC[y]},${word(nn())}`, { call: true, callTarget: nn(), operand: wordOperand });
     case 5:
       if (q === 0) return plain(1, `push ${n.rp2(p)}`);
-      return plain(3, `call ${word(nn())}`, { call: true, callTarget: nn() });
+      return plain(3, `call ${word(nn())}`, { call: true, callTarget: nn(), operand: wordOperand });
     case 6:
-      return plain(2, `${ALU[y]}${byte(operand(1))}`);
+      return plain(2, `${ALU[y]}${byte(operand(1))}`, { operand: byteOperand });
     default:
       return plain(1, `rst ${byte(y * 8)}`, { call: true, callTarget: y * 8 });
   }
@@ -202,7 +217,7 @@ function ed(opcode: number, at: (offset: number) => number): Instruction {
         return plain(2, `${q === 0 ? "sbc" : "adc"} hl,${RP[p]}`);
       case 3: {
         const target = `(${word(at(2) | (at(3) << 8))})`;
-        return plain(4, q === 0 ? `ld ${target},${RP[p]}` : `ld ${RP[p]},${target}`);
+        return plain(4, q === 0 ? `ld ${target},${RP[p]}` : `ld ${RP[p]},${target}`, { operand: { offset: 2, size: 2 } });
       }
       case 4:
         return plain(2, "neg");

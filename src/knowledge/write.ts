@@ -5,12 +5,12 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
 import { ANY_SPACE, C64, isMachineId, MACHINE_IDS, MACHINES, type MachineId } from "../machine.ts";
-import { instructionLength } from "../cpu/mos6502.ts";
+import { labelProblem, SYMBOL_SYNTAX } from "../cpu.ts";
 import { type AddressRange, formatAddress, SYMBOL_NAME } from "../address.ts";
 import { isoCet } from "../time.ts";
 import { CONFLICT_RULES, conflicts, conflictTable, type Conflict, type ConflictRow } from "./conflicts.ts";
 import { transaction } from "./database.ts";
-import { labelProblem, MNEMONICS } from "../opcodes.ts";
+import { MNEMONICS } from "../opcodes.ts";
 import { checkExpression, evaluate, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
 import {
   baseValue,
@@ -519,13 +519,15 @@ export function checkSpace(request: InSpace): void {
 function checkSymbol(request: SymbolRequest): void {
   checkSpace(request);
   checkAddress(request.address);
-  const problem = labelProblem(request.name);
-  if (problem !== undefined) throw new Refusal("invalid-input", problem);
+  // The mnemonics that a name must not be come from the project's CPU: the step checks them.
+  if (!SYMBOL_NAME.test(request.name)) throw new Refusal("invalid-input", SYMBOL_SYNTAX);
   if (request.kind !== undefined) checkOneOf(SYMBOL_KINDS, request.kind, "kind");
 }
 
 function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: SymbolRequest): Step<SymbolRow, SymbolRow> {
   const space = spaceOf(db, request);
+  const problem = labelProblem(request.name, machineOf(db).cpu);
+  if (problem !== undefined) throw new Refusal("invalid-input", problem);
   const existing = symbolAt(db, request.address, space);
   const kind = request.kind ?? existing?.kind ?? "label";
   if (existing !== undefined && existing.name === request.name && existing.kind === kind && !confirms(existing.origin, origin)) return { current: existing };
@@ -761,7 +763,7 @@ function checkInstructionStart(db: DatabaseSync, space: Space, byteAt: (address:
       throw new Refusal("invalid-input", `The code region ${formatAddress(code.start)}-${formatAddress(code.end)} has no program byte at ${formatAddress(next)}, so its instructions up to ${where} are not known. Correct the region (classify), then write the operand.`);
     }
     start = next;
-    next += instructionLength(opcode);
+    next += machineOf(db).cpu.decode(byteAt, next)!.length;
   }
   if (next !== address) {
     const what = write === "operand" ? "" : ` A ${write} is at the start of an instruction, as the listing and the source show it.`;
@@ -779,13 +781,13 @@ function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, 
   const opcode = image.byteAt(request.address);
   if (opcode === undefined) throw new Refusal("invalid-input", `${where} is outside the image.`);
   checkInstructionStart(db, space, (at) => image.byteAt(at), request.address, "operand");
-  const length = instructionLength(opcode);
-  if (length === 1) throw new Refusal("invalid-input", `The instruction at ${where} (opcode ${shown(opcode, 0x100)}) has no operand.`);
-  if ((opcode & 0x1f) === 0x10) throw new Refusal("invalid-input", `The instruction at ${where} is a branch: its operand is a distance, not a value.`);
-  if ((request.select === "lo" || request.select === "hi") && length === 3) {
+  const field = machineOf(db).cpu.decode((at) => image.byteAt(at), request.address)!.operand;
+  if (field === undefined) throw new Refusal("invalid-input", `The instruction at ${where} (opcode ${shown(opcode, 0x100)}) has no operand.`);
+  if (field.relative === true) throw new Refusal("invalid-input", `The instruction at ${where} is a branch: its operand is a distance, not a value.`);
+  if ((request.select === "lo" || request.select === "hi") && field.size === 2) {
     throw new Refusal("invalid-input", `lo and hi give one byte, but the instruction at ${where} has a 2-byte operand. Use value.`);
   }
-  const bytes = [image.byteAt(request.address + 1), length === 3 ? image.byteAt(request.address + 2) : 0];
+  const bytes = [image.byteAt(request.address + field.offset), field.size === 2 ? image.byteAt(request.address + field.offset + 1) : 0];
   if (bytes.some((byte) => byte === undefined)) throw new Refusal("invalid-input", `The instruction at ${where} runs past the end of the image.`);
   const operand = bytes[0]! | (bytes[1]! << 8);
   const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? (space === C64.spaces.main ? image.platform.get(name) : undefined);
@@ -796,7 +798,7 @@ function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, 
     if (error instanceof Refusal) throw new Refusal(error.code, `${where}: ${error.message}`);
     throw error;
   }
-  const size = length === 2 ? 0x100 : 0x10000;
+  const size = field.size === 1 ? 0x100 : 0x10000;
   if (value < -size / 2 || value >= size || ((value % size) + size) % size !== operand) {
     throw new Refusal("invalid-input", `At ${where}, ${text} gives ${shown(value, size)}, but the operand in the image is ${shown(operand, size)}.`);
   }
@@ -1403,7 +1405,8 @@ function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { im
   }
   checkInImage(image, request.start, request.end, "a macro use");
   let next = request.start;
-  while (next <= request.end) next += instructionLength(image.byteAt(next)!);
+  const cpu = machineOf(db).cpu;
+  while (next <= request.end) next += cpu.decode((at) => image.byteAt(at), next)?.length ?? 1;
   if (next !== request.end + 1) {
     throw new Refusal("invalid-input", `A macro use is a run of whole instructions, but the instructions from ${formatAddress(request.start)} end at ${formatAddress(next - 1)}, not at ${formatAddress(request.end)}.`);
   }

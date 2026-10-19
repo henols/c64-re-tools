@@ -8,7 +8,7 @@ import { Refusal } from "../errors.ts";
 import { openForWrite, textPath } from "./database.ts";
 import { machineOf, mainSpaceOf } from "./project-machine.ts";
 import { listSymbols, symbolAt } from "./read.ts";
-import { applyBatch, renameSymbol, revert, writeMachine } from "./write.ts";
+import { applyBatch, classifyRegion, renameSymbol, revert, setOperand, writeMachine } from "./write.ts";
 
 const roots: string[] = [];
 after(() => {
@@ -67,5 +67,22 @@ test("a revert gives back the machine of the revision it restores", () => {
   assert.equal(machineOf(db).id, "spectrum128");
   revert(db, { origin: "user" }, { revision: first });
   assert.equal(machineOf(db).id, "spectrum48");
+  db.close();
+});
+
+test("a Spectrum project checks names and operands with the Z80: ld is no label, LD HL,nn has a word operand, JR a distance", () => {
+  const { db } = project();
+  writeMachine(db, { origin: "user" }, { machine: "spectrum48" });
+  assert.throws(() => renameSymbol(db, { origin: "llm" }, { address: 0x9000, name: "ld" }), refused("invalid-input", /ld is the name of a Z80 instruction, register or condition/));
+  renameSymbol(db, { origin: "llm" }, { address: 0x9000, name: "counter" });
+  renameSymbol(db, { origin: "llm" }, { address: 0x9010, name: "lda" });
+  // $8000 LD HL,$9000 ; $8003 JR $8000 ; $8005 LD A,$05
+  const code = new Map([[0x8000, 0x21], [0x8001, 0x00], [0x8002, 0x90], [0x8003, 0x18], [0x8004, 0xfb], [0x8005, 0x3e], [0x8006, 0x05]]);
+  const image = () => ({ byteAt: (address: number) => code.get(address), platform: new Map<string, number>() });
+  classifyRegion(db, { origin: "llm" }, { start: 0x8000, end: 0x8006, type: "code" });
+  assert.equal(setOperand(db, { origin: "llm", image }, { address: 0x8000, select: "value", symbol: "counter" }).current.symbol, "counter");
+  assert.throws(() => setOperand(db, { origin: "llm", image }, { address: 0x8003, select: "value", symbol: "counter" }), refused("invalid-input", /is a branch: its operand is a distance/));
+  assert.throws(() => setOperand(db, { origin: "llm", image }, { address: 0x8001, select: "value", symbol: "counter" }), refused("invalid-input", /\$8001 is not the start of an instruction/));
+  assert.throws(() => setOperand(db, { origin: "llm", image }, { address: 0x8005, select: "value", symbol: "counter" }), refused("invalid-input", /gives \$9000, but the operand in the image is \$05/));
   db.close();
 });
