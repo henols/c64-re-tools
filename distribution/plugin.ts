@@ -110,7 +110,7 @@ function c64Plugin() {
   return definePlugin({
     id: "c64-re-tools",
     version: PACKAGE.version,
-    description: "Commodore 64 reverse engineering and development: a live VICE emulator, static analysis, disk and BASIC tools, project knowledge, building and testing.",
+    description: "Commodore 64 and ZX Spectrum reverse engineering and development: live VICE and ZEsarUX emulators, static analysis, media and BASIC tools, project knowledge, building and testing.",
     author: { name: "Henrik Olsson" },
     homepage: "https://github.com/henols/c64-re-tools",
     license: "MIT",

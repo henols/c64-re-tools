@@ -1,7 +1,8 @@
 name: Live
 
-# The live suites with a real VICE on Linux, macOS and Windows. CI installs
-# VICE itself; the product never does (it refuses by name with the remedy).
+# The live suites with a real VICE on Linux, macOS and Windows, and on Linux
+# also with ZEsarUX for the ZX Spectrum. CI installs the emulators itself; the
+# product never does (it refuses by name with the remedy).
 # The skill scripts run only in the Linux dev container, so only Linux gets
 # ACME, dxa, Exomizer and c64run; on macOS and Windows their tests skip.
 # c64-re-tools needs VICE 3.9 or later and supports the latest release:
@@ -48,6 +49,21 @@ jobs:
             done
           done
           echo "C64RT_LIVE_VICE=$(command -v x64sc)" >> "$GITHUB_ENV"
+      # Debian has no ZEsarUX package: build 13.0 from its source, without sound
+      # or a display (the suites run it with --vo null), with the visual memory of the coverage.
+      - name: Build ZEsarUX 13.0
+        run: |
+          apt-get install -y --no-install-recommends build-essential
+          curl -fsSL -o /tmp/zesarux.tgz https://github.com/chernandezba/zesarux/archive/refs/tags/ZEsarUX-13.0.tar.gz
+          mkdir -p /tmp/zesarux && tar -xzf /tmp/zesarux.tgz -C /tmp/zesarux --strip-components=1
+          cd /tmp/zesarux/src
+          ./configure --prefix=/usr/local --disable-xwindows --disable-sdl --disable-curses --disable-cursesw --disable-aa --disable-caca --disable-fbdev \
+            --disable-alsa --disable-pulse --disable-dsp --disable-onebitspeaker --disable-pcspeaker --disable-linuxrealjoystick --disable-sndfile \
+            --disable-xext --disable-xvidmode --enable-memptr --enable-visualmem --enable-cpustats --enable-undoc-scfccf
+          make -j"$(nproc)"
+          make install
+          /usr/local/bin/zesarux --version || true
+          echo "C64RT_LIVE_ZESARUX=/usr/local/bin/zesarux" >> "$GITHUB_ENV"
           x64sc -version || true
 
       - uses: actions/checkout@v4

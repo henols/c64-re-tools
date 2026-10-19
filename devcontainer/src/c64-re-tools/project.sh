@@ -14,7 +14,7 @@ set -Eeuo pipefail
 
 SHARE="/usr/local/share/c64-re-tools"
 # shellcheck disable=SC1091
-. "${SHARE}/feature.env" # TARGET and CHANNEL, the options of the Feature
+. "${SHARE}/feature.env" # TARGET, CHANNEL and MACHINES, the options of the Feature
 REGISTRY="${NPM_CONFIG_REGISTRY:-https://registry.npmjs.org}"
 REGISTRY="${REGISTRY%/}"
 
@@ -85,7 +85,7 @@ case "${1:-}" in
     install)
         resolve || { say "the registry ${REGISTRY} gave no version for the channel ${CHANNEL}."; exit 1; }
         tools
-        exec npx --prefer-online -y "@henols/c64-re-tools@${VERSION}" install --target "${TARGET}"
+        exec npx --prefer-online -y "@henols/c64-re-tools@${VERSION}" install --target "${TARGET}" --machines "${MACHINES:-c64}"
         ;;
     update)
         BEFORE="$(cat "${SHARE}/tools.version" 2> /dev/null || true)"

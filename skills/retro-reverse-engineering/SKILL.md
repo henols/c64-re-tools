@@ -1,6 +1,6 @@
 ---
 name: retro-reverse-engineering
-description: Reverse engineers a C64 program or a part of it, from an unknown disk image or file to documented understanding or a rebuilt program. It selects the next unknown to examine and the task that examines it. Use it when the user asks what a program does, for example "what does this game do", "find the main loop" or "understand $2100". Use it to rebuild a program from its original file, for example "rebuild this program". It does not do the specialist work of each task itself, and it does not add a feature to a program.
+description: Reverse engineers a C64 or ZX Spectrum program or a part of it. The work goes from an unknown disk image or file to documented understanding or a rebuilt program. It selects the next unknown to examine and the task that examines it. Use it when the user asks what a program does, for example "what does this game do", "find the main loop" or "understand $2100". Use it to rebuild a program from its original file, for example "rebuild this program". It does not do the specialist work of each task itself, and it does not add a feature to a program.
 ---
 
 # C64 reverse engineering
@@ -107,6 +107,22 @@ In stage 10, a base release that is identical to the original proves the source.
 - Do the other tests of stage 1 only when the user selected them.
 
 After stage 7, save each routine that other programs can have to the routine library of the workspace. Examples are a music driver, a decruncher and a loader. Ask the user before you make a library.
+
+### The stages for a ZX Spectrum program
+
+For a ZX Spectrum program, these stages change. The other stages stay the same.
+
+| Stage | Work for a ZX Spectrum program |
+|---|---|
+| 2. Get | List the blocks of the tape. Keep the tape in `original/`. |
+| 3. Start | List the BASIC loader of the tape. Read the USR address, the CLEAR address and the CODE files. A game with its own loader has `turbo` or `pure-data` blocks, or blocks without a header. |
+| 4. Load and capture | Load the tape in the emulator of the ZX Spectrum, and run it until the entry of the machine code. For a game with its own loader, find the entry with breakpoints. Write the machine state as a snapshot into `.c64-re-tools/local/`. Put the snapshot into the project knowledge. |
+| 5. Run | Record the program from its snapshot with frames, keys and joystick steps. A ZX Spectrum recording has no play session of the user. Put the coverage of each recording into the project knowledge. |
+| 6. Analyze | Analyze the program statically with Ghidra. DXA reads only 6502 code. |
+| 7. Name | Find the platform addresses in the memory map of the ZX Spectrum. |
+| 8. Releases and switches | Not for a ZX Spectrum program. Give it as an exception. |
+| 9. Generate | Generate the source from the project knowledge into `src`. The source is `main.asm` for sjasmplus. There is no loader: the snapshot is the start. |
+| 10. Build and test | Build `main.asm` into `build/`, and compare it with the program. Replay each recording on the rebuild. Give the build and the first address of its range. |
 
 ### Deliverables of a full rebuild
 

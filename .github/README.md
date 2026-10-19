@@ -3,9 +3,10 @@
 <img src="../assets/branding/c64-re-tools-transparent.svg" alt="C64 RE Tools" width="440">
 
 
-Let an AI agent work on Commodore 64 programs. The agent drives a real VICE
-emulator and runs ACME, DXA, Ghidra and Exomizer. Use it to build new C64 apps and games,
-and to reverse engineer old ones.
+Let an AI agent work on Commodore 64 programs, and on ZX Spectrum 48K and 128K
+programs. The agent drives a real emulator (VICE for the C64, ZEsarUX for the
+Spectrum) and runs ACME, sjasmplus, DXA, Ghidra and Exomizer. Use it to build new apps
+and games, and to reverse engineer old ones.
 
 It works with Claude Code, Codex, pi, opencode, Gemini, Copilot, Cursor and
 Windsurf.
@@ -39,18 +40,31 @@ Ask for what you want in plain words. The agent picks the skill for each step.
 - Test that a rebuild behaves as the original: PASS, FAIL or INCONCLUSIVE.
 - Export a rebuild as the start of a new program: one value for each switch, unused code removed, as a zip file.
 
+**ZX Spectrum**
+
+- Run the program in ZEsarUX: breakpoints, watchpoints, steps, memory, the Z80 registers, the screen, the keyboard and the Kempston joystick.
+- List the blocks of TAP and TZX tapes, list Sinclair BASIC with the numbers that a loader hides, and read .z80 and .sna snapshots.
+- Put a program into the knowledge from a snapshot at its entry, and analyse it with Ghidra's Z80 language.
+- Generate sjasmplus source that rebuilds the program byte for byte.
+- Record key presses in the replay core zxrun, and test that a rebuild gives the same result.
+
 ## How it works
 
-VICE and the Host Runtime run on your computer, where VICE can open a window.
-The agent runs in a dev container in your project. It reaches VICE through an
-MCP server, and it runs ACME, DXA, Ghidra, Exomizer and c64run through its skills.
+The emulators and the Host Runtime run on your computer, where an emulator can
+open a window. The agent runs in a dev container in your project. It reaches
+the emulator through an MCP server for each machine (`c64`, `spectrum`), and it
+runs ACME, sjasmplus, DXA, Ghidra, Exomizer, c64run and zxrun through its skills.
 
 ## Install
 
 ### Host
 
-You need Node.js 24 or newer and VICE 3.9 or later (`x64sc`, `c1541`, `petcat`)
-with its ROM files. Use the latest VICE release.
+You need Node.js 24 or newer, and the emulator of each machine:
+
+- C64: VICE 3.9 or later (`x64sc`, `c1541`, `petcat`) with its ROM files. Use the latest VICE release.
+- ZX Spectrum: ZEsarUX 13.0 or later (`zesarux`).
+
+The Host Runtime starts when one of them starts, and names the missing one.
 
 VICE 3.10 and older have a joystick and keyboard flaw (VICE bug #2202). The
 nightly builds (SVN r45971 or later) have the fix. When you compile VICE from
@@ -77,15 +91,16 @@ mkdir -p .devcontainer
 curl -fsSL -o .devcontainer/devcontainer.json https://raw.githubusercontent.com/henols/c64-re-tools/main/devcontainer/example/devcontainer.json
 ```
 
-Its comments tell what to change: the harness, the release channel, the image
-and the address of the Host Runtime. If the project already has a
+Its comments tell what to change: the harness, the machines (`c64`,
+`spectrum` or both), the release channel, the image and the address of the
+Host Runtime. If the project already has a
 `devcontainer.json`, copy the c64-re-tools Feature, `runArgs` and `appPort` into it.
 `appPort` publishes the page of a retro-testing play run on
 http://localhost:6465/ of your computer; rebuild the container after you add it.
 
 Open the project in the container, for example with "Reopen in Container" in
 VS Code, or with `npx -y @devcontainers/cli up --workspace-folder .`. The
-Feature gives the container ACME, dxa, Exomizer and c64run. At each
+Feature gives the container ACME, dxa, Exomizer, c64run, sjasmplus and zxrun. At each
 start it installs the newest toolkit of its channel into the project, with the
 tools of that version. It reads its options only when the container is built:
 rebuild after a change.
@@ -108,6 +123,10 @@ packed, and name the main routines.
 ```
 Find the routine that draws the score, and explain how it works.
 ```
+```
+Load original/game.tzx on the Spectrum, stop where the machine code starts,
+and put the program into the knowledge. Then rebuild it with sjasmplus.
+```
 
 The agent keeps what it learns about a program as text in
 `.c64-re-tools/knowledge/`. Commit that folder with the project. If a command
@@ -124,6 +143,8 @@ Set the host variables where the Host Runtime starts, and the others in
 | Variable | Meaning |
 | --- | --- |
 | `C64RT_VICE`, `C64RT_C1541`, `C64RT_PETCAT` | Full path of the VICE tool, when it is not on `PATH` (host). |
+| `C64RT_ZESARUX` | Full path of `zesarux`, when it is not on `PATH` (host). |
+| `C64RT_SPECTRUM_MODEL` | `48k` (default) or `128k`: the model of the `spectrum` MCP server. |
 | `C64RT_HOST` | `host:port` of the Host Runtime, when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at port 6464. |
 | `C64RT_VIDEO` | `pal` (default) or `ntsc`. |
 | `C64RT_TRACE` | A directory for the trace of the MCP server and the skill scripts. See [Trace](#trace). |

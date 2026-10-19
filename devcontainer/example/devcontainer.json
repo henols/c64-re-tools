@@ -14,9 +14,11 @@
     // The toolkit: Node.js 24, ACME, dxa, Exomizer, c64run, sjasmplus and zxrun. At each start it
     // installs the newest toolkit of its channel into the project, with the tools of that version.
     "https://github.com/henols/c64-re-tools/releases/latest/download/devcontainer-feature-c64-re-tools.tgz": {
-      // The harnesses to install the skills and the VICE MCP for. One name, or a comma list:
+      // The harnesses to install the skills and the MCP servers for. One name, or a comma list:
       // claude, codex, pi, opencode, gemini, copilot, cursor, windsurf. Example: "claude,codex".
       "target": "claude",
+      // The machines of the project: "c64", "spectrum" or "c64,spectrum".
+      "machines": "c64",
       // "latest" for releases. "next" for prereleases: the newer of the prerelease and the release.
       "channel": "latest"
     },

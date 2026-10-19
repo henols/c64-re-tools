@@ -19,12 +19,15 @@ when the emulator misbehaves.
 Released as 2.0.0. `.github/README.md` is the user documentation (GitHub shows it on the repository page). It stays out of the npm package: the agent side gets only skills and tools, never the README. Do not add design
 documents, plans or decision numbers to the repository.
 
-Architecture in one line: one MCP process owns one VICE instance and is
-VICE-only; a Host Runtime on the graphical host owns VICE and the tools that
-come with it (c1541, petcat); skill scripts call the Host Runtime for those,
-run ACME, DXA and Exomizer themselves and Ghidra in process (a committed WebAssembly
-build of a Rust port, from `native/sleigh/`, as base64 in a `.ts` file), and keep project knowledge local as
-text in `.c64-re-tools/knowledge/`, with a SQLite index in `local/`.
+Architecture in one line: one MCP process per machine family
+(`c64-re-tools-mcp --machine c64|spectrum`) owns one emulator; a Host Runtime
+on the graphical host owns the emulators (VICE with c1541 and petcat, ZEsarUX)
+and starts when at least one starts; skill scripts call the Host Runtime for
+those, run ACME, sjasmplus, DXA, Exomizer, c64run and zxrun themselves and Ghidra
+in process (a committed WebAssembly build of a Rust port, from `native/sleigh/`,
+as base64 in a `.ts` file), and keep project knowledge local as text in `.c64-re-tools/knowledge/`, with a SQLite
+index in `local/`. The project's machine (`machine.jsonl`) picks the CPU,
+the spaces, the assembler and the platform names.
 
 ## Commands
 
@@ -52,7 +55,7 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
   VICE 3.9 runs only the tests of what a VICE flaw breaks:
   `C64RT_LIVE_VICE=/usr/bin/x64sc pnpm test $(grep -rl viceFlaws test/integration)`.
   Every VICE runs headless. The window tests open real windows and also
-  need `C64RT_LIVE_WINDOW=1`.
+  need `C64RT_LIVE_WINDOW=1`. The ZEsarUX suites: `C64RT_LIVE_ZESARUX=/usr/local/bin/zesarux`.
 - Real VICE is given by absolute path. `-default` must precede
   `-binarymonitor`, and autostart needs `-autostartprgmode 1`.
 - `/tmp` is a RAM tmpfs here; tests that leak scratch dirs fill it.

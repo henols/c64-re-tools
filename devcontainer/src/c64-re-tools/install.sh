@@ -10,6 +10,7 @@ set -Eeuo pipefail
 SHARE="/usr/local/share/c64-re-tools"
 TARGET="${TARGET:-claude}"
 CHANNEL="${CHANNEL:-latest}"
+MACHINES="${MACHINES:-c64}"
 
 fail() {
     printf 'c64-re-tools Feature: %s\n' "$*" >&2
@@ -18,6 +19,7 @@ fail() {
 
 [[ "${TARGET}" =~ ^[a-z]+(,[a-z]+)*$ ]] || fail "target must be a harness name or a comma list of them, not '${TARGET}'."
 [[ "${CHANNEL}" == latest || "${CHANNEL}" == next ]] || fail "channel must be latest or next, not '${CHANNEL}'."
+[[ "${MACHINES}" =~ ^(c64|spectrum)(,(c64|spectrum))*$ ]] || fail "machines must be c64, spectrum or c64,spectrum, not '${MACHINES}'."
 
 # shellcheck disable=SC1091
 . /etc/os-release
@@ -33,6 +35,6 @@ fi
 # The lifecycle commands cannot read the options, so they are written next to project.sh.
 mkdir -p "${SHARE}"
 install -m 0755 "$(dirname "$0")/project.sh" "${SHARE}/project.sh"
-printf 'TARGET=%s\nCHANNEL=%s\n' "${TARGET}" "${CHANNEL}" > "${SHARE}/feature.env"
+printf 'TARGET=%s\nCHANNEL=%s\nMACHINES=%s\n' "${TARGET}" "${CHANNEL}" "${MACHINES}" > "${SHARE}/feature.env"
 
 "${SHARE}/project.sh" tools

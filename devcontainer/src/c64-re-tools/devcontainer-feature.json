@@ -12,6 +12,12 @@
       "proposals": ["claude", "codex", "pi", "opencode", "gemini", "copilot", "cursor", "windsurf"],
       "description": "The harnesses to install the toolkit for, one name or a comma list, for example claude,codex."
     },
+    "machines": {
+      "type": "string",
+      "default": "c64",
+      "proposals": ["c64", "spectrum", "c64,spectrum"],
+      "description": "The machines to install an MCP server for: c64, spectrum, or a comma list. A change takes effect when the container is built again."
+    },
     "channel": {
       "type": "string",
       "default": "latest",
