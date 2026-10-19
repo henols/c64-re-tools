@@ -16,10 +16,10 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["address", "build-name", "c64-keys", "c64", "compare", "cpu", "errors", "graphics", "machine", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
+      return ["address", "assembler", "build-name", "c64-keys", "c64", "compare", "cpu", "errors", "graphics", "machine", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
-    return ["mcp", "host-client", "host", "knowledge", "cli", "cpu", "native", "protocol"].includes(dir) ? dir : undefined;
+    return ["mcp", "host-client", "host", "knowledge", "cli", "assembler", "cpu", "native", "protocol"].includes(dir) ? dir : undefined;
   }
   if (parts[0] === "skills" && parts.length > 2) return `skill:${parts[1]}`;
   // The one-off conversion of an old knowledge.db is no part of the package edge.
@@ -44,8 +44,10 @@ const ALLOWED: Record<string, readonly string[]> = {
   platform: ["c64", "cpu"],
   // The CPU of a machine for the analysis: instruction lengths, flow and text (6502, Z80), and the coverage flows.
   cpu: ["opcodes"],
-  // A machine: its CPU and its Ghidra language.
-  machine: ["cpu"],
+  // The assembler of a machine: the rules for patch code and macro bodies in its syntax.
+  assembler: ["opcodes"],
+  // A machine: its CPU, its spaces, its assembler and its Ghidra language.
+  machine: ["cpu", "assembler"],
   // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images.
   graphics: [],
   // The one time format (ISO 8601 at +01:00).

@@ -38,7 +38,6 @@ import {
   setStartScreen,
   setSwitch,
   removeStartScreen,
-  leastPatchBytes,
   unclassifyRegion,
   type OperandImage,
   type WriteContext,
@@ -594,7 +593,6 @@ test("a patch puts code in a range of the image under a switch", () => {
   );
   assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code: "!byte $ea, $ea\n!word $1234" }), /at least 4 bytes/);
   for (const code of ["!fill 3, $ea", "nop\nasl a\nrts ; done", "jsr $1234", "+inc16 ptr\nlda #1\nlda #2", "loop lda #1\nlda #2"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
-  assert.deepEqual(["lda+2 $12", "!fill $10", "bne .skip\n.skip", "!text \"ab\""].map(leastPatchBytes), [3, 16, undefined, undefined]);
 
   removePatch(db, llm, { start: 0x807e });
   assert.throws(() => removePatch(db, llm, { start: 0x807e }), failsWith("not-found"));

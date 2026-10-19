@@ -3,6 +3,9 @@
 // server that drives it: one server for each family, from the one bin.
 
 import type { AddressRange } from "./address.ts";
+import type { AssemblerDialect } from "./assembler.ts";
+import { ACME } from "./assembler/acme.ts";
+import { SJASMPLUS } from "./assembler/sjasmplus.ts";
 import type { Cpu } from "./cpu.ts";
 import { MOS6502 } from "./cpu/mos6502.ts";
 import { Z80 } from "./cpu/z80.ts";
@@ -34,6 +37,8 @@ export interface Machine {
   spaces: Spaces;
   /** The Ghidra language ID of the CPU. */
   ghidraLanguage: string;
+  /** The assembler of the generated source, whose syntax patch code and macro bodies use. */
+  assembler: AssemblerDialect;
 }
 
 const FULL: AddressRange = { start: 0, end: 0xffff };
@@ -57,10 +62,10 @@ const SPECTRUM128_SPACES: Spaces = {
 };
 
 export const MACHINES: Record<MachineId, Machine> = {
-  c64: { id: "c64", family: "c64", name: "Commodore 64", cpu: MOS6502, spaces: C64_SPACES, ghidraLanguage: "C64RT_6510:LE:16:nmos" },
+  c64: { id: "c64", family: "c64", name: "Commodore 64", cpu: MOS6502, spaces: C64_SPACES, ghidraLanguage: "C64RT_6510:LE:16:nmos", assembler: ACME },
   // Ghidra's own Z80 language: nothing to install.
-  spectrum48: { id: "spectrum48", family: "spectrum", name: "ZX Spectrum 48K", cpu: Z80, spaces: SPECTRUM48_SPACES, ghidraLanguage: "z80:LE:16:default" },
-  spectrum128: { id: "spectrum128", family: "spectrum", name: "ZX Spectrum 128K", cpu: Z80, spaces: SPECTRUM128_SPACES, ghidraLanguage: "z80:LE:16:default" },
+  spectrum48: { id: "spectrum48", family: "spectrum", name: "ZX Spectrum 48K", cpu: Z80, spaces: SPECTRUM48_SPACES, ghidraLanguage: "z80:LE:16:default", assembler: SJASMPLUS },
+  spectrum128: { id: "spectrum128", family: "spectrum", name: "ZX Spectrum 128K", cpu: Z80, spaces: SPECTRUM128_SPACES, ghidraLanguage: "z80:LE:16:default", assembler: SJASMPLUS },
 };
 
 export const C64 = MACHINES.c64;
