@@ -83,8 +83,8 @@ export const ZESARUX: ToolSpec = {
   name: "ZEsarUX",
   envVar: "C64RT_ZESARUX",
   binaries: ["zesarux"],
-  where: "on this machine",
-  remedy: "Install ZEsarUX 13.0 or later so that zesarux is on PATH, or set C64RT_ZESARUX to its full path.",
+  where: "on the host",
+  remedy: "Install ZEsarUX 13.0 or later on the host so that zesarux is on PATH, or set C64RT_ZESARUX to the full path of zesarux, then restart the Host Runtime.",
 };
 
 export const VICE: ToolSpec = {

@@ -23,6 +23,10 @@
     "c64": {
       "command": "npx",
       "args": ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp", "--machine", "c64"]
+    },
+    "spectrum": {
+      "command": "npx",
+      "args": ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp", "--machine", "spectrum"]
     }
   },
   "defaultEnabled": false

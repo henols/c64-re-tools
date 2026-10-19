@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { bitmapFrame, charsetFrame, encodePng, PATTERN_PALETTES, scaleFrame, screenText, SPRITE, spriteSheet } from "./graphics.ts";
+import { bitmapFrame, charsetFrame, encodePng, PATTERN_PALETTES, scaleFrame, screenText, SPECTRUM_BORDER, spectrumScreenFrame, SPRITE, spriteSheet } from "./graphics.ts";
 import { readPng } from "./graphics.testkit.ts";
 
 test("a PNG round-trips size, palette and every pixel", () => {
@@ -65,4 +65,21 @@ test("screen codes show as the upper-case set, rows of 40", () => {
   const bytes = new Uint8Array(41).fill(0x20);
   bytes.set([0x08, 0x09, 0x21, 0x00, 0x81, 0x70], 0);
   assert.deepEqual(screenText(bytes), [`HI!@A.${" ".repeat(34)}`, " "]);
+});
+
+test("a Spectrum screen frame takes the bitmap in thirds, the attribute colours and the border", () => {
+  const screen = new Uint8Array(0x1b00);
+  // Pixel row 65: third 1, character row 0, pixel row 1 of the character, so offset $0900.
+  screen[0x0900] = 0b1000_0001;
+  // Its cell: character row 8, column 0. FLASH, BRIGHT, paper 1 (blue), ink 6 (yellow).
+  screen[0x1800 + 8 * 32] = 0b1100_1110;
+  const frame = spectrumScreenFrame(screen, 2);
+  const width = 256 + 2 * SPECTRUM_BORDER;
+  assert.deepEqual([frame.width, frame.height], [width, 192 + 2 * SPECTRUM_BORDER]);
+  const at = (x: number, y: number) => frame.pixels[(y + SPECTRUM_BORDER) * width + SPECTRUM_BORDER + x];
+  assert.equal(frame.pixels[0], 2, "the border");
+  assert.deepEqual([at(0, 65), at(1, 65), at(7, 65)], [14, 9, 14], "bright ink on bright paper");
+  assert.deepEqual([at(0, 64), at(0, 0)], [9, 0], "the rest of the cell is paper, and the first cell is black on black");
+  const flashed = spectrumScreenFrame(screen, 2, true);
+  assert.equal(flashed.pixels[(65 + SPECTRUM_BORDER) * width + SPECTRUM_BORDER], 9, "FLASH swaps ink and paper");
 });

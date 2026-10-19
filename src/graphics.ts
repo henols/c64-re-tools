@@ -51,6 +51,42 @@ export function encodePng(frame: IndexedFrame, palette: ReadonlyArray<Rgb>): Buf
 
 export type GraphicsMode = "hires" | "multicolour";
 
+/** The ZX Spectrum palette: colours 0-7 normal, 8-15 bright (bright black is black). */
+export const SPECTRUM_PALETTE: readonly Rgb[] = [
+  [0x00, 0x00, 0x00], [0x00, 0x00, 0xd7], [0xd7, 0x00, 0x00], [0xd7, 0x00, 0xd7], [0x00, 0xd7, 0x00], [0x00, 0xd7, 0xd7], [0xd7, 0xd7, 0x00], [0xd7, 0xd7, 0xd7],
+  [0x00, 0x00, 0x00], [0x00, 0x00, 0xff], [0xff, 0x00, 0x00], [0xff, 0x00, 0xff], [0x00, 0xff, 0x00], [0x00, 0xff, 0xff], [0xff, 0xff, 0x00], [0xff, 0xff, 0xff],
+];
+
+/** The border around the 256 x 192 Spectrum picture in a frame, in pixels on each side. */
+export const SPECTRUM_BORDER = 32;
+
+/**
+ * The Spectrum screen as a frame: the 6144 bitmap bytes and the 768 attribute
+ * bytes of a screen bank ($4000-$5aff), with the border colour around them.
+ * The bitmap is in thirds: the address of row y is 010T TSSS LLLC CCCC, with
+ * the third in T, the pixel row of the character in S and the character row
+ * in L. An attribute byte gives FLASH, BRIGHT, PAPER and INK of one 8 x 8 cell.
+ * With `flashInverted`, a FLASH cell swaps ink and paper.
+ */
+export function spectrumScreenFrame(screen: Uint8Array, border: number, flashInverted = false): IndexedFrame {
+  const width = 256 + 2 * SPECTRUM_BORDER;
+  const height = 192 + 2 * SPECTRUM_BORDER;
+  const pixels = new Uint8Array(width * height).fill(border & 7);
+  for (let y = 0; y < 192; y++) {
+    const row = ((y & 0xc0) << 5) | ((y & 0x07) << 8) | ((y & 0x38) << 2);
+    for (let column = 0; column < 32; column++) {
+      const bits = screen[row | column]!;
+      const attribute = screen[0x1800 + (y >> 3) * 32 + column]!;
+      const bright = (attribute & 0x40) !== 0 ? 8 : 0;
+      let ink = (attribute & 0x07) + bright;
+      let paper = ((attribute >> 3) & 0x07) + bright;
+      if (flashInverted && (attribute & 0x80) !== 0) [ink, paper] = [paper, ink];
+      for (let bit = 0; bit < 8; bit++) pixels[(y + SPECTRUM_BORDER) * width + SPECTRUM_BORDER + column * 8 + bit] = (bits & (0x80 >> bit)) !== 0 ? ink : paper;
+    }
+  }
+  return { width, height, pixels };
+}
+
 /**
  * The pattern palettes: the index is the pixel value (hires: the bit; multicolour:
  * the bit pair, 0 = background $d021, 1 = $d022 or screen high nibble, 2 = $d023 or

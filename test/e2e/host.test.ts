@@ -55,11 +55,12 @@ test("c64-re-tools-host refuses a bad --port", async () => {
   assert.equal(code, 2);
 });
 
-test("c64-re-tools-host does not start without VICE and says how to install it", () => {
-  const run = spawnSync(process.execPath, [...process.execArgv, "src/host/main.ts", "--port", "0"], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_VICE: join(scratch, "no-such-x64sc") } });
+test("c64-re-tools-host does not start without any emulator and says how to install each", () => {
+  const run = spawnSync(process.execPath, [...process.execArgv, "src/host/main.ts", "--port", "0"], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_VICE: join(scratch, "no-such-x64sc"), C64RT_ZESARUX: join(scratch, "no-such-zesarux") } });
   assert.equal(run.status, 1);
   assert.ok(run.stderr.startsWith(`c64-re-tools-host: ${PACKAGE.name} ${PACKAGE.version} (Node.js `), "the first line names the version");
   assert.match(run.stderr, /C64RT_VICE.*Install VICE/);
+  assert.match(run.stderr, /C64RT_ZESARUX.*Install ZEsarUX/);
 });
 
 test("c64-re-tools-host does not start when VICE cannot load its ROMs", { skip: shellStandIn }, () => {
@@ -71,7 +72,7 @@ test("c64-re-tools-host does not start when VICE cannot load its ROMs", { skip: 
     "exit 255",
   ].join("\n"));
   chmodSync(brokenVice, 0o755);
-  const run = spawnSync(process.execPath, [...process.execArgv, "src/host/main.ts", "--port", "0"], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_VICE: brokenVice } });
+  const run = spawnSync(process.execPath, [...process.execArgv, "src/host/main.ts", "--port", "0"], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_VICE: brokenVice, C64RT_ZESARUX: join(scratch, "no-such-zesarux") } });
   assert.equal(run.status, 1);
   assert.match(run.stderr, /does not start:\n  C64MEM: Error - Couldn't load kernal ROM/);
   assert.equal(run.stdout, "", "it never listens");

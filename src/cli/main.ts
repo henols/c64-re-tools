@@ -55,6 +55,13 @@ function installMachines(given: string | undefined, scope: Scope): Family[] | st
   return families as Family[];
 }
 
+/** The machine families whose MCP server is installed in the project or globally; the C64 when none is. */
+function installedFamilies(): Family[] {
+  const names = (["project", "global"] as const).flatMap((scope) => installedItems(scope, undefined).filter((item) => item.kind === "mcp").map((item) => item.name));
+  const families = [...new Set(names)].filter((name): name is Family => (FAMILIES as readonly string[]).includes(name));
+  return families.length > 0 ? families : ["c64"];
+}
+
 /** Runs the AP SDK CLI. Writes its error output to stderr and returns its exit status and its report. */
 async function apSdk(command: "install" | "uninstall", flags: readonly string[], machines?: readonly string[]): Promise<{ code: number; output: string }> {
   // The report is printed after the CLI's own tidying, so the colours stay when this is a terminal.

@@ -13,10 +13,11 @@ import { inputTools } from "../../src/mcp/tools/input.ts";
 import { machineTools } from "../../src/mcp/tools/machine.ts";
 import { mediaTools } from "../../src/mcp/tools/media.ts";
 import { memoryTools } from "../../src/mcp/tools/memory.ts";
+import { spectrumTools } from "../../src/mcp/tools/spectrum.ts";
 import { videoTools } from "../../src/mcp/tools/video.ts";
 
 const ROOT = join(import.meta.dirname, "../..");
-const TOOLS = new Set([...machineTools, ...executionTools, ...debugTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools].map((tool) => tool.name));
+const TOOLS = new Set([...machineTools, ...executionTools, ...debugTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools, ...spectrumTools].map((tool) => tool.name));
 
 const docs = () => [
   ...readdirSync(join(ROOT, "skills")).flatMap((skill) => {

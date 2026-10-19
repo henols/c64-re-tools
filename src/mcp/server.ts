@@ -11,6 +11,7 @@ import { z } from "zod";
 import { formatAddress } from "../address.ts";
 import { Byte, TOOL_INPUTS } from "./inputs.ts";
 import { LostBeforeAnswer, type ViceSessionClient } from "../host-client/vice-session.ts";
+import { SessionLostBeforeAnswer } from "../host-client/host-session.ts";
 import { checkOut } from "../host-client/transfer.ts";
 import { isRefusal } from "../errors.ts";
 import { shownMessage, WireFailure, type WireError } from "../protocol/messages.ts";
@@ -61,7 +62,7 @@ export type ViceSessionApi = Pick<
 >;
 
 /** Resolves the session, opening it on first use when the start-up attempt failed. */
-export type SessionSource = () => Promise<ViceSessionApi>;
+export type SessionSource<S = ViceSessionApi> = () => Promise<S>;
 
 type JsonObject = Record<string, unknown>;
 
@@ -70,7 +71,7 @@ type JsonObject = Record<string, unknown>;
 // wait for the machine are in inputs.ts: the action steps take the same inputs.
 
 /** Output address: "$" and four lowercase hex digits. */
-export const AddressOutput = z.string().regex(/^\$[0-9a-f]{4}$/).describe("C64 address, $0000 to $ffff");
+export const AddressOutput = z.string().regex(/^\$[0-9a-f]{4}$/).describe("address, $0000 to $ffff");
 
 export const HexData = z.string().regex(/^(?:[0-9a-f]{2})*$/).describe("bytes as lowercase hex, two digits per byte, no separators");
 
@@ -115,7 +116,7 @@ export class ToolOutput<T> {
   }
 }
 
-export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z.ZodObject = z.ZodObject> {
+export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z.ZodObject = z.ZodObject, S = ViceSessionApi> {
   name: string;
   title: string;
   description: string;
@@ -123,7 +124,7 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   outputSchema: O;
   /** True for operations that only observe the machine. */
   readOnly: boolean;
-  run(input: z.output<I>, session: ViceSessionApi): Promise<z.input<O> | ToolOutput<z.input<O>>>;
+  run(input: z.output<I>, session: S): Promise<z.input<O> | ToolOutput<z.input<O>>>;
 }
 
 /** A condition as a result shows it: the input form, with the memory address as "$xxxx". */
@@ -151,8 +152,8 @@ export function toCondition(input: z.output<typeof TOOL_INPUTS.condition>): Cond
 }
 
 /** Keeps a tool's handler typed against its own schemas. */
-export function defineTool<I extends z.ZodObject, O extends z.ZodObject>(tool: ToolDefinition<I, O>): ToolDefinition {
-  return tool as unknown as ToolDefinition;
+export function defineTool<I extends z.ZodObject, O extends z.ZodObject, S = ViceSessionApi>(tool: ToolDefinition<I, O, S>): ToolDefinition<z.ZodObject, z.ZodObject, S> {
+  return tool as unknown as ToolDefinition<z.ZodObject, z.ZodObject, S>;
 }
 
 function jsonSchema(schema: z.ZodObject, io: "input" | "output"): McpTool["inputSchema"] {
@@ -160,7 +161,7 @@ function jsonSchema(schema: z.ZodObject, io: "input" | "output"): McpTool["input
   return rest as McpTool["inputSchema"];
 }
 
-export function toolListing(tool: ToolDefinition): McpTool {
+export function toolListing<S>(tool: ToolDefinition<z.ZodObject, z.ZodObject, S>): McpTool {
   return {
     name: tool.name,
     title: tool.title,
@@ -197,11 +198,11 @@ function describeIssues(error: z.ZodError, input?: z.ZodObject): string {
 const INTERNAL_FAILURE: WireError = { code: "operation-failed", message: "The operation failed inside the c64-re-tools MCP server." };
 
 /** Runs one tool call and translates every outcome into an MCP result. The trace gets the call, its time and its outcome. */
-export async function callTool(
-  tools: ReadonlyMap<string, ToolDefinition>,
+export async function callTool<S>(
+  tools: ReadonlyMap<string, ToolDefinition<z.ZodObject, z.ZodObject, S>>,
   name: string,
   args: unknown,
-  session: SessionSource,
+  session: SessionSource<S>,
   log: (line: string) => void = () => {},
 ): Promise<CallToolResult> {
   const started = performance.now();
@@ -222,11 +223,11 @@ function outcome(result: CallToolResult): TraceFields {
   }
 }
 
-async function runCall(
-  tools: ReadonlyMap<string, ToolDefinition>,
+async function runCall<S>(
+  tools: ReadonlyMap<string, ToolDefinition<z.ZodObject, z.ZodObject, S>>,
   name: string,
   args: unknown,
-  session: SessionSource,
+  session: SessionSource<S>,
   log: (line: string) => void,
 ): Promise<CallToolResult> {
   const tool = tools.get(name);
@@ -242,7 +243,7 @@ async function runCall(
       output = await tool.run(parsed.data, await session());
     } catch (error) {
       // A session that the emulator never answered had no machine state: the call goes again on a new session.
-      if (!(error instanceof LostBeforeAnswer)) throw error;
+      if (!(error instanceof LostBeforeAnswer) && !(error instanceof SessionLostBeforeAnswer)) throw error;
       output = await tool.run(parsed.data, await session());
     }
     // The result goes out in the shape that the tool listing advertises: keys
@@ -288,10 +289,18 @@ const INSTRUCTIONS: Partial<Record<Family, string>> = {
   "With out, a tool writes a large result to a project file in place of the result.",
 };
 
+INSTRUCTIONS.spectrum =
+  "These tools control one live ZX Spectrum emulator that belongs to this session. " +
+  "An address is a dollar sign and 1 to 4 hex digits, for example $8000. A result gives four hex digits. " +
+  "An error is {\"error\": {\"code\", \"message\"}}. Memory data is lowercase hex without separators. " +
+  "The CPU is a Z80. The ROM is at $0000-$3fff, the screen at $4000-$5aff with its attributes, and the system variables from $5c00. " +
+  "A run (resume, advance-frames, run_until, keyboard) holds the machine: while the CPU runs, only execution, reset and autostart work. " +
+  "Keys are keys of the keyboard matrix that the program reads from port $fe. Use advance-frames for time: it stops at the same emulated time on every run.";
+
 /** The families whose MCP server has tools in this build. */
 export const MCP_FAMILIES = (Object.keys(INSTRUCTIONS) as Family[]).filter((family) => INSTRUCTIONS[family] !== undefined);
 
-export function createMcpServer(options: { family?: Family; tools: readonly ToolDefinition[]; session: SessionSource; log?: (line: string) => void }): Server {
+export function createMcpServer<S = ViceSessionApi>(options: { family?: Family; tools: readonly ToolDefinition<z.ZodObject, z.ZodObject, S>[]; session: SessionSource<S>; log?: (line: string) => void }): Server {
   const family = options.family ?? "c64";
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));
   const server = new Server({ name: family, version: packageVersion() }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS[family] ?? "" });

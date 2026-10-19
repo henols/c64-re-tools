@@ -70,7 +70,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   vsf: ["media"],
   "host-client": ["protocol", "c64", "c64-keys", "cpu", "project", "trace", "package", "machine"],
   mcp: ["host-client", "protocol", "c64", "c64-keys", "cpu", "trace", "package", "machine"],
-  host: ["native", "protocol", "c64", "c64-keys", "cpu", "graphics", "opcodes", "trace", "package", "media", "vsf", "machine"],
+  host: ["native", "protocol", "c64", "c64-keys", "cpu", "graphics", "opcodes", "trace", "package", "media", "vsf", "machine", "spectrum"],
   // opcodes: one rule for a name that ACME can take as a label.
   knowledge: ["c64", "cpu", "machine", "project", "time", "opcodes"],
   // The call contract of the skill scripts: the command line, the values, the envelope.

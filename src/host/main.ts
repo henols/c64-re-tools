@@ -13,6 +13,8 @@ import { inspect } from "./tools/c1541.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
+import { checkZesaruxStarts } from "./zesarux/process.ts";
+import { zesaruxBackend } from "./zesarux/session.ts";
 import { oldNodeRefusal, PACKAGE } from "../package.ts";
 
 const HELP = `c64-re-tools-host
@@ -117,6 +119,15 @@ async function main(): Promise<number> {
     );
   } catch (error) {
     unavailable.c64 = (error as Error).message;
+  }
+
+  // ZEsarUX for the ZX Spectrum.
+  try {
+    const version = await checkZesaruxStarts({ supervisor });
+    log(`ZEsarUX ${version} starts`);
+    backends.spectrum = zesaruxBackend({ supervisor });
+  } catch (error) {
+    unavailable.spectrum = (error as Error).message;
   }
 
   // Without any emulator the runtime is useless: refuse to start, by name and with the remedy.

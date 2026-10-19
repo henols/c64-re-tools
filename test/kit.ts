@@ -23,6 +23,8 @@ export interface McpOptions {
   env?: Record<string, string>;
   /** "ignore" for a test that provokes errors on purpose. */
   stderr?: "inherit" | "ignore";
+  /** Arguments of the MCP server, for example ["--machine", "spectrum"]. */
+  args?: string[];
 }
 
 /** Starts the MCP server from this checkout as an agent does, connected to the Host Runtime at `address` (host:port). */
@@ -31,7 +33,7 @@ export async function startMcp(address: string, options: McpOptions = {}): Promi
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [...process.execArgv, resolve(root, "src/mcp/main.ts")],
+    args: [...process.execArgv, resolve(root, "src/mcp/main.ts"), ...(options.args ?? [])],
     env: { ...env, C64RT_HOST: address, ...options.env },
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     stderr: options.stderr ?? "inherit",

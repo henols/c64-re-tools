@@ -32,7 +32,7 @@ export const AddressInput = z
     message: "must be $ and 1 to 4 hex digits, for example $c000 or $fb. A tool takes no names: get the address of the name from the project knowledge",
   })
   .transform((value) => addressOf(value)!)
-  .describe("C64 address: $ and 1 to 4 hex digits, $0000 to $ffff");
+  .describe("address: $ and 1 to 4 hex digits, $0000 to $ffff");
 
 /** The space of a memory target or condition: the emulator tests only C64 memory. */
 const MemorySpaceInput = SpaceInput.describe("c64 only: the emulator tests only C64 memory. For the drive, use a watchpoint or an address target in space drive8");

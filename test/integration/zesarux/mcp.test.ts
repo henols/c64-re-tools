@@ -1,0 +1,141 @@
+// The spectrum MCP server end to end: a Host Runtime with ZEsarUX, the MCP
+// server with --machine spectrum over stdio, and its tools on the keyboard
+// counter (test/fixtures/z80). Needs ZEsarUX on the host: set
+// C64RT_LIVE_ZESARUX to the absolute path of zesarux.
+
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
+
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+
+import { readZ80 } from "../../../src/spectrum.ts";
+import { COUNT, FRAMES_SEEN, HALT_AT, keyboardCounterSnapshot, PRESSES } from "../../fixtures/z80/keyboard-counter.ts";
+import { startMcp } from "../../kit.ts";
+import { startHost, stopHosts } from "../vice/live.ts";
+
+const zesarux = process.env.C64RT_LIVE_ZESARUX;
+const skip = zesarux === undefined ? "live ZEsarUX: set C64RT_LIVE_ZESARUX=/absolute/path/to/zesarux to run" : false;
+
+const project = mkdtempSync(join(tmpdir(), "c64-re-tools-spectrum-mcp-"));
+mkdirSync(join(project, ".c64-re-tools"));
+writeFileSync(join(project, "counter.z80"), keyboardCounterSnapshot());
+writeFileSync(join(project, "bytes.bin"), Uint8Array.from([0x11, 0x22, 0x33]));
+after(async () => {
+  await stopHosts();
+  rmSync(project, { recursive: true, force: true });
+});
+
+const json = (result: CallToolResult) => JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
+
+test("the spectrum MCP server runs, stops, steps and reads a Spectrum on ZEsarUX", { skip, timeout: 120_000 }, async () => {
+  const host = await startHost({ ...process.env, C64RT_ZESARUX: zesarux! });
+  const { client } = await startMcp(host.address, { args: ["--machine", "spectrum"], cwd: project });
+  try {
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
+      assert.notEqual(result.isError, true, `${name}: ${(result.content[0] as { text: string }).text}`);
+      return result;
+    };
+    const tools = (await client.listTools()).tools.map((tool) => tool.name);
+    assert.ok(tools.includes("ula") && tools.includes("memory_read") && !tools.includes("vicii"), tools.join(", "));
+
+    assert.equal(json(await call("autostart", { path: "counter.z80" })).state, "running");
+    assert.equal(json(await call("execution", { action: "pause" })).stopReason, "pause");
+    const added = json(await call("breakpoint", { action: "add", address: `$${COUNT.toString(16)}` })) as { points: Array<{ id: number }> };
+    // SPACE down until COUNT: the breakpoint stops the keys.
+    const pressed = json(await call("keyboard", { keys: ["space"], frames: 5 }));
+    assert.deepEqual([pressed.stopReason, pressed.pc, pressed.pointId], ["breakpoint", "$8030", added.points[0]!.id]);
+    assert.equal(json(await call("registers", { action: "read" })).pc, "$8030");
+    await call("breakpoint", { action: "remove", id: added.points[0]!.id });
+    assert.equal(json(await call("execution", { action: "advance-frames", count: 10 })).stopReason, "frames");
+    const presses = json(await call("memory_read", { address: `$${PRESSES.toString(16)}`, size: 3 }));
+    // One press of SPACE was counted before the breakpoint; ten frames without keys add none to the presses.
+    assert.equal((presses.data as string).slice(0, 2), "01");
+    const listing = json(await call("disassemble", { address: "$8030", count: 3 })) as { instructions: Array<{ text: string }> };
+    assert.deepEqual(listing.instructions.map((item) => item.text), ["ld hl,$9000", "inc (hl)", "ld a,(hl)"]);
+    const reached = json(await call("run_until", { address: "$8023", timeoutFrames: 5 }));
+    assert.deepEqual([reached.reached, reached.pc], [true, "$8023"]);
+    const ranges = (json(await call("memmap", { action: "read" })).ranges as Array<{ start: string; flags: number }>).filter((range) => range.start === "$8000" || range.start === "$8030");
+    assert.ok(ranges.every((range) => (range.flags & 4) !== 0) && ranges.length === 2, JSON.stringify(ranges));
+    const screen = await call("screen");
+    assert.equal((screen.content[1] as { mimeType: string }).mimeType, "image/png");
+    await call("snapshot", { action: "export", out: "state.z80" });
+    assert.equal(readZ80(readFileSync(join(project, "state.z80"))).registers.pc, 0x8023);
+    assert.equal(json(await call("ula")).border !== undefined, true);
+    assert.equal(json(await call("reset", { run: false })).state, "stopped");
+  } finally {
+    await client.close();
+    await host.stop();
+  }
+});
+
+test("the spectrum MCP server watches, writes, searches, times, types and keeps snapshots on ZEsarUX", { skip, timeout: 120_000 }, async () => {
+  const host = await startHost({ ...process.env, C64RT_ZESARUX: zesarux! });
+  const { client } = await startMcp(host.address, { args: ["--machine", "spectrum"], cwd: project });
+  try {
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
+      assert.notEqual(result.isError, true, `${name}: ${(result.content[0] as { text: string }).text}`);
+      return json(result);
+    };
+    const byte = async (address: number) => Number.parseInt((await call("memory_read", { address: `$${address.toString(16)}`, size: 1 })).data as string, 16);
+
+    await call("autostart", { path: "counter.z80" });
+    assert.equal((await call("execution", { action: "pause" })).state, "stopped");
+
+    // The frame counter is written once a frame: the watchpoint stops after INC (HL), at the HALT or,
+    // as ZEsarUX 13.0 does here, after it.
+    const watched = (await call("watchpoint", { action: "add", start: `$${FRAMES_SEEN.toString(16)}`, access: "write" })) as { points: Array<{ id: number }> };
+    const hit = await call("execution", { action: "advance-frames", count: 5 });
+    assert.deepEqual([hit.stopReason, hit.pointId], ["watchpoint", watched.points[0]!.id]);
+    assert.ok([HALT_AT, HALT_AT + 1].includes(Number.parseInt((hit.pc as string).slice(1), 16)), String(hit.pc));
+    await call("watchpoint", { action: "remove", id: watched.points[0]!.id });
+    assert.deepEqual((await call("watchpoint", { action: "list" })).points, []);
+
+    // Memory: a write, a read back and a search with a wildcard.
+    assert.equal((await call("memory_write", { address: "$9100", data: "deadbeef" })).bytesWritten, 4);
+    assert.equal((await call("memory_read", { address: "$9100", size: 4 })).data, "deadbeef");
+    assert.deepEqual((await call("memory_search", { start: "$9000", end: "$91ff", pattern: "dead??ef" })).matches, ["$9100"]);
+    await call("program_load", { path: "bytes.bin", address: "$9200" });
+    assert.equal((await call("memory_read", { address: "$9200", size: 3 })).data, "112233");
+
+    // Registers, one step and the history.
+    const written = await call("registers", { action: "write", values: { bc: 0x1234, hl2: 0xabcd, i: 0x3f } });
+    assert.deepEqual([written.bc, written.hl2, written.i], [0x1234, 0xabcd, 0x3f]);
+    const before = (await call("registers", { action: "read" })).pc;
+    await call("execution", { action: "step", count: 1 });
+    assert.equal(((await call("cpu_history", { count: 1 })).pcs as string[])[0], before);
+
+    // Two frames are two frames of t-states.
+    await call("timing", { action: "start" });
+    await call("execution", { action: "advance-frames", count: 2 });
+    const tstates = (await call("timing", { action: "read" })).tstates as number;
+    assert.ok(Math.abs(tstates - 2 * 69_888) < 32, `${tstates} t-states in two frames`);
+
+    // A capital letter holds CAPS SHIFT, which the counter counts; a small letter does not.
+    const counted = await byte(PRESSES);
+    assert.equal((await call("keyboard", { text: "a" })).typed, 1);
+    assert.equal(await byte(PRESSES), counted);
+    await call("keyboard", { text: "A" });
+    assert.ok((await byte(PRESSES)) > counted, "CAPS SHIFT was counted");
+    assert.equal((await call("joystick", { fire: true })).set, true);
+    await call("joystick", {});
+
+    // A snapshot brings back memory that changed after it.
+    await call("snapshot", { action: "save", name: "before" });
+    const kept = await byte(PRESSES);
+    await call("memory_write", { address: `$${PRESSES.toString(16)}`, data: ((kept + 1) & 0xff).toString(16).padStart(2, "0") });
+    await call("snapshot", { action: "restore", name: "before" });
+    assert.equal(await byte(PRESSES), kept);
+    assert.deepEqual((await call("snapshot", { action: "list" })).names, ["before"]);
+    await call("snapshot", { action: "remove", name: "before" });
+    assert.deepEqual((await call("snapshot", { action: "list" })).names, []);
+    assert.equal(((await call("ay")).registers as number[]).length, 16);
+  } finally {
+    await client.close();
+    await host.stop();
+  }
+});
