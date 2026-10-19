@@ -473,23 +473,28 @@ test("a port in use names the address and the port that failed", async () => {
   );
 });
 
-test("a second stop signal while the host stops is logged and does not end the process", { skip: process.platform === "win32" ? "Windows ends a process on any signal" : false }, async () => {
-  const before = { SIGINT: process.listeners("SIGINT"), SIGTERM: process.listeners("SIGTERM") };
-  const lines: string[] = [];
-  try {
-    const stopped = stopSignal((line) => lines.push(line));
-    process.kill(process.pid, "SIGINT");
-    assert.equal(await stopped, "SIGINT");
-    // Without a handler, this second signal ends the test process at once.
-    process.kill(process.pid, "SIGINT");
-    await waitFor(() => lines.length === 2);
-    assert.deepEqual(lines, ["received SIGINT, stopping", "received SIGINT again; the host is already stopping"]);
-  } finally {
-    for (const signal of ["SIGINT", "SIGTERM"] as const) {
-      for (const listener of process.listeners(signal)) if (!before[signal].includes(listener)) process.off(signal, listener);
+for (const [first, second] of [["SIGINT", "SIGINT"], ["SIGHUP", "SIGTERM"]] as const) {
+  test(`${first} stops the host and a second signal (${second}) stops it at once`, { skip: process.platform === "win32" ? "Windows ends a process on any signal" : false }, async () => {
+    const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+    const before = new Map(signals.map((signal) => [signal, process.listeners(signal)]));
+    const lines: string[] = [];
+    const again: NodeJS.Signals[] = [];
+    try {
+      const stopped = stopSignal((line) => lines.push(line), (signal) => again.push(signal));
+      process.kill(process.pid, first);
+      assert.equal(await stopped, first);
+      // Without a handler, this second signal ends the test process at once.
+      process.kill(process.pid, second);
+      await waitFor(() => again.length === 1);
+      assert.deepEqual(again, [second]);
+      assert.deepEqual(lines, [`received ${first}, stopping`, `received ${second} again; stopping at once`]);
+    } finally {
+      for (const signal of signals) {
+        for (const listener of process.listeners(signal)) if (!before.get(signal)!.includes(listener)) process.off(signal, listener);
+      }
     }
-  }
-});
+  });
+}
 
 test("with C64RT_TRACE every connection and request leaves a trace line with the op, the time and the outcome", async () => {
   const dir = mkdtempSync(join(tmpdir(), "c64-re-tools-host-trace-"));

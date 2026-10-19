@@ -308,24 +308,24 @@ export function parsePort(text: string): number | undefined {
 }
 
 /**
- * Resolves with the first SIGINT or SIGTERM. The handlers stay: a later
- * signal is logged and ignored, so a second Ctrl+C cannot cut the shutdown
- * short before every emulator and tool is stopped.
+ * Resolves with the first SIGINT, SIGTERM or SIGHUP. The handlers stay: a
+ * later signal is logged and calls again, which stops the host at once
+ * instead of waiting for the graceful stop of each emulator and tool.
  */
-export function stopSignal(log: (line: string) => void): Promise<NodeJS.Signals> {
+export function stopSignal(log: (line: string) => void, again: (signal: NodeJS.Signals) => void): Promise<NodeJS.Signals> {
   return new Promise((resolve) => {
     let stopping = false;
     const stop = (signal: NodeJS.Signals) => {
       if (stopping) {
-        log(`received ${signal} again; the host is already stopping`);
+        log(`received ${signal} again; stopping at once`);
+        again(signal);
         return;
       }
       stopping = true;
       log(`received ${signal}, stopping`);
       resolve(signal);
     };
-    process.on("SIGINT", stop);
-    process.on("SIGTERM", stop);
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, stop);
   });
 }
 

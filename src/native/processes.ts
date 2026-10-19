@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess, type StdioOptions } from "node:child_process";
 import type { Writable } from "node:stream";
-import { mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -14,6 +14,8 @@ export const STOP_GRACE_MS = 5_000;
 /** How long to wait for the group to vanish after SIGKILL before giving up. */
 const KILL_WAIT_MS = 2_000;
 const POLL_MS = 25;
+/** How many times a killed watchdog is replaced. A watchdog that cannot run at all must not start new ones forever. */
+const WATCHDOG_RESPAWNS = 5;
 
 export interface SpawnOptions {
   cwd?: string;
@@ -170,6 +172,7 @@ export class ProcessSupervisor {
   /** The registry file that the watchdog reads, once a watchdog runs. */
   #registry: string | undefined;
   #watchdogPid: number | undefined;
+  #watchdogRespawns = 0;
   /** The writing end of the watchdog's pipe. Kept open until this process ends: its end tells the watchdog that this process is gone. */
   #watchdogPipe: Writable | undefined;
 
@@ -270,10 +273,20 @@ export class ProcessSupervisor {
     const directory = mkdtempSync(join(tmpdir(), `c64-re-tools-${owner}-watchdog-`));
     this.#registry = join(directory, "registry.json");
     this.#writeRegistry();
+    this.#spawnWatchdog(this.#registry);
+    this.installExitGuard();
+  }
+
+  /**
+   * A watchdog that ends while its registry is still there did not end by
+   * itself (it removes the registry when it cleans up, as the exit guard does):
+   * something killed it. A new one takes over the same registry, a few times at most.
+   */
+  #spawnWatchdog(registry: string): void {
     // The watchdog runs in the temporary directory, never in the caller's directory: Windows refuses
     // to remove a directory that a running process uses. Its standard input is a pipe from this
     // process, which the system closes when this process ends.
-    const watchdog = spawn(process.execPath, [...process.execArgv, WATCHDOG, String(process.pid), this.#registry], { cwd: tmpdir(), detached: true, stdio: ["pipe", "ignore", "ignore"], windowsHide: true });
+    const watchdog = spawn(process.execPath, [...process.execArgv, WATCHDOG, String(process.pid), registry], { cwd: tmpdir(), detached: true, stdio: ["pipe", "ignore", "ignore"], windowsHide: true });
     watchdog.unref();
     // The pipe does not keep this process running, and an error on it does not end this process.
     const pipe = watchdog.stdin as (Writable & { unref?: () => void }) | null;
@@ -281,7 +294,11 @@ export class ProcessSupervisor {
     pipe?.unref?.();
     this.#watchdogPipe = pipe ?? undefined;
     this.#watchdogPid = watchdog.pid;
-    this.installExitGuard();
+    watchdog.once("exit", () => {
+      if (!existsSync(registry) || this.#watchdogRespawns >= WATCHDOG_RESPAWNS) return;
+      this.#watchdogRespawns++;
+      this.#spawnWatchdog(registry);
+    });
   }
 
   #writeRegistry(): void {

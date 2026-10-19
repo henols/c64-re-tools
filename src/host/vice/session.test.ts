@@ -231,6 +231,21 @@ test("a VICE crash fails the operation and every later one with machine-state-lo
   await session.close();
 });
 
+test("a VICE that ends by itself is stopped at once, before its session closes", async () => {
+  const { session, process } = await startSession();
+  process.crash();
+  await waitFor(() => process.stopCount === 1);
+  await session.close();
+});
+
+test("a VICE that drops its monitor but runs on is stopped at once and the session is lost", async () => {
+  const { session, process } = await startSession();
+  process.dropMonitor();
+  await waitFor(() => process.stopCount === 1);
+  await assert.rejects(session.handle("registersGet", { space: "c64" }), failsWith("machine-state-lost"));
+  await session.close();
+});
+
 /** Short monitor time limits, so a held VICE is noticed quickly. */
 function shortLimits(process: { monitor: { defaultTimeoutMs: number }; text: { defaultTimeoutMs: number } }): void {
   process.monitor.defaultTimeoutMs = 100;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -130,6 +130,66 @@ test("the registry directory of a watchdog names its owner", { skip: process.pla
     } finally {
       if (!passed) cleanUp(owner);
     }
+  }
+});
+
+/** The last argument of a process: the registry file, for a watchdog. */
+function lastArgument(pid: number): string | undefined {
+  try {
+    return readFileSync(`/proc/${pid}/cmdline`, "utf8").split(String.fromCharCode(0)).filter((part) => part !== "").at(-1);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The running watchdogs of a registry file. */
+function watchdogsOf(registry: string): number[] {
+  return readdirSync("/proc")
+    .filter((entry) => /^\d+$/.test(entry))
+    .map(Number)
+    .filter((pid) => lastArgument(pid) === registry && isAlive(pid));
+}
+
+test("a killed watchdog is replaced, and the new one cleans up when the owner is killed", { skip: process.platform === "linux" ? false : "the arguments of another process are read from /proc", timeout: 20_000 }, async () => {
+  const owner = await start(OWNERS[0]!.program);
+  let passed = false;
+  let replacement: number | undefined;
+  try {
+    const registry = lastArgument(owner.watchdog)!;
+    process.kill(owner.watchdog, "SIGKILL");
+    assert.ok(
+      await until(() => (replacement = watchdogsOf(registry).find((pid) => pid !== owner.watchdog)) !== undefined, 4_000),
+      "a new watchdog runs",
+    );
+    process.kill(owner.pid, "SIGKILL");
+    assert.ok(await until(() => !groupAlive(owner.group), 8_000), "the new watchdog stopped the child group");
+    assert.ok(await until(() => !existsSync(owner.path), 4_000), "the new watchdog removed the owned path");
+    assert.ok(await until(() => !isAlive(replacement!), 4_000), "the new watchdog ended");
+    passed = true;
+  } finally {
+    if (!passed) {
+      cleanUp(owner);
+      if (replacement !== undefined) cleanUp({ ...owner, watchdog: replacement });
+    }
+  }
+});
+
+test("a skill script that gets SIGHUP exits through its exit guard", { skip, timeout: 20_000 }, async () => {
+  const script = spawn(process.execPath, [OWNERS[1]!.program], { stdio: ["ignore", "pipe", "inherit"] });
+  const [line] = (await once(createInterface({ input: script.stdout! }), "line")) as [string];
+  const owner: Owner = { pid: script.pid!, ...(JSON.parse(line) as { group: number; watchdog: number; path: string }) };
+  let passed = false;
+  try {
+    const exited = once(script, "exit");
+    script.kill("SIGHUP");
+    // Killed by the signal, the script would report the signal and no code: its exit guard would not have run.
+    assert.deepEqual(await exited, [129, null]);
+    assert.ok(await until(() => !groupAlive(owner.group), 3_000), "the exit guard stopped the tool group");
+    assert.ok(await until(() => !existsSync(owner.path), 3_000), "the exit guard removed the workspace");
+    assert.ok(await until(() => !isAlive(owner.watchdog), 3_000), "the watchdog ended");
+    passed = true;
+  } finally {
+    if (!passed) cleanUp(owner);
   }
 });
 

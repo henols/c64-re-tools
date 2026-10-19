@@ -288,7 +288,9 @@ export class ViceSession implements ViceSessionHandle {
   /**
    * A VICE ended or dropped its monitor without the session asking. A window
    * VICE goes back headless from the state of when the window opened;
-   * any other loss is final.
+   * any other loss is final, and the lost VICE is stopped at once: a VICE
+   * that hangs without its monitor ends, and its group and scratch directory
+   * do not wait for the session to close.
    */
   #ended(vice: ViceProcess, why: string): void {
     if (this.#closed || this.#vice !== vice || this.#lost || this.#windowClosing) return;
@@ -302,6 +304,7 @@ export class ViceSession implements ViceSessionHandle {
       return;
     }
     this.#lost = true;
+    void vice.stop().catch((error: unknown) => this.#log(`stopping the lost VICE failed: ${error instanceof Error ? error.message : String(error)}`));
   }
 
   /** Restarts headless from the handover saved when the window opened. */

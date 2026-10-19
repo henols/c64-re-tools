@@ -18,6 +18,21 @@ export const C64RUN_PROTOCOL = 2;
 export const PAL_FRAME_CYCLES = 19_656;
 
 const STOP_MS = 5_000;
+/** How long c64run may take to answer a command, beyond the run up to a target tick. */
+const COMMAND_MS = 30_000;
+/** The slowest run that a command limit allows for: c64run runs about 6 million cycles per second. */
+const SLOWEST_CYCLES_PER_SECOND = 1_000_000;
+
+/**
+ * The time limit of a command, so that a core that hangs cannot keep the
+ * script running. run, run-pc and run-reads end with the absolute tick that
+ * they run to at most; the others answer at once.
+ */
+export function commandLimitMs(text: string): number {
+  const [name, ...rest] = text.split(" ");
+  const target = name === "run" || name === "run-pc" || name === "run-reads" ? Number(rest.at(-1)) : 0;
+  return COMMAND_MS + (Number.isFinite(target) ? (target * 1000) / SLOWEST_CYCLES_PER_SECOND : 0);
+}
 
 /** The machine state that most commands answer with. */
 export interface CoreStatus {
@@ -82,7 +97,8 @@ export class C64RunSession {
     createInterface({ input: child.stdout! }).on("line", (line) => this.#waiting.shift()?.resolve(line));
     void process.exited.then((status) => {
       const how = status.spawnError !== undefined ? `did not start (${status.spawnError})` : `ended (exit ${status.code ?? status.signal})`;
-      this.#ended = new WireFailure(status.spawnError !== undefined ? "installation-incomplete" : "operation-failed", `c64run ${how}.${this.#stderr === "" ? "" : ` ${this.#stderr.trim()}`}`);
+      // A core stopped because it did not answer keeps that reason.
+      this.#ended ??= new WireFailure(status.spawnError !== undefined ? "installation-incomplete" : "operation-failed", `c64run ${how}.${this.#stderr === "" ? "" : ` ${this.#stderr.trim()}`}`);
       for (const waiting of this.#waiting.splice(0)) waiting.reject(this.#ended);
     });
   }
@@ -103,10 +119,24 @@ export class C64RunSession {
     return session;
   }
 
-  /** Sends one command and gives its "ok ..." answer. An "err ..." answer throws operation-failed. */
-  command(text: string): Promise<string> {
+  /**
+   * Sends one command and gives its "ok ..." answer. An "err ..." answer throws operation-failed.
+   * A core that does not answer within the limit is stopped: every command then fails.
+   */
+  command(text: string, limitMs = commandLimitMs(text)): Promise<string> {
     if (this.#ended !== undefined) return Promise.reject(this.#ended);
-    const answer = new Promise<string>((resolve, reject) => this.#waiting.push({ resolve, reject }));
+    const answer = new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.#ended = new WireFailure("operation-failed", `c64run ${text.split(" ")[0]} did not answer in ${Math.ceil(limitMs / 1000)} s; the core is stopped.`);
+        for (const waiting of this.#waiting.splice(0)) waiting.reject(this.#ended);
+        void this.#process.stop().catch(() => {});
+      }, limitMs);
+      const done = () => clearTimeout(timer);
+      this.#waiting.push({
+        resolve: (line) => (done(), resolve(line)),
+        reject: (error) => (done(), reject(error)),
+      });
+    });
     this.#process.child.stdin!.write(`${text}\n`);
     return answer.then((line) => {
       if (line.startsWith("ok")) return line;

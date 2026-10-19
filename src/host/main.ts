@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 
+import { constants } from "node:os";
 import { parseArgs } from "node:util";
 
 import { DEFAULT_HOST_PORT } from "../protocol/messages.ts";
@@ -138,7 +139,8 @@ async function main(): Promise<number> {
   process.stdout.write(`c64-re-tools-host listening on ${address}\n`);
   trace().event("host.listening", { addresses: [address] });
 
-  trace().event("host.stop", { signal: await stopSignal(log) });
+  // A second signal exits at once: the exit guard SIGKILLs every group that is still running.
+  trace().event("host.stop", { signal: await stopSignal(log, (signal) => process.exit(128 + constants.signals[signal])) });
   await server.close();
   await supervisor.stopAll();
   return 0;

@@ -183,7 +183,7 @@ export class FakeVice {
   }
 
   /** Starts both servers and returns a ViceProcess wired to them. */
-  async start(): Promise<ViceProcess & { crash(): void; stopCount: number }> {
+  async start(): Promise<ViceProcess & { crash(): void; dropMonitor(): void; stopCount: number }> {
     for (const server of [this.binaryServer, this.textServer]) {
       server.listen(0, "127.0.0.1");
       await once(server, "listening");
@@ -210,6 +210,10 @@ export class FakeVice {
         fake.#binary?.destroy();
         fake.#text?.destroy();
         exit({ code: null, signal: "SIGSEGV" as NodeJS.Signals });
+      },
+      /** The binary monitor connection drops; the process itself runs on, as a hung VICE does. */
+      dropMonitor() {
+        fake.#binary?.destroy();
       },
     };
     return handle;

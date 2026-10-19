@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../protocol/messages.ts";
-import { C64RunSession, parseStatus } from "./c64run.ts";
+import { C64RunSession, commandLimitMs, parseStatus } from "./c64run.ts";
 import { ProcessSupervisor } from "./processes.ts";
 
 const skip = process.platform === "win32" ? "the stand-in c64run is a shell script" : false;
@@ -27,6 +27,7 @@ function standInCore(name: string, options: { protocol?: number; roms?: boolean 
       `    version) echo "ok c64run protocol=${options.protocol ?? 2} chips=test" ;;`,
       `    init) ${init} ;;`,
       '    peek) echo "ok 0102" ;;',
+      "    hang) sleep 600 ;;",
       "    quit) exit 0 ;;",
       '    *) echo "err unknown $cmd" ;;',
       "  esac",
@@ -55,6 +56,28 @@ test("a session sends commands in order and turns an err answer into operation-f
     assert.equal((await session.init()).pc, 0xfce2);
     assert.deepEqual([...(await session.peek(0x0400, 2))], [1, 2]);
     await assert.rejects(session.command("fly"), (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && /c64run fly: unknown fly/.test(error.message));
+  } finally {
+    await session.close();
+  }
+  assert.equal(run.supervisor.size, 0);
+});
+
+test("a run to a far tick gets the time of its cycles at 1 million per second; other commands get 30 s", () => {
+  assert.equal(commandLimitMs("peek 0400 2"), 30_000);
+  assert.equal(commandLimitMs("run-sync"), 30_000);
+  assert.equal(commandLimitMs("run 600000000"), 630_000);
+  assert.equal(commandLimitMs("run-pc c000 60000000"), 90_000);
+  assert.equal(commandLimitMs("run-reads c000 dc00 3 120000000"), 150_000);
+});
+
+test("a command that c64run does not answer in time fails, stops the core and fails every later command", { skip, timeout: 20_000 }, async () => {
+  const run = context({ C64RT_C64RUN: standInCore("c64run-hang") });
+  const session = await C64RunSession.open(run);
+  const stopped = (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && /c64run hang did not answer in 1 s; the core is stopped/.test(error.message);
+  try {
+    await assert.rejects(session.command("hang", 300), stopped);
+    await assert.rejects(session.command("peek 0400 2"), stopped);
+    // The stop of the core's group (its sleep too) is under way; close waits for it.
   } finally {
     await session.close();
   }

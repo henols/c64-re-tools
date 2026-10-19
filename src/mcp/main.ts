@@ -123,10 +123,10 @@ async function main(): Promise<void> {
     process.exit(0);
   };
   // The harness ends the server by closing stdin or by a signal; both end the session and its emulator.
+  // Only the client holds the writing end of stdin: its end, close or error means that the client is gone.
   server.onclose = () => void stop();
-  process.stdin.once("end", () => void stop());
-  process.once("SIGINT", () => void stop());
-  process.once("SIGTERM", () => void stop());
+  for (const event of ["end", "close", "error"] as const) process.stdin.once(event, () => void stop());
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(signal, () => void stop());
 
   await server.connect(new StdioServerTransport());
 }
