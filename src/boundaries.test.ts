@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["address", "assembler", "build-name", "c64-keys", "c64", "compare", "cpu", "errors", "graphics", "machine", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
+      return ["address", "assembler", "build-name", "c64-keys", "c64", "compare", "cpu", "errors", "graphics", "machine", "media", "opcodes", "package", "platform", "project", "script", "spectrum", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "assembler", "cpu", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -46,6 +46,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   cpu: ["opcodes"],
   // The assembler of a machine: the rules for patch code and macro bodies in its syntax.
   assembler: ["opcodes"],
+  // ZX Spectrum media and snapshots: TAP and TZX blocks, .z80 and .sna.
+  spectrum: [],
   // A machine: its CPU, its spaces, its assembler and its Ghidra language.
   machine: ["cpu", "assembler"],
   // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images.
