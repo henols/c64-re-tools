@@ -4,7 +4,7 @@ The project logo draws on the Commodore-era open **C**, five-color rainbow, and 
 
 | Asset | Use |
 | --- | --- |
-| [Dark horizontal logo](c64-re-tools-dark.svg) | Dark backgrounds |
+| [Dark horizontal logo](c64-re-tools-dark.svg) | Transparent background with light lettering for dark surfaces |
 | [Light horizontal logo](c64-re-tools-light.svg) | White or light backgrounds |
 | [Transparent horizontal logo](c64-re-tools-transparent.svg) | Transparent backgrounds, with dark lettering; recommended for the main README |
 | [Square icon](c64-re-tools-icon.svg) | Square avatars and app/tool icons |
