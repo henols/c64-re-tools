@@ -3,7 +3,7 @@
 // Each command prints one JSON result.
 
 import { projectMainSpace } from "#src/knowledge/names.ts";
-import { C64 } from "#src/machine.ts";
+import { C64, MACHINES } from "#src/machine.ts";
 import { machineOf, mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
-import { readImage } from "#src/host-client/image.ts";
+import { readImage, readSnapshotImage } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
@@ -1069,11 +1069,32 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "image",
-      summary: "Puts the program into the knowledge: its bytes, and for the image.json of a capture also the entry, the entry state and the stages. Only changed bytes write.",
-      subjects: [{ name: "<file>", help: "the image.json of a capture or of loads, or a PRG" }],
+      summary:
+        "Puts the program into the knowledge: its bytes, and for the image.json of a capture also the entry, the entry state and the stages. " +
+        "A ZX Spectrum snapshot gives $4000-$ffff at its PC, the PC as the entry and the Z80 state; on the 128K also each other RAM bank with data, in ram0-ram7. Only changed bytes write.",
+      subjects: [{ name: "<file>", help: "the image.json of a capture or of loads, a PRG, or a .z80 or .sna snapshot" }],
+      notes: "A snapshot sets the machine of the project to its model when the knowledge has no rows of another machine.",
     },
     (call) => {
       const context = contextOf(call);
+      if (/\.(z80|sna)$/i.test(call.subject(0))) {
+        if (call.string("space") !== undefined) throw new UsageError("A snapshot gives its own spaces: the CPU view and the RAM banks. Remove --space");
+        const snapshot = readSnapshotImage(call.subject(0));
+        return (db) => {
+          const machine = machineOf(db).id === snapshot.machine ? undefined : writeMachine(db, context, { machine: snapshot.machine });
+          const main = MACHINES[snapshot.machine].spaces.main;
+          const written = [
+            { ...setImage(db, context, { space: main, segments: snapshot.main.segments, byteAt: snapshot.main.byteAt, entry: snapshot.main.entry, state: snapshot.main.state }), space: main },
+            ...snapshot.banks.map((bank) => ({ ...setImage(db, context, { space: `ram${bank.bank}`, segments: [{ start: 0xc000, end: 0xffff }], byteAt: bank.byteAt }), space: `ram${bank.bank}` })),
+          ];
+          return {
+            revision: [machine?.revision ?? null, ...written.map((item) => item.revision)].filter((revision) => revision !== null).at(-1) ?? null,
+            machine: snapshot.machine,
+            machineChanged: machine !== undefined,
+            spaces: written.map(({ space, current }) => ({ space, bytes: current.bytes, rowsAdded: current.rowsAdded, rowsClosed: current.rowsClosed, entryChanged: current.entry })),
+          };
+        };
+      }
       const request = imageRequest(call.subject(0), call.space);
       return (db) => {
         const { revision, current } = setImage(db, context, request);

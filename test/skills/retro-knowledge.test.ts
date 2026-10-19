@@ -11,6 +11,8 @@ import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
+import { writeZ80 } from "../../src/spectrum.ts";
+import { keyboardCounterSnapshot } from "../fixtures/z80/keyboard-counter.ts";
 import { listing, type ListingSource } from "../../skills/retro-knowledge/scripts/lib/listing.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/retro-knowledge/scripts/knowledge.ts");
@@ -467,4 +469,39 @@ test("a read with conflicts of a git merge gives merge as the next command, and 
   assert.match(refused.envelope.hint!, /Decide the conflicts of the git merge in the project knowledge\. Then write again\./);
   const merged = knowledge(root, "merge", "--reason", "two computers");
   assert.equal((merged.json.choices as unknown[]).length, 1);
+});
+
+test("image puts a ZX Spectrum snapshot into the knowledge: the machine, the CPU view, the entry state and the other RAM banks", () => {
+  const root = project();
+  writeFileSync(join(root, "counter.z80"), keyboardCounterSnapshot());
+  const imported = knowledge(root, "image", "counter.z80");
+  assert.equal(imported.status, 0, JSON.stringify(imported.json));
+  assert.deepEqual({ ...imported.json, revision: undefined }, {
+    revision: undefined,
+    machine: "spectrum48",
+    machineChanged: true,
+    spaces: [{ space: "spectrum", bytes: 0xc000, rowsAdded: 768, rowsClosed: 0, entryChanged: true }],
+  });
+  assert.deepEqual(knowledge(root, "program").json.image, { segments: [{ start: "$4000", end: "$ffff" }], bytes: 0xc000, entry: "$8000", state: true, stages: 0 });
+  assert.match(readFileSync(join(root, ".c64-re-tools", "knowledge", "entry.jsonl"), "utf8"), /"state":\{"registers":\{"pc":"\$8000","sp":"\$ff00",.*"im":1,"iff1":false,"iff2":false\},"border":7\}/);
+  assert.equal(knowledge(root, "image", "counter.z80", "--space", "spectrum").status, 2);
+
+  // A 128K with bank 3 paged in and data in bank 1: bank 1 goes to ram1; empty banks stay out.
+  const banks = Array.from({ length: 8 }, () => new Uint8Array(0x4000));
+  banks[1]![0] = 0xc9;
+  banks[2]!.set([0xf3, 0x18, 0xfe], 0);
+  const registers = { af: 0, bc: 0, de: 0, hl: 0, af2: 0, bc2: 0, de2: 0, hl2: 0, ix: 0, iy: 0x5c3a, sp: 0x8ff0, pc: 0x8000, i: 0x3f, r: 0, iff1: false, iff2: false, im: 1 as const };
+  writeFileSync(join(root, "big.z80"), writeZ80({ model: "128k", registers, border: 0, port7ffd: 0x13, banks }));
+  const big = knowledge(root, "image", "big.z80");
+  assert.deepEqual([big.json.machine, big.json.machineChanged, (big.json.spaces as Array<{ space: string }>).map((item) => item.space)], ["spectrum128", true, ["spectrum", "ram1"]]);
+  assert.match(readFileSync(join(root, ".c64-re-tools", "knowledge", "entry.jsonl"), "utf8"), /"port7ffd":"\$13"/);
+
+  // A C64 project keeps its machine: the knowledge has C64 rows.
+  const c64 = project();
+  writeFileSync(join(c64, "game.prg"), Buffer.from([0x00, 0xc0, 0x60]));
+  assert.equal(knowledge(c64, "image", "game.prg").status, 0);
+  writeFileSync(join(c64, "counter.z80"), keyboardCounterSnapshot());
+  const refused = knowledge(c64, "image", "counter.z80");
+  assert.equal(refused.status, 2);
+  assert.match(refused.envelope.error!, /The knowledge has rows in c64, and the ZX Spectrum 48K has no such space/);
 });

@@ -68,7 +68,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   "c64-keys": [],
   // The modules of a VICE snapshot file, and the changes that press keys in it.
   vsf: ["media"],
-  "host-client": ["protocol", "c64", "c64-keys", "cpu", "project", "trace", "package", "machine"],
+  "host-client": ["protocol", "c64", "c64-keys", "cpu", "project", "trace", "package", "machine", "spectrum"],
   mcp: ["host-client", "protocol", "c64", "c64-keys", "cpu", "trace", "package", "machine"],
   host: ["native", "protocol", "c64", "c64-keys", "cpu", "graphics", "opcodes", "trace", "package", "media", "vsf", "machine", "spectrum"],
   // opcodes: one rule for a name that ACME can take as a label.

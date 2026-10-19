@@ -543,7 +543,10 @@ A macro writes a run of instructions as one line of the source, for example `+in
 
 ### `image <file>`
 
-- `<file>` is the `image.json` of a capture, or a PRG. A PRG has the extension `.prg` or no extension. The script refuses a file with another extension.
+- `<file>` is the `image.json` of a capture, a PRG, or a ZX Spectrum snapshot (`.z80` or `.sna`). A PRG has the extension `.prg` or no extension. The script refuses a file with another extension.
+- To get a snapshot, load the ZX Spectrum program in the emulator with its own loader. Stop at the entry of its machine code. Then write the machine state with `snapshot` action `export` into `.c64-re-tools/local/`.
+- A snapshot gives `$4000`-`$ffff` as the CPU sees it, and the PC as the entry. The entry state holds the registers, the interrupt state, the border and the paging. On the 128K, each other RAM bank with data goes into its space `ram0` to `ram7`, at `$c000`-`$ffff`. The snapshot gives the spaces, so `image` refuses `--space` with a snapshot.
+- A snapshot sets the machine of the project to `spectrum48` or `spectrum128`. `body.machineChanged` is `true` then. The script refuses this when the knowledge has rows of the C64.
 - For drive code or a cartridge bank, give `--space drive8` or `--space bank0`.
 - `body` holds `revision`, `bytes`, `rowsAdded`, `rowsClosed` and `entryChanged`.
 - `image` writes only the bytes that changed. The same image again writes nothing. A new image replaces the program of the space. The history keeps the old bytes.

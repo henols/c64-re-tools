@@ -1,11 +1,12 @@
-// An image.json of the c64-unpacker skill (a 64 KiB memory and its segments)
-// or a PRG, read from the project to put it into the knowledge.
+// An image.json of the c64-unpacker skill (a 64 KiB memory and its segments),
+// a PRG, or a ZX Spectrum snapshot, read from the project to put it into the knowledge.
 
 import { posix } from "node:path";
 
 import { isRefusal, Refusal } from "../errors.ts";
 import { prgRange } from "../c64.ts";
-import { formatAddress } from "../address.ts";
+import { formatAddress, formatByte } from "../address.ts";
+import { cpuRam, pagedBank, readSna, readZ80, type SpectrumSnapshot } from "../spectrum.ts";
 import { readEntryState, type EntryState } from "./entry-state.ts";
 import { readProjectFile } from "./transfer.ts";
 
@@ -121,4 +122,42 @@ function entryStateNextTo(path: string): EntryState | undefined {
     if (isRefusal(error) && error.code === "not-found") return undefined;
     throw error;
   }
+}
+
+/** A ZX Spectrum snapshot as the program of a project: the machine, the CPU view at the entry, and the other RAM banks of a 128K. */
+export interface SnapshotImage {
+  machine: "spectrum48" | "spectrum128";
+  /** $4000-$FFFF as the CPU sees it at the entry (banks 5 and 2 and the paged bank), the PC as the entry, and the Z80 state. */
+  main: { segments: Array<{ start: number; end: number }>; byteAt: (address: number) => number; entry: number; state: Record<string, unknown> };
+  /** The 128K: each RAM bank that is not in the CPU view and holds a byte that is not 0, at $C000-$FFFF. */
+  banks: Array<{ bank: number; byteAt: (address: number) => number }>;
+}
+
+/** The entry state of a Spectrum snapshot: the Z80 registers, the interrupt state, the border and, on the 128K, port $7ffd. */
+export function z80EntryState(snapshot: SpectrumSnapshot): Record<string, unknown> {
+  const r = snapshot.registers;
+  const word = (value: number) => formatAddress(value);
+  return {
+    registers: {
+      pc: word(r.pc), sp: word(r.sp), af: word(r.af), bc: word(r.bc), de: word(r.de), hl: word(r.hl), ix: word(r.ix), iy: word(r.iy),
+      af2: word(r.af2), bc2: word(r.bc2), de2: word(r.de2), hl2: word(r.hl2), i: formatByte(r.i), r: formatByte(r.r), im: r.im, iff1: r.iff1, iff2: r.iff2,
+    },
+    border: snapshot.border,
+    ...(snapshot.model === "128k" ? { port7ffd: formatByte(snapshot.port7ffd) } : {}),
+  };
+}
+
+/** Reads a .z80 or .sna snapshot of the project as the program at its PC. */
+export function readSnapshotImage(path: string): SnapshotImage {
+  const file = readProjectFile(path, { what: "<file>" });
+  const snapshot = file.type === "z80" ? readZ80(file.bytes) : file.type === "sna" ? readSna(file.bytes) : undefined;
+  if (snapshot === undefined) throw new Refusal("invalid-input", `${path} is no ZX Spectrum snapshot: give a .z80 or a .sna file.`);
+  const ram = cpuRam(snapshot);
+  const inView = new Set([5, 2, pagedBank(snapshot)]);
+  const banks = snapshot.model === "128k" ? [0, 1, 3, 4, 6, 7].filter((bank) => !inView.has(bank) && snapshot.banks[bank]!.some((byte) => byte !== 0)) : [];
+  return {
+    machine: snapshot.model === "128k" ? "spectrum128" : "spectrum48",
+    main: { segments: [{ start: 0x4000, end: 0xffff }], byteAt: (address) => ram[address - 0x4000]!, entry: snapshot.registers.pc, state: z80EntryState(snapshot) },
+    banks: banks.map((bank) => ({ bank, byteAt: (address: number) => snapshot.banks[bank]![address - 0xc000]! })),
+  };
 }
