@@ -1,6 +1,6 @@
-// zxrun: the replay core for the ZX Spectrum 48K (floooh/chips zx.h) with the
-// line-command interface of c64run: one command per line on stdin, one answer
-// line on stdout ("ok ..." or "err ..."). Time is counted in CPU cycles
+// zxrun: the replay core for the ZX Spectrum 48K and 128K (floooh/chips zx.h)
+// with the line-command interface of c64run: one command per line on stdin, one
+// answer line on stdout ("ok ..." or "err ..."). Time is counted in CPU cycles
 // ("ticks") from the first opcode fetch after init (the reset at $0000) or after
 // load-z80 (the pc of the snapshot).
 //
@@ -10,8 +10,11 @@
 // of ports. chips is not changed: the harness calls _zx_tick and edits the data
 // pins between two ticks.
 //
-// zx.h does not emulate contended memory, so the tick counts are not the ticks
-// of a real Spectrum. A replay is still the same as its recording.
+// zx.h counts one scan line too many in a frame (scanline_y++ >= frame_scan_lines),
+// so init sets one line less: a frame is 312 x 224 (48K) or 311 x 228 (128K)
+// cycles, as on a real Spectrum. zx.h has no contended memory either: the harness
+// adds it (see "Contended memory" below), so the ticks are those of a real
+// Spectrum and of ZEsarUX.
 
 #define CHIPS_IMPL
 #include <stdio.h>
@@ -27,8 +30,10 @@
 #include "chips/clk.h"
 #include "systems/zx.h"
 
-#define ZXRUN_PROTOCOL 1
-#define ROM_NAME "48.rom"
+#define ZXRUN_PROTOCOL 2
+#define ROM_48 "48.rom"
+// The two 128K ROMs in one file: ROM 0 (the 128 editor), then ROM 1 (48 BASIC).
+#define ROM_128 "128.rom"
 #ifndef CHIPS_COMMIT
 #define CHIPS_COMMIT "unknown"
 #endif
@@ -37,6 +42,8 @@ static zx_t sys;
 static uint64_t pins;
 static uint64_t ticks;
 static int ready;
+static int is128;
+static char last_romdir[1024];
 static uint16_t last_sync_pc;
 
 // An opcode fetch that starts an instruction: an M1 memory read with no prefix
@@ -139,6 +146,9 @@ static void input_read(uint16_t pc, uint16_t port) {
 
 enum { COV_RAM_R = 1, COV_RAM_W = 2, COV_RAM_X = 4, COV_ROM_R = 8, COV_ROM_X = 16, COV_IO_R = 32, COV_IO_W = 64 };
 static uint8_t coverage[0x10000];
+// The 128K: the coverage of $C000-$FFFF per RAM bank, the bank that was paged in
+// at each access (8 x 16 KiB, bank n from n * $4000).
+static uint8_t bank_coverage[8 * 0x4000];
 // The ports: IO_R and IO_W for each 16-bit port address of an IN or OUT.
 static uint8_t io_coverage[0x10000];
 
@@ -159,15 +169,147 @@ static void cover(uint16_t addr, int start, int read) {
         bit = COV_RAM_W;
     }
     coverage[addr] |= bit;
+    if (is128 && addr >= 0xC000) bank_coverage[(sys.last_mem_config & 7) * 0x4000 + (addr - 0xC000)] |= bit;
+}
+
+// ---- Contended memory: the ULA holds the CPU while it reads the screen ----
+//
+// The model of Fuse and ZEsarUX: in the 192 screen lines, during the first 128
+// cycles of each line, a cycle that puts a contended address on the bus waits
+// 6, 5, 4, 3, 2, 1, 0 or 0 cycles. Contended are $4000-$7FFF and, on the 128K,
+// $C000-$FFFF when an odd RAM bank is paged in. The cycles are those of the bus:
+// the opcode fetch, each memory read and write, the I/O cycle (its own pattern),
+// and each internal cycle, which has the address of the last access (IR after an
+// opcode fetch) on the bus.
+//
+// zx.h runs each instruction as a list of steps, one per cycle; a memory cycle is
+// an empty step (T1), the access with its WAIT test (T2) and an empty step (T3).
+// The harness reads the next step on a copy of the CPU. Empty steps that are no
+// part of a machine cycle are internal cycles; they wait until the next access,
+// which then gets all their delays at once. A delay is a stall: the ULA, the
+// interrupt, the AY and the beeper run on while the CPU stands still.
+
+static int frame_t;          // the cycle of the frame that the next tick runs, in the count of ZEsarUX
+static uint32_t frame_seen;  // sys.blink_counter: it counts the frame interrupts
+static int rest;             // the ticks of the current machine cycle after its access
+static int idle_count, idle_from; // the empty steps since the last access, and the first one's frame cycle
+static uint16_t last_addr;   // the address of the last access
+
+static void contention_reset(void) {
+    rest = idle_count = 0;
+    last_addr = 0;
+}
+
+static int contended(uint16_t addr) {
+    const int segment = addr >> 14;
+    return segment == 1 || (is128 && segment == 3 && (sys.last_mem_config & 1));
+}
+
+// The first contended cycle of the frame: 14336 on the 48K and 14362 on the
+// 128K in this count, measured against ZEsarUX 13.0 (the usual reference counts
+// one cycle less: 14335 and 14361).
+static int ula_delay(int t) {
+    static const int pattern[8] = { 6, 5, 4, 3, 2, 1, 0, 0 };
+    const int frame = is128 ? 70908 : 69888, period = is128 ? 228 : 224, first = is128 ? 14362 : 14336;
+    t %= frame;
+    if (t < first) return 0;
+    const int line = (t - first) / period, at = (t - first) % period;
+    return line < 192 && at < 128 ? pattern[at & 7] : 0;
+}
+
+// Counts the cycle that just ran. The tick after the one that raised the frame
+// interrupt is cycle 0, as ZEsarUX counts the cycles of a frame.
+static void count_cycle(void) {
+    ticks++;
+    if (sys.blink_counter != frame_seen) { frame_seen = sys.blink_counter; frame_t = 0; }
+    else frame_t++;
+}
+
+// One cycle with the CPU held: zx.h's _zx_tick without the CPU and the bus.
+static void stall(int count) {
+    while (count-- > 0) {
+        if (--sys.scanline_counter <= 0) {
+            sys.scanline_counter += sys.scanline_period;
+            if (_zx_decode_scanline(&sys)) { pins |= Z80_INT; sys.int_counter = 32; }
+        }
+        if ((pins & Z80_INT) && --sys.int_counter < 0) pins &= ~Z80_INT;
+        if (++sys.tick_count & 1) ay38910_tick(&sys.ay);
+        beeper_tick(&sys.beeper);
+        count_cycle();
+    }
+}
+
+// The frame cycle after the empty steps before an access, of which the last
+// t1 steps belong to the access's own cycle: each internal cycle waits for the ULA.
+static int after_internal(int t1) {
+    if (idle_count == 0) return frame_t;
+    int v = idle_from;
+    for (int i = 0; i < idle_count - t1; i++) v += (contended(last_addr) ? ula_delay(v) : 0) + 1;
+    return v;
+}
+
+// Before each tick: the delay of the cycle that the next step starts.
+static void contend(void) {
+    z80_t probe = sys.cpu;
+    const uint64_t next = z80_tick(&probe, pins);
+    const uint16_t addr = Z80_GET_ADDR(next);
+    int v;
+    if ((next & (Z80_MREQ | Z80_RFSH)) == (Z80_MREQ | Z80_RFSH)) {
+        // T3 of an opcode fetch: IR is on the bus from now on
+        last_addr = addr;
+        if (rest > 0) rest--;
+        return;
+    }
+    if (next & Z80_MREQ) {
+        if (next & Z80_M1) {
+            // an opcode fetch: its T1 is this step
+            v = after_internal(0);
+            v += contended(addr) ? ula_delay(v) : 0;
+            rest = 3;
+        } else {
+            // a memory read or write: its T1 was the empty step before
+            const int t1 = idle_count > 0 ? 1 : 0;
+            v = after_internal(t1);
+            v += (contended(addr) ? ula_delay(v) : 0) + t1;
+            rest = 1;
+        }
+    } else if ((next & (Z80_IORQ | Z80_M1)) == Z80_IORQ) {
+        // an I/O cycle of 4 cycles: T1 was 1 (write) or 2 (read) empty steps before
+        // The pattern: a contended high byte waits at T1; the ULA (an even port)
+        // waits at T2; another port with a contended high byte waits at T2, T3 and T4.
+        const int lead = (next & Z80_RD) ? 2 : 1;
+        const int t1 = idle_count < lead ? idle_count : lead;
+        v = after_internal(t1);
+        const int high = contended(addr), ula = (addr & 1) == 0;
+        int t = v, delays = 0;
+        if (high) { const int d = ula_delay(t); delays += d; t += d; }
+        t++;
+        for (int i = 0; i < (ula ? 1 : high ? 3 : 0); i++) { const int d = ula_delay(t); delays += d; t += d + 1; }
+        v += delays + t1;
+        rest = (next & Z80_RD) ? 1 : 2;
+    } else if (next & Z80_IORQ) {
+        // the interrupt acknowledge: at the start of the frame, out of the screen lines
+        v = after_internal(0);
+        rest = 0;
+    } else {
+        if (rest > 0) rest--;
+        else { if (idle_count++ == 0) idle_from = frame_t; }
+        return;
+    }
+    if (next & (Z80_MREQ | Z80_IORQ)) last_addr = addr;
+    idle_count = 0;
+    if (v > frame_t) stall(v - frame_t);
 }
 
 // ---- The tick ----
 
 static void tick(void) {
+    contend();
     pins = _zx_tick(&sys, pins);
+    count_cycle();
     const uint16_t addr = Z80_GET_ADDR(pins);
     if (pins & Z80_MREQ) {
-        if (pins & Z80_RFSH) { ticks++; return; }
+        if (pins & Z80_RFSH) return;
         const int read = (pins & Z80_RD) != 0;
         const int start = (pins & Z80_M1) && read && !sys.cpu.prefix_active;
         if (start) last_sync_pc = addr;
@@ -179,7 +321,6 @@ static void tick(void) {
             if (coverage_on) io_coverage[addr] |= COV_IO_R;
         } else if ((pins & Z80_WR) && coverage_on) io_coverage[addr] |= COV_IO_W;
     }
-    ticks++;
 }
 
 // ---- Files and helpers ----
@@ -203,19 +344,19 @@ static int write_file(const char* path, const void* data, size_t size) {
     return put == size;
 }
 
-// FNV-1a over the 48 KiB of RAM ($4000-$FFFF).
+// FNV-1a over the RAM: the 3 banks of the 48K, the 8 banks of the 128K.
 static uint32_t state_hash(void) {
     uint32_t h = 2166136261u;
-    for (int b = 0; b < 3; b++) for (int i = 0; i < 0x4000; i++) { h ^= sys.ram[b][i]; h *= 16777619u; }
+    for (int b = 0; b < (is128 ? 8 : 3); b++) for (int i = 0; i < 0x4000; i++) { h ^= sys.ram[b][i]; h *= 16777619u; }
     return h;
 }
 
 static void status(const char* prefix) {
     const int sync = at_sync();
-    printf("%s tick=%llu sync=%d pc=%04x af=%04x bc=%04x de=%04x hl=%04x ix=%04x iy=%04x sp=%04x im=%u iff=%d line=%d cycle=%d hash=%08x\n", prefix,
+    printf("%s tick=%llu sync=%d pc=%04x af=%04x bc=%04x de=%04x hl=%04x ix=%04x iy=%04x sp=%04x im=%u iff=%d line=%d cycle=%d frame=%d model=%s port7ffd=%02x hash=%08x\n", prefix,
         (unsigned long long)ticks, sync, sync ? Z80_GET_ADDR(pins) : 0xFFFF,
         sys.cpu.af, sys.cpu.bc, sys.cpu.de, sys.cpu.hl, sys.cpu.ix, sys.cpu.iy, sys.cpu.sp, sys.cpu.im, sys.cpu.iff1 ? 1 : 0,
-        sys.scanline_y, sys.scanline_period - sys.scanline_counter, state_hash());
+        sys.scanline_y, sys.scanline_period - sys.scanline_counter, frame_t, is128 ? "128k" : "48k", is128 ? sys.last_mem_config : 0, state_hash());
 }
 
 // The ROM folder: the argument, C64RT_ZX_ROMS, or ../share/c64-re-tools/roms next to the program.
@@ -249,19 +390,37 @@ static int to_first_sync(void) {
     return 0;
 }
 
-static const char* init(const char* romdir) {
+static const char* init(const char* romdir, int want128) {
     static char missing[1200];
     char path[1100];
-    snprintf(path, sizeof path, "%s/%s", romdir, ROM_NAME);
-    uint8_t* rom = read_file(path, 0x4000, NULL);
-    if (!rom) { snprintf(missing, sizeof missing, "no ROM %s (16384 bytes)", path); return missing; }
+    const size_t size = want128 ? 0x8000 : 0x4000;
+    snprintf(path, sizeof path, "%s/%s", romdir, want128 ? ROM_128 : ROM_48);
+    uint8_t* rom = read_file(path, size, NULL);
+    if (!rom) { snprintf(missing, sizeof missing, "no ROM %s (%zu bytes)", path, size); return missing; }
     if (ready) zx_discard(&sys);
-    zx_init(&sys, &(zx_desc_t){
-        .type = ZX_TYPE_48K,
-        .joystick_type = ZX_JOYSTICKTYPE_KEMPSTON,
-        .roms = { .zx48k = { .ptr = rom, .size = 0x4000 } },
-    });
+    ready = 0;
+    if (want128) {
+        zx_init(&sys, &(zx_desc_t){
+            .type = ZX_TYPE_128,
+            .joystick_type = ZX_JOYSTICKTYPE_KEMPSTON,
+            .roms = { .zx128_0 = { .ptr = rom, .size = 0x4000 }, .zx128_1 = { .ptr = rom + 0x4000, .size = 0x4000 } },
+        });
+    } else {
+        zx_init(&sys, &(zx_desc_t){
+            .type = ZX_TYPE_48K,
+            .joystick_type = ZX_JOYSTICKTYPE_KEMPSTON,
+            .roms = { .zx48k = { .ptr = rom, .size = 0x4000 } },
+        });
+    }
     free(rom);
+    // One line less than zx.h sets: its frame counter counts frame_scan_lines + 1 lines.
+    sys.frame_scan_lines -= 1;
+    is128 = want128;
+    snprintf(last_romdir, sizeof last_romdir, "%s", romdir);
+    // zx.h raises the first interrupt in the last tick of the first frame.
+    frame_t = 0;
+    frame_seen = sys.blink_counter;
+    contention_reset();
     pins = sys.pins;
     ticks = 0;
     if (!to_first_sync()) return "the CPU did not reach the reset address";
@@ -326,10 +485,15 @@ int main(int argc, char** argv) {
         // The version, and whether the default ROM folder has the ROM.
         char dir[1024], path[1100];
         rom_dir(NULL, argv[0], dir, sizeof dir);
-        snprintf(path, sizeof path, "%s/%s", dir, ROM_NAME);
-        FILE* f = fopen(path, "rb");
         printf("zxrun protocol=%d chips=%s\n", ZXRUN_PROTOCOL, CHIPS_COMMIT);
-        if (f) { fclose(f); printf("roms=ok %s\n", dir); } else printf("roms=missing %s has no %s\n", dir, ROM_NAME);
+        const char* names[] = { ROM_48, ROM_128 };
+        const char* absent = NULL;
+        for (int i = 0; i < 2; i++) {
+            snprintf(path, sizeof path, "%s/%s", dir, names[i]);
+            FILE* f = fopen(path, "rb");
+            if (f) fclose(f); else if (!absent) absent = names[i];
+        }
+        if (!absent) printf("roms=ok %s\n", dir); else printf("roms=missing %s has no %s\n", dir, absent);
         return 0;
     }
     static char line[1 << 17], cmd[64], a1[1024], a2[1 << 16];
@@ -340,9 +504,10 @@ int main(int argc, char** argv) {
         if (!strcmp(cmd, "version")) {
             printf("ok zxrun protocol=%d chips=%s\n", ZXRUN_PROTOCOL, CHIPS_COMMIT);
         } else if (!strcmp(cmd, "init")) {
-            // init [<rom folder>]: power on; the CPU stops at the first opcode fetch, tick 0
+            // init 48k|128k [<rom folder>]: power on; the CPU stops at the first opcode fetch, tick 0
+            if (n < 2 || (strcmp(a1, "48k") && strcmp(a1, "128k"))) { printf("err init: give 48k or 128k\n"); continue; }
             char dir[1024];
-            rom_dir(n >= 2 ? a1 : NULL, argv[0], dir, sizeof dir);
+            rom_dir(n >= 3 ? a2 : NULL, argv[0], dir, sizeof dir);
             clear_sites();
             replaying = 0;
             replay_unknown = 0;
@@ -351,7 +516,8 @@ int main(int argc, char** argv) {
             if (record_file) { fclose(record_file); record_file = NULL; }
             memset(coverage, 0, sizeof coverage);
             memset(io_coverage, 0, sizeof io_coverage);
-            const char* problem = init(dir);
+            memset(bank_coverage, 0, sizeof bank_coverage);
+            const char* problem = init(dir, !strcmp(a1, "128k"));
             if (problem) printf("err init: %s\n", problem); else status("ok");
         } else if (!strcmp(cmd, "quit")) {
             break;
@@ -360,13 +526,28 @@ int main(int argc, char** argv) {
         } else if (!strcmp(cmd, "status")) {
             status("ok");
         } else if (!strcmp(cmd, "load-z80")) {
-            // load-z80 <file>: a .z80 snapshot; the CPU stops at its pc, tick 0
+            // load-z80 <file>: a .z80 snapshot of a 48K or a 128K; the machine becomes
+            // that model, and the CPU stops at the snapshot pc, tick 0
             size_t size = 0;
             uint8_t* b = read_file(a1, 1 << 20, &size);
             if (!b) { printf("err load-z80: cannot read %s\n", a1); continue; }
+            // Version 1 has a pc in the header; versions 2 and 3 give the hardware after it
+            // (version 2: 3 and 4 are a 128K; version 3: 4, 5 and 6 are a 128K).
+            int want128 = 0;
+            if (size > 34 && b[6] == 0 && b[7] == 0) {
+                const int length = b[30] | (b[31] << 8), mode = b[34];
+                want128 = length == 23 ? mode >= 3 : mode >= 4 && mode <= 6;
+                if (length != 23 && mode == 3) { free(b); printf("err load-z80: %s is a 48K with an MGT interface\n", a1); continue; }
+            }
+            if (want128 != is128) {
+                const char* problem = init(last_romdir, want128);
+                if (problem) { free(b); printf("err load-z80: %s\n", problem); continue; }
+                ready = 1;
+            }
             const int loaded = size > 30 && zx_quickload(&sys, (chips_range_t){ .ptr = b, .size = size });
             free(b);
-            if (!loaded) { printf("err load-z80: %s is not a 48K .z80 snapshot\n", a1); continue; }
+            if (!loaded) { printf("err load-z80: %s is not a .z80 snapshot of a 48K or a 128K\n", a1); continue; }
+            contention_reset();
             pins = sys.pins;
             if (!to_first_sync()) { printf("err load-z80: the CPU did not reach the snapshot pc\n"); continue; }
             status("ok");
@@ -375,6 +556,11 @@ int main(int argc, char** argv) {
             static uint8_t all[0x10000];
             for (int i = 0; i < 0x10000; i++) all[i] = mem_rd(&sys.mem, (uint16_t)i);
             printf(write_file(a1, all, sizeof all) ? "ok\n" : "err ram-dump: cannot write %s\n", a1);
+        } else if (!strcmp(cmd, "bank-dump")) {
+            // bank-dump <n> <file>: the 16 KiB of RAM bank n (128K: 0-7; 48K: 0-2 at $4000, $8000, $C000)
+            const int bank = atoi(a1);
+            if (a1[0] < '0' || a1[0] > '7' || a1[1] || bank >= (is128 ? 8 : 3)) { printf("err bank-dump: give a bank 0-%d and a file\n", is128 ? 7 : 2); continue; }
+            printf(write_file(a2, sys.ram[bank], 0x4000) ? "ok\n" : "err bank-dump: cannot write %s\n", a2);
         } else if (!strcmp(cmd, "write")) {
             // write <addr hex> <bytes hex>: into RAM (writes to ROM have no effect)
             unsigned addr;
@@ -516,15 +702,20 @@ int main(int argc, char** argv) {
             if (!strcmp(a1, "on")) {
                 memset(coverage, 0, sizeof coverage);
                 memset(io_coverage, 0, sizeof io_coverage);
+                memset(bank_coverage, 0, sizeof bank_coverage);
                 coverage_on = 1;
                 coverage_armed_input = 0;
                 // At an opcode fetch the fetch is on the bus already: its instruction counts.
                 if (at_sync()) cover(Z80_GET_ADDR(pins), 1, 1);
                 printf("ok\n");
             }
-            else if (!strcmp(a1, "on-input")) { memset(coverage, 0, sizeof coverage); memset(io_coverage, 0, sizeof io_coverage); coverage_on = 0; coverage_armed_input = 1; printf("ok\n"); }
+            else if (!strcmp(a1, "on-input")) { memset(coverage, 0, sizeof coverage); memset(io_coverage, 0, sizeof io_coverage); memset(bank_coverage, 0, sizeof bank_coverage); coverage_on = 0; coverage_armed_input = 1; printf("ok\n"); }
             else if (!strcmp(a1, "off")) { coverage_on = coverage_armed_input = 0; printf("ok\n"); }
             else printf(write_file(a1, coverage, sizeof coverage) ? "ok\n" : "err coverage: cannot write %s\n", a1);
+        } else if (!strcmp(cmd, "bank-coverage")) {
+            // bank-coverage <file>: the 128K map of $C000-$FFFF per RAM bank (8 x 16384 bytes, bank n from n * 16384)
+            if (!is128) { printf("err bank-coverage: the 48K has no paged banks\n"); continue; }
+            printf(write_file(a1, bank_coverage, sizeof bank_coverage) ? "ok\n" : "err bank-coverage: cannot write %s\n", a1);
         } else if (!strcmp(cmd, "io-coverage")) {
             // io-coverage <file>: the 65536-byte port map (IO_R, IO_W)
             printf(write_file(a1, io_coverage, sizeof io_coverage) ? "ok\n" : "err io-coverage: cannot write %s\n", a1);

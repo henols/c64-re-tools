@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The native tools of the skill scripts in a Debian or Ubuntu dev container,
-# as root: ACME, dxa, Exomizer, and c64run with its C64 ROMs. The dev container
+# as root: ACME, dxa, Exomizer and c64run with its C64 ROMs for the C64; sjasmplus and
+# zxrun with its ZX Spectrum ROMs for the ZX Spectrum. The dev container
 # Feature runs the copy of this script that comes with the toolkit version it
 # installs, so the tools and the skills are always of the same version.
 # A tool is installed again only when its install files changed: a stamp in
@@ -53,9 +54,11 @@ tool() {
     echo "${sum}" > "${STAMPS}/${name}"
 }
 
-packages acme unzip curl ca-certificates build-essential
+packages acme unzip curl ca-certificates build-essential xz-utils
 tool dxa install-dxa.sh
 tool exomizer install-exomizer.sh
 tool c64run install-chips.sh c64run.c
+tool sjasmplus install-sjasmplus.sh
+tool zxrun install-zxrun.sh zxrun.c
 
 [[ -z "${APT_UPDATED}" ]] || rm -rf /var/lib/apt/lists/*

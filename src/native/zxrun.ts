@@ -1,4 +1,4 @@
-// The zxrun session: one ZX Spectrum 48K replay core (see tools/zxrun.c) for the
+// The zxrun session: one ZX Spectrum 48K or 128K replay core (see tools/zxrun.c) for the
 // life of a skill script. The process, the command queue and the stop are those
 // of every line core (line-core.ts).
 
@@ -8,10 +8,12 @@ import { LineCoreSession, openLineCore, statusFields } from "./line-core.ts";
 import type { ToolContext } from "./run.ts";
 
 /** The command protocol that this module speaks; zxrun --version and version name it. */
-export const ZXRUN_PROTOCOL = 1;
+export const ZXRUN_PROTOCOL = 2;
 
-/** CPU cycles in one 48K frame: 312 lines of 224 cycles. */
-export const ZX48_FRAME_CYCLES = 69_888;
+/** CPU cycles in one frame: 312 lines of 224 cycles on the 48K, 311 lines of 228 cycles on the 128K. */
+export const ZX_FRAME_CYCLES = { "48k": 69_888, "128k": 70_908 } as const;
+
+export type ZxModel = keyof typeof ZX_FRAME_CYCLES;
 
 /** The machine state that most zxrun commands answer with. */
 export interface ZxStatus {
@@ -31,7 +33,10 @@ export interface ZxStatus {
   iff: boolean;
   line: number;
   cycle: number;
-  /** FNV-1a of the 48 KiB of RAM. */
+  model: ZxModel;
+  /** The last write to port $7ffd on the 128K (0 on the 48K): the paged bank in bits 0-2. */
+  port7ffd: number;
+  /** FNV-1a of the RAM: 3 banks on the 48K, 8 on the 128K. */
   hash: string;
   /** The word after "ok", if any: "reached" or "not-reached" for run-pc and run-reads. */
   word?: string;
@@ -56,6 +61,8 @@ export function parseZxStatus(answer: string): ZxStatus {
     iff: fields.get("iff") === "1",
     line: Number(fields.get("line")),
     cycle: Number(fields.get("cycle")),
+    model: fields.get("model") === "128k" ? "128k" : "48k",
+    port7ffd: hex("port7ffd"),
     hash: fields.get("hash") ?? "",
     ...(word === undefined ? {} : { word }),
   };
@@ -74,20 +81,24 @@ export class ZxRunSession extends LineCoreSession {
     return parseZxStatus(await this.command(text));
   }
 
-  /** Power-on: the CPU stops at its first opcode fetch, tick 0. A missing ROM refuses with the remedy. */
-  async init(romFolder?: string): Promise<ZxStatus> {
+  /** Power-on of a model: the CPU stops at its first opcode fetch, tick 0. A missing ROM refuses with the remedy. */
+  init(model: ZxModel, romFolder?: string): Promise<ZxStatus> {
+    return this.#withRoms(this.status(romFolder === undefined ? `init ${model}` : `init ${model} ${romFolder}`));
+  }
+
+  /** Loads a .z80 snapshot of a 48K or a 128K; the machine becomes that model, and the CPU stops at its pc, tick 0. */
+  loadZ80(path: string): Promise<ZxStatus> {
+    return this.#withRoms(this.status(`load-z80 ${path}`));
+  }
+
+  async #withRoms(answer: Promise<ZxStatus>): Promise<ZxStatus> {
     try {
-      return await this.status(romFolder === undefined ? "init" : `init ${romFolder}`);
+      return await answer;
     } catch (error) {
       if (error instanceof WireFailure && /no ROM/.test(error.message)) {
-        throw new WireFailure("installation-incomplete", `${error.message}. zxrun needs the 48K ROM 48.rom. ${ZXRUN.remedy}`);
+        throw new WireFailure("installation-incomplete", `${error.message}. zxrun needs the ROMs 48.rom and 128.rom. ${ZXRUN.remedy}`);
       }
       throw error;
     }
-  }
-
-  /** Loads a .z80 snapshot; the CPU stops at its pc, tick 0. */
-  loadZ80(path: string): Promise<ZxStatus> {
-    return this.status(`load-z80 ${path}`);
   }
 }

@@ -274,12 +274,17 @@ export class ZesaruxSession implements SessionHandle {
   #target: number | undefined;
 
   /**
-   * Puts ZEsarUX in step mode: a run command works only there. smartload and
-   * a closed menu leave it, so every run enters it again first.
+   * Puts ZEsarUX in step mode: a run command works only there, and the CPU
+   * stays where it is. Only when an open menu refuses step mode does it close
+   * the menus first: close-all-menus lets the CPU run until step mode starts
+   * again, and a breakpoint does not stop it then (ZEsarUX 13.0).
    */
   async #stepMode(): Promise<void> {
-    await this.#zrcp("close-all-menus");
-    const answer = await this.#zrcp("enter-cpu-step");
+    let answer = await this.#zrcp("enter-cpu-step");
+    if (answer.startsWith("Error")) {
+      await this.#zrcp("close-all-menus");
+      answer = await this.#zrcp("enter-cpu-step");
+    }
     if (answer.startsWith("Error")) throw new WireFailure("machine-unavailable", `ZEsarUX does not take commands now: ${answer}`);
   }
 
@@ -369,10 +374,9 @@ export class ZesaruxSession implements SessionHandle {
 
   async #reset(params: { run: boolean }): Promise<SpectrumStop> {
     if (this.#run !== undefined) await this.#execution({ action: "pause" });
-    // reset-cpu works outside step mode, and step mode needs close-all-menus after it (ZEsarUX 13.0).
-    await this.#zrcp("exit-cpu-step");
-    await this.#zrcp("reset-cpu");
+    // In step mode the CPU stays at $0000 after reset-cpu; outside it the ROM runs on (ZEsarUX 13.0).
     await this.#stepMode();
+    await this.#zrcp("reset-cpu");
     this.#stop = {};
     const pc = parseRegisters(await this.#zrcp("get-registers")).pc;
     if (params.run) return this.#execution({ action: "resume" });

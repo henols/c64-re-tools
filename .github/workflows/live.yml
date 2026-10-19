@@ -52,7 +52,7 @@ jobs:
 
       - uses: actions/checkout@v4
       # The native tools of the skill scripts, as the dev container Feature installs them.
-      - name: Install ACME, dxa, Exomizer and c64run
+      - name: Install ACME, dxa, Exomizer, c64run, sjasmplus and zxrun
         run: bash tools/install-container.sh
       # In a container, Node.js must come first: the pnpm installer runs on it.
       - uses: actions/setup-node@v4

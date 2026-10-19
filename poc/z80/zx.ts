@@ -20,7 +20,9 @@ import { MACHINES } from "../../src/machine.ts";
 import { findTool, ZESARUX } from "../../src/native/discover.ts";
 import { analyze } from "../../src/native/ghidra/analyze.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ZX48_FRAME_CYCLES, ZxRunSession, type ZxStatus } from "../../src/native/zxrun.ts";
+import { ZX_FRAME_CYCLES, ZxRunSession, type ZxStatus } from "../../src/native/zxrun.ts";
+
+const ZX48_FRAME_CYCLES = ZX_FRAME_CYCLES["48k"];
 import { COUNT, keyboardCounterSnapshot, PRESSES } from "../../test/fixtures/z80/keyboard-counter.ts";
 import { freePort, Zrcp } from "./zrcp.ts";
 
@@ -52,7 +54,7 @@ async function record(snapshot: string, out: string, frames: number, keys: KeySt
   copyFileSync(snapshot, join(out, "snapshot.z80"));
   const core = await ZxRunSession.open(localToolContext());
   try {
-    await core.init();
+    await core.init("48k");
     await core.command(`inputs ${INPUTS}`);
     const start = await core.loadZ80(join(out, "snapshot.z80"));
     await core.command("coverage on");
@@ -83,7 +85,7 @@ async function replay(dir: string) {
   const recording = JSON.parse(readFileSync(join(dir, "recording.json"), "utf8")) as { inputs: string; end: { tick: number; hash: string } };
   const core = await ZxRunSession.open(localToolContext());
   try {
-    await core.init();
+    await core.init("48k");
     await core.command(`inputs ${recording.inputs}`);
     await core.loadZ80(join(dir, "snapshot.z80"));
     const loaded = await core.command(`replay ${join(dir, "reads.txt")}`);
@@ -344,7 +346,7 @@ async function compare(snapshot: string, hits: number) {
   const core = await ZxRunSession.open(localToolContext());
   const fromCore: Array<{ state: ZxStatus; counters: number[] }> = [];
   try {
-    await core.init();
+    await core.init("48k");
     await core.loadZ80(resolve(snapshot));
     await core.command("key 20 down");
     for (let hit = 0; hit < hits; hit++) {

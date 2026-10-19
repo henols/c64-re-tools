@@ -76,7 +76,15 @@ export const ZXRUN: ToolSpec = {
   envVar: "C64RT_ZXRUN",
   binaries: ["zxrun"],
   where: "on this machine",
-  remedy: "Build it with tools/install-zxrun.sh, or set C64RT_ZXRUN to its full path.",
+  remedy: INSTALL_STEPS,
+};
+
+export const SJASMPLUS: ToolSpec = {
+  name: "sjasmplus",
+  envVar: "C64RT_SJASMPLUS",
+  binaries: ["sjasmplus"],
+  where: "on this machine",
+  remedy: INSTALL_STEPS,
 };
 
 export const ZESARUX: ToolSpec = {
