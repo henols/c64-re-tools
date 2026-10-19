@@ -1,12 +1,13 @@
 #!/usr/bin/env tsx
 
 import { constants } from "node:os";
+import type { Family } from "../machine.ts";
 import { parseArgs } from "node:util";
 
 import { DEFAULT_HOST_PORT } from "../protocol/messages.ts";
 import { ProcessSupervisor } from "../native/processes.ts";
 import { startTrace, trace } from "../trace.ts";
-import { ListenError, parsePort, startHostServer, stopSignal } from "./server.ts";
+import { ListenError, parsePort, startHostServer, stopSignal, viceBackend, type MachineBackend } from "./server.ts";
 import { viceFlaws, type ViceVersion } from "../native/discover.ts";
 import { inspect } from "./tools/c1541.ts";
 import { createToolDispatcher } from "./tools/index.ts";
@@ -82,41 +83,28 @@ async function main(): Promise<number> {
   // First, so that every start, also a refused one, tells which runtime runs.
   log(`${PACKAGE.name} ${PACKAGE.version} (Node.js ${process.version}, ${process.platform} ${process.arch})`);
 
-  // Without an emulator the runtime is useless: refuse to start, by name and with the remedy.
-  try {
-    findVice(process.env);
-  } catch (error) {
-    process.stderr.write(`${(error as Error).message}\n`);
-    return 1;
-  }
-
   // Every emulator and tool is started through this one supervisor; however
   // this process ends, the exit guard takes their process groups down with it,
   // and the watchdog does the same if this process is killed.
   const supervisor = new ProcessSupervisor();
   supervisor.startWatchdog("host");
 
-  // Finding x64sc is not enough: VICE without its ROM files exits at once.
-  let vice: ViceVersion;
-  try {
-    vice = await checkViceStarts({ supervisor });
-  } catch (error) {
-    process.stderr.write(`${(error as Error).message}\n`);
-    await supervisor.stopAll();
-    return 1;
-  }
-  log(`VICE ${vice.major}.${vice.minor}${vice.revision === undefined ? "" : ` r${vice.revision}`} starts`);
-  const flaws = viceFlaws(vice);
-  // A known VICE flaw is named, not worked around.
-  for (const flaw of flaws) log(`Known VICE flaw: ${flaw.text}`);
+  // Each emulator is started once, headless: one that does not start serves no
+  // sessions, and a session of its machine is refused by name with the remedy.
+  const backends: Partial<Record<Family, MachineBackend>> = {};
+  const unavailable: Partial<Record<Family, string>> = {};
 
-  let server;
+  // VICE for the C64. Finding x64sc is not enough: VICE without its ROM files exits at once.
+  let vice: ViceVersion | undefined;
   try {
-    server = await startHostServer({
-      host: "0.0.0.0",
-      port,
-      log,
-      createViceSession: viceSessionFactory({
+    findVice(process.env);
+    vice = await checkViceStarts({ supervisor });
+    log(`VICE ${vice.major}.${vice.minor}${vice.revision === undefined ? "" : ` r${vice.revision}`} starts`);
+    const flaws = viceFlaws(vice);
+    // A known VICE flaw is named, not worked around.
+    for (const flaw of flaws) log(`Known VICE flaw: ${flaw.text}`);
+    backends.c64 = viceBackend(
+      viceSessionFactory({
         supervisor,
         log,
         flaws,
@@ -126,6 +114,27 @@ async function main(): Promise<number> {
           return result.action === "directory" ? result.entries : [];
         },
       }),
+    );
+  } catch (error) {
+    unavailable.c64 = (error as Error).message;
+  }
+
+  // Without any emulator the runtime is useless: refuse to start, by name and with the remedy.
+  if (Object.keys(backends).length === 0) {
+    for (const why of Object.values(unavailable)) process.stderr.write(`${why}\n`);
+    await supervisor.stopAll();
+    return 1;
+  }
+  for (const [family, why] of Object.entries(unavailable)) log(`No ${family} sessions on this host: ${why}`);
+
+  let server;
+  try {
+    server = await startHostServer({
+      host: "0.0.0.0",
+      port,
+      log,
+      backends,
+      unavailable,
       tools: createToolDispatcher({ supervisor, log }),
     });
   } catch (error) {

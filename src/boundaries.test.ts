@@ -57,7 +57,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   // The opt-in trace of a process, for people. Every program may write to it.
   trace: ["time"],
   project: ["c64"],
-  protocol: ["c64", "c64-keys"],
+  protocol: ["c64", "c64-keys", "machine"],
   // The package name and channel: the npx command in refusals and help texts.
   package: [],
   // Media file signatures and sizes: the host checks a file before VICE gets it, and c64-disk reads it.
@@ -66,9 +66,9 @@ const ALLOWED: Record<string, readonly string[]> = {
   "c64-keys": [],
   // The modules of a VICE snapshot file, and the changes that press keys in it.
   vsf: ["media"],
-  "host-client": ["protocol", "c64", "c64-keys", "cpu", "project", "trace", "package"],
+  "host-client": ["protocol", "c64", "c64-keys", "cpu", "project", "trace", "package", "machine"],
   mcp: ["host-client", "protocol", "c64", "c64-keys", "cpu", "trace", "package"],
-  host: ["native", "protocol", "c64", "c64-keys", "cpu", "graphics", "opcodes", "trace", "package", "media", "vsf"],
+  host: ["native", "protocol", "c64", "c64-keys", "cpu", "graphics", "opcodes", "trace", "package", "media", "vsf", "machine"],
   // opcodes: one rule for a name that ACME can take as a label.
   knowledge: ["c64", "cpu", "machine", "project", "time", "opcodes"],
   // The call contract of the skill scripts: the command line, the values, the envelope.

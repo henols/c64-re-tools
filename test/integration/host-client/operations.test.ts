@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { VICE_OPERATIONS, type ViceOperation } from "../../../src/protocol/vice.ts";
 
 const REGISTERS = { pc: 0x2100, a: 1, x: 2, y: 3, sp: 0xf9, flags: { n: false, v: false, b: false, d: false, i: true, z: false, c: true } };
@@ -157,7 +157,7 @@ test("every private operation has a contract example", () => {
 test("every operation crosses the real host boundary with its parameters and result intact", async () => {
   server = await startHostServer({
     port: 0,
-    createViceSession: async () => ({
+    backends: { c64: viceBackend(async () => ({
       async handle(op, params, attachments, reply) {
         seen.set(op, { params, attachments: attachments?.length ?? 0 });
         const example = EXAMPLES[op];
@@ -165,7 +165,7 @@ test("every operation crosses the real host boundary with its parameters and res
         return (example.reply?.result ?? example.result) as never;
       },
       async close() {},
-    }),
+    })) },
   });
   client = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${server.host}:${server.port}` } });
   for (const [op, example] of Object.entries(EXAMPLES)) {
@@ -178,14 +178,14 @@ test("every operation crosses the real host boundary with its parameters and res
 test("a snapshot export comes back as the one attachment of the reply", async () => {
   const exporting = await startHostServer({
     port: 0,
-    createViceSession: async () => ({
+    backends: { c64: viceBackend(async () => ({
       async handle(op, params, _attachments, reply) {
         assert.deepEqual([op, params], ["snapshotFile", { action: "export", name: "room0" }]);
         reply?.push(Buffer.from("VICE Snapshot File"));
         return { exported: true, bytes: 18 } as never;
       },
       async close() {},
-    }),
+    })) },
   });
   const exportClient = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${exporting.host}:${exporting.port}` } });
   try {

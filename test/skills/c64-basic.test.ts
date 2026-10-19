@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ProcessSupervisor } from "../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../src/host/server.ts";
 import { findTool, PETCAT } from "../../src/native/discover.ts";
 import { createToolDispatcher } from "../../src/host/tools/index.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
@@ -42,9 +42,9 @@ async function hostEnv(): Promise<string> {
     supervisor.installExitGuard();
     server = await startHostServer({
       port: 0,
-      createViceSession: async () => {
+      backends: { c64: viceBackend(async () => {
         throw new WireFailure("machine-unavailable", "no emulators here");
-      },
+      }) },
       tools: createToolDispatcher({ supervisor }),
     });
   }

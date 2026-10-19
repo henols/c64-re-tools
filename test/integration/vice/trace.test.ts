@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
@@ -19,7 +19,7 @@ after(async () => {
 async function openClient(): Promise<ViceSessionClient> {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
   servers.push(server);
   return ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${server.host}:${server.port}` } });
 }

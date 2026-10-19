@@ -1,5 +1,6 @@
 // Deterministic connection to the Host Runtime and the version handshake.
 
+import type { MachineId } from "../machine.ts";
 import { connect as connectTcp, type Socket } from "node:net";
 
 import { encodeFrame, MessageReader } from "../protocol/framing.ts";
@@ -129,6 +130,7 @@ export class HostConnection {
    */
   static async open(options: {
     role: Role;
+    machine?: MachineId;
     videoStandard?: VideoStandard;
     env?: NodeJS.ProcessEnv;
     /** Stops the connect and the handshake at once; the open then fails and its socket is closed. */
@@ -155,6 +157,7 @@ export class HostConnection {
     const connection = new HostConnection(socket);
     const release = options.release ?? PACKAGE.version;
     const hello: Hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release, role: options.role };
+    if (options.machine !== undefined) hello.machine = options.machine;
     if (options.videoStandard !== undefined) hello.videoStandard = options.videoStandard;
 
     const stop = () => void connection.close();

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { WireFailure } from "../../../src/protocol/messages.ts";
@@ -19,7 +19,7 @@ after(async () => {
 test("a snapshot file from one session restores the machine in a new session", { skip: liveSkip, timeout: 300_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
   const env = { C64RT_HOST: `${server.host}:${server.port}` };
 
   const first = await ViceSessionClient.open({ videoStandard: "pal", env });

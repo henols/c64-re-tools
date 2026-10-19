@@ -10,9 +10,9 @@ import { HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, type ClientMessage, WireFailur
 import { FrameDecoder } from "../protocol/framing.testkit.ts";
 import { PACKAGE } from "../package.ts";
 import { startTrace, TRACE_VARIABLE } from "../trace.ts";
-import { ListenError, parsePort, startHostServer, stopSignal, type HostServer, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
+import { ListenError, parsePort, startHostServer, stopSignal, type HostServer, type ViceSessionFactory, type ViceSessionHandle, viceBackend } from "./server.ts";
 
-const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release: PACKAGE.version, role: "vice-session" } as const;
+const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release: PACKAGE.version, role: "session", machine: "c64" } as const;
 
 /** A raw framed client: no host-client code, so these tests pin the wire. */
 class RawClient {
@@ -96,7 +96,7 @@ after(async () => {
 async function serve(factory: ViceSessionFactory, handshakeTimeoutMs?: number, heartbeatTimeoutMs?: number): Promise<HostServer> {
   const server = await startHostServer({
     port: 0,
-    createViceSession: factory,
+    backends: { c64: viceBackend(factory) },
     ...(handshakeTimeoutMs === undefined ? {} : { handshakeTimeoutMs }),
     ...(heartbeatTimeoutMs === undefined ? {} : { heartbeatTimeoutMs }),
   });
@@ -110,7 +110,7 @@ test("the host binds to loopback only", async () => {
   assert.ok(server.port > 0);
 });
 
-test("a vice-session handshake starts one session and answers ready", async () => {
+test("a session handshake starts one session and answers ready", async () => {
   const log: StubLog = { started: [], closed: 0 };
   const client = await RawClient.open(await serve(stubFactory(log)));
   client.send({ ...hello, videoStandard: "ntsc" });
@@ -128,6 +128,27 @@ test("the video standard defaults to PAL", async () => {
   client.end();
 });
 
+test("a session of a machine whose emulator the host does not run is refused by name, and nothing starts", async () => {
+  const log: StubLog = { started: [], closed: 0 };
+  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(stubFactory(log)) }, unavailable: { spectrum: "ZEsarUX did not start on the host: install ZEsarUX 13.0, then start the Host Runtime again." } });
+  servers.push(server);
+  const client = await RawClient.open(server);
+  client.send({ ...hello, machine: "spectrum48" });
+  const reply = (await client.next()) as { type: string; error: { code: string; message: string } };
+  assert.deepEqual([reply.type, reply.error.code], ["error", "installation-incomplete"]);
+  assert.match(reply.error.message, /ZEsarUX did not start on the host/);
+  await client.closed;
+  assert.equal(log.started.length, 0);
+});
+
+test("a session hello that names no machine is a protocol error", async () => {
+  const client = await RawClient.open(await serve(stubFactory({ started: [], closed: 0 })));
+  const { machine: _machine, ...nameless } = hello as typeof hello & { machine?: string };
+  client.send(nameless);
+  assert.equal(await client.next(), undefined);
+  await client.closed;
+});
+
 test("a protocol version mismatch is refused as installation-incomplete and closed", async () => {
   const log: StubLog = { started: [], closed: 0 };
   const client = await RawClient.open(await serve(stubFactory(log)));
@@ -142,7 +163,7 @@ test("a protocol version mismatch is refused as installation-incomplete and clos
 
 test("a client of another release, or one that gives no release, is refused as installation-incomplete before an emulator starts", async () => {
   const log: StubLog = { started: [], closed: 0 };
-  const server = await startHostServer({ port: 0, createViceSession: stubFactory(log), release: "2.1.5" });
+  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(stubFactory(log)) }, release: "2.1.5" });
   servers.push(server);
   const { release: _release, ...noRelease } = hello;
   for (const [sent, older] of [
@@ -257,7 +278,7 @@ test("a result too large for one reply is refused as limit-exceeded with its siz
       return { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false } as never;
     },
   });
-  const server = await startHostServer({ port: 0, createViceSession: factory, log: (line) => lines.push(line) });
+  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(factory) }, log: (line) => lines.push(line) });
   servers.push(server);
   const client = await RawClient.open(server);
   client.send(hello);
@@ -385,7 +406,7 @@ test("two connections own two independent sessions", async () => {
 
 test("closing the server closes every session", async () => {
   const log: StubLog = { started: [], closed: 0 };
-  const server = await startHostServer({ port: 0, createViceSession: stubFactory(log) });
+  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(stubFactory(log)) } });
   const clients = await Promise.all([RawClient.open(server), RawClient.open(server)]);
   for (const client of clients) client.send(hello);
   for (const client of clients) await client.next();
@@ -409,7 +430,7 @@ test("the log has one line for each call of a skill script, and none for a VICE 
   const lines: string[] = [];
   const server = await startHostServer({
     port: 0,
-    createViceSession: stubFactory({ started: [], closed: 0 }),
+    backends: { c64: viceBackend(stubFactory({ started: [], closed: 0 })) },
     tools: async () => {
       throw new Error("no tool operation runs in this test");
     },
@@ -519,7 +540,7 @@ test("a port is decimal digits from 0 to 65535 and nothing else", () => {
 test("a port in use names the address and the port that failed", async () => {
   const busy = await serve(stubFactory({ started: [], closed: 0 }));
   await assert.rejects(
-    startHostServer({ port: busy.port, createViceSession: stubFactory({ started: [], closed: 0 }) }),
+    startHostServer({ port: busy.port, backends: { c64: viceBackend(stubFactory({ started: [], closed: 0 })) } }),
     (error: unknown) => error instanceof ListenError && error.code === "EADDRINUSE" && error.address === "127.0.0.1" && error.port === busy.port,
   );
 });
@@ -582,7 +603,7 @@ test("with C64RT_TRACE every connection and request leaves a trace line with the
     assert.equal(failed.code, "unsupported-in-space");
     assert.deepEqual(failed.params, { space: "drive8" });
     const ready = events.find((event) => event.event === "connection.ready")!;
-    assert.equal(ready.role, "vice-session");
+    assert.equal(ready.role, "session");
     assert.equal(ready.connection, ok.connection);
   } finally {
     startTrace("host", { env: {} });

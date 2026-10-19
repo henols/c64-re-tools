@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { startHostServer, type HostServer, type ViceSessionFactory } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, type ViceSessionFactory, viceBackend } from "../../../src/host/server.ts";
 import { WireFailure } from "../../../src/protocol/messages.ts";
 import { type Registers } from "../../../src/protocol/vice.ts";
 import { waitFor } from "../../kit.ts";
@@ -51,7 +51,7 @@ after(async () => {
 });
 
 async function host(factory: ViceSessionFactory): Promise<NodeJS.ProcessEnv> {
-  const server = await startHostServer({ port: 0, createViceSession: factory });
+  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(factory) } });
   servers.push(server);
   return { C64RT_HOST: `${server.host}:${server.port}` };
 }
@@ -113,7 +113,7 @@ test("two clients get two independent sessions", async () => {
 
 test("a host that shuts down fails a session that the emulator answered as lost machine state", async () => {
   const state: StubState = { opened: [], closed: 0, calls: [] };
-  const server = await startHostServer({ port: 0, createViceSession: stub(state) });
+  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(stub(state)) } });
   const client = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${server.host}:${server.port}` } });
   await client.status();
   await server.close();

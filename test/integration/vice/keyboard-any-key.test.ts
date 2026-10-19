@@ -8,7 +8,7 @@ import { after, test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { viceFlaws } from "../../../src/native/discover.ts";
 import { checkViceStarts } from "../../../src/host/vice/process.ts";
@@ -29,7 +29,7 @@ test("a wait for any key that reads all keyboard columns ends without input only
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
   const flawed = viceFlaws(await checkViceStarts({ supervisor, env: liveEnv() })).length > 0;
-  server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
   const client = await ViceSessionClient.open({ videoStandard: "pal", env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` } });
   try {
     await client.reset({ mode: "hard", run: true });

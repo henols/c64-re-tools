@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { buildD64 } from "../../fixtures/d64.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
@@ -42,7 +42,7 @@ const part = Uint8Array.from([0x00, 0xc0, 0xa9, 0x2a, 0x8d, 0x00, 0xc1, 0x4c, 0x
 test("each capture step writes what the C64 changed since the capture before, and the drive RAM; a save step writes a snapshot file", { skip: liveSkip, timeout: 300_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
   writeFileSync(join(project, "game.d64"), buildD64([{ name: "MAIN", bytes: main }, { name: "PART", bytes: part }]));
   writeFileSync(
     join(project, "steps.json"),
@@ -89,7 +89,7 @@ test("each capture step writes what the C64 changed since the capture before, an
 test("loads that capture no segment give loaded false, and a capture at READY. tells the key wait", { skip: liveSkip, timeout: 300_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  server ??= await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  server ??= await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
   // 10 END: the program is smaller than one segment, and the C64 goes back to READY.
   writeFileSync(join(project, "end.d64"), buildD64([{ name: "END", bytes: Uint8Array.from([0x01, 0x08, 0x07, 0x08, 0x0a, 0x00, 0x80, 0x00, 0x00, 0x00]) }]));
   writeFileSync(join(project, "ready.json"), JSON.stringify([{ frames: 600 }, { capture: "ready" }]));
@@ -112,7 +112,7 @@ test("loads that capture no segment give loaded false, and a capture at READY. t
 test("loads of a PRG without a BASIC start line gives loaded false, an empty captures list and the remedy", { skip: liveSkip, timeout: 300_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  server ??= await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  server ??= await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
   // Code at $c000 and no BASIC line: RUN runs no program line.
   writeFileSync(join(project, "c000.prg"), part);
   writeFileSync(join(project, "c000.json"), JSON.stringify([{ frames: 10 }, { capture: "start" }]));
@@ -133,7 +133,7 @@ test("loads of a PRG without a BASIC start line gives loaded false, an empty cap
 test("a capture holds the RAM under the I/O area that the program wrote, and leaves out an --exclude range", { skip: liveSkip, timeout: 300_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  server ??= await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  server ??= await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
   // 10 SYS 2061; with all RAM ($01 = $34) it fills $d000-$d0ff and $c000-$c0ff with $5a, then waits at $0824.
   const io = Uint8Array.from([
     0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00,

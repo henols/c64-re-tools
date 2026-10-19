@@ -15,7 +15,7 @@ import { runProgram } from "../../../src/host-client/autostart.ts";
 import { textToPetscii } from "../../../src/c64.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
 import { borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
@@ -48,7 +48,7 @@ async function unpack(...args: string[]): Promise<{ status: number | null; json:
   if (server === undefined) {
     const supervisor = new ProcessSupervisor();
     supervisor.installExitGuard();
-    server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+    server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
   }
   const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";

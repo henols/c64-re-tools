@@ -1,5 +1,6 @@
 import { createServer, type Server, type Socket } from "node:net";
 
+import { MACHINES, type Family, type MachineId } from "../machine.ts";
 import { encodeFrame, FrameTooLarge, MessageReader } from "../protocol/framing.ts";
 import { isRefusal } from "../errors.ts";
 import { PACKAGE } from "../package.ts";
@@ -24,6 +25,39 @@ export interface ViceSessionHandle {
 /** Starts a VICE session. Throws WireFailure with an actionable code when it cannot. */
 export type ViceSessionFactory = (options: { videoStandard: VideoStandard; log?: (line: string) => void }) => Promise<ViceSessionHandle>;
 
+/** One live session of any machine: what a connection holds. */
+export interface SessionHandle {
+  handle(op: string, params: unknown, attachments?: Buffer[], reply?: Buffer[]): Promise<unknown>;
+  close(): Promise<void>;
+}
+
+/** The emulator of one family of machines on this host: how a session starts, and the operations of its sessions. */
+export interface MachineBackend {
+  /** The emulator by name, for the log. */
+  emulator: string;
+  /** Starts a session. Throws WireFailure with an actionable code when it cannot. */
+  start(options: { machine: MachineId; videoStandard: VideoStandard; log?: (line: string) => void }): Promise<SessionHandle>;
+  isOperation(op: string): boolean;
+  /** The checked params of an operation; throws WireFailure for bad ones. */
+  validate(op: string, params: unknown): unknown;
+  /** The count of file attachments that the operation takes. */
+  attachments(op: string, params: unknown): number;
+}
+
+/** The C64 family on VICE. */
+export function viceBackend(create: ViceSessionFactory): MachineBackend {
+  return {
+    emulator: "VICE",
+    start: async ({ videoStandard, log }) => {
+      const session = await create({ videoStandard, ...(log === undefined ? {} : { log }) });
+      return { handle: (op, params, attachments, reply) => session.handle(op as ViceOperation, params as never, attachments, reply), close: () => session.close() };
+    },
+    isOperation: (op) => isOneOf(VICE_OPERATIONS, op),
+    validate: (op, params) => validateViceParams(op as ViceOperation, params),
+    attachments: (op, params) => attachmentCount(op as ViceOperation, params as never),
+  };
+}
+
 /**
  * Runs one native-tool request. `signal` aborts when the client goes away; the
  * tool must then stop its children and remove its workspace. Throws WireFailure.
@@ -36,7 +70,10 @@ export type ToolDispatcher = <O extends ToolOperation>(
 ) => Promise<{ result: ToolOperations[O]["result"]; attachments?: Buffer[] }>;
 
 export interface HostServerOptions {
-  createViceSession: ViceSessionFactory;
+  /** The emulator of each family that this host runs. */
+  backends: Partial<Record<Family, MachineBackend>>;
+  /** Why a family has no backend here, with the remedy: the emulator did not start when the host started. */
+  unavailable?: Partial<Record<Family, string>>;
   /** Native-tool requests on "tool" connections; without it they are refused. */
   tools?: ToolDispatcher;
   /** Defaults to 127.0.0.1; 0.0.0.0 listens on every address, so a container reaches it too. */
@@ -80,8 +117,9 @@ class Connection {
   readonly closed: Promise<void>;
   readonly #id = ++connectionCount;
   #state: "handshake" | "starting" | "open" | "closed" = "handshake";
-  #session: ViceSessionHandle | undefined;
-  #starting: Promise<ViceSessionHandle | undefined> | undefined;
+  #session: SessionHandle | undefined;
+  #backend: MachineBackend | undefined;
+  #starting: Promise<SessionHandle | undefined> | undefined;
   #shuttingDown = false;
   readonly #toolAbort = new AbortController();
   #isTool = false;
@@ -214,9 +252,20 @@ class Connection {
         this.#restartHeartbeat();
         return;
       }
+      const machine = MACHINES[message.machine!];
+      const backend = this.#options.backends[machine.family];
+      if (backend === undefined) {
+        const why = this.#options.unavailable?.[machine.family] ?? `This host runtime runs no emulator for the ${machine.name}.`;
+        this.#log(`refusing a ${machine.id} session: ${why}`);
+        this.#send({ type: "error", error: { code: "installation-incomplete", message: why } });
+        this.#endRefused();
+        this.#state = "closed";
+        return;
+      }
+      this.#backend = backend;
       this.#state = "starting";
-      this.#log(`starts a VICE session (${message.videoStandard ?? "pal"})`);
-      this.#contain(this.#startSession(message.videoStandard ?? "pal"));
+      this.#log(`starts a ${backend.emulator} session of the ${machine.name}${machine.family === "c64" ? ` (${message.videoStandard ?? "pal"})` : ""}`);
+      this.#contain(this.#startSession(machine.id, message.videoStandard ?? "pal"));
       return;
     }
     if (message.type === "hello") throw new ProtocolError("hello sent twice");
@@ -228,26 +277,26 @@ class Connection {
     this.#contain(this.#answer(message, attachments));
   }
 
-  async #startSession(videoStandard: VideoStandard): Promise<void> {
+  async #startSession(machine: MachineId, videoStandard: VideoStandard): Promise<void> {
     const started = performance.now();
-    this.#starting = this.#createSession(videoStandard);
+    this.#starting = this.#createSession(machine, videoStandard);
     const session = await this.#starting;
     // A connection closed while starting is shut down by #shutdown, which awaits #starting.
     if (session === undefined || this.#state === "closed") return;
     this.#session = session;
     this.#state = "open";
     this.#send({ type: "ready", release: this.#release });
-    this.#log(`VICE session ready after ${Math.round(performance.now() - started)} ms`);
-    trace().event("connection.ready", { connection: this.#id, role: "vice-session", videoStandard, ms: elapsedMs(started) });
+    this.#log(`${this.#backend!.emulator} session ready after ${Math.round(performance.now() - started)} ms`);
+    trace().event("connection.ready", { connection: this.#id, role: "session", machine, videoStandard, ms: elapsedMs(started) });
     this.#restartHeartbeat();
   }
 
   /** The new session, or undefined after the failure is sent to the client. Never rejects, also when the factory throws at once. */
-  async #createSession(videoStandard: VideoStandard): Promise<ViceSessionHandle | undefined> {
+  async #createSession(machine: MachineId, videoStandard: VideoStandard): Promise<SessionHandle | undefined> {
     try {
-      return await this.#options.createViceSession({ videoStandard, log: this.#log });
+      return await this.#backend!.start({ machine, videoStandard, log: this.#log });
     } catch (error) {
-      this.#log(`VICE session failed to start: ${error instanceof Error ? error.message : String(error)}`);
+      this.#log(`${this.#backend!.emulator} session failed to start: ${error instanceof Error ? error.message : String(error)}`);
       trace().event("connection.session-failed", { connection: this.#id, error });
       this.#send({
         type: "error",
@@ -283,10 +332,11 @@ class Connection {
       } else {
         const { op } = request;
         const session = this.#session;
-        if (session === undefined || !isOneOf(VICE_OPERATIONS, op)) throw new WireFailure("invalid-input", `unknown operation: ${op}`);
-        const params = validateViceParams(op, request.params);
-        if (attachments.length !== attachmentCount(op, params)) {
-          throw new WireFailure("invalid-input", `${op} takes ${attachmentCount(op, params)} file attachment(s)`);
+        const backend = this.#backend;
+        if (session === undefined || backend === undefined || !backend.isOperation(op)) throw new WireFailure("invalid-input", `unknown operation: ${op}`);
+        const params = backend.validate(op, request.params);
+        if (attachments.length !== backend.attachments(op, params)) {
+          throw new WireFailure("invalid-input", `${op} takes ${backend.attachments(op, params)} file attachment(s)`);
         }
         result = await session.handle(op, params, attachments, replyAttachments);
       }

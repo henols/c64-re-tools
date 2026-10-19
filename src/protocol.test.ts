@@ -8,7 +8,7 @@ import { attachmentCount, MAX_MASK_RECTANGLES, validateViceParams, validateViceR
 import { FrameDecoder } from "./protocol/framing.testkit.ts";
 
 const RELEASE = "2.1.4";
-const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release: RELEASE, role: "vice-session" } as const;
+const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release: RELEASE, role: "session", machine: "c64" } as const;
 
 test("a frame is a 4-byte big-endian length followed by UTF-8 JSON", () => {
   const frame = encodeFrame({ type: "ready", release: RELEASE });

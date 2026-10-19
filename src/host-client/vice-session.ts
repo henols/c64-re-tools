@@ -75,7 +75,7 @@ export class ViceSessionClient {
   /** Connects and waits until the host has started this session's emulator; `signal` stops the wait at once. */
   static async open(options: { videoStandard: VideoStandard; env?: NodeJS.ProcessEnv; signal?: AbortSignal }): Promise<ViceSessionClient> {
     const connection = await HostConnection.open({
-      role: "vice-session",
+      role: "session", machine: "c64",
       videoStandard: options.videoStandard,
       ...(options.env === undefined ? {} : { env: options.env }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),

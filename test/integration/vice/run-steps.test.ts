@@ -12,7 +12,7 @@ import { after, test } from "node:test";
 
 import { COVERAGE } from "../../../src/cpu/coverage.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { joystickCounterPrg, LEFT_SEEN } from "../../fixtures/prg/joystick-counter.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
@@ -30,7 +30,7 @@ async function runSteps(...args: string[]): Promise<{ status: number | null; jso
   if (server === undefined) {
     const supervisor = new ProcessSupervisor();
     supervisor.installExitGuard();
-    server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+    server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
   }
   const child = spawn(process.execPath, [...process.execArgv, script, "run", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";

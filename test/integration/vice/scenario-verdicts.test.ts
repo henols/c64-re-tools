@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 
 import { formatAddress } from "../../../src/address.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { openForWrite } from "../../../src/knowledge/database.ts";
 import { renameSymbol } from "../../../src/knowledge/write.ts";
@@ -63,7 +63,7 @@ async function hostAddress(): Promise<string> {
   if (server === undefined) {
     const supervisor = new ProcessSupervisor();
     supervisor.installExitGuard();
-    server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+    server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
   }
   return `${server.host}:${server.port}`;
 }

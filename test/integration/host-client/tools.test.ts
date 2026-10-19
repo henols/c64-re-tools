@@ -9,7 +9,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 
 import { callTool, decodeBasic, inspectDisk } from "../../../src/host-client/tools.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { startHostServer, type HostServer, type ToolDispatcher } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, type ToolDispatcher, viceBackend } from "../../../src/host/server.ts";
 import { WireFailure } from "../../../src/protocol/messages.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-tools-"));
@@ -34,9 +34,9 @@ after(async () => {
 async function host(tools?: ToolDispatcher): Promise<NodeJS.ProcessEnv> {
   const server = await startHostServer({
     port: 0,
-    createViceSession: async () => {
+    backends: { c64: viceBackend(async () => {
       throw new WireFailure("machine-unavailable", "no emulators in this test");
-    },
+    }) },
     ...(tools === undefined ? {} : { tools }),
   });
   servers.push(server);

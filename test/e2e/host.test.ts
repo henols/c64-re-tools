@@ -36,7 +36,7 @@ test("c64-re-tools-host runs in the foreground, serves the protocol and stops on
   // A client from another installation is refused without starting an emulator.
   const socket = connect({ host: "127.0.0.1", port: Number(match[1]) });
   await once(socket, "connect");
-  socket.write(encodeFrame({ type: "hello", protocol: HOST_PROTOCOL_ID, version: 0, role: "vice-session" }));
+  socket.write(encodeFrame({ type: "hello", protocol: HOST_PROTOCOL_ID, version: 0, role: "session", machine: "c64" }));
   const decoder = new FrameDecoder();
   const [chunk] = (await once(socket, "data")) as [Buffer];
   const [reply] = decoder.push(chunk) as Array<{ type: string; error: { code: string } }>;
