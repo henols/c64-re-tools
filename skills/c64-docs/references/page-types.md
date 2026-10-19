@@ -10,11 +10,11 @@ The most interesting parts for a reader are the development of the program and i
 
 1. **One paragraph.** What the program is, who made it and when, and which release the documentation is for. Under it, one line defines the evidence marks: **Observed**, **Code** and **Conclusion**.
 2. **The development.** How the authors made the program, as the code and the leftovers tell it. Explain each trace in depth: what the bytes are, how you identified them, and what they tell about the work of the authors. Use as many paragraphs as the traces need. Link the development page (section 6) for the full details.
-3. **The copy protection.** How the original protection works, in depth. Tell what the loader left in memory, and explain each check and where the program hides it. Tell what happens when a check fails. Tell which parts of it each release still has, and how the rebuild turns it off. Link the copy protection page (section 7) for the full details.
+3. **The copy protection.** How the original protection works, in depth. Tell what the loader left in memory, and explain each check and where the program hides it. Tell what happens when a check fails, and how the rebuild turns it off. Link the copy protection page (section 7) for the full details.
 4. **Findings.** The bugs and the facts that a reader does not expect. Write a bulleted list, not a table. Each item has a title in bold, the facts and the evidence. It also has a link to the page with the details. Then tell what the finding means in practice. Examples are what a player sees, what a test or a fix can use, and what a preservation project must know. Mark an idea that no run showed as **Conclusion**.
 5. **How the program works.** A short walk through the program, from the start to the main loop. Tell what the program does at each stage and why. Use one mermaid diagram of the layers and one of the flow of the player. Under the diagrams, a numbered list tells how the layers work together. Link only the entry of each layer, for example the cold start, the main loop and the interrupt. Use about 5 to 8 links in the full section.
 6. **The pages.** A table with one row for each page: the link and one sentence about its content. The sentences have no links to the code.
-7. **Releases and cracks.** The known releases, what each crack changed, and what a preservation project must know. Give a summary here. When the facts fill more than a screen, put them on a releases page (section 8) and link it.
+7. **The releases.** A short section. A small table gives each known release: the label, the file and the SHA-256 of the file. Then one line for each crack tells what it adds around the program, and the bytes of the program that it changed. Do not describe the intro, the mover or the relocator of a crack in detail. They are not part of the program.
 8. **The rebuild.** Which release is the base release, the program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. A table of the switches from `knowledge.ts switches`: the name, the kind, the default and the releases that have the switch on. How to build the default program and each release. Which scenarios compare the original with the rebuild.
 9. **Still open.** What is not known yet, and which run can find it.
 10. **The reference.** One line with a link to `docs/reference/index.md`.
@@ -40,7 +40,7 @@ Look for findings of these kinds. They are often the most useful to a reader:
 
 ## The copy protection
 
-<Several paragraphs: the marks of the loader, each check, what a failed check does, and the state in each release.> The details are on [docs/protection.md](docs/protection.md).
+<Several paragraphs: the marks of the loader, each check, and what a failed check does.> The details are on [docs/protection.md](docs/protection.md).
 
 ## Findings
 
@@ -66,9 +66,9 @@ flowchart TB
 |---|---|
 | [docs/main_loop.md](docs/main_loop.md) | **The main loop.** <one sentence> |
 
-## Releases and cracks
+## The releases
 
-<Summary, or a link to docs/releases.md.>
+<A small table of the releases, and one line for each crack.>
 
 ## The rebuild
 
@@ -102,7 +102,7 @@ Reverse-engineered C64 games. Each game has its own folder with the original dis
 One page for each subsystem, for example the main loop, the interrupt chain, the room generation or the sound player. It has these parts:
 
 1. **What it does.** One paragraph in the words of the program. Tell what the subsystem does for the player and why the program needs it. Do not list the routines.
-2. **The conventions.** The terms of the page, for example "a pass is one run of the main loop". Use the conventions block of section 9.
+2. **The conventions.** The terms of the page, for example "a pass is one run of the main loop". Use the conventions block of section 8.
 3. **How it works.** A small mermaid flowchart, then the explanation in prose. Put a fact that a reader does not expect into the text where it belongs. The findings of the entry page link to it. Link the entry routine of the subsystem one time. For the main routine, give a numbered list of what it does and why, in the order of the code. Name a helper routine only when the reader needs it. Add pseudo-code when a loop or a condition is not clear from the list.
 4. **The data.** Only the data that a reader needs to understand the subsystem. For each structure, give the layout: the bytes, the entries and the meaning of each byte. The reference lists every variable, so do not make a table of each variable.
 5. **The state machine.** For code that changes from one state to another: a mermaid `stateDiagram-v2` and a transition table. The transition table has the state, the condition, the next state and the name of the code that makes the change, without a link.
@@ -178,21 +178,11 @@ One page, `docs/protection.md`, that explains the copy protection of the program
 1. **The scheme.** How the original protection works as a whole. Tell about the disk or the loader, and the marks that the loader leaves in memory. Tell which keys the program compares.
 2. **Each check.** For each check, tell where it is and when it runs. Tell what it compares, and how the program hides it. Link the code of the check one time. Use a table for a summary of the checks, without links.
 3. **The effect of a failed check.** What the program does when a check fails. Examples are a crash at once, a slow change of code, damaged data and a wipe of memory. Tell how long the effect takes to show.
-4. **The releases.** What each crack did to the protection: removed it, set the marks again, or left it as it is. Tell which checks still run in each release.
+4. **The releases.** In one or two sentences: which checks still run in each release.
 5. **The rebuild.** The switch that turns the protection off, the bytes that it changes, and the scenarios that show that the program runs without it.
 6. **Still open.** The checks that no run reached, and the run that can reach them.
 
-## 8. The releases page
-
-One page, `docs/releases.md`, for the releases of the program and the facts that a preservation project needs. Get the differences from `provenance.ts compare` of c64-provenance, and the crack stages from c64-unpacker. It has these parts:
-
-1. **The known releases.** A table with one row for each release. A row gives the label, the disk image, the file, the group, the date and the SHA-256 of the file. The file is the file of the release, for example the PRG on the disk. Write "unknown" for a value that no source gives.
-2. **The original.** Which release is nearest to the original program, and the evidence. Tell what is missing, for example the original loader or a release without a crack.
-3. **The cracks.** For each crack: the intro, the mover, the relocator, the packer, a trainer and the texts that it changed. Tell what the crack did to the copy protection, and link the copy protection page.
-4. **Traces of other people.** A release made from another crack, a memory dump of a program that ran, or tools on the disk.
-5. **The differences.** A table of the bytes where the releases differ, what each difference does, and the switch that gives it in the rebuild.
-
-## 9. The conventions block
+## 8. The conventions block
 
 Put this block near the top of each subsystem page. Change the terms for the program.
 
