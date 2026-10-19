@@ -1,6 +1,7 @@
 // Knowledge seeds for an analyzer, and the mapping of a Ghidra result to the
 // common normalized findings.
 
+import type { Cpu } from "#src/cpu.ts";
 import { mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import type { DatabaseSync } from "node:sqlite";
 
@@ -75,7 +76,7 @@ function guessedIndirectTarget(instructions: GhidraResult["instructions"]): (ref
  * the importer never replaces, so the name keeps its owner,
  * and a code/data disagreement with that symbol is still reported.
  */
-export function ghidraFindings(result: GhidraResult): NormalizedFindings {
+export function ghidraFindings(result: GhidraResult, cpu: Cpu["id"] = "6502"): NormalizedFindings {
   // Ghidra can give one generated name to two functions, for example
   // thunk_FUN_e434 to two thunks of one routine. A name
   // must have one address, so a repeated name that is not a seed gets its address.
@@ -86,7 +87,8 @@ export function ghidraFindings(result: GhidraResult): NormalizedFindings {
   // A function that branches and jumps reach, and no call, is a place in a routine: a label.
   const called = new Set(result.references.filter((reference) => reference.type === "call").map((reference) => reference.to));
   const jumped = new Set(result.references.filter((reference) => reference.type === "jump").map((reference) => reference.to));
-  const guessed = guessedIndirectTarget(result.instructions);
+  // The guess is 6502 addressing: Z80 references are facts.
+  const guessed = cpu === "6502" ? guessedIndirectTarget(result.instructions) : () => false;
   const kindOf = (fn: GhidraResult["functions"][number]) => (jumped.has(fn.entry) && !called.has(fn.entry) ? ("label" as const) : ("routine" as const));
   return {
     analyzer: "ghidra",

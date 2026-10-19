@@ -2,6 +2,7 @@
 // the addressing mode, the operand in 6502 syntax, the flow target and,
 // with a coverage file, whether the instruction ran.
 
+import { Z80 } from "#src/cpu/z80.ts";
 import { COVERAGE } from "#src/cpu/coverage.ts";
 import { formatAddress } from "#src/address.ts";
 import { OPCODES, type Mode as OpcodeMode } from "#src/opcodes.ts";
@@ -87,6 +88,31 @@ export interface ListedInstruction {
   operand: string;
   target?: string;
   executed?: boolean;
+}
+
+/** A Z80 instruction of the list: the text of the Z80 decoder (Zilog syntax, as sjasmplus reads it) in place of the 6502 mode and operand. */
+export interface ListedZ80Instruction {
+  address: string;
+  bytes: string;
+  text: string;
+  target?: string;
+  executed?: boolean;
+}
+
+/** Ghidra's Z80 instructions as the list that --out-instructions writes. */
+export function z80InstructionList(instructions: GhidraInstruction[], coverage?: Uint8Array): ListedZ80Instruction[] {
+  return instructions.map((instruction) => {
+    const bytes = Buffer.from(instruction.bytes, "hex");
+    const decoded = Z80.decode((address) => bytes[address - instruction.address], instruction.address);
+    const [target] = instruction.flows;
+    return {
+      address: formatAddress(instruction.address),
+      bytes: (instruction.bytes.match(/../g) ?? []).join(" "),
+      text: decoded?.text ?? `${instruction.mnemonic} ${instruction.operands}`.trim(),
+      ...(target === undefined ? {} : { target: formatAddress(target) }),
+      ...(coverage === undefined ? {} : { executed: (coverage[instruction.address]! & COVERAGE.ramExecute) !== 0 }),
+    };
+  });
 }
 
 /** Ghidra's instructions as the list that --out-instructions writes. */

@@ -1,5 +1,5 @@
-// The Ghidra analysis: the Ghidra SLEIGH decoder and decompiler with the NMOS
-// 6510 language, in this process as a WebAssembly module. Knowledge seeds go
+// The Ghidra analysis: the Ghidra SLEIGH decoder and decompiler with the
+// language of the machine (the NMOS 6510 or the Z80), in this process as a WebAssembly module. Knowledge seeds go
 // in, the structural result comes out, and the result is checked completely
 // before the script imports it.
 
@@ -25,19 +25,19 @@ export async function analyze(
   // The decoder sees only the loaded bytes; labels may name any address.
   const { entryPoints, codeStarts, dataRanges } = seedsInside(params, start, end);
   if (entryPoints.length === 0) {
-    throw new WireFailure("invalid-input", "Give at least one entry point inside the program, for example the SYS address of its BASIC loader.");
+    throw new WireFailure("invalid-input", `Give at least one entry point inside the program, for example the ${machine.cpu.id === "z80" ? "USR address of its BASIC loader" : "SYS address of its BASIC loader"}.`);
   }
   context.signal.throwIfAborted();
 
   let walked: ReturnType<typeof walk>;
   try {
-    loadImage(body, start);
-    walked = walk(body, start, end, { entryPoints, codeStarts, dataRanges, labels: params.labels });
+    loadImage(body, start, machine.ghidraLanguage);
+    walked = walk(body, start, end, { entryPoints, codeStarts, dataRanges, labels: params.labels }, machine.cpu.id);
   } catch (error) {
     context.log?.(`The Ghidra decoder failed: ${describeError(error)}`);
     throw new WireFailure("operation-failed", `The Ghidra decoder failed: ${describeError(error)}. Nothing was imported.`);
   }
-  const { decompilations, notDecompiled } = decompileRoutines(params, walked.functions, body, start, context);
+  const { decompilations, notDecompiled } = decompileRoutines(params, walked.functions, body, start, context, machine.ghidraLanguage);
 
   let result: GhidraResult;
   try {
@@ -50,7 +50,7 @@ export async function analyze(
 }
 
 /** The requested routines as C text, within the character bounds; the labels name routines and data. */
-function decompileRoutines(params: GhidraParams, functions: GhidraResult["functions"], body: Uint8Array, start: number, context: ToolContext): Pick<GhidraResult, "decompilations" | "notDecompiled"> {
+function decompileRoutines(params: GhidraParams, functions: GhidraResult["functions"], body: Uint8Array, start: number, context: ToolContext, language: string): Pick<GhidraResult, "decompilations" | "notDecompiled"> {
   const decompilations: GhidraResult["decompilations"] = [];
   const notDecompiled: NonNullable<GhidraResult["notDecompiled"]> = [];
   if (params.decompile.length === 0) return { decompilations, notDecompiled };
@@ -59,7 +59,7 @@ function decompileRoutines(params: GhidraParams, functions: GhidraResult["functi
   let prepared = false;
   const prepare = () => {
     if (prepared) return;
-    loadImage(body, start);
+    loadImage(body, start, language);
     for (const label of params.labels) {
       try {
         setName(label.address, label.name, entries.has(label.address) ? "function" : "data");

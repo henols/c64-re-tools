@@ -256,6 +256,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 ### `listing <range>`
 
 - `body.lines` has `count` and `listed`. `listed` holds one line for each instruction of a code region, and one `!byte` line for other bytes.
+- For a ZX Spectrum program, `text` is Z80 code in the syntax of sjasmplus, and the other bytes are `db` lines.
 - Each line has `address`, `bytes`, `text`, `referencesIn` and `referencesOut`. It can also have `label`, `analyzerNames`, `lineComments` and `comment`. `lineComments` are the line comments before the line. `comment` is the side comment.
 - `text` is the instruction with the names of its target. An operand expression of the knowledge replaces the operand.
 - When the knowledge has coverage, `access` tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line, or `-` for none. An `r` on code can come from a read of the 6502 that the program does not do, for example the byte after an RTS or the opcode at the PC when an interrupt starts.

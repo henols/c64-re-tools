@@ -12,6 +12,9 @@ export type Exit = { kind: "fall" } | { kind: "branch" | "call" | "return" | "in
 /** Values are kept below 2^48, so sizes up to 6 bytes are exact. */
 const MAX_SIZE = 6;
 
+/** The index of the ram space in the first input of LOAD and STORE, in the 6510 and the Z80 language. The Z80 I/O space has another index. */
+export const RAM_SPACE = 3;
+
 const mask = (size: number) => 2 ** (8 * Math.min(size, MAX_SIZE)) - 1;
 /** The value modulo 2^(8 * size), also for a negative value. */
 const wrap = (value: number, size: number) => ((value % (mask(size) + 1)) + mask(size) + 1) % (mask(size) + 1);
@@ -172,9 +175,11 @@ export class PcodeState {
           out = a === undefined ? undefined : [...a.toString(2)].filter((bit) => bit === "1").length;
           break;
         case "LOAD":
-          out = b === undefined ? undefined : this.get({ space: "ram", offset: b & 0xffff, size: operation.out!.size });
+          // A port of the Z80 I/O space is no memory: its value is not known.
+          out = b === undefined || operation.in[0]!.offset !== RAM_SPACE ? undefined : this.get({ space: "ram", offset: b & 0xffff, size: operation.out!.size });
           break;
         case "STORE":
+          if (operation.in[0]!.offset !== RAM_SPACE) break;
           if (b === undefined) this.forgetRam();
           else this.set({ space: "ram", offset: b & 0xffff, size: operation.in[2]!.size }, inputs[2]);
           break;

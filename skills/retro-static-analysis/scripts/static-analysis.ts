@@ -5,7 +5,7 @@
 
 import { projectMainSpace } from "#src/knowledge/names.ts";
 import { C64 } from "#src/machine.ts";
-import { mainSpaceOf } from "#src/knowledge/project-machine.ts";
+import { machineOf, mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import { prgRange } from "#src/c64.ts";
 import { COVERAGE } from "#src/cpu/coverage.ts";
 import { formatAddress } from "#src/address.ts";
@@ -28,7 +28,8 @@ import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/s
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
-import { instructionList } from "./lib/instructions.ts";
+import { instructionList, z80InstructionList } from "./lib/instructions.ts";
+import { findZ80Idioms } from "./lib/z80-idioms.ts";
 import { CATALOGUE, findMacroUses, type MacroCandidate } from "./lib/macros.ts";
 import { findPitfalls, type Pitfall } from "./lib/pitfalls.ts";
 import { findPointers, type PointerCandidate } from "./lib/pointers.ts";
@@ -192,6 +193,13 @@ async function analyze(call: Call): Promise<unknown> {
   const space = call.space;
   const reader = openForRead();
   const program = requireProgram(reader, space);
+  const machine = machineOf(reader);
+  // DXA, the 6502 idioms, macros, pointers and pitfalls read 6502 code: a Z80 program gets Ghidra and the Z80 idioms.
+  const z80 = machine.cpu.id === "z80";
+  if (z80 && analyzer === "dxa") {
+    reader?.close();
+    throw new UsageError(`--analyzer dxa reads only 6502 code, and the ${machine.name} has a Z80. Use --analyzer ghidra`);
+  }
   // A coverage map is of the C64 CPU: VICE keeps none for the drive.
   const covered = space === mainSpaceOf(reader) ? programCoverage(reader) : undefined;
   const coverage = covered?.map;
@@ -203,25 +211,29 @@ async function analyze(call: Call): Promise<unknown> {
   const executed = coverage === undefined ? {} : { executed: (address: number) => (coverage[address]! & COVERAGE.ramExecute) !== 0 };
   const loaded = imageKind === "flat64k" ? { start: 0x0000, end: 0xffff } : prgRange(bytes);
   // The idioms read only the program: a table that runs past a segment gets no targets from the 0 bytes of the 64 KiB.
-  const idioms = findIdioms(inProgram, { start: loaded.start, end: loaded.end }, covered);
+  const idioms = z80 ? undefined : findIdioms(inProgram, { start: loaded.start, end: loaded.end }, covered);
 
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries, space, executed.executed);
   // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound:
   // at most GHIDRA_LIMITS.entryPoints (1024) entry points for both analyzers, and for Ghidra at most
   // GHIDRA_LIMITS.codeStarts (8192) coverage flow starts that are code in a routine. coverageSeeds gives what was used.
-  const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, inProgram);
-  const known = [...seeds.entryPoints, ...codeEntries(reader, byteAt, space)];
+  const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, inProgram, machine.cpu);
+  // A Spectrum snapshot gives its PC as the entry of the program: it is a seed too.
+  const snapshotEntry = z80 && program.entry !== undefined ? [program.entry] : [];
+  const known = [...new Set([...seeds.entryPoints, ...snapshotEntry, ...codeEntries(reader, byteAt, space)])];
   // Ghidra takes the coverage as code starts without a function; DXA has one list.
-  const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, inProgram);
-  const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines])];
+  const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, inProgram, machine.cpu);
+  // The Z80 idioms follow the code from every seed and the entry of the program.
+  const restarts = z80 ? findZ80Idioms(inProgram, { start: loaded.start, end: loaded.end }, [...known, ...kinds.routines, ...kinds.codeStarts, ...(program.entry === undefined ? [] : [program.entry])]) : undefined;
+  const ordered = [...new Set([...known, ...(idioms?.entryPoints ?? []), ...kinds.routines])];
   seeds.entryPoints = ordered.slice(0, GHIDRA_LIMITS.entryPoints).sort((a, b) => a - b);
-  const codeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry)).slice(0, GHIDRA_LIMITS.codeStarts);
+  const codeStarts = [...new Set([...kinds.codeStarts, ...(restarts?.codeStarts ?? [])])].filter((entry) => !seeds.entryPoints.includes(entry)).slice(0, GHIDRA_LIMITS.codeStarts);
   // Idiom tables and the RAM under ROM that the runs never used are data for this run too; semantic data ranges come first.
   // A range with an entry point of the knowledge or --entry in it is left out: that code stays code.
   const fromRom = coverage === undefined ? [] : romOnlyRanges(coverage, byteAt).filter((range) => !known.some((entry) => entry >= range.start && entry <= range.end));
   const dataRanges = [...seeds.dataRanges];
-  for (const range of [...idioms.dataRanges, ...fromRom]) if (!dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start)) dataRanges.push(range);
+  for (const range of [...(idioms ?? restarts)!.dataRanges, ...fromRom]) if (!dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start)) dataRanges.push(range);
   seeds.dataRanges = dataRanges.slice(0, GHIDRA_LIMITS.dataRanges);
   const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
   const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry)).length;
@@ -230,7 +242,19 @@ async function analyze(call: Call): Promise<unknown> {
   reader?.close();
   /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
   const idiomsResult = () => {
-    const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: "Idioms in the program" }));
+    if (restarts !== undefined) {
+      const imported = withWrite((db) => importFindings(db, { ...restarts.findings, space }, { description: "Z80 idioms in the program" }));
+      return {
+        idioms: {
+          ...restarts.counts,
+          revision: imported.revision,
+          changes: { regions: imported.regions, references: imported.references },
+          conflicts: imported.conflicts.map((conflict) => showConflict(conflict, "heuristic")),
+        },
+      };
+    }
+    const found = idioms!;
+    const imported = withWrite((db) => importFindings(db, { ...found.findings, space }, { description: "Idioms in the program" }));
     // The macro candidates read the code regions after both imports.
     const macros = macroCandidates(space, byteAt, romUseOfProgram(coverage, program.state), skip);
     // With --apply-macros, the candidates and their macros are a third revision of the LLM.
@@ -247,14 +271,14 @@ async function analyze(call: Call): Promise<unknown> {
     codeDb?.close();
     return {
       idioms: {
-        ...idioms.counts,
+        ...found.counts,
         revision: imported.revision,
         changes: { regions: imported.regions, references: imported.references },
         conflicts: imported.conflicts.map((conflict) => showConflict(conflict, "heuristic")),
         // Candidates are not knowledge: a larger --max-listed gives more of them.
         candidates: {
-          dop: listed(idioms.candidates.dop, max, formatAddress, "a larger --max-listed"),
-          selfModified: listed(idioms.candidates.selfModified, max, formatAddress, "a larger --max-listed"),
+          dop: listed(found.candidates.dop, max, formatAddress, "a larger --max-listed"),
+          selfModified: listed(found.candidates.selfModified, max, formatAddress, "a larger --max-listed"),
           pointers: listed(pointers, max, showPointer, "a larger --max-listed"),
           pitfalls: listed(pitfalls, max, showPitfall, "a larger --max-listed"),
           macros: {
@@ -312,13 +336,13 @@ async function analyze(call: Call): Promise<unknown> {
       labels: listed(result.labels, max, (label) => ({ address: formatAddress(label.address), name: label.name }), ALL_NAMES),
       ...(written === undefined ? {} : { listing: written }),
     };
-    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision });
+    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, ("candidates" in found.idioms ? { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision } : { candidates: 0, applied: false, revision: undefined }));
   }
 
-  const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
+  const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext(), machine);
   // Executed instruction starts that Ghidra did not decode: the instruction list and the source miss them.
   const decoded = new Set(result.instructions.map((instruction) => instruction.address));
-  const imported = record({ ...ghidraFindings(result), space, ...executed }, revision, "Ghidra analysis of the program", runProvenance(bytes, result.toolVersion));
+  const imported = record({ ...ghidraFindings(result, machine.cpu.id), space, ...executed }, revision, "Ghidra analysis of the program", runProvenance(bytes, result.toolVersion));
   const found = idiomsResult();
   // A start inside a dual-use region is a known overlap, for example the second instruction of a BIT skip: one list cannot hold both.
   // Read after the idioms, which write those regions.
@@ -328,12 +352,12 @@ async function analyze(call: Call): Promise<unknown> {
   const gaps = coverage === undefined ? [] : executedStarts(coverage, inProgram).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address) && !overlaps.some((region) => address >= region.start && address <= region.end));
   let instructions: Record<string, unknown> | undefined;
   if (instructionsPath !== undefined) {
-    const list = instructionList(result.instructions, coverage);
+    const list = z80 ? z80InstructionList(result.instructions, coverage) : instructionList(result.instructions, coverage);
     instructions = { count: list.length, ...writeReported(instructionsPath, `${JSON.stringify(list, null, 1)}\n`, { what: "--out-instructions" }) };
   }
   const body = {
     analyzer: "ghidra",
-    ...(space === C64.spaces.main ? {} : { space }),
+    ...(space === machine.spaces.main ? {} : { space }),
     ...(instructions === undefined ? {} : { instructions }),
     ...found,
     ...coverageResult(),
@@ -346,7 +370,7 @@ async function analyze(call: Call): Promise<unknown> {
       ? {}
       : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatAddress(item.entry), reason: item.reason })) }),
   };
-  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision });
+  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, ("candidates" in found.idioms ? { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision } : { candidates: 0, applied: false, revision: undefined }));
 }
 
 await runScript({

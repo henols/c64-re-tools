@@ -280,6 +280,7 @@ function listingSource(db: DatabaseSync | undefined, space: string): ListingSour
   const platform = new Map(names.map((entry) => [entry.address, entry.name]));
   const entries = names.filter((entry) => entry.end > entry.address);
   return {
+    cpu: machineOf(db).cpu,
     byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined),
     entryStart: (at) => (inside(at) ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),
     // A user or LLM name, else the platform name; an analyzer name in symbols (knowledge from an older version) gives way to it.
@@ -695,7 +696,7 @@ const READ_COMMANDS: CommandSpec[] = [
   readCommand(
     {
       name: "listing",
-      summary: "The program as ACME lines with names, operand expressions, comments, the access of each line in the coverage (x executed, r read, w written) and the references in and out.",
+      summary: "The program as assembler lines (ACME for the C64, sjasmplus for the ZX Spectrum) with names, operand expressions, comments, the access of each line in the coverage (x executed, r read, w written) and the references in and out.",
       subjects: [RANGE],
       options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the listing as text to this file in place of the lines in the result" }, ...LIST },
     },

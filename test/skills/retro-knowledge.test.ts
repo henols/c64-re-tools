@@ -505,3 +505,13 @@ test("image puts a ZX Spectrum snapshot into the knowledge: the machine, the CPU
   assert.equal(refused.status, 2);
   assert.match(refused.envelope.error!, /The knowledge has rows in c64, and the ZX Spectrum 48K has no such space/);
 });
+
+test("the listing of a ZX Spectrum program is Z80 text in sjasmplus syntax with the names of the knowledge", () => {
+  const root = project();
+  writeFileSync(join(root, "counter.z80"), keyboardCounterSnapshot());
+  assert.equal(knowledge(root, "image", "counter.z80").status, 0);
+  assert.equal(knowledge(root, "classify", "$8000-$8026", "code").status, 0);
+  assert.equal(knowledge(root, "rename", "$8030", "count").status, 0);
+  const lines = (knowledge(root, "listing", "$8010-$8028").json.lines as { listed: Array<{ text: string }> }).listed.map((line) => line.text);
+  assert.deepEqual(lines, ["jr c,$8015", "call count", "ld bc,$7ffe", "in a,(c)", "and $01", "call z,count", "ld hl,$9002", "inc (hl)", "halt", "jp $800b", "db $00,$00"]);
+});

@@ -1,10 +1,12 @@
 // One listing of the image with its knowledge: the lines of a range as
-// ACME text with names, operand expressions and comments, the access class of
-// the bytes from coverage files, and the references in and out. Nothing here
-// reads files: knowledge.ts gives the lookups.
+// assembler text with names, operand expressions and comments (ACME for the
+// 6502, sjasmplus for the Z80), the access class of the bytes from coverage
+// files, and the references in and out. Nothing here reads files: knowledge.ts
+// gives the lookups.
 
 import { COVERAGE } from "#src/cpu/coverage.ts";
 import { formatAddress, formatByte } from "#src/address.ts";
+import type { Cpu } from "#src/cpu.ts";
 import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
@@ -26,6 +28,8 @@ export interface ListingSource {
   references: (address: number) => { in: number; out: number };
   /** Joined coverage files, or undefined without them. */
   coverage?: Uint8Array;
+  /** The CPU of the machine; the 6502 when absent. */
+  cpu?: Cpu;
 }
 
 export interface ListingLine {
@@ -77,6 +81,24 @@ function operandOf(mode: Mode, address: number, low: number, high: number, sourc
   return MODE_LENGTH[mode] === 3 ? named(low | (high << 8), 4) : named(low, 2);
 }
 
+/**
+ * A Z80 instruction as text: the text of the decoder with a name, or the
+ * operand expression of the knowledge, in place of the address that its
+ * operand gives. Undefined when the instruction runs past the image.
+ */
+function z80Text(cpu: Cpu, source: ListingSource, address: number): { length: number; text: string } | undefined {
+  const instruction = cpu.decode(source.byteAt, address);
+  if (instruction?.text === undefined) return undefined;
+  const { operand } = instruction;
+  let text = instruction.text;
+  if (operand !== undefined && (operand.size === 2 || operand.relative)) {
+    const target = operand.relative ? (instruction.branch ?? instruction.jump)! : source.byteAt(address + operand.offset)! | (source.byteAt(address + operand.offset + 1)! << 8);
+    const shown = source.operand(address) ?? source.nameOf(target);
+    if (shown !== undefined) text = text.replace(formatAddress(target), shown);
+  }
+  return { length: instruction.length, text };
+}
+
 /** The lines of start..end: instructions in code regions, decoded from the region start, and bytes elsewhere. */
 export function listing(source: ListingSource, start: number, end: number): ListingLine[] {
   const lines: ListingLine[] = [];
@@ -118,7 +140,14 @@ export function listing(source: ListingSource, start: number, end: number): List
       continue;
     }
     const region = regionAt(address);
-    if (region !== undefined && CODE.has(region.type)) {
+    if (region !== undefined && CODE.has(region.type) && source.cpu?.id === "z80") {
+      const decoded = z80Text(source.cpu, source, address);
+      if (decoded !== undefined && address + decoded.length - 1 <= region.end) {
+        if (address >= start) lines.push(line(address, decoded.length, decoded.text));
+        address += decoded.length;
+        continue;
+      }
+    } else if (region !== undefined && CODE.has(region.type)) {
       const opcode = OPCODES[byte]!;
       const length = MODE_LENGTH[opcode.mode];
       const bytes = Array.from({ length: length - 1 }, (_, offset) => source.byteAt(address + 1 + offset));
@@ -137,7 +166,7 @@ export function listing(source: ListingSource, start: number, end: number): List
       values.push(source.byteAt(at)!);
       at++;
     }
-    if (address >= start) lines.push(line(address, values.length, `!byte ${values.map(formatByte).join(",")}`));
+    if (address >= start) lines.push(line(address, values.length, `${source.cpu?.id === "z80" ? "db" : "!byte"} ${values.map(formatByte).join(",")}`));
     address = at;
   }
   return lines;

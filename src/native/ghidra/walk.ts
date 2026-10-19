@@ -6,8 +6,9 @@
 // code before it, or else from the pointer in the image.
 
 import { SYMBOL_NAME } from "../../address.ts";
+import type { Cpu } from "../../cpu.ts";
 import type { GhidraInstruction, GhidraResult } from "../types.ts";
-import { PcodeState } from "./pcode.ts";
+import { PcodeState, RAM_SPACE } from "./pcode.ts";
 import { decode, type Decoded, type Varnode } from "./wasm.ts";
 
 export interface WalkSeeds {
@@ -31,15 +32,20 @@ const MAX_CHAIN = 32;
 
 const isRam = (varnode: Varnode) => varnode.space === "ram";
 
-/** The value of the operand bytes after the first byte, little-endian; undefined without operand bytes. */
-function operandValue(bytes: readonly number[]): number | undefined {
+/**
+ * The value of the operand bytes of a 6502 instruction after the first byte,
+ * little-endian; undefined without operand bytes. A Z80 instruction gives
+ * none: its prefixes put the operand at other bytes, and an index is an offset.
+ */
+function operandValue(bytes: readonly number[], cpu: Cpu["id"]): number | undefined {
+  if (cpu !== "6502") return undefined;
   if (bytes.length === 2) return bytes[1]!;
   if (bytes.length === 3) return bytes[1]! | (bytes[2]! << 8);
   return undefined;
 }
 
 /** Decodes [start, end] from the seeds; the image bytes are already loaded at start. */
-export function walk(image: Uint8Array, start: number, end: number, seeds: WalkSeeds): Omit<GhidraResult, "decompilations" | "completeness" | "toolVersion"> {
+export function walk(image: Uint8Array, start: number, end: number, seeds: WalkSeeds, cpu: Cpu["id"] = "6502"): Omit<GhidraResult, "decompilations" | "completeness" | "toolVersion"> {
   const isData = new Uint8Array(0x10000);
   for (const range of seeds.dataRanges) isData.fill(1, range.start, range.end + 1);
   const imageByte = (address: number) => (address >= start && address <= end ? image[address - start] : undefined);
@@ -70,7 +76,7 @@ export function walk(image: Uint8Array, start: number, end: number, seeds: WalkS
       reference(to, type);
       instruction.accessed.push(to);
     };
-    const operand = operandValue(decoded.bytes);
+    const operand = operandValue(decoded.bytes, cpu);
     // Unique and register varnodes that hold an operand address plus an index.
     const indexed = new Map<string, number>();
     const key = (varnode: Varnode) => `${varnode.space}:${varnode.offset}`;
@@ -112,6 +118,8 @@ export function walk(image: Uint8Array, start: number, end: number, seeds: WalkS
         case "LOAD":
         case "STORE": {
           const type = operation.op === "LOAD" ? "read" : "write";
+          // A port of the Z80 I/O space is no memory address.
+          if (first!.offset !== RAM_SPACE) break;
           if (second!.space === "const") access(second!.offset & 0xffff, type);
           else if (indexed.has(key(second!))) reference(indexed.get(key(second!))!, type);
           break;

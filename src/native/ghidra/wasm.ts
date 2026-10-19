@@ -1,10 +1,14 @@
 // The Ghidra SLEIGH decoder and decompiler for the c64-re-tools 6510
-// language, as a WebAssembly module (built from native/sleigh/). It has no imports and holds one program image at a time.
+// language and Ghidra's Z80 language, as a WebAssembly module (built from native/sleigh/). It has no imports and holds one program image at a time.
 // A panic in the module traps: the instance is then dropped and the next
 // load makes a new one.
 
 import { Refusal } from "../../errors.ts";
 import { C64RT_WASM } from "./c64rt-wasm.ts";
+
+/** The languages of the module, in the order of LANGUAGES in native/sleigh/src/lib.rs. */
+export const LANGUAGES = ["C64RT_6510:LE:16:nmos", "z80:LE:16:default"] as const;
+export type Language = (typeof LANGUAGES)[number];
 
 /** The decoder and decompiler, as a result names its tool. */
 export const SLEIGH_VERSION = "ghidra-decompiler 2.1.0";
@@ -37,7 +41,7 @@ interface Exports {
   memory: WebAssembly.Memory;
   alloc(length: number): number;
   out_ptr(): number;
-  load(image: number, length: number, base: number): number;
+  load(image: number, length: number, base: number, language: number): number;
   decode(address: number): number;
   name(address: number, text: number, length: number, kind: number): number;
   decompile(address: number): number;
@@ -76,9 +80,11 @@ function put(wasm: Exports, bytes: Uint8Array): number {
   return pointer;
 }
 
-/** The program image that decode, name and decompile work on: the bytes at base. */
-export function loadImage(bytes: Uint8Array, base: number): void {
-  call((wasm) => wasm.load(put(wasm, bytes), bytes.length, base));
+/** The program image that decode, name and decompile work on: the bytes at base, in a language of LANGUAGES. */
+export function loadImage(bytes: Uint8Array, base: number, language: string = LANGUAGES[0]): void {
+  const index = (LANGUAGES as readonly string[]).indexOf(language);
+  if (index < 0) throw new Refusal("operation-failed", `the decoder has no language ${language}`);
+  call((wasm) => wasm.load(put(wasm, bytes), bytes.length, base, index));
 }
 
 /** The instruction at an address of the loaded image. */

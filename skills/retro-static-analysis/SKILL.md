@@ -1,6 +1,6 @@
 ---
 name: retro-static-analysis
-description: Finds the structure of a C64 program with DXA or Ghidra, without running it. It records the code and data regions, the analyzer names and the references in the project knowledge. Use it to get a fast first pass of code and data, and a disassembly listing. Use it to get the routines, the references, an instruction list and decompiled code. Use it when the project knowledge has coverage, to find code that only a vector, a table or an interrupt reaches. Use it to find 6502 idioms, pointer candidates, raster pitfalls and macro candidates. It does not run the program. It does not give names to routines.
+description: Finds the structure of a C64 or ZX Spectrum program with DXA or Ghidra, without running it. It records the code and data regions, the analyzer names and the references in the project knowledge. Use it to get a fast first pass of code and data, and a disassembly listing. Use it to get the routines, the references, an instruction list and decompiled code. Use it when the project knowledge has coverage, to find code that only a vector, a table or an interrupt reaches. Use it to find 6502 idioms, pointer candidates, raster pitfalls and macro candidates. It does not run the program. It does not give names to routines.
 ---
 
 # Static analysis
@@ -39,7 +39,7 @@ To get the command list, run the script with no arguments.
 
 - The program comes from the project knowledge. Put the program into the project knowledge before you analyze it.
 - Put each coverage map of the program into the project knowledge before you analyze it. With coverage, the analysis finds code that only a vector, an RTS table or an interrupt reaches. It also finds the code after a JSR to a routine that an analyzer thinks does not return.
-- The analysis uses coverage only in the space `c64`.
+- The analysis uses coverage only in the space of the CPU: `c64` or `spectrum`.
 - An entry point is an address where code starts. Give it with `--entry`. Get it from these sources:
   - The SYS address of a BASIC start. Get it from a listing of the BASIC program.
   - A vector or an interrupt target that you found in the emulator.
@@ -175,6 +175,18 @@ The script does not record the candidates. Examine each candidate and decide.
 - `stale-revision`: the project knowledge changed during the analysis. The script recorded nothing. Run `analyze` again.
 - `operation-failed` about an incomplete result or listing: the analyzer did not give a complete result. The script recorded nothing. Tell the user.
 - The script did not write the listing: the error tells if the project knowledge has the findings. Correct `--out-listing` and run `analyze` again.
+
+---
+
+## A ZX Spectrum program
+
+The project machine gives the CPU. A ZX Spectrum program has a Z80.
+
+- Use Ghidra. The script refuses `--analyzer dxa`, because DXA reads only 6502 code.
+- The PC of the snapshot in the project knowledge is an entry point. The USR address of the BASIC loader is also an entry point.
+- After `RST $08`, the next byte is an error code. After `RST $28`, the bytes up to `$38` (end-calc) are calculator literals. The script writes these bytes as `heuristic` regions of type `bytes`. The code after end-calc is a code start. `idioms` counts them in `errorRestarts` and `calculatorRestarts`.
+- The candidates (pitfalls, macros and pointers) are for 6502 code. A Z80 program gets no candidates.
+- `--out-instructions` gives `text` in the Z80 syntax of sjasmplus, in place of `mnemonic`, `mode` and `operand`.
 
 ---
 

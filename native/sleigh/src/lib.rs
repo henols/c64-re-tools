@@ -1,5 +1,5 @@
 // The Ghidra SLEIGH decoder and decompiler for the c64-re-tools 6510
-// language, as a WebAssembly module without imports. The module holds one
+// language and Ghidra's Z80 language, as a WebAssembly module without imports. The module holds one
 // program image. Each call returns the length of a JSON text that out_ptr
 // points to: the result, or {"error": "..."}. The analysis itself is
 // TypeScript (src/native/ghidra/); this module only decodes and decompiles.
@@ -12,7 +12,8 @@ use ghidra_decompiler::program::{PcodeVarnode, Program};
 use ghidra_decompiler::sleigh_arch::{LanguageRegistry, set_global_language_registry};
 use serde_json::{Value, json};
 
-const LANGUAGE: &str = "C64RT_6510:LE:16:nmos";
+/// The languages that load takes, by number: 0 is the NMOS 6510 of the C64, 1 the Z80.
+const LANGUAGES: [&str; 2] = ["C64RT_6510:LE:16:nmos", "z80:LE:16:default"];
 
 thread_local! {
     static PROGRAM: RefCell<Option<Program>> = const { RefCell::new(None) };
@@ -55,19 +56,26 @@ pub extern "C" fn out_ptr() -> *const u8 {
     OUT.with(|out| out.borrow().as_ptr())
 }
 
-/// Loads the image bytes at base; replaces the program that was loaded before.
+/// Loads the image bytes at base in a language of LANGUAGES; replaces the program that was loaded before.
 #[unsafe(no_mangle)]
-pub extern "C" fn load(image: *mut u8, length: usize, base: u32) -> u32 {
+pub extern "C" fn load(image: *mut u8, length: usize, base: u32, language: u32) -> u32 {
     let bytes = unsafe { take(image, length) };
+    let Some(language) = LANGUAGES.get(language as usize) else {
+        return error(format!("no language {language}"));
+    };
     let mut registry = LanguageRegistry::new();
     registry.add_static_directory(&[
         ("c64rt_6510.ldefs", include_bytes!("../../../src/native/ghidra/language/c64rt_6510.ldefs")),
         ("c64rt_6510.sla", include_bytes!("../../../src/native/ghidra/language/c64rt_6510.sla")),
         ("c64rt_6510.pspec", include_bytes!("../../../src/native/ghidra/language/c64rt_6510.pspec")),
         ("c64rt_6510.cspec", include_bytes!("../../../src/native/ghidra/language/c64rt_6510.cspec")),
+        ("z80.ldefs", include_bytes!("../../../src/native/ghidra/language/z80.ldefs")),
+        ("z80.sla", include_bytes!("../../../src/native/ghidra/language/z80.sla")),
+        ("z80.pspec", include_bytes!("../../../src/native/ghidra/language/z80.pspec")),
+        ("z80.cspec", include_bytes!("../../../src/native/ghidra/language/z80.cspec")),
     ]);
     set_global_language_registry(registry);
-    match Program::from_raw_bytes(bytes, LANGUAGE, u64::from(base)) {
+    match Program::from_raw_bytes(bytes, language, u64::from(base)) {
         Ok(program) => {
             PROGRAM.with(|slot| *slot.borrow_mut() = Some(program));
             reply(json!({ "ok": true }))
