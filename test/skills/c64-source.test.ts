@@ -1289,3 +1289,76 @@ test("an immediate stored to a register with a decoder gets the decoded value as
   assert.match(text, /stx \$d018 +; Charset at \$1000\.\n/);
   assert.match(text, /sta \$d020\n/);
 });
+
+/**
+ * $1000 LDA $dd0e / LDA #$1b / STA $d011 / STA $d012 / STA $d800,X / STA $d012 / LDA $d040 / JSR $d100 / RTS,
+ * and RAM at $d000-$dfff in the image (a game copies sprites there with $01=$00): a named data region.
+ */
+function ioInput(overrides: Partial<SourceInput> = {}): SourceInput {
+  const code = [0xad, 0x0e, 0xdd, 0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x8d, 0x12, 0xd0, 0x9d, 0x00, 0xd8, 0x8d, 0x12, 0xd0, 0xad, 0x40, 0xd0, 0x20, 0x00, 0xd1, 0x60];
+  const memory = new Uint8Array(0x10000);
+  memory.set(code, 0x1000);
+  memory.set(seededBytes(5, 0x1000), 0xd000);
+  memory[0xd100] = 0x60;
+  const instructions = new Map([[0x1000, 3], [0x1003, 2], [0x1005, 3], [0x1008, 3], [0x100b, 3], [0x100e, 3], [0x1011, 3], [0x1014, 3], [0x1017, 1], [0xd100, 1]]);
+  return {
+    ...input([0], 0x1000),
+    segments: [{ start: 0x1000, end: 0x1000 + code.length - 1 }, { start: 0xd000, end: 0xdfff }],
+    byteAt: (address) => memory[address]!,
+    instructions,
+    symbols: [{ address: 0xd000, name: "fighter_extra_sprites" }, { address: 0xd100, name: "under_io" }],
+    regions: [{ start: 0xd000, end: 0xd0ff, type: "bytes" }, { start: 0xd100, end: 0xd100, type: "code" }, { start: 0xd101, end: 0xdfff, type: "bytes" }],
+    platform: platformNames(),
+    describe: describeAddress,
+    decode,
+    io: { start: 0xd000, end: 0xdfff },
+    ...overrides,
+  };
+}
+
+/** The code lines of segment_1000.asm without their side comments. */
+const ioCode = (rendered: ReturnType<typeof render>) => textOf(rendered, "segment_1000.asm").split("\n").filter((line) => line.startsWith(" ")).map((line) => line.split(";")[0]!.trim());
+
+test("a read or write in the I/O area names the register, also where the image holds RAM; the data label of the RAM stays", () => {
+  const rendered = render(layout(ioInput()), new Set(), []);
+  assert.deepEqual(ioCode(rendered), ["lda CI2CRA", "lda #$1b", "sta SCROLY", "sta RASTER", "sta $d800,x", "sta RASTER", "lda $d040", "jsr under_io", "rts"]);
+  // The register gets its decoded value, as a register outside the image does.
+  assert.match(textOf(rendered, "segment_1000.asm"), /sta SCROLY +; \$d011: yScroll 3, rows 25, displayEnabled, rasterBit8 0\n/);
+  const data = textOf(rendered, "segment_d000.asm");
+  assert.match(data, /^fighter_extra_sprites\n {8}!byte /m);
+  assert.doesNotMatch(data, /^(RASTER|SCROLY|CI2CRA|l_d|fighter_extra_sprites\+)/m, "a register gets no label line in the data");
+  const constants = textOf(rendered, "constants.asm");
+  assert.match(constants, /^; A name of an address inside the image names the register there, not the RAM of the program\.$/m);
+  assert.match(constants, /^SCROLY += \$d011 ; Control 1: .* Used: written 1\.$/m);
+  assert.match(constants, /^RASTER += \$d012 ; .* Used: written 2\.$/m);
+  assert.match(constants, /^CI2CRA += \$dd0e ; CIA 2: .* Used: read 1\.$/m);
+  assert.doesNotMatch(constants, /fighter_extra_sprites|under_io|\$d800|\$d040/);
+});
+
+test("a platform name of a knowledge operand expression stays as written and is a constant, also where the image holds RAM or a knowledge name", () => {
+  const operands: SourceInput["operands"] = [{ address: 0x100e, select: "value", symbol: "RASTER" }];
+  assert.deepEqual(ioCode(render(layout(ioInput({ operands })), new Set(), [])).slice(3, 6), ["sta RASTER", "sta $d800,x", "sta RASTER"]);
+  // A knowledge name at $d012 names the RAM: the plain operand is that label, the expression keeps the register.
+  const symbols = [...ioInput().symbols, { address: 0xd012, name: "sprite_row", origin: "llm" as const }];
+  const rendered = render(layout(ioInput({ operands, symbols })), new Set(), []);
+  assert.deepEqual(ioCode(rendered).slice(3, 6), ["sta sprite_row", "sta $d800,x", "sta RASTER"]);
+  assert.match(textOf(rendered, "segment_d000.asm"), /^sprite_row\n/m);
+  assert.match(textOf(rendered, "constants.asm"), /^RASTER += \$d012 ; .* Used: written 1\.$/m);
+  // Without the I/O area (drive code, a bank), the RAM of the image keeps its data label.
+  const { io: _io, describe: _describe, ...plain } = ioInput({ platform: [] });
+  assert.deepEqual(ioCode(render(layout(plain), new Set(), [])).slice(0, 5), ["lda l_dd0e", "lda #$1b", "sta fighter_extra_sprites+17", "sta fighter_extra_sprites+18", "sta l_d800,x"]);
+});
+
+test("with real ACME, registers named over the RAM of the image assemble to the same bytes", { skip: acmeSkip }, async () => {
+  const operands: SourceInput["operands"] = [{ address: 0x100e, select: "value", symbol: "RASTER" }];
+  const symbols = [...ioInput().symbols, { address: 0xd012, name: "sprite_row", origin: "llm" as const }];
+  for (const source of [ioInput(), ioInput({ operands }), ioInput({ operands, symbols })]) {
+    const { bytes, messages } = await assembleRendered(render(layout(source), new Set(), []));
+    assert.ok(bytes !== undefined, messages.join("; "));
+    const at = (address: number) => bytes[address - 0x1000];
+    assert.deepEqual([0x1000, 0x1017, 0xd000, 0xd012, 0xd100, 0xdfff].map(at), [0x1000, 0x1017, 0xd000, 0xd012, 0xd100, 0xdfff].map(source.byteAt));
+    assert.equal(bytes.length, 0xe000 - 0x1000);
+    assert.deepEqual(bytes.slice(0xd000 - 0x1000), Array.from({ length: 0x1000 }, (_, offset) => source.byteAt(0xd000 + offset)));
+    assert.deepEqual(bytes.slice(0, 0x18), Array.from({ length: 0x18 }, (_, offset) => source.byteAt(0x1000 + offset)));
+  }
+});

@@ -1,6 +1,7 @@
 // ACME source from an image, current knowledge and Ghidra's instruction
 // boundaries. The same input gives the same text. Names come from
-// knowledge; a target that knowledge does not name gets l_xxxx. Data is
+// knowledge; a target that knowledge does not name gets l_xxxx. A read or
+// write in the I/O area names the register, also where the image holds RAM. Data is
 // written by its region type. The source assembles to the same bytes: the
 // generator forces operand sizes, and writes an opcode form that ACME
 // encodes differently as bytes (see the probe in source.ts). An operand
@@ -40,6 +41,8 @@ export interface SourceInput {
   platformLeftOut?: ReadonlySet<string>;
   /** The platform area of an address, and the register that an I/O mirror repeats: constants.asm groups and describes its names with them. */
   describe?: (address: number) => { area: Area; mirrorOf?: number };
+  /** The I/O area: a code operand there names the register, also when the image holds RAM there. */
+  io?: AddressRange;
   /** What a value in a platform register means (c64-memory-map): an immediate stored to such a register gets it as a side comment. Throws for a register without a decoder. */
   decode?: (register: number, value: number) => Record<string, unknown>;
   /** Operand expressions of the knowledge, by instruction address. */
@@ -158,7 +161,7 @@ function decodedText(decoded: Record<string, unknown>): string {
  * register with a decoder, for example "$d011: yScroll 3, rows 25". A knowledge
  * side comment at the store wins.
  */
-function decodedStores(pieces: readonly Piece[], input: SourceInput): Array<{ address: number; placement: CommentPlacement; text: string }> {
+function decodedStores(pieces: readonly Piece[], input: SourceInput, isRegister: (address: number) => boolean): Array<{ address: number; placement: CommentPlacement; text: string }> {
   if (input.decode === undefined) return [];
   const own = new Set(input.comments.filter((comment) => comment.placement === "side").map((comment) => comment.address));
   const found: Array<{ address: number; placement: CommentPlacement; text: string }> = [];
@@ -170,8 +173,8 @@ function decodedStores(pieces: readonly Piece[], input: SourceInput): Array<{ ad
       const register = STORES[store.opcode];
       if (register === undefined || LOADS[load.opcode] !== register || load.address + load.length !== store.address || own.has(store.address)) continue;
       const target = store.length === 3 ? input.byteAt(store.address + 1) | (input.byteAt(store.address + 2) << 8) : input.byteAt(store.address + 1);
-      // A register inside the image is RAM of the program, not the register.
-      if (input.segments.some((segment) => target >= segment.start && target <= segment.end)) continue;
+      // A register inside the image is RAM of the program, not the register, unless the source names the register there.
+      if (!isRegister(target)) continue;
       try {
         const text = decodedText(input.decode(target, input.byteAt(load.address + 1)));
         if (text !== "") found.push({ address: store.address, placement: "side", text: `${formatC64Address(target)}: ${text}` });
@@ -215,8 +218,12 @@ export interface Layout {
   pieces: Piece[];
   /** Names of addresses: inside the image a label, outside it a constant. */
   names: Map<number, string>;
-  /** Addresses outside the image that the source names, as constants. */
+  /** Addresses that the source names as constants: outside the image, and the registers in `registers`. */
   constants: number[];
+  /** Platform names of addresses inside the image that the source writes as constants, not as labels: a name of an operand expression, and a register of the I/O area. */
+  registers: Map<number, string>;
+  /** The operand of an instruction without an expression when it is not the name of its target: a register of the I/O area, or the plain address of the I/O area. */
+  operandNames: Map<number, string>;
   /** How the source uses each constant: instructions by kind, and pointer table entries. */
   uses: Map<number, Map<UseKind, number>>;
   platform: NonNullable<SourceInput["platform"]>;
@@ -364,12 +371,22 @@ export function layout(input: SourceInput): Layout {
   /** Addresses outside the image without a name of their own, inside a named platform entry of more bytes: the start of that entry. */
   const insideEntry = new Map<number, number>();
   const uses = new Map<number, Map<UseKind, number>>();
-  const count = (constant: number, kind: UseKind) => {
-    outside.add(constant);
+  const tally = (constant: number, kind: UseKind) => {
     const kinds = uses.get(constant) ?? new Map<UseKind, number>();
     kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
     uses.set(constant, kinds);
   };
+  const count = (constant: number, kind: UseKind) => {
+    outside.add(constant);
+    tally(constant, kind);
+  };
+  /** Platform names inside the image that the source writes as constants: the register, not the RAM of the program there. */
+  const registers = new Map<number, string>();
+  const register = (address: number, name: string, kind: UseKind) => {
+    registers.set(address, name);
+    tally(address, kind);
+  };
+  const inIo = (address: number) => input.io !== undefined && address >= input.io.start && address <= input.io.end;
   /** The start of the named data region that holds an address without a name of its own: the operand is written name+offset. */
   const tableStart = (address: number) => {
     if (symbols.has(address)) return undefined;
@@ -393,6 +410,30 @@ export function layout(input: SourceInput): Layout {
   const byName = new Map<string, number>();
   for (const row of input.platform ?? []) if (!byName.has(row.name)) byName.set(row.name, row.address);
   for (const symbol of input.symbols) byName.set(symbol.name, symbol.address);
+  /** A platform name of an expression stays as written: inside the image it is a register constant, not the label of the RAM there. */
+  const useName = (name: string, kind: UseKind) => {
+    const address = byName.get(name)!;
+    if (inImage(address) && platform.get(address) === name) register(address, name, kind);
+    else use(address, kind);
+  };
+  /**
+   * The operand of an instruction without an expression. A read or a write in the
+   * I/O area inside the image, without a knowledge name there, is the register:
+   * its platform name, else the plain address. The data label of the RAM there stays.
+   */
+  const operandNames = new Map<number, string>();
+  const useOperand = (item: InstructionItem) => {
+    const value = operandValue(item.address, item.opcode, input.byteAt)!;
+    const kind = useKind(item.opcode);
+    const access = kind === "read" || kind === "written" || kind === "modified";
+    if (!inImage(value) || symbols.has(value) || !access) return use(value, kind);
+    const name = registers.get(value) ?? (inIo(value) ? platform.get(value) : undefined);
+    if (name !== undefined) {
+      register(value, name, kind);
+      operandNames.set(item.address, name);
+    } else if (inIo(value)) operandNames.set(item.address, literalOperand(item.opcode, value));
+    else use(value, kind);
+  };
   const instructionAt = new Map(pieces.flatMap((piece) => piece.items.flatMap((item) => (item.kind === "instruction" ? [[item.address, item] as const] : []))));
   /** Why names of an expression are not names of the source: not known, or platform names of a ROM that the program does not use. */
   const unknownNames = (missing: readonly string[], remedy: string) => {
@@ -459,19 +500,20 @@ export function layout(input: SourceInput): Layout {
     // An immediate operand builds the address of a name; any other operand uses the address as the instruction does.
     expressions.push({ address: operand.address, text: expression, kind: mode === "imm" ? "address" : useKind(item!.opcode) });
   }
-  for (const { text: expression, kind } of expressions) for (const name of identifiers(expression)) use(byName.get(name)!, kind);
+  // The names of expressions and macro args come first: a platform name there names the register for the plain operands too.
+  for (const { text: expression, kind } of expressions) for (const name of identifiers(expression)) useName(name, kind);
+  for (const candidate of candidates) for (const arg of candidate.use.args) for (const name of identifiers(arg)) useName(name, "macro argument");
   // An instruction with an expression names what the expression names, not its plain target.
   const written = new Set(expressions.map((expression) => expression.address));
   for (const piece of pieces) {
     for (const item of piece.items) {
       if (item.kind === "instruction") {
-        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address) && !inUse.has(item.address)) use(operandValue(item.address, item.opcode, input.byteAt)!, useKind(item.opcode));
+        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address) && !inUse.has(item.address)) useOperand(item);
         continue;
       }
       for (const pointer of pointersOf(item, input.byteAt)) use(pointer, "table");
     }
   }
-  for (const candidate of candidates) for (const arg of candidate.use.args) for (const name of identifiers(arg)) use(byName.get(name)!, "macro argument");
   for (const symbol of input.symbols) want(symbol.address);
   // A reference target inside a named data region without its own name is that region's name plus the offset: it makes no label.
   for (const target of input.referenceTargets) want(tableStart(target) ?? target);
@@ -488,7 +530,7 @@ export function layout(input: SourceInput): Layout {
       macrosAsInstructions.push({ start: candidate.use.start, end: candidate.use.end, macro: candidate.use.macro, reason: `The source has a label at ${formatC64Address(inside)}, inside the use.` });
       for (const item of candidate.items) {
         inUse.delete(item.address);
-        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address)) use(operandValue(item.address, item.opcode, input.byteAt)!, useKind(item.opcode));
+        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address)) useOperand(item);
       }
     }
   }
@@ -506,7 +548,8 @@ export function layout(input: SourceInput): Layout {
       if (inImage(address)) namedLabels++;
       continue;
     }
-    const named = platform.get(address);
+    // A platform name in the I/O area, or of a register constant, is the register: the RAM of the program there gets no label of that name.
+    const named = inImage(address) && (inIo(address) || registers.has(address)) ? undefined : platform.get(address);
     if (named !== undefined) {
       names.set(address, named);
       if (inImage(address)) namedLabels++;
@@ -562,9 +605,14 @@ export function layout(input: SourceInput): Layout {
   // The high byte of a vector is NMINV+1. A zero-page entry keeps zero-page instructions: its constant has two digits.
   // An address inside a table keeps its own label when the source needs one there anyway, for example as the entry.
   for (const [address, start] of insideEntry) if (!wanted.has(address)) names.set(address, `${names.get(start)!}+${address - start}`);
+  /** The name that the source gives a name of an expression: a register constant keeps its platform name. */
+  const sourceName = (name: string) => {
+    const address = byName.get(name)!;
+    return registers.get(address) === name ? name : names.get(address);
+  };
   /** An expression with the names of this source: a name with an offset in brackets, so an operator after it keeps its meaning. */
   const sourceText = (text: string) => replaceIdentifiers(text, (name) => {
-    const label = names.get(byName.get(name)!)!;
+    const label = sourceName(name)!;
     return label.includes("+") ? `(${label})` : label;
   });
   const usesWritten = new Map<number, MacroUseBlock>();
@@ -573,7 +621,7 @@ export function layout(input: SourceInput): Layout {
   for (const { address, text } of expressions) {
     const unnamed: string[] = [];
     const written = replaceIdentifiers(text, (name) => {
-      const label = names.get(byName.get(name)!);
+      const label = sourceName(name);
       if (label === undefined) unnamed.push(name);
       return label === undefined ? name : label.includes("+") ? `(${label})` : label;
     });
@@ -583,13 +631,15 @@ export function layout(input: SourceInput): Layout {
   return {
     pieces,
     names,
-    constants: [...outside].sort((a, b) => a - b),
+    constants: [...outside, ...registers.keys()].sort((a, b) => a - b),
+    registers,
+    operandNames,
     uses,
     platform: input.platform ?? [],
     ...(input.describe === undefined ? {} : { describe: input.describe }),
     inImage,
     byteAt: input.byteAt,
-    comments: [...input.comments, ...decodedStores(pieces, input)],
+    comments: [...input.comments, ...decodedStores(pieces, input, (address) => !inImage(address) || (registers.has(address) && !symbols.has(address)))],
     ...(input.coverage === undefined ? {} : { coverage: input.coverage }),
     generatedLabels,
     namedLabels,
@@ -800,16 +850,20 @@ function dataLines(item: DataItem, layout: Layout, breaks: Set<number>): Array<{
 /** A longer name moves only its own comment, not the columns of the file. */
 const MAX_NAME_COLUMN = 24;
 
-/** What an address outside the image is: the comment of the knowledge, else the platform meaning, else the register that a mirror repeats. */
-function describeConstant(layout: Layout, address: number): string | undefined {
-  const comments = layout.comments.filter((comment) => comment.address === address);
+/**
+ * What a constant is: the comment of the knowledge, else the platform meaning,
+ * else the register that a mirror repeats. A comment inside the image is of the
+ * RAM there, so a register constant has the platform meaning.
+ */
+function describeConstant(layout: Layout, address: number, name: string): string | undefined {
+  const comments = layout.registers.has(address) ? [] : layout.comments.filter((comment) => comment.address === address);
   // Line comments come before the side comment, as they do in the code.
   const own = [...comments.filter((comment) => comment.placement === "line"), ...comments.filter((comment) => comment.placement === "side")];
   if (own.length > 0) return own.map((comment) => comment.text.replace(/\s*\r?\n\s*/g, " ").trim()).join(" ");
   const entry = layout.platform.find((row) => address >= row.address && address <= row.end);
   if (entry?.meaning !== undefined) {
     const platformName = address === entry.address ? entry.name : `${entry.name}+${address - entry.address}`;
-    return platformName === layout.names.get(address) ? entry.meaning : `${platformName}: ${entry.meaning}`;
+    return platformName === name ? entry.meaning : `${platformName}: ${entry.meaning}`;
   }
   const mirrorOf = layout.describe?.(address).mirrorOf;
   if (mirrorOf === undefined) return undefined;
@@ -918,13 +972,14 @@ function switchesText(layout: Layout): string {
   return `${out.join("\n")}\n`;
 }
 
-/** constants.asm: the names outside the image by platform area, each with what it is and how the source uses it. */
+/** constants.asm: the names outside the image and the register constants by platform area, each with what it is and how the source uses it. */
 function constantsText(layout: Layout): { text: string; labels: SourceLabel[] } {
   const { describe } = layout;
   const labels: SourceLabel[] = [];
   const rows = layout.constants.map((address) => {
-    const comment = [describeConstant(layout, address), usageText(layout.uses.get(address))].filter((text) => text !== undefined).join(" ");
-    return { address, name: layout.names.get(address)!, value: constantValue(address), comment };
+    const name = layout.registers.get(address) ?? layout.names.get(address)!;
+    const comment = [describeConstant(layout, address, name), usageText(layout.uses.get(address))].filter((text) => text !== undefined).join(" ");
+    return { address, name, value: constantValue(address), comment };
   });
   const nameColumn = Math.min(MAX_NAME_COLUMN, Math.max(0, ...rows.map((row) => row.name.length)));
   const valueColumn = Math.max(0, ...rows.map((row) => row.value.length));
@@ -932,6 +987,7 @@ function constantsText(layout: Layout): { text: string; labels: SourceLabel[] } 
   out.push(
     describe === undefined ? "; Names of addresses outside the image." : "; Names of addresses outside the image, by memory area.",
     '; "Used" counts the instructions and table entries of this source that use the name.',
+    ...(layout.registers.size === 0 ? [] : ["; A name of an address inside the image names the register there, not the RAM of the program."]),
   );
   // Without platform areas the names form one group.
   if (describe === undefined && rows.length > 0) out.push("");
@@ -1205,7 +1261,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
           out.push(withSide(`${INDENT}${instructionWith(item.opcode, written, form.suffix)}`, sides.length === 0 ? undefined : sides.join(" ")));
           result.expressions.push({ address: item.address, length: item.length, file: piece.file, line: out.length });
         } else {
-          const expression = takesAddress(mode) ? (layout.names.get(value) ?? literalOperand(item.opcode, value)) : literalOperand(item.opcode, value);
+          const expression = takesAddress(mode) ? (layout.operandNames.get(item.address) ?? layout.names.get(value) ?? literalOperand(item.opcode, value)) : literalOperand(item.opcode, value);
           out.push(withSide(`${INDENT}${instructionWith(item.opcode, expression, form.suffix)}`, sides.length === 0 ? undefined : sides.join(" ")));
         }
         mapLine(item.address, item.address + item.length - 1);

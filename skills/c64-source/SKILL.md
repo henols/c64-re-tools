@@ -146,7 +146,7 @@ Do these actions for the findings:
 
 - `main.asm` sets the address of each segment. It includes the files in address order.
 - Each module in the knowledge is one file. A module starts at its address. It stops at the next module or at the end of its segment. Without modules, each segment is one file, `segment_xxxx.asm`.
-- `constants.asm` holds the names of addresses outside the program, for example `EXTCOL = $d020`. The names are in groups by memory area, in address order. Drive code and banks have one group only.
+- `constants.asm` holds the names of addresses outside the program, for example `EXTCOL = $d020`. It also holds the register names in the program, for example `RASTER = $d012`. The names are in groups by memory area, in address order. Drive code and banks have one group only.
 - The side comment of a constant is the knowledge comment of the address. Without a comment, it is the platform meaning. When the knowledge name is not the platform name, the platform name comes first. For an I/O mirror without a meaning, the comment gives the register that the mirror repeats.
 - After the side comment, `Used:` counts how the source uses the name. The kinds are `read`, `written`, `modified`, `called`, `jumped to`, `jumped through`, `branched to`, `pointer`, `address`, `table` and `macro argument`. `address` is an immediate operand expression. `table` is an entry in a table of addresses.
 - `config.asm` holds the value of each switch, for example `PROTECTION = 0`. The switches are in groups by kind. The side comment gives the releases that have the switch on, the ranges of its patches and the comment of the switch.
@@ -159,6 +159,8 @@ Do these actions for the findings:
 - A label or a constant gets the name of the address in the knowledge.
 - Without a knowledge name, it gets the platform name, for example `EXTCOL` or `CHROUT`. A platform name wins over an analyzer name (`dxa`, `ghidra` or `heuristic`), for example `EXTCOL` over `ld020`. A `user` or `llm` name wins over a platform name.
 - An address in the program without a name gets `l_xxxx`.
+- A read or a write in the I/O area `$d000-$dfff` uses the register, also when the program has RAM there. For example, `lda $dd0e` is `lda CI2CRA` and `sta $d012` is `sta RASTER`. `constants.asm` has these names. An address without a platform name stays a number, for example `sta $d800,x`. The data label of the RAM stays at its data. A `user` or `llm` name of the address wins over the register.
+- A platform name in an operand expression of the knowledge stays in the source. When the program has the address, `constants.asm` has the name, and the RAM there keeps its label.
 - The source uses the names of a ROM only when the program uses that ROM. With coverage, the program uses a ROM when a run executed code of it. A read of ROM bytes as data does not count. Without coverage, `$01` of the entry state tells which ROMs are in.
 - When the program uses no ROM, the zero page and pages 2 and 3 get no system names. An operand expression or a macro use with such a name gets that reason.
 

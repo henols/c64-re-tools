@@ -16,6 +16,7 @@ import { basename, join, relative, sep } from "node:path";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { type AddressRange, coverageSeedKinds, findHandoffs, formatC64Address, parseTokenized, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
+import { IO_RAM } from "#src/host-client/coverage.ts";
 import { readImage, type Image } from "#src/host-client/image.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
@@ -691,7 +692,7 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
     macroUses: knowledge.macroUses,
     ...(coverage === undefined || !options.notExecutedMarks ? {} : { coverage }),
     // The platform names are C64 names: drive code and banks get none. A ROM that the program does not use gives none.
-    ...(space === DEFAULT_SPACE ? { platform, platformLeftOut: leftOutNames(platform), describe: describeAddress, decode: decodeRegister } : {}),
+    ...(space === DEFAULT_SPACE ? { platform, platformLeftOut: leftOutNames(platform), describe: describeAddress, decode: decodeRegister, io: IO_RAM } : {}),
   });
   const asBytes = await probe(laid);
   const { header } = options;
