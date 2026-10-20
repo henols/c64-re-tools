@@ -1,10 +1,10 @@
-// A person plays the program in the replay core: a page on localhost shows
-// the screen and sends the keyboard and gamepad. The machine is frozen at the
+// A person plays the program in the replay core: a page shows the screen and sends the keyboard and gamepad. The machine is frozen at the
 // start screen until Start on the page; then the core runs one frame each
 // 20 ms. End freezes it again and the recording is saved; Cancel ends the
 // session without one. The reads of the program keep the input, so the
 // recording needs nothing from the page. RESTORE is no read: it is an event
-// of the recording (see record in recording.ts).
+// of the recording (see record in recording.ts). The page listens on every
+// address: in a dev container, a forward of the port from the host needs that.
 
 import { createServer, type ServerResponse } from "node:http";
 
@@ -287,7 +287,7 @@ export async function play(core: Pick<C64RunSession, "command" | "status">, opti
       response.writeHead(404).end();
     }
   });
-  await new Promise<void>((resolve) => server.listen(options.httpPort, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(options.httpPort, "0.0.0.0", resolve));
   const address = server.address();
   options.ready("http://localhost:" + (typeof address === "object" && address !== null ? address.port : options.httpPort) + "/");
   let tick = (await core.status("status")).tick;

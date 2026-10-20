@@ -76,7 +76,7 @@ async function recordCommand(call: Call): Promise<Record<string, unknown>> {
     const person = playing
       ? (session: C64RunSession, restore: () => Promise<string | undefined>) => {
           const ready = (url: string) =>
-            process.stderr.write("Open " + url + ". The start screen is frozen. Enter or Start begins the play, F12 or End saves the recording, F11 or Cancel ends without one. F9 changes the joystick port.\n");
+            process.stderr.write("Open " + url + ". In a dev container, forward port " + new URL(url).port + " to this computer first. The start screen is frozen. Enter or Start begins the play, F12 or End saves the recording, F11 or Cancel ends without one. F9 changes the joystick port.\n");
           return play(session, { httpPort, joystick, ready, restore });
         }
       : undefined;

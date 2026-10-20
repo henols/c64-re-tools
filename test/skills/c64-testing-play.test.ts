@@ -4,6 +4,7 @@
 // C64 keys, and RESTORE goes to the event of the recording.
 
 import assert from "node:assert/strict";
+import { networkInterfaces } from "node:os";
 import { after, test } from "node:test";
 
 import { CANCELLED, KEY_MAPS, play } from "../../skills/c64-testing/scripts/lib/play.ts";
@@ -78,6 +79,9 @@ test("the page has Start, End and Cancel, and shows the start screen frozen unti
   const html = await (await fetch(page.url)).text();
   for (const id of ["start", "end", "cancel", "port", "arrows", "map"]) assert.match(html, new RegExp('<button id="' + id + '"'));
   assert.doesNotMatch(html, /__KEYS__/, "the page has the key maps");
+  // A dev container forwards the port to an address of the container that is not loopback.
+  const outside = Object.values(networkInterfaces()).flat().find((item) => item !== undefined && item.family === "IPv4" && !item.internal);
+  if (outside !== undefined) assert.equal((await fetch(page.url.replace("localhost", outside.address))).status, 200, "the page answers on " + outside.address);
   await until(() => page.events().includes("data: 2 1 AAE="), "the start frame", page.events);
   assert.match(page.events(), /event: palette\ndata: 000000 ffffff\n\n/);
   assert.match(page.events(), /event: state\ndata: waiting\n\nevent: port\ndata: 2\n\n/);
