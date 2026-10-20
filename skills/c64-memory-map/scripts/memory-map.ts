@@ -7,7 +7,7 @@ import { isRefusal, Refusal } from "#src/errors.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { decode, IO, lookup, platformNames, ROM, SYSTEM, type Entry } from "#src/platform.ts";
-import { listed, OPTIONS, runScript, UsageError } from "#src/script.ts";
+import { listed, OPTIONS, reply, runScript, UsageError } from "#src/script.ts";
 
 const show = (entry: Entry) => ({ start: formatC64Address(entry.start), ...(entry.end !== entry.start ? { end: formatC64Address(entry.end) } : {}), name: entry.name, meaning: entry.meaning });
 
@@ -25,7 +25,7 @@ function names(name: string, space: string): number {
     return knowledgeNames(name, space);
   } catch (error) {
     if (!isRefusal(error) || error.code !== "not-found") throw error;
-    throw new Refusal("not-found", `${name} is not a C64 platform name and not a name in the knowledge. Give a $ address, a platform name that memory-map.ts list or export shows (for example SCROLY or CHROUT), or a name that knowledge.ts symbols lists.`);
+    throw new Refusal("not-found", `${name} is not a C64 platform name and not a name in the knowledge. Give a $ address, a platform name that the command list or export shows (for example SCROLY or CHROUT), or a symbol of the project knowledge.`);
   }
 }
 
@@ -47,8 +47,8 @@ await runScript({
       name: "at",
       summary: "The platform meaning of each address: its name, area and meaning.",
       subjects: [{ name: "<address>", help: "an address, a platform name such as SCROLY, or a name of the knowledge", list: true }],
-      run: (call) => ({
-        addresses: call.subjects.map((text) => {
+      run: (call) => {
+        const addresses = call.subjects.map((text) => {
           const found = lookup(call.parseAddress(text, "<address>"));
           // The chip registers, color RAM and the cartridge I/O areas show only while $01 maps I/O in.
           const io = found.address >= 0xd000 && found.address <= 0xdfff;
@@ -59,8 +59,11 @@ await runScript({
             ...(found.entryStart === undefined ? {} : { entryStart: formatC64Address(found.entryStart) }),
             ...(io ? { visible: "when $01 shows I/O at $D000 (the default)" } : {}),
           };
-        }),
-      }),
+        });
+        const application = addresses.filter((address) => address.kind === "application").map((address) => address.address);
+        if (application.length === 0) return { addresses };
+        return reply({ addresses }, { hint: `The program decides the use of ${application.join(", ")}. Find its use in the disassembly or in the emulator.` });
+      },
     },
     {
       name: "decode",
@@ -74,8 +77,10 @@ await runScript({
         const register = call.parseAddress(call.subject(0), "<register>");
         const value = call.parseNumber(call.subject(1), "<value>", 0, 0xff);
         const bank = call.count("bank");
-        if (bank !== undefined && register !== 0xd018) throw new UsageError(`--bank works only with $d018 (VMCSB), not with ${formatC64Address(register)}. Remove --bank`);
-        return { register: formatC64Address(register), value: formatC64Byte(value), name: lookup(register).name, ...decode(register, value, bank) };
+        if (bank !== undefined && register !== 0xd018) throw new UsageError(`--bank works only with $d018 (VMCSB), not with ${formatC64Address(register)}. Remove --bank.`);
+        const body = { register: formatC64Address(register), value: formatC64Byte(value), name: lookup(register).name, ...decode(register, value, bank) };
+        if (register === 0xd018 && bank === undefined) return reply(body, { hint: "The addresses are offsets in the VIC-II bank. To get the addresses, give --bank with the value of $dd00." });
+        return body;
       },
     },
     {
@@ -84,9 +89,12 @@ await runScript({
       subjects: [{ name: "<list>", help: `one of ${Object.keys(LISTS).join(", ")}` }],
       options: { "max-listed": OPTIONS["max-listed"] },
       run: (call) => {
-        const list = LISTS[call.subject(0)];
-        if (list === undefined) throw new UsageError(`<list> must be one of ${Object.keys(LISTS).join(", ")}, not ${call.subject(0)}`);
-        return { entries: listed(list(), call.count("max-listed")!, show, "a larger --max-listed, or memory-map.ts export --out <file> for every platform name") };
+        const name = call.subject(0);
+        const list = LISTS[name];
+        if (list === undefined) throw new UsageError(`<list> must be one of ${Object.keys(LISTS).join(", ")}, not ${name}.`);
+        const entries = listed(list(), call.count("max-listed")!, show, "a larger --max-listed, or the command export for every platform name");
+        if (entries.rest === undefined) return { entries };
+        return reply({ entries }, { hint: `The list is cut. To get all ${entries.count} entries, give --max-listed ${entries.count}.`, nextAction: call.next("list", name, "--max-listed", String(entries.count)) });
       },
     },
     {

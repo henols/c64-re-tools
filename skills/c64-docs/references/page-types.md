@@ -1,6 +1,6 @@
 # Page types
 
-Each page that you write is one of these types. Use the parts of a type that the program needs. Do not add a part with no content. Write each page by the rules in `style.md`.
+Each page that you write is one of these types. Use the parts of a type that the program needs. Do not add a part with no content. Write each page by the rules in `<skill>/references/style.md`. The section "Workflow" of `<skill>/SKILL.md` gives the steps to plan and write the pages.
 
 ## 1. The entry page
 
@@ -15,7 +15,7 @@ The most interesting parts for a reader are the development of the program and i
 5. **How the program works.** A short walk through the program, from the start to the main loop. Tell what the program does at each stage and why. Use one mermaid diagram of the layers and one of the flow of the player. Under the diagrams, a numbered list tells how the layers work together. Link only the entry of each layer, for example the cold start, the main loop and the interrupt. Use about 5 to 8 links in the full section.
 6. **The pages.** A table with one row for each page: the link and one sentence about its content. The sentences have no links to the code.
 7. **The releases.** A short section. A small table gives each known release: the label, the file and the SHA-256 of the file. Then one line for each crack tells what it adds around the program, and the bytes of the program that it changed. Do not describe the intro, the mover or the relocator of a crack in detail. They are not part of the program.
-8. **The rebuild.** Which release is the base release, the program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. A table of the switches from `knowledge.ts switches`: the name, the kind, the default and the releases that have the switch on. How to build the default program and each release. Which scenarios compare the original with the rebuild.
+8. **The rebuild.** Which release is the base release, the program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. A table of the switches of the project knowledge: the name, the kind, the default and the releases that have the switch on. How to build the default program and each release. Which scenarios compare the original with the rebuild.
 9. **Still open.** What is not known yet, and which run can find it.
 10. **The reference.** One line with a link to `docs/reference/index.md`.
 
@@ -159,7 +159,7 @@ One page for each format of data, for example a packed map, a music stream or a 
 
 ## 6. The development page
 
-One page, `docs/development.md`, that tells how the authors made the program. The facts come from the code, the texts and the leftovers. Get the leftovers from `provenance.ts leftovers` of c64-provenance, or from the leftover spaces of the knowledge. This page is one of the most interesting pages for a reader. Explain each trace in depth: what the bytes are, how you identified them, and what they tell. Compare an old copy with the version that runs, byte by byte when it helps. Use the parts that the program has evidence for:
+One page, `docs/development.md`, that tells how the authors made the program. The facts come from the code, the texts and the leftovers. Get the leftovers from the leftover spaces of the project knowledge. If the knowledge has none, find the leftovers of the development in the program. This page is one of the most interesting pages for a reader. Explain each trace in depth: what the bytes are, how you identified them, and what they tell. Compare an old copy with the version that runs, byte by byte when it helps. Use the parts that the program has evidence for:
 
 1. **The authors and the version.** The names, the dates and the version texts in the program, for example a credit line or "REV.2".
 2. **The tools and the computer of the development.** The format of the source text in the leftovers, and the assembler. The computer that the authors used, for example an Apple II with a cross-assembler.

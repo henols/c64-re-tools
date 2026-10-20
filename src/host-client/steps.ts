@@ -229,7 +229,7 @@ function checkTarget(value: unknown, where: string, fail: (message: string) => n
 }
 
 /** What a step of a script without the replay core gets for press: the scripts that read these steps run without a window. */
-const PRESS_REMEDY = "press pushes keys of the keyboard matrix, and only the replay core of c64-testing has them. Use type for the KERNAL keyboard queue, or put the press step in a record file and play it with testing.ts record of c64-testing";
+const PRESS_REMEDY = "press pushes keys of the keyboard matrix, and only the replay of a record file has them. Use type for the KERNAL keyboard queue, or put the press step in a record file and play the record file";
 
 /** Checks the input of one step kind and returns it with the defaults of its MCP tool. */
 function checkInput(kind: ActionStepKind, value: unknown, at: string, fail: (message: string) => never): ActionStep {

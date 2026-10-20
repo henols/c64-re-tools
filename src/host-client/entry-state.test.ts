@@ -19,7 +19,7 @@ test("an entry state of a capture parses to its registers, CPU port and pages, a
 
 test("a value that is no entry state is refused with the field and the remedy", () => {
   const refused = (value: unknown, pattern: RegExp) =>
-    assert.throws(() => parseEntryState(value, "x/entry_state.json"), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /^x\/entry_state\.json is not an entry state of a c64-unpacker capture: /.test(error.message) && pattern.test(error.message) && /Capture the program again/.test(error.message));
+    assert.throws(() => parseEntryState(value, "x/entry_state.json"), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /^x\/entry_state\.json is not an entry state of a program capture: /.test(error.message) && pattern.test(error.message) && /Capture the program again/.test(error.message));
   refused([], /it is not a JSON object/);
   refused({ ...capture, registers: undefined }, /it has no registers/);
   refused({ ...capture, registers: { ...capture.registers, pc: "080d" } }, /registers\.pc is not a \$ address/);

@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
+import { readEnvelope } from "../kit.ts";
 
 const skills = resolve(import.meta.dirname, "../../skills");
 const workspace = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-workspace-")));
@@ -22,7 +23,7 @@ function script(skill: string, file: string, args: readonly string[], options: {
     ...(options.input === undefined ? {} : { input: options.input }),
   });
   assert.equal(run.stderr, "", run.stderr);
-  return { status: run.status, json: JSON.parse(run.stdout) as Record<string, unknown> };
+  return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, unknown> };
 }
 
 const knowledge = (args: readonly string[], options: { cwd?: string; input?: string } = {}) => script("c64-knowledge", "knowledge.ts", args, options);

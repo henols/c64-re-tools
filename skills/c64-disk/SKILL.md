@@ -1,109 +1,181 @@
 ---
 name: c64-disk
-description: Use this skill to examine a C64 disk image (D64, D71, D81 or G64), a T64 tape file or a CRT cartridge file. It extracts files into the project. It shows the directory, the BAM, the directory entry of a file and the sector chain of a file. It writes each bank of a cartridge as a PRG. Do not use it to run a program or to decode BASIC. Give an extracted file to the c64-basic, c64-unpacker or c64-static-analysis skill.
+description: Examines a C64 disk image (D64, D71, D81 or G64), a T64 tape file or a CRT cartridge file. It extracts files from it into the project. It shows the directory, the BAM, the directory entry of a file and the sector chain of a file. It writes each bank of a cartridge as a PRG. Use it when a program comes as a disk image, a tape file or a cartridge file. Use it to find the sectors that a loader reads directly. It does not run the program, it does not decode BASIC, and it does not change the disk image.
 ---
 
-# c64-disk
+# C64 disk
 
-## Purpose
+Use this script to extract files from a C64 disk image, a T64 tape file or a CRT cartridge file, and to examine them.
+Use only the commands of the script. Do not read disk images, tape files or cartridge files in another way.
 
-Examine a C64 disk image, a T64 tape file or a CRT cartridge file. Extract a file from it into the project.
-
-This skill does not change the disk image and does not change project knowledge.
-
-## Inputs
-
-- The disk image: a `.d64`, `.d71`, `.d81` or `.g64` file, relative to the project folder.
-- For one file: the file name as the directory shows it.
-- To extract a file: the output path, relative to the project folder.
-- A T64 tape file or a CRT cartridge file, relative to the project folder.
-
-## Tools
-
-```
-node <skill>/scripts/disk.ts <command> <image> [name] [--out <file>]
+```bash
+node <skill>/scripts/disk.ts <command>
 ```
 
-| Need | Command |
+`<skill>` is the base directory of this skill. Run the script with `node`. You can run it from any directory.
+Each command in this skill, for example `directory original/game.d64`, goes in the place of `<command>`.
+Each command prints one JSON envelope on stdout. See the section "JSON output".
+To get the command list, run the script with no arguments.
+
+---
+
+## Select the command
+
+| Goal | Command |
 |---|---|
-| The disk name, the free blocks and the files | `directory original/game.d64` |
-| The free and used sectors of each track, and the used sectors that no file uses | `bam original/game.d64` |
-| The type, size and first block of one file | `entry original/game.d64 GAME` |
-| The track and sector of each block of one file | `chain original/game.d64 GAME` |
-| Extract one file | `read original/game.d64 GAME --out extracted/game.prg` |
-| The files of a tape | `directory original/game.t64` |
+| Get the disk name, the free blocks and the files of a disk | `directory original/game.d64` |
+| Extract one file of a disk | `read original/game.d64 GAME --out extracted/game.prg` |
+| Get the type, the size and the first block of one file | `entry original/game.d64 GAME` |
+| Get the track and the sector of each block of one file | `chain original/game.d64 GAME` |
+| Find the used sectors that no file uses | `bam original/game.d64` |
+| Get the files of a tape | `directory original/game.t64` |
 | Extract one file of a tape | `read original/game.t64 GAME --out extracted/game.prg` |
-| The banks of a cartridge | `directory original/game.crt` |
+| Get the banks of a cartridge | `directory original/game.crt` |
 | Write each bank of a cartridge as a PRG | `crt original/game.crt --out cart` |
 
-File names show the characters that the C64 shows in a directory list. A byte that has no character shows as `{$xx}`, for example `{$c1}`. Write the name in the same form. The letter case of a name is not important. Put the name in single quotes in a shell, for example `'GAME {$c1}'`. A name that starts with `-` needs `--` before it, after all options, for example `read d.d64 --out x.prg -- '-----'`.
+## Images and file names
 
-### Calling the script
+- `<image>` is the file that the user gives. Each command takes only some types of file:
 
-- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
-- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
-- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+  | Command | Types of file |
+  |---|---|
+  | `directory` | `.d64`, `.d71`, `.d81`, `.g64`, `.t64`, `.crt` |
+  | `read` | `.d64`, `.d71`, `.d81`, `.g64`, `.t64` |
+  | `bam`, `entry`, `chain` | `.d64`, `.d71`, `.d81`, `.g64` |
+  | `crt` | `.crt` |
+
+- `<name>` is a file name from the result of `directory`. Write the name in the same form as the directory shows it. The letter case of a name is not important.
+- A name shows the characters that the C64 shows in a directory list. A byte that has no character shows as `{$xx}`, for example `{$c1}`. Put the name in single quotes in a shell, for example `'GAME {$c1}'`.
+- Put `--` before a name that starts with `-`. Put the `--` after all flags, for example `read d.d64 --out x.prg -- '-----'`.
+- The script does not read a TAP file. A TAP file holds tape signals, and turbo loaders have their own formats. Start a TAP file in the emulator, or capture the parts of the program that it loads.
+
+### Wrong files and names
+
+- `not-found`: the image file is missing, or the image has no file with that name. Run `directory` again and compare the names.
+- `media-error`: the file has a defect, or its content is not of its type. A cartridge of a hardware type that the script does not read also gives `media-error`. `error` tells the problem, for example a sector chain that loops. Give `error` to the user. Do not change the file.
+- `invalid-input` with "is not a file that": the command does not take this type of file. `hint` gives each type that the command takes.
+
+### Paths and the project folder
+
+- Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
-- The script examines each `--out` path before it starts work. It refuses a path in `.c64-re-tools/knowledge/` and the index of the knowledge, because only c64-knowledge writes them. It refuses a folder where the command writes a file, and a file where the command writes a folder.
-- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
-- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
-- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
-
-### Project folder
-
-- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
-- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
-- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
-- Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
+- The script refuses an `--out` path in `.c64-re-tools/knowledge/` and the index of the knowledge. Change the project knowledge only with the commands that change it.
+- The script refuses a folder where the command writes a file. It refuses a file where the command writes a folder.
+- When a file is the evidence for a finding in the project knowledge, move it out of `.c64-re-tools/local/` first. The project knowledge refuses evidence in that folder.
+- Do not move a coverage map after you put it into the project knowledge. The knowledge refers to the map by its path at that time.
+- Put a run that is evidence in `runs/<name>/`, with its run file, its results and its snapshot files. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
+
+## Flags
+
+Each flag applies only to the commands in the table. On another command, the script refuses the flag.
+
+| Flag | Command | Effect |
+|---|---|---|
+| `--out <file>` | `read` | The file to write, relative to the project folder. Required. |
+| `--out <dir>` | `crt` | The folder for the bank files and `crt.json`, relative to the project folder. Required. |
+
+---
+
+## Examine a file
+
+### `directory <image>`
+
+For a disk image, `body` holds `diskName`, `diskId`, `dosType`, `freeBlocks` and `entries`. Each entry has `name`, `type`, `blocks`, `closed` and `locked`.
+
+For a tape file, `body` holds `name` and `entries`. Each entry has `name`, `start`, `end` and `bytes`. Many T64 files have a wrong end address. Then the entry has `fixedSize: true`, and the size comes from the position of the next file.
+
+For a cartridge file, `body` holds the header and `chips`. The header is `name`, `type`, `typeName`, `exrom`, `game`, and `mode` for type 0. Each chip has `bank`, `address`, `size` and `space`.
+
+When a file on a disk is not `closed`, `hint` names it. The data of that file can be incomplete.
+
+Do not record the directory list in the project knowledge.
+
+### `bam <image>`
+
+`body.tracks` gives the `freeSectors` and the `usedSectors` of each track. `body.unreferenced` lists the used sectors that no file uses. The list does not include the header, the directory and the BAM blocks. These sectors can hold data that a loader reads directly.
+
+### `entry <image> <name>`
+
+`body` holds `found: true` and `entry`: the `name`, `type`, `blocks`, `closed`, `locked`, `startTrack` and `startSector` of the file. Use it when the disk structure is important, for example for a loader that reads sectors directly.
+
+### `chain <image> <name>`
+
+`body` holds `found: true` and `sectors`: the `track` and the `sector` of each block of the file, in sequence. Do not record the sector chain in the project knowledge.
+
+---
+
+## Extract files
+
+### `read <image> <name>`
+
+Writes the bytes of one file at `--out`. A PRG file keeps its 2-byte load address at the start. A file from a tape gets the start address of its tape entry as its load address.
+
+`body` holds the `name` of the file and the written file as `out`, `bytes` and `sha256`.
+
+For a cartridge file, the script refuses `read`. Use `crt`.
+
+### `crt <file.crt>`
+
+Writes one PRG for each CHIP packet of the cartridge, for example `bank3-8000.prg`. It also writes `crt.json` with the header and the packets. The script reads hardware types 0 (normal 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) and 32 (EasyFlash).
+
+`body` holds the header, `chips` and `files`. Each chip has `bank`, `address`, `size`, `space` and `file`. `files` has one item for each PRG and one item for `crt.json`.
+
+All banks use the same addresses. Thus `hint` tells you to analyze each bank PRG in its own knowledge space. The field `space` of the chip gives that space, for example `bank3`. Record the knowledge of the bank in that space too.
+
+---
 
 ## Workflow
 
-1. Run `directory`. Find the file in `entries`. Each entry has a `name`, a `type`, a size in `blocks` and the `closed` and `locked` flags.
-2. Run `read` with an output path to extract the file. A PRG file keeps its 2-byte load address at the start.
-3. Run `entry` or `chain` only when the disk structure is important, for example for a loader that reads sectors directly.
-4. Run `bam` only to find used sectors that no file uses. `unreferenced` lists them. The list does not include the header, the directory and the BAM blocks. These sectors can hold data that a loader reads directly.
+1. Run `directory`. Find the file in `entries`.
+2. Run `read` to extract the file. For a cartridge, run `crt`.
+3. Run `entry` or `chain` only when the disk structure is important.
+4. Run `bam` only to find the used sectors that no file uses.
+5. Give the extracted file to the next task. Decode a BASIC program, unpack a packed program, or disassemble machine code.
 
-## Knowledge
+---
 
-Automatic write:
-- none.
+## JSON output
 
-Do not store:
-- the directory list
-- sector chains.
+Each command prints one JSON envelope on one line on stdout. Notes go to stderr.
 
-A downstream skill records the meaning of the extracted content.
+On success, the exit code is 0:
 
-## Tapes and cartridges
+```json
+{"ok": true, "command": "<command>", "body": {}, "hint": "...", "nextAction": "..."}
+```
 
-- T64: `directory` and `read`. Many T64 files have a wrong end address. Then the entry has `fixedSize: true`, and the size comes from the position of the next file.
-- CRT: `directory` and `crt`. The script reads hardware types 0 (normal 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) and 32 (EasyFlash). It refuses other types by name. `crt` writes `crt.json` and one PRG for each CHIP packet, for example `bank3-8000.prg`.
-- A cartridge bank uses the same addresses as other banks. Analyze each bank PRG with c64-static-analysis and `--space bank3`, and record its knowledge in space `bank3`.
-- TAP: a TAP file holds tape signals, and turbo loaders have their own formats. The script does not read it. Start it with the emulator skill, or capture its parts with `loads` of the c64-unpacker skill.
+On failure, the exit code is 2:
 
-## Result
+```json
+{"ok": false, "command": "<command>", "code": "<code>", "error": "...", "hint": "...", "nextAction": "..."}
+```
 
-The directory, the BAM, an entry or a sector chain as JSON.
+- `body` holds the result. The section of each command gives the fields of its body.
+- A check gives its verdict in `body.result`: `PASS`, `FAIL` or `INCONCLUSIVE`. The exit code is 0 for each verdict. Thus read `body.result`, not the exit code.
+- `error` is one sentence. It tells what is wrong.
+- `hint` tells what to do or what to examine. Read it before your next step. Some envelopes have no `hint`.
+- `nextAction` is a full command line. It runs from any directory. Run it when it agrees with your task. Some envelopes have no `nextAction`.
+- `code` does not change between versions. Do the action for the code:
 
-`read` writes the file at the output path. Its result gives the `name` and the file as `{out, bytes, sha256}`. `crt` gives the header, `chips` and `files`: one item for each PRG and one for `crt.json`.
+| `code` | Action |
+|---|---|
+| `installation-incomplete`, `machine-unavailable` | Stop the task. Give `error` and `hint` to the user and wait for the user. Do not install, start or change a tool. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script. |
+| `invalid-input`, `not-found` | Correct the call as `hint` tells. Then run the command again. |
+| `operation-failed` | Give `error` and `hint` to the user. |
+| Another code | Do as `hint` tells. |
 
-## Failure and conflicts
+These fields have the same meaning in each body:
 
-- `not-found`: the image file is missing, or the image has no file with that name. Read the directory again and compare the names.
-- `media-error`: the image, the T64 file or the CRT file has a defect, or its content is not of its type. A CRT with a hardware type that the script does not read also gives `media-error`. The message tells the problem, for example a sector chain that loops. Tell the user. Do not change the file.
-- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
-- `invalid-input`: an argument or a path is wrong. A file with an extension that the command does not take is also wrong. The message gives each type that the command takes. Read the message and change the call.
+| Field | Meaning |
+|---|---|
+| `out`, `bytes`, `sha256` | A file that the command wrote: its path, its size and its SHA-256. |
+| `count`, `listed`, `rest` | A list. `count` is the number of items. `listed` holds the first items, at most `--max-listed`. `rest` tells how to get the other items. |
 
-A file that is not `closed` was not written fully. Its data can be incomplete.
+To get the command list, run the script with no arguments. The envelope has `command: "help"`, and `body.commands` gives the name, the summary and the synopsis of each command.
+To get the subjects and the flags of one command, run `<command> --help`. Then `body.subjects` and `body.options` give them.
 
-## Handoffs
-
-- BASIC program → c64-basic
-- Packed program → c64-unpacker
-- Machine code, also a cartridge bank → c64-static-analysis
-- A TAP file → c64-unpacker
-- Run the program → emulator

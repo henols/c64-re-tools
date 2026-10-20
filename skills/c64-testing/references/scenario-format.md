@@ -1,5 +1,7 @@
 # Scenario format
 
+This file gives the format of a scenario file and of a run file. For the commands, see the sections ``### `test <scenario.json>` `` and ``### `run <run.json>` `` of `SKILL.md`.
+
 A scenario is one JSON object in a project file.
 
 ```json
@@ -26,7 +28,7 @@ A scenario is one JSON object in a project file.
 - `program`: a PRG file, relative to the project folder.
 - `symbols`: where the names come from:
   - `knowledge`: the project knowledge.
-  - A JSON file: the output of the c64-assembler skill, or an object of names and `$` addresses.
+  - A JSON file: the symbol file of a build, or an object of names and `$` addresses.
   - `none`: no names.
 
 Optional: `videoStandard`, `pal` (default) or `ntsc`.
@@ -51,7 +53,7 @@ Before the first step of each side, the script does a hard reset. The CPU stops 
 | `{ "runUntil": { "target": { "kind": "raster", "line": 250 }, "timeoutFrames": 5 } }` | Run until the raster beam gets to a line (0 to 311 for PAL, 0 to 262 for NTSC). Optional: `cycle` from 0 to 64. |
 | `{ "runUntil": { "target": { "kind": "address", "address": "irq_tick", "condition": { "kind": "raster", "line": 250 } }, "timeoutFrames": 600 } }` | Run until the CPU gets to an address while the condition is true. |
 | `{ "snapshot": "snapshots/start.vsf" }` | Restore a snapshot file. Usually with `side`: the snapshot of one program is not a state of the other. |
-| `{ "normalize": true }` | Write pages 0 to 3 and `$00`/`$01` from the entry state in the knowledge. The entry state comes from a capture of the c64-unpacker skill, which `image` of the c64-knowledge skill put in. Then both sides have the same zero page, stack and KERNAL work area. |
+| `{ "normalize": true }` | Write pages 0 to 3 and `$00`/`$01` from the entry state in the project knowledge. The entry state comes from a capture of the unpacked program. Then both sides have the same zero page, stack and KERNAL work area. |
 | `{ "observe": "moved", ... }` | Record a checkpoint. |
 
 The `port` of a joystick is 1 or 2. The `direction` is `center`, `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left` or `down-right`.
@@ -86,7 +88,7 @@ A `pc` value is an address. Compare `pc` only when both programs have the code a
 
 ## Runs
 
-A run file (for `testing.ts run`) has:
+A run file is one JSON object in a project file. It has:
 
 - `name`: a short name.
 - `start`: `{ "program": "game.prg" }` to autostart a program with a BASIC start line, `{ "program": "game.prg", "load": true }` to load it with the CPU stopped (set `pc` in a step), or `{ "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" }`.
@@ -94,11 +96,24 @@ A run file (for `testing.ts run`) has:
 - `videoStandard`: optional, `pal` (default) or `ntsc`.
 - `steps`: the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage`, `trace`, `observe` and `expect`.
 
+The run steps have these effects:
+
+| Step | Effect |
+|---|---|
+| `{ "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" }` | Restore a snapshot file. |
+| `{ "save": "room3" }` | Write the state now to `room3.vsf` in the `--out` folder. |
+| `{ "screen": "room3" }` | Write the screen to `room3.png`. |
+| `{ "coverage": "room3" }` | Write the coverage map since the start or the last `coverage` step to `room3.bin`. Then clear the map. |
+| `{ "observe": "room3", "memory": ["$c100"], "registers": true }` | Record memory, registers, `vicii` or `sprites` in `results.json`. |
+| `{ "observe": "all3", "memory": "all" }` | Write all 64 KiB of RAM to `all3.bin`, also the RAM under the ROMs and the I/O area. |
+| `{ "trace": "d011", "points": [{ "kind": "write", "start": "$d011" }], "frames": 100 }` | Record each hit of the points for 100 frames in `d011.json`: the instruction, its registers, and the raster line and cycle. |
+| `{ "expect": "title", "memory": [{ "address": "$0400", "text": "HELLO" }] }` | Compare memory and registers with the expected values. See the section "Expected values". |
+
 A `trace` step has a name, `points` (1 to 8), `frames` (1 to 3000) and an optional `maxHits` (at most 20000). A point has `kind` (`exec`, `read` or `write`), `start` and an optional `end`. The step writes `<name>.json` with each hit. `results.json` gives the file, the count of hits, the frames and why the trace ended. A trace that a breakpoint, a watchpoint or a JAM ends also ends the run.
 
 In a run, an `observe` step can have `memory`, `registers`, `vicii` and `sprites`. `registers` and `vicii` are `true` or `false`, not a list. `"registers": true` gives all registers. A scenario takes a list of register names, a run does not. `sprites` is a list of sprite numbers from 0 to 7.
 
-In a run, a memory item has `address`, `size` (1 to 65536) and `view`. An item larger than 4096 bytes goes into the file `<observe>-<address>.bin`, without the `$`. `"memory": "all"` writes all 64 KiB of RAM to `<observe>.bin`.
+In a run, a memory item has `address`, `size` (1 to 65536) and `view`. An item larger than 4096 bytes goes into the file `<observe>-<address>.bin`, without the `$`. `results.json` gives the file name.
 
 A name in `save`, `screen`, `coverage`, `observe` and `expect` has 1 to 64 letters, digits, dots, underscores or hyphens. The files go into the `--out` directory, with `results.json`. It has the observations, the expectations, the files and the steps done. If a `runUntil` step did not reach its target, it also tells why the run stopped.
 
@@ -158,7 +173,7 @@ Example: visit two rooms from the same start.
 
 The script checks the scenario before it does a step. A step with an unknown key or a wrong value stops the script with `invalid-input`. The message names the step.
 
-The script also examines each file before it does a step: the program and the symbols of each side, and each snapshot file. A missing file stops the script with `not-found`. A program that is not a PRG, for example a disk image, stops the script with `invalid-input`. A snapshot file that does not start with the signature of a VICE snapshot file also stops the script with `invalid-input`. The message names the step and the file.
+The script also examines each file before it does a step: the program and the symbols of each side, and each snapshot file. A missing file stops the script with `not-found`. A program that is not a PRG, for example a disk image, stops the script with `invalid-input`. A snapshot file that is not a `.vsf` snapshot file also stops the script with `invalid-input`. The message names the step and the file.
 
 A run also examines each name of its steps before it does a step. An unknown name stops the run with `invalid-input`, and the message names the step. In a scenario, a side that does not have a name gives INCONCLUSIVE, and `reason` names the step.
 

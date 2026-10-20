@@ -69,12 +69,12 @@ const FLAG_BITS = { n: 0x80, v: 0x40, d: 0x08, i: 0x04, z: 0x02, c: 0x01 } as co
 
 /**
  * The entry state that the loader recreates: the shared entry state of the
- * c64-unpacker capture, with the flags as PLP reads them, the VIC-II and the CIAs.
+ * program capture, with the flags as PLP reads them, the VIC-II and the CIAs.
  */
 export function loaderState(value: unknown, where: string): EntryState {
   const state = parseEntryState(value, where);
   const fail = (what: string): never => {
-    throw new Refusal("invalid-input", `${where} is not an entry state of a c64-unpacker capture: ${what}. Capture the program again with c64-unpacker capture or loads.`);
+    throw new Refusal("invalid-input", `${where} is not an entry state of a program capture: ${what}. Capture the program again at its entry point.`);
   };
   let flags = 0x20;
   for (const [name, bit] of Object.entries(FLAG_BITS)) if (state.flags[name as keyof typeof FLAG_BITS]) flags |= bit;
@@ -119,7 +119,7 @@ export interface LoaderPlan {
  */
 export function loaderLimits(plan: { cia?: CiaPlan }): string[] {
   if (plan.cia === undefined) {
-    return ["The entry state has no CIA values, so the loader does not set the CIA timers. Capture the program again with c64-unpacker to get them."];
+    return ["The entry state has no CIA values, so the loader does not set the CIA timers. Capture the program again at its entry point to get them."];
   }
   return plan.cia.limits;
 }
@@ -448,7 +448,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   if (end > LOAD_LIMIT) return planPacked(input, blocks, cia, codeSize, `The plain loader would end ${end > 0xffff ? "past $ffff" : `at ${formatC64Address(end)}`}, after ${formatC64Address(LOAD_LIMIT)}: loading it would write the I/O area.`);
   // The CIA part takes room from the copy table in the copier's two pages.
   const maxCopies = Math.min(MAX_COPIES, Math.floor((COPIER_LIMIT - codeSize - 2) / COPY_ENTRY));
-  if (plain.length > maxCopies) throw new WireFailure("invalid-input", `The loader needs ${plain.length} copies; it can do at most ${maxCopies}. Join segments in the unpacker capture (--range) or write the loader by hand.`);
+  if (plain.length > maxCopies) throw new WireFailure("invalid-input", `The loader needs ${plain.length} copies; it can do at most ${maxCopies}. Capture the program again with fewer segments, or write the loader by hand.`);
 
   const order = copyOrder(plain);
   if (order === undefined) {
@@ -566,7 +566,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
   const stackByte = 0x0100 + state.sp;
   const lines: string[] = [
     ...input.header.map((line) => `; ${line}`),
-    "; The image is too large for one loader file, so this is the packed form. c64-packer packs the",
+    "; The image is too large for one loader file, so this is the packed form. Exomizer packs the",
     `; build of main.asm and the build of this file into loader.prg, with --entry '${formatC64Address(copier)}' and --exit-memory '$34'.`,
     "; The unpacker of Exomizer uses the zero page and $0334-$03ff, so the copier writes pages $0002-$03ff after the unpack.",
     "",

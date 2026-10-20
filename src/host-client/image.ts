@@ -34,7 +34,7 @@ const MEDIA_KINDS: Record<string, string> = {
 };
 
 /** The remedy for a disk, tape or cartridge file where a PRG must be: get the PRG out of it. */
-export const MEDIA_REMEDY = "Get the PRG out of it with disk.ts read (or disk.ts crt for a cartridge) of the c64-disk skill";
+export const MEDIA_REMEDY = "Get the PRG out of it, and give the path of that PRG";
 
 /**
  * Refuses a file that is no PRG by its extension (`type`, lowercase, without
@@ -75,12 +75,12 @@ export function readPrg(path: string, remedy = MEDIA_REMEDY, accepted = "a PRG")
 /** Reads an image.json or a PRG, relative to the project folder. Refuses every other file as readPrg does. */
 export function readImage(path: string): Image {
   if (!path.endsWith(".json")) {
-    const range = readPrg(path, MEDIA_REMEDY, "an image.json of the c64-unpacker skill or a PRG");
+    const range = readPrg(path, MEDIA_REMEDY, "an image.json of an unpacked program or a PRG");
     return { segments: [{ start: range.start, end: range.end }], byteAt: (address) => range.body[address - range.start]! };
   }
   const { bytes } = readProjectFile(path);
   const fail = (what: string): never => {
-    throw new Refusal("invalid-input", `${path} is not an image.json of the c64-unpacker skill: ${what}`);
+    throw new Refusal("invalid-input", `${path} is not an image.json of an unpacked program: ${what}`);
   };
   const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
   let parsed: unknown;

@@ -279,11 +279,11 @@ test("an output path is refused before the command runs: in the knowledge, a fol
       assert.equal(result.envelope.code, "invalid-input", result.stdout);
       return [result.envelope.error, result.envelope.hint].filter((part) => part !== undefined && !/^To get the usage/.test(part)).join(" ").replace(/ To get the usage, run .*$/, "");
     };
-    assert.match(error(["echo", "a", "--out", ".c64-re-tools/knowledge/symbols.jsonl"]), /^--out: \.c64-re-tools\/knowledge\/symbols\.jsonl is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the c64-knowledge skill writes it/);
+    assert.match(error(["echo", "a", "--out", ".c64-re-tools/knowledge/symbols.jsonl"]), /^--out: \.c64-re-tools\/knowledge\/symbols\.jsonl is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the commands that change the project knowledge write it/);
     assert.match(error(["echo", "a", "--out", "./.C64-RE-TOOLS/Knowledge/new.jsonl"]), /is in \.c64-re-tools\/knowledge\//);
     assert.equal(
       error(["echo", "a", "--out", ".c64-re-tools/local/knowledge.db"]),
-      "--out: .c64-re-tools/local/knowledge.db is the index of the knowledge. Only the c64-knowledge skill writes it: a write there destroys the index. Give another file name, for example .c64-re-tools/local/<other name>.",
+      "--out: .c64-re-tools/local/knowledge.db is the index of the knowledge. Only the commands that change the project knowledge write it: a write there destroys the index. Give another file name, for example .c64-re-tools/local/<other name>.",
     );
     assert.match(error(["need", "--out", ".c64-re-tools/knowledge/pages"]), /, for example \.c64-re-tools\/local\/<folder>\.$/);
     assert.match(error(["need", "--out", ".c64-re-tools/knowledge"]), /is in \.c64-re-tools\/knowledge\//);

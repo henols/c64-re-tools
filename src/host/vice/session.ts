@@ -1828,7 +1828,7 @@ async function setPoint(
  */
 function checkDirectoryEntry(entries: DiskFile[], index: number): void {
   const entry = entries[index - 1];
-  if (entry === undefined) throw new WireFailure("invalid-input", `The disk has ${entries.length} directory entries, so index ${index - 1} selects no entry. The c64-disk directory list gives the index of each entry.`);
+  if (entry === undefined) throw new WireFailure("invalid-input", `The disk has ${entries.length} directory entries, so index ${index - 1} selects no entry. List the directory of the disk to get the index of each entry.`);
   if (entry.type === "del") throw new WireFailure("invalid-input", `Directory entry ${index - 1} (${entry.name}) is a DEL entry and holds no program. Give the index of a PRG entry.`);
 }
 

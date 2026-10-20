@@ -15,6 +15,7 @@ import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { readEnvelope } from "../../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-provenance/scripts/provenance.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-run-"));
@@ -73,7 +74,7 @@ test("each difference gets its first access in every release and whether the run
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(status, 0, stdout);
-  const json = JSON.parse(stdout) as {
+  const json = readEnvelope(stdout, status).json as {
     differences: Array<{ start: string; end: string; runtime: Record<string, { start: string; end: string; first: string; changed: boolean }> }>;
     run: { releases: Record<string, { started: boolean }> };
   };
@@ -106,7 +107,7 @@ test("each difference gets its first access in every release and whether the run
   shifted.stdout.on("data", (chunk) => (shiftedOut += chunk));
   const [shiftedStatus] = (await once(shifted, "exit")) as [number | null];
   assert.equal(shiftedStatus, 0, shiftedOut);
-  const moved = JSON.parse(shiftedOut) as typeof json & { releases: Array<{ name: string; shift: number }> };
+  const moved = readEnvelope(shiftedOut, shiftedStatus).json as typeof json & { releases: Array<{ name: string; shift: number }> };
   assert.deepEqual(moved.releases.map((item) => [item.name, item.shift]), [["a.prg", 16], ["b.prg", 0]]);
   const hex = (text: string) => Number.parseInt(text.slice(1), 16);
   for (const difference of moved.differences) {

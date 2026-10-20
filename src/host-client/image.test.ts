@@ -24,7 +24,7 @@ after(() => {
 });
 
 test("readImage refuses a disk, tape or cartridge image by its extension, with the message of readPrg", () => {
-  const disk = "game.d64 is a disk image (.d64), not a PRG. Get the PRG out of it with disk.ts read (or disk.ts crt for a cartridge) of the c64-disk skill.";
+  const disk = "game.d64 is a disk image (.d64), not a PRG. Get the PRG out of it, and give the path of that PRG.";
   assert.throws(() => readImage("game.d64"), { code: "invalid-input", message: disk });
   assert.throws(() => readPrg("game.d64"), { code: "invalid-input", message: disk });
   assert.throws(() => readImage("game.TAP"), { code: "invalid-input", message: /^game\.TAP is a tape file \(\.tap\), not a PRG\./ });
@@ -43,7 +43,7 @@ test("a PRG has the extension .prg in any letter case or no extension; every oth
   assert.equal(readPrg("bruce lee").start, 0x0801);
   const message = "README.md is not a PRG: a PRG has the extension .prg or no extension, not .md. Give the PRG of the program, or rename the file to .prg when it is a PRG.";
   assert.throws(() => readPrg("README.md"), { code: "invalid-input", message });
-  assert.throws(() => readImage("README.md"), { code: "invalid-input", message: /^README\.md is not an image\.json of the c64-unpacker skill or a PRG: a PRG has the extension \.prg or no extension, not \.md\./ });
+  assert.throws(() => readImage("README.md"), { code: "invalid-input", message: /^README\.md is not an image\.json of an unpacked program or a PRG: a PRG has the extension \.prg or no extension, not \.md\./ });
 });
 
 test("readImage reads a PRG as one segment at its load address", () => {

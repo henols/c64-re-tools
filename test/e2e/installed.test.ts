@@ -28,6 +28,7 @@ import { mcpServerFor } from "../../distribution/package.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { killTree, signalGroup } from "../../src/native/processes.ts";
 import { liveEnv, liveSkip } from "../integration/vice/live.ts";
+import { readEnvelope } from "../kit.ts";
 
 let acme: string | false = false;
 try {
@@ -122,7 +123,7 @@ describe("the packed package works through npx", { skip: liveSkip }, () => {
   });
 
   test("a local skill script runs from its installed location", () => {
-    const memmap = JSON.parse(sh(process.execPath, [...process.execArgv, join(skills, "c64-memory-map", "scripts", "memory-map.ts"), "at", "$d020"], project)) as { addresses: Array<{ name: string }> };
+    const memmap = readEnvelope(sh(process.execPath, [...process.execArgv, join(skills, "c64-memory-map", "scripts", "memory-map.ts"), "at", "$d020"], project), 0).json as { addresses: Array<{ name: string }> };
     assert.equal(memmap.addresses[0]?.name, "EXTCOL");
   });
 
@@ -134,6 +135,7 @@ describe("the packed package works through npx", { skip: liveSkip }, () => {
       env: { ...process.env, C64RT_HOST: address },
     });
     assert.equal(assemble.status, 0, assemble.stdout + assemble.stderr);
+    assert.equal(readEnvelope(assemble.stdout, assemble.status).json.result, "PASS", assemble.stdout);
     assert.equal(readFileSync(join(project, "build", "game.prg")).readUInt16LE(0), 0x0801);
   });
 });

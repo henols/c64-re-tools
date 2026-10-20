@@ -75,13 +75,13 @@ export async function pack(params: PackParams, context: ToolContext): Promise<Pa
     const output = workspace.directory("out");
     const packedPath = join(output, PACKED);
     const packing = await runToolOrFail("Exomizer", "The pack", { argv: sfxArguments(executable, params, inputs, packedPath), cwd: workspace.root, timeoutMs: TIMEOUT_MS }, context);
-    if (packing.code !== 0) throw new WireFailure("operation-failed", `Exomizer could not pack the program (exit ${packing.code}).${outputTail("Exomizer", packing, workspace.root, PROBLEM)}`);
+    if (packing.code !== 0) throw new WireFailure("operation-failed", `Exomizer could not pack the program (exit ${packing.code}).${outputTail("Exomizer", packing, workspace.root, PROBLEM)} Correct the call as this output tells, or give this message to the user.`);
     if (!existsSync(packedPath)) throw new WireFailure("operation-failed", "Exomizer reported success but wrote no program.");
     const unpackedPath = join(output, UNPACKED);
     const unpacking = await runToolOrFail("Exomizer", "The unpack check", { argv: [executable, "desfx", "-o", unpackedPath, packedPath], cwd: workspace.root, timeoutMs: TIMEOUT_MS }, context);
     const found = parseDesfx(`${unpacking.stdout}\n${unpacking.stderr}`);
     if (unpacking.code !== 0 || found === undefined || !existsSync(unpackedPath)) {
-      throw new WireFailure("operation-failed", `Exomizer could not unpack the packed program in its emulator (exit ${unpacking.code}).${outputTail("Exomizer", unpacking, workspace.root)}`);
+      throw new WireFailure("operation-failed", `Exomizer could not unpack the packed program in its emulator (exit ${unpacking.code}).${outputTail("Exomizer", unpacking, workspace.root)} Give this message to the user.`);
     }
     return { program: readFileSync(packedPath), unpacked: readFileSync(unpackedPath), ...found };
   } finally {

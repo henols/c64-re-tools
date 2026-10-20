@@ -13,6 +13,7 @@ import { after, test } from "node:test";
 
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
+import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 
 let generateSkip: string | false = false;
 try {
@@ -27,10 +28,11 @@ const workspace = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-library-
 after(() => rmSync(workspace, { recursive: true, force: true }));
 
 /** Runs a skill script at the workspace root, as the agent does, and gives its exit status and its JSON line. */
-function script(skill: string, file: string, args: readonly string[]): { status: number | null; json: Record<string, any> } {
+function script(skill: string, file: string, args: readonly string[]): { status: number | null; json: Record<string, any>; envelope: ScriptEnvelope } {
   const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", file), ...args], { cwd: workspace, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   assert.equal(run.stderr, "", run.stderr);
-  return { status: run.status, json: JSON.parse(run.stdout) as Record<string, any> };
+  const { envelope, json } = readEnvelope(run.stdout, run.status);
+  return { status: run.status, json: json as Record<string, any>, envelope };
 }
 
 function ok(skill: string, file: string, args: readonly string[]): Record<string, any> {
@@ -93,10 +95,12 @@ test("a routine saved from program A is found in program B at another address, a
 
   // Program B: match finds the routine $2000 bytes higher, with the other SID register listed.
   ok("c64-knowledge", "knowledge.ts", ["image", "b.prg", "--project", "game-b"]);
-  const matched = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--out", ".c64-re-tools/local/match.json", "--project", "game-b"]);
+  const matchRun = script("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--out", ".c64-re-tools/local/match.json", "--project", "game-b"]);
+  assert.equal(matchRun.status, 0, JSON.stringify(matchRun.json));
+  const matched = matchRun.json;
   assert.deepEqual(matched.matches, { count: 1, listed: [{ routine: "play", start: "$3000", end: "$3026", shift: 0x2000, differing: [{ address: "$3005", library: "$d400", program: "$d407" }] }] });
   assert.deepEqual({ ...matched.batch, bytes: undefined, sha256: undefined }, { bytes: undefined, sha256: undefined, out: ".c64-re-tools/local/match.json", writes: 9, known: 0, leftOut: { count: 0, listed: [] } });
-  assert.equal(matched.apply, 'knowledge.ts apply .c64-re-tools/local/match.json --reason "names of library routines"');
+  assert.match(matchRun.envelope.hint!, /Apply the changes in \.c64-re-tools\/local\/match\.json to the project knowledge\./);
 
   // The agent applies the batch as the LLM.
   ok("c64-knowledge", "knowledge.ts", ["apply", ".c64-re-tools/local/match.json", "--reason", "names of library routines", "--project", "game-b"]);

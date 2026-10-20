@@ -36,7 +36,7 @@ const isByte = (value: unknown): value is number => Number.isInteger(value) && (
 /** The entry state of a value. `where` names it in a refusal, for example a file or "the entry state of the knowledge". */
 export function parseEntryState(value: unknown, where: string): EntryState {
   const fail = (what: string): never => {
-    throw new Refusal("invalid-input", `${where} is not an entry state of a c64-unpacker capture: ${what}. Capture the program again with c64-unpacker capture or loads.`);
+    throw new Refusal("invalid-input", `${where} is not an entry state of a program capture: ${what}. Capture the program again at its entry point.`);
   };
   if (!isObject(value)) return fail("it is not a JSON object");
   const registers = isObject(value.registers) ? value.registers : fail("it has no registers");

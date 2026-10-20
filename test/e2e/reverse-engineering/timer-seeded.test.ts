@@ -15,6 +15,7 @@ import { after, test } from "node:test";
 import { ACME, findTool } from "../../../src/native/discover.ts";
 import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { liveSkip, startHost, stopHosts } from "../../integration/vice/live.ts";
+import { readEnvelope } from "../../kit.ts";
 
 let skip: string | false = liveSkip;
 if (skip === false) {
@@ -53,7 +54,7 @@ async function skill(address: string, name: string, file: string, ...args: strin
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  return { status, stdout, json: JSON.parse(stdout) as Record<string, any> };
+  return { status, stdout, json: readEnvelope(stdout, status).json as Record<string, any> };
 }
 
 test("a rebuild whose loader sets the CIA timers reads the timer value of the original at the entry", { skip, timeout: 900_000 }, async () => {
@@ -94,5 +95,6 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
   const withTimers = await scenario("timers.json", "src/loader.prg");
   assert.equal(withTimers.json.result, "PASS", withTimers.stdout);
   const without = await scenario("no-timers.json", "src-old/loader.prg");
+  assert.equal(without.status, 0, without.stdout);
   assert.equal(without.json.result, "FAIL", without.stdout);
 });

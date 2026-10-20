@@ -58,7 +58,7 @@ export type Step = StepBody & { side?: Side };
 
 export interface Subject {
   program: string;
-  /** "knowledge" for the project knowledge, a project JSON file (c64-assembler output or a name → "$xxxx" map), or "none". */
+  /** "knowledge" for the project knowledge, a project JSON file (the symbol file of a build or a name → "$xxxx" map), or "none". */
   symbols: string;
 }
 
@@ -257,7 +257,7 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
 
 /**
  * Name → address from a source of names: none; the knowledge (its symbols and
- * the analyzer names that only one address has); the c64-assembler output; or
+ * the analyzer names that only one address has); the symbol file of a build; or
  * a JSON map of name to $ address. With kinds "code", only the names that move
  * with the code: labels and routines of the knowledge, and the labels of the
  * assembler output. With "all", also the data names and the assembler
@@ -300,7 +300,7 @@ export function namesOf(source: string, kinds: "code" | "all" = "all"): Map<stri
 }
 
 /** The remedy for a scenario program that is no PRG. */
-const PROGRAM_REMEDY = "A scenario program is a PRG. Get the PRG out of the disk, tape or cartridge with disk.ts read (or disk.ts crt) of the c64-disk skill";
+const PROGRAM_REMEDY = "A scenario program is a PRG. Extract the program file from the disk, tape or cartridge image, and give that PRG";
 
 /**
  * Checks each file that the scenario names before an emulator starts: the
@@ -366,7 +366,7 @@ async function normalize(client: ViceSessionClient): Promise<void> {
   } finally {
     db?.close();
   }
-  if (state === undefined) throw new Refusal("invalid-input", "normalize needs the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json> of the c64-knowledge skill");
+  if (state === undefined) throw new Refusal("invalid-input", "normalize needs the entry state of a capture in the project knowledge, and the knowledge has none. Capture the unpacked program at its entry point, and put the capture image into the project knowledge");
   await applyEntryState(client, parseEntryState(state, "the entry state of the knowledge"), { registers: false });
 }
 

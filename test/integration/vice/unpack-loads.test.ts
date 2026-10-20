@@ -16,6 +16,7 @@ import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { buildD64 } from "../../fixtures/d64.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { readEnvelope } from "../../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-unpacker/scripts/unpacker.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpack-loads-"));
@@ -61,7 +62,7 @@ test("each capture step writes what the C64 changed since the capture before, an
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(status, 0, stdout);
-  const json = JSON.parse(stdout) as { captures: Array<{ capture: string; pc: string; segments: Array<{ start: string; end: string }>; smallChanges?: number; drive?: string }> };
+  const json = readEnvelope(stdout, status).json as { captures: Array<{ capture: string; pc: string; segments: Array<{ start: string; end: string }>; smallChanges?: number; drive?: string }> };
   const [first, second] = json.captures;
   assert.equal(first!.pc, "$080d");
   assert.ok(
@@ -96,8 +97,9 @@ test("loads that capture no segment give loaded false, and a capture at READY. t
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  assert.equal(status, 1, stdout);
-  const json = JSON.parse(stdout) as { loaded: boolean; reason: string; captures: Array<{ segments: unknown[]; keyWait?: boolean }> };
+  assert.equal(status, 0, stdout);
+  const json = readEnvelope(stdout, status).json as { result: string; loaded: boolean; reason: string; captures: Array<{ segments: unknown[]; keyWait?: boolean }> };
+  assert.equal(json.result, "FAIL");
   assert.equal(json.loaded, false);
   assert.match(json.reason, /No capture has a segment/);
   assert.equal(json.captures[0]!.keyWait, true, stdout);
@@ -118,8 +120,8 @@ test("loads of a PRG without a BASIC start line gives loaded false, an empty cap
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  assert.equal(status, 1, stdout);
-  const json = JSON.parse(stdout) as { result: string; loaded: boolean; reason: string; captures: unknown[] };
+  assert.equal(status, 0, stdout);
+  const json = readEnvelope(stdout, status).json as { result: string; loaded: boolean; reason: string; captures: unknown[] };
   assert.deepEqual([json.result, json.loaded, json.captures], ["FAIL", false, []]);
   assert.match(json.reason, /^After RUN, BASIC ran no program line in \d+ frames\. loads starts a PRG with RUN, so it needs a program with a BASIC start line, for example 10 SYS 2061\. For a PRG without a BASIC start, use capture with --entry\.$/);
 });
@@ -146,7 +148,7 @@ test("a capture holds the RAM under the I/O area that the program wrote, and lea
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(status, 0, stdout);
-  const json = JSON.parse(stdout) as { captures: Array<{ segments: Array<{ start: string; end: string }>; excluded?: Array<{ start: string; end: string }> }> };
+  const json = readEnvelope(stdout, status).json as { captures: Array<{ segments: Array<{ start: string; end: string }>; excluded?: Array<{ start: string; end: string }> }> };
   const [capture] = json.captures;
   assert.ok(capture!.segments.some((segment) => segment.start === "$d000" && segment.end === "$d0ff"), `the RAM under the I/O area is a segment: ${JSON.stringify(capture!.segments)}`);
   assert.ok(!capture!.segments.some((segment) => segment.start <= "$c0ff" && segment.end >= "$c000"), `the excluded range is no segment: ${JSON.stringify(capture!.segments)}`);

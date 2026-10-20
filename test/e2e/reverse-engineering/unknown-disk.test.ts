@@ -17,6 +17,7 @@ import { ACME, C1541, DXA, findTool, PETCAT } from "../../../src/native/discover
 import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { basicCounterPrg } from "../../fixtures/prg/basic-counter.ts";
 import { liveSkip, startHost, stopHosts } from "../../integration/vice/live.ts";
+import { readEnvelope } from "../../kit.ts";
 
 let skip: string | false = liveSkip;
 let c1541 = "";
@@ -47,7 +48,7 @@ async function skill(address: string, name: string, file: string, ...args: strin
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  return { status, stdout, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, stdout, json: readEnvelope(stdout, status).json as Record<string, unknown> };
 }
 
 test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout: 900_000 }, async () => {
@@ -101,6 +102,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   cpSync(resolve(root, "test/fixtures/asm/reconstructed"), join(project, "rebuild"), { recursive: true });
   const built = await run("c64-assembler", "assembler.ts", "build", "rebuild", "game.a", "--out", "build/game.prg", "--all-symbols", "--out-symbols", "build/game.json");
   assert.equal(built.status, 0, built.stdout);
+  assert.equal(built.json.result, "PASS", built.stdout);
 
   // 8. Functional verification: the rebuild behaves as the original.
   writeFileSync(

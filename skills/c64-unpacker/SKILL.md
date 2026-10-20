@@ -1,178 +1,324 @@
 ---
 name: c64-unpacker
-description: Use this skill to find out if a packer or a cruncher compressed a C64 program, and to get the unpacked program for analysis. It shows evidence of packing without a guess of the packer name. It runs the program in an emulator until the unpacked code starts, then writes the memory into the project. It also captures each part of a multi-load program and the drive RAM. Do not use it to analyze the unpacked code.
+description: Finds evidence that a packer or a cruncher compressed a C64 program, and captures the unpacked program from the emulator into the project. Use it when a program can be packed, crunched, encrypted or relocated. Use it to get the unpacked program, its segments and its entry state for analysis. Use it to capture each part of a multi-load program and the drive RAM. It does not name the packer. It does not analyze the unpacked code.
 ---
 
-# c64-unpacker
+# C64 unpacker
 
-## Purpose
+Use this script to find evidence of packing and to capture the unpacked program.
+Use only the commands of the script. Do not unpack or capture a program in another way.
 
-Find out if a packer compressed a C64 program. Get the unpacked program for analysis.
-
-This skill does not change project knowledge.
-
-## Inputs
-
-- The program: a PRG file, relative to the project folder. `inspect`, `trace`, `stages` and `capture` refuse a disk, tape or cartridge image. For such an image, use `loads`, or get the PRG with `disk.ts read` of the c64-disk skill.
-- For a capture: the address where the unpacked program starts, and the directory for the result.
-
-## Tools
-
-```
-node <skill>/scripts/unpacker.ts inspect original/game.prg
-node <skill>/scripts/unpacker.ts trace original/game.prg
-node <skill>/scripts/unpacker.ts stages original/game.prg --steps .c64-re-tools/local/input.json
-node <skill>/scripts/unpacker.ts capture original/game.prg --until '$c000' --out .c64-re-tools/local/capture
-node <skill>/scripts/unpacker.ts loads original/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts --drive
+```bash
+node <skill>/scripts/unpacker.ts <command>
 ```
 
-`inspect` examines the file and does not run the program. `trace`, `stages`, `capture` and `loads` run the program. `trace` runs the program and finds the memory that the program wrote and then executed. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). `wrote` lists each block that the stage wrote, also a small block. `capture` stops the program when the CPU gets to the `--until` address. In `stages` and `capture`, a `frames` step and a `runUntil` step to an address without a condition count as run time. `stages` refuses a different `runUntil` step.
+`<skill>` is the base directory of this skill. Run the script with `node`. You can run it from any directory.
+Each command in this skill, for example `inspect original/game.prg`, goes in the place of `<command>`.
+Each command prints one JSON envelope on stdout. See the section "JSON output".
+To get the command list, run the script with no arguments.
 
-| Option | Meaning |
+---
+
+## Select the command
+
+| Goal | Command |
 |---|---|
-| `--until '$c000'` | `capture`: the address where the unpacked program starts. The capture stops there after the steps. To capture a later arrival at the address, add a `runUntil` step to an address after the first arrival. |
-| `--out .c64-re-tools/local/capture` | `capture` and `loads`: the folder for the result, relative to the project folder. |
-| `--range '$c000-$cfff'` | `capture` only: write this range as the one segment. Without it, the segments are the blocks that the stages wrote. The range must hold the `--until` address. |
-| `--exclude '$a000-$a9ff'` | `capture` and `loads`: remove this range from the segments. You can give it more than once. `image.json` lists the ranges in `excluded`. For `capture`, the range must not hold the `--until` address. |
-| `--timeout-frames 3000` | `capture` only: how many frames the program can run before the capture stops (default 3000). |
-| `--frames 3000` | `trace` and `stages`: how many frames the program runs (default 3000). |
-| `--entry '$c000'` | `trace`, `stages` and `capture`: start the program at this address. Without it, the script types RUN. A file that is not a BASIC program at `$0801` needs it. |
-| `--steps input.json` | Input for the program, right after it starts: a JSON list of steps. Use it when an intro waits for a key or a menu waits for a choice. |
-| `--max-listed 50` | `trace` only: the most ranges that `writtenThenExecuted` lists (default 50). |
-| `--drive` | `loads` only: each capture also writes the 2 KiB RAM of the 1541 drive as `drive8.prg`. |
-| `--min-block 64` | `loads` only: the smallest block of changed memory that becomes a segment (default 64). The result counts smaller changes as `smallChanges`. |
-| `--min-stage 64` | `stages` and `capture`: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). It does not change `wrote` or the segments. |
+| Find evidence of packing in the file, without a run | `inspect original/game.prg` |
+| Find the code that the program wrote and then executed | `trace original/game.prg` |
+| Run a program that is not a BASIC program at `$0801` | `trace original/game.prg --entry '$c000'` |
+| Give input to an intro or a menu before the evidence starts | `trace original/game.prg --steps .c64-re-tools/local/input.json` |
+| Find each stage and the entry of the unpacked program | `stages original/game.prg` |
+| Capture the unpacked program at its entry | `capture original/game.prg --until '$c000' --out .c64-re-tools/local/capture` |
+| Capture again without the bytes of a cracktro | `capture original/game.prg --until '$c000' --out .c64-re-tools/local/capture --exclude '$a000-$a9ff'` |
+| Capture only one known range of the program | `capture original/game.prg --until '$c000' --out .c64-re-tools/local/capture --range '$c000-$cfff'` |
+| Capture each part of a multi-load program | `loads original/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts` |
+| Capture each part and the RAM of the disk drive | `loads original/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts --drive` |
 
-The capture reads RAM, also the RAM under the ROMs and the I/O area. A segment can be in the RAM under the I/O area at `$d000`-`$dfff`. The script refuses an option that the command does not use. It refuses a wrong `--range` or `--exclude` before the program runs.
+---
 
-A steps file is a JSON list of steps. Each step has the input of the MCP tool of the same action. An address in a step can be a name. The script refuses an unknown name before the program runs. The message gives the file and the step. For example, wait 50 frames and type a space:
+## Programs, addresses and steps
+
+- `<program>` is a PRG file of the project. `inspect`, `trace`, `stages` and `capture` refuse a disk, tape or cartridge image. For an image, use `loads`. Or extract the PRG from the image, and give the path of that PRG.
+- `loads` takes a PRG, or a disk, tape or cartridge image. It starts a PRG with RUN. Thus the PRG must have a BASIC start line, for example `10 SYS 2061`.
+- `trace`, `stages` and `capture` start the program with RUN. RUN needs a BASIC program at `$0801`. For another program, give `--entry` with the start address of its code. Get that address from the load address of the file, or from a disassembly of the file.
+- Get the `--until` address of `capture` from `stages`, or from `runningRange.start` or `suggestedUntil` of `trace`. Or set a breakpoint in the emulator after the unpack loop. Then read the address where the CPU stops.
+- Get each `--exclude` range from the segments of an earlier capture. Exclude only bytes that the program does not read. See step 5 of the section "Workflow".
+
+### Steps files
+
+A steps file is a JSON list of steps. The steps run right after the program starts. Use a steps file when an intro waits for a key or a menu waits for a choice. For example, wait 50 frames and type a space:
 
 ```json
 [{ "frames": 50 }, { "type": { "mode": "text", "text": " " } }]
 ```
+
+Each step has one of these kinds:
 
 - `{ "write": { "address": "$c000", "data": "0102" } }` writes bytes.
 - `{ "registers": { "pc": "start", "a": 1 } }` sets registers. Only `pc` takes a name.
 - `{ "joystick": { "port": 2, "direction": "up", "fire": false } }` sets a joystick.
 - `{ "type": { "mode": "text", "text": "RUN\n" } }` or `{ "type": { "mode": "petscii", "bytes": [147] } }` puts keys in the keyboard queue of the KERNAL.
 - `{ "frames": 50 }` runs 1 to 30000 frames.
-- `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 300 } }` runs until the target. The target kinds are `address`, `memory` and `raster`. `timeoutFrames` is 1 to 30000 (default 3000).
+- `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 300 } }` runs until the target. The target kinds are `address`, `memory` and `raster`. `timeoutFrames` is 1 to 30000. The default is 3000.
+- `{ "capture": "level1" }` captures a part. Only `loads` takes this step. Give each capture step a different name of 1 to 64 letters, digits, dots, underscores or hyphens.
 
-A program that reads the keyboard matrix does not see the keys of a `type` step. These scripts refuse a `press` step. A wait for any key that reads all keyboard columns can end without a key.
+An address in a step can be a name. The script refuses an unknown name before the program runs. The message gives the file and the step.
 
-The scripts refuse a step in the form of version 2.0, for example `{ "runUntil": { "at": "main_loop" }, "timeoutFrames": 300 }`. The message names the old field and gives the step to write.
+The script refuses a `press` step. A program that reads the keyboard matrix does not see the keys of a `type` step. A wait for any key that reads all keyboard columns can end without a key.
 
-### Calling the script
+The script refuses a step in an old form. The message gives the step to write.
 
-- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
-- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
-- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+### Paths and the project folder
+
+- Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
-- The script examines each `--out` path before it starts work. It refuses a path in `.c64-re-tools/knowledge/` and the index of the knowledge, because only c64-knowledge writes them. It refuses a folder where the command writes a file, and a file where the command writes a folder.
-- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
-- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
-- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
-
-### Project folder
-
-- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
-- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
-- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
-- Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
+- The script refuses an `--out` path in `.c64-re-tools/knowledge/` and the index of the knowledge. Change the project knowledge only with the commands that change it.
+- The script refuses a folder where the command writes a file. It refuses a file where the command writes a folder.
+- When a file is the evidence for a finding in the project knowledge, move it out of `.c64-re-tools/local/` first. The project knowledge refuses evidence in that folder.
+- Do not move a coverage map after you put it into the project knowledge. The knowledge refers to the map by its path at that time.
+- Put a run that is evidence in `runs/<name>/`, with its run file, its results and its snapshot files. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
+
+---
+
+## Flags
+
+Each flag applies only to the commands in the table. On another command, the script refuses the flag.
+
+| Flag | Command | Effect |
+|---|---|---|
+| `--entry <address>` | `trace`, `stages`, `capture` | Start the program at this address in place of RUN. Without it, the script types RUN. |
+| `--steps <file>` | `trace`, `stages`, `capture`, `loads` | Run the steps of the file right after the program starts. See "Steps files". `loads` needs this flag. The other commands run no steps without it. |
+| `--frames <n>` | `trace`, `stages` | Run the program for n frames, at most 30000. The default is 3000. In `stages`, the frames of the steps count in n. |
+| `--max-listed <n>` | `trace` | List at most n ranges in `writtenThenExecuted`. The default is 50. |
+| `--min-stage <bytes>` | `stages`, `capture` | A new stage starts when the CPU executes a written block of at least this size. The default is 64. It does not change `wrote` or the segments. |
+| `--until <address>` | `capture` | Capture when the CPU gets to this address after the steps. `capture` needs this flag. |
+| `--out <dir>` | `capture`, `loads` | Write the result into this folder. These commands need this flag. |
+| `--range <start>-<end>` | `capture` | Write only this range as the one segment. The range must hold the `--until` address. Without it, the segments are the blocks that the stages wrote. |
+| `--exclude <start>-<end>` | `capture`, `loads` | Remove this range from the segments. You can give it more than once. For `capture`, the range must not hold the `--until` address. The default is no range. |
+| `--timeout-frames <n>` | `capture` | Stop the wait for `--until` after n frames, at most 30000. The default is 3000. The frames of the steps count in n. |
+| `--drive` | `loads` | Also write the 2 KiB RAM of the 1541 drive at each capture, as `drive8.prg`. The default is off. |
+| `--min-block <bytes>` | `loads` | Write a changed block as a segment when it has at least this size. The default is 64. |
+
+The script refuses a wrong `--range` or `--exclude` before the program runs.
+
+---
+
+## Examine the file
+
+### `inspect <program>`
+
+`inspect` examines the file. It does not run the program.
+
+`body` holds:
+
+- `loadRange` and `bytes`: the addresses and the size of the program.
+- `basicStart`: the first SYS line and its address in `sys`. When the SYS argument needs values at run time, `sys` is null and `expression` gives the argument. Then `stages` and `capture` start the first stage at the first instruction after the BASIC text. `basicStart` is null when the program has no SYS.
+- `packing`, with the reason in `evidence`:
+  - `likely`: most of the bytes look compressed. Packed data has this property.
+  - `unlikely`: the bytes look like code and data. A simple cruncher can also give this result.
+  - `unclear`: the file is short, or the blocks do not give clear evidence. Or the code at the SYS address decodes or moves bytes outside the program.
+- `entropy`: the count of blocks, the count of blocks that look compressed, and the median.
+- `basicText`: the BASIC lines as raw evidence. A byte that is not a printable character shows as `{$xx}`. A packer or a crack often puts its name there. This is not a listing. To get a listing, list the BASIC program of the file.
+- `strings`: readable text near the start of the code.
+- `start`: the code at the SYS address. `jumpsOutside` and `writesOutside` give an address outside the program, where the code jumps or writes.
+- `decodeLoops`: EOR instructions in loops that store with an index. This is usually decryption or decoding.
+
+The script never names a packer. Do not name a packer from this evidence.
+
+`nextAction` is `trace` of the same program. When the program is not a BASIC program at `$0801`, there is no `nextAction`. Then `hint` tells you to give `--entry`.
+
+---
+
+## Run the program
+
+`trace`, `stages`, `capture` and `loads` run the program in the emulator. `body.result` is `PASS` or `FAIL`. A `FAIL` has `reason`, which tells what stopped the run. Do the action for the reason:
+
+- The program was not in memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
+- The body has `stopReason`. The CPU stopped before the frames ran, for example at a JAM instruction. The reason gives the address. Make sure that `--entry` is the start of the code at that time. Make sure that the steps have no error.
+- A step did not reach its target. The reason names the step. Change the step, or give it more frames.
+- After RUN, BASIC ran no program line. The program has no BASIC start line. Give `--entry`. For `loads`, use `capture` with `--entry`.
+
+### `trace <program>`
+
+`trace` runs the program and finds the memory that the program wrote and then executed.
+
+`body` holds:
+
+- `traced`: true when the run completed. `frames` and `pc` give where the run ended.
+- `writtenThenExecuted`: the ranges that the program wrote and then executed, as a list. `underRom: true` marks a range in RAM under a ROM.
+- `bytes`: the count of written bytes that the CPU executed.
+- `packing`, with the reason in `evidence`:
+  - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code.
+  - `unclear`: the program executed a small quantity of code that it wrote. This can be code that changes itself.
+  - `unlikely`: the program executed no code that it wrote.
+- `runningRange`: the written code that runs at the end of the run. When the run ends in ROM code, for example in an interrupt, it is the written code that runs next. Its `start` is code that runs after the unpacking. It is not always the entry point of the program.
+- `suggestedUntil`: an address that the CPU gets to after the unpacking.
+
+When no written code runs in 50 more frames, `body` has no `runningRange` and no `suggestedUntil`.
+
+For `likely` and `unclear`, `nextAction` is `stages` with the same `--entry` and `--steps`. For `unlikely`, `hint` tells you to give the input of the program in `--steps`. A program that waits for a key or a joystick can unpack its code after that input. When `writtenThenExecuted` is cut, `hint` tells you to give a larger `--max-listed`.
+
+### `stages <program>`
+
+`stages` runs the program and finds each stage, for example a decruncher, an intro, a copier, and then the program.
+
+`body` holds:
+
+- `followed`: true when the run completed. `frames` and `pc` give where the run ended.
+- `stages`: one item for each stage, with `stage`, `entry`, `frames`, `wrote` and `next`. `wrote` lists each block that the stage wrote, also a small block. `next` is the entry of the next stage.
+- `moreStages: true`: the script followed only the first stages. Then `hint` tells you to give a larger `--min-stage`.
+
+The `entry` of the last stage is usually the start of the program. `nextAction` is `capture` at that entry, into `.c64-re-tools/local/capture`, with the same `--entry` and `--steps`. `hint` tells you to disassemble the code at that entry first.
+
+Traps:
+
+- A routine that a stage writes and calls is part of that stage when it returns to the stage.
+- A program can be relocated and not packed. Then a short copier moves the code and jumps to it. The moved code is the last stage.
+- The `entry` of the last stage can be code that the program writes at run time. Disassemble the entry to make sure that it is the start of the program.
+- `stages` takes a `runUntil` step only with an address target without a condition. It refuses each other `runUntil` step. Use `frames` steps, or use `capture`.
+
+### `capture <program>`
+
+`capture` runs the program until the CPU gets to `--until` after the steps. Then it writes the memory into `--out`.
+
+`body` holds:
+
+- `captured`: true when the CPU got to `--until`. `pc` is that address.
+- `files`: each file that the command wrote, as `{out, bytes, sha256}`. `removed` names the segment files of an earlier capture that the new `image.json` does not list.
+- `segments` and `excluded`: the ranges of the segment files, and the ranges that `--exclude` removed.
+- `stages`: the count of stages.
+- `differsFromReset`: the count of bytes that are not as a clean C64 has them at READY.
+
+The folder `--out` gets these files:
+
+- `image.bin`: all 64 KiB of RAM at the entry. This RAM includes the RAM under the ROMs and the I/O area. A segment can be in the RAM under the I/O area at `$d000`-`$dfff`.
+- `image.json`: the entry, the segments, the vectors and the stages. `writtenBy` of a segment tells the last stage that wrote into it.
+- One PRG for each segment.
+- `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, and the vectors. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
+
+A segment is a block that a stage wrote, also a small block. These blocks are not segments:
+
+- A block that holds the entry of a later stage before the program, when no stage wrote over that entry.
+- A block that a stage before the program wrote in such a block, for example a variable of a loader.
+- A block that is fully in pages 0 to 3. `entry_state.json` holds these pages.
+
+The block with the capture entry is always a segment. Segments do not overlap.
+
+A capture into a folder with an earlier capture removes only the segment files that the new `image.json` does not list. It keeps all other files.
+
+On `PASS`, `hint` tells you to disassemble the code at `pc`, and then to put `<out>/image.json` into the project knowledge.
+
+Traps:
+
+- The capture stops at the first arrival at `--until` after the steps. To capture a later arrival, add a `runUntil` step to an address after the first arrival.
+- `captured: false`: the program did not get to `--until` in `--timeout-frames`. The reason tells where it stopped. Find a better address, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step.
+
+### `loads <program>`
+
+`loads` runs a multi-load program with the steps file. Each `capture` step writes `<out>/<name>/` with `image.bin`, `image.json`, `entry_state.json` and a PRG for each segment. With `--drive`, it also writes `drive8.prg`: the drive RAM at `$0000`-`$07ff`.
+
+A segment is a block of RAM from `$0400` that the program changed after the capture before. The first capture also has the program itself.
+
+`body` holds:
+
+- `loaded`: true when a capture has a segment.
+- `captures`: one item for each capture step, with `capture`, `out`, `files`, `removed`, `pc`, `segments`, `excluded`, `differsFromReset`, `smallChanges` and `drive`.
+  - `smallChanges`: the count of changed bytes in blocks that are smaller than `--min-block`.
+  - `keyWait: true`: the CPU was in the KERNAL wait for a key, at READY or at an INPUT statement.
+  - `drive`: the name of the drive file, with `--drive`.
+
+Each `entry_state.json` has `differsFromReset`, as the one of `capture` has. A capture into a folder with an earlier capture removes the segment files and the `drive8.prg` that the new `image.json` does not list.
+
+On `PASS`, `hint` tells you to put the `image.json` of the part that you work on into the project knowledge. With `--drive`, it also tells you to put `drive8.prg` into the project knowledge in the space `drive8`.
+
+Traps:
+
+- `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited for a key at READY or at an INPUT statement.
+
+---
 
 ## Workflow
 
-1. Run `inspect`. Read `basicStart` and `packing`. `basicStart` gives the first SYS line and its address. When the SYS argument needs values at run time, `sys` is null and `expression` gives the argument. Then `trace`, `stages` and `capture` stop at the first instruction after the BASIC text:
-   - `likely`: most of the bytes look compressed. Packed data has this property.
-   - `unlikely`: the bytes look like code and data. A simple cruncher can also give this result.
-   - `unclear`: the file is short, or the blocks do not give clear evidence. Or the code at the SYS address decodes or moves bytes outside the program.
+### Packed program
 
-   Also read the evidence that the script finds in the file. The script never names a packer from it:
-   - `basicText`: raw evidence from the BASIC lines, not a listing. A byte that is not a printable character shows as `{$xx}`. A packer or a crack often puts its name there. For a listing, use the c64-basic skill.
-   - `strings`: readable text near the start of the code.
-   - `start`: the code at the SYS address. `jumpsOutside` and `writesOutside` give an address outside the loaded program, where the code jumps or writes.
-   - `decodeLoops`: EOR instructions in loops that store with an index. This is usually decryption or decoding.
-2. Run `trace`. It gives the evidence from the run. `writtenThenExecuted` lists the ranges that the program wrote and then executed. Read `packing`:
-   - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code. `runningRange` is the written code that runs at the end of the trace. When the trace ends in ROM code, for example in an interrupt, it is the written code that runs next. Its `start` is code that runs after the unpacking. It is not always the entry point of the program. When no written code runs in 50 more frames, the result has no `runningRange` and no `suggestedUntil`.
-   - `unclear`: the program executed a small quantity of code that it wrote. This can be code that changes itself.
-   - `unlikely`: the program executed no code that it wrote. If the program waits for a key or a joystick, it can move code after that input. Then use the emulator skill.
+1. Run `inspect`. Read `packing` and the evidence.
+2. Run `trace`. Read `packing`. If it is `unlikely` and the program waits for input, give the input in `--steps`.
 3. Find the address where the unpacked program starts:
-   - Run `stages`. The `entry` of the last stage is usually the start of the program. A routine that a stage writes and calls is part of that stage when it returns to the stage.
-   - Or use `runningRange.start` from `trace`, or `suggestedUntil`. The CPU gets to `suggestedUntil` after the unpacking.
-   - Or use the emulator skill: set a breakpoint after the unpack loop, or look at the last JMP of the unpacker.
-   - Disassemble the code at the address with the emulator skill. Make sure that it is the start of the program. The start of a program often sets the stack pointer, the interrupts and the vectors.
-   - A program can be relocated and not packed. Then a short copier moves the code and jumps to it. The moved code is the last stage. Make sure that the `entry` of the last stage is not code that the program writes later. An example is a routine that the program makes at run time. Disassemble the entry to make sure.
-4. Run `capture` with that address and a directory in `--out`. Give the same `--steps` as before. The directory gets:
-   - `image.bin`: all 64 KiB of RAM at the entry.
-   - `image.json`: the entry, the segments, the vectors and the stages. A segment is a block that a stage wrote, also a small block. A block is not a segment when it holds the entry of a later stage before the program, and no stage wrote over that entry. A block that a stage before the program wrote in such a block is also not a segment, for example a variable of a loader. A block that is fully in pages 0 to 3 is not a segment, because `entry_state.json` holds these pages. The block with the capture entry is always a segment. Segments do not overlap. `writtenBy` tells the last stage that wrote into the segment.
-   - One PRG for each segment. A capture into a directory that has a capture removes the segment PRGs that the new `image.json` does not list. `removed` in the result names them. The capture keeps all other files.
-   - `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, and the vectors. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
-5. Make sure that the result is the application: the code at the entry must not be the unpacker again. A segment can be data that a loader or a cracktro left, for example intro graphics. Keep it until other evidence shows that the program does not use it. Then capture again with `--exclude` for that range. Thus the source and the loader do not include the range.
-   - Cut each range of a cracktro that the program does not read. A rebuild has no cracktro.
-   - Do not cut other unused bytes, for example leftovers of the development or an old copy of a routine. A rebuild keeps them.
-   - A crack change that the program reads, for example a credit text in the game, stays. Record it as a `crack` switch with the c64-knowledge skill.
-6. Put the capture into the knowledge with `image <out>/image.json` of the c64-knowledge skill. The knowledge keeps the segments, the entry, the entry state and the stages. The other skills read them there. The files in `<out>` are not necessary after that.
-7. Use `--range` only when you know the area of the program. Then the capture writes that one segment.
+   - Run `stages`. Use the `entry` of the last stage.
+   - Or use `runningRange.start` or `suggestedUntil` of `trace`.
+   - Or set a breakpoint in the emulator after the unpack loop. Or examine the last JMP of the unpacker.
+   - Disassemble the code at the address. Make sure that it is the start of the program. The start of a program often sets the stack pointer, the interrupts and the vectors.
+4. Run `capture` with that address in `--until` and a folder in `--out`. Give the same `--steps` as before.
+5. Make sure that the result is the program. The code at the entry must not be the unpacker again. A segment can be data that a loader or a cracktro left, for example intro graphics. Keep it until other evidence shows that the program does not use it. Then capture again with `--exclude` for that range.
+   - Exclude each range of a cracktro that the program does not read. A rebuild has no cracktro.
+   - Do not exclude other unused bytes, for example leftovers of the development or an old copy of a routine. A rebuild keeps them.
+   - Keep a crack change that the program reads, for example a credit text in the game. Record it as a `crack` switch in the project knowledge.
+6. Put `<out>/image.json` into the project knowledge. The knowledge keeps the segments, the entry, the entry state and the stages. After that, you do not need the files in `<out>`.
+7. Use `--range` only when you know the area of the program.
 
-## Multi-load programs
+Do not record the unpacker in the project knowledge, unless the user asks you to examine the unpacker.
 
-A multi-load program loads more parts from the disk while it runs, for example one part for each level. Use `loads` to capture each part. The program can be a PRG, or a disk, tape or cartridge image. `loads` starts a PRG with RUN. Thus the PRG must have a BASIC start line. For a PRG without a BASIC start line, use `capture` with `--entry`.
+### Multi-load program
 
 1. Write a steps file. Put a `capture` step after each point where a part is in memory, for example:
 
+   ```json
+   [
+     { "runUntil": { "target": { "kind": "address", "address": "$080d" }, "timeoutFrames": 6000 } },
+     { "capture": "main" },
+     { "type": { "mode": "text", "text": " " } },
+     { "runUntil": { "target": { "kind": "address", "address": "$c000" }, "timeoutFrames": 6000 } },
+     { "capture": "level1" }
+   ]
+   ```
+
+2. Run `loads` with the steps file and a folder in `--out`. Add `--drive` when the program has its own drive code, for example a fast loader. Add `--exclude` for each range of a loader, an intro or a loading picture that the program does not read.
+3. Put `<out>/<name>/image.json` of the part that you work on into the project knowledge.
+4. With `--drive`, put `<out>/<name>/drive8.prg` into the project knowledge in the space `drive8`. Then analyze the drive code in the space `drive8`.
+
+---
+
+## JSON output
+
+Each command prints one JSON envelope on one line on stdout. Notes go to stderr.
+
+On success, the exit code is 0:
+
 ```json
-[
-  { "runUntil": { "target": { "kind": "address", "address": "$080d" }, "timeoutFrames": 6000 } },
-  { "capture": "main" },
-  { "type": { "mode": "text", "text": " " } },
-  { "runUntil": { "target": { "kind": "address", "address": "$c000" }, "timeoutFrames": 6000 } },
-  { "capture": "level1" }
-]
+{"ok": true, "command": "<command>", "body": {}, "hint": "...", "nextAction": "..."}
 ```
 
-2. Run `loads` with the steps file and a directory in `--out`. Add `--drive` when the program has its own drive code, for example a fast loader. Add `--exclude` for each range of a loader, an intro or a loading picture that the program does not read. The script removes these ranges from the segments of each capture.
-3. Each capture writes `<out>/<name>/` with `image.bin`, `image.json`, `entry_state.json` and a PRG for each segment. It removes the segment PRGs and the `drive8.prg` of an earlier capture that the new `image.json` does not list. A segment is a block of RAM from `$0400` that the program changed after the capture before. The first capture also has the program itself.
-4. Put the part that you work on into the knowledge with `image <out>/<name>/image.json` of the c64-knowledge skill.
-5. With `--drive`, `drive8.prg` is the drive RAM at `$0000`-`$07ff`. Put it into the knowledge with `image <out>/<name>/drive8.prg --space drive8`. Then analyze it with c64-static-analysis and `--space drive8`.
+On failure, the exit code is 2:
 
-No tool gives coverage of drive code.
+```json
+{"ok": false, "command": "<command>", "code": "<code>", "error": "...", "hint": "...", "nextAction": "..."}
+```
 
-## Knowledge
+- `body` holds the result. The section of each command gives the fields of its body.
+- A check gives its verdict in `body.result`: `PASS`, `FAIL` or `INCONCLUSIVE`. The exit code is 0 for each verdict. Thus read `body.result`, not the exit code.
+- `error` is one sentence. It tells what is wrong.
+- `hint` tells what to do or what to examine. Read it before your next step. Some envelopes have no `hint`.
+- `nextAction` is a full command line. It runs from any directory. Run it when it agrees with your task. Some envelopes have no `nextAction`.
+- `code` does not change between versions. Do the action for the code:
 
-Automatic write:
-- none.
+| `code` | Action |
+|---|---|
+| `installation-incomplete`, `machine-unavailable` | Stop the task. Give `error` and `hint` to the user and wait for the user. Do not install, start or change a tool. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script. |
+| `invalid-input`, `not-found` | Correct the call as `hint` tells. Then run the command again. |
+| `operation-failed` | Give `error` and `hint` to the user. |
+| Another code | Do as `hint` tells. |
 
-Do not record the unpacker in the project knowledge, unless the user asks to examine the unpacker.
+These fields have the same meaning in each body:
 
-## Result
+| Field | Meaning |
+|---|---|
+| `out`, `bytes`, `sha256` | A file that the command wrote: its path, its size and its SHA-256. |
+| `count`, `listed`, `rest` | A list. `count` is the number of items. `listed` holds the first items, at most `--max-listed`. `rest` tells how to get the other items. |
 
-The packing evidence, the stages, or the unpacked program with its image, segments and entry state in a directory of the project.
-
-`trace`, `stages`, `capture` and `loads` give `result: "PASS"` or `result: "FAIL"`. A FAIL has `reason`. `capture` gives the written files in `files`, each as `{out, bytes, sha256}`.
-
-`capture` gives `differsFromReset`: the count of bytes that are not as a clean C64 has them at READY.
-
-For `loads`: `captures`, with the name, the PC, the segments, `differsFromReset`, the files and the drive file of each capture. Each `entry_state.json` of `loads` has `differsFromReset` as the one of `capture` has. `keyWait: true` tells that the CPU was in the KERNAL wait for a key.
-
-## Failure and conflicts
-
-- `traced: false` or `followed: false`: the C64 did not load the program into memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
-- `traced: false` or `followed: false` with `stopReason`: the CPU stopped before the frames ran, for example at a JAM instruction. `pc` gives the address. Make sure that `--entry` is the start of the code that the file holds at that time, and that the steps have no error.
-- `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step.
-- A step did not reach its target: the reason names the step. Change the step or give it more frames.
-- `loaded: false` with an empty `captures` and the reason `BASIC ran no program line`: the PRG has no BASIC start line. Use `capture` with `--entry`.
-- `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited for a key at the READY prompt or at an INPUT statement.
-- Do not name a packer from weak evidence. The script never names one.
-- Some programs unpack in more than one stage. Run `stages` to find each stage. Capture at the entry of the last stage. Make sure that it is the application and not a second unpacker.
-- `not-found` or `invalid-input`: a path or an argument is wrong. Read the message.
-- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
-- `not-implemented`: the tool does not work in this setup. Give the message to the user. Do not use that tool or step again in this task.
-
-## Handoffs
-
-- Unpacked machine code → c64-static-analysis
-- Find the start address at run time → emulator
+To get the command list, run the script with no arguments. The envelope has `command: "help"`, and `body.commands` gives the name, the summary and the synopsis of each command.
+To get the subjects and the flags of one command, run `<command> --help`. Then `body.subjects` and `body.options` give them.

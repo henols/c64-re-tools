@@ -50,7 +50,7 @@ export interface StateItem {
 export interface RecordFile {
   name: string;
   program: string;
-  /** "knowledge", "none", or a project JSON file (c64-assembler output or a name → "$xxxx" map). */
+  /** "knowledge", "none", or a project JSON file (the symbol file of a build or a name → "$xxxx" map). */
   symbols: string;
   /** true: load the program with the CPU at READY and no RUN; a registers step starts it. */
   load?: boolean;
@@ -134,7 +134,7 @@ const KEY_CODES = new Map<string, number>([
 export function keyCodes(text: string): number[] {
   return [...text.replace(/\r\n?/g, "\n")].map((character) => {
     const code = KEY_CODES.get(character.toUpperCase());
-    if (code === undefined) throw new Refusal("invalid-input", `press cannot press ${JSON.stringify(character)} on the keyboard of the replay core`);
+    if (code === undefined) throw new Refusal("invalid-input", `press cannot press ${JSON.stringify(character)} on the C64 keyboard`);
     return code;
   });
 }
@@ -225,7 +225,7 @@ export function readRecordFile(path: string): RecordFile {
 
 /** What the replay core cannot do of a step that is right for VICE: it has the C64 alone, no raster wait and no conditions. */
 function checkCoreStep(step: ActionStep, at: string, fail: (message: string) => never): void {
-  if ("write" in step && step.write.space !== "c64") fail(`${at}: the replay core has the C64 alone, not ${step.write.space}`);
+  if ("write" in step && step.write.space !== "c64") fail(`${at}: a recording has the C64 alone, not ${step.write.space}`);
   if ("press" in step) {
     try {
       keyCodes(step.press);
@@ -240,9 +240,9 @@ function checkCoreStep(step: ActionStep, at: string, fail: (message: string) => 
   }
   if ("runUntil" in step) {
     const { target } = step.runUntil;
-    if (target.kind === "raster") fail(`${at}: the replay core has no raster target; use an address or a memory target`);
-    else if (target.space !== "c64") fail(`${at}: the replay core has the C64 alone, not ${target.space}`);
-    else if (target.kind === "address" && target.condition !== undefined) fail(`${at}: the replay core has no condition at an address target`);
+    if (target.kind === "raster") fail(`${at}: a recording has no raster target. Use an address or a memory target`);
+    else if (target.space !== "c64") fail(`${at}: a recording has the C64 alone, not ${target.space}`);
+    else if (target.kind === "address" && target.condition !== undefined) fail(`${at}: a recording has no condition at an address target`);
   }
 }
 
@@ -429,7 +429,7 @@ async function doAction(core: C64RunSession, step: ActionStep | RestoreAction, a
         await core.status(`run ${tick + PAL_FRAME_CYCLES}`);
       }
     }
-    if (target.kind !== "address") return "the replay core has no raster target";
+    if (target.kind !== "address") return "a recording has no raster target";
     const reached = await core.status(`run-pc ${hex(at.code(target.address))} ${until}`);
     if (reached.word !== "reached") return `the program did not reach ${target.address} within ${timeoutFrames} frames`;
   }

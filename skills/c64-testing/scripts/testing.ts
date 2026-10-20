@@ -14,9 +14,9 @@ import { C64RunSession, PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { OPTIONS, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
+import { OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type Reply } from "#src/script.ts";
 import { diffFiles } from "./lib/diff-files.ts";
-import { play } from "./lib/play.ts";
+import { CANCELLED, play } from "./lib/play.ts";
 import { readRecordFile, record, RECORDING_FILES } from "./lib/recording.ts";
 import { replay } from "./lib/replay.ts";
 import { runFile } from "./lib/runs.ts";
@@ -34,7 +34,10 @@ const ALWAYS = [
   "Nothing unexpected happens outside the tested scenarios.",
 ];
 
-async function test(call: Call): Promise<ScenarioResult> {
+/** The hint of a test or replay verdict: what to do after a FAIL or an INCONCLUSIVE. */
+const INCONCLUSIVE_HINT = "reason tells why the script could not compare. This is not a failure of the program. Correct the cause, then run the command again.";
+
+async function test(call: Call): Promise<ScenarioResult | Reply> {
   const scenario = readScenario(call.subject(0));
   const out = call.string("out");
   // Every file of the scenario is checked before the emulator starts.
@@ -44,18 +47,21 @@ async function test(call: Call): Promise<ScenarioResult> {
     client = await ViceSessionClient.open({ videoStandard: scenario.videoStandard ?? "pal" });
   } catch (error) {
     if (!(error instanceof WireFailure)) throw error;
-    return { result: "INCONCLUSIVE", scenario: scenario.name, reason: `no emulator: ${error.message}`, checkpoints: [], differences: [] };
+    return reply({ result: "INCONCLUSIVE", scenario: scenario.name, reason: `no emulator: ${error.message}`, checkpoints: [], differences: [] }, { hint: "The emulator did not start. Give error and reason to the user." });
   }
   try {
-    return await runScenario(client, scenario, { names, max: call.count("max-listed")!, ...(out === undefined ? {} : { out }) });
+    const result = await runScenario(client, scenario, { names, max: call.count("max-listed")!, ...(out === undefined ? {} : { out }) });
+    if (result.result === "INCONCLUSIVE") return reply(result, { hint: INCONCLUSIVE_HINT });
+    if (result.result === "FAIL") return reply(result, { hint: `Examine the first difference in the emulator at its checkpoint.${out === undefined ? " Give --out to get the screens and all differing bytes as files." : ""}` });
+    return result;
   } finally {
     await client.close();
   }
 }
 
-async function recordCommand(call: Call): Promise<Record<string, unknown>> {
+async function recordCommand(call: Call): Promise<Reply> {
   const playing = call.flag("play");
-  if (!playing && (call.count("joystick") !== undefined || call.count("http-port") !== undefined)) throw new UsageError("--joystick and --http-port are for --play");
+  if (!playing && (call.count("joystick") !== undefined || call.count("http-port") !== undefined)) throw new UsageError("--joystick and --http-port need --play. Give --play, or leave out these flags.");
   const joystick = (call.count("joystick") ?? 2) as 1 | 2;
   const httpPort = call.count("http-port") ?? DEFAULT_HTTP_PORT;
   const out = call.string("out")!;
@@ -89,13 +95,17 @@ async function recordCommand(call: Call): Promise<Record<string, unknown>> {
       // The instructions in the coverage map: 0 when the program never read its input from RAM.
       executed: outcome.coverage.reduce((count, byte) => count + ((byte & COVERAGE.ramExecute) === 0 ? 0 : 1), 0),
     };
-    if (outcome.reason !== undefined) return { result: "FAIL", recorded: false, reason: outcome.reason, ...summary };
+    if (outcome.reason === CANCELLED) return reply({ result: "FAIL", recorded: false, reason: outcome.reason, ...summary }, { hint: "Ask the user what to do. Do not make a scripted recording in place of the session of the user." });
+    if (outcome.reason !== undefined) return reply({ result: "FAIL", recorded: false, reason: outcome.reason, ...summary }, { hint: "reason names the step that did not complete. Change that step, then record again." });
     const files = [
       writeReported(`${out}/${RECORDING_FILES.recording}`, `${JSON.stringify(outcome.recording, null, 2)}\n`, { what: "--out" }),
       writeReported(`${out}/${RECORDING_FILES.reads}`, outcome.reads, { what: "--out" }),
       writeReported(`${out}/${RECORDING_FILES.coverage}`, outcome.coverage, { what: "--out" }),
     ];
-    return { result: "PASS", recorded: true, out, ...summary, files };
+    return reply(
+      { result: "PASS", recorded: true, out, ...summary, files },
+      { hint: `Commit ${out} with the scenarios. Add ${out}/${RECORDING_FILES.coverage} to the project knowledge as coverage. To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
+    );
   } finally {
     await core.close();
     workspace.remove();
@@ -136,12 +146,14 @@ const COMMANDS: CommandSpec[] = [
     options: { out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the files of the steps and results.json" } },
     run: async (call) => {
       const { output, failed } = await runFile(call.subject(0), call.string("out")!);
-      return { result: failed ? "FAIL" : "PASS", ...output };
+      if (!failed) return { result: "PASS", ...output };
+      const hint = output.reason !== undefined ? "reason tells why a step did not run. Correct the step or the start, then run again." : "failedExpectations names the expect steps that failed. expectations in results.json gives the expected and the actual values.";
+      return reply({ result: "FAIL", ...output }, { hint });
     },
   },
   {
     name: "record",
-    summary: "Plays the steps of a record file on the original in the replay core (c64run), and writes the session as a recording folder: recording.json, reads.txt and coverage.bin. result is FAIL when the session did not complete.",
+    summary: "Plays the steps of a record file on the original, and writes the session as a recording folder: recording.json, reads.txt and coverage.bin. result is FAIL when the session did not complete.",
     subjects: [{ name: "<record.json>", help: "a record file, relative to the project folder. See references/recording-format.md" }],
     options: {
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the recording folder, for example tests/recordings/<name>" },
@@ -160,13 +172,21 @@ const COMMANDS: CommandSpec[] = [
       state: { kind: "text", value: "<item>", multiple: true, help: `the state to compare at each checkpoint: ${STATE_ITEM}` },
       pin: { kind: "text", value: "<item>", multiple: true, help: `random state in RAM, in the form of --state: at each checkpoint the rebuild gets the original's values there` },
       rebuild: { kind: "path", value: "<prg>", help: "the rebuild to compare with the original" },
-      symbols: { ...OPTIONS.symbols, help: "the names of the rebuild: the c64-assembler output (default: the symbols of the recording)" },
+      symbols: { ...OPTIONS.symbols, help: "the names of the rebuild: the symbol file of its build (default: the symbols of the recording)" },
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder" },
     },
     notes: "A recording without names takes the names of the knowledge for the original. A $ address is an address of the original: on the rebuild it moves with the name before it.",
-    run: (call) => {
+    run: async (call) => {
       const [checkpoint, rebuild, symbols, out] = [call.string("checkpoint"), call.string("rebuild"), call.string("symbols"), call.string("out")];
-      return replay({ folder: call.subject(0), state: call.strings("state"), pin: call.strings("pin"), ...(checkpoint === undefined ? {} : { checkpoint }), ...(rebuild === undefined ? {} : { rebuild }), ...(symbols === undefined ? {} : { symbols }), ...(out === undefined ? {} : { out }) });
+      const result = await replay({ folder: call.subject(0), state: call.strings("state"), pin: call.strings("pin"), ...(checkpoint === undefined ? {} : { checkpoint }), ...(rebuild === undefined ? {} : { rebuild }), ...(symbols === undefined ? {} : { symbols }), ...(out === undefined ? {} : { out }) });
+      if (result.result === "INCONCLUSIVE") return reply(result, { hint: INCONCLUSIVE_HINT });
+      if (result.result !== "FAIL") return result;
+      const [original, rebuilt] = result.files ?? [];
+      if (original !== undefined && rebuilt !== undefined) {
+        return reply(result, { hint: "files holds the RAM of each side at the first different checkpoint. Run nextAction to compare them. Then examine the first different state item in the emulator.", nextAction: call.next("diff", original.out, rebuilt.out) });
+      }
+      if (result.firstDifference === undefined) return reply(result, { hint: "reason tells how many checkpoints the rebuild came to. Examine the rebuild in the emulator after its last checkpoint." });
+      return reply(result, { hint: `A difference in a random value with the same input often shows a missing --pin.${out === undefined ? " Give --out to get the RAM of each side at the first different checkpoint." : ""}` });
     },
   },
   {
@@ -199,7 +219,7 @@ const COMMANDS: CommandSpec[] = [
 
 await runScript({
   name: "testing",
-  summary: "Tests a rebuild against the original: scenarios in VICE, runs, recorded play sessions in the replay core, state differences, and a checklist for a human tester.",
+  summary: "Tests a rebuild against the original: scenarios in an emulator, runs, recorded play sessions, state differences, and a checklist for a human tester.",
   names: knowledgeNames,
   commands: COMMANDS,
 });

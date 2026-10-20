@@ -56,8 +56,8 @@ test("a symbol comes first, then an analyzer name that the analyzers give to one
   assert.equal(addressOfName(db, "shared"), 0x0a00, "two analyzers, one address");
   assert.equal(addressOfName(db, "drive_loop", "drive8"), 0x0300);
   assert.throws(() => addressOfName(db, "split"), refused("invalid-input", /the analyzers give split to \$0b00 \(dxa\) and \$0c00 \(ghidra\)\. Give the address/));
-  assert.throws(() => addressOfName(db, "nothing"), refused("not-found", /^nothing is not a name in the knowledge\. Give a \$ address, or a name that knowledge\.ts symbols lists, with or without --analyzer\.$/));
-  assert.throws(() => addressOfName(db, "main_loop", "drive8"), refused("not-found", /^main_loop is not a name in the knowledge in drive8\. Give a \$ address, or a name that knowledge\.ts symbols --space drive8 lists, with or without --analyzer\.$/));
+  assert.throws(() => addressOfName(db, "nothing"), refused("not-found", /^nothing is not a name in the knowledge\. Give a \$ address, or a symbol or an analyzer name of the project knowledge\.$/));
+  assert.throws(() => addressOfName(db, "main_loop", "drive8"), refused("not-found", /^main_loop is not a name in the knowledge in drive8\. Give a \$ address, or a symbol or an analyzer name of the project knowledge in drive8\.$/));
   assert.throws(() => addressOfName(undefined, "main_loop"), refused("not-found", /main_loop/), "no knowledge: no names");
 });
 

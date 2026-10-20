@@ -11,6 +11,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
+import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
+
 const script = resolve(import.meta.dirname, "../../skills/c64-packer/scripts/packer.ts");
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-packer-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -85,7 +87,7 @@ function project(files: Record<string, Buffer>): string {
   return root;
 }
 
-async function packer(root: string, args: string[], env: Record<string, string> = {}): Promise<{ status: number | null; json: Record<string, unknown> }> {
+async function packer(root: string, args: string[], env: Record<string, string> = {}): Promise<{ status: number | null; json: Record<string, unknown>; envelope: ScriptEnvelope }> {
   const child = spawn(process.execPath, [...process.execArgv, script, "pack", ...args], {
     cwd: root,
     env: { ...process.env, C64RT_EXOMIZER: exomizer, C64RT_HOST: "127.0.0.1:1", ...env },
@@ -97,15 +99,17 @@ async function packer(root: string, args: string[], env: Record<string, string> 
   child.stderr.on("data", (chunk) => (stderr += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(stderr, "");
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  const { envelope, json } = readEnvelope(stdout, status);
+  return { status, json: json as Record<string, unknown>, envelope };
 }
 
 test("a BASIC program is packed with its SYS address as the entry and checked", { timeout: 60_000 }, async () => {
   const root = project({ "build/game.prg": BASIC });
   const log = join(root, "argv.jsonl");
-  const { status, json } = await packer(root, ["build/game.prg", "--out", "build/game-packed.prg"], { FAKE_EXO_LOG: log });
+  const { status, json, envelope } = await packer(root, ["build/game.prg", "--out", "build/game-packed.prg"], { FAKE_EXO_LOG: log });
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.result, "PASS");
+  assert.equal(envelope.hint, "Run build/game-packed.prg in the emulator with RUN. Make sure that the program starts and works.");
   assert.equal(json.out, "build/game-packed.prg");
   assert.equal(json.entry, "$080d");
   assert.equal(json.unpackedBytes, BASIC.length - 2);
@@ -134,21 +138,24 @@ test("several files go into one program in load order, with --entry and --exit-m
 test("a program that unpacks to other bytes or jumps elsewhere is FAIL and is not written", { timeout: 60_000 }, async () => {
   const root = project({ "game.prg": BASIC });
   const corrupt = await packer(root, ["game.prg", "--out", "packed.prg"], { FAKE_EXO_CORRUPT: "1" });
-  assert.equal(corrupt.status, 1, JSON.stringify(corrupt.json));
+  assert.equal(corrupt.status, 0, JSON.stringify(corrupt.json));
   assert.equal(corrupt.json.result, "FAIL");
+  assert.match(corrupt.envelope.hint!, /The script did not write it\. Do not use it\./);
   assert.equal(corrupt.json.out, undefined);
   assert.deepEqual((corrupt.json.check as { segments: unknown[] }).segments, [{ start: "$0801", end: "$0812", result: "different", differences: 1, firstDifference: { address: "$0804", built: "$ff", reference: "$00" } }]);
   const elsewhere = await packer(root, ["game.prg", "--out", "packed.prg"], { FAKE_EXO_ENTRY: "fce2" });
-  assert.equal(elsewhere.status, 1, JSON.stringify(elsewhere.json));
+  assert.equal(elsewhere.status, 0, JSON.stringify(elsewhere.json));
+  assert.equal(elsewhere.json.result, "FAIL");
   assert.equal((elsewhere.json.check as { entry: string }).entry, "$fce2");
   assert.equal(existsSync(join(root, "packed.prg")), false);
 });
 
 test("a check that does not hold all inputs is INCONCLUSIVE", { timeout: 60_000 }, async () => {
   const root = project({ "low.prg": prg(0x1000, [1, 2, 3, 4]), "high.prg": prg(0x8000, [5, 6]) });
-  const { status, json } = await packer(root, ["low.prg", "high.prg", "--entry", "$1000", "--out", "packed.prg"]);
-  assert.equal(status, 3, JSON.stringify(json));
+  const { status, json, envelope } = await packer(root, ["low.prg", "high.prg", "--entry", "$1000", "--out", "packed.prg"]);
+  assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.result, "INCONCLUSIVE");
+  assert.match(envelope.hint!, /^The check does not hold all bytes of the inputs\. Run packed\.prg in the emulator/);
   assert.deepEqual((json.check as { segments: unknown[] }).segments, [
     { start: "$1000", end: "$1003", result: "identical" },
     { start: "$8000", end: "$8001", result: "not covered", uncovered: 2 },
@@ -165,7 +172,7 @@ test("wrong calls are refused before Exomizer runs: no SYS, an entry below $0400
     assert.equal(error.code, "invalid-input");
     assert.match(error.message, message);
   };
-  await refused(["code.prg", "--out", "packed.prg"], /Give --entry: there is no SYS address in code\.prg\. It loads at \$c000/);
+  await refused(["code.prg", "--out", "packed.prg"], /^There is no SYS address in code\.prg\. It loads at \$c000, not at \$0801 where BASIC starts\. Give --entry/);
   await refused(["code.prg", "--entry", "$0300", "--out", "packed.prg"], /below \$0400/);
   await refused(["code.prg", "--entry", "$c000", "--out", "./code.prg"], /is the input code\.prg/);
   await refused(["tiny.prg", "--entry", "$c000", "--out", "packed.prg"], /tiny\.prg is not a PRG/);
@@ -179,7 +186,7 @@ test("an Exomizer that cannot pack is an error with its message", { timeout: 60_
   assert.equal(status, 2, JSON.stringify(json));
   const error = json.error as { code: string; message: string };
   assert.equal(error.code, "operation-failed");
-  assert.match(error.message, /Exomizer could not pack the program \(exit 1\)\.\nThe last output of Exomizer:\n {2}Error: the data overlaps the decrunch table\./);
+  assert.match(error.message, /Exomizer could not pack the program \(exit 1\)\. The last output of Exomizer:\n {2}Error: the data overlaps the decrunch table\./);
 });
 
 test("a missing Exomizer is refused by name with the remedy", { timeout: 60_000 }, async () => {

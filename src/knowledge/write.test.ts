@@ -469,7 +469,7 @@ test("an operand expression that does not give the operand in the image is refus
   const { db, context } = operands();
   assert.throws(() => setOperand(db, context, { address: 0x8079, select: "hi", symbol: "irq_handler" }), /At \$8079, >irq_handler gives \$80, but the operand in the image is \$c0\./);
   assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "value", symbol: "bar_colours" }), /gives \$8a98, but the operand in the image is \$8a97/);
-  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo", symbol: "nowhere" }), /nowhere is not a symbol of the knowledge or a platform name. Give a number, a symbol that knowledge\.ts symbols lists, or a platform name that memory-map\.ts at gives\./);
+  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo", symbol: "nowhere" }), /nowhere is not a symbol of the knowledge or a platform name. Give a number, a symbol of the project knowledge, or a platform name of the C64 memory map\./);
   assert.throws(() => setOperand(db, context, { address: 0x8000, select: "expr", expression: "5" }), /is a branch/);
   assert.throws(() => setOperand(db, context, { address: 0x8005, select: "expr", expression: "5" }), /has no operand/);
   assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "lo", symbol: "bar_colours" }), /lo and hi give one byte/);

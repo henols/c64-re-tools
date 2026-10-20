@@ -31,10 +31,10 @@ function observation(path: string): MachineState {
     results = JSON.parse(readProjectFile(file).bytes.toString("utf8")) as typeof results;
   } catch (error) {
     if (error instanceof WireFailure) throw error;
-    throw new UsageError(`${file} is not JSON: ${(error as Error).message}`);
+    throw new Refusal("invalid-input", `${file} is not JSON: ${(error as Error).message}`);
   }
   const seen = results.observations?.[name];
-  if (seen === undefined) throw new UsageError(`${file} has no observation ${name}; it has ${Object.keys(results.observations ?? {}).join(", ") || "none"}`);
+  if (seen === undefined) throw new Refusal("not-found", `${file} has no observation ${name}. It has ${Object.keys(results.observations ?? {}).join(", ") || "none"}.`);
   const observed: Record<string, string> = {};
   for (const [at, value] of Object.entries(seen.memory ?? {})) {
     // A memory item in a file of its own: compare its bytes.
@@ -102,7 +102,7 @@ export function snapshotCpuPort(file: Uint8Array): { direction: number; data: nu
 async function snapshotState(client: ViceSessionClient, path: string, ntsc: boolean): Promise<MachineState> {
   const file = readProjectFile(path).bytes;
   const saved = snapshotRam(file);
-  if (saved === undefined) throw new Refusal("invalid-input", `${path} is not a snapshot of a C64: it has no C64 memory. Give a file that c64_snapshot save or a save step of a run wrote.`);
+  if (saved === undefined) throw new Refusal("invalid-input", `${path} is not a snapshot of a C64: it has no C64 memory. Give a file that a snapshot save in the emulator or a save step of a run wrote.`);
   const restored = await client.snapshotRestore(file);
   const memory = await readMemoryInParts(client, 0x0000, 0x10000, "ram");
   // $00 and $01 are the CPU port: the file keeps them apart from the RAM.
@@ -148,9 +148,9 @@ export function comparedItems(what: string, a: readonly string[], b: readonly st
 /** The differences of two states of one kind: snapshots, memory files or observations of runs. */
 export async function diffFiles(first: string, second: string, options: { gap: number; max: number; ntsc: boolean; at?: number; out?: string }): Promise<Record<string, unknown>> {
   const kind = kindOf(first);
-  if (kindOf(second) !== kind) throw new UsageError("give two states of one kind: two snapshots, two memory files or two observations");
-  if (options.at !== undefined && kind !== "memory") throw new UsageError(`--address is only for two memory files (.bin). ${kind === "snapshot" ? "A snapshot file holds all 64 KiB" : "An observation gives the address of each item"}: leave out --address`);
-  if (options.ntsc && kind !== "snapshot") throw new UsageError(`--ntsc is only for two snapshot files (.vsf), which restore in an emulator. ${kind === "memory" ? "Memory files" : "Observations"} compare as they are: leave out --ntsc`);
+  if (kindOf(second) !== kind) throw new UsageError("The two states are not of one kind. Give two snapshot files, two memory files or two observations.");
+  if (options.at !== undefined && kind !== "memory") throw new UsageError(`--address is only for two memory files (.bin). ${kind === "snapshot" ? "A snapshot file holds all 64 KiB" : "An observation gives the address of each item"}: leave out --address.`);
+  if (options.ntsc && kind !== "snapshot") throw new UsageError(`--ntsc is only for two snapshot files (.vsf), which restore in an emulator. ${kind === "memory" ? "Memory files" : "Observations"} compare as they are: leave out --ntsc.`);
   const { gap, max } = options;
   let a: MachineState;
   let b: MachineState;
@@ -161,8 +161,8 @@ export async function diffFiles(first: string, second: string, options: { gap: n
     const base = options.at ?? 0;
     const read = (path: string) => readProjectFile(path).bytes;
     const [left, right] = [read(first), read(second)];
-    if (left.length !== right.length) throw new UsageError(`the memory files have ${left.length} and ${right.length} bytes; give two of one size`);
-    if (base + left.length > 0x10000) throw new UsageError("the memory file goes past $ffff from --address");
+    if (left.length !== right.length) throw new UsageError(`The memory files have ${left.length} and ${right.length} bytes. Give two files of one size.`);
+    if (base + left.length > 0x10000) throw new UsageError("The memory file goes past $ffff from --address. Give a lower --address.");
     a = { memory: { base, bytes: left } };
     b = { memory: { base, bytes: right } };
   } else {

@@ -16,6 +16,7 @@ import { after, test } from "node:test";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { CATALOGUE } from "../../skills/c64-static-analysis/scripts/lib/macros.ts";
+import { readEnvelope } from "../kit.ts";
 
 let skip: string | false = false;
 try {
@@ -32,7 +33,7 @@ after(() => rmSync(project, { recursive: true, force: true }));
 function script(skill: string, file: string, args: readonly string[]): { status: number | null; json: Record<string, any> } {
   const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", file), ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   assert.equal(run.stderr, "", run.stderr);
-  return { status: run.status, json: JSON.parse(run.stdout) as Record<string, any> };
+  return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, any> };
 }
 
 function ok(skill: string, file: string, args: readonly string[]): Record<string, any> {
@@ -108,7 +109,8 @@ test("switches and macros: the original stays identical, each switch fits, and t
 
   // The agent builds the default program with c64-assembler: only the bytes of the PROTECTION ranges differ from the original.
   const clean = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/clean.prg", "--compare"]);
-  assert.equal(clean.status, 1, JSON.stringify(clean.json));
+  assert.equal(clean.status, 0, JSON.stringify(clean.json));
+  assert.equal(clean.json.result, "FAIL", JSON.stringify(clean.json));
   const [segment] = clean.json.compare.segments as Array<{ differences: number; firstDifference: { address: string } }>;
   assert.deepEqual([segment!.differences, segment!.firstDifference.address], [8, "$100e"]);
   const built = readFileSync(join(project, "build", "clean.prg"));

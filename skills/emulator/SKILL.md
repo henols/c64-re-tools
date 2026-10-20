@@ -1,6 +1,6 @@
 ---
 name: emulator
-description: Use this skill to operate and debug the live emulator through the MCP tools of the c64-re-tools machine server. For the C64, the tool names start with c64_. It loads programs and disks, controls and steps the CPU, and sets breakpoints and watchpoints. It reads and writes memory and registers, gives keyboard and joystick input, advances frames and captures the screen. Do not use it for static analysis, project knowledge, assembly or disk inspection.
+description: Operates and debugs the live emulator through the MCP tools of the machine server. For the C64, the tool names start with c64_. It loads programs and disks, controls and steps the CPU, and sets breakpoints and watchpoints. It reads and writes memory and registers, gives keyboard and joystick input, advances frames and captures the screen. Use it to get runtime evidence or runtime state from the machine. Use it when the user must play or look at the program in a window. It does not analyze code statically, change the project knowledge, assemble source or list the files on a disk image.
 ---
 
 # emulator
@@ -19,7 +19,7 @@ The MCP server knows the machine and the emulator. Its instructions, its tool de
 - The target address, state or condition, when the question needs one.
 - The project path of the program or disk to load, when the question needs one.
 
-A tool takes addresses, not names. The server instructions give the address format. Get the address of a name with `knowledge.ts at <name>` of the c64-knowledge skill.
+A tool takes addresses, not names. The server instructions give the address format. Get the address of a name from the project knowledge.
 
 ## Tools
 
@@ -59,11 +59,11 @@ To keep a coverage run:
 1. Clear the memory map with `c64_memmap` action `clear`.
 2. Run the part of the program that you want to keep.
 3. Read the map with `c64_memmap` action `read` and `out`, for example to `.c64-re-tools/local/attract.bin`.
-4. Add the file to the knowledge with `coverage` of the c64-knowledge skill.
+4. Add the file to the coverage of the project knowledge.
 
 ## Workflow
 
-1. Read the project knowledge for the addresses in the question. Use the c64-knowledge skill.
+1. Read the project knowledge for the addresses in the question.
 2. Get the machine state with `c64_status`.
 3. Load the subject if it is not loaded. Use `c64_autostart` to start it as a user does. Use `c64_program_load` to put a program in memory with no start.
 4. Set the stop condition. Use a breakpoint, a watchpoint or a `c64_run_until` target. Add a condition when the stop must occur only in one state.
@@ -78,7 +78,7 @@ Before a risky experiment, save the state with `c64_snapshot`. Restore it to try
 Some programs read input in a way that the input tools cannot give. The tool description tells when. Then use one of these ways:
 
 - Open the window and ask the user to give the input.
-- Record a session with a `press` step. Use `testing.ts record` of the c64-testing skill.
+- Record a test session with a `press` step.
 
 Do not change the program to make it accept the input.
 
@@ -102,7 +102,7 @@ Automatic write:
 - none.
 
 Write after interpretation:
-- a symbol, a region or a comment that the runtime evidence justifies. Record it with the c64-knowledge skill.
+- a symbol, a region or a comment that the runtime evidence justifies. Record it in the project knowledge.
 
 Do not store:
 - breakpoints or watchpoints
@@ -128,11 +128,11 @@ An error is `{"error": {"code": "...", "message": "..."}}`. The message tells wh
 - `stopReason` `timeout` or `jam`: this is evidence too. Report it. For `jam`, report the address.
 - A different code: the message names the cause. Change the call, or report the cause.
 
-If the runtime evidence does not agree with the current knowledge, do not change the knowledge. Report the conflict and hand it to c64-knowledge.
+If the runtime evidence does not agree with the current knowledge, do not change the knowledge. Report the conflict with the runtime evidence. Then resolve the conflict in the project knowledge.
 
-## Handoffs
+## Other tasks
 
-- Static explanation of code → c64-static-analysis
-- Durable conclusion or a knowledge conflict → c64-knowledge
-- Comparison or assertion between runs → c64-testing
-- Meaning of a C64 address or register → c64-memory-map
+- To explain code without a run, analyze the program statically.
+- Record a durable conclusion in the project knowledge.
+- To compare runs or to assert values in a run, write a test run file.
+- To find the meaning of a C64 address or register, read the memory map of the C64.

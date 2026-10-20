@@ -55,3 +55,29 @@ export function seededBytes(seed: number, length: number): Buffer {
   }
   return bytes;
 }
+
+/** The one JSON envelope that a skill script prints. */
+export interface ScriptEnvelope {
+  ok: boolean;
+  command?: string;
+  body?: any;
+  code?: string;
+  error?: string;
+  hint?: string;
+  nextAction?: string;
+}
+
+/**
+ * Reads the stdout of a skill script: exactly one envelope line, with ok:true
+ * for exit status 0 and ok:false for exit status 2. Returns the envelope and
+ * `json`: the body for ok:true, or { error: { code, message } } for ok:false,
+ * where message is error and hint, so a test can match the whole text.
+ */
+export function readEnvelope(stdout: string, status: number | null): { envelope: ScriptEnvelope; json: any } {
+  const lines = stdout.split("\n").filter((line) => line !== "");
+  if (lines.length !== 1) throw new Error(`the script printed ${lines.length} lines, not one envelope: ${stdout}`);
+  const envelope = JSON.parse(lines[0]!) as ScriptEnvelope;
+  if (envelope.ok !== (status === 0) || (!envelope.ok && status !== 2)) throw new Error(`ok is ${envelope.ok}, but the exit status is ${status}: ${stdout}`);
+  const json = envelope.ok ? envelope.body : { error: { code: envelope.code, message: [envelope.error, envelope.hint].filter((part) => part !== undefined).join(" ") } };
+  return { envelope, json };
+}

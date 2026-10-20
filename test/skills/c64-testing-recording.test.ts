@@ -13,6 +13,7 @@ import { STOP_AND_ASK } from "../../src/protocol/messages.ts";
 import { firstDifference, joystickMask, keyCodes, mover, parseStateItem, pinLines, readRecordFile, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { Refusal } from "../../src/errors.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
+import { readEnvelope } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-recording-"));
 mkdirSync(join(project, ".c64-re-tools"));
@@ -135,12 +136,15 @@ test("record and replay refuse by name when c64run is missing", () => {
     });
     if (script === "replay") {
       // The program changed since the recording: that is found before the core starts.
-      assert.equal(run.status, 3, run.stderr);
-      assert.match(JSON.parse(run.stdout).reason, /is not the program of the recording/);
+      assert.equal(run.status, 0, run.stderr);
+      const { envelope, json } = readEnvelope(run.stdout, run.status);
+      assert.equal(json.result, "INCONCLUSIVE");
+      assert.match(envelope.hint ?? "", /^reason tells why the script could not compare\./);
+      assert.match(json.reason, /is not the program of the recording/);
       continue;
     }
     assert.equal(run.status, 2, run.stderr);
-    const error = JSON.parse(run.stdout).error;
+    const error = readEnvelope(run.stdout, run.status).json.error;
     assert.equal(error.code, "installation-incomplete");
     assert.match(error.message, /C64RT_C64RUN/);
     assert.ok(error.message.endsWith(STOP_AND_ASK));
@@ -156,7 +160,7 @@ test("a record file names itself and the step of a key that the replay core does
     }
     return assert.fail(`${name} is not refused`);
   };
-  assert.equal(message("umlaut.json", { ...valid, steps: [{ frames: 10 }, { press: "ä" }] }), 'record file umlaut.json: step 2: press cannot press "ä" on the keyboard of the replay core');
+  assert.equal(message("umlaut.json", { ...valid, steps: [{ frames: 10 }, { press: "ä" }] }), 'record file umlaut.json: step 2: press cannot press "ä" on the C64 keyboard');
   assert.equal(message("old-state.json", { ...valid, state: [{ at: "falls_left", size: 3 }] }), "record file old-state.json: state item 1 has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(message("old-pin.json", { ...valid, pin: [{ at: "random_ptr", size: 2 }] }), "record file old-pin.json: pin item 1 has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(message("old-type.json", { ...valid, steps: [{ type: " " }] }), 'record file old-type.json: step 1 has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes');
@@ -173,7 +177,7 @@ test("a recording of 2.0 is refused with the field and the 2.1 form before the r
       env: { ...process.env, C64RT_C64RUN: join(project, "no-c64run") },
     });
     assert.equal(run.status, 2, run.stdout + run.stderr);
-    const { error } = JSON.parse(run.stdout) as { error: { code: string; message: string } };
+    const { error } = readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } };
     assert.equal(error.code, "invalid-input");
     return error.message;
   };

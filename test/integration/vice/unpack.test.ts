@@ -25,6 +25,7 @@ import { selfOverwritingPrg } from "../../fixtures/prg/self-overwriting.ts";
 import { stagedPrg } from "../../fixtures/prg/staged.ts";
 import { xorPackedPrg } from "../../fixtures/prg/xor-packed.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { readEnvelope } from "../../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-unpacker/scripts/unpacker.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpack-"));
@@ -53,7 +54,7 @@ async function unpack(...args: string[]): Promise<{ status: number | null; json:
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
 }
 
 test("a capture at the unpacked entry gives the original program back", { skip: liveSkip, timeout: 180_000 }, async () => {
@@ -68,7 +69,8 @@ test("a capture at the unpacked entry gives the original program back", { skip: 
 
 test("an address that the program never gets to captures nothing", { skip: liveSkip, timeout: 180_000 }, async () => {
   const { status, json } = await unpack("capture", "packed.prg", "--until", "$c0f0", "--out", "unpacked/never", "--timeout-frames", "200");
-  assert.equal(status, 1);
+  assert.equal(status, 0);
+  assert.equal(json.result, "FAIL");
   assert.equal(json.captured, false);
   assert.match(json.reason as string, /did not get to \$c0f0 in 200 frames/);
   assert.equal(existsSync(join(project, "unpacked", "never")), false);
@@ -107,12 +109,13 @@ test("trace and stages give FAIL with the stop reason when the CPU stops before 
   // A JAM at $c000: the CPU stops at the first instruction.
   writeFileSync(join(project, "jam.prg"), Uint8Array.of(0x00, 0xc0, 0x02));
   const traced = await unpack("trace", "jam.prg", "--entry", "$c000", "--frames", "200");
-  assert.equal(traced.status, 1, JSON.stringify(traced.json));
+  assert.equal(traced.status, 0, JSON.stringify(traced.json));
   assert.equal(traced.json.result, "FAIL");
   assert.equal(traced.json.stopReason, "jam");
   assert.match(traced.json.reason as string, /^The CPU stopped at \$c00[01] by a JAM instruction after \d+ of 200 frames\./);
   const staged = await unpack("stages", "jam.prg", "--entry", "$c000", "--frames", "200");
-  assert.equal(staged.status, 1, JSON.stringify(staged.json));
+  assert.equal(staged.status, 0, JSON.stringify(staged.json));
+  assert.equal(staged.json.result, "FAIL");
   assert.equal(staged.json.stopReason, "jam");
   assert.match(staged.json.reason as string, /by a JAM instruction after \d+ of 200 frames/);
 });

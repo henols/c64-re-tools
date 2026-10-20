@@ -6,7 +6,7 @@ import { formatC64Address } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { DISK_IMAGE_TYPES, inspectDisk } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
-import { OPTIONS, runScript, type Call, type SubjectSpec } from "#src/script.ts";
+import { OPTIONS, reply, runScript, type Call, type SubjectSpec } from "#src/script.ts";
 import { parseCrt, parseT64, tapeFile } from "./lib/containers.ts";
 
 const IMAGE: SubjectSpec = { name: "<image>", help: "a .d64, .d71, .d81 or .g64 disk image, relative to the project folder" };
@@ -31,15 +31,17 @@ function kindFor(command: string, image: string, takes: readonly Kind[]): Kind {
   throw new Refusal("invalid-input", `${image} is not a file that ${command} takes. Give ${list}.`);
 }
 
-/** Runs `body` and names the file in a refusal of its content. */
+/** Runs `body` and names the file in a refusal of its content. A CRT of a hardware type that CRT_TYPES does not hold is also a media-error. */
 function about<T>(image: string, body: () => T): T {
   try {
     return body();
   } catch (error) {
-    if (isRefusal(error) && error.code === "media-error") throw new Refusal(error.code, `${image}: ${error.message}`);
+    if (isRefusal(error) && error.code === "media-error") throw new Refusal(error.code, `${image}: ${error.message}.`, { hint: MEDIA_HINT });
     throw error;
   }
 }
+
+const MEDIA_HINT = "The file has a defect, or its content is not of its type. Give this message to the user. Do not change the file.";
 
 /** A file that the image does not hold. */
 const noFile = (image: string, name: string) => new Refusal("not-found", `${image} has no file ${name}. Give the name as directory shows it.`);
@@ -75,7 +77,7 @@ const diskOnly = (call: Call, action: string) => kindFor(action, call.subject(0)
 
 await runScript({
   name: "disk",
-  summary: "Inspects a disk image with c1541 and extracts files into the project. T64 tape files and CRT cartridge files are read here. A CRT can have hardware type 0 (normal 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) or 32 (EasyFlash).",
+  summary: "Inspects a disk image and extracts files into the project. It also reads T64 tape files and CRT cartridge files. A CRT can have hardware type 0 (normal 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) or 32 (EasyFlash).",
   commands: [
     {
       name: "directory",
@@ -89,7 +91,10 @@ await runScript({
           const { header, chips } = cartridge(image);
           return { ...header, chips: chips.map(({ file: _file, ...chip }) => chip) };
         }
-        return inspect(call, "directory");
+        const listing = (await inspect(call, "directory")) as { entries?: Array<{ name: string; closed?: boolean }> };
+        const open = (listing.entries ?? []).filter((entry) => entry.closed === false).map((entry) => entry.name);
+        if (open.length === 0) return listing;
+        return reply(listing, { hint: `The file ${open.join(", ")} is not closed. Its data can be incomplete.` });
       },
     },
     {
@@ -153,7 +158,7 @@ await runScript({
         const { crt, header, chips } = cartridge(image);
         const files = crt.chips.map((chip, index) => writeReported(`${out}/${chips[index]!.file}`, Buffer.concat([Buffer.from([chip.address & 0xff, chip.address >> 8]), chip.data]), { what: "--out" }));
         files.push(writeReported(`${out}/crt.json`, `${JSON.stringify({ ...header, chips }, null, 2)}\n`, { what: "--out" }));
-        return { ...header, chips, files };
+        return reply({ ...header, chips, files }, { hint: "All banks use the same addresses. Analyze each bank PRG in its own knowledge space: the field space of its chip gives the space." });
       },
     },
   ],

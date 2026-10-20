@@ -15,7 +15,6 @@ import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TR
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { checkSnapshotFile } from "#src/media.ts";
-import { UsageError } from "#src/script.ts";
 import { namesOf } from "./scenario.ts";
 
 type RunStep =
@@ -107,10 +106,10 @@ function readRun(path: string): Run {
     value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
   } catch (error) {
     if (error instanceof WireFailure) throw error;
-    throw new UsageError(`the run ${path} is not JSON: ${(error as Error).message}`);
+    throw new Refusal("invalid-input", `the run ${path} is not JSON: ${(error as Error).message}`);
   }
   const fail = (message: string): never => {
-    throw new UsageError(`run ${path}: ${message}`);
+    throw new Refusal("invalid-input", `run ${path}: ${message}`);
   };
   if (!isObject(value)) return fail("is not a JSON object");
   if (typeof value.name !== "string" || value.name === "") fail("needs a name");
@@ -216,7 +215,7 @@ function readRun(path: string): Run {
 }
 
 /** The remedy for a start program that is no PRG. */
-const PROGRAM_REMEDY = "A run starts a PRG. Get the PRG out of the disk, tape or cartridge with disk.ts read (or disk.ts crt) of the c64-disk skill";
+const PROGRAM_REMEDY = "A run starts a PRG. Extract the program file from the disk, tape or cartridge image, and give that PRG";
 
 /** Checks each file that the run reads before the emulator starts: the start program, and the start snapshot and each snapshot step, which must be VICE snapshot files. A refusal names the run file and the step. */
 function checkRunFiles(path: string, run: Run): void {
@@ -286,9 +285,9 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
     const address = symbols.get(location);
     if (address !== undefined) return address;
     if (run.symbols === undefined || run.symbols === "none") {
-      throw new UsageError(`${location} is a name, and the run file has no symbols. A run file has no symbols unless it gives "symbols": "knowledge" for the names of the knowledge, or "symbols": "<file>" for a JSON file of names. Give one of them, or a $ address`);
+      throw new Refusal("invalid-input", `${location} is a name, and the run file has no symbols. A run file has no symbols unless it gives "symbols": "knowledge" for the names of the knowledge, or "symbols": "<file>" for a JSON file of names. Give one of them, or a $ address`);
     }
-    throw new UsageError(`the symbols ${run.symbols} have no ${location}`);
+    throw new Refusal("not-found", `the symbols ${run.symbols} have no ${location}`);
   };
   // Every name of the steps resolves before the emulator starts. A refusal names the step.
   run.steps.forEach((step, index) => {
@@ -352,7 +351,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
       } else if ("trace" in step) {
         // A trace: every hit of the points while the program runs on, to <name>.json.
         const points = step.points.map((point) => ({ kind: point.kind, start: at(point.start), end: at(point.end ?? point.start) }));
-        if (points.some((point) => point.end < point.start)) throw new UsageError(`the trace ${step.trace} has a point whose end is before its start`);
+        if (points.some((point) => point.end < point.start)) throw new Refusal("invalid-input", `the trace ${step.trace} has a point whose end is before its start`);
         const traced = await client.trace({ points, frames: step.frames, maxHits: step.maxHits ?? MAX_TRACE_HITS });
         write(`${step.trace}.json`, Buffer.from(`${JSON.stringify({ points: step.points, frames: traced.frames, end: traced.end, hits: traced.hits.map(showHit) }, null, 1)}\n`));
         traces[step.trace] = { file: `${step.trace}.json`, hits: traced.hits.length, frames: traced.frames, end: traced.end };

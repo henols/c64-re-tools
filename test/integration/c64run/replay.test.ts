@@ -13,6 +13,7 @@ import { after, test } from "node:test";
 
 import { C64RUN, findTool } from "../../../src/native/discover.ts";
 import { joystickCounterPrg } from "../../fixtures/prg/joystick-counter.ts";
+import { readEnvelope } from "../../kit.ts";
 
 let skip: string | false = false;
 try {
@@ -49,7 +50,7 @@ function symbols(base: number) {
 function script(name: string, args: string[]): { status: number | null; result: Record<string, unknown> } {
   const run = spawnSync(process.execPath, [...process.execArgv, join(root, "skills/c64-testing/scripts/testing.ts"), name, ...args], { cwd: project, encoding: "utf8", timeout: 120_000 });
   assert.ok(run.stdout !== "", run.stderr);
-  return { status: run.status, result: JSON.parse(run.stdout) as Record<string, unknown> };
+  return { status: run.status, result: readEnvelope(run.stdout, run.status).json as Record<string, unknown> };
 }
 
 writeFileSync(join(project, "counter.prg"), counterAt(0xc000));
@@ -107,7 +108,7 @@ test("a relocated rebuild replays the same, and a changed one fails at the first
   const moved = script("replay", ["tests/recordings/walk", ...compare, "--rebuild", "moved.prg", "--symbols", "moved.json"]);
   assert.deepEqual([moved.status, moved.result.result, moved.result.movedSites, moved.result.idleReads], [0, "PASS", 1, undefined]);
   const right = script("replay", ["tests/recordings/walk", ...compare, "--rebuild", "right.prg", "--out", "out"]);
-  assert.equal(right.status, 1, JSON.stringify(right.result));
+  assert.deepEqual([right.status, right.result.result], [0, "FAIL"], JSON.stringify(right.result));
   const difference = right.result.firstDifference as { checkpoint: number; items: Array<{ address: string; original: string; rebuild: string }> };
   // Left is pressed after 20 frames: the frame that sees it first differs, in the left count.
   assert.ok(difference.checkpoint >= 20 && difference.checkpoint <= 23, `checkpoint ${difference.checkpoint}`);

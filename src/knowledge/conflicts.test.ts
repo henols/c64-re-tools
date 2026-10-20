@@ -160,7 +160,7 @@ test("while the knowledge has conflicts, writes and imports are refused, and mer
     (a) => withWrite((db) => renameSymbol(db, llm, { address: 0x2100, name: "a" }), a),
     (b) => withWrite((db) => renameSymbol(db, llm, { address: 0x2100, name: "b" }), b),
   );
-  assert.throws(() => withWrite((db) => renameSymbol(db, llm, { address: 0x3000, name: "other" }), root), (error: unknown) => isConflict(error) && /two symbols at one address in c64 \(\$2100\).*knowledge\.ts merge/.test((error as Error).message));
+  assert.throws(() => withWrite((db) => renameSymbol(db, llm, { address: 0x3000, name: "other" }), root), (error: unknown) => isConflict(error) && /two symbols at one address in c64 \(\$2100\).*Decide the conflicts of the git merge in the project knowledge/.test((error as Error).message));
   const findings = { analyzer: "dxa" as const, coverage: [{ start: 0x3000, end: 0x30ff }], authoritative: { symbols: true, regions: true, references: true }, symbols: [], regions: [], references: [] };
   assert.throws(() => withWrite((db) => importFindings(db, findings), root), isConflict);
   const merged = withWrite((db) => mergeConflicts(db, llm, platform), root);

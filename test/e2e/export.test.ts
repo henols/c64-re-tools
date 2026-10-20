@@ -17,6 +17,7 @@ import { after, test } from "node:test";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { readZip } from "../../src/zip.testkit.ts";
+import { readEnvelope } from "../kit.ts";
 
 let skip: string | false = false;
 try {
@@ -35,7 +36,7 @@ after(() => rmSync(sandbox, { recursive: true, force: true }));
 function script(skill: string, file: string, args: readonly string[], cwd = project): { status: number | null; json: Record<string, any> } {
   const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", file), ...args], { cwd, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   assert.equal(run.stderr, "", run.stderr);
-  return { status: run.status, json: JSON.parse(run.stdout) as Record<string, any> };
+  return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, any> };
 }
 
 function ok(skill: string, file: string, args: readonly string[], cwd = project): Record<string, any> {

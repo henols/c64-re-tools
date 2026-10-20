@@ -15,7 +15,7 @@ import { readPrg } from "#src/host-client/image.ts";
 import { writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
-import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
+import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges } from "./lib/stages.ts";
@@ -39,7 +39,7 @@ async function runSteps(client: ViceSessionClient, steps: ActionStep[]): Promise
 }
 
 /** inspect, trace, stages and capture take a PRG: a disk, tape or cartridge file goes to loads. */
-const NOT_PRG_REMEDY = "Use loads, which runs a disk, tape or cartridge image, or get the PRG out of it with disk.ts read of the c64-disk skill";
+const NOT_PRG_REMEDY = "Use loads, which runs a disk, tape or cartridge image, or extract the PRG from the image and give the path of that PRG";
 const readProgram = (path: string) => readPrg(path, NOT_PRG_REMEDY).bytes;
 
 async function trace(program: string, options: { frames: number; entry?: number; steps: ActionStep[]; max: number }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
@@ -112,7 +112,7 @@ async function trace(program: string, options: { frames: number; entry?: number;
   }
 }
 
-const NO_BASIC = "the program is no BASIC program at $0801, so RUN cannot start it. Give --entry <address>.";
+const NO_BASIC = "The program is not a BASIC program at $0801, so RUN cannot start it. Give --entry <address>.";
 
 /** Why a run stopped before its frames: what stopped the CPU, where, and after how many frames. */
 function stoppedEarly(stopReason: string, pc: number, ran: number, frames: number): string {
@@ -585,20 +585,79 @@ const stepsOf = (call: Call) => {
   const path = call.string("steps");
   return path === undefined ? [] : readActionSteps(path, "--steps", knowledgeAt());
 };
+/** The --entry and --steps of the call, so that the next command starts the program in the same way. */
+const sameStart = (call: Call): string[] => {
+  const entry = call.address("entry");
+  const steps = call.string("steps");
+  return [...(entry === undefined ? [] : ["--entry", formatC64Address(entry)]), ...(steps === undefined ? [] : ["--steps", steps])];
+};
+/** The hints of a result, as one text, or undefined when there is none. */
+const joined = (hints: Array<string | undefined>) => {
+  const given = hints.filter((hint): hint is string => hint !== undefined);
+  return given.length === 0 ? undefined : given.join(" ");
+};
+/** The folder that a capture writes when the agent follows the nextAction of stages. */
+const CAPTURE_OUT = ".c64-re-tools/local/capture";
+
+/** inspect: the next step is a run of the program with trace. A program without a BASIC start needs --entry for it. */
+function inspected(call: Call) {
+  const program = call.subject(0);
+  const bytes = readProgram(program);
+  const evidence = inspect(bytes);
+  if (basicStart(bytes) === undefined) return reply(evidence, { hint: "The program is not a BASIC program at $0801, so RUN cannot start it. Find the start address of the code, and give it as --entry to trace, stages and capture." });
+  return reply(evidence, { hint: "Run trace to get the evidence of a run.", nextAction: call.next("trace", program) });
+}
+
+/** trace: after code that the program wrote and executed, the next step is stages. */
+function traced(call: Call, { output, failed }: { output: Record<string, unknown>; failed: boolean }) {
+  const result = outcome({ output, failed });
+  if (failed) return result;
+  const more = (output.writtenThenExecuted as { rest?: string }).rest === undefined ? undefined : "The list writtenThenExecuted is cut. Give a larger --max-listed to see all of it.";
+  if (output.packing === "unlikely") return reply(result, { hint: joined(["The program executed no code that it wrote. If the program waits for a key or a joystick, give the input in --steps and run trace again.", more]) });
+  return reply(result, { hint: joined(["Run stages to find the entry of each stage.", more]), nextAction: call.next("stages", call.subject(0), ...sameStart(call)) });
+}
+
+/** stages: the entry of the last stage is usually the start of the program; the next step is a capture there. */
+function staged(call: Call, { output, failed }: { output: Record<string, unknown>; failed: boolean }) {
+  const result = outcome({ output, failed });
+  if (failed) return result;
+  const last = (output.stages as Array<{ entry: string }>).at(-1)!.entry;
+  const more = output.moreStages === true ? `The script followed only the first ${MAX_STAGES} stages. Give a larger --min-stage, so that small stages join.` : undefined;
+  return reply(result, {
+    hint: joined([more, `Disassemble the code at ${last}, the entry of the last stage. Make sure that it is the start of the program and not a second unpacker. Then capture at that address.`]),
+    nextAction: call.next("capture", call.subject(0), "--until", last, "--out", CAPTURE_OUT, ...sameStart(call)),
+  });
+}
+
+/** capture: the next step is a check of the entry, then the capture goes into the project knowledge. */
+function captured(call: Call, { output, failed }: { output: Record<string, unknown>; failed: boolean }) {
+  const result = outcome({ output, failed });
+  if (failed) return result;
+  return reply(result, { hint: `Disassemble the code at ${output.pc as string}. Make sure that it is the program and not the unpacker again. Then put the capture ${call.string("out")!}/image.json into the project knowledge.` });
+}
+
+/** loads: each capture goes into the project knowledge when the agent works on that part. */
+function loaded(call: Call, { output, failed }: { output: Record<string, unknown>; failed: boolean }) {
+  const result = outcome({ output, failed });
+  if (failed) return result;
+  const out = call.string("out")!;
+  const drive = call.flag("drive") ? ` Put the drive RAM ${out}/<name>/drive8.prg into the project knowledge in the space drive8.` : "";
+  return reply(result, { hint: `Put the capture ${out}/<name>/image.json of the part that you work on into the project knowledge.${drive}` });
+}
 
 const COMMANDS: CommandSpec[] = [
   {
     name: "inspect",
     summary: "Packing evidence: the BASIC start and the entropy of the bytes.",
     subjects: [PROGRAM],
-    run: (call) => inspect(readProgram(call.subject(0))),
+    run: inspected,
   },
   {
     name: "trace",
     summary: "Runs the program and reports the memory that it wrote and then executed.",
     subjects: [PROGRAM],
     options: { frames: FRAMES, entry: ENTRY, steps: STEPS, "max-listed": OPTIONS["max-listed"] },
-    run: async (call) => outcome(await trace(call.subject(0), { frames: call.count("frames")!, steps: stepsOf(call), max: call.count("max-listed")!, ...entryOf(call) })),
+    run: async (call) => traced(call, await trace(call.subject(0), { frames: call.count("frames")!, steps: stepsOf(call), max: call.count("max-listed")!, ...entryOf(call) })),
   },
   {
     name: "stages",
@@ -610,8 +669,8 @@ const COMMANDS: CommandSpec[] = [
       const steps = stepsOf(call);
       // A runUntil step to a raster line or a memory value cannot be tracked in chunks of frames; capture takes it.
       const untracked = steps.findIndex((step) => "runUntil" in step && !trackedRunUntil(step));
-      if (untracked >= 0) throw new UsageError(`--steps ${call.string("steps")!}: step ${untracked + 1}: stages takes a runUntil step only with an address target without a condition. Use frames steps, or capture`);
-      return outcome(await stages(call.subject(0), { frames: call.count("frames")!, steps, minStage: call.count("min-stage")!, ...entryOf(call) }));
+      if (untracked >= 0) throw new UsageError(`--steps ${call.string("steps")!}: step ${untracked + 1}: stages takes a runUntil step only with an address target without a condition. Use frames steps, or use capture.`);
+      return staged(call, await stages(call.subject(0), { frames: call.count("frames")!, steps, minStage: call.count("min-stage")!, ...entryOf(call) }));
     },
   },
   {
@@ -636,9 +695,9 @@ const COMMANDS: CommandSpec[] = [
       const show = (item: AddressRange) => `${formatC64Address(item.start)}-${formatC64Address(item.end)}`;
       const holds = (item: AddressRange) => until >= item.start && until <= item.end;
       const excluded = call.ranges("exclude").find(holds);
-      if (excluded !== undefined) throw new UsageError(`--exclude ${show(excluded)} holds the entry --until ${formatC64Address(until)}. A segment must hold the entry: give an --exclude range without it`);
-      if (range !== undefined && !holds(range)) throw new UsageError(`--range ${show(range)} does not hold the entry --until ${formatC64Address(until)}. Give a --range that holds the entry`);
-      return outcome(await capture(call.subject(0), { until, out: call.string("out")!, ...(range === undefined ? {} : { range }), exclude: call.ranges("exclude"), timeoutFrames: call.count("timeout-frames")!, steps: stepsOf(call), minStage: call.count("min-stage")!, ...entryOf(call) }));
+      if (excluded !== undefined) throw new UsageError(`--exclude ${show(excluded)} holds the entry --until ${formatC64Address(until)}. A segment must hold the entry: give an --exclude range without it.`);
+      if (range !== undefined && !holds(range)) throw new UsageError(`--range ${show(range)} does not hold the entry --until ${formatC64Address(until)}. Give a --range that holds the entry.`);
+      return captured(call, await capture(call.subject(0), { until, out: call.string("out")!, ...(range === undefined ? {} : { range }), exclude: call.ranges("exclude"), timeoutFrames: call.count("timeout-frames")!, steps: stepsOf(call), minStage: call.count("min-stage")!, ...entryOf(call) }));
     },
   },
   {
@@ -652,7 +711,7 @@ const COMMANDS: CommandSpec[] = [
       "min-block": { kind: "count", value: "<bytes>", min: 1, max: 0x10000, default: 64, help: "write a changed block of at least this many bytes (default 64)" },
       exclude: EXCLUDE,
     },
-    run: async (call) => outcome(await loads(call.subject(0), { out: call.string("out")!, steps: readLoadSteps(call.string("steps")!), drive: call.flag("drive"), minBlock: call.count("min-block")!, exclude: call.ranges("exclude") })),
+    run: async (call) => loaded(call, await loads(call.subject(0), { out: call.string("out")!, steps: readLoadSteps(call.string("steps")!), drive: call.flag("drive"), minBlock: call.count("min-block")!, exclude: call.ranges("exclude") })),
   },
 ];
 

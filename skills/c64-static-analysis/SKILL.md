@@ -1,150 +1,226 @@
 ---
 name: c64-static-analysis
-description: Use this skill to find the structure of a C64 program without running it. DXA gives a fast first pass of code and data regions and a disassembly listing. Ghidra gives a deeper pass with routines, regions, references and decompiled code. The skill records the structure in the project knowledge and reports conflicts with the current knowledge. Do not use it for runtime questions or to name routines.
+description: Finds the structure of a C64 program with DXA or Ghidra, without running it. It records the code and data regions, the analyzer names and the references in the project knowledge. Use it to get a fast first pass of code and data, and a disassembly listing. Use it to get the routines, the references, an instruction list and decompiled code. Use it when the project knowledge has coverage, to find code that only a vector, a table or an interrupt reaches. Use it to find 6502 idioms, pointer candidates, raster pitfalls and macro candidates. It does not run the program. It does not give names to routines.
 ---
 
-# c64-static-analysis
+# Static analysis
 
-## Purpose
+Use this script to find the code, the data, the routines and the references of a C64 program without running it.
+Use only the commands of the script. Do not disassemble or decompile the program in another way.
 
-Find the static structure of a C64 program. Record the structure in the project knowledge. Report conflicts with current knowledge.
-
-## Inputs
-
-- The program in the knowledge. Put it in with `image` of the c64-knowledge skill: a PRG, or a capture of the c64-unpacker skill.
-- Optional: the coverage in the knowledge. Add it with `coverage` of the c64-knowledge skill.
-- Entry points: addresses where code starts, for example the SYS address from the c64-basic skill. Routine symbols in the knowledge are entry points too. Ghidra needs at least one. DXA finds the SYS of a BASIC start by itself.
-- Optional: routines to decompile (Ghidra), or a file for the listing (DXA).
-
-## Tools
-
-The script reads the program, the coverage and the current knowledge. It records the result in the project knowledge, `.c64-re-tools/knowledge/`.
-
-```
-node <skill>/scripts/static-analysis.ts analyze --analyzer dxa --out-listing .c64-re-tools/local/game.lst
-node <skill>/scripts/static-analysis.ts analyze --entry '$080d' --decompile '$080d'
+```bash
+node <skill>/scripts/static-analysis.ts <command>
 ```
 
-| Option | Meaning |
+`<skill>` is the base directory of this skill. Run the script with `node`. You can run it from any directory.
+Each command in this skill, for example `analyze --analyzer dxa`, goes in the place of `<command>`.
+Each command prints one JSON envelope on stdout. See the section "JSON output".
+To get the command list, run the script with no arguments.
+
+---
+
+## Select the command
+
+| Goal | Command |
 |---|---|
-| `--analyzer dxa` | Use DXA: a fast first pass. Without this option, the script uses Ghidra. |
-| `--entry '$080d'` | An address where code starts. Use it again for more addresses. |
-| `--out-listing .c64-re-tools/local/game.lst` | DXA only: write the disassembly listing to this project file. |
-| `--decompile '$0818'` | Ghidra only: decompile the routine at this address. Use it again for more routines, at most 32. |
-| `--max-listed 20` | List at most this number of labels, functions or candidates. The default is 50. Use 0 to list none. |
-| `--out-instructions .c64-re-tools/local/instructions.json` | Ghidra only: write every instruction to this project file as JSON. Each has `address`, `bytes`, `mnemonic`, `mode` and `operand` in 6502 syntax. A branch, jump or call also has its `target`. When the knowledge has coverage, `executed` tells if it ran. |
-| `--space drive8` | The knowledge space of the program: `drive8` for code from the 1541 drive, or `bank0` to `bank255` for a cartridge bank. The default is `c64`. The seeds come from that space, and the findings go into it. |
-| `--out-macro-batch .c64-re-tools/local/macros.json` | Write the macro candidates to this project file as a batch for `apply` of the c64-knowledge skill. |
+| Get a fast first pass of the code and data regions | `analyze --analyzer dxa` |
+| Get a disassembly listing | `analyze --analyzer dxa --out-listing .c64-re-tools/local/game.lst` |
+| Find the routines and the references | `analyze --entry '$080d'` |
+| Get C-like code of a routine | `analyze --entry '$080d' --decompile '$0818'` |
+| Get each instruction as JSON | `analyze --entry '$080d' --out-instructions .c64-re-tools/local/instructions.json` |
+| Analyze drive code or a cartridge bank | `analyze --space drive8` |
+| Get the macro candidates as a batch of changes | `analyze --out-macro-batch .c64-re-tools/local/macros.json` |
+| Get more items in each list | `analyze --max-listed 500` |
 
-Both analyzers use the knowledge from the user and the LLM as seeds:
+---
 
-- Each routine is an entry point.
-- Each region that is not code stays data.
-- Each symbol of the kind `data` or `variable` stays data. The region that is not code and that holds the symbol stays data, also a region of an analyzer. Without such a region, the byte of the symbol stays data. A symbol in a code region or at an executed address is not data. When the region holds an entry point or an executed address, only the byte of the symbol stays data.
-- Each name is a label. The listing, Ghidra and the decompiler show that name.
+## The program and the entry points
 
-Facts that an analyzer found are not seeds alone. A new analysis can then correct or remove them.
+- The program comes from the project knowledge. Put the program into the project knowledge before you analyze it.
+- Put each coverage map of the program into the project knowledge before you analyze it. With coverage, the analysis finds code that only a vector, an RTS table or an interrupt reaches. It also finds the code after a JSR to a routine that an analyzer thinks does not return.
+- The analysis uses coverage only in the space `c64`.
+- An entry point is an address where code starts. Give it with `--entry`. Get it from these sources:
+  - The SYS address of a BASIC start. Get it from a listing of the BASIC program.
+  - A vector or an interrupt target that you found in the emulator.
+  - An address in `functions` of an earlier Ghidra result.
+- Ghidra needs at least one entry point. DXA finds the SYS address of a BASIC start without help.
+- Each routine, each `code` region and each entry of a `jumps` table in the project knowledge is also an entry point. Each name in the project knowledge is a label in the listing and in the decompiled code.
+- The two start vectors of a `CBM80` header at `$8000` are entry points without help.
+- Each region that is not code in the project knowledge stays data. Each `data` or `variable` symbol also keeps its region as data. If the region holds an entry point or executed code, only the byte of the symbol stays data.
+- If an analyzer decodes data as code, classify the region as data in the project knowledge. Then run `analyze` again.
+- The facts of an analyzer are not entry points or data for the next analysis. Thus a new analysis can correct them.
+- With coverage, the analysis keeps as data the RAM under ROM that the runs did not read or execute. A call into the KERNAL thus does not decode the RAM under it. If the program has code there, give its address with `--entry`.
+- Ghidra does not follow BRK. If the program removes the KERNAL and uses the BRK vector, give the target of the vector with `--entry`.
+- `--decompile` takes the address of a routine. Get it from `functions` of an earlier Ghidra result, or from the routines in the project knowledge.
 
-More seeds come from evidence:
+### Paths and the project folder
 
-- The start of each `code` region and each entry of a `jumps` table from the user or the LLM is an entry point.
-- When the knowledge has coverage, each executed instruction of the program that starts a flow is an entry point. A flow starts after a gap, or after RTS, RTI, JMP, BRK or JSR. Then the analyzers find code that only a vector, an RTS table or an interrupt reaches. They also find the code after a JSR to a routine that an analyzer thinks does not return.
-- For Ghidra, a flow start is a routine only when no executed branch or JMP from another flow gets to it. Also, no JSR can be immediately before it. Another flow start is code in a routine, and Ghidra does not make a function of it.
-- When the knowledge has coverage, Ghidra gives `coverageGaps`: the executed instruction starts in the program that are not in its instructions. Normally the count is 0. Each start in the list is missing from `--out-instructions` and from the source of c64-source. Examine the code at the start. Overlapped instructions and self-modified code can cause a gap. A start in a `dual-use` region is a known overlap, for example a BIT skip, and is not in the list.
-- When the knowledge has coverage, some RAM under a ROM is data for the analysis. At these addresses, the runs used the ROM and did not read or execute the RAM. Then a call into the KERNAL does not decode the RAM bytes under it as code. A knowledge routine or an `--entry` in such a range keeps its code. Ghidra does not follow BRK, because the vector at `$fffe` is in ROM unless the program removes the KERNAL.
-
-The analyzers take at most 1024 entry points. Knowledge routines and `--entry` come first, then code regions and tables, then coverage. Ghidra also takes at most 8192 flow starts that are code in a routine. `coverageSeeds` gives how many entry points the coverage gave and how many the analysis used. `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
-
-### Calling the script
-
-- Call a script as `node <skill>/scripts/<script>.ts <command> [subjects] [options]`. The command comes first.
-- `<script>.ts --help` lists the commands. `<script>.ts <command> --help` gives the subjects and the options of one command. The help is JSON: `{"text": "..."}`.
-- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Quote an address in a shell.
+- Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
+- An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
-- The script examines each `--out` path before it starts work. It refuses a path in `.c64-re-tools/knowledge/` and the index of the knowledge, because only c64-knowledge writes them. It refuses a folder where the command writes a file, and a file where the command writes a folder.
-- The result is one JSON object on one line. A file that the script writes shows as `{"out", "bytes", "sha256"}`. A list shows as `{"count", "listed"}`, and `rest` tells where to get the rest of a long list.
-- An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do.
-- The exit status is 0 for done or PASS, 1 for FAIL, 2 for an error and 3 for INCONCLUSIVE.
-
-### Project folder
-
-- Paths are relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
-- If the working directory is not in a project and has projects below it, the script refuses and lists them. Then give `--project <folder>` to each script.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- Move a file out of `.c64-re-tools/local/` only when it is the evidence for a finding. Move it before you give it to `--evidence test:<file>` or `--evidence file:<file>` of c64-knowledge. These two refuse a file in `.c64-re-tools/local/`.
-- Do not move a coverage map after `coverage` of c64-knowledge imported it. `--evidence coverage:<map>` names the map by its path at the import. The knowledge keeps the coverage and the SHA-256 of the map, so the evidence stays valid.
-- Put a run that is evidence in `runs/<name>/`, with its run file, its results and the snapshot files that it uses. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
+- The script refuses an `--out` path in `.c64-re-tools/knowledge/` and the index of the knowledge. Change the project knowledge only with the commands that change it.
+- The script refuses a folder where the command writes a file. It refuses a file where the command writes a folder.
+- When a file is the evidence for a finding in the project knowledge, move it out of `.c64-re-tools/local/` first. The project knowledge refuses evidence in that folder.
+- Do not move a coverage map after you put it into the project knowledge. The knowledge refers to the map by its path at that time.
+- Put a run that is evidence in `runs/<name>/`, with its run file, its results and its snapshot files. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
+
+---
+
+## Flags
+
+Each flag applies only to the commands in the table. On another command, the script refuses the flag.
+
+| Flag | Command | Effect |
+|---|---|---|
+| `--analyzer <dxa\|ghidra>` | `analyze` | The analyzer. `dxa` gives a fast first pass. `ghidra` gives a deeper pass. The default is `ghidra`. |
+| `--entry <address>` | `analyze` | An entry point of the program. Give it again for more entry points. There is no default. |
+| `--decompile <address>` | `analyze` | Ghidra only. Decompile the routine at this address. Give it again for more routines, at most 32. There is no default. |
+| `--space <space>` | `analyze` | The knowledge space of the program: `drive8` for 1541 drive code, or `bank0` to `bank255` for a cartridge bank. The analysis reads the entry points from that space and writes the findings into it. The default is `c64`. |
+| `--max-listed <n>` | `analyze` | List at most `n` items in each list. `0` lists no items. The counts stay complete. The default is 50. |
+| `--out-listing <file>` | `analyze` | DXA only. Write the disassembly listing to this project file. There is no default. |
+| `--out-instructions <file>` | `analyze` | Ghidra only. Write each instruction to this project file as JSON. There is no default. |
+| `--out-macro-batch <file>` | `analyze` | Write the macro candidates to this project file as a batch of changes to the project knowledge. There is no default. |
+
+---
+
+## Analyze the program
+
+### `analyze`
+
+Runs DXA or Ghidra over the program in the project knowledge. The script records the findings in the project knowledge as one revision. Then it records the 6502 idioms as a second revision.
+
+The script records only structure: code and data regions, analyzer names, and the references from Ghidra. It does not record the listing or the decompiled code. Do not record the listing, the decompiled code or the function list as comments in the project knowledge.
+
+`body` holds these fields for both analyzers:
+
+- `analyzer`: `dxa` or `ghidra`. `space` is in `body` only for a space that is not `c64`.
+- `revision`: the revision of the findings, or `null` when the knowledge did not change.
+- `coverage`: the ranges that the analyzer examined.
+- `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `symbols.retired` counts the old symbols of the analyzer that became analyzer names.
+- `conflicts`: each place where the analyzer and the project knowledge disagree. `problem` tells the disagreement.
+- `coverageSeeds`: only with coverage. `entryPoints` and `used` give how many entry points the coverage gave, and how many the analysis used. `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
+- `coverageConflicts`: only with coverage. Each analyzer data region where the coverage shows executed code.
+- `idioms`: the 6502 idioms that the script found by pattern. The counts are `rtsTables`, `jumpTables`, `bitSkips` and `cartridgeHeaders`. `revision`, `changes` and `conflicts` are for the idioms, as above. `candidates` holds what the script did not record.
+
+DXA also gives:
+
+- `regions`: the code and data regions, each with `start`, `end` and `classification`.
+- `labels`: the names that DXA found, as a list.
+- `listing`: the listing file, with `--out-listing`.
+
+Ghidra also gives:
+
+- `functions`: the routines that Ghidra found, as a list, each with `entry` and `name`.
+- `decompilations`: the C-like code of each `--decompile` routine, with `entry` and `text`. `truncated` tells that the text is cut.
+- `notDecompiled`: the routines that Ghidra did not decompile, each with a `reason`.
+- `instructions`: the file and the `count`, with `--out-instructions`. Each instruction has `address`, `bytes`, `mnemonic`, `mode` and `operand` in 6502 syntax. A branch, a jump or a call also has `target`. With coverage, `executed` tells if the instruction ran.
+- `coverageGaps`: only with coverage. The executed instruction starts that are not in the instructions of Ghidra.
+
+The `hint` gives each of these cases:
+
+- `conflicts` is not empty. Find the correct answer in the emulator. Then correct the project knowledge.
+- `coverageConflicts` is not empty. Classify each range as code in the project knowledge, or as `dual-use` when its bytes are also data. For many ranges, write all classifications in one batch of changes.
+- The batch of `--out-macro-batch` has changes. Apply the changes in the batch file to the project knowledge. Then generate the source again.
+- A list is cut. Give a larger `--max-listed`. The project knowledge has all `labels` and `functions` as analyzer names.
+
+There is no `nextAction`.
+
+#### The candidates
+
+The script does not record the candidates. Examine each candidate and decide.
+
+- `dop`: DOP padding.
+- `selfModified`: opcodes that the program wrote and then executed. The write and the execution must be in one coverage file. A coverage file does not record the order. Thus a candidate can also be code that ran first, and that the program then wrote over. To prevent this, save one coverage file for each part of the program, for example the intro, the game, or a loader that copies code. Clear the memory map between the parts.
+- `pointers`: code that makes an address from immediates. A `vector` or a `zero-page pointer` candidate stores a low byte (`low`) and a high byte (`high`) to a vector or to a zero-page pair. A `sprite pointer` candidate stores an immediate (`at`) to a sprite pointer of the screen at `$0400` in VIC bank 0. For each correct candidate, record a low and a high operand expression to its `target` in the project knowledge. Then a rebuild can move the target.
+- `pitfalls`: code that a C64 runs in a different way than it reads. For `raster-bit-8`, the instruction at `at` reads `$D011`, and the instruction at `store` writes the value back. The write can move the raster interrupt to line 256 or later. On PAL, past line 311, the interrupt never comes. Where the code must not keep bit 7, add a comment and test the program.
+- `macros`: runs of instructions that one macro line can replace, for example `+inc16 ptr`. Each candidate has `macro`, `start`, `end`, `args` and `text`. The macros are `inc16`, `dec16`, `add16_8`, `add16`, `sub16`, `set16`, `mov16` and `wait_line`. An arg is a name of the user or the LLM, or a platform name of a ROM that the program uses. `known` counts the uses that the project knowledge has. `leftOut` counts the candidates with a label inside, or with a patch or a use over them. With `--out-macro-batch`, `batch` gives the file and the count of changes (`writes`). The batch holds the macros that the project knowledge does not have, and the uses. `otherMacros` names each macro that the project knowledge has with another body. The batch does not have the uses of that macro.
+
+#### Which facts the analysis replaces
+
+- The analysis never replaces a name or a region of the user or the LLM. Each disagreement shows in `conflicts`.
+- DXA and Ghidra do not replace the facts of each other, with one exception. With coverage, a code finding replaces DXA or Ghidra data where a run executed an instruction start. Thus put all coverage maps into the project knowledge first. Then run DXA, then Ghidra.
+- An analyzer can find data where a run executed an instruction start, or at a `label` or `routine` symbol of the user or the LLM. Then the script does not record that data region, and the earlier region stays. The conflict has `executed` or `knowledge`.
+- An idiom region (origin `heuristic`) replaces the part of a DXA or Ghidra region where it lies. DXA and Ghidra never replace an idiom region. If they find code there, the result shows a conflict.
+- An idiom table can be too long or too short. Correct its region in the project knowledge. Your region replaces it.
+- A new analysis replaces the earlier facts of the same analyzer in its `coverage`, also its analyzer names. The history keeps the earlier facts.
+- A fact that the user or the LLM removed does not come back. To remove a wrong fact, remove it in the project knowledge.
+- An analyzer name is a second name of the address, not a symbol. Each analyzer keeps its own name at an address. The generated source does not use an analyzer name by default. To use a name in the source, give the address a name in the project knowledge.
+- A Ghidra function that only branches and jumps reach is a `label`, not a `routine`.
+
+#### Traps
+
+- A conflict with the problem "another address has this name": the project knowledge has the generated name at a different address. The knowledge stays unchanged.
+- A false reference through a vector: the code jumps through a vector, for example `JMP ($0408)`, and the program writes the vector at run time. The analyzer follows the bytes that the program has there. Do these steps:
+  1. Find the real targets in the emulator, or in a coverage file.
+  2. If the vector bytes are also code at another time, classify them as `dual-use` in the project knowledge.
+  3. Remove the false reference in the project knowledge. It does not come back.
+  4. Record a `jump` reference from the JMP to each real target in the project knowledge. Record each target as a routine.
+- `coverageGaps` has starts. Normally its count is 0. Each start is not in `--out-instructions` and not in the generated source. Examine the code at the start. Overlapped instructions and self-modified code can cause a gap. A start in a `dual-use` region is a known overlap, for example a BIT skip, and is not in the list.
+- `coverageSeeds.used` is smaller than `coverageSeeds.entryPoints`. The analysis did not use all entry points of the coverage. Give the important entry points with `--entry`, or record them as routines in the project knowledge. These come first.
+- `romOnlyUsed` is smaller than `romOnlyRanges`. The analysis did not keep all RAM under ROM as data. Classify the RAM under ROM that is not code as data in the project knowledge.
+- `notDecompiled` has a reason that the decompiler did not start. Give the remedy in the reason to the user.
+
+#### Failures
+
+- `invalid-input` about an entry point: Ghidra has no entry point in the program. Give one with `--entry`.
+- `stale-revision`: the project knowledge changed during the analysis. The script recorded nothing. Run `analyze` again.
+- `operation-failed` about an incomplete result or listing: the analyzer did not give a complete result. The script recorded nothing. Tell the user.
+- The script did not write the listing: the error tells if the project knowledge has the findings. Correct `--out-listing` and run `analyze` again.
+
+---
 
 ## Workflow
 
-1. Read the knowledge for the program with the c64-knowledge skill.
-2. Run a first pass with `--analyzer dxa`. For a BASIC loader, DXA finds the SYS address. Read the listing for a quick view of the code.
-3. Find the important routines. Give them names with the c64-knowledge skill.
-4. Run a deeper pass with Ghidra. Give the entry points with `--entry`. Ask for decompiled code of the routines that you must understand.
-5. Read the result:
-   - `changes` counts the analyzer names (`names`), regions and references that the analysis `added`, `changed`, `retired` or kept `unchanged`. `symbols.retired` counts the old symbols of the analyzer that moved to its analyzer names. `suppressed` counts the findings that the analysis did not write, because a removal blocks that place.
-   - DXA: `regions` lists the code and data regions. `labels` gives the number of names that DXA found (`count`) and lists the first names (`listed`).
-   - Ghidra: `functions` gives the number of routines that Ghidra found (`count`) and lists the first routines (`listed`). `decompilations` gives C-like code for the requested routines.
-   - If a list is not complete, `rest` gives the c64-knowledge command that lists all of them. For `candidates`, `rest` tells you to give a larger `--max-listed`.
-   - `conflicts` lists the places where the analyzer and the current knowledge disagree.
-   - DXA or Ghidra can find data where a run executed an instruction start (`executed`), or where a `user` or `llm` symbol of kind `label` or `routine` is (`knowledge`). Then the script does not write that data region, and the earlier region of the analyzer stays. `conflicts` lists each such place. Executed code and your names have priority over the guess of an analyzer.
-   - `idioms` tells what the script found by pattern: RTS dispatch tables (`rtsTables`), JMP tables (`jumpTables`) and BIT skips (`bitSkips`). It also finds the `CBM80` header of a cartridge bank at `$8000` (`cartridgeHeaders`). The two start vectors of the header become entry points. The script writes them as knowledge with the origin `heuristic`, and seeds their targets into the same analysis. `candidates` gives DOP padding (`dop`) and opcodes that the program wrote and executed (`selfModified`). For `selfModified`, the write and the execution must be in one coverage file. A coverage file does not record the order. Thus a candidate can also be code that ran first, and that the program then wrote over. To prevent this, save one coverage file for each part of the program, for example the intro and the game. A loader that copies relocated code is also such a part. Clear the memory map between the parts. Each list has a `count`. The script does not write the candidates. Look at them and decide.
-   - `candidates.pointers` gives code that makes an address from immediates. The script reads only the instructions of the code regions, from the start of each region. A `vector` or a `zero-page pointer` candidate stores a low byte (`low`) and a high byte (`high`) to a vector or to a zero-page pair. A `(zp),y` instruction of the code uses the zero-page pair. Its `target` is in the program or has a platform name. A `sprite pointer` candidate stores an immediate (`at`) to a sprite pointer of the screen at $0400 in VIC bank 0. Its `target` (the value × 64) is in a `sprite` region. For each candidate that you confirm, write operand expressions with `operand` of the c64-knowledge skill, for example `operand '<low>' --lo <target name>` and `operand '<high>' --hi <target name>`. Then a rebuild can move the target.
-   - `candidates.pitfalls` gives code that a C64 runs in a different way than it reads. `raster-bit-8`: the instruction at `at` reads $D011, and the instruction at `store` writes the value back. A read of $D011 gives bit 8 of the raster line in bit 7. Thus the write can move the raster interrupt to line 256 or later, and on PAL past line 311 the interrupt never comes. Examine each candidate. Where the code must not keep bit 7, add a comment and test the program.
-   - `candidates.macros` gives runs of instructions that a macro writes as one line, for example `+inc16 ptr`. The script knows these 6502 idioms: `inc16`, `dec16`, `add16_8`, `add16`, `sub16`, `set16`, `mov16` and `wait_line`. It reads the code regions after the analysis. An arg has the name of a `user` or `llm` symbol or a platform name. A platform name of a ROM that the program does not use is not an arg, because the c64-source skill does not use it. Each candidate has `macro`, `start`, `end`, `args` and `text`. `known` counts the uses that the knowledge has. `leftOut` counts the candidates with a label inside, or with a patch or a use over them. The c64-source skill writes such a candidate as instructions. With `--out-macro-batch`, `batch` gives the file, the count of writes (`writes`) and the `apply` command. The batch holds the macros that the knowledge does not have, and the uses. When the knowledge has a macro with the same name and another body, `otherMacros` tells that the batch does not have its uses. The script does not write the candidates. Apply the batch, then generate the source again.
-   - When the knowledge has coverage, a code finding replaces the DXA or Ghidra data where a run executed an instruction start. `coverageConflicts` lists the analyzer data regions where the coverage still shows executed code. Classify them as code with the c64-knowledge skill, or as `dual-use` when the bytes are also data. For many conflicts, write all classifications in one `apply` batch of the c64-knowledge skill.
-6. Give each important routine a name with the c64-knowledge skill. Then run the analysis again. The analyzers use the new names.
+1. Read the project knowledge of the program.
+2. Put each coverage map of the program into the project knowledge.
+3. Run `analyze --analyzer dxa` for a first pass. Read the listing for a quick view of the code.
+4. Find the important routines. Give them names in the project knowledge.
+5. Run `analyze` with Ghidra. Give the entry points with `--entry`. Give `--decompile` for the routines that you must understand.
+6. Do the action for each `hint`. Examine the candidates.
+7. Give each important routine a name in the project knowledge. Then run `analyze` again. The analyzers use the new names.
 
-The script records only structure: generated names, code and data regions, and references from Ghidra. The listing and the decompiled code are only for the current task. The script does not record them in the knowledge.
+---
 
-## Knowledge
+## JSON output
 
-Automatic write:
-- code and data regions
-- analyzer names: the labels that DXA generated and the functions that Ghidra found, for example `l17e2` and `FUN_17e2`
-- references from Ghidra: call, jump, read and write.
+Each command prints one JSON envelope on one line on stdout. Notes go to stderr.
 
-An analyzer name is a second name of the address. It is not a symbol. Each analyzer keeps its own name at an address. The generated source does not use an analyzer name, unless you give `--analyzer-names` to the c64-source skill. To use a name in the source, give it to the address with `rename` of the c64-knowledge skill. A Ghidra function that only branches and jumps get to is a `label`, not a `routine`.
+On success, the exit code is 0:
 
-The script never replaces a name or a region from the user or the LLM. DXA and Ghidra do not replace the facts of each other, with one exception. When the knowledge has coverage, a code finding replaces a DXA or Ghidra data region where a run executed an instruction start. Thus add all coverage maps to the knowledge first. Then run DXA, then Ghidra.
+```json
+{"ok": true, "command": "<command>", "body": {}, "hint": "...", "nextAction": "..."}
+```
 
-A `heuristic` region replaces the part of a DXA or Ghidra region where it lies, because an idiom is specific evidence about those bytes. DXA and Ghidra never replace a `heuristic` region. If they find code there, the result shows a conflict. A heuristic table can be too long or too short, because the script cannot know its length. Correct it with the c64-knowledge skill. Your region replaces it, and a removal holds.
+On failure, the exit code is 2:
 
-A new analysis replaces the earlier facts of the same analyzer in the analyzed range, also its analyzer names. The history keeps the earlier facts.
+```json
+{"ok": false, "command": "<command>", "code": "<code>", "error": "...", "hint": "...", "nextAction": "..."}
+```
 
-A fact that the user or the LLM removes does not come back. The next analysis does not write a fact at that place, and counts it as `suppressed`. To remove a wrong fact, use the c64-knowledge skill.
+- `body` holds the result. The section of each command gives the fields of its body.
+- A check gives its verdict in `body.result`: `PASS`, `FAIL` or `INCONCLUSIVE`. The exit code is 0 for each verdict. Thus read `body.result`, not the exit code.
+- `error` is one sentence. It tells what is wrong.
+- `hint` tells what to do or what to examine. Read it before your next step. Some envelopes have no `hint`.
+- `nextAction` is a full command line. It runs from any directory. Run it when it agrees with your task. Some envelopes have no `nextAction`.
+- `code` does not change between versions. Do the action for the code:
 
-Do not store:
-- the listing or decompiled code
-- the function list as comments.
+| `code` | Action |
+|---|---|
+| `installation-incomplete`, `machine-unavailable` | Stop the task. Give `error` and `hint` to the user and wait for the user. Do not install, start or change a tool. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script. |
+| `invalid-input`, `not-found` | Correct the call as `hint` tells. Then run the command again. |
+| `operation-failed` | Give `error` and `hint` to the user. |
+| Another code | Do as `hint` tells. |
 
-## Result
+These fields have the same meaning in each body:
 
-The changes to the knowledge and the conflicts. For DXA, also the regions, the labels and the file of the listing (`listing`). For Ghidra, also the routines, the decompiled code and the file of the instructions (`instructions`).
+| Field | Meaning |
+|---|---|
+| `out`, `bytes`, `sha256` | A file that the command wrote: its path, its size and its SHA-256. |
+| `count`, `listed`, `rest` | A list. `count` is the number of items. `listed` holds the first items, at most `--max-listed`. `rest` tells how to get the other items. |
 
-The exit status is 0, also with conflicts.
-
-## Failure and conflicts
-
-- A conflict: the analyzer finds code where the knowledge has data, or data where the knowledge has code. The knowledge stays unchanged. Find the correct answer with the emulator skill, then correct the knowledge with the c64-knowledge skill.
-- A conflict with the problem "another address has this name": the knowledge has the generated name at a different address. The knowledge stays unchanged.
-- A false reference through a vector: the code jumps through a vector, for example `JMP ($0408)`, and the program writes the vector at run time. The analyzer follows the bytes that the program has there. Do these steps:
-  1. Find the real targets with the emulator skill, or in a coverage file.
-  2. If the vector bytes are also code at another time, classify them as `dual-use`.
-  3. Remove the false reference with `unreference`. It does not come back.
-  4. Add a `jump` reference from the JMP to each real target, and name each target as a routine.
-- `invalid-input` with a message about an entry point: no entry point is inside the program for Ghidra. Give one with `--entry`.
-- `stale-revision`: the knowledge changed during the analysis. The script recorded nothing. Run the analysis again.
-- `operation-failed` with a message about an incomplete result or listing: the analyzer did not give a complete result. The script recorded nothing. Tell the user.
-- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
-- `notDecompiled`: Ghidra did not decompile these routines. Each entry has the reason. If the reason says that the decompiler did not start, tell the user the remedy in the reason.
-
-## Handoffs
-
-- Runtime behavior → emulator
-- Names and classifications → c64-knowledge
-- The meaning of a C64 hardware address → c64-memory-map
-- Source code from the knowledge → c64-source
-- Build the source → c64-assembler
+To get the command list, run the script with no arguments. The envelope has `command: "help"`, and `body.commands` gives the name, the summary and the synopsis of each command.
+To get the subjects and the flags of one command, run `<command> --help`. Then `body.subjects` and `body.options` give them.

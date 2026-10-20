@@ -12,6 +12,7 @@ import { after, test } from "node:test";
 
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
+import { readEnvelope } from "../kit.ts";
 
 let generateSkip: string | false = false;
 try {
@@ -39,7 +40,7 @@ function gitOk(cwd: string, ...args: string[]): string {
 /** Runs a skill script in the project folder of a clone and gives its exit status and its JSON line. */
 function script(clone: string, skill: string, file: string, ...args: string[]): { status: number | null; json: Record<string, unknown> } {
   const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", file), ...args], { cwd: join(clone, "game"), encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  return { status: run.status, json: JSON.parse(run.stdout) as Record<string, unknown> };
+  return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, unknown> };
 }
 
 const knowledge = (clone: string, ...args: string[]) => script(clone, "c64-knowledge", "knowledge.ts", ...args);
@@ -114,7 +115,7 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
   const refused = knowledge(second, "rename", "$1001", "x");
   assert.equal(refused.status, 2);
   assert.equal((refused.json.error as { code: string }).code, "conflict");
-  assert.match((refused.json.error as { message: string }).message, /knowledge\.ts merge/);
+  assert.match((refused.json.error as { message: string }).message, /from a git merge/);
 
   const merged = knowledge(second, "merge", "--reason", "merge of two computers", "--by", "user");
   assert.equal(merged.status, 0, JSON.stringify(merged.json));

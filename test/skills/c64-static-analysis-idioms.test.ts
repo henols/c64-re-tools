@@ -16,6 +16,7 @@ import { imageReader } from "../../skills/c64-static-analysis/scripts/lib/covera
 import { findIdioms } from "../../skills/c64-static-analysis/scripts/lib/idioms.ts";
 import { findPointers } from "../../skills/c64-static-analysis/scripts/lib/pointers.ts";
 import { findPitfalls } from "../../skills/c64-static-analysis/scripts/lib/pitfalls.ts";
+import { readEnvelope } from "../kit.ts";
 import { importImage, importPrg } from "../fixtures/program.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-idioms-"));
@@ -114,7 +115,7 @@ test("an analysis writes the idioms as heuristic knowledge and DXA finds the cod
   importPrg(project, prg);
   const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--analyzer", "dxa"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  const json = JSON.parse(run.stdout) as { idioms: { rtsTables: number; revision: number | null } };
+  const json = readEnvelope(run.stdout, run.status).json as { idioms: { rtsTables: number; revision: number | null } };
   assert.equal(json.idioms.rtsTables, 1, run.stdout);
   const db = openForRead(project);
   assert.ok(listRegions(db).some((region) => region.origin === "heuristic" && region.start === 0x0828), "the low table is heuristic knowledge");
@@ -137,7 +138,7 @@ test("an RTS table at the end of a segment ends there: the bytes after the progr
     importImage(own, memory, { space: "c64", segments: [{ start: 0x0801, end: 0x0837 }, { start: 0xc000, end: 0xc000 }] });
     const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
     const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--analyzer", "dxa", "--entry", "$080d"], { cwd: own, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(run.status, 0, run.stdout);
+    assert.equal(readEnvelope(run.stdout, run.status).envelope.ok, true, run.stdout);
     const db = openForRead(own);
     const heuristic = listReferences(db).filter((reference) => reference.origin === "heuristic");
     assert.deepEqual(heuristic.map((reference) => [reference.from, reference.to, reference.kind]), [[0x0817, 0x0820, "jump"]], "no target in the zero bytes after the segment");

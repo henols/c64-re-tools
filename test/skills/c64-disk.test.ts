@@ -16,6 +16,7 @@ import { createToolDispatcher } from "../../src/host/tools/index.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { buildD64 } from "../fixtures/d64.ts";
 import { borderLoopPrg } from "../fixtures/prg/border-loop.ts";
+import { readEnvelope } from "../kit.ts";
 
 let skip: string | false = false;
 try {
@@ -49,7 +50,7 @@ async function hostEnv(): Promise<string> {
   return `${server.host}:${server.port}`;
 }
 
-async function disk(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
+async function disk(...args: string[]): Promise<{ status: number | null; json: Record<string, any> }> {
   const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: await hostEnv() }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -57,7 +58,7 @@ async function disk(...args: string[]): Promise<{ status: number | null; json: R
   child.stderr.on("data", (chunk) => (stderr += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(stderr, "");
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, json: readEnvelope(stdout, status).json };
 }
 
 test("the directory lists the disk and its files", { skip }, async () => {

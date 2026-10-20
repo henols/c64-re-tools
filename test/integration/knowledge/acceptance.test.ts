@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { nthIn } from "../../../src/knowledge/revisions.testkit.ts";
+import { readEnvelope } from "../../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-knowledge/scripts/knowledge.ts");
 const root = mkdtempSync(join(tmpdir(), "c64-re-tools-m4-"));
@@ -19,7 +20,7 @@ function knowledge(...args: string[]): Record<string, unknown> {
   // An unreachable host: the knowledge path must never try to use it.
   const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   assert.equal(run.status, 0, run.stdout + run.stderr);
-  return JSON.parse(run.stdout) as Record<string, unknown>;
+  return readEnvelope(run.stdout, run.status).json as Record<string, unknown>;
 }
 
 test("from a clean project: a read, the first write, several changes, the current view and the full history", () => {

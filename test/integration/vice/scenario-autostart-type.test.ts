@@ -15,6 +15,7 @@ import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { keyWaitPrg } from "../../fixtures/prg/key-wait.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { readEnvelope } from "../../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-autostart-type-"));
@@ -47,7 +48,7 @@ test("a type step right after autostart reaches the program", { skip: liveSkip, 
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  const json = JSON.parse(stdout) as Record<string, unknown>;
+  const json = readEnvelope(stdout, status).json as Record<string, unknown>;
   assert.deepEqual(json, { result: "PASS", scenario: "takes a key after autostart", checkpoints: ["key"], differences: [] });
   assert.equal(status, 0);
 });

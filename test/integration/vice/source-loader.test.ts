@@ -21,7 +21,7 @@ import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { seededBytes } from "../../kit.ts";
+import { readEnvelope, seededBytes } from "../../kit.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 let skip: string | false = liveSkip;
@@ -106,6 +106,7 @@ async function generate(memory: Uint8Array, segments: ReadonlyArray<{ start: num
   const knowledgeScript = resolve(import.meta.dirname, "../../../skills/c64-knowledge/scripts/knowledge.ts");
   const imported = spawnSync(process.execPath, [...process.execArgv, knowledgeScript, "image", "unpacked/image.json"], { cwd: project, encoding: "utf8" });
   assert.equal(imported.status, 0, imported.stdout + imported.stderr);
+  readEnvelope(imported.stdout, imported.status);
   const child = spawn(process.execPath, [...process.execArgv, script, "generate", "--out", "src", "--loader"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: `${address}:${port}` },
@@ -115,7 +116,7 @@ async function generate(memory: Uint8Array, segments: ReadonlyArray<{ start: num
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(status, 0, stdout);
-  return { status, json: JSON.parse(stdout) as Generated["json"], project };
+  return { status, json: readEnvelope(stdout, status).json as Generated["json"], project };
 }
 
 test("the loader puts every segment and pages 0-3 in place and gets to the entry with the entry state", { skip, timeout: 600_000 }, async () => {

@@ -177,7 +177,7 @@ export class Change {
     if (found.length > 0) {
       throw new Refusal(
         "conflict",
-        `The knowledge has ${found.length} conflict${found.length === 1 ? "" : "s"} from a git merge, for example ${describe(found[0]!)}. Nothing was written. Run knowledge.ts merge to decide them, then write again.`,
+        `The knowledge has ${found.length} conflict${found.length === 1 ? "" : "s"} from a git merge, for example ${describe(found[0]!)}. Nothing was written. Decide the conflicts of the git merge in the project knowledge. Then write again.`,
       );
     }
     const current = currentRevision(db);
@@ -735,7 +735,7 @@ function checkModule(request: ModuleRequest): void {
   checkAddress(request.start, "start");
   if (!MODULE_FILE.test(request.file)) throw new Refusal("invalid-input", "A module file is a name of letters, digits, underscores or hyphens (at most 60) that ends in .asm, without a directory.");
   if (isGeneratedFile(request.file)) {
-    throw new Refusal("invalid-input", `c64-source writes ${GENERATED_FILES.join(", ")} itself, in any letter case, so a module cannot have the file ${request.file}. Give the module another file.`);
+    throw new Refusal("invalid-input", `A module cannot have the file ${request.file}, because the generated source writes ${GENERATED_FILES.join(", ")} itself, in any letter case. Give the module another file.`);
   }
   if (request.title !== undefined && (request.title.trim().length === 0 || request.title.length > MAX_COMMENT)) throw new Refusal("invalid-input", `A module title has 1 to ${MAX_COMMENT} characters.`);
 }

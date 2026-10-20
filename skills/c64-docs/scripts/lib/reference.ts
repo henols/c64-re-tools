@@ -297,7 +297,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
   {
     const page = posix.join(out, "tables.md");
     const lines = ["# Tables", "", `Each table of addresses, jumps and words, entry by entry. An RTS table holds each target minus 1; the target column gives the target. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`];
-    if (input.image === undefined) lines.push("", "Put the program into the knowledge with knowledge.ts image, then generate the reference again to decode the tables.");
+    if (input.image === undefined) lines.push("", "Put the program bytes into the project knowledge. Then generate the reference again to decode the tables.");
     for (const table of tables) {
       const name = entryAt.get(table.start);
       lines.push("", `<a id="${tableAnchor(table)}"></a>`, `## ${name === undefined ? `\`${range(table.start, table.end)}\`` : `${codeOfName(page, name.name)} \`${range(table.start, table.end)}\``}`, "", `*${table.type}*`);
@@ -327,7 +327,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       "",
       `Each sprite, bitmap, charset and screen region of the knowledge. The knowledge gives no display mode and no colours, so a sprite, bitmap or charset shows in hires and in multicolour, in pattern colours: black is pixel value 0, white is 1 in hires; in multicolour light grey is 1, grey is 2 and yellow is 3. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`,
     ];
-    if (input.image === undefined && graphics.length > 0) lines.push("", "Put the program into the knowledge with knowledge.ts image, then generate the reference again to show the graphics.");
+    if (input.image === undefined && graphics.length > 0) lines.push("", "Put the program bytes into the project knowledge. Then generate the reference again to show the graphics.");
     for (const region of graphics) {
       const anchor = entryAt.get(region.start)?.name ?? `${region.type}_${region.start.toString(16).padStart(4, "0")}`;
       const name = entryAt.get(region.start);

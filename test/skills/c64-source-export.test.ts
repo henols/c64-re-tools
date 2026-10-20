@@ -211,8 +211,8 @@ test("the README gives the commands first, then the free ranges, the files and t
   });
   const order = ["## Build", "## Test", "## Free ranges", "## Files", "## Origin"].map((heading) => text.indexOf(heading));
   assert.deepEqual([...order].sort((a, b) => a - b), order);
-  assert.match(text, /assembler\.ts build src loader\.asm --out build\/game\.prg --out-symbols build\/game\.json\nassembler\.ts build src main\.asm --out \.c64-re-tools\/local\/program\.prg --compare\n/);
-  assert.match(text, /testing\.ts test tests\/a\.json\ntesting\.ts run tests\/r\.json --out \.c64-re-tools\/local\/runs\/r\n/);
+  assert.match(text, /^Assemble `src\/loader\.asm` to `build\/game\.prg`, with its symbols in `build\/game\.json`\.\nAssemble `src\/main\.asm` to `\.c64-re-tools\/local\/program\.prg`, and compare it with the program in the project knowledge/m);
+  assert.match(text, /^- `tests\/a\.json`: run the scenario\.\n- `tests\/r\.json`: run the run file, with its results in `\.c64-re-tools\/local\/runs\/r`\.\n/m);
   assert.match(text, /\| `\$1000-\$10ff` \| 256 \| code \|/);
   assert.match(text, /\| TRAINER \| trainer \| 1 \|/);
   assert.match(text, /- `tests\/s\.json`: it restores a snapshot\./);

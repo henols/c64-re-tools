@@ -93,11 +93,11 @@ import {
 } from "#src/knowledge/write.ts";
 import { platformNames } from "#src/platform.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
-import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
+import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
 
 function oneOf<T extends string>(values: readonly T[], value: string | undefined, what: string): T {
-  if (value === undefined || !(values as readonly string[]).includes(value)) throw new UsageError(`${what} must be one of: ${values.join(", ")}`);
+  if (value === undefined || !(values as readonly string[]).includes(value)) throw new UsageError(`${what} must be one of: ${values.join(", ")}.`);
   return value as T;
 }
 
@@ -283,7 +283,7 @@ function originFilter(value: string): Origin[] {
     if (part === "semantic") for (const origin of SEMANTIC_ORIGINS) origins.add(origin);
     else if (part === "analyzer") for (const origin of ANALYZERS) origins.add(origin);
     else if ((ORIGINS as readonly string[]).includes(part)) origins.add(part as Origin);
-    else throw new UsageError(`--origin cannot be ${JSON.stringify(part)}. Give ${ORIGIN_VALUES}`);
+    else throw new UsageError(`--origin cannot be ${JSON.stringify(part)}. Give ${ORIGIN_VALUES}.`);
   }
   return [...origins];
 }
@@ -293,7 +293,7 @@ function knowledgePath(path: string, what: string): string {
   try {
     return projectRelative(path);
   } catch {
-    throw new UsageError(`${what} must be a path relative to the project folder that stays inside it, not ${path}`);
+    throw new UsageError(`${what} must be a path relative to the project folder that stays inside it, not ${path}.`);
   }
 }
 
@@ -314,7 +314,7 @@ function evidenceOf(value: string, space: string): Evidence {
     try {
       const run = coverageRuns(db).filter((item) => item.name === ref && item.space === space).at(-1);
       const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
-      if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${where}: import the map with coverage${space === DEFAULT_SPACE ? "" : ` --space ${space}`} first`);
+      if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${where}. Import the map with coverage${space === DEFAULT_SPACE ? "" : ` --space ${space}`} first.`);
       return { kind, ref, sha256: run.sha256, ...(run.space === DEFAULT_SPACE ? {} : { space: run.space }) };
     } finally {
       db?.close();
@@ -323,12 +323,12 @@ function evidenceOf(value: string, space: string): Evidence {
   const bytes = readProjectFile(ref).bytes;
   const root = projectRoot();
   if (isInside(join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY), resolveProjectPath(ref, root))) {
-    throw new UsageError(`--evidence ${kind}:${ref} is in ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/, which git ignores: move it to a folder that git keeps (a run folder to runs/<name>/) and give the new path`);
+    throw new UsageError(`--evidence ${kind}:${ref} is in ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/, which git ignores. Move it to a folder that git keeps, for example a run folder to runs/<name>/. Then give the new path.`);
   }
   return { kind, ref, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
-/** An image.json of c64-unpacker capture or a PRG as a write of the program, with the entry state of the capture. */
+/** An image.json of a capture or a PRG as a write of the program, with the entry state of the capture. */
 function imageRequest(path: string, space: string): ImageRequest {
   const image = readImage(path);
   const request: ImageRequest = { space, segments: image.segments, byteAt: image.byteAt };
@@ -428,7 +428,7 @@ const WRITE: Record<string, OptionSpec> = {
 /** A list command: --max-listed limits each list of its result. */
 const LIST = { "max-listed": OPTIONS["max-listed"] };
 /** Where to get the rest of a list that a --range limits. */
-const RANGE_REST = "a larger --max-listed, a smaller --range, or knowledge.ts export --out <file> for all current knowledge";
+const RANGE_REST = "a larger --max-listed, a smaller --range, or export --out <file> for all current knowledge";
 const MORE = "a larger --max-listed";
 
 /** A list in a result: its count and its first --max-listed items, with rest when it is cut. */
@@ -456,7 +456,11 @@ function readCommand(spec: Omit<CommandSpec, "run">, answer: (db: DatabaseSync |
       try {
         const result = answer(db, call);
         const found = conflicts(db);
-        return found.length === 0 ? result : { ...result, conflicts: found.map(showConflict) };
+        if (found.length === 0) return result;
+        return reply(
+          { ...result, conflicts: found.map(showConflict) },
+          { hint: "A git merge left conflicts in the knowledge: see conflicts. Each write stops until you decide them. Run merge, then tell the user each item of its choices.", nextAction: call.next("merge", "--reason", "decide the conflicts of a git merge") },
+        );
       } finally {
         db?.close();
       }
@@ -496,7 +500,7 @@ function shown<T, U>(result: { revision: string | null; current: T; previous?: T
 function textOrFile(call: Call, option: string): string | undefined {
   const inline = call.string(option);
   const file = call.string(`${option}-file`);
-  if (inline !== undefined && file !== undefined) throw new UsageError(`give --${option} or --${option}-file, not both`);
+  if (inline !== undefined && file !== undefined) throw new UsageError(`Give --${option} or --${option}-file, not both.`);
   if (file !== undefined) return readProjectFile(file).bytes.toString("utf8");
   return inline;
 }
@@ -610,7 +614,7 @@ const READ_COMMANDS: CommandSpec[] = [
       const name = call.string("name");
       const macroName = call.string("macro");
       const switchName = call.string("switch");
-      if ([call.subjects.length > 0, name !== undefined, macroName !== undefined, switchName !== undefined].filter(Boolean).length !== 1) throw new UsageError("history needs exactly one of <address>, --name, --macro and --switch");
+      if ([call.subjects.length > 0, name !== undefined, macroName !== undefined, switchName !== undefined].filter(Boolean).length !== 1) throw new UsageError("history needs exactly one of <address>, --name, --macro and --switch.");
       const entries =
         switchName !== undefined
           ? historyOfSwitch(db, switchName, call.space)
@@ -772,12 +776,12 @@ const WRITE_COMMANDS: CommandSpec[] = [
     (call) => {
       const context = contextOf(call);
       const given = (["lo", "hi", "value", "expr"] as const).filter((option) => call.string(option) !== undefined);
-      if (given.length !== 1) throw new UsageError("operand needs exactly one of --lo, --hi, --value or --expr");
+      if (given.length !== 1) throw new UsageError("operand needs exactly one of --lo, --hi, --value or --expr.");
       const select: OperandSelect = given[0]!;
       const offset = call.string("offset");
       const request: { space: string; address: number; select: OperandSelect; symbol?: string; offset?: number; expression?: string } = { space: call.space, address: call.parseAddress(call.subject(0), "<address>"), select };
       if (select === "expr") {
-        if (offset !== undefined) throw new UsageError("--offset works with --lo, --hi and --value, not with --expr");
+        if (offset !== undefined) throw new UsageError("--offset works with --lo, --hi and --value, not with --expr.");
         request.expression = call.string("expr")!;
       } else {
         request.symbol = call.string(select)!;
@@ -807,7 +811,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
     (call) => {
       const context = contextOf(call);
       const code = textOrFile(call, "code");
-      if ((code === undefined) === !call.flag("nop")) throw new UsageError("patch needs exactly one of --code, --code-file or --nop");
+      if ((code === undefined) === !call.flag("nop")) throw new UsageError("patch needs exactly one of --code, --code-file or --nop.");
       const commentText = call.string("comment");
       const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>"), switch: call.subject(1), code: code ?? "", ...(commentText === undefined ? {} : { comment: commentText }) };
       return (db) => shown(setPatch(db, { ...context, image: operandImage(db, call.space) }, request), "patch", patch);
@@ -868,21 +872,21 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "release",
-      summary: "Records a release of the program: its PRG or c64-unpacker image.json in the project. The base release is the one whose bytes are the program of the knowledge.",
+      summary: "Records a release of the program: its PRG or the image.json of its capture in the project. The base release is the one whose bytes are the program of the knowledge.",
       subjects: [{ name: "<label>", help: "the release label, for example ORIGINAL or FIRESTAR" }],
       options: {
         file: { kind: "path", value: "<file>", help: "the PRG or image.json of the release, in a folder that git keeps", required: true },
         base: { kind: "flag", help: "this release is the program of the knowledge: its segments and bytes must be the same" },
         comment: { kind: "text", value: "<text>", help: "what the release is, for example the group and the date" },
       },
-      notes: "The build of a release defines RELEASE_<label>=1: each switch then has the value of that release. c64-source checks that this build gives the bytes of the file.",
+      notes: "The build of a release defines RELEASE_<label>=1: each switch then has the value of that release. The check of the generated source builds each release and compares it with the bytes of its file.",
     },
     (call) => {
       const context = contextOf(call);
       const file = knowledgePath(call.string("file")!, "--file");
       const root = projectRoot();
       if (isInside(join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY), resolveProjectPath(file, root))) {
-        throw new UsageError(`--file ${file} is in ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/, which git ignores: move the release to a folder that git keeps, for example original/`);
+        throw new UsageError(`--file ${file} is in ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/, which git ignores. Move the release to a folder that git keeps, for example original/.`);
       }
       const image = readImage(file);
       const sha256 = createHash("sha256").update(readProjectFile(file).bytes).digest("hex");
@@ -896,7 +900,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
             for (let address = segment.start; address <= segment.end; address++) if (program.byteAt(address) !== image.byteAt(address)) return false;
             return true;
           });
-          if (!same) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge. The base release is the file that knowledge.ts image put in.`);
+          if (!same) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge. Give --base only to the release whose file image put into the knowledge.`);
         }
         return shown(setRelease(db, context, request), "release", release);
       };
@@ -923,7 +927,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
     (call) => {
       const context = contextOf(call);
       const body = textOrFile(call, "body");
-      if (body === undefined || body === "") throw new UsageError("macro needs --body or --body-file with text");
+      if (body === undefined || body === "") throw new UsageError("macro needs --body or --body-file with text.");
       const commentText = call.string("comment");
       const request = { space: call.space, name: call.subject(0), params: commaList(call.string("params") ?? ""), body, ...(commentText === undefined ? {} : { comment: commentText }) };
       return (db) => shown(setMacro(db, context, request), "macro", macro);
@@ -958,8 +962,8 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "image",
-      summary: "Puts the program into the knowledge: its bytes, and for an image.json of a c64-unpacker capture also the entry, the entry state and the stages. Only changed bytes write.",
-      subjects: [{ name: "<file>", help: "an image.json of c64-unpacker capture or loads, or a PRG" }],
+      summary: "Puts the program into the knowledge: its bytes, and for the image.json of a capture also the entry, the entry state and the stages. Only changed bytes write.",
+      subjects: [{ name: "<file>", help: "the image.json of a capture or of loads, or a PRG" }],
     },
     (call) => {
       const context = contextOf(call);
@@ -973,7 +977,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "coverage",
-      summary: "Joins coverage maps of c64_memmap or of a run into the coverage of the knowledge. Each map is named by its path: --evidence coverage:<path> cites it.",
+      summary: "Joins coverage maps of the emulator or of a run into the coverage of the knowledge. Each map is named by its path: --evidence coverage:<path> cites it.",
       subjects: [{ name: "<map>", help: "a 64 KiB coverage map", list: true }],
     },
     (call) => {
@@ -1025,9 +1029,9 @@ const WRITE_COMMANDS: CommandSpec[] = [
       try {
         parsed = JSON.parse(text);
       } catch (error) {
-        throw new Refusal("invalid-input", `the batch ${path} is not JSON: ${(error as Error).message}`);
+        throw new Refusal("invalid-input", `The batch ${path} is not JSON: ${(error as Error).message}`);
       }
-      if (!Array.isArray(parsed)) throw new Refusal("invalid-input", `the batch ${path} is a JSON list of writes, for example [{"op": "rename", "address": "$2100", "name": "update_player"}]`);
+      if (!Array.isArray(parsed)) throw new Refusal("invalid-input", `The batch ${path} is not a JSON list of writes. Give a list such as [{"op": "rename", "address": "$2100", "name": "update_player"}].`);
       const operations = parsed.map((item, index) => batchOperation(call, item, `write ${index + 1}`));
       const checked = operations.some((operation) => operation.op === "operand" || operation.op === "patch" || operation.op === "use");
       return (db) => {
@@ -1048,7 +1052,7 @@ const JOIN: CommandSpec = {
   options: { ...SPACE, out: { ...OPTIONS.out, output: "file", value: "<file>", help: "the joined batch, relative to the project folder", required: true } },
   notes: "At an address in the owner range of a batch, its name, comment, operand and module win, and its regions come last. One name or one module file at two addresses writes nothing.",
   run: (call) => {
-    if (call.subjects.length < 2) throw new UsageError("join needs two or more batch files");
+    if (call.subjects.length < 2) throw new UsageError("join needs two or more batch files.");
     const batches: Batch[] = call.subjects.map((file) => {
       let value: unknown;
       try {
@@ -1083,7 +1087,8 @@ const JOIN: CommandSpec = {
       throw new Refusal("conflict", `The batches give one ${joined.clashes.map(clash).join(", one ")}. Nothing was written. Give each name and each module file one address in the batches, then join again.`);
     }
     const out = call.string("out")!;
-    return { writes: joined.ops.length, repeated: joined.repeated, choices: joined.choices.map(choice), apply: `knowledge.ts apply ${out}`, ...writeReported(out, `${JSON.stringify(joined.ops.map(batchJson), null, 1)}\n`, { what: "--out" }) };
+    const body = { writes: joined.ops.length, repeated: joined.repeated, choices: joined.choices.map(choice), ...writeReported(out, `${JSON.stringify(joined.ops.map(batchJson), null, 1)}\n`, { what: "--out" }) };
+    return reply(body, { hint: "Examine each item of choices. Then apply the joined batch.", nextAction: call.next("apply", out) });
   },
 };
 

@@ -18,6 +18,7 @@ import { historyAt } from "../../../src/knowledge/history.ts";
 import { currentRevision, regionsOverlapping, symbolAt } from "../../../src/knowledge/read.ts";
 import { analysisSubjectPrg } from "../../fixtures/prg/analysis-subject.ts";
 import { nthIn } from "../../../src/knowledge/revisions.testkit.ts";
+import { readEnvelope } from "../../kit.ts";
 
 let skip: string | false = false;
 try {
@@ -37,7 +38,7 @@ async function skill(env: NodeJS.ProcessEnv, name: string, file: string, ...args
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
 }
 
 const regions = () => {

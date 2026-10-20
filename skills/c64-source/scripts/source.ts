@@ -36,7 +36,7 @@ import { decode as decodeRegister, describeAddress, platformNames, platformNames
 import { ensureLocal, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { isoCet } from "#src/time.ts";
 import { zipFiles } from "#src/zip.ts";
-import { listed, OPTIONS, runScript, UsageError, type Call } from "#src/script.ts";
+import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, packLoader, planLoader, rasterLine, loaderState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan, type PackedLoader } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
@@ -50,7 +50,7 @@ const ROUNDS = 6;
 const PROBE_BASE = 0x1000;
 const PROBE_SLOT = 4;
 /** Why a source has no instructions when the knowledge has no code. */
-const DATA_ONLY = "The knowledge has no entry, routine, code region or executed address in this space. Thus the source has only data. For instructions, give --entry, or classify the code with knowledge.ts classify, then generate again.";
+const DATA_ONLY = "The knowledge has no entry, routine, code region or executed address in this space. Thus the source has only data. For instructions, give --entry, or record a code region in the project knowledge. Then generate again.";
 
 /** The copies of a full 64 KiB take about 140 frames. */
 const LOADER_FRAMES = 1500;
@@ -63,7 +63,7 @@ function readKnowledge(space: Space, analyzerNames = false) {
   try {
     // With conflicts from a git merge, the source would depend on which of two rows comes first.
     const found = conflicts(db).length;
-    if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was generated. Run c64-knowledge's knowledge.ts merge, then generate again.`);
+    if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Merge the open changes of the project knowledge. Then run the command again.`);
     const symbols = listSymbols(db, undefined, undefined, undefined, space);
     const second = listAnalyzerNames(db, undefined, undefined, undefined, space);
     const releases = listReleases(db, undefined, space);
@@ -465,7 +465,7 @@ async function checkRelease(release: ReleaseRow, files: Array<{ name: string; te
   try {
     const bytes = readProjectFile(release.file).bytes;
     if (createHash("sha256").update(bytes).digest("hex") !== release.sha256) {
-      return { ...shown, result: "file changed", reason: `The SHA-256 of ${release.file} is not the one that the knowledge has. Record the release again (knowledge.ts release), or put back the file.` };
+      return { ...shown, result: "file changed", reason: `The SHA-256 of ${release.file} is not the one that the knowledge has. Put back the file, or record the release again in the project knowledge.` };
     }
     image = readImage(release.file);
   } catch (error) {
@@ -752,16 +752,16 @@ async function buildLoader(files: Array<{ name: string; text: string }>, laid: L
     return false;
   });
   if (loaderBuilt.start !== (loader.packed?.start ?? 0x0801) || loaderBuilt.start + program.length - 3 !== loader.end || wrongPacking !== undefined) {
-    throw new WireFailure("operation-failed", `The assembled loader does not have the planned layout${wrongPacking === undefined ? "" : ` (${wrongPacking.what})`}. This is a defect of the c64-source script.`);
+    throw new WireFailure("operation-failed", `The assembled loader does not have the planned layout${wrongPacking === undefined ? "" : ` (${wrongPacking.what})`}. This is a defect of the script.`);
   }
   const symbolValue = (name: string) => {
     const symbol = loaderBuilt.symbols?.find((item) => item.name === name);
-    if (symbol === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${name} label. This is a defect of the c64-source script.`);
+    if (symbol === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${name} label. This is a defect of the script.`);
     return symbol.kind === "address" ? symbol.address : symbol.value;
   };
   const jump = symbolValue(LOADER_JUMP);
   const wrong = simulate(memory, loader.copies, expected);
-  if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatC64Address(wrong)}. This is a defect of the c64-source script.`);
+  if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatC64Address(wrong)}. This is a defect of the script.`);
   return { program, symbols: loaderBuilt.symbols ?? [], jump, copierSource: symbolValue(COPIER_SOURCE), expected };
 }
 
@@ -778,7 +778,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const knowledge = readKnowledge(space, call.flag("analyzer-names"));
   const image = knowledge.program;
   if (loaderWanted && (image.state === undefined || image.entry === undefined)) {
-    throw new Refusal("not-found", "--loader needs the entry and the entry state of a c64-unpacker capture in the knowledge: put the capture in with knowledge.ts image <image.json>");
+    throw new Refusal("not-found", "The knowledge has no entry and no entry state, and --loader needs them. Capture the unpacked program at its entry point, and put the capture into the project knowledge. Then generate again.");
   }
   // Read the entry state before the long steps, so a bad state stops the run at once.
   const state = loaderWanted ? loaderState(image.state, "the entry state of the knowledge") : undefined;
@@ -1019,13 +1019,12 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   // 1. The source of the knowledge must give the base release byte for byte, with every patch in it.
   const baseValues = new Map(knowledge.switches.map((row) => [row.name, row.base]));
   const original = await buildSource(knowledge, { space: DEFAULT_SPACE, entries: [], header: [], values: baseValues, notExecutedMarks: false });
-  const fix = "Run source.ts generate, correct the knowledge until generate gives PASS, then export again.";
-  if (original.built.program === undefined) return { result: "FAIL", stage: "original", reason: `The source of the knowledge does not assemble. ${fix}`, diagnostics: original.built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
+  if (original.built.program === undefined) return { result: "FAIL", stage: "original", reason: "The source of the knowledge does not assemble.", diagnostics: original.built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
   const checked = check(original.built.program, original.built.start!, image);
-  if (!checked.identical) return { result: "FAIL", stage: "original", reason: `The source of the knowledge does not assemble to the program. ${fix}`, check: checked };
+  if (!checked.identical) return { result: "FAIL", stage: "original", reason: "The source of the knowledge does not assemble to the program.", check: checked };
   if (original.missingEntry !== undefined) return { result: "FAIL", stage: "original", reason: original.missingEntry };
   if (original.laid.patchesNotWritten.length > 0) {
-    return { result: "FAIL", stage: "original", reason: `The source cannot write every patch. ${fix}`, patchesNotWritten: listed(original.laid.patchesNotWritten, max, (item) => ({ ...shownRange(item), switch: item.switch, reason: item.reason })) };
+    return { result: "FAIL", stage: "original", reason: "The source cannot write every patch.", patchesNotWritten: listed(original.laid.patchesNotWritten, max, (item) => ({ ...shownRange(item), switch: item.switch, reason: item.reason })) };
   }
 
   // 2. Each switch at its export value. Two alternatives of one range cannot both be in.
@@ -1033,7 +1032,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   for (const patch of original.laid.patches.values()) {
     const both = patch.alternatives.filter((alternative) => values.get(alternative.switch) !== alternative.base);
     if (both.length > 1) {
-      throw new Refusal("invalid-input", `The switches ${both.map((item) => item.switch).join(" and ")} change ${formatC64Address(patch.start)}-${formatC64Address(patch.end)} in different ways, and the export puts both in. Give all but one of them the kind change with --default and the value of the base release (knowledge.ts switch), then export again.`);
+      throw new Refusal("invalid-input", `The switches ${both.map((item) => item.switch).join(" and ")} change ${formatC64Address(patch.start)}-${formatC64Address(patch.end)} in different ways, and the export puts both in. In the project knowledge, give all but one of them the kind change, with the default of the base release. Then export again.`);
     }
   }
   const withPatches = switchesOf(original.laid);
@@ -1042,7 +1041,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   const baked = await assembleFiles(withValues(original.files, original.laid, values), "main.asm");
   const bakedCheck = compareBuilds(baked, patchesIn, { program: original.built.program, start: original.built.start! });
   const switches = knowledge.switches.map((row) => ({ name: row.name, kind: row.kind, base: row.base, value: values.get(row.name)! }));
-  if (bakedCheck.result !== "fits" || baked.program === undefined) return { result: "FAIL", stage: "switches", reason: "The build with the export values of the switches does not fit. Build each switch alone with source.ts generate and correct its patches.", switches, build: bakedCheck };
+  if (bakedCheck.result !== "fits" || baked.program === undefined) return { result: "FAIL", stage: "switches", reason: "The build with the export values of the switches does not fit.", switches, build: bakedCheck };
 
   // 3. The baked image: the bytes of that build in the segments of the program.
   const memory = Uint8Array.from(image.memory);
@@ -1130,9 +1129,9 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
     notExecutedMarks: false,
     ...(state === undefined ? {} : { state, loaderHeader: [`The loader of ${name}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] }),
   });
-  if (exported.built.program === undefined) return { result: "FAIL", stage: "export", reason: "The source of the export does not assemble. This is a defect of the c64-source script.", diagnostics: exported.built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
+  if (exported.built.program === undefined) return { result: "FAIL", stage: "export", reason: "The source of the export does not assemble. This is a defect of the script.", diagnostics: exported.built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
   const exportCheck = check(exported.built.program, exported.built.start!, derived.program);
-  if (!exportCheck.identical) return { result: "FAIL", stage: "export", reason: "The source of the export does not assemble to the exported program. This is a defect of the c64-source script.", check: exportCheck };
+  if (!exportCheck.identical) return { result: "FAIL", stage: "export", reason: "The source of the export does not assemble to the exported program. This is a defect of the script.", check: exportCheck };
 
   // 6. The loader of a capture: planned and simulated. The tests of the new project run it.
   let baseline = { program: exported.built.program, symbols: exported.built.symbols ?? [], entryFile: "main.asm" };
@@ -1141,7 +1140,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
     if (exported.loader === undefined) return { result: "FAIL", stage: "loader", reason: exported.loaderRefused ?? "The loader could not be planned." };
     if (exported.loader.packed !== undefined) return { result: "FAIL", stage: "loader", reason: "The program is too large for one loader file, and export does not make the packed form of the loader." };
     const loaderBuilt = await buildLoader(exported.files, exported.laid, exported.loader, derived.program, state, new Map());
-    if ("diagnostics" in loaderBuilt) return { result: "FAIL", stage: "loader", reason: "loader.asm does not assemble. This is a defect of the c64-source script.", diagnostics: loaderBuilt.diagnostics };
+    if ("diagnostics" in loaderBuilt) return { result: "FAIL", stage: "loader", reason: "loader.asm does not assemble. This is a defect of the script.", diagnostics: loaderBuilt.diagnostics };
     baseline = { program: loaderBuilt.program, symbols: loaderBuilt.symbols, entryFile: "loader.asm" };
     loaderOutput = {
       copies: exported.loader.copies.map((copy) => ({ what: copy.what, to: `${formatC64Address(copy.target.start)}-${formatC64Address(copy.target.end)}` })),
@@ -1219,6 +1218,92 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   };
 }
 
+/** True when a list of a body (from listed) is cut at --max-listed. */
+function isCut(list: unknown): boolean {
+  return typeof list === "object" && list !== null && "rest" in list;
+}
+
+/** The same generate command line again, for the run after a change of the knowledge. */
+function generateAgain(call: Call): string {
+  const max = call.count("max-listed")!;
+  return call.next(
+    "generate",
+    "--out",
+    call.string("out")!,
+    ...call.addresses("entry").flatMap((entry) => ["--entry", formatC64Address(entry)]),
+    ...(call.space === DEFAULT_SPACE ? [] : ["--space", call.space]),
+    ...(call.flag("loader") ? ["--loader"] : []),
+    ...(call.flag("analyzer-names") ? ["--analyzer-names"] : []),
+    ...(max === OPTIONS["max-listed"].default ? [] : ["--max-listed", String(max)]),
+  );
+}
+
+/**
+ * The hint of a generate result: the action for each finding. When a change
+ * of the knowledge corrects a finding, nextAction is the same generate command.
+ */
+function generateReply(call: Call, body: Record<string, unknown>): Reply {
+  const steps: string[] = [];
+  let again = false;
+  const check = body.check as { identical: boolean; diagnostics?: unknown[] } | undefined;
+  if (check?.diagnostics !== undefined) {
+    steps.push("ACME does not assemble the source. Read check.diagnostics, and correct the name or the patch code in the project knowledge that ACME refuses.");
+    again = true;
+  } else if (check !== undefined && !check.identical) {
+    steps.push("The source does not assemble to the program. This is a defect of the script. Give the result to the user.");
+  }
+  if (body.entryOutside !== undefined) {
+    steps.push("The entry is in no segment of the program. Capture the program again, so that a segment holds the entry, and put the capture into the project knowledge.");
+    again = true;
+  }
+  const switches = body.switches as Array<{ result: string }> | undefined;
+  const defaultBuild = body.default as { result: string } | undefined;
+  if (body.patchesNotWritten !== undefined || switches?.some((item) => item.result !== "fits") === true || (defaultBuild !== undefined && defaultBuild.result !== "fits")) {
+    steps.push("Read the reason of each item in patchesNotWritten, and the result of each switch and of the default build. Correct the patches and the switches in the project knowledge.");
+    again = true;
+  }
+  const releases = body.releases as Array<{ result: string; base: boolean }> | undefined;
+  if (releases?.some((item) => item.result !== "identical" && (item.base || item.result !== "layout differs")) === true) {
+    steps.push("Read the result of each release. Put back a changed file, or record a switch and a patch in the project knowledge for each difference.");
+    again = true;
+  }
+  if ((body.loader as { verified?: boolean } | undefined)?.verified === false) steps.push("The loader is not verified. Read loader.reason, loader.differences and loader.stop.");
+  if (body.dataOnly !== undefined) {
+    steps.push("The source has only data. If the space has code, give --entry, or record a code region in the project knowledge.");
+    again = true;
+  }
+  if (body.entriesInData !== undefined) {
+    steps.push("An --entry is in a data region, and the source does not decode it. If the entry is code, record a code region at the entry in the project knowledge.");
+    again = true;
+  }
+  if (body.operandsAsNumbers !== undefined || body.macrosAsInstructions !== undefined) {
+    steps.push("Read the reason of each item in operandsAsNumbers and macrosAsInstructions. Correct the operand expression or the macro use in the project knowledge.");
+    again = true;
+  }
+  if ([body.asBytes, body.operandsAsNumbers, body.macrosAsInstructions, body.patchesNotWritten].some(isCut)) steps.push("To see all items of a list, give a larger --max-listed.");
+  if (steps.length === 0) return reply(body, { hint: "Read the source. Record names, comments, regions and modules in the project knowledge. Then generate again." });
+  if (again) steps.push("Then generate again.");
+  return reply(body, { hint: steps.join(" "), ...(again ? { nextAction: generateAgain(call) } : {}) });
+}
+
+/** The hint of an export result: the action for a failed stage, or the next steps for the new project. */
+function exportReply(body: Record<string, unknown>): Reply {
+  if (body.result === "FAIL") {
+    const hints: Record<string, string> = {
+      original: "Run generate, and correct the project knowledge until generate gives PASS. Then export again.",
+      switches: "Run generate. It builds each switch alone. Correct the patches in the project knowledge until each switch fits. Then export again.",
+      export: "This is a defect of the script. Give the result to the user.",
+      loader: "Read reason, and give it to the user.",
+    };
+    return reply(body, { hint: hints[String(body.stage)] });
+  }
+  const steps = ["Build and test the new project as its README.md tells."];
+  if (body.noCoverage !== undefined) steps.push("To make unused code and data free, put the coverage of a run into the project knowledge. Then remove the new folder and its zip file, and export again.");
+  if (((body.unreachableExecuted as { count: number } | undefined)?.count ?? 0) > 0) steps.push("To make the code in unreachableExecuted free, remove the new folder and its zip file. Then export again with the drop value of the code.");
+  if ([body.free, body.unreachableExecuted, body.operandsAsNumbers, body.macrosAsInstructions, (body.tests as { leftOut?: unknown } | undefined)?.leftOut].some(isCut)) steps.push("To see all items of a list, give a larger --max-listed.");
+  return reply(body, { hint: steps.join(" ") });
+}
+
 await runScript({
   name: "source",
   summary: "Generates ACME source from the program and the knowledge, and checks with ACME that it assembles to the program byte by byte.",
@@ -1229,19 +1314,19 @@ await runScript({
       summary: "Writes the source files, source-map.json and not_executed.json, and checks them. result is PASS when every check passes, else FAIL.",
       options: {
         out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "the folder for the source files, relative to the project folder", required: true },
-        entry: { ...OPTIONS.entry, multiple: true, help: "an entry point for Ghidra" },
+        entry: { ...OPTIONS.entry, multiple: true, help: "an address where code starts. The entry of the program, the routines and the code regions of the knowledge are entry points too" },
         space: { ...OPTIONS.space, help: "the knowledge space of the program: c64 (the default), drive8, or bank0 to bank255. The coverage and --loader are for c64 only" },
         loader: { kind: "flag", help: "also write loader.asm and loader.prg: the loader copies the segments into place, sets the entry state of the knowledge, and jumps to the entry. It is checked in the emulator" },
         "analyzer-names": { kind: "flag", help: "name an address that has no name of the user or the LLM, and no platform name, with its analyzer name" },
         "max-listed": OPTIONS["max-listed"],
       },
-      notes: "The program, its entry state and the coverage come from the knowledge: put them in with knowledge.ts image and coverage of the c64-knowledge skill. Code that no imported run executed is marked and listed, and <dir>/not_executed.json has all of its ranges. Without --analyzer-names, an address without a name gets a name of the source, for example l_17e2.",
+      notes: "The program, its entry state and the coverage come from the knowledge: put them into the project knowledge first. Code that no imported run executed is marked and listed, and <dir>/not_executed.json has all of its ranges. Without --analyzer-names, an address without a name gets a name of the source, for example l_17e2.",
       run: async (call) => {
         const { output, failed, removed } = await generate(call);
         // A file of an earlier run that this run removed and did not write again.
         const written = new Set((output.files as Written[]).map((file) => file.out));
         const gone = removed.filter((path) => !written.has(path));
-        return { result: failed ? "FAIL" : "PASS", ...output, ...(gone.length === 0 ? {} : { removed: gone }) };
+        return generateReply(call, { result: failed ? "FAIL" : "PASS", ...output, ...(gone.length === 0 ? {} : { removed: gone }) });
       },
     },
     {
@@ -1255,7 +1340,7 @@ await runScript({
         "max-listed": OPTIONS["max-listed"],
       },
       notes: "Fixes, trainers and cheats are in, protection and crack changes are out, and a change keeps its default. Code becomes free only when no run executed it and nothing reaches it; data only when no run touched it and nothing names it. Charset, sprite, bitmap and screen data stay unless --drop names them. Addresses do not move: a free range is $00 with a label free_xxxx. The export needs coverage in the knowledge to make ranges free by itself.",
-      run: (call) => exportProject(call),
+      run: async (call) => exportReply(await exportProject(call)),
     },
   ],
 });

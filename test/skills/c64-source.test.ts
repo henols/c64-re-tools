@@ -21,7 +21,7 @@ import { WireFailure } from "../../src/protocol/messages.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
 import { configValues, entriesInData, entryOutsideImage, layout, render, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
-import { seededBytes } from "../kit.ts";
+import { readEnvelope, seededBytes } from "../kit.ts";
 
 let acmeSkip: string | false = false;
 try {
@@ -414,7 +414,7 @@ test("an entry state file is read with its flags as PLP reads them, and a wrong 
   const read = loaderState({ registers: { pc: "$0810", a: 1, x: 2, y: 3, sp: 0xf0, flags: { n: true, i: true, c: true } }, cpuPort: { $00: 0x2f, $01: 0x35 }, pages }, "e.json");
   assert.equal(read.flags, 0xa5);
   assert.deepEqual(read.port, [0x2f, 0x35]);
-  assert.throws(() => loaderState({ registers: { pc: "$0810" } }, "e.json"), /e\.json is not an entry state of a c64-unpacker capture: registers\.a is not a byte/);
+  assert.throws(() => loaderState({ registers: { pc: "$0810" } }, "e.json"), /e\.json is not an entry state of a program capture: registers\.a is not a byte/);
 });
 
 test("with real ACME, data of every kind assembles to the same bytes", { skip: acmeSkip }, async () => {
@@ -510,7 +510,7 @@ test("operand expressions are written in place of numbers, with the names of the
     rendered.operandsAsNumbers.map((row) => [row.address, row.expression]),
     [[0x1001, "<table"], [0x100f, "1"], [0x1010, "nowhere + 5"]],
   );
-  assert.match(rendered.operandsAsNumbers[2]!.reason, /^nowhere is not a symbol of the knowledge or a platform name\. Name the address with knowledge\.ts rename, or write the operand again with knowledge\.ts operand\.$/);
+  assert.match(rendered.operandsAsNumbers[2]!.reason, /^nowhere is not a symbol of the knowledge or a platform name\. Name the address in the project knowledge, or record the operand expression again\.$/);
   assert.deepEqual(rendered.expressions.map((row) => [row.address, row.line]), [[0x1000, 4], [0x1002, 5], [0x1004, 6], [0x1007, 7], [0x1009, 8], [0x100c, 9]]);
   const demoted = render(layout(operandInput({ operands: OPERANDS })), new Set(), [], new Map([[0x1000, "a reason"]]));
   assert.ok(textOf(demoted, "segment_1000.asm").includes("        lda #$20                        ; = <table\n"));
@@ -554,7 +554,7 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  const json = JSON.parse(stdout) as { result: string; check: { identical: boolean }; asBytes: { listed: Array<{ address: string; instruction: string }> }; files: Array<{ out: string; bytes: number; sha256: string }>; removed: string[] };
+  const json = readEnvelope(stdout, status).json as { result: string; check: { identical: boolean }; asBytes: { listed: Array<{ address: string; instruction: string }> }; files: Array<{ out: string; bytes: number; sha256: string }>; removed: string[] };
   assert.equal(status, 0, stdout);
   assert.equal(json.result, "PASS");
   assert.equal(json.check.identical, true);
@@ -590,7 +590,7 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
     encoding: "utf8",
   });
   assert.equal(covered.status, 0, covered.stdout);
-  const notExecuted = (JSON.parse(covered.stdout) as { notExecuted: { count: number; rest?: string } }).notExecuted;
+  const notExecuted = (readEnvelope(covered.stdout, covered.status).json as { notExecuted: { count: number; rest?: string } }).notExecuted;
   const all = JSON.parse(readFileSync(join(project, "src", "not_executed.json"), "utf8")) as { files: Record<string, number>; ranges: Array<{ start: string; end: string; file?: string; routine?: string }> };
   assert.equal(all.ranges.length, notExecuted.count);
   assert.equal(all.ranges[0]!.start, "$1005");
@@ -632,7 +632,7 @@ test("with real Ghidra and ACME, an operand expression that ACME assembles to ot
     encoding: "utf8",
   });
   assert.equal(generated.status, 0, generated.stdout);
-  const json = JSON.parse(generated.stdout) as { check: { identical: boolean }; operandExpressions: number; operandsAsNumbers: unknown };
+  const json = readEnvelope(generated.stdout, generated.status).json as { check: { identical: boolean }; operandExpressions: number; operandsAsNumbers: unknown };
   assert.equal(json.check.identical, true);
   assert.equal(json.operandExpressions, 2);
   assert.deepEqual(json.operandsAsNumbers, { count: 1, listed: [{ address: "$1005", expression: ">handler+$100", reason: "ACME assembles it to $11, and the image has $10." }] });
@@ -668,8 +668,9 @@ test("with real Ghidra and ACME, a loader that cannot be planned still gives the
     env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
     encoding: "utf8",
   });
-  assert.equal(run.status, 1, run.stdout + run.stderr);
-  const json = JSON.parse(run.stdout) as { check: { identical: boolean }; files: Array<{ out: string }>; loader: { verified: boolean; reason: string } };
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const json = readEnvelope(run.stdout, run.status).json as { result: string; check: { identical: boolean }; files: Array<{ out: string }>; loader: { verified: boolean; reason: string } };
+  assert.equal(json.result, "FAIL");
   assert.equal(json.check.identical, true);
   assert.ok((json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))).includes("main.asm") && !(json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))).includes("loader.asm"));
   assert.equal(json.loader.verified, false);
@@ -701,22 +702,28 @@ test("with real Ghidra and ACME, an image whose entry is in no segment gives the
       env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
       encoding: "utf8",
     });
-  const reason = /^The entry \$0801 is in no segment of the image: the image does not hold the program\. Capture it again/;
+  const reason = /^The entry \$0801 is in no segment of the image: the image does not hold the program\. Capture the program again, so that a segment holds the entry\./;
   const withLoader = generate("--loader");
-  assert.equal(withLoader.status, 1, withLoader.stdout + withLoader.stderr);
-  const json = JSON.parse(withLoader.stdout) as { check: { identical: boolean }; files: Array<{ out: string }>; entryOutside: { entry: string; reason: string }; loader: { verified: boolean; reason: string } };
+  assert.equal(withLoader.status, 0, withLoader.stdout + withLoader.stderr);
+  const { envelope, json } = readEnvelope(withLoader.stdout, withLoader.status) as { envelope: { hint?: string; nextAction?: string }; json: { result: string; check: { identical: boolean }; files: Array<{ out: string }>; entryOutside: { entry: string; reason: string }; loader: { verified: boolean; reason: string } } };
+  assert.equal(json.result, "FAIL");
+  assert.match(envelope.hint!, /Capture the program again, so that a segment holds the entry/);
+  assert.match(envelope.nextAction!, /^node \/.*source\.ts generate --out src --entry '\$1000' --loader --project /, "the same generate command, to run after the capture");
   assert.equal(json.check.identical, true);
   assert.ok((json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))).includes("main.asm") && !(json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))).includes("loader.asm"));
   assert.equal(json.entryOutside.entry, "$0801");
   assert.equal(json.loader.verified, false);
   assert.match(json.loader.reason, reason);
   const source = generate();
-  assert.equal(source.status, 1, source.stdout + source.stderr);
-  assert.match((JSON.parse(source.stdout) as { entryOutside: { reason: string } }).entryOutside.reason, reason);
+  assert.equal(source.status, 0, source.stdout + source.stderr);
+  const sourceJson = readEnvelope(source.stdout, source.status).json as { result: string; entryOutside: { reason: string } };
+  assert.equal(sourceJson.result, "FAIL");
+  assert.match(sourceJson.entryOutside.reason, reason);
   // With no --entry and no knowledge, the image has no seed for Ghidra: still entryOutside, not a usage error.
   const unseeded = generate("--no-seed", "--loader");
-  assert.equal(unseeded.status, 1, unseeded.stdout + unseeded.stderr);
-  const data = JSON.parse(unseeded.stdout) as { instructions: number; entryOutside: { reason: string }; loader: { verified: boolean } };
+  assert.equal(unseeded.status, 0, unseeded.stdout + unseeded.stderr);
+  const data = readEnvelope(unseeded.stdout, unseeded.status).json as { result: string; instructions: number; entryOutside: { reason: string }; loader: { verified: boolean } };
+  assert.equal(data.result, "FAIL");
   assert.equal(data.instructions, 0);
   assert.match(data.entryOutside.reason, reason);
   assert.equal(data.loader.verified, false);
@@ -737,9 +744,11 @@ test("with real ACME, a space with no known code gives a source of data only, wi
     encoding: "utf8",
   });
   assert.equal(run.status, 0, run.stdout + run.stderr);
-  const json = JSON.parse(run.stdout) as { result: string; instructions: number; dataBytes: number; dataOnly: string; check: { identical: boolean } };
+  const { envelope, json } = readEnvelope(run.stdout, run.status) as { envelope: { hint?: string; nextAction?: string }; json: { result: string; instructions: number; dataBytes: number; dataOnly: string; check: { identical: boolean } } };
   assert.deepEqual([json.result, json.instructions, json.dataBytes, json.check.identical], ["PASS", 0, 256, true]);
-  assert.match(json.dataOnly, /^The knowledge has no entry, routine, code region or executed address in this space\. Thus the source has only data\./);
+  assert.match(json.dataOnly, /^The knowledge has no entry, routine, code region or executed address in this space\. Thus the source has only data\. For instructions, give --entry, or record a code region in the project knowledge\./);
+  assert.match(envelope.hint!, /record a code region in the project knowledge\. Then generate again\.$/);
+  assert.match(envelope.nextAction!, /^node \/.*source\.ts generate --out src --space bank3 --project /);
 });
 
 test("with coverage, each run of instructions that no run executed is marked and listed", () => {
@@ -875,7 +884,7 @@ test("the loader sets only the CIA timers that differ from the KERNAL's, and a r
   assert.deepEqual(section.plan.timers[0], { cia: 1, timer: "A", control: 0x01, latch: 0x4025, counterAtJump: 0x1237 });
   assert.deepEqual(section.plan.limits, []);
   assert.deepEqual(loaderLimits({ cia: section.plan }), []);
-  assert.match(loaderLimits({}).join("\n"), /no CIA values.*Capture the program again with c64-unpacker/, "an entry state from an older version");
+  assert.match(loaderLimits({}).join("\n"), /no CIA values.*Capture the program again at its entry point/, "an entry state from an older version");
 });
 
 test("a CIA timer that the loader cannot set as it was is a named limit", () => {
@@ -1039,7 +1048,7 @@ test("config.asm has the value of every switch by kind, switches.asm each releas
     textOf(rendered, "switches.asm"),
     [
       "; The releases of the knowledge. config.asm holds the value of each switch.",
-      "; Build a release with -DRELEASE_<label>=1 (c64-assembler --release <label>):",
+      "; Build a release with -DRELEASE_<label>=1 (the build option --release <label>):",
       "; then each switch has the value of that release, and the build does not read config.asm.",
       "",
       "; ORIGINAL (the program of the knowledge): original/game.prg. The first release.",
@@ -1125,8 +1134,9 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
     releases: Array<{ label: string; result: string }>;
   };
   const first = generate();
-  assert.equal(first.status, 1, first.stdout);
-  const json = JSON.parse(first.stdout) as Result;
+  assert.equal(first.status, 0, first.stdout);
+  const json = readEnvelope(first.stdout, first.status).json as Result & { result: string };
+  assert.equal(json.result, "FAIL", "a switch that does not fit fails the run");
   assert.equal(json.check.identical, true, "the build of the base release gives the image");
   assert.deepEqual(json.switches.map((item) => [item.name, item.result]), [["BIG", "overflow"], ["CRACK", "fits"]]);
   assert.deepEqual(json.default, { in: [], result: "fits", changedBytes: 0 });
@@ -1136,13 +1146,13 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
   assert.equal(knowledge("unpatch", "$1005").status, 0);
   const second = generate();
   assert.equal(second.status, 0, second.stdout);
-  assert.deepEqual((JSON.parse(second.stdout) as Result).switches.map((item) => [item.name, item.result]), [["CRACK", "fits"]]);
+  assert.deepEqual((readEnvelope(second.stdout, second.status).json as Result).switches.map((item) => [item.name, item.result]), [["CRACK", "fits"]]);
   // The user turns CRACK on in config.asm: generate keeps the value and says so, and the checks still build from the knowledge.
   const config = join(project, "src", "config.asm");
   writeFileSync(config, readFileSync(config, "utf8").replace(/^CRACK = 0/m, "CRACK = 1"));
   const third = generate();
   assert.equal(third.status, 0, third.stdout);
-  assert.deepEqual((JSON.parse(third.stdout) as Result).config, { file: "src/config.asm", notDefault: [{ name: "CRACK", value: 1, default: 0 }] });
+  assert.deepEqual((readEnvelope(third.stdout, third.status).json as Result).config, { file: "src/config.asm", notDefault: [{ name: "CRACK", value: 1, default: 0 }] });
   assert.match(readFileSync(config, "utf8"), /^CRACK = 1 ; on in V2\. \$1000-\$1004$/m);
 });
 
@@ -1178,8 +1188,8 @@ test("a macro arg that is a platform name of a ROM that the program does not use
     }),
   );
   assert.deepEqual(laid.macrosAsInstructions.map((row) => [row.start, row.reason]), [
-    [0x1000, "CHRGET is a platform name of a ROM that the program does not use, so the source leaves it out (romNamesLeftOut). Name the address with knowledge.ts rename, or give other args with knowledge.ts use."],
-    [0x1006, "nowhere is not a symbol of the knowledge or a platform name. Name the address with knowledge.ts rename, or give other args with knowledge.ts use."],
+    [0x1000, "CHRGET is a platform name of a ROM that the program does not use, so the source leaves it out (romNamesLeftOut). Name the address in the project knowledge, or record the macro use again with other args."],
+    [0x1006, "nowhere is not a symbol of the knowledge or a platform name. Name the address in the project knowledge, or record the macro use again with other args."],
   ]);
 });
 
@@ -1239,7 +1249,7 @@ test("with real Ghidra and ACME, a macro use that ACME refuses or assembles to o
   assert.equal(knowledge("apply", "batch.json").status, 0);
   const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout);
-  const json = JSON.parse(run.stdout) as { check: { identical: boolean }; files: Array<{ out: string }>; macroUses: number; macrosAsInstructions: { listed: Array<{ start: string; macro: string; reason: string }> } };
+  const json = readEnvelope(run.stdout, run.status).json as { check: { identical: boolean }; files: Array<{ out: string }>; macroUses: number; macrosAsInstructions: { listed: Array<{ start: string; macro: string; reason: string }> } };
   assert.equal(json.check.identical, true);
   assert.deepEqual(json.files.map((file) => file.out), ["src/segment_1000.asm", "src/constants.asm", "src/macros.asm", "src/main.asm", "src/source-map.json"]);
   assert.equal(json.macroUses, 1);

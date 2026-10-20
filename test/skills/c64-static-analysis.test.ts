@@ -16,6 +16,7 @@ import { analyzerNamesAt, listReferences, regionsOverlapping, symbolAt } from ".
 import { analysisSubjectPrg, MAIN, ROUTINE, TABLE_START } from "../fixtures/prg/analysis-subject.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 import { importPrg } from "../fixtures/program.ts";
+import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 
 let skip: string | false = false;
 try {
@@ -37,7 +38,7 @@ const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-"));
 importPrg(project, analysisSubjectPrg);
 after(() => rmSync(project, { recursive: true, force: true }));
 
-async function analyze(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
+async function analyze(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown>; envelope: ScriptEnvelope }> {
   const child = spawn(process.execPath, [...process.execArgv, script, "analyze", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -45,7 +46,7 @@ async function analyze(...args: string[]): Promise<{ status: number | null; json
   child.stderr.on("data", (chunk) => (stderr += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(stderr, "");
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, ...readEnvelope(stdout, status) };
 }
 
 test("an analysis imports Ghidra's structure into knowledge and reports it", { skip, timeout: 600_000 }, async () => {
@@ -56,7 +57,7 @@ test("an analysis imports Ghidra's structure into knowledge and reports it", { s
   assert.deepEqual((json.changes as { names: unknown }).names, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
   assert.deepEqual(json.conflicts, []);
   // The rest of the list is in the knowledge as the analyzer names of Ghidra.
-  assert.deepEqual(json.functions, { count: 2, listed: [{ entry: "$080d", name: "FUN_080d" }], rest: "c64-knowledge: knowledge.ts symbols --analyzer --origin ghidra" });
+  assert.deepEqual(json.functions, { count: 2, listed: [{ entry: "$080d", name: "FUN_080d" }], rest: "a larger --max-listed. The project knowledge has all of them as analyzer names" });
   assert.equal((json.decompilations as Array<{ entry: string }>)[0]?.entry, "$0818");
 
   const db = openForRead(project);
@@ -89,10 +90,13 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
   assert.equal(labels.listed.length, labels.count, "a short list is not cut");
   assert.equal(labels.rest, undefined);
 
-  const cut = (await analyze("--analyzer", "dxa", "--max-listed", "1")).json.labels as { count: number; listed: unknown[]; rest?: string };
+  const cutRun = await analyze("--analyzer", "dxa", "--max-listed", "1");
+  const cut = cutRun.json.labels as { count: number; listed: unknown[]; rest?: string };
   assert.equal(cut.count, labels.count);
   assert.equal(cut.listed.length, 1);
-  assert.equal(cut.rest, "c64-knowledge: knowledge.ts symbols --analyzer --origin dxa");
+  assert.equal(cut.rest, "a larger --max-listed. The project knowledge has all of them as analyzer names");
+  // The envelope tells that a list is cut.
+  assert.match(cutRun.envelope.hint ?? "", /A list in the body is cut/);
   const db = openForRead(project);
   // DXA's own facts sit beside Ghidra's from the test above; it does not replace them.
   assert.ok(regionsOverlapping(db, 0x0801, 0x080c).some((region) => region.origin === "dxa" && region.type === "bytes"));

@@ -12,6 +12,7 @@ import { COVERAGE } from "../../src/c64.ts";
 import { instructionList, modeOf } from "../../skills/c64-static-analysis/scripts/lib/instructions.ts";
 import { vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importPrg } from "../fixtures/program.ts";
+import { readEnvelope } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-instructions-"));
 after(() => rmSync(project, { recursive: true, force: true }));
@@ -59,7 +60,7 @@ test("analyze --out-instructions writes Ghidra's instructions to a project file"
   importPrg(project, vectoredPrg);
   const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--entry", "$080d", "--out-instructions", "analysis/instructions.json"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  const json = JSON.parse(run.stdout) as { instructions: { out: string; count: number } };
+  const json = readEnvelope(run.stdout, run.status).json as { instructions: { out: string; count: number } };
   assert.equal(json.instructions.out, "analysis/instructions.json", run.stdout);
   const list = JSON.parse(readFileSync(join(project, "analysis", "instructions.json"), "utf8")) as Array<{ address: string; mnemonic: string; mode: string; operand: string }>;
   assert.equal(list.length, json.instructions.count);

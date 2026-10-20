@@ -5,6 +5,7 @@
 // knowledge space drive8. No tool guesses where a load ends: the steps decide.
 
 import { type AddressRange, COVERAGE, formatC64Address } from "#src/c64.ts";
+import { Refusal } from "#src/errors.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage } from "#src/host-client/coverage.ts";
 import { ACTION_STEP_KINDS, checkActionStep, checkStepNames, isObject, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
@@ -12,7 +13,6 @@ import { knowledgeAt } from "#src/knowledge/names.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { UsageError } from "#src/script.ts";
 import { entryStateFile, json, machineState, readRam, readyState, removeStaleFiles, vectorsOf } from "./machine.ts";
 import { FIRST_SEGMENT_ADDRESS } from "./stages.ts";
 
@@ -35,10 +35,10 @@ export function readLoadSteps(path: string): LoadStep[] {
     value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
   } catch (error) {
     if (error instanceof WireFailure) throw error;
-    throw new UsageError(`--steps ${path} is not JSON: ${(error as Error).message}`);
+    throw new Refusal("invalid-input", `--steps ${path} is not JSON: ${(error as Error).message}`);
   }
   const fail = (message: string): never => {
-    throw new UsageError(`--steps ${path}: ${message}`);
+    throw new Refusal("invalid-input", `--steps ${path}: ${message}`);
   };
   if (!Array.isArray(value) || value.length === 0) return fail("the steps are a JSON list with at least one step");
   const names = new Set<string>();

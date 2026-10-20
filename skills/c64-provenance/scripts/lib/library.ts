@@ -121,7 +121,7 @@ export function routineFrom(source: RoutineSource): { routine: Routine; leftOut:
       instructions.push(at - start);
     }
   }
-  if (instructions.length === 0) throw new Refusal("invalid-input", `The knowledge has no code region in ${where(start)}-${where(end)}. Run c64-static-analysis first, or classify the code.`);
+  if (instructions.length === 0) throw new Refusal("invalid-input", `The knowledge has no code region in ${where(start)}-${where(end)}. Analyze the program for its code regions first, or classify the code in the project knowledge.`);
 
   // The operands: an address inside the routine moves with it; one outside may differ.
   const relocations = new Map<number, Relocation>();
@@ -238,7 +238,7 @@ export function routineText(routine: Routine): string {
 /** Reads the text of a routine file. Throws LibraryError for a file that is no routine. */
 export function parseRoutine(text: string, file: string): Routine {
   const fail = (what: string): never => {
-    throw new Refusal("invalid-input", `${file} is not a routine file of the library: ${what}.`);
+    throw new Refusal("invalid-input", `${file} is not a routine file of the library: ${what}.`, { hint: "Remove the file from the library folder, or save the routine again with routine --replace." });
   };
   let value: Record<string, unknown>;
   try {
@@ -308,7 +308,7 @@ function checkLibraryOutput(path: string, root: string): void {
       const shown = relative(base, target).split(sep).join("/") || ".";
       const part = knowledgePart(shown);
       if (part !== undefined) {
-        throw new Refusal("invalid-input", `--library: ${shown} is in ${part}, the knowledge of the project. Only the c64-knowledge skill writes it: a write there destroys the knowledge. Give a library folder beside the projects, for example ../library.`);
+        throw new Refusal("invalid-input", `--library: ${shown} is in ${part}, the knowledge of the project. Only the commands that change the project knowledge write it: a write there destroys the knowledge. Give a library folder beside the projects, for example ../library.`);
       }
       checkOutputPath(shown, "folder", { root: base, what: "--library" });
       return;
@@ -323,15 +323,15 @@ function checkLibraryOutput(path: string, root: string): void {
  * the output check of every script, which refuses the knowledge.
  */
 export function libraryFolder(folder: string, options: { create: boolean; cwd?: string }): string {
-  if (folder.length === 0) throw new Refusal("invalid-input", "The library folder must not be empty.");
+  if (folder.length === 0) throw new Refusal("invalid-input", "The library folder must not be empty.", { hint: "Give a library folder beside the projects, for example ../library." });
   const root = options.cwd ?? process.cwd();
   const path = resolve(root, folder);
   if (options.create) checkLibraryOutput(path, root);
   const stat = statSync(path, { throwIfNoEntry: false });
   if (stat === undefined) {
-    if (!options.create) throw new Refusal("not-found", `There is no library folder ${folder}. Save a routine to it first with routine.`);
+    if (!options.create) throw new Refusal("not-found", `There is no library folder ${folder}. Save a routine to it with routine first.`);
     mkdirSync(path, { recursive: true });
-  } else if (!stat.isDirectory()) throw new Refusal("invalid-input", `${folder} is not a folder.`);
+  } else if (!stat.isDirectory()) throw new Refusal("invalid-input", `${folder} is not a folder.`, { hint: "Give a library folder beside the projects, for example ../library." });
   if (statSync(join(path, PROJECT_DIRECTORY), { throwIfNoEntry: false }) !== undefined) {
     throw new Refusal("invalid-input", `${folder} is a project folder. A library is a plain folder beside the projects, for example library/ at the workspace root.`);
   }

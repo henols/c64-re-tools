@@ -1,8 +1,10 @@
 # Recording format
 
+This file gives the format of a record file and of a recording folder. For the commands, see the sections ``### `record <record.json>` `` and ``### `replay <recording>` `` of `SKILL.md`.
+
 ## Record file
 
-A record file (for `testing.ts record`) is one JSON object in a project file.
+A record file is one JSON object in a project file.
 
 ```json
 {
@@ -20,7 +22,7 @@ A record file (for `testing.ts record`) is one JSON object in a project file.
 
 - `name`: a short text.
 - `program`: a PRG file, relative to the project folder.
-- `symbols`: optional. `knowledge` (default), `none`, or a JSON file: the output of the c64-assembler skill, or an object of names and `$` addresses. The steps use these names.
+- `symbols`: optional. `knowledge` (default), `none`, or a JSON file: the symbol file of a build, or an object of names and `$` addresses. The steps use these names.
 - `load`: optional. With `false` (default), the program must load at `$0801` with a BASIC start line, and the C64 types `RUN`. With `true`, the program goes into memory and the C64 stays at READY. Then a `registers` step with `pc` starts the program.
 - `checkpoint`, `state` and `pin`: optional. The comparison that a replay uses when the replay gives none. `checkpoint` is the name or `$` address of a routine. Each entry of the routine is a checkpoint. `state` is 1 to 16 memory items that the checkpoints compare. `pin` is the random state in RAM. An item is a name, a `$` address, or `{ "address", "size" }` with a size from 1 to 4096. Give `checkpoint` and `state` together.
 - `inputs`: optional. The I/O addresses (or ranges such as `$de00-$dfff`) whose reads are input. The default is `$dc00` and `$dc01`: the joystick ports and the keyboard matrix. It also has `$d419` to `$d41c` (the paddles, and the noise and envelope of SID voice 3), and `$de00-$dfff` (no device: the last byte on the bus). Add `$d012` or a CIA timer only for a program that reads a seed there and does not wait in a loop on it.
@@ -56,14 +58,14 @@ The keyboard queue of the KERNAL holds 10 keys. If the keys of a `type` step and
 
 ## Play
 
-With `--play`, `testing.ts record` does the steps, then a person plays. The page on `http://localhost:<port>/` (`--http-port`, default 6465) shows the screen at 50 frames each second. It has no sound.
+With `--play`, `record` does the steps, then a person plays. The page on `http://localhost:<port>/` (`--http-port`) shows the screen at 50 frames each second. It has no sound.
 
 | Button | Key | Effect |
 |---|---|---|
 | Start | Enter, on the start screen | The C64 runs. Before Start, the page shows the screen after the steps, and the C64 is frozen. The time before Start is not in the recording. |
 | End and save | F12 | The C64 stops at the frame on the page, and the screen stays frozen. The script writes the recording folder. |
 | Cancel | F11 | The session stops before or during the play. The script writes no folder and gives `recorded: false`. |
-| Port | F9 | The joystick goes to the other port. `--joystick` gives the first port (default 2). |
+| Port | F9 | The joystick goes to the other port. `--joystick` gives the first port. |
 | Arrows | F10 | The arrow keys and space change between the joystick and the C64 keys. At the start, they are the joystick. |
 | Keys | | The keyboard changes between the symbolic map (the default) and the positional map. |
 
@@ -91,7 +93,7 @@ The page sends input only between Start and End. The input of the page goes into
 
 ## Recording folder
 
-`testing.ts record` writes these files into the `--out` folder:
+`record` writes these files into the `--out` folder:
 
 | File | Content |
 |---|---|
@@ -101,20 +103,17 @@ The page sends input only between Start and End. The input of the page goes into
 
 A site is the address of the instruction that reads. The values are hex. `<from>` and `<count>` are decimal.
 
-`testing.ts replay` checks `recording.json` before the replay starts. A recording of version 2.0 can have events or a comparison in the old form, for example `"at"` in place of `"address"`. The script refuses it with `invalid-input`. The message names the event, the old field and the form to write. Record the session again.
+`replay` examines `recording.json` before the replay starts. A recording of version 2.0 can have events or a comparison in the old form, for example `"at"` in place of `"address"`. The script refuses it with `invalid-input`. The message names the event, the old field and the form to write. Record the session again.
 
 ## Replay
 
-`testing.ts replay` replays a recording folder:
+`replay` replays the recording on the original program first. The session must end with the recorded cycles and state hash. Else the result is INCONCLUSIVE. With `--rebuild`, `replay` then replays the recording on the rebuild. At each checkpoint, the rebuild first gets the pinned values of the original. Then the script compares the state. The cycles can be different.
 
-1. It replays the recording on the original program. The session must end with the recorded cycles and state hash. Else the result is INCONCLUSIVE. It also takes the state at each checkpoint of the original.
-2. With `--rebuild`, it replays the recording on the rebuild. At each checkpoint, the rebuild first gets the pinned values of the original. Then the script compares the state. The cycles can be different.
-
-The comparison comes from `--checkpoint`, `--state` and `--pin`, or else from the record file. A recording without names (`symbols` is `none`) takes the names of the knowledge at the time of the replay.
+A recording without names (`symbols` is `none`) takes the names of the project knowledge at the time of the replay.
 
 For the rebuild, the script finds each name with the names of the rebuild (`--symbols`). A `$` address is an address of the original. It moves with the name before it in the original: the script finds the same name in the rebuild and adds the same offset. Code moves with a code label, and data with any name. A site in ROM does not move. Give a state item a name, or the state moves with the code before it.
 
-The result is one JSON object:
+The body of the envelope of `replay` has these fields:
 
 - `result`: PASS, FAIL or INCONCLUSIVE.
 - `side`: `original` for the check of the original only, `rebuild` with `--rebuild`.

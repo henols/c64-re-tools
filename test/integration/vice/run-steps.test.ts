@@ -16,6 +16,7 @@ import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { joystickCounterPrg, LEFT_SEEN } from "../../fixtures/prg/joystick-counter.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { readEnvelope } from "../../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-run-"));
@@ -35,7 +36,7 @@ async function runSteps(...args: string[]): Promise<{ status: number | null; jso
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
 }
 
 test("a run writes screens, a coverage map, a snapshot and observations; a later run starts from that snapshot", { skip: liveSkip, timeout: 300_000 }, async () => {
@@ -79,7 +80,8 @@ test("a run writes screens, a coverage map, a snapshot and observations; a later
 test("a runUntil that does not reach its target ends the run with the reason", { skip: liveSkip, timeout: 180_000 }, async () => {
   writeFileSync(join(project, "never.json"), JSON.stringify({ name: "never", start: { program: "counter.prg", load: true }, steps: [{ registers: { pc: "$c000" } }, { runUntil: { target: { kind: "address", address: "$c0f0" }, timeoutFrames: 20 } }, { screen: "never" }] }));
   const { status, json } = await runSteps("never.json", "--out", "runs/never");
-  assert.equal(status, 1);
+  assert.equal(status, 0);
+  assert.equal(json.result, "FAIL");
   assert.equal(json.completed, false);
   assert.match(json.reason as string, /Step 2 did not reach its target in 20 frames/);
   assert.deepEqual((json.files as Array<{ out: string }>).map((file: { out: string }) => file.out.split("/").at(-1)), ["results.json"], "the steps after it did not run");
@@ -104,7 +106,7 @@ test("an expect step passes on equal values, fails on others with each mismatch,
     }),
   );
   const { status, json } = await runSteps("expect.json", "--out", "runs/expect");
-  assert.equal(status, 1, JSON.stringify(json));
+  assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.result, "FAIL");
   assert.equal(json.completed, true);
   assert.deepEqual(json.failedExpectations, ["bad"]);
@@ -153,7 +155,7 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(status, 0, stdout);
-  const diff = JSON.parse(stdout) as { memory: { listed: Array<{ start: string; end: string; a?: string; b?: string }> } };
+  const diff = readEnvelope(stdout, status).json as { memory: { listed: Array<{ start: string; end: string; a?: string; b?: string }> } };
   assert.ok(diff.memory.listed.some((range) => range.start === "$e000" && range.end === "$e003" && range.b === "01020304"), stdout);
 
   // PAL snapshots in an NTSC machine do not restore: refused, never a diff of the wrong state.
@@ -162,7 +164,7 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
   ntsc.stdout.on("data", (chunk) => (refused += chunk));
   const [ntscStatus] = (await once(ntsc, "exit")) as [number | null];
   assert.equal(ntscStatus, 2, refused);
-  const { error } = JSON.parse(refused) as { error: { code: string; message: string } };
+  const { error } = readEnvelope(refused, ntscStatus).json as { error: { code: string; message: string } };
   assert.equal(error.code, "invalid-input", refused);
   assert.match(error.message, /^runs\/under\/a\.vsf did not restore: the RAM after the restore is not the RAM of the file\..*Leave out --ntsc for a PAL snapshot/);
 });

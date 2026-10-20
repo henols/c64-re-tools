@@ -39,7 +39,7 @@ test("a step has the input of its MCP tool, with names and the defaults of the t
     [[{ registers: { flags: {} } }], /name at least one register/],
     [[{ frames: 0 }], /step 1: frames/],
     [[{ frames: 30_001 }], /step 1: frames/],
-    [[{ press: "A" }], /press pushes keys of the keyboard matrix, and only the replay core of c64-testing has them\. Use type for the KERNAL keyboard queue, or put the press step in a record file and play it with testing\.ts record of c64-testing$/],
+    [[{ press: "A" }], /press pushes keys of the keyboard matrix, and only the replay of a record file has them\. Use type for the KERNAL keyboard queue, or put the press step in a record file and play the record file$/],
   ] as const) {
     assert.throws(() => checkActionSteps(bad, refuse), why, JSON.stringify(bad));
   }

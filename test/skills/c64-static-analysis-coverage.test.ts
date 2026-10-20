@@ -17,6 +17,7 @@ import { DXA, findTool } from "../../src/native/discover.ts";
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importCoverage, importImage, importPrg } from "../fixtures/program.ts";
+import { readEnvelope } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-coverage-"));
 const home = process.cwd();
@@ -45,6 +46,12 @@ function fresh(): string {
 
 const analyzeScript = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
 const analyzeIn = (root: string, ...args: string[]) => spawnSync(process.execPath, [...process.execArgv, analyzeScript, "analyze", ...args], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+/** The body of a run: the envelope must be ok:true. */
+const bodyOf = (run: ReturnType<typeof analyzeIn>) => {
+  const { envelope, json } = readEnvelope(run.stdout, run.status);
+  assert.equal(envelope.ok, true, run.stdout);
+  return json;
+};
 
 function mapWith(starts: number[]): Uint8Array {
   const map = new Uint8Array(0x10000);
@@ -123,7 +130,7 @@ test("with coverage, Ghidra does not follow a KERNAL call or the IRQ vector into
   importImage(root, image, { segments: [{ start: 0x0016, end: 0x0019 }, { start: 0x080d, end: 0x0810 }, { start: 0xffe4, end: 0xffe9 }, { start: 0xfffe, end: 0xffff }] });
   importCoverage(root, { "kernal-run.bin": map });
   const run = analyzeIn(root, "--entry", "$080d");
-  const json = JSON.parse(run.stdout) as { coverageSeeds: unknown };
+  const json = bodyOf(run) as { coverageSeeds: unknown };
   // $080d and the return point after JSR $ffe4.
   assert.deepEqual(json.coverageSeeds, { entryPoints: 2, used: 2, romOnlyRanges: 2, romOnlyUsed: 2 }, run.stdout);
   const db = openForRead(root);
@@ -137,7 +144,7 @@ test("with coverage, Ghidra does not follow a KERNAL call or the IRQ vector into
 test("with coverage, DXA finds the code that only a vector reaches", { skip: dxaSkip, timeout: 120_000 }, () => {
   const root = fresh();
   importPrg(root, vectoredPrg);
-  const analyze = () => JSON.parse(analyzeIn(root, "--analyzer", "dxa").stdout) as Record<string, unknown>;
+  const analyze = () => bodyOf(analyzeIn(root, "--analyzer", "dxa")) as Record<string, unknown>;
   const codeAt = (address: number) => {
     const db = openForRead(root);
     const region = regionsOverlapping(db, address, address)[0];
@@ -160,7 +167,7 @@ test("with coverage, a branch target after an RTS is no Ghidra function, and no 
   importPrg(root, prg);
   importCoverage(root, { "branch.bin": mapWith([0x0810, 0x0812, 0x0815, 0x0818]) });
   const run = analyzeIn(root, "--entry", "$0810");
-  const json = JSON.parse(run.stdout) as { functions: { listed: Array<{ entry: string }> }; coverageGaps: { count: number } };
+  const json = bodyOf(run) as { functions: { listed: Array<{ entry: string }> }; coverageGaps: { count: number } };
   assert.deepEqual(json.functions.listed.map((fn) => fn.entry), ["$0810"], run.stdout);
   assert.equal(json.coverageGaps.count, 0, run.stdout);
 });
@@ -170,6 +177,6 @@ test("with coverage, Ghidra makes a function of the code that only a vector reac
   importPrg(root, vectoredPrg);
   importCoverage(root, { "run.bin": mapWith([0x080d, 0x080f, 0x0812, 0x0814, 0x0817, VECTORED_ROUTINE, VECTORED_ROUTINE + 3]) });
   const run = analyzeIn(root, "--entry", "$080d");
-  const json = JSON.parse(run.stdout) as { functions: { listed: Array<{ entry: string }> } };
+  const json = bodyOf(run) as { functions: { listed: Array<{ entry: string }> } };
   assert.ok(json.functions.listed.some((fn) => fn.entry === "$0820"), run.stdout);
 });

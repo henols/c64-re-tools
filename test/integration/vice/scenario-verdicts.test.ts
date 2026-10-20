@@ -19,6 +19,7 @@ import { openForWrite } from "../../../src/knowledge/database.ts";
 import { renameSymbol } from "../../../src/knowledge/write.ts";
 import { BROKEN, EQUIVALENT, ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { readEnvelope } from "../../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m9-"));
@@ -72,7 +73,7 @@ async function runTest(scenario: string): Promise<{ status: number | null; json:
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
 }
 
 test("the equivalent rebuild passes, the different one fails, an unreachable checkpoint is inconclusive", { skip: liveSkip, timeout: 300_000 }, async () => {
@@ -83,13 +84,13 @@ test("the equivalent rebuild passes, the different one fails, an unreachable che
   assert.equal(pass.status, 0);
 
   const fail = await runTest("fail.json");
-  assert.equal(fail.status, 1);
+  assert.equal(fail.status, 0);
   assert.equal(fail.json.result, "FAIL");
   // Only the counter differs: the screen, the border and A are the same on both sides.
   assert.deepEqual(fail.json.differences, [{ checkpoint: "counted", what: "memory counter", bytes: { count: 1, listed: [{ address: "$c100", original: "0a", rebuild: "09" }] } }]);
 
   const inconclusive = await runTest("inconclusive.json");
-  assert.equal(inconclusive.status, 3);
+  assert.equal(inconclusive.status, 0);
   assert.equal(inconclusive.json.result, "INCONCLUSIVE");
   assert.match(inconclusive.json.reason as string, /original side did not reach the checkpoint before 10 frames/);
 });

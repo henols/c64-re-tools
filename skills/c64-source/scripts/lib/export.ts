@@ -405,7 +405,7 @@ export interface ReadmeInput {
   tests: { written: ReadonlyArray<{ file: string; kind: "scenario" | "run" }>; leftOut: ReadonlyArray<{ file: string; reason: string }> };
 }
 
-/** The README of the new project: the commands first, then the free ranges, the files and where the program comes from. */
+/** The README of the new project: the build and the tests first, then the free ranges, the files and where the program comes from. */
 export function readmeText(input: ReadmeInput): string {
   const { name } = input;
   const lines = [
@@ -415,15 +415,11 @@ export function readmeText(input: ReadmeInput): string {
     "",
     "## Build",
     "",
-    "With the c64-assembler skill:",
-    "",
-    "```",
-    ...(input.entryFile === "main.asm"
-      ? [`assembler.ts build src main.asm --out build/${name}.prg --out-symbols build/${name}.json --compare`]
-      : [`assembler.ts build src ${input.entryFile} --out build/${name}.prg --out-symbols build/${name}.json`, `assembler.ts build src main.asm --out .c64-re-tools/local/program.prg --compare`]),
-    "```",
-    "",
-    "`--compare` checks that the source gives the program in the knowledge. After a change to the source, it gives FAIL: that is correct.",
+    `Assemble \`src/${input.entryFile}\` to \`build/${name}.prg\`, with its symbols in \`build/${name}.json\`.`,
+    input.entryFile === "main.asm"
+      ? "Compare the build with the program in the project knowledge: the source must give that program."
+      : "Assemble `src/main.asm` to `.c64-re-tools/local/program.prg`, and compare it with the program in the project knowledge: the source must give that program.",
+    "After a change to the source, the compare gives FAIL: that is correct.",
     "",
     "With ACME only, from the folder `src`:",
     "",
@@ -434,11 +430,10 @@ export function readmeText(input: ReadmeInput): string {
     "## Test",
     "",
   ];
-  if (input.tests.written.length === 0) lines.push("No tests came with the program. Write run files with `expect` steps in `tests/` (c64-development skill).");
+  if (input.tests.written.length === 0) lines.push("No tests came with the program. Write run files with `expect` steps in `tests/`.");
   else {
-    lines.push(`Build first. A scenario compares \`build/${name}.prg\` with \`baseline/${name}.prg\`, the exported program. A run file runs \`build/${name}.prg\`. Use the c64-testing skill:`, "", "```");
-    for (const test of input.tests.written) lines.push(test.kind === "run" ? `testing.ts run ${test.file} --out .c64-re-tools/local/runs/${test.file.replace(/^tests\//, "").replace(/\.json$/, "")}` : `testing.ts test ${test.file}`);
-    lines.push("```");
+    lines.push(`Build first. A scenario compares \`build/${name}.prg\` with \`baseline/${name}.prg\`, the exported program. A run file runs \`build/${name}.prg\`. Run each test:`, "");
+    for (const test of input.tests.written) lines.push(test.kind === "run" ? `- \`${test.file}\`: run the run file, with its results in \`.c64-re-tools/local/runs/${test.file.replace(/^tests\//, "").replace(/\.json$/, "")}\`.` : `- \`${test.file}\`: run the scenario.`);
   }
   lines.push("", "## Free ranges", "");
   if (input.free.length === 0) lines.push("None: the export dropped nothing.");

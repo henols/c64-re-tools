@@ -12,6 +12,7 @@ import { ACME, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
 import { Refusal } from "../../src/errors.ts";
 import { areaOf, decode, describeAddress, IO, lookup, platformNames, ROM } from "../../src/platform.ts";
+import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-memmap-"));
 after(() => rmSync(project, { recursive: true, force: true }));
@@ -96,47 +97,64 @@ test("register values decode to their C64 meaning", () => {
   assert.throws(() => decode(0xd020, 1), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /There is no decoder for \$d020/.test(error.message));
 });
 
+const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memory-map.ts");
+
+/** Runs memory-map.ts and reads its envelope; json is the body, or { error } for a refusal. */
+function memoryMap(args: string[], cwd?: string): { status: number | null; json: any; envelope: ScriptEnvelope } {
+  const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { encoding: "utf8", ...(cwd === undefined ? {} : { cwd }) });
+  return { status: run.status, ...readEnvelope(run.stdout, run.status) };
+}
+
 test("the script answers in JSON and refuses bad input", () => {
-  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memory-map.ts");
-  const at = spawnSync(process.execPath, [...process.execArgv, script, "at", "$d020", "$D021", "$fffe", "$fb"], { encoding: "utf8" });
+  const at = memoryMap(["at", "$d020", "$D021", "$fffe", "$fb"]);
   assert.equal(at.status, 0);
   assert.deepEqual(
-    (JSON.parse(at.stdout) as { addresses: Array<{ name: string }> }).addresses.map((address) => address.name),
+    (at.json as { addresses: Array<{ name: string }> }).addresses.map((address) => address.name),
     ["EXTCOL", "BGCOL0", "IRQ vector", "FREEZP"],
   );
+  assert.equal(at.envelope.hint, undefined, "platform addresses need no hint");
+  const free = memoryMap(["at", "$c000", "$d020"]);
+  assert.equal(free.envelope.hint, "The program decides the use of $c000. Find its use in the disassembly or in the emulator.");
   for (const address of ["53281", "%1111111111111110", "d020"]) {
-    const refused = spawnSync(process.execPath, [...process.execArgv, script, "at", address], { encoding: "utf8" });
+    const refused = memoryMap(["at", address]);
     assert.equal(refused.status, 2, address);
-    assert.equal((JSON.parse(refused.stdout) as { error: { code: string } }).error.code, "invalid-input", address);
+    assert.equal(refused.json.error.code, "invalid-input", address);
   }
-  const unknown = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "at", "d020"], { encoding: "utf8" }).stdout) as { error: { message: string } };
-  assert.match(unknown.error.message, /^<address>: d020 is not a C64 platform name and not a name in the knowledge\. Give a \$ address, a platform name that memory-map\.ts list or export shows \(for example SCROLY or CHROUT\), or a name that knowledge\.ts symbols lists\./);
+  const unknown = memoryMap(["at", "d020"]);
+  assert.equal(unknown.envelope.error, "<address>: d020 is not a C64 platform name and not a name in the knowledge.");
+  assert.match(unknown.envelope.hint!, /^Give a \$ address, a platform name that the command list or export shows \(for example SCROLY or CHROUT\), or a symbol of the project knowledge\./);
   // The platform names of memory-map itself, in any letter case, for at and decode.
-  const named = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "at", "SCROLY", "chrout"], { encoding: "utf8" }).stdout) as { addresses: Array<{ address: string; name: string }> };
+  const named = memoryMap(["at", "SCROLY", "chrout"]).json as { addresses: Array<{ address: string; name: string }> };
   assert.deepEqual(named.addresses.map((address) => [address.address, address.name]), [["$d011", "SCROLY"], ["$ffd2", "CHROUT"]]);
-  const decoded = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "decode", "SCROLY", "$1b"], { encoding: "utf8" }).stdout) as { register: string; name: string };
+  const decoded = memoryMap(["decode", "SCROLY", "$1b"]).json as { register: string; name: string };
   assert.deepEqual([decoded.register, decoded.name], ["$d011", "SCROLY"]);
-  const vic = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "list", "vic"], { encoding: "utf8" }).stdout) as { entries: { count: number; listed: Array<{ name: string }>; rest?: string } };
-  assert.deepEqual([vic.entries.count, vic.entries.listed.length, vic.entries.listed[0]!.name, vic.entries.rest], [47, 47, "SP0X", undefined]);
-  const system = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "list", "system", "--max-listed", "2"], { encoding: "utf8" }).stdout) as { entries: { count: number; listed: unknown[]; rest: string } };
-  assert.deepEqual([system.entries.count, system.entries.listed.length, system.entries.rest], [108, 2, "a larger --max-listed, or memory-map.ts export --out <file> for every platform name"]);
-  const value = spawnSync(process.execPath, [...process.execArgv, script, "decode", "$1", "%00110111"], { encoding: "utf8" });
-  assert.equal((JSON.parse(value.stdout) as { value: string }).value, "$37", "a value takes $ and hex, decimal, or % and binary");
-  const bad = spawnSync(process.execPath, [...process.execArgv, script, "decode", "$d020", "1"], { encoding: "utf8" });
+  const vic = memoryMap(["list", "vic"]);
+  assert.deepEqual([vic.json.entries.count, vic.json.entries.listed.length, vic.json.entries.listed[0]!.name, vic.json.entries.rest, vic.envelope.nextAction], [47, 47, "SP0X", undefined, undefined]);
+  const system = memoryMap(["list", "system", "--max-listed", "2"]);
+  assert.deepEqual([system.json.entries.count, system.json.entries.listed.length, system.json.entries.rest], [108, 2, "a larger --max-listed, or the command export for every platform name"]);
+  assert.equal(system.envelope.hint, "The list is cut. To get all 108 entries, give --max-listed 108.");
+  assert.match(system.envelope.nextAction!, /^node \/\S+memory-map\.ts list system --max-listed 108( --project \S+)?$/);
+  const value = memoryMap(["decode", "$1", "%00110111"]);
+  assert.equal(value.json.value, "$37", "a value takes $ and hex, decimal, or % and binary");
+  const bad = memoryMap(["decode", "$d020", "1"]);
   assert.equal(bad.status, 2);
-  assert.equal((JSON.parse(bad.stdout) as { error: { code: string } }).error.code, "invalid-input");
+  assert.equal(bad.json.error.code, "invalid-input");
   // --bank is only for $d018: another register refuses it, and does not ignore it.
-  const bank = spawnSync(process.execPath, [...process.execArgv, script, "decode", "$d011", "$1b", "--bank", "$97"], { encoding: "utf8" });
-  assert.equal(bank.status, 2, bank.stdout);
-  assert.match((JSON.parse(bank.stdout) as { error: { message: string } }).error.message, /^--bank works only with \$d018 \(VMCSB\), not with \$d011\. Remove --bank/);
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "decode", "VMCSB", "$15", "--bank", "$97"], { encoding: "utf8" }).status, 0);
+  const bank = memoryMap(["decode", "$d011", "$1b", "--bank", "$97"]);
+  assert.equal(bank.status, 2, JSON.stringify(bank.envelope));
+  assert.equal(bank.envelope.error, "--bank works only with $d018 (VMCSB), not with $d011.");
+  assert.match(bank.envelope.hint!, /^Remove --bank\./);
+  const vmcsb = memoryMap(["decode", "VMCSB", "$15", "--bank", "$97"]);
+  assert.deepEqual([vmcsb.status, vmcsb.envelope.hint], [0, undefined]);
+  assert.match(memoryMap(["decode", "VMCSB", "$15"]).envelope.hint!, /give --bank with the value of \$dd00/);
+  const help = memoryMap([]);
+  assert.deepEqual([help.envelope.command, help.json.commands.map((command: { name: string }) => command.name)], ["help", ["at", "decode", "list", "export"]]);
 });
 
 test("every address in $d000-$dfff says that it is visible only while $01 maps I/O in", () => {
-  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memory-map.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "at", "$d020", "$d800", "$dbff", "$de00", "$cfff", "$e000"], { encoding: "utf8" });
+  const run = memoryMap(["at", "$d020", "$d800", "$dbff", "$de00", "$cfff", "$e000"]);
   assert.equal(run.status, 0);
-  const visible = (JSON.parse(run.stdout) as { addresses: Array<{ visible?: string }> }).addresses.map((address) => address.visible !== undefined);
+  const visible = (run.json as { addresses: Array<{ visible?: string }> }).addresses.map((address) => address.visible !== undefined);
   assert.deepEqual(visible, [true, true, true, true, false, false]);
 });
 
@@ -149,10 +167,9 @@ test("the platform names are symbols, each name once", () => {
 });
 
 test("export writes the platform names as an ACME include that ACME reads", { skip: acmeSkip }, async () => {
-  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memory-map.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "export", "--out", "src/hw.asm"], { cwd: project, encoding: "utf8" });
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  assert.equal((JSON.parse(run.stdout) as { names: number }).names, platformNames().length);
+  const run = memoryMap(["export", "--out", "src/hw.asm"], project);
+  assert.equal(run.status, 0, JSON.stringify(run.envelope));
+  assert.equal(run.json.names, platformNames().length);
   const include = readFileSync(join(project, "src", "hw.asm"));
   assert.match(include.toString(), /^EXTCOL = \$d020 +; Border color/m);
   assert.match(include.toString(), /^ADRAY2 = \$05 +;/m);
@@ -164,5 +181,5 @@ test("export writes the platform names as an ACME include that ACME reads", { sk
   );
   assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
   assert.deepEqual([...attachments![0]!.subarray(2)], [0x8d, 0x20, 0xd0, 0x20, 0xd2, 0xff, 0xa5, 0x05, 0x91, 0x05]);
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "export"], { cwd: project, encoding: "utf8" }).status, 2);
+  assert.equal(memoryMap(["export"], project).status, 2);
 });

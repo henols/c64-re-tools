@@ -1,5 +1,5 @@
 // The c64-knowledge script, run as the LLM runs it: in a project folder,
-// with arguments, reading one JSON object from stdout.
+// with arguments, reading one JSON envelope from stdout.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
+import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 import { listing, type ListingSource } from "../../skills/c64-knowledge/scripts/lib/listing.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
@@ -37,10 +38,12 @@ function rev(root: string, n: number): string {
   return id;
 }
 
-function knowledge(root: string, ...args: string[]): { status: number | null; json: Record<string, unknown> } {
+/** One run of the script: json is the body, or {error: {code, message}} for a refusal. */
+function knowledge(root: string, ...args: string[]): { status: number | null; json: Record<string, unknown>; envelope: ScriptEnvelope } {
   const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: root, encoding: "utf8" });
   assert.equal(run.stderr, "", run.stderr);
-  return { status: run.status, json: JSON.parse(run.stdout) as Record<string, unknown> };
+  const { envelope, json } = readEnvelope(run.stdout, run.status);
+  return { status: run.status, json: json as Record<string, unknown>, envelope };
 }
 
 test("reads in a project without knowledge answer empty and create nothing", () => {
@@ -163,7 +166,7 @@ test("a removal shows as a suppression with its reason, in at and in the history
   assert.deepEqual(knowledge(root, "suppressions", "--max-listed", "1").json.suppressions, {
     count: 2,
     listed: [{ suppresses: "reference", from: "$0410", to: "$ef29", kind: "jump", origin: "llm", revision: rev(root, 5), reason: "the vector is written at run time" }],
-    rest: "a larger --max-listed, a smaller --range, or knowledge.ts export --out <file> for all current knowledge",
+    rest: "a larger --max-listed, a smaller --range, or export --out <file> for all current knowledge",
   });
   assert.equal(knowledge(root, "at", "$0408").json.suppressions, undefined);
   assert.deepEqual(knowledge(root, "at", "$0480").json.suppressions, [{ suppresses: "region", start: "$0480", end: "$04ff", origin: "llm", revision: rev(root, 6) }]);
@@ -182,7 +185,7 @@ test("apply writes a batch from a file or standard input as one revision", () =>
   );
   assert.deepEqual(knowledge(root, "apply", "batch.json", "--reason", "first names", "--evidence", "note:seen in the attract mode").json, { revision: rev(root, 1), writes: 2, replaced: [] });
   const piped = spawnSync(process.execPath, [...process.execArgv, script, "apply", "-"], { cwd: root, encoding: "utf8", input: JSON.stringify([{ op: "comment", address: "$2100", placement: "line", text: "Reads joystick 2." }]) });
-  assert.deepEqual(JSON.parse(piped.stdout), { revision: rev(root, 2), writes: 1, replaced: [] });
+  assert.deepEqual(readEnvelope(piped.stdout, piped.status).json, { revision: rev(root, 2), writes: 1, replaced: [] });
   // A batch lists each row of another origin that it replaced, as previous does for one write.
   knowledge(root, "rename", "$2200", "l2200", "--by", "user");
   writeFileSync(join(root, "over.json"), JSON.stringify([{ op: "comment", address: "$2200", placement: "line", text: "x" }, { op: "rename", address: "$2200", name: "draw_cave" }]));
@@ -217,7 +220,7 @@ test("evidence names a project file with its SHA-256, and --origin filters the r
   assert.deepEqual(knowledge(root, "symbols", "--origin", "analyzer").json, { symbols: { count: 0, listed: [] } });
   const robot = knowledge(root, "symbols", "--origin", "robot");
   assert.equal(robot.status, 2);
-  assert.match((robot.json.error as { message: string }).message, /^--origin cannot be "robot"\. Give one of user, llm, dxa, ghidra, heuristic, semantic or analyzer, or a comma list of them\. semantic is user and llm\. analyzer is dxa, ghidra and heuristic\n/);
+  assert.match((robot.json.error as { message: string }).message, /^--origin cannot be "robot"\. Give one of user, llm, dxa, ghidra, heuristic, semantic or analyzer, or a comma list of them\. semantic is user and llm\. analyzer is dxa, ghidra and heuristic\. To get the usage, run knowledge\.ts symbols --help\.$/);
 });
 
 test("image puts a capture into the knowledge, and coverage joins maps that are evidence by their path", () => {
@@ -251,7 +254,7 @@ test("image puts a capture into the knowledge, and coverage joins maps that are 
   assert.deepEqual(evidence.map((item) => [item.kind, item.ref]), [["coverage", ".c64-re-tools/local/capture/attract.bin"]]);
   const unknown = knowledge(root, "rename", "$0401", "x", "--evidence", "coverage:other.bin");
   assert.equal(unknown.status, 2);
-  assert.match((unknown.json.error as { message: string }).message, /import the map with coverage first/);
+  assert.match((unknown.json.error as { message: string }).message, /Import the map with coverage first\./);
   assert.equal(knowledge(root, "coverage").status, 2);
   assert.deepEqual(knowledge(root, "program").json, {
     image: { segments: [{ start: "$0400", end: "$04ff" }], bytes: 256, entry: "$0400", state: true, stages: 1 },
@@ -301,7 +304,7 @@ test("coverage imports a map into each space, by one spelling of its path, and -
   assert.deepEqual(evidenceOf("--evidence", "coverage:runs/m.bin", "--space", "drive8"), [{ kind: "coverage", ref: "runs/m.bin", sha256: first, space: "drive8" }]);
   const missing = knowledge(root, "rename", "$0400", "x", "--evidence", "coverage:runs/m.bin", "--space", "bank1");
   assert.equal(missing.status, 2);
-  assert.match((missing.json.error as { message: string }).message, /no coverage map of the knowledge in bank1: import the map with coverage --space bank1 first/);
+  assert.match((missing.json.error as { message: string }).message, /no coverage map of the knowledge in bank1\. Import the map with coverage --space bank1 first\./);
   assert.deepEqual((knowledge(root, "program").json.coverage as { maps: string[] }).maps, ["runs/m.bin"]);
 });
 
@@ -352,7 +355,7 @@ test("operand writes an expression after a check against the program in the know
   knowledge(root, "rename", "$80c0", "irq_handler");
   const without = knowledge(root, "operand", "$8079", "--lo", "irq_handler");
   assert.equal(without.status, 2, "operand needs the program in the knowledge");
-  assert.match((without.json.error as { message: string }).message, /knowledge\.ts image/);
+  assert.match((without.json.error as { message: string }).message, /^The knowledge has no program\. Put the program into the project knowledge: a PRG, or the image\.json of a capture\./);
   assert.equal(knowledge(root, "image", "game.prg").json.revision, rev(root, 2));
   // The operand byte of an instruction is no instruction start, also when the expression gives its value.
   const inside = knowledge(root, "operand", "$807a", "--expr", "$c0");
@@ -400,10 +403,12 @@ test("a command takes a start of a revision id that only one revision has, and 0
   assert.deepEqual(knowledge(root, "revision", "0").json, { revision: { id: "0", operation: "none", description: "The knowledge before every revision. It is empty." }, added: { count: 0, listed: [] }, closed: { count: 0, listed: [] } });
   // A revert keeps the revision that it restored.
   assert.equal((knowledge(root, "revision", rev(root, 4)).json.revision as { restores: string }).restores, "0");
-  const help = String(knowledge(root, "revert", "--help").json.text);
-  assert.match(help, /Makes the knowledge the same as at one revision: all spaces, or with --space only that space\. The revert is a new revision/);
-  assert.match(help, /Without --space, every space reverts/);
-  assert.doesNotMatch(help, /Undoes one revision/);
+  const help = knowledge(root, "revert", "--help");
+  assert.equal(help.envelope.command, "help");
+  const body = help.json as { summary: string; options: Array<{ flag: string; help: string }> };
+  assert.match(body.summary, /Makes the knowledge the same as at one revision: all spaces, or with --space only that space\. The revert is a new revision/);
+  assert.match(body.options.find((option) => option.flag === "--space <space>")!.help, /Without --space, every space reverts/);
+  assert.doesNotMatch(JSON.stringify(body), /Undoes one revision/);
 });
 
 test("release, switch, patch, macro and use write the source knowledge, and releases, patches, switches, macros, uses, at and history read it", () => {
@@ -497,8 +502,8 @@ test("join makes one batch of the batches of parallel agents, and apply writes i
     writes: 4,
     repeated: 0,
     choices: [{ what: "name", at: "$1000", kept: { file: "b.json", value: "draw_room (routine)" }, left: [{ file: "a.json", value: "draw_room_a" }] }],
-    apply: "knowledge.ts apply joined.json",
   });
+  assert.equal(joined.envelope.nextAction, `node ${script} apply joined.json --project ${root}`, "the next command applies the joined batch from any directory");
   const batch = JSON.parse(readFileSync(join(root, "joined.json"), "utf8")) as Array<Record<string, unknown>>;
   assert.deepEqual(batch.find((write) => write.op === "operand"), { op: "operand", address: "$0400", select: "lo", symbol: "draw_room" }, "the operand follows the owner's name");
   assert.equal(existsSync(join(root, ".c64-re-tools")), false, "join writes no knowledge");
@@ -605,4 +610,24 @@ test("a batch write with an unknown field names every field that the write takes
   const refused = knowledge(root, "apply", "batch.json");
   assert.equal(refused.status, 2);
   assert.match((refused.json.error as { message: string }).message, /^write 1: classify takes start, end, type, element, space, not range/);
+});
+
+test("a read with conflicts of a git merge gives merge as the next command, and a write is refused until merge decides them", () => {
+  const root = project();
+  knowledge(root, "rename", "$2100", "first");
+  knowledge(root, "rename", "$2200", "second");
+  // A git merge keeps the lines of both sides: a second current name at $2100.
+  const file = join(root, ".c64-re-tools", "knowledge", "symbols.jsonl");
+  const second = JSON.parse(readFileSync(file, "utf8").trim().split("\n")[1]!) as Record<string, unknown>;
+  writeFileSync(file, `${readFileSync(file, "utf8")}${JSON.stringify({ ...second, id: `${second.added}/2`, address: "$2100", name: "other" })}\n`);
+  const read = knowledge(root, "at", "$2100");
+  assert.equal((read.json.conflicts as unknown[]).length, 1);
+  assert.match(read.envelope.hint!, /Run merge/);
+  assert.equal(read.envelope.nextAction, `node ${script} merge --reason 'decide the conflicts of a git merge' --project ${root}`);
+  const refused = knowledge(root, "rename", "$2300", "third");
+  assert.equal(refused.envelope.code, "conflict");
+  assert.match(refused.envelope.hint!, /Decide the conflicts of the git merge in the project knowledge\. Then write again\./);
+  const merged = knowledge(root, "merge", "--reason", "two computers");
+  assert.equal((merged.json.choices as unknown[]).length, 1);
+  assert.equal(knowledge(root, "at", "$2100").envelope.nextAction, undefined);
 });

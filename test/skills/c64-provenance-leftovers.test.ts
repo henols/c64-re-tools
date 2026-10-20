@@ -12,7 +12,7 @@ import { after, test } from "node:test";
 import { COVERAGE } from "../../src/c64.ts";
 import { findBasic, findCopies, findFills, findLeftovers, findText } from "../../skills/c64-provenance/scripts/lib/leftovers.ts";
 import { separate } from "../../src/knowledge/separate.ts";
-import { seededBytes } from "../kit.ts";
+import { readEnvelope, seededBytes } from "../kit.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
 
 const roots: string[] = [];
@@ -21,7 +21,11 @@ after(() => {
 });
 
 const provenance = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
-const script = (path: string, args: string[], cwd: string) => spawnSync(process.execPath, [...process.execArgv, path, ...args], { cwd, encoding: "utf8" });
+/** Runs a script in `cwd`: the exit status, the envelope, and json (the body, or { error: { code, message } }). */
+const script = (path: string, args: string[], cwd: string) => {
+  const spawned = spawnSync(process.execPath, [...process.execArgv, path, ...args], { cwd, encoding: "utf8" });
+  return { status: spawned.status, stdout: spawned.stdout, stderr: spawned.stderr, ...readEnvelope(spawned.stdout, spawned.status) };
+};
 
 /** PETSCII bytes of upper-case text, as the C64 shows them after a reset. */
 const petscii = (text: string) => [...text].map((character) => character.charCodeAt(0));
@@ -159,7 +163,8 @@ test("the leftovers command reads the program, its stages and the coverage from 
 
   const run = script(provenance, ["leftovers", "--out", ".c64-re-tools/local/leftovers.json", "--max-listed", "1"], root);
   assert.equal(run.status, 0, run.stdout + run.stderr);
-  const result = JSON.parse(run.stdout) as Record<string, any>;
+  const result = run.json as Record<string, any>;
+  assert.match(run.envelope.hint ?? "", /\.c64-re-tools\/local\/leftovers\.json holds all items\./);
   assert.equal(result.entry, "$2000");
   assert.equal(result.stages, 2);
   assert.equal(result.noCoverage, undefined);
@@ -177,5 +182,6 @@ test("the leftovers command reads the program, its stages and the coverage from 
   roots.push(empty);
   const none = script(provenance, ["leftovers"], empty);
   assert.equal(none.status, 2, "no program in the knowledge");
-  assert.match(none.stdout, /knowledge\.ts image/);
+  assert.equal(none.json.error.code, "not-found");
+  assert.match(none.json.error.message, /^The knowledge has no program\./);
 });

@@ -42,7 +42,7 @@ import { CODE_REGION_TYPES, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
-import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
+import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
 import { findRoutine, libraryFolder, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
 import { watchRelease, type Start } from "./lib/runtime.ts";
@@ -63,8 +63,8 @@ interface LoadedRelease {
 
 /**
  * A release to compare: "knowledge" (the program of the knowledge, with its
- * entry state and stages), a PRG at its load address, or an image.json of the
- * c64-unpacker skill with the entry_state.json beside it.
+ * entry state and stages), a PRG at its load address, or an image.json of an
+ * unpacked program (a capture) with the entry_state.json beside it.
  */
 function readRelease(name: string, shift: number): LoadedRelease {
   const moved = (range: AddressRange) => ({ start: range.start + shift, end: range.end + shift });
@@ -79,13 +79,13 @@ function readRelease(name: string, shift: number): LoadedRelease {
     } finally {
       db?.close();
     }
-    noState = "The knowledge has no entry state: put a c64-unpacker capture in with knowledge.ts image <image.json>.";
+    noState = "The knowledge has no entry state. Put a capture of the unpacked program, with its entry state, into the project knowledge.";
   } else {
     image = readImage(name);
-    noState = `It has no entry_state.json beside it; capture it with c64-unpacker.`;
+    noState = "It has no entry_state.json beside it. Capture the unpacked program again, with its entry state.";
   }
   const segments = image.segments.map(moved);
-  if (!segments.every(inside)) throw new UsageError(`the shift moves ${name} outside $0000-$ffff`);
+  if (!segments.every(inside)) throw new UsageError(`The shift moves ${name} outside $0000-$ffff.`, { hint: "Give a shift that keeps each segment of the release in $0000-$ffff." });
   const memory = image.memory ?? new Uint8Array(0x10000);
   if (image.memory === undefined) for (const segment of image.segments) for (let at = segment.start; at <= segment.end; at++) memory[at] = image.byteAt(at);
   const prg = name !== "knowledge" && !name.endsWith(".json");
@@ -106,27 +106,27 @@ const MAX_ALIGNED = 64;
 /** compare: the releases byte by byte, with --align a map of two releases in blocks, and with --frames the first access of each difference in each release. */
 async function compare(call: Call): Promise<unknown> {
   const positionals = call.subjects;
-  if (positionals.length < 2) throw new UsageError("compare needs two or more releases");
+  if (positionals.length < 2) throw new UsageError("compare needs two or more releases.", { hint: "Give the paths of two or more releases, or knowledge for the program in the knowledge." });
   const shifts = new Map<number, number>();
   for (const text of call.strings("shift")) {
     const match = /^(\d+):([+-]?\d+)$/.exec(text);
-    if (match === null) throw new UsageError(`--shift must be <release>:<bytes>, for example 2:-256, not ${text}`);
+    if (match === null) throw new UsageError(`--shift must be <release>:<bytes>, for example 2:-256, not ${text}.`);
     if (Number(match[1]) < 1 || Number(match[1]) > positionals.length) {
-      throw new UsageError(`--shift ${text}: there is no release ${match[1]}. This compare has ${positionals.length} releases: give a release number from 1 to ${positionals.length}`);
+      throw new UsageError(`--shift ${text}: there is no release ${match[1]}. This compare has ${positionals.length} releases: give a release number from 1 to ${positionals.length}.`);
     }
-    if (shifts.has(Number(match[1]))) throw new UsageError(`--shift gives release ${match[1]} more than one shift (${shifts.get(Number(match[1]))} and ${match[2]}). Give one --shift for each release`);
+    if (shifts.has(Number(match[1]))) throw new UsageError(`--shift gives release ${match[1]} more than one shift (${shifts.get(Number(match[1]))} and ${match[2]}). Give one --shift for each release.`);
     shifts.set(Number(match[1]), Number(match[2]));
   }
   const frames = call.count("frames");
   const stepsFile = call.string("steps");
-  if (stepsFile !== undefined && frames === undefined) throw new UsageError("--steps works only with --frames");
+  if (stepsFile !== undefined && frames === undefined) throw new UsageError("--steps works only with --frames.", { hint: "Add --frames <n>, or remove --steps." });
   const aligned = call.flag("align");
   const minBlock = call.count("min-block");
-  if (minBlock !== undefined && !aligned) throw new UsageError("--min-block works only with --align");
+  if (minBlock !== undefined && !aligned) throw new UsageError("--min-block works only with --align.", { hint: "Add --align, or remove --min-block." });
   if (aligned) {
-    if (shifts.size > 0) throw new UsageError("--align does not work with --shift: --align finds the shift of each block itself. Remove --shift");
-    if (frames !== undefined) throw new UsageError("--align does not work with --frames: --align gives no differences to run. Run --frames without --align");
-    if (positionals.length !== 2) throw new UsageError(`--align maps two releases, not ${positionals.length}. Give two releases`);
+    if (shifts.size > 0) throw new UsageError("--align does not work with --shift: --align finds the shift of each block itself.", { hint: "Remove --shift." });
+    if (frames !== undefined) throw new UsageError("--align does not work with --frames: --align gives no differences to run.", { hint: "Run --frames without --align." });
+    if (positionals.length !== 2) throw new UsageError(`--align maps two releases, not ${positionals.length}.`, { hint: "Give two releases." });
   }
   const steps: ActionStep[] = stepsFile === undefined ? [] : readActionSteps(stepsFile, "--steps", knowledgeAt());
   const loaded = positionals.map((path, index) => readRelease(path, shifts.get(index + 1) ?? 0));
@@ -146,13 +146,15 @@ async function compare(call: Call): Promise<unknown> {
     // Code added and data moved: one shift for the release cannot fit, so each block of equal bytes gets its own.
     const alignment = align(releases[0]!, releases[1]!, range ?? { start: 0x0000, end: 0xffff }, minBlock ?? 16);
     const capped = <T>(name: string, items: T[]) => ({ [name]: items.slice(0, MAX_ALIGNED), ...(items.length > MAX_ALIGNED ? { [`more${name[0]!.toUpperCase()}${name.slice(1)}`]: items.length - MAX_ALIGNED } : {}) });
-    return {
+    const mapped = {
       ...compared,
       alignedShare: alignment.alignedShare,
       ...capped("blocks", alignment.blocks.map((block) => ({ a: show(block.a), b: show(block.b), shift: block.shift, bytes: block.bytes }))),
       ...capped("onlyInA", alignment.onlyInA.map(show)),
       ...capped("onlyInB", alignment.onlyInB.map(show)),
     };
+    const cut = alignment.blocks.length > MAX_ALIGNED || alignment.onlyInA.length > MAX_ALIGNED || alignment.onlyInB.length > MAX_ALIGNED;
+    return cut ? reply(mapped, { hint: `A list holds only its first ${MAX_ALIGNED} items: moreBlocks, moreOnlyInA and moreOnlyInB count the others. Give --range to map a part of the releases.` }) : mapped;
   }
   // A poor match at the load addresses can mean that the releases are placed differently.
   // Each release gets its best shifts: data that stayed can outvote code that moved, so one is not enough.
@@ -195,7 +197,24 @@ async function compare(call: Call): Promise<unknown> {
     }
   }
 
-  return {
+  // The next compare: the best suggested shift that the run does not have yet, else --align for two releases.
+  const rangeArgs = range === undefined ? [] : ["--range", `${formatC64Address(range.start)}-${formatC64Address(range.end)}`];
+  const runArgs = frames === undefined ? [] : ["--frames", String(frames), ...(stepsFile === undefined ? [] : ["--steps", stepsFile])];
+  const best = suggested.find((suggestion) => !("current" in suggestion));
+  const hints: string[] = [];
+  let nextAction: string | undefined;
+  if (best !== undefined && "shift" in best) {
+    const next = [...applied];
+    next[best.release - 1] = best.shift;
+    const shiftArgs = next.flatMap((shift, index) => (shift === 0 ? [] : ["--shift", `${index + 1}:${shift}`]));
+    hints.push("identicalShare is low: the releases can be at different addresses. nextAction runs compare with the first suggested shift. Try each shift in suggestedShifts. If no shift gives a high identicalShare, run compare with --align.");
+    nextAction = call.next("compare", ...positionals, ...shiftArgs, ...rangeArgs, ...runArgs);
+  } else if (share < 0.5 && positionals.length === 2 && shifts.size === 0 && frames === undefined) {
+    hints.push("identicalShare is low, and no suggested shift is better. The code and the data can be at other addresses in each release. Map the releases in blocks with --align.");
+    nextAction = call.next("compare", ...positionals, "--align", ...rangeArgs);
+  }
+  if (comparison.moreDifferences) hints.push("differences holds only the first differences. Give --range to compare a part of the releases.");
+  const body = {
     ...compared,
     differences: comparison.differences.map((difference, index) => ({
       start: formatC64Address(difference.start),
@@ -221,6 +240,7 @@ async function compare(call: Call): Promise<unknown> {
       ? {}
       : { run: { frames, steps: steps.length, releases: runs, ...(comparison.differences.length === 0 ? { skipped: "The releases have no differences, so no release ran." } : {}) } }),
   };
+  return hints.length === 0 && nextAction === undefined ? body : reply(body, { ...(hints.length === 0 ? {} : { hint: hints.join(" ") }), nextAction });
 }
 
 /** The stages of a capture as ranges; a stage that is not a capture stage is refused. `where` names the capture. */
@@ -229,7 +249,7 @@ function stagesOf(stages: Array<Record<string, unknown>> | undefined, where = "t
   const parse = (value: unknown) => {
     const at = typeof value === "string" ? c64AddressOf(value) : undefined;
     if (at !== undefined) return at;
-    throw new Refusal("invalid-input", `the stages of ${where} are not the stages of a c64-unpacker capture; capture it again with c64-unpacker`);
+    throw new Refusal("invalid-input", `The stages of ${where} are not the stages of a capture.`, { hint: "Capture the unpacked program again, with its stages, and put the capture into the project knowledge." });
   };
   return stages.map((stage) => ({
     entry: parse(stage.entry),
@@ -270,7 +290,7 @@ const showRoots = (roots: readonly Root[]) => roots.map((root) => ({ address: fo
 
 const NO_ROOTS = "none: the program in the knowledge has no entry, and the image does not hold the hardware vectors at $fffa-$ffff, so no code region is reachable or unreachable.";
 
-const NO_STAGES = "The program in the knowledge has no stage log. Only a capture of c64-unpacker gives one. A capture of loads holds one part of a program and has none.";
+const NO_STAGES = "The program in the knowledge has no stage log. Only a capture of the unpack stages gives one. A capture of the loads of a loader holds one part of a program and has none.";
 
 /** separate: evidence from the program in the knowledge, with all ranges in --out and the first ones in the result. */
 function separateCommand(call: Call): unknown {
@@ -284,11 +304,10 @@ function separateCommand(call: Call): unknown {
   const outside = { read: found.outside.read.map(show), executed: found.outside.executed.map(show), generated: found.outside.generated.map(show) };
   const roots = showRoots(found.roots);
   const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify({ roots, ranges, codeRegions, outside }, null, 1)}\n`, { what: "--out" });
-  const rest = out === undefined ? undefined : out;
-  const list = <T>(items: T[]) => listed(items, max, undefined, rest);
+  const list = <T>(items: T[]) => listed(items, max, undefined, out ?? "a larger --max-listed, or --out <file>");
   const bytes = (filter: (range: (typeof found.ranges)[number]) => boolean) => found.ranges.filter(filter).reduce((sum, range) => sum + range.end - range.start + 1, 0);
   const lastStage = loaded.stages === undefined ? undefined : loaded.stages.length - 1;
-  return {
+  const body = {
     ...(loaded.entry === undefined ? {} : { entry: formatC64Address(loaded.entry) }),
     ...(lastStage === undefined
       ? { noStages: NO_STAGES }
@@ -308,6 +327,27 @@ function separateCommand(call: Call): unknown {
     ...(coverage === undefined ? {} : { outside: { read: list(outside.read), executed: list(outside.executed), generated: list(outside.generated) } }),
     ...(written === undefined ? {} : written),
   };
+  return withFile(body, out);
+}
+
+/** True when a list of the body ({count, listed}) holds fewer items than its count. */
+function hasCutList(value: unknown, depth = 0): boolean {
+  if (typeof value !== "object" || value === null || depth > 3) return false;
+  const { count, listed: items } = value as { count?: unknown; listed?: unknown };
+  if (typeof count === "number" && Array.isArray(items)) return items.length < count;
+  return Object.values(value).some((item) => hasCutList(item, depth + 1));
+}
+
+/** The note for a cut list: with --out, the file holds all items; without it, a larger --max-listed or --out gives them. */
+function cutNote(body: unknown, out: string | undefined): string | undefined {
+  if (!hasCutList(body)) return undefined;
+  return out === undefined ? "A list in the body is cut: count gives its full size. To get the rest, give a larger --max-listed." : `A list in the body is cut: count gives its full size. ${out} holds all items.`;
+}
+
+/** A body with the note for a cut list when --out holds all items. Without --out, the envelope gives the note itself. */
+function withFile(body: unknown, out: string | undefined): unknown {
+  const note = out === undefined ? undefined : cutNote(body, out);
+  return note === undefined ? body : reply(body, { hint: note });
 }
 
 /** The longest text that the result shows; --out has all of it. */
@@ -343,11 +383,11 @@ function leftoversCommand(call: Call): unknown {
   };
   const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify(all, null, 1)}\n`, { what: "--out" });
   const list = <T>(items: T[]) => listed(items, max, undefined, out ?? "a larger --max-listed, or --out <file>");
-  return {
+  const body = {
     ...(program.entry === undefined ? {} : { entry: formatC64Address(program.entry) }),
     roots: found.roots.length === 0 ? NO_ROOTS : showRoots(found.roots),
     ...(stages === undefined ? { noStages: NO_STAGES } : { stages: stages.length }),
-    ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Add coverage with coverage of the c64-knowledge skill." } : {}),
+    ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Put the coverage of runs into the project knowledge." } : {}),
     text: list(all.text.map((item) => (item.text.length > SHOWN_TEXT ? { ...item, text: `${item.text.slice(0, SHOWN_TEXT)} ...`, length: item.text.length } : item))),
     basic: list(all.basic),
     fill: list(all.fill),
@@ -356,6 +396,7 @@ function leftoversCommand(call: Call): unknown {
     deadCode: list(all.deadCode),
     ...(written === undefined ? {} : written),
   };
+  return withFile(body, out);
 }
 
 const platform = () => new Map(platformNames().map((entry) => [entry.name, entry.address]));
@@ -375,18 +416,18 @@ function routineCommand(call: Call): unknown {
       start = call.parseAddress(given, "<module>");
       const modules = listModules(db);
       const module = modules.find((item) => item.start === start);
-      if (module === undefined) throw new Refusal("not-found", `No module starts at ${formatC64Address(start)}. List the modules with knowledge.ts modules, or give a range <start>-<end>.`);
+      if (module === undefined) throw new Refusal("not-found", `No module starts at ${formatC64Address(start)}. List the modules of the project knowledge, or give a range <start>-<end>.`);
       const segment = segmentOf(start);
-      if (segment === undefined) throw new UsageError(`The module at ${formatC64Address(start)} is outside the segments of the program.`);
+      if (segment === undefined) throw new UsageError(`The module at ${formatC64Address(start)} is outside the segments of the program.`, { hint: "Give a range <start>-<end> in one segment of the program." });
       end = (modules.find((item) => item.start > start && item.start <= segment.end)?.start ?? segment.end + 1) - 1;
       title ??= module.title;
     } else {
       ({ start, end } = call.parseRange(given, "<range>"));
-      if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Address(start)}-${formatC64Address(end)} is not inside one segment of the program.`);
+      if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Address(start)}-${formatC64Address(end)} is not inside one segment of the program.`, { hint: "Give a range in one segment of the program." });
     }
     const range = { start, end };
     const name = call.string("name") ?? listSymbols(db, { start, end: start }, undefined, SEMANTIC_ORIGINS)[0]?.name;
-    if (name === undefined) throw new UsageError(`The knowledge has no user or LLM name at ${formatC64Address(start)}: give --name.`);
+    if (name === undefined) throw new UsageError(`The knowledge has no user or LLM name at ${formatC64Address(start)}.`, { hint: "Give --name <name>, or name the start of the routine in the project knowledge first." });
     const { routine, leftOut } = routineFrom({
       name,
       ...(title === undefined ? {} : { title }),
@@ -450,7 +491,15 @@ function matchCommand(call: Call): unknown {
     )
     .sort((a, b) => a.start.localeCompare(b.start));
   const result: Record<string, unknown> = { library, routines: routines.length, matches: list(matches) };
-  if (out === undefined) return result;
+  const noMatch = "No routine of the library is in the program. A packed program can hold a routine in a packed form. Unpack the program, put the unpacked program into the project knowledge, and run match again.";
+  const withNote = (shown: unknown, hint: string) => [cutNote(shown, undefined), hint].filter((part) => part !== undefined).join(" ");
+  if (out === undefined) {
+    if (matches.length === 0) return reply(result, { hint: noMatch });
+    return reply(result, {
+      hint: withNote(result, "Examine differing of each match. Then nextAction writes the names of the found routines as a batch of changes."),
+      nextAction: call.next("match", "--library", library, "--out", ".c64-re-tools/local/match.json"),
+    });
+  }
   const db = openForRead();
   let suggestions: ReturnType<typeof suggest>;
   try {
@@ -475,11 +524,11 @@ function matchCommand(call: Call): unknown {
   }
   const { batch, known, leftOut } = suggestions;
   const written = writeReported(out, batch.length === 0 ? "[]\n" : `[\n${batch.map((write) => ` ${JSON.stringify(write)}`).join(",\n")}\n]\n`, { what: "--out" });
-  return {
-    ...result,
-    batch: { ...written, writes: batch.length, known, leftOut: list(leftOut) },
-    ...(batch.length === 0 ? {} : { apply: `knowledge.ts apply ${out} --reason "names of library routines"` }),
-  };
+  const body = { ...result, batch: { ...written, writes: batch.length, known, leftOut: list(leftOut) } };
+  // The batch is applied by the knowledge, not by this script: the hint gives the task, not a command.
+  if (matches.length === 0) return reply(body, { hint: noMatch });
+  if (batch.length === 0) return reply(body, { hint: withNote(body, "The batch has no writes. The project knowledge has the names of the found routines already, or batch.leftOut tells why the script left out a write.") });
+  return reply(body, { hint: withNote(body, `Apply the changes in ${out} to the project knowledge.`) });
 }
 
 const LIBRARY = { kind: "text", value: "<folder>", required: true, help: "the library: a plain folder of routine files beside the projects, relative to the project folder, for example ../library" } as const;
@@ -488,7 +537,7 @@ const COMMANDS: CommandSpec[] = [
   {
     name: "compare",
     summary: "Compares releases byte by byte, in their common ranges, and suggests shifts when they are placed differently. With --align, maps two releases with moved code in blocks of equal bytes, each with its own shift.",
-    subjects: [{ name: "<release>", help: "knowledge (the program in the knowledge), a PRG at its load address, or an image.json of the c64-unpacker skill with the entry_state.json beside it. Two or more", list: true }],
+    subjects: [{ name: "<release>", help: "knowledge (the program in the knowledge), a PRG at its load address, or the image.json of a capture of the unpacked program with the entry_state.json beside it. Two or more", list: true }],
     options: {
       shift: {
         kind: "text",
@@ -539,7 +588,7 @@ const COMMANDS: CommandSpec[] = [
     summary: "Finds each routine of the library in the program of the knowledge: the opcodes and other fixed bytes equal, and the addresses into the routine moved by one shift.",
     options: {
       library: { ...LIBRARY, help: "the library folder, relative to the project folder, for example ../library" },
-      out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the names of the routines at the found addresses as a batch for knowledge.ts apply" },
+      out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the names of the routines at the found addresses as a batch of changes for the project knowledge" },
       "max-listed": OPTIONS["max-listed"],
     },
     run: matchCommand,

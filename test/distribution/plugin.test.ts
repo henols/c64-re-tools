@@ -103,7 +103,7 @@ test("every installed script runs without the repository", () => {
   writeFileSync(join(project, "package.json"), '{ "type": "commonjs" }\n');
   for (const skill of plugin.skills!) {
     for (const resource of (skill.resources ?? []).filter((resource) => resource.executable === true)) {
-      // An unknown command loads every module of the script and stops at its usage text.
+      // An unknown option loads every module of the script and stops at its refusal.
       const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill.name, resource.path), "--no-such-option"], { cwd: project, encoding: "utf8" });
       const output = run.stdout + run.stderr;
       assert.doesNotMatch(output, /ERR_MODULE_NOT_FOUND|ERR_PACKAGE_IMPORT_NOT_DEFINED|SyntaxError|ERR_UNKNOWN_FILE_EXTENSION/, `${skill.name}/${resource.path}: ${output}`);
@@ -112,7 +112,7 @@ test("every installed script runs without the repository", () => {
   }
   const memmap = spawnSync(process.execPath, [...process.execArgv, join(skills, "c64-memory-map", "scripts", "memory-map.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
   assert.equal(memmap.status, 0, memmap.stderr);
-  assert.equal((JSON.parse(memmap.stdout) as { addresses: Array<{ name: string }> }).addresses[0]?.name, "EXTCOL");
+  assert.equal((JSON.parse(memmap.stdout) as { body: { addresses: Array<{ name: string }> } }).body.addresses[0]?.name, "EXTCOL");
 });
 
 test("the agent starts the newest MCP server of the installed channel through npx", () => {

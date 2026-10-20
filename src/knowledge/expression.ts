@@ -119,7 +119,7 @@ function value(node: Node, resolve: (name: string) => number | undefined): numbe
       return node.value;
     case "name": {
       const found = resolve(node.name);
-      if (found === undefined) throw new Refusal("invalid-input", `${node.name} is not a symbol of the knowledge or a platform name. Give a number, a symbol that knowledge.ts symbols lists, or a platform name that memory-map.ts at gives.`);
+      if (found === undefined) throw new Refusal("invalid-input", `${node.name} is not a symbol of the knowledge or a platform name. Give a number, a symbol of the project knowledge, or a platform name of the C64 memory map.`);
       return found;
     }
     case "unary": {

@@ -38,7 +38,7 @@ export interface ProgramImage {
   /** The byte at an address inside a segment. */
   byteAt: (address: number) => number;
   entry?: number;
-  /** The machine state at the entry: the content of the entry_state.json of the c64-unpacker skill. */
+  /** The machine state at the entry: the content of the entry_state.json of a capture. */
   state?: Record<string, unknown>;
   /** The stages of the unpacker capture, in order: the last one is the program. */
   stages?: Array<Record<string, unknown>>;
@@ -220,8 +220,7 @@ export function requireProgram(db: DatabaseSync | undefined, space: Space = DEFA
   const image = programImage(db, space);
   if (image !== undefined) return image;
   const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
-  const option = space === DEFAULT_SPACE ? "" : ` --space ${space}`;
-  throw new Refusal("not-found", `The knowledge has no program${where}. Put it in with knowledge.ts image <image.json|prg>${option} of the c64-knowledge skill.`);
+  throw new Refusal("not-found", `The knowledge has no program${where}. Put the program into the project knowledge${where}: a PRG, or the image.json of a capture.`);
 }
 
 /** The pages of an entry state: $0000-$03ff as the capture wrote them, 256 bytes as hex for each page. */

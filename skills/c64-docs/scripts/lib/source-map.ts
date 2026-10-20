@@ -38,12 +38,12 @@ export function readSourceMap(directory: string): SourceMap {
     text = readProjectFile(path).bytes.toString("utf8");
   } catch (error) {
     if (error instanceof WireFailure && error.code === "not-found") {
-      throw new WireFailure("not-found", `There is no ${path}. Generate the source with c64-source source.ts generate --out ${directory}: it writes the source map.`);
+      throw new WireFailure("not-found", `There is no ${path}. Generate the source from the project knowledge into ${directory}. That also writes the source map.`);
     }
     throw error;
   }
   const fail = (what: string): never => {
-    throw new WireFailure("invalid-input", `${path} is not a source map of c64-source: ${what}. Generate the source again.`);
+    throw new WireFailure("invalid-input", `${path} is not a source map of the generated source: ${what}. Generate the source again from the project knowledge.`);
   };
   let raw: Record<string, unknown>;
   try {

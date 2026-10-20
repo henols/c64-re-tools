@@ -13,7 +13,7 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { ACME, findTool } from "../../../src/native/discover.ts";
-import { startMcp } from "../../kit.ts";
+import { readEnvelope, startMcp } from "../../kit.ts";
 import { liveSkip, startHost, stopHosts } from "./live.ts";
 
 let skip: string | false = liveSkip;
@@ -53,7 +53,7 @@ test("assembled source loads into VICE and reaches its known end state", { skip,
     { cwd: project, env: { ...process.env, C64RT_HOST: hostAddress }, encoding: "utf8" },
   );
   assert.equal(assembled.status, 0, assembled.stdout + assembled.stderr);
-  const build = JSON.parse(assembled.stdout) as { symbols: { listed: Array<{ name: string; address?: string; value?: string }> } };
+  const build = readEnvelope(assembled.stdout, assembled.status).json as { symbols: { listed: Array<{ name: string; address?: string; value?: string }> } };
   const valueOf = (name: string) => Number.parseInt(symbol(name).value!.slice(1), 16);
   const symbol = (name: string) => build.symbols.listed.find((entry) => entry.name === name)!;
 

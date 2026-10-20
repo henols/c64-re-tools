@@ -11,6 +11,7 @@ import { after, test } from "node:test";
 
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { STOP_AND_ASK } from "../../src/protocol/messages.ts";
+import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 import { importPrg } from "../fixtures/program.ts";
 
 let acmeSkip: string | false = false;
@@ -25,7 +26,7 @@ const project = mkdtempSync(join(tmpdir(), "c64-re-tools-assembler-"));
 cpSync(resolve(import.meta.dirname, "../fixtures/asm/counter"), join(project, "src"), { recursive: true });
 after(() => rmSync(project, { recursive: true, force: true }));
 
-async function assembleScript(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
+async function assembleScript(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown>; envelope: ScriptEnvelope }> {
   const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -33,7 +34,7 @@ async function assembleScript(...args: string[]): Promise<{ status: number | nul
   child.stderr.on("data", (chunk) => (stderr += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(stderr, "");
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, ...readEnvelope(stdout, status) };
 }
 
 test("the script writes the program into the project and reports symbols", { skip: acmeSkip }, async () => {
@@ -55,7 +56,7 @@ test("the script writes the program into the project and reports symbols", { ski
 });
 
 test("--max-listed limits the symbols in the result, and --out-symbols writes the whole list, without the unused constants", { skip: acmeSkip }, async () => {
-  const { status, json } = await assembleScript("build", "src", "main.a", "--include", "lib", "--out", "build/counter.prg", "--max-listed", "1", "--out-symbols", "build/counter.json");
+  const { status, json, envelope } = await assembleScript("build", "src", "main.a", "--include", "lib", "--out", "build/counter.prg", "--max-listed", "1", "--out-symbols", "build/counter.json");
   assert.equal(status, 0, JSON.stringify(json));
   const symbols = json.symbols as { count: number; listed: unknown[]; rest: string };
   assert.equal(symbols.listed.length, 1);
@@ -64,8 +65,10 @@ test("--max-listed limits the symbols in the result, and --out-symbols writes th
   const file = JSON.parse(readFileSync(join(project, "build", "counter.json"), "utf8")) as { symbols: Array<{ name: string }> };
   assert.equal(file.symbols.length, symbols.count);
   assert.equal(file.symbols.find((symbol) => symbol.name === "UNUSED_CONSTANT"), undefined, "the file has no unused constant without --all-symbols");
+  assert.match(String(envelope.hint), /symbols is cut\. To get all symbols, give a larger --max-listed, or --out-symbols <file\.json> for the whole list\./);
   const help = await assembleScript("build", "--help");
-  assert.match(String(help.json.text), /--out-symbols <file\.json> +write the listed symbols .* Without --all-symbols, the file does not have the constants that the source does not use/);
+  const option = (help.json.options as Array<{ flag: string; help: string }>).find((item) => item.flag === "--out-symbols <file.json>");
+  assert.match(String(option?.help), /^write the listed symbols .* Without --all-symbols, the file does not have the constants that the source does not use/);
   assert.equal((json.symbolsFile as { out: string }).out, "build/counter.json");
 });
 
@@ -83,8 +86,9 @@ test("--all-symbols lists the unused constants, and --plain writes the bytes wit
 
 test("source errors are a FAIL with the diagnostics and write no program", { skip: acmeSkip }, async () => {
   writeFileSync(join(project, "src", "broken.a"), "* = $c000\n  lda #$123\n");
-  const { status, json } = await assembleScript("build", "src", "broken.a", "--out", "build/broken.prg");
-  assert.equal(status, 1);
+  const { status, json, envelope } = await assembleScript("build", "src", "broken.a", "--out", "build/broken.prg");
+  assert.equal(status, 0, "a source with errors is a FAIL verdict, not an error");
+  assert.match(String(envelope.hint), /Correct the source at the file and the line of each diagnostic/);
   assert.equal(json.result, "FAIL");
   assert.equal(json.assembled, false);
   assert.equal((json.diagnostics as Array<{ line: number }>)[0]?.line, 2);
@@ -114,7 +118,7 @@ test("a missing ACME is refused with the stop instruction", async () => {
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  const { error } = JSON.parse(stdout) as { error: { code: string; message: string } };
+  const { error } = readEnvelope(stdout, status).json as { error: { code: string; message: string } };
   assert.equal(status, 2);
   assert.equal(error.code, "installation-incomplete");
   assert.ok(error.message.endsWith(STOP_AND_ASK), error.message);
@@ -125,7 +129,10 @@ test("--compare checks the build against the program in the knowledge and fails 
   assert.equal(first.status, 0, JSON.stringify(first.json));
   const refused = await assembleScript("build", "src", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare");
   assert.equal(refused.status, 2, "no program in the knowledge yet");
-  assert.match((refused.json.error as { message: string }).message, /knowledge\.ts image/);
+  assert.equal((refused.json.error as { code: string }).code, "not-found");
+  assert.match((refused.json.error as { message: string }).message, /no program/);
+  const release = await assembleScript("build", "src", "main.a", "--include", "lib", "--out", "build/again.prg", "--release", "NONE");
+  assert.deepEqual(release.json.error, { code: "not-found", message: "There is no release NONE in the knowledge. Record the release in the project knowledge first, or give the label of a recorded release." });
   importPrg(project, readFileSync(join(project, "build", "reference.prg")));
   const same = await assembleScript("build", "src", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare");
   assert.equal(same.status, 0, JSON.stringify(same.json));
@@ -134,8 +141,9 @@ test("--compare checks the build against the program in the knowledge and fails 
   changed[10] = changed[10]! ^ 0xff;
   importPrg(project, changed);
   const different = await assembleScript("build", "src", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare");
-  assert.equal(different.status, 1, "a build that differs is a failed check");
+  assert.equal(different.status, 0, "a build that differs is a failed check, not an error");
   assert.equal(different.json.result, "FAIL");
+  assert.match(String(different.envelope.hint), /^The program is not identical to the reference program\. Read compare\.segments/);
   const [segment] = (different.json.compare as { segments: Array<{ result: string; firstDifference: { address: string } }> }).segments;
   assert.equal(segment!.result, "different");
   assert.equal(segment!.firstDifference.address, "$0809");

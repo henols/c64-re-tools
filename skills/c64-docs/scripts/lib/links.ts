@@ -88,7 +88,7 @@ export function linkPage(text: string, context: LinkContext): { text: string; ch
       const report = (kind: ProblemKind, message: string) => problems.push({ page: context.page, line: index + 1, kind, message });
       const shown = `${TICK}${name}${offset ?? ""}${TICK}${space}${TICK}${addressText}${TICK}`;
       if (address === undefined) {
-        report("unknown-name", `\`${name}\` is no name of the knowledge or the source. Apply the name to the knowledge, or correct the page.`);
+        report("unknown-name", `\`${name}\` is no name of the knowledge or the source. Record the name in the project knowledge, or correct the page.`);
         return whole;
       }
       const delta = offset === undefined ? 0 : offset.startsWith("+$") ? Number.parseInt(offset.slice(2), 16) : Number.parseInt(offset.slice(1), 10);

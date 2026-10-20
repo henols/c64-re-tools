@@ -30,16 +30,16 @@ export interface ReplayOptions {
 
 /** Replays the recording on the original, and with `rebuild` on the rebuild: PASS, FAIL or INCONCLUSIVE. */
 export async function replay(values: ReplayOptions): Promise<ReplayResult> {
-  if (values.symbols !== undefined && values.rebuild === undefined) throw new UsageError("--symbols is for the rebuild: give --rebuild too");
-  if ((values.checkpoint === undefined) !== (values.state.length === 0)) throw new UsageError("give --checkpoint and --state together");
-  if (values.state.length + values.pin.length > MAX_STATE_ITEMS) throw new UsageError(`give at most ${MAX_STATE_ITEMS} --state and --pin items`);
-  if (values.pin.length > 0 && values.checkpoint === undefined) throw new UsageError("--pin needs --checkpoint and --state");
+  if (values.symbols !== undefined && values.rebuild === undefined) throw new UsageError("--symbols gives the names of the rebuild, and --rebuild is missing. Give --rebuild too, or leave out --symbols.");
+  if ((values.checkpoint === undefined) !== (values.state.length === 0)) throw new UsageError("--checkpoint and --state go together. Give both of them, or neither.");
+  if (values.state.length + values.pin.length > MAX_STATE_ITEMS) throw new UsageError(`There are more than ${MAX_STATE_ITEMS} --state and --pin items. Give at most ${MAX_STATE_ITEMS} of them.`);
+  if (values.pin.length > 0 && values.checkpoint === undefined) throw new UsageError("--pin needs --checkpoint and --state. Give them too, or leave out --pin.");
   const folder = values.folder.replace(/\/+$/, "").replace(/\/recording\.json$/, "");
   const recording = readRecording(folder);
   const given: Comparison | undefined =
     values.checkpoint === undefined ? undefined : { checkpoint: values.checkpoint, state: values.state.map((item) => parseStateItem(item, "--state")), ...(values.pin.length === 0 ? {} : { pin: values.pin.map((item) => parseStateItem(item, "--pin")) }) };
   const compare = given ?? recording.compare;
-  if (values.rebuild !== undefined && compare === undefined) throw new UsageError("the recording has no checkpoint and state: give --checkpoint and --state");
+  if (values.rebuild !== undefined && compare === undefined) throw new UsageError("The recording has no checkpoint and state for --rebuild. Give --checkpoint and --state.");
   const result = (outcome: ReplayResult["result"], side: ReplayResult["side"], fields: Partial<ReplayResult> = {}): ReplayResult => ({
     result: outcome,
     recording: folder,
@@ -73,10 +73,10 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     const self = await side(original, { ...(compare === undefined ? {} : { compare }) });
     if (self.problem !== undefined) return result("INCONCLUSIVE", "original", { reason: `the recording does not reproduce on the original: ${self.problem}` });
     if (self.unknown > 0 || self.misses > 0) {
-      return result("INCONCLUSIVE", "original", { reason: `the recording does not reproduce on the original: ${self.unknown + self.misses} input reads had no recorded value; record the session again with this c64run` });
+      return result("INCONCLUSIVE", "original", { reason: `the recording does not reproduce on the original: ${self.unknown + self.misses} input reads had no recorded value; record the session again with this version of the toolkit` });
     }
     if (self.end.tick !== recording.ticks || self.end.hash !== recording.hash) {
-      return result("INCONCLUSIVE", "original", { reason: "the recording does not reproduce on the original: the state at its end is different; record the session again with this c64run" });
+      return result("INCONCLUSIVE", "original", { reason: "the recording does not reproduce on the original: the state at its end is different; record the session again with this version of the toolkit" });
     }
     const expected = self.samples;
     if (compare !== undefined && expected.length === 0) return result("INCONCLUSIVE", "original", { reason: `the original never came to the checkpoint ${compare.checkpoint} in the session` });

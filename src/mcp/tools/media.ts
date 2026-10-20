@@ -27,7 +27,7 @@ export const c64Autostart = defineTool({
     "The C64 resets and loads the file. With run true (the default), it also runs the file. A disk image stays in drive 8. " +
     "A cartridge stays in the C64 through every reset, as on a real C64. An autostart of a file that is not a cartridge detaches it first. " +
     "Both joysticks are centred first: joystick port 1 uses the keyboard lines, and a held direction changes the RUN that the autostart types. " +
-    "Without index, a disk image loads like LOAD\"*\",8,1. index selects one directory entry by its number in the c64-disk directory list (0 is the first entry). " +
+    "Without index, a disk image loads like LOAD\"*\",8,1. index selects one directory entry by its number in the directory list of the disk (0 is the first entry). " +
       "The tool refuses an index of a DEL entry, or an index after the last entry. " +
     "The machine runs when this tool returns, and the load continues. The emulator keeps warp mode on until it types RUN. " +
     "A key in that time stops the autostart, so c64_keyboard refuses keys until then. Run frames with c64_execution advance-frames until c64_status gives warp false. " +

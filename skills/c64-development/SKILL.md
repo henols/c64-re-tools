@@ -1,15 +1,15 @@
 ---
 name: c64-development
-description: Use this skill to write a new C64 program in 6510 assembly for ACME. Also use it to add a feature or a fix to a program. It builds, runs, debugs and tests the program step by step, with tests that give PASS or FAIL. It works on source that a person wrote, and on a rebuilt program with switches. It decides which specialist skill does each step. Use it for requests such as "write a game", "add a high score", "fix the sprite flicker" or "make the border flash". Do not use it to find out what an unknown program does. Use c64-reverse-engineering for that.
+description: Writes a new C64 program in 6510 assembly for ACME, or adds a feature or a fix to a program. It builds, runs, debugs and tests the program in small steps, with tests that give PASS or FAIL. It works on source that a person wrote, and on a rebuilt program with switches. Use it when the user asks for a new program, for example "write a game" or "make the border flash". Use it to add a feature or a fix, for example "add a high score" or "fix the sprite flicker". It does not find out what an unknown program does.
 ---
 
-# c64-development
+# C64 development
 
 ## Purpose
 
 Coordinate the development of a C64 program: a new program, a new feature or a fix. Make each change in small steps. Prove each step with a test that gives PASS.
 
-This skill does not do the specialist work itself.
+Do the specialist work of each task as that task tells. Do not do it in another way.
 
 ## Inputs
 
@@ -17,38 +17,19 @@ This skill does not do the specialist work itself.
 - The acceptance checks: what the user must see or what memory must hold when the work is complete.
 - The project: its source, its tests and its knowledge.
 
-## Tools
+## Project rules
 
-This skill uses the other skills. It does not use the emulator tools directly.
-
-| Work | Skill |
-|---|---|
-| Assemble the source to a PRG, with errors and symbols | c64-assembler |
-| Run, look, debug and measure | emulator |
-| Tests with expected values (`expect` steps in a run), and original against rebuild | c64-testing |
-| The meaning of an address or a register, and an include of the platform names | c64-memory-map |
-| Patches and switches of a rebuilt program, names and comments | c64-knowledge |
-| The source of a rebuilt program | c64-source |
-| Ranges that a rebuilt program does not use | c64-provenance |
-| Documentation | c64-docs |
-
-### Project folder
-
-One repository can hold several programs, with one project folder for each program. A project folder holds `.c64-re-tools/`. Work on one project at a time:
-
-- From the root of the repository, give `--project <folder>` to each skill script, and `project` to each emulator tool with a path.
+- One repository can hold several programs, with one project folder for each program. Work on one project at a time.
 - Write all files in the project folder. Do not write files at the root of the repository.
-- Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, step files, snapshots and memory dumps.
 - Keep the run files that are tests in `tests/`. Git keeps them.
-- Write the knowledge only with the c64-knowledge script. Do not write or edit the files in `.c64-re-tools/knowledge/` yourself.
 
 ## Workflow
 
 First select the path:
 
 - The project has no program yet: path A.
-- The program has source that a person wrote: path B. A project from the c64-export skill also takes path B.
-- The source comes from c64-source: path C. The source has `main.asm` and `source-map.json` from c64-source. Do not edit this source. The next `source.ts generate` writes over it.
+- The program has source that a person wrote: path B. A project that an export of a rebuilt program made also takes path B.
+- The source comes from a generation from the project knowledge: path C. Such a source has `main.asm` and `source-map.json`. Do not edit this source. The next generation of the source writes over it.
 
 ### Acceptance checks
 
@@ -59,7 +40,7 @@ Before you write code, write the acceptance checks. If the request does not give
 - the border color in a frame
 - the address of the main loop.
 
-A check that only a person can judge, for example smooth animation, goes into a checklist with `testing.ts checklist` of c64-testing.
+Put a check that only a person can judge, for example smooth animation, into a test checklist.
 
 ### A. A new program
 
@@ -67,12 +48,12 @@ Use this layout. No script makes it.
 
 ```
 src/           the source, with src/main.a as the entry
-build/         programs and symbol files from c64-assembler
+build/         the built programs and their symbol files
 tests/         run files with expect steps
 docs/          the documentation, when the user asks for it
 ```
 
-Start the program with a BASIC line, so that `c64_autostart` and a run with `start.program` can start it:
+Start the program with a BASIC line. Then an autostart in the emulator and a test run can start it:
 
 ```
 * = $0801
@@ -85,51 +66,51 @@ start                 ; $080d = 2061
 
 Do these steps for each small part of the program:
 
-1. Find the meaning of each register with c64-memory-map. Make an include of the platform names with `memory-map.ts export --out src/hw.a`. Include it with `!source`. Do not type the addresses of registers yourself.
+1. Find the meaning of each register in the memory map of the C64. Export the platform names as an include file to `src/hw.a`. Include it with `!source`. Do not type the addresses of registers yourself.
 2. Write the code for one part.
-3. Build it with c64-assembler: `assembler.ts build src main.a --out build/<name>.prg --out-symbols build/<name>.json`. Change the source at the file and the line of each error.
-4. Start it with `c64_autostart` of the emulator skill. Look at the screen with `c64_screen`. Read the screen memory, not only the image.
-5. Write the `expect` steps of this part in a run file. Give `"symbols": "build/<name>.json"`, so that a step can use the labels of the source.
-6. Run all run files in `tests/` with `testing.ts run`. Go to the next part only when each run gives PASS.
+3. Assemble `src/main.a` into `build/<name>.prg`, with the symbols in `build/<name>.json`. Change the source at the file and the line of each error.
+4. Start the program in the emulator with an autostart. Look at the screen. Read the screen memory, not only the screen image.
+5. Write the `expect` steps of this part in a run file. Give the symbol file `build/<name>.json` in the run file, so that a step can use the labels of the source.
+6. Run all run files in `tests/`. Go to the next part only when each run gives PASS.
 
-To find a defect, use the emulator skill:
+To find a defect, debug the program in the emulator:
 
-- Stop at the code with `c64_breakpoint`, or at a write to a variable with `c64_watchpoint`.
-- Get to a state with `c64_run_until`.
-- Measure an interrupt or a loop with `c64_timing`. Find the routines that use the most cycles with `c64_profile`.
-- Save the state with `c64_snapshot` before a risky try.
+- Stop at the code with a breakpoint, or at a write to a variable with a watchpoint.
+- Run the emulator until the program gets to a state.
+- Measure the cycles of an interrupt or a loop. Profile the program to find the routines that use the most cycles.
+- Save a snapshot of the machine before a risky try.
 
 Find the cause before you change the code. Do not change code at random until a test passes.
 
-When the user must play or look at the program, use the window procedure of the emulator skill.
+When the user must play or look at the program, open the emulator window for the user.
 
 ### B. A feature or a fix in source that a person wrote
 
 1. Write a run file with an `expect` step that shows the defect or the missing feature.
-2. Run it with `testing.ts run`. Make sure that it gives FAIL. A test that gives PASS before the change does not test the change.
-3. For a defect, find the cause with the emulator skill.
-4. Change the source. Build it with c64-assembler.
+2. Run it. Make sure that it gives FAIL. A test that gives PASS before the change does not test the change.
+3. For a defect, find the cause in the emulator.
+4. Change the source. Assemble it.
 5. Run the new run file and all other run files in `tests/`. Each run must give PASS.
 
 ### C. A feature or a fix in a rebuilt program
 
-A rebuilt program gets its source from the knowledge. A change is a switch and its patches in the knowledge. The build of the base release stays identical to the original. See the section "Releases and switches" of c64-knowledge.
+A rebuilt program gets its source from the project knowledge. A change is a switch and its patches in the knowledge. The build of the base release stays identical to the original.
 
-1. Read the releases and the switches with `knowledge.ts releases` and `knowledge.ts switches` of c64-knowledge. If the knowledge has no base release, record it first, for example `knowledge.ts release ORIGINAL --file original/game.prg --base`.
-2. Give each feature and each fix its own switch. Then each one can be on or off alone. Write the switch with `knowledge.ts switch <SWITCH> --kind <kind>`. No release has your change, so do not give `--releases`. Select the kind:
+1. Read the releases and the switches in the project knowledge. If the knowledge has no base release, record the original file as the base release first, for example `original/game.prg`.
+2. Give each feature and each fix its own switch. Then each one can be on or off alone. Record the switch in the project knowledge. No release has your change, so do not give the switch a release. Select the kind of the switch:
    - A fix: `fix`, for example `FIX_FLICKER`. The default build has it.
    - A trainer or a cheat: `trainer` or `cheat`. The default build does not have it.
-   - Another feature: `change`, for example `HISCORE`. Ask the user if the default build must have it. Give `--default 1` or `--default 0`.
-3. Find the code to change with c64-knowledge (`at`, `regions`) and the emulator skill.
-4. Write the code in a file in `.c64-re-tools/local/`. Write the patch with `knowledge.ts patch '<range>' <SWITCH> --code-file <file>` of c64-knowledge. The code must fit in the range.
-5. If the code does not fit, write a short patch with a `jsr` to the new code. Put the new code in a second patch of the same switch, in a range that the program does not use. The range must have evidence: `provenance.ts leftovers` of c64-provenance, or code that no run executed and that the program cannot reach. If no range has this evidence, stop and ask the user.
-6. Make the source again with `source.ts generate --out src` of c64-source. The checks `check`, `switches`, `default` and `releases` must pass. A switch must not give `overflow` or `does not assemble`.
-7. Build with c64-assembler:
-   - `--release <base label> --compare`: this build must be identical to the original.
-   - The default build, with no option.
-   - When the default build does not have the switch: set the switch to 1 in `src/config.asm`, then build with no option. After the test, set the value back to the default if the user did not ask for the change.
+   - Another feature: `change`, for example `HISCORE`. Ask the user if the default build must have it. Record the default as 1 or 0.
+3. Find the code to change. Read the project knowledge at the addresses, and examine the code in the emulator.
+4. Write the code in a file in `.c64-re-tools/local/`. Record a patch of the switch for the range, with the code from the file. The code must fit in the range.
+5. If the code does not fit, write a short patch with a `jsr` to the new code. Put the new code in a second patch of the same switch, in a range that the program does not use. The range must have evidence: a leftover that you found in the program, or code that no run executed and that the program cannot reach. If no range has this evidence, stop and ask the user.
+6. Generate the source from the project knowledge into `src`. Continue only when the result of the generation is PASS. A switch with the result `overflow` or `does not assemble` has a patch that you must change.
+7. Build the program:
+   - Build the base release and compare it with the original. This build must be identical to the original.
+   - Build the default build.
+   - When the default build does not have the switch, set the switch to 1 in `src/config.asm`. Then build the default build. After the test, set the value back to the default if the user did not ask for the change.
 8. Test the build that has the switch:
-   - Run the scenarios in `tests/` with `testing.ts test`, where the behavior must stay the same as the original.
+   - Run the test scenarios in `tests/` where the behavior must stay the same as the original.
    - Run a run file with `expect` steps that show the feature or the fix.
 
 ### The answer
@@ -143,9 +124,9 @@ Give the user a short answer at the end:
 
 ## Knowledge
 
-For a new program, the source is the truth. Record names and comments in the knowledge only when the user asks for the knowledge or for documentation. Then put the program in with `knowledge.ts image build/<name>.prg` of c64-knowledge first.
+For a new program, the source is the truth. Record names and comments in the project knowledge only when the user asks for the knowledge or for documentation. Then put the built program into the project knowledge first.
 
-For a rebuilt program, write each change as a switch and its patches with c64-knowledge.
+For a rebuilt program, record each change as a switch and its patches in the project knowledge.
 
 Do not store:
 
@@ -159,22 +140,14 @@ A program that builds, with a run file in `tests/` for each acceptance check, an
 
 ## Failure and conflicts
 
-- A skill reports `installation-incomplete` or `machine-unavailable`: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own assembler or emulator script.
+- A task reports `installation-incomplete` or `machine-unavailable`: stop the whole task. Give the message to the user and wait for the user. Do not continue with other tasks.
 - A tool gives a wrong result: tell the user the defect and the evidence, and wait for the user. Do not make a workaround.
 - A test gives FAIL: change the program until the test gives PASS. Do not change the expected value to make the test pass. Change an expected value only when the user changes the acceptance check.
-- A run gives FAIL because a `runUntil` did not get to its target: the program did not get to that state. Find why with the emulator skill.
-- The program reads the keyboard hardware, and a key does not arrive: read the description of `c64_keyboard`. Do not change the program to make it accept a key.
+- A run gives FAIL because a `runUntil` step did not get to its target: the program did not get to that state. Find the cause in the emulator.
+- The program reads the keyboard hardware, and a key does not arrive: read the description of the keyboard tool of the emulator. Do not change the program to make it accept a key.
 - A patch does not fit, and no unused range has evidence: stop and ask the user.
 
-## Handoffs
+## Other tasks
 
-- Assemble → c64-assembler
-- Run, debug and measure → emulator
-- Tests with expected values, and original against rebuild → c64-testing
-- The meaning of an address or a register → c64-memory-map
-- Patches, names and comments → c64-knowledge
-- The source of a rebuilt program → c64-source
-- Unused ranges of a rebuilt program → c64-provenance
-- Documentation → c64-docs
-- Code that nobody understands yet → c64-reverse-engineering
-- The start of a new program from a rebuilt program → c64-export
+- To find out what code does when nobody understands it yet, reverse engineer it.
+- To start a new program from a rebuilt program, export the rebuilt program as a new project.

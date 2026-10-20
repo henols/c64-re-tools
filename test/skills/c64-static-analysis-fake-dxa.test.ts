@@ -16,6 +16,7 @@ import { classifyRegion } from "../../src/knowledge/write.ts";
 import { addCoverage, setImage } from "../../src/knowledge/program.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
+import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-fake-dxa-"));
@@ -47,7 +48,7 @@ function project(name: string, space = "c64"): string {
   return root;
 }
 
-async function analyze(root: string, dxa: string, ...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
+async function analyze(root: string, dxa: string, ...args: string[]): Promise<{ status: number | null; json: Record<string, unknown>; envelope: ScriptEnvelope }> {
   const child = spawn(process.execPath, [...process.execArgv, script, "analyze", "--analyzer", "dxa", ...args], {
     cwd: root,
     env: { ...process.env, C64RT_DXA: dxa, C64RT_HOST: "127.0.0.1:1" },
@@ -59,7 +60,7 @@ async function analyze(root: string, dxa: string, ...args: string[]): Promise<{ 
   child.stderr.on("data", (chunk) => (stderr += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(stderr, "");
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, ...readEnvelope(stdout, status) };
 }
 
 test("a DXA conflict names what DXA found under the key dxa", { timeout: 60_000 }, async () => {
@@ -67,11 +68,14 @@ test("a DXA conflict names what DXA found under the key dxa", { timeout: 60_000 
   const db = openForWrite(root);
   classifyRegion(db, { origin: "user" }, { start: 0x1000, end: 0x1002, type: "bytes" });
   db.close();
-  const { status, json } = await analyze(root, fakeDxa("dxa-ok", LISTING));
+  const { status, json, envelope } = await analyze(root, fakeDxa("dxa-ok", LISTING));
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.conflicts, [
     { range: { start: "$1000", end: "$1002" }, knowledge: { type: "bytes", origin: "user" }, dxa: { type: "code" }, problem: "code and data disagree" },
   ]);
+  // The hint gives the task for a conflict, and names no other script.
+  assert.match(envelope.hint ?? "", /^The analysis and the project knowledge disagree at each place in conflicts\. Find the correct answer in the emulator\./);
+  assert.equal(envelope.nextAction, undefined);
 });
 
 test("a refused DXA import writes no revision and no listing", { timeout: 60_000 }, async () => {
@@ -161,6 +165,12 @@ test("a macro candidate names no platform name of a ROM that the program does no
   };
   // Without coverage or entry state, the program uses both ROMs: TXTPTR names the address.
   assert.deepEqual(await argsOf(false), ["TXTPTR", "$3000"]);
+  // The batch has the macro and its use; the hint tells to apply it, and the body has no command of another script.
+  const batched = await analyze(join(scratch, "set16-false"), dxa, "--out-macro-batch", "analysis/macros.json");
+  assert.equal(batched.status, 0, JSON.stringify(batched.json));
+  const batch = (batched.json.idioms as { candidates: { macros: { batch: Record<string, unknown> } } }).candidates.macros.batch;
+  assert.deepEqual([batch.out, batch.writes, batch.apply], ["analysis/macros.json", 2, undefined]);
+  assert.equal(batched.envelope.hint, "Apply the changes in analysis/macros.json to the project knowledge. Then generate the source again.");
   // The coverage shows no ROM code executed: c64-source leaves TXTPTR out, so the candidate has the number.
   assert.deepEqual(await argsOf(true), ["$7a", "$3000"]);
 });

@@ -18,6 +18,7 @@ import { ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
 import { gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { importImage } from "../../fixtures/program.ts";
+import { readEnvelope } from "../../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-d46-"));
@@ -37,7 +38,7 @@ async function runTest(...args: string[]): Promise<{ status: number | null; json
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
 }
 
 const steps = [
@@ -69,6 +70,7 @@ test("one-side steps, a raster sync, normalize and an exclude make two different
   // The screens differ: the original went through BASIC (RUN on the screen), the rebuild did not.
   writeFileSync(join(project, "fail.json"), JSON.stringify({ name: "screens", ...subjects, steps: [...steps, { observe: "done", memory, screen: {} }] }));
   const fail = await runTest("fail.json", "--out", "results/fail");
+  assert.equal(fail.status, 0, JSON.stringify(fail.json));
   assert.equal(fail.json.result, "FAIL", JSON.stringify(fail.json));
   assert.deepEqual((fail.json.differences as Array<{ what: string }>).map((difference) => difference.what), ["screen"]);
   const files = (fail.json.files as Array<{ out: string }>).map((file) => file.out);

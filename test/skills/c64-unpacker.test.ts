@@ -12,7 +12,7 @@ import { removeStaleFiles } from "../../skills/c64-unpacker/scripts/lib/machine.
 import { callReturn, captureSegments, executedIn, stageCandidates, stagePoints, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
-import { seededBytes } from "../kit.ts";
+import { readEnvelope, seededBytes } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpacker-"));
 after(() => rmSync(project, { recursive: true, force: true }));
@@ -58,12 +58,15 @@ test("a short program is unclear, and the script reports it", () => {
   const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpacker.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "packed.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
-  const result = JSON.parse(run.stdout) as Record<string, unknown>;
+  const { envelope, json: result } = readEnvelope(run.stdout, run.status);
   assert.equal(result.packing, "unclear");
   assert.deepEqual(result.basicStart, { line: 10, sys: "$080d" });
+  assert.equal(envelope.hint, "Run trace to get the evidence of a run.");
+  assert.match(envelope.nextAction!, /^node \/\S+unpacker\.ts trace packed\.prg --project \//);
   for (const args of [["inspect"], ["capture", "packed.prg"], ["capture", "packed.prg", "--until", "49152", "--out", "x.prg"], ["unpack", "packed.prg"], ["trace", "packed.prg", "--until", "$1000"], ["inspect", "packed.prg", "--entry", "$1000"], ["capture", "packed.prg", "--until", "$1000", "--out", "x", "--exclude", "$a000"], ["capture", "packed.prg", "--until", "$1000", "--out", "x", "--exclude", "$a9ff-$a000"], ["stages", "packed.prg", "--exclude", "$a000-$a9ff"]]) {
     const bad = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8" });
     assert.equal(bad.status, 2, args.join(" "));
+    assert.equal(readEnvelope(bad.stdout, bad.status).envelope.ok, false, args.join(" "));
   }
 });
 
@@ -76,17 +79,18 @@ test("inspect, trace, stages and capture take a PRG: a disk image and a file pas
   const refused = (...args: string[]) => {
     const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
     assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
-    const { error } = JSON.parse(run.stdout) as { error: { code: string; message: string } };
+    const { error } = readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } };
     assert.equal(error.code, "invalid-input", `${args.join(" ")}: ${error.message}`);
-    return error.message.split("\n")[0]!;
+    // A wrong command line also gives the help command: the asserts read the message without it.
+    return error.message.split("\n")[0]!.replace(/ To get the usage, run unpacker\.ts \w+ --help\.$/, "");
   };
-  const disk = "game.d64 is a disk image (.d64), not a PRG. Use loads, which runs a disk, tape or cartridge image, or get the PRG out of it with disk.ts read of the c64-disk skill.";
+  const disk = "game.d64 is a disk image (.d64), not a PRG. Use loads, which runs a disk, tape or cartridge image, or extract the PRG from the image and give the path of that PRG.";
   for (const command of [["inspect"], ["trace"], ["stages"], ["capture", "--until", "$080d", "--out", "x"]]) assert.equal(refused(command[0]!, "game.d64", ...command.slice(1)), disk);
   assert.match(refused("inspect", "long.prg"), /^long\.prg is not a PRG: The PRG runs past \$ffff\. Use loads/);
   assert.throws(() => inspect(new Uint8Array(0x10003)), /runs past \$ffff/);
   // A segment must hold the entry: refused before the emulator runs.
-  assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--exclude", "$0800-$0900"), "--exclude $0800-$0900 holds the entry --until $080d. A segment must hold the entry: give an --exclude range without it");
-  assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--range", "$c000-$cfff"), "--range $c000-$cfff does not hold the entry --until $080d. Give a --range that holds the entry");
+  assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--exclude", "$0800-$0900"), "--exclude $0800-$0900 holds the entry --until $080d. A segment must hold the entry: give an --exclude range without it.");
+  assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--range", "$c000-$cfff"), "--range $c000-$cfff does not hold the entry --until $080d. Give a --range that holds the entry.");
   // The steps of the unpacker run in VICE: a refusal lists the kinds that VICE runs, without press.
   writeFileSync(join(project, "wait.json"), JSON.stringify([{ wait: 10 }]));
   assert.equal(refused("trace", "packed.prg", "--steps", "wait.json"), "--steps wait.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil");
@@ -98,7 +102,7 @@ test("inspect, trace, stages and capture take a PRG: a disk image and a file pas
     assert.match(refused(command[0]!, "packed.prg", "--steps", "name.json", ...command.slice(1)), /^--steps name\.json: step 2: nonsense is not a name in the knowledge\. Give a \$ address/);
   }
   writeFileSync(join(project, "raster.json"), JSON.stringify([{ frames: 10 }, { runUntil: { target: { kind: "raster", line: 100 }, timeoutFrames: 10 } }]));
-  assert.equal(refused("stages", "packed.prg", "--steps", "raster.json"), "--steps raster.json: step 2: stages takes a runUntil step only with an address target without a condition. Use frames steps, or capture");
+  assert.equal(refused("stages", "packed.prg", "--steps", "raster.json"), "--steps raster.json: step 2: stages takes a runUntil step only with an address target without a condition. Use frames steps, or use capture.");
   writeFileSync(join(project, "parts.json"), JSON.stringify([{ wait: 10 }, { capture: "a" }]));
   assert.equal(refused("loads", "game.d64", "--steps", "parts.json", "--out", "parts"), "--steps parts.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil, capture");
   writeFileSync(join(project, "part.json"), JSON.stringify([{ capture: "a" }]));
@@ -142,10 +146,10 @@ test("inspect refuses a link to a file outside the project", { skip: process.pla
     const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpacker.ts");
     const linked = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "linked.prg"], { cwd: project, encoding: "utf8" });
     assert.equal(linked.status, 2, linked.stdout + linked.stderr);
-    assert.equal((JSON.parse(linked.stdout) as { error: { code: string } }).error.code, "invalid-input");
+    assert.equal(readEnvelope(linked.stdout, linked.status).envelope.code, "invalid-input");
     const missing = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "missing.prg"], { cwd: project, encoding: "utf8" });
     assert.equal(missing.status, 2, missing.stdout + missing.stderr);
-    assert.equal((JSON.parse(missing.stdout) as { error: { code: string } }).error.code, "not-found");
+    assert.equal(readEnvelope(missing.stdout, missing.status).envelope.code, "not-found");
   } finally {
     rmSync(outside, { recursive: true, force: true });
   }

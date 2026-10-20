@@ -28,7 +28,7 @@ export const MemoryViewInput = z
 export const AddressInput = z
   .string()
   .refine((value) => c64AddressOf(value) !== undefined, {
-    message: "must be $ and 1 to 4 hex digits, for example $c000 or $fb. A tool takes no names: get the address of a name with knowledge.ts at <name> of the c64-knowledge skill",
+    message: "must be $ and 1 to 4 hex digits, for example $c000 or $fb. A tool takes no names: get the address of the name from the project knowledge",
   })
   .transform((value) => c64AddressOf(value)!)
   .describe("C64 address: $ and 1 to 4 hex digits, $0000 to $ffff");

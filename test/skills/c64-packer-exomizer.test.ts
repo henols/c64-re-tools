@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { EXOMIZER, findTool } from "../../src/native/discover.ts";
-import { seededBytes } from "../kit.ts";
+import { readEnvelope, seededBytes } from "../kit.ts";
 
 let skip: string | false = false;
 try {
@@ -37,7 +37,7 @@ async function packer(...args: string[]): Promise<{ status: number | null; json:
   child.stderr.on("data", (chunk) => (stderr += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(stderr, "");
-  return { status, json: JSON.parse(stdout) as Record<string, unknown> };
+  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
 }
 
 test("a BASIC program is packed into a smaller PRG at $0801 that unpacks to the same bytes and jumps to its SYS address", { skip, timeout: 300_000 }, async () => {

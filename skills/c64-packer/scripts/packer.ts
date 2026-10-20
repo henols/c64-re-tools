@@ -12,7 +12,7 @@ import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { pack } from "#src/native/exomizer.ts";
 import { localToolContext } from "#src/native/local.ts";
-import { OPTIONS, runScript, UsageError } from "#src/script.ts";
+import { OPTIONS, reply, runScript, UsageError } from "#src/script.ts";
 
 /** CPU cycles in one second of a PAL C64. */
 const PAL_CYCLES_PER_SECOND = 985_248;
@@ -64,7 +64,7 @@ await runScript({
         let entry = call.address("entry");
         if (entry === undefined) {
           const found = sysEntry(programs[0]!.bytes);
-          if (typeof found === "string") throw new UsageError(`Give --entry: there is no SYS address in ${files[0]}. ${found}`);
+          if (typeof found === "string") throw new UsageError(`There is no SYS address in ${files[0]}. ${found} Give --entry with the start address of the program.`);
           entry = found;
         }
         const exitMemory = call.count("exit-memory");
@@ -76,7 +76,7 @@ await runScript({
         const different = !entryReached || check.segments.some((segment) => segment.result === "different");
         const result = different ? "FAIL" : check.identical ? "PASS" : "INCONCLUSIVE";
         const unpackedBytes = reference.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
-        return {
+        const body = {
           result,
           // A program that does not unpack to its inputs is not written.
           ...(different ? {} : writeReported(out, packed.program, { what: "--out" })),
@@ -89,6 +89,13 @@ await runScript({
           inputs: programs.map((program) => ({ file: program.file, loadRange: { start: formatC64Address(program.start), end: formatC64Address(program.end) }, bytes: program.body.length })),
           check: { entry: formatC64Address(packed.entry), ...check },
         };
+        const hint =
+          result === "PASS"
+            ? `Run ${out} in the emulator with RUN. Make sure that the program starts and works.`
+            : result === "INCONCLUSIVE"
+              ? `The check does not hold all bytes of the inputs. Run ${out} in the emulator, and examine the memory of each segment in check.segments that is not covered.`
+              : "The packed program does not unpack to the inputs, or it jumps to a different entry. The script did not write it. Do not use it. Give the call and check to the user.";
+        return reply(body, { hint });
       },
     },
   ],

@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { parseCrt, parseT64 } from "../../skills/c64-disk/scripts/lib/containers.ts";
+import { readEnvelope } from "../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/c64-disk/scripts/disk.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-containers-"));
@@ -62,7 +63,7 @@ function t64(files: Array<{ name: string; start: number; data: number[]; end?: n
 
 const disk = (...args: string[]) => {
   const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  return { status: run.status, json: JSON.parse(run.stdout) as Record<string, any> };
+  return { status: run.status, ...readEnvelope(run.stdout, run.status) };
 };
 
 test("a CRT gives its type, its mode and each bank; unknown types are refused by name", () => {
@@ -89,6 +90,7 @@ test("crt writes one PRG for each bank and chip, for space bankN, with a manifes
   ]);
   const written = disk("crt", "easy.crt", "--out", "cart");
   assert.equal(written.status, 0, JSON.stringify(written.json));
+  assert.match(written.envelope.hint!, /Analyze each bank PRG in its own knowledge space/);
   assert.deepEqual([...readFileSync(join(project, "cart", "bank0-a000.prg"))], [0x00, 0xa0, 0xcc]);
   assert.equal(JSON.parse(readFileSync(join(project, "cart", "crt.json"), "utf8")).typeName, "EasyFlash");
   assert.equal(disk("bam", "easy.crt").status, 2);
@@ -100,19 +102,20 @@ test("a file of a kind that a command does not take is refused with every kind t
   const refused = (args: string[]) => {
     const result = disk(...args);
     assert.equal(result.status, 2, args.join(" "));
-    return result.json.error as { code: string; message: string };
+    return { code: result.envelope.code!, message: result.envelope.error!, hint: result.envelope.hint };
   };
-  assert.deepEqual(refused(["directory", "notes.txt"]), { code: "invalid-input", message: "notes.txt is not a file that directory takes. Give a .d64, .d71, .d81 or .g64 disk image, a .t64 tape file or a .crt cartridge file." });
-  assert.equal(refused(["read", "notes.txt", "GAME", "--out", "x.prg"]).message, "notes.txt is not a file that read takes. Give a .d64, .d71, .d81 or .g64 disk image or a .t64 tape file.");
-  assert.equal(refused(["bam", "notes.txt"]).message, "notes.txt is not a file that bam takes. Give a .d64, .d71, .d81 or .g64 disk image.");
-  assert.equal(refused(["crt", "game.d64", "--out", "x"]).message, "game.d64 is not a file that crt takes. Give a .crt cartridge file.");
+  const media = "The file has a defect, or its content is not of its type. Give this message to the user. Do not change the file.";
+  assert.deepEqual(refused(["directory", "notes.txt"]), { code: "invalid-input", message: "notes.txt is not a file that directory takes.", hint: "Give a .d64, .d71, .d81 or .g64 disk image, a .t64 tape file or a .crt cartridge file." });
+  assert.equal(refused(["read", "notes.txt", "GAME", "--out", "x.prg"]).hint, "Give a .d64, .d71, .d81 or .g64 disk image or a .t64 tape file.");
+  assert.equal(refused(["bam", "notes.txt"]).hint, "Give a .d64, .d71, .d81 or .g64 disk image.");
+  assert.equal(refused(["crt", "game.d64", "--out", "x"]).hint, "Give a .crt cartridge file.");
   writeFileSync(join(project, "bad.crt"), Buffer.alloc(0x50));
   writeFileSync(join(project, "bad.t64"), Buffer.alloc(0x50));
-  assert.deepEqual(refused(["directory", "bad.crt"]), { code: "media-error", message: "bad.crt: the file is not a CRT: it does not start with C64 CARTRIDGE" });
+  assert.deepEqual(refused(["directory", "bad.crt"]), { code: "media-error", message: "bad.crt: the file is not a CRT: it does not start with C64 CARTRIDGE.", hint: media });
   assert.deepEqual(refused(["crt", "bad.crt", "--out", "x"]).code, "media-error");
   writeFileSync(join(project, "short.crt"), Buffer.from("C64 CARTRIDGE   \0\0\0\x40", "latin1"));
-  assert.deepEqual(refused(["directory", "short.crt"]), { code: "media-error", message: "short.crt: the CRT header is shorter than 64 bytes: the file has only 20 bytes" });
-  assert.deepEqual(refused(["directory", "bad.t64"]), { code: "media-error", message: "bad.t64: the file is not a T64: it does not start with C64" });
+  assert.deepEqual(refused(["directory", "short.crt"]), { code: "media-error", message: "short.crt: the CRT header is shorter than 64 bytes: the file has only 20 bytes.", hint: media });
+  assert.deepEqual(refused(["directory", "bad.t64"]), { code: "media-error", message: "bad.t64: the file is not a T64: it does not start with C64.", hint: media });
   assert.deepEqual(refused(["read", "bad.t64", "GAME", "--out", "x.prg"]).code, "media-error");
   writeFileSync(join(project, "type1.crt"), crt(1, 0, 0, [{ bank: 0, address: 0x8000, data: [0] }]));
   assert.equal(refused(["directory", "type1.crt"]).code, "media-error", "a hardware type that the script does not read");

@@ -128,7 +128,7 @@ export const OPTIONS = {
   frames: { kind: "count", value: "<n>", help: "run for this number of video frames", min: 1, max: 1_000_000 },
   "timeout-frames": { kind: "count", value: "<n>", help: "stop a wait after this number of video frames", min: 1, max: 1_000_000 },
   "max-listed": { kind: "count", value: "<n>", help: "list at most n items of each list (default 50). The counts are always given", min: 0, max: 100_000, default: 50 },
-  symbols: { kind: "path", value: "<file>", help: "the symbols of a build: the c64-assembler output, or a JSON map of name to $ address" },
+  symbols: { kind: "path", value: "<file>", help: "the symbols of a build: the symbols file of the assembler, or a JSON map of name to $ address" },
   origin: { kind: "text", value: "<origin>", help: "user, llm, dxa, ghidra, heuristic, semantic (user and llm) or analyzer (dxa, ghidra and heuristic), or a comma list" },
   reason: { kind: "text", value: "<text>", help: "why: kept with the revision" },
   evidence: { kind: "text", value: "<kind:ref>", help: "what the change rests on: coverage:<map>, test:<file>, file:<file> or note:<text>", multiple: true },
@@ -590,7 +590,7 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
   const most = last?.list ? Number.POSITIVE_INFINITY : specs.length;
   if (subjects.length < least || subjects.length > most) {
     const named = specs.length === 0 ? "no subjects" : specs.map((subject) => (subject.list ? `${subject.name}...` : subject.name)).join(" ");
-    throw new UsageError(subjects.length < least ? `${command.name} needs ${named}` : `${command.name} takes ${named}. ${JSON.stringify(subjects[most])} is one too many`);
+    throw new UsageError(subjects.length < least ? sentence(`${command.name} needs ${named}`) : `${sentence(`${command.name} takes ${named}`)} ${JSON.stringify(subjects[most])} is one too many.`);
   }
   for (const [name, spec] of Object.entries(options)) {
     const value = values[name];
@@ -636,6 +636,11 @@ function cutListHint(body: unknown): string | undefined {
   return rest === undefined ? undefined : `A list in the body is cut: count gives its full size. To get the rest, give ${rest}.`;
 }
 
+/** The text with a full stop at its end, so that another sentence can follow it. */
+function sentence(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
 /** What the envelope needs of a script. */
 interface Envelope {
   name: string;
@@ -673,10 +678,10 @@ async function envelope(script: Envelope): Promise<void> {
       const stop = code === "installation-incomplete";
       const message = stop && error.message.endsWith(STOP_AND_ASK) ? error.message.slice(0, -STOP_AND_ASK.length).trim() : error.message;
       shown = splitMessage(message, (error as { hint?: string }).hint);
-      if (stop) shown = { error: shown.error, hint: shown.hint === undefined ? STOP_AND_ASK : `${shown.hint} ${STOP_AND_ASK}` };
+      if (stop) shown = { error: shown.error, hint: shown.hint === undefined ? STOP_AND_ASK : `${sentence(shown.hint)} ${STOP_AND_ASK}` };
       if (error instanceof UsageError) {
         const help = `To get the usage, run ${script.name}.ts${commandName === undefined ? "" : ` ${commandName}`} --help.`;
-        shown = { error: shown.error, hint: shown.hint === undefined ? help : `${shown.hint} ${help}` };
+        shown = { error: shown.error, hint: shown.hint === undefined ? help : `${sentence(shown.hint)} ${help}` };
         nextAction = commandLine(commandName === undefined ? [] : [commandName, "--help"]);
       }
     } else {
@@ -706,7 +711,8 @@ async function envelope(script: Envelope): Promise<void> {
       commandName = command;
     });
     const { body, hint, nextAction } = result instanceof Reply ? result : { body: result ?? {}, hint: undefined, nextAction: undefined };
-    const shownHint = hint ?? cutListHint(body);
+    const cut = cutListHint(body);
+    const shownHint = hint === undefined ? cut : cut === undefined || hint.includes("--max-listed") ? hint : `${sentence(hint)} ${cut}`;
     print({ ok: true, command: commandName ?? "help", body: body ?? {}, ...(shownHint === undefined ? {} : { hint: shownHint }), ...(nextAction === undefined ? {} : { nextAction }) }, 0);
     trace().event("script.end", { ms: elapsedMs(started), status: 0, result: body });
   } catch (error) {

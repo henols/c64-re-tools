@@ -14,7 +14,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { C1541, findTool, PETCAT } from "../../../src/native/discover.ts";
 import { BORDER_LOOP_START, borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
-import { startMcp } from "../../kit.ts";
+import { readEnvelope, startMcp } from "../../kit.ts";
 import { liveSkip, startHost, stopHosts, type LiveHost } from "./live.ts";
 
 let c1541 = "";
@@ -49,7 +49,7 @@ function makeDisk(): void {
 function script(skill: string, file: string, args: string[], address: string): { status: number | null; json: Record<string, unknown> } {
   const run = spawnSync(process.execPath, [...process.execArgv, resolve(root, "skills", skill, "scripts", file), ...args], { cwd: project, env: { ...process.env, C64RT_HOST: address }, encoding: "utf8" });
   assert.equal(run.stderr, "");
-  return { status: run.status, json: JSON.parse(run.stdout) as Record<string, unknown> };
+  return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, unknown> };
 }
 
 /** The Host Runtime runs c1541 and petcat for the disk and BASIC scripts. */

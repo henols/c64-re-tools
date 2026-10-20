@@ -273,7 +273,7 @@ export function entriesInData<R extends { start: number; end: number; type: Regi
 /** Why an image without its entry fails: the image does not hold the program. Undefined when the entry is in a segment, or the image has no entry. */
 export function entryOutsideImage(entry: number | undefined, segments: readonly AddressRange[]): string | undefined {
   if (entry === undefined || segments.some((segment) => entry >= segment.start && entry <= segment.end)) return undefined;
-  return `The entry ${formatC64Address(entry)} is in no segment of the image: the image does not hold the program. Capture it again with c64-unpacker loads or capture.`;
+  return `The entry ${formatC64Address(entry)} is in no segment of the image: the image does not hold the program. Capture the program again, so that a segment holds the entry.`;
 }
 
 /** Splits the segments into pieces at module starts and lays out instructions and data. */
@@ -434,7 +434,7 @@ export function layout(input: SourceInput): Layout {
     }
     const missing = [...new Set(use.args.flatMap((arg) => identifiers(arg)))].filter((name) => !byName.has(name));
     if (missing.length > 0) {
-      fallBack(unknownNames(missing, "Name the address with knowledge.ts rename, or give other args with knowledge.ts use."));
+      fallBack(unknownNames(missing, "Name the address in the project knowledge, or record the macro use again with other args."));
       continue;
     }
     candidates.push({ use, items: run as InstructionItem[] });
@@ -453,7 +453,7 @@ export function layout(input: SourceInput): Layout {
     }
     const missing = identifiers(expression).filter((name) => !byName.has(name));
     if (missing.length > 0) {
-      operandsAsNumbers.push({ address: operand.address, expression, reason: unknownNames(missing, "Name the address with knowledge.ts rename, or write the operand again with knowledge.ts operand.") });
+      operandsAsNumbers.push({ address: operand.address, expression, reason: unknownNames(missing, "Name the address in the project knowledge, or record the operand expression again.") });
       continue;
     }
     // An immediate operand builds the address of a name; any other operand uses the address as the instruction does.
@@ -501,7 +501,7 @@ export function layout(input: SourceInput): Layout {
     const known = symbols.get(address);
     if (known !== undefined) {
       const problem = labelProblem(known);
-      if (problem !== undefined) throw new WireFailure("invalid-input", `The symbol ${known} at ${formatC64Address(address)}: ${problem} Rename the symbol with c64-knowledge.`);
+      if (problem !== undefined) throw new WireFailure("invalid-input", `The symbol ${known} at ${formatC64Address(address)}: ${problem} Rename the symbol in the project knowledge.`);
       names.set(address, known);
       if (inImage(address)) namedLabels++;
       continue;
@@ -902,7 +902,7 @@ export function configText(layout: Pick<Layout, "switches" | "patches">, values:
 function switchesText(layout: Layout): string {
   const out = [
     "; The releases of the knowledge. config.asm holds the value of each switch.",
-    `; Build a release with -D${RELEASE_DEFINE}<label>=1 (c64-assembler --release <label>):`,
+    `; Build a release with -D${RELEASE_DEFINE}<label>=1 (the build option --release <label>):`,
     "; then each switch has the value of that release, and the build does not read config.asm.",
   ];
   for (const release of layout.releases) {

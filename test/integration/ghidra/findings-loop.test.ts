@@ -15,6 +15,7 @@ import { after, test } from "node:test";
 import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { analysisSubjectPrg } from "../../fixtures/prg/analysis-subject.ts";
 import { nthIn } from "../../../src/knowledge/revisions.testkit.ts";
+import { readEnvelope } from "../../kit.ts";
 
 let skip: string | false = false;
 try {
@@ -35,9 +36,9 @@ async function skill(name: string, file: string, ...args: string[]): Promise<Rec
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   child.stderr.on("data", (chunk) => (stderr += chunk));
-  await once(child, "exit");
+  const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(stderr, "");
-  return JSON.parse(stdout) as Record<string, unknown>;
+  return readEnvelope(stdout, status).json as Record<string, unknown>;
 }
 
 test("Ghidra findings, a semantic rename and a seeded re-run go through one importer", { skip, timeout: 900_000 }, async () => {

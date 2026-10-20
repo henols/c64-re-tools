@@ -18,7 +18,7 @@ import { importFindings, runProvenance, type ImportConflict, type ImportContext,
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
-import { listed, OPTIONS, runScript, UsageError, type Call } from "#src/script.ts";
+import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
@@ -26,6 +26,23 @@ import { instructionList } from "./lib/instructions.ts";
 import { CATALOGUE, findMacroUses, type MacroCandidate } from "./lib/macros.ts";
 import { findPitfalls, type Pitfall } from "./lib/pitfalls.ts";
 import { findPointers, type PointerCandidate } from "./lib/pointers.ts";
+
+/** The rest of a cut label or function list: the knowledge has all of them as analyzer names. */
+const ALL_NAMES = "a larger --max-listed. The project knowledge has all of them as analyzer names";
+
+/**
+ * The result with a hint for what the agent does next: conflicts to examine,
+ * analyzer data over executed code to classify, and a macro batch to apply.
+ * The envelope adds the sentence for a cut list.
+ */
+function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, batch: { out: string; writes: number } | undefined) {
+  const hints: string[] = [];
+  if (conflicts > 0) hints.push("The analysis and the project knowledge disagree at each place in conflicts. Find the correct answer in the emulator. Then correct the project knowledge.");
+  if (coverageConflicts > 0) hints.push("The coverage shows executed code in each range of coverageConflicts. Classify each range as code, or as dual-use when its bytes are also data, in the project knowledge.");
+  if (batch !== undefined && batch.writes > 0) hints.push(`Apply the changes in ${batch.out} to the project knowledge. Then generate the source again.`);
+  if (hints.length === 0) return body;
+  return reply(body, { hint: hints.join(" ") });
+}
 
 /** A pitfall with $ addresses and what goes wrong. */
 function showPitfall(pitfall: Pitfall) {
@@ -106,7 +123,6 @@ function macroCandidates(space: string, byteAt: ImageByte, batchPath: string | u
         ...written,
         writes: batch.length,
         ...(other.size === 0 ? {} : { otherMacros: [...other].map((name) => `The knowledge has another macro ${name}: its candidates are not in the batch.`) }),
-        ...(batch.length === 0 ? {} : { apply: `knowledge.ts apply ${batchPath} --reason "macro uses of 6502 idioms"` }),
       },
     };
   } finally {
@@ -200,7 +216,9 @@ async function analyze(call: Call): Promise<unknown> {
 
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries, space, executed.executed);
-  // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound.
+  // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound:
+  // at most GHIDRA_LIMITS.entryPoints (1024) entry points for both analyzers, and for Ghidra at most
+  // GHIDRA_LIMITS.codeStarts (8192) coverage flow starts that are code in a routine. coverageSeeds gives what was used.
   const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, inProgram);
   const known = [...seeds.entryPoints, ...codeEntries(reader, byteAt, space)];
   // Ghidra takes the coverage as code starts without a function; DXA has one list.
@@ -286,7 +304,7 @@ async function analyze(call: Call): Promise<unknown> {
       }
     }
     const found = idiomsResult();
-    return {
+    const body = {
       analyzer: "dxa",
       ...(space === DEFAULT_SPACE ? {} : { space }),
       ...found,
@@ -294,9 +312,10 @@ async function analyze(call: Call): Promise<unknown> {
       coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
       ...imported,
       regions: result.regions.map((region) => ({ start: formatC64Address(region.start), end: formatC64Address(region.end), classification: region.classification })),
-      labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), "c64-knowledge: knowledge.ts symbols --analyzer --origin dxa"),
+      labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), ALL_NAMES),
       ...(written === undefined ? {} : { listing: written }),
     };
+    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, found.idioms.candidates.macros.batch);
   }
 
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
@@ -315,7 +334,7 @@ async function analyze(call: Call): Promise<unknown> {
     const list = instructionList(result.instructions, coverage);
     instructions = { count: list.length, ...writeReported(instructionsPath, `${JSON.stringify(list, null, 1)}\n`, { what: "--out-instructions" }) };
   }
-  return {
+  const body = {
     analyzer: "ghidra",
     ...(space === DEFAULT_SPACE ? {} : { space }),
     ...(instructions === undefined ? {} : { instructions }),
@@ -324,12 +343,13 @@ async function analyze(call: Call): Promise<unknown> {
     ...(coverage === undefined ? {} : { coverageGaps: listed(gaps, max, formatC64Address, "a larger --max-listed") }),
     coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     ...imported,
-    functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), "c64-knowledge: knowledge.ts symbols --analyzer --origin ghidra"),
+    functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), ALL_NAMES),
     decompilations: result.decompilations.map((item) => ({ entry: formatC64Address(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
     ...((result.notDecompiled ?? []).length === 0
       ? {}
       : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: withRemedy(item.reason) })) }),
   };
+  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, found.idioms.candidates.macros.batch);
 }
 
 await runScript({
@@ -348,9 +368,9 @@ await runScript({
         "max-listed": { ...OPTIONS["max-listed"], help: "list at most n labels, functions or candidates (default 50, 0 for none). The counts are always given, and the knowledge has all labels and functions" },
         "out-listing": { kind: "path", output: "file", value: "<file>", help: "dxa: write the disassembly listing to this project file" },
         "out-instructions": { kind: "path", output: "file", value: "<file>", help: "ghidra: write every instruction (address, bytes, mnemonic, mode, operand, target, executed) to this project file as JSON" },
-        "out-macro-batch": { kind: "path", output: "file", value: "<file>", help: "write the macro candidates as an apply batch of c64-knowledge (the macros and their uses) to this project file" },
+        "out-macro-batch": { kind: "path", output: "file", value: "<file>", help: "write the macro candidates (the macros and their uses) to this project file as a batch of changes to the project knowledge" },
       },
-      notes: "The program and the coverage come from the knowledge: put them in with knowledge.ts image and coverage of the c64-knowledge skill. The executed code of the coverage is seeded. Routine symbols in the knowledge are entry points too. Ghidra needs at least one entry point. DXA finds the SYS of a BASIC start by itself.",
+      notes: "The program and the coverage come from the project knowledge: put them into the project knowledge first. The executed code of the coverage gives entry points. Routine symbols in the knowledge are entry points too. Ghidra needs at least one entry point. DXA finds the SYS of a BASIC start by itself.",
       run: analyze,
     },
   ],

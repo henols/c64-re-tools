@@ -1,6 +1,7 @@
 // The c64-docs script. generate writes the reference pages of a program from
-// the knowledge, the source map of c64-source and the program in the
-// knowledge; the pages are generated and never edited. link links the name
+// the knowledge, the source map that c64-source writes next to the generated
+// source, and the program bytes in the knowledge; the pages are generated and
+// never edited. link links the name
 // mentions of the documentation to the source and the reference, and checks
 // every link and image of the pages.
 
@@ -15,7 +16,7 @@ import { openForRead } from "#src/knowledge/database.ts";
 import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
 import { currentRevision, listComments, listModules, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { resolveProjectFile, resolveProjectPath } from "#src/project.ts";
-import { listed, OPTIONS, runScript, UsageError, type Call } from "#src/script.ts";
+import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
 import { checkLinks, linkPage, type Files, type Problem } from "./lib/links.ts";
 import { buildReference, GENERATED_MARK } from "./lib/reference.ts";
 import { readSourceMap } from "./lib/source-map.ts";
@@ -43,7 +44,7 @@ function oldFiles(out: string, directory: string): string[] {
   return found;
 }
 
-function generate(call: Call): Record<string, unknown> {
+function generate(call: Call): Reply {
   const source = call.subject(0);
   const out = call.string("out")!;
   // The files of an earlier run are deleted: only in a folder that is inside the project, also after its symbolic links.
@@ -62,11 +63,11 @@ function generate(call: Call): Record<string, unknown> {
   try {
     image = programImage(db, map.space);
     const found = conflicts(db).length;
-    if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was written. Run c64-knowledge's knowledge.ts merge, then generate the source and the reference again.`);
+    if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was written. Resolve the merge conflicts of the project knowledge. Then generate the source again from the knowledge, and run generate again.`);
     const revision = currentRevision(db);
     // A source of another revision has other lines: the links would point to the wrong code.
     if (map.revision !== revision) {
-      throw new WireFailure("invalid-input", `${map.pathOf("source-map.json")} is from knowledge revision ${map.revision}, and the knowledge is at revision ${revision}. Nothing was written. Generate the source again with c64-source, then run docs.ts generate.`);
+      throw new WireFailure("invalid-input", `${map.pathOf("source-map.json")} is from knowledge revision ${map.revision}, and the knowledge is at revision ${revision}. Nothing was written. Generate the source again from the knowledge. Then run generate again.`);
     }
     knowledge = {
       revision,
@@ -88,7 +89,17 @@ function generate(call: Call): Record<string, unknown> {
   });
   for (const path of old) rmSync(join(directory, path), { force: true });
   const written = built.files.map((file) => writeReported(file.path, file.bytes, { what: "--out" }));
-  return { out, revision: knowledge.revision, index: posix.join(posix.normalize(out), "index.md"), ...built.counts, files: listed(written, call.count("max-listed")!), program: image === undefined ? "none: put the program into the knowledge with knowledge.ts image to decode the tables and show the graphics" : "the knowledge" };
+  const files = listed(written, call.count("max-listed")!);
+  const hints: string[] = [];
+  if (image === undefined) hints.push("The knowledge has no program bytes. Thus the reference does not decode the tables and does not show the graphics. To get them, put the program bytes into the project knowledge and run generate again.");
+  if (files.rest !== undefined) hints.push(`files is cut. To list all files, give ${files.rest}.`);
+  hints.push("Write the pages of the documentation. Then run nextAction to link them to the source.");
+  // The next step links the entry page and the folder above the reference, with the reference given, so that it also finds a reference that is not named reference/.
+  const parent = posix.dirname(posix.normalize(out));
+  return reply(
+    { out, revision: knowledge.revision, index: posix.join(posix.normalize(out), "index.md"), ...built.counts, files, program: image === undefined ? "none" : "the knowledge" },
+    { hint: hints.join(" "), nextAction: call.next("link", "README.md", ...(parent === "." ? [] : [parent]), "--source", source, "--reference", posix.normalize(out)) },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +170,7 @@ const files: Files = {
 /** A .md entry of a directory that is a symbolic link to no file, or to a file outside the project. */
 const unreadable = (page: string): Problem => ({ page, line: 1, kind: "missing-file", message: `${page} is a symbolic link to no file or to a file outside the project folder.` });
 
-function link(call: Call): Record<string, unknown> {
+function link(call: Call): Reply {
   const check = call.flag("check");
   const given = [...new Set(call.subjects.map((path) => posix.normalize(path)))];
   for (const path of given) if (!files.inside(path)) throw new UsageError(`<page> must be a path relative to the project folder that stays inside it, not ${path}`);
@@ -276,16 +287,29 @@ function link(call: Call): Record<string, unknown> {
   }
   const byKind: Record<string, number> = {};
   for (const problem of problems) byKind[problem.kind] = (byKind[problem.kind] ?? 0) + 1;
+  const shownProblems = listed(problems, call.count("max-listed")!, (problem) => ({ at: `${problem.page}:${problem.line}`, kind: problem.kind, message: problem.message }));
   const output: Record<string, unknown> = {
     pages: pages.length,
-    ...(reference === undefined ? { reference: "none: no reference/ folder is in or beside the given pages. Give --reference <dir>, or run docs.ts generate" } : { reference }),
+    reference: reference ?? "none",
     ...(check ? { notUpToDate: { links, pages: changedPages } } : { linked: { links, pages: changedPages } }),
-    problems: { byKind, ...listed(problems, call.count("max-listed")!, (problem) => ({ at: `${problem.page}:${problem.line}`, kind: problem.kind, message: problem.message })) },
+    problems: { byKind, ...shownProblems },
   };
-  return { result: problems.length > 0 || (check && links > 0) ? "FAIL" : "PASS", ...output };
+  const again = (withCheck: boolean) => call.next("link", ...call.subjects, "--source", call.string("source")!, ...(givenReference === undefined ? [] : ["--reference", givenReference]), ...(withCheck ? ["--check"] : []));
+  const hints: string[] = [];
+  let nextAction: string | undefined;
+  if (reference === undefined) hints.push("No reference/ folder is in or beside the given pages, so the links to the reference are not checked. Give --reference <dir>, or run generate first.");
+  if (problems.length > 0) {
+    hints.push("Correct each problem in problems.listed as its message tells. Then run nextAction.");
+    if (shownProblems.rest !== undefined) hints.push(`problems is cut. To list all problems, give ${shownProblems.rest}.`);
+    nextAction = again(check);
+  } else if (check && links > 0) {
+    hints.push("Some links are not up to date. Run nextAction to write them.");
+    nextAction = again(false);
+  }
+  return reply({ result: problems.length > 0 || (check && links > 0) ? "FAIL" : "PASS", ...output }, { ...(hints.length === 0 ? {} : { hint: hints.join(" ") }), nextAction });
 }
 
-const SOURCE = { kind: "path", value: "<dir>", help: "the source folder of c64-source, with its source-map.json, relative to the project folder" } as const;
+const SOURCE = { kind: "path", value: "<dir>", help: "the folder of the source that was generated from the knowledge, with its source-map.json, relative to the project folder" } as const;
 
 await runScript({
   name: "docs",
@@ -299,9 +323,9 @@ await runScript({
         out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "the folder for the reference pages, relative to the project folder, for example docs/reference. generate writes only there and refuses a page in it that it did not write", required: true },
         "max-listed": OPTIONS["max-listed"],
       },
-      notes: "When the knowledge has the program of the source (knowledge.ts image of the c64-knowledge skill), the reference decodes the tables and shows the graphics.",
+      notes: "When the project knowledge has the program bytes, the reference decodes the tables and shows the graphics.",
       run: (call) => {
-        if (!isDirectory(call.subject(0))) throw new Refusal("not-found", `There is no folder ${call.subject(0)} in the project folder. Give the source folder of c64-source.`);
+        if (!isDirectory(call.subject(0))) throw new Refusal("not-found", `There is no folder ${call.subject(0)} in the project folder. Give the folder of the source that was generated from the knowledge.`);
         return generate(call);
       },
     },
@@ -311,7 +335,7 @@ await runScript({
       subjects: [{ name: "<page>", help: ".md files and folders of the documentation, relative to the project folder, for example README.md docs. link reads each file and every .md file below each folder", list: true }],
       options: {
         source: { ...SOURCE, required: true },
-        reference: { kind: "path", value: "<dir>", help: "the reference pages of docs.ts generate. The default is the first reference/ folder in a given folder or beside a given page" },
+        reference: { kind: "path", value: "<dir>", help: "the folder of the reference pages of generate. The default is the first reference/ folder in a given folder or beside a given page" },
         check: { kind: "flag", help: "write nothing. FAIL when a link is not up to date or a page has a problem" },
         "max-listed": OPTIONS["max-listed"],
       },
