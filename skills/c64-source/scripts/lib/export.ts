@@ -377,16 +377,16 @@ export function rewriteTest(text: string, name: string, symbols: ReadonlyMap<str
       if (inside(address, free)) return { reason: `it names ${location}, which is in a free range` };
     } else if (!symbols.has(location)) return { reason: `it names ${location}, which the exported program does not have` };
   }
-  const side = (old: unknown, program: string) => ({ program: `${program}.prg`, symbols: `${program}.json`, ...(typeof old === "object" && old !== null && "videoStandard" in old ? { videoStandard: (old as { videoStandard: unknown }).videoStandard } : {}) });
+  const side = (program: string) => ({ program: `${program}.prg`, symbols: `${program}.json` });
   if (scenario) {
     // Both sides are the exported program now: a step of the original alone (for example a key for its intro) goes, and a step of the rebuild alone runs on both sides.
-    const { original, rebuild, steps, ...rest } = test;
+    const { original: _original, rebuild: _rebuild, steps, ...rest } = test;
     const both = (steps as unknown[]).flatMap((step) => {
       if (step === null || typeof step !== "object" || !("side" in step)) return [step];
       const { side: only, ...action } = step as Record<string, unknown>;
       return only === "original" ? [] : [action];
     });
-    return { kind: "scenario", text: `${JSON.stringify({ ...rest, original: side(original, `baseline/${name}`), rebuild: side(rebuild, `build/${name}`), steps: both }, null, 2)}\n` };
+    return { kind: "scenario", text: `${JSON.stringify({ ...rest, original: side(`baseline/${name}`), rebuild: side(`build/${name}`), steps: both }, null, 2)}\n` };
   }
   const start = test.start as Record<string, unknown>;
   const symbolsFile = test.symbols === undefined || test.symbols === "none" ? {} : { symbols: `build/${name}.json` };

@@ -173,9 +173,9 @@ test("the start of the image and the hardware vectors stay", () => {
 const SYMBOLS = new Map([["start", 0x1000], ["loop", 0x1003]]);
 
 test("a scenario compares the baseline with the build, and a run file runs the build", () => {
-  const scenario = rewriteTest(JSON.stringify({ name: "s", original: { program: "game.prg", symbols: "knowledge", videoStandard: "ntsc" }, rebuild: { program: "build/x.prg", symbols: "none" }, steps: [{ registers: { pc: "start" } }] }), "game", SYMBOLS, []);
+  const scenario = rewriteTest(JSON.stringify({ name: "s", original: { program: "game.prg", symbols: "knowledge" }, rebuild: { program: "build/x.prg", symbols: "none" }, steps: [{ registers: { pc: "start" } }] }), "game", SYMBOLS, []);
   assert.ok("kind" in scenario && scenario.kind === "scenario");
-  assert.deepEqual(JSON.parse(scenario.text), { name: "s", steps: [{ registers: { pc: "start" } }], original: { program: "baseline/game.prg", symbols: "baseline/game.json", videoStandard: "ntsc" }, rebuild: { program: "build/game.prg", symbols: "build/game.json" } });
+  assert.deepEqual(JSON.parse(scenario.text), { name: "s", steps: [{ registers: { pc: "start" } }], original: { program: "baseline/game.prg", symbols: "baseline/game.json" }, rebuild: { program: "build/game.prg", symbols: "build/game.json" } });
   const run = rewriteTest(JSON.stringify({ start: { program: "game.prg", load: true }, steps: [{ expect: "e", memory: [{ address: "$0400", data: "01" }] }] }), "game", SYMBOLS, []);
   assert.ok("kind" in run && run.kind === "run");
   assert.deepEqual(JSON.parse(run.text), { start: { program: "build/game.prg", load: true }, steps: [{ expect: "e", memory: [{ address: "$0400", data: "01" }] }] });
