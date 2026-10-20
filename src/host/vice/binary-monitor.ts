@@ -233,6 +233,8 @@ interface Pending {
   resolve: (response: MonitorResponse & { extras: MonitorResponse[] }) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout | undefined;
+  /** The place of the request in the send order. */
+  sequence: number;
 }
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -257,8 +259,13 @@ export class BinaryMonitor {
   defaultTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
   /** The time limit of a request while an earlier one is overdue (see OVERDUE_REQUEST_TIMEOUT_MS). */
   overdueTimeoutMs = OVERDUE_REQUEST_TIMEOUT_MS;
-  /** Requests that timed out and whose late answer has not come yet. */
-  readonly #overdue = new Set<number>();
+  /**
+   * Requests that timed out and whose late answer has not come yet, with
+   * their place in the send order. VICE answers in order, so an answer to a
+   * later request tells that no answer comes for the earlier ones.
+   */
+  readonly #overdue = new Map<number, number>();
+  #sequence = 0;
 
   private constructor(socket: Socket) {
     this.#socket = socket;
@@ -308,13 +315,16 @@ export class BinaryMonitor {
     const requestId = this.#nextId;
     this.#nextId = this.#nextId >= EVENT_REQUEST_ID - 1 ? 1 : this.#nextId + 1;
     const limit = this.#overdue.size > 0 && timeoutMs !== Infinity ? Math.min(timeoutMs, this.overdueTimeoutMs) : timeoutMs;
+    const sequence = ++this.#sequence;
+    // An id that wrapped around belongs to this request now, not to a dead one.
+    this.#overdue.delete(requestId);
     return new Promise((resolve, reject) => {
       const timer =
         limit === Infinity
           ? undefined
           : setTimeout(() => {
               this.#pending.delete(requestId);
-              this.#overdue.add(requestId);
+              this.#overdue.set(requestId, sequence);
               reject(new MonitorTimeoutError(`monitor command 0x${command.toString(16)} got no response in ${limit} ms`));
             }, limit);
       this.#pending.set(requestId, {
@@ -324,6 +334,7 @@ export class BinaryMonitor {
         resolve,
         reject,
         timer,
+        sequence,
       });
       this.#socket.write(encodeCommand(requestId, command, body));
     });
@@ -351,11 +362,12 @@ export class BinaryMonitor {
         continue;
       }
       const pending = this.#pending.get(response.requestId);
-      if (pending === undefined) {
-        // A late answer to a timed-out request: VICE went on.
-        this.#overdue.delete(response.requestId);
-        continue;
+      // An answer, also a late one to a timed-out request: VICE went on, past every request sent before it.
+      const sequence = pending?.sequence ?? this.#overdue.get(response.requestId);
+      if (sequence !== undefined) {
+        for (const [requestId, sent] of this.#overdue) if (sent <= sequence) this.#overdue.delete(requestId);
       }
+      if (pending === undefined) continue;
       if (response.error !== 0) {
         this.#settle(response.requestId, pending);
         pending.reject(new MonitorError(pending.command, response.error));

@@ -232,6 +232,24 @@ test("while a request is overdue, later ones wait briefly; its late answer ends 
   await monitor.close();
 });
 
+test("an overdue request whose answer never comes ends when a later request is answered: VICE answers in order", async () => {
+  // VICE drops the first command; it answers each later one after 120 ms.
+  let first = true;
+  const monitor = await fakeMonitor((socket, id, command) => {
+    if (first) first = false;
+    else setTimeout(() => socket.write(response(command, id)), 120);
+  });
+  monitor.overdueTimeoutMs = 50;
+  await assert.rejects(monitor.request(Command.ping, undefined, 30), MonitorTimeoutError);
+  // Overdue: the slow answer comes after the short limit.
+  await assert.rejects(monitor.request(Command.ping, undefined, 60_000), MonitorTimeoutError);
+  // Its late answer tells that no answer comes for the first one, so the full limit applies again.
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  await monitor.request(Command.ping, undefined, 60_000);
+  await monitor.request(Command.ping, undefined, 60_000);
+  await monitor.close();
+});
+
 test("the peer closing the connection rejects pending requests and reports why", async () => {
   const monitor = await fakeMonitor((socket) => socket.destroy());
   await assert.rejects(monitor.request(Command.ping), MonitorConnectionError);
