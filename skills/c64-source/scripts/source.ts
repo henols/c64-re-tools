@@ -751,7 +751,7 @@ async function buildLoader(files: Array<{ name: string; text: string }>, laid: L
     for (let address = block.range.start; address <= block.range.end; address++) if (memory[block.packedAt + address - block.range.start] !== block.bytes(address)) return true;
     return false;
   });
-  if (loaderBuilt.start !== (loader.packed === true ? loader.copier : 0x0801) || loaderBuilt.start + program.length - 3 !== loader.end || wrongPacking !== undefined) {
+  if (loaderBuilt.start !== (loader.packed?.start ?? 0x0801) || loaderBuilt.start + program.length - 3 !== loader.end || wrongPacking !== undefined) {
     throw new WireFailure("operation-failed", `The assembled loader does not have the planned layout${wrongPacking === undefined ? "" : ` (${wrongPacking.what})`}. This is a defect of the c64-source script.`);
   }
   const symbolValue = (name: string) => {
@@ -907,10 +907,10 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   if ("diagnostics" in loaderBuilt) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics } }, removed, failed: true };
   const { jump, copierSource, expected } = loaderBuilt;
   const copierBuild = loaderBuilt.program;
-  const fileByte = (address: number) => copierBuild[2 + address - (loader.packed === true ? loader.copier : 0x0801)]!;
+  const fileByte = (address: number) => copierBuild[2 + address - (loader.packed?.start ?? 0x0801)]!;
   // The packed form: Exomizer packs the build of main.asm with the copier. Without Exomizer, or when its check fails, there is no loader.prg.
   let packed: PackedLoader | undefined;
-  if (loader.packed === true) {
+  if (loader.packed !== undefined) {
     try {
       packed = await packLoader(built.program, copierBuild, loader, localToolContext());
     } catch (error) {
@@ -1139,7 +1139,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   let loaderOutput: Record<string, unknown> | undefined;
   if (state !== undefined) {
     if (exported.loader === undefined) return { result: "FAIL", stage: "loader", reason: exported.loaderRefused ?? "The loader could not be planned." };
-    if (exported.loader.packed === true) return { result: "FAIL", stage: "loader", reason: "The program is too large for one loader file, and export does not make the packed form of the loader." };
+    if (exported.loader.packed !== undefined) return { result: "FAIL", stage: "loader", reason: "The program is too large for one loader file, and export does not make the packed form of the loader." };
     const loaderBuilt = await buildLoader(exported.files, exported.laid, exported.loader, derived.program, state, new Map());
     if ("diagnostics" in loaderBuilt) return { result: "FAIL", stage: "loader", reason: "loader.asm does not assemble. This is a defect of the c64-source script.", diagnostics: loaderBuilt.diagnostics };
     baseline = { program: loaderBuilt.program, symbols: loaderBuilt.symbols, entryFile: "loader.asm" };

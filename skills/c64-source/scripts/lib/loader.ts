@@ -109,8 +109,8 @@ export interface LoaderPlan {
   text: string;
   /** The CIA timers and masks that the loader sets, when the entry state has them. */
   cia?: CiaPlan;
-  /** The packed form: loader.asm holds only the copier and pages 0-3, and Exomizer packs it with the build of main.asm. */
-  packed?: boolean;
+  /** The packed form: loader.asm holds only the copier and pages 0-3 from `start` to `end`, and Exomizer packs it with the build of main.asm. */
+  packed?: { start: number };
 }
 
 /**
@@ -202,7 +202,7 @@ export function stopCause(ram: Uint8Array, plan: LoaderPlan, copierSource: numbe
     const wanted = fileByte(copierSource + offset);
     if (got === wanted) continue;
     const at = formatC64Address(plan.copier + offset);
-    if (plan.packed === true) return `The copier at ${at} holds ${formatC64Byte(got)}, not ${formatC64Byte(wanted)} of the build of loader.asm: the unpack did not write it.`;
+    if (plan.packed !== undefined) return `The copier at ${at} holds ${formatC64Byte(got)}, not ${formatC64Byte(wanted)} of the build of loader.asm: the unpack did not write it.`;
     const rom = underRom(copierSource + offset) ? `; ${formatC64Address(copierSource + offset)} is under a ROM, so the move read the ROM` : "";
     return `The copier at ${at} holds ${formatC64Byte(got)}, not ${formatC64Byte(wanted)} from ${formatC64Address(copierSource + offset)} of the loader file${rom}.`;
   }
@@ -530,9 +530,11 @@ const SHOWN_FREE = 8;
  * The packed form of the loader, for an image too large for one loader file:
  * Exomizer packs the build of main.asm (from $0400) and the build of
  * loader.asm into loader.prg, which starts at the copier with all RAM
- * visible ($01 = $34). loader.asm holds only the copier, at its free range,
- * and the bytes of pages $0002-$03ff: the unpacker of Exomizer uses the zero
- * page and $0334-$03ff, so the copier writes them after the unpack.
+ * visible ($01 = $34). loader.asm holds only the copier, in one free range,
+ * and the bytes of pages $0002-$03ff, in pieces in the free ranges: the
+ * unpacker of Exomizer uses the zero page and $0334-$03ff, so the copier
+ * writes them after the unpack. Between its ranges, loader.asm holds the
+ * bytes of the image, so its build does not change a segment.
  */
 function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof ciaSection>, codeSize: number, tooLarge: string): LoaderPlan {
   const { state } = input;
@@ -543,27 +545,24 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     const cut = range.start !== block.range.start || range.end !== block.range.end;
     return [{ what: cut ? `${block.what}, part ${show(range)}` : block.what, range, bytes: block.bytes }];
   });
-  const maxCopies = Math.floor((256 - 2) / COPY_ENTRY);
-  if (low.length > maxCopies) throw new WireFailure("invalid-input", `${tooLarge} A packed loader needs ${low.length} copies below $0400; it can do at most ${maxCopies}. Join segments in the unpacker capture (--range) or write the loader by hand.`);
-  const tableEnd = codeSize + COPY_ENTRY * low.length + 2;
-  const size = tableEnd + low.reduce((sum, block) => sum + block.range.end - block.range.start + 1, 0);
+  const lowBytes = low.reduce((sum, block) => sum + block.range.end - block.range.start + 1, 0);
   const free = PACKED_AREAS.flatMap((area) => subtract(area, input.segments));
-  const fits = (start: number) => free.some((range) => start >= range.start && start + size - 1 <= range.end);
-  // A free page of the plain copier first, else the start of a free range.
-  const copier = [...COPIER_PAGES, ...free.map((range) => range.start)].find(fits);
-  if (copier === undefined) {
+  const placed = placePacked(free, low, codeSize);
+  if ("refusal" in placed) {
     const largest = [...free].sort((a, b) => b.end - b.start - (a.end - a.start)).slice(0, SHOWN_FREE);
     const ranges = largest.length === 0 ? "none" : largest.map((range) => `${show(range)} (${range.end - range.start + 1} bytes)`).join(", ");
-    throw new WireFailure("invalid-input", `${tooLarge} A packed loader needs ${size} free bytes in one range for its copier and the bytes of pages 0-3, in $0400-$9fff or $c000-$cfff outside the segments. The largest free ranges there: ${ranges}. Write the loader by hand.`);
+    const why =
+      placed.refusal === "copies"
+        ? `A packed loader needs more than ${MAX_PACKED_COPIES} copies for the ${lowBytes} bytes of pages 0-3 in the free ranges.`
+        : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier, and ${lowBytes} more free bytes for pages 0-3, in $0400-$9fff or $c000-$cfff outside the segments.`;
+    throw new WireFailure("invalid-input", `${tooLarge} ${why} The largest free ranges there: ${ranges}. Write the loader by hand.`);
   }
-  let at = copier + tableEnd;
-  const packed = low.map((block) => {
-    const packedAt = at;
-    at += block.range.end - block.range.start + 1;
-    return { ...block, packedAt };
-  });
+  const { copier, pieces } = placed;
+  const copierEnd = copier + codeSize + COPY_ENTRY * pieces.length + 2 - 1;
   // The sources are at $0400 or higher and the targets below: any order works.
-  const copies: Copy[] = packed.map((block) => ({ what: block.what, target: block.range, source: { start: block.packedAt, end: block.packedAt + block.range.end - block.range.start }, backward: false }));
+  const copies: Copy[] = pieces.map((piece) => ({ what: piece.what, target: piece.target, source: { start: piece.at, end: piece.at + piece.target.end - piece.target.start }, backward: false }));
+  const start = Math.min(copier, ...pieces.map((piece) => piece.at));
+  const end = Math.max(copierEnd, ...copies.map((copy) => copy.source.end));
   const stackByte = 0x0100 + state.sp;
   const lines: string[] = [
     ...input.header.map((line) => `; ${line}`),
@@ -572,7 +571,10 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     "; The unpacker of Exomizer uses the zero page and $0334-$03ff, so the copier writes pages $0002-$03ff after the unpack.",
     "",
     "!cpu 6510",
-    "",
+  ];
+  // The parts in address order: the copier, the pieces of pages 0-3, and the bytes of the image between them.
+  const parts: Array<{ range: AddressRange; text: string[] }> = [];
+  const copierText = [
     `; The copier runs at ${formatC64Address(copier)}. The flags pass through ${formatC64Address(stackByte)}, the free stack byte below the stack pointer.`,
     `* = ${formatC64Address(copier)}`,
     COPIER_SOURCE,
@@ -580,21 +582,109 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     ...copierLines(state, cia, stackByte, `${formatC64Address(input.entry)}${input.entryName === undefined ? "" : ` ; ${input.entryName} in main.asm`}`),
   ];
   for (const copy of copies) {
-    const [from, end] = [blockLabel(copy.target.start, "from"), blockLabel(copy.target.start, "end")];
-    lines.push(`        !word ${end} - ${from}, ${from}, ${formatC64Address(copy.target.start)} : !byte 0 ; ${copy.what}`);
+    const [from, to] = [blockLabel(copy.target.start, "from"), blockLabel(copy.target.start, "end")];
+    copierText.push(`        !word ${to} - ${from}, ${from}, ${formatC64Address(copy.target.start)} : !byte 0 ; ${copy.what}`);
   }
-  lines.push("        !word 0", "}");
-  for (const block of packed) lines.push("", `; ${block.what}`, blockLabel(block.range.start, "from"), ...byteLines(block.range, block.bytes), blockLabel(block.range.start, "end"));
+  copierText.push("        !word 0", "}");
+  parts.push({ range: { start: copier, end: copierEnd }, text: copierText });
+  for (const piece of pieces) {
+    const range = { start: piece.at, end: piece.at + piece.target.end - piece.target.start };
+    const text = [`; ${piece.what}`, `* = ${formatC64Address(piece.at)}`, blockLabel(piece.target.start, "from"), ...byteLines(piece.target, piece.bytes), blockLabel(piece.target.start, "end")];
+    parts.push({ range, text });
+  }
+  const used = parts.map((part) => part.range);
+  for (const segment of input.segments) {
+    const within = { start: Math.max(segment.start, start), end: Math.min(segment.end, end) };
+    if (within.start > within.end) continue;
+    for (const range of subtract(within, used)) {
+      parts.push({ range, text: [`; The bytes of the image at ${show(range)}, so the build of this file does not change them`, `* = ${formatC64Address(range.start)}`, ...byteLines(range, input.byteAt)] });
+    }
+  }
+  parts.sort((a, b) => a.range.start - b.range.start);
+  for (const part of parts) lines.push("", ...part.text);
   return {
-    blocks: packed.map((block) => ({ what: block.what, range: block.range, packedAt: block.packedAt, bytes: block.bytes })),
+    blocks: pieces.map((piece) => ({ what: piece.what, range: piece.target, packedAt: piece.at, bytes: piece.bytes })),
     copies,
     copier,
     stackByte,
-    end: copier + size - 1,
+    end,
     text: `${lines.join("\n")}\n`,
     ...(cia === undefined ? {} : { cia: cia.plan }),
-    packed: true,
+    packed: { start },
   };
+}
+
+/** The copy table of the packed form: X indexes it, so it fits in 256 bytes. */
+const MAX_PACKED_COPIES = Math.floor((256 - 2) / COPY_ENTRY);
+
+/** A piece of pages 0-3 in the packed form: its target and where the copier reads it. */
+interface Piece {
+  what: string;
+  target: AddressRange;
+  at: number;
+  bytes: (address: number) => number;
+}
+
+/**
+ * Puts the parts of pages 0-3 into the free ranges, in their order: each time
+ * into the nearest range that holds the rest, else into the largest range.
+ * A part that does not fit in one range is split, and each piece is a copy.
+ * Undefined when the ranges are too small.
+ */
+function placePieces(ranges: AddressRange[], low: ReadonlyArray<{ what: string; range: AddressRange; bytes: (address: number) => number }>, distance: (range: AddressRange) => number): Piece[] | undefined {
+  const left = ranges.map((range) => ({ ...range }));
+  const pieces: Piece[] = [];
+  let rest = low.reduce((sum, block) => sum + block.range.end - block.range.start + 1, 0);
+  const length = (range: AddressRange) => range.end - range.start + 1;
+  let target: AddressRange | undefined;
+  for (const block of low) {
+    let next = block.range.start;
+    while (next <= block.range.end) {
+      if (target === undefined || target.start > target.end) {
+        const open = left.filter((range) => range.start <= range.end);
+        if (open.length === 0) return undefined;
+        const holding = open.filter((range) => length(range) >= rest).sort((a, b) => distance(a) - distance(b));
+        target = holding[0] ?? open.sort((a, b) => length(b) - length(a))[0]!;
+      }
+      const count = Math.min(block.range.end - next + 1, length(target));
+      const part = { start: next, end: next + count - 1 };
+      const cut = part.start !== block.range.start || part.end !== block.range.end;
+      pieces.push({ what: cut ? `${block.what}, bytes ${show(part)}` : block.what, target: part, at: target.start, bytes: block.bytes });
+      target.start += count;
+      next += count;
+      rest -= count;
+    }
+  }
+  return pieces;
+}
+
+/**
+ * Where the packed form puts its copier and the pieces of pages 0-3: the copier
+ * in one free range, a free page of the plain copier first, else the start of a
+ * free range. The placement with the fewest pieces wins, then the one with the
+ * shortest build of loader.asm.
+ */
+function placePacked(free: AddressRange[], low: Parameters<typeof placePieces>[1], codeSize: number): { copier: number; pieces: Piece[] } | { refusal: "room" | "copies" } {
+  const candidates = [...COPIER_PAGES, ...free.map((range) => range.start)];
+  // The table has one entry per piece: a split can make the copier larger, so the room for the table grows until it holds every piece.
+  for (let copies = Math.max(low.length, 1); copies <= MAX_PACKED_COPIES; ) {
+    const size = codeSize + COPY_ENTRY * copies + 2;
+    let best: { copier: number; pieces: Piece[]; span: number } | undefined;
+    for (const copier of candidates) {
+      const range = { start: copier, end: copier + size - 1 };
+      if (!free.some((area) => range.start >= area.start && range.end <= area.end)) continue;
+      // A piece goes to the start of its range: a range below the copier adds its whole length to the build.
+      const distance = (other: AddressRange) => (other.end < range.start ? range.start - other.start : other.start - range.end);
+      const pieces = placePieces(free.flatMap((area) => subtract(area, [range])), low, distance);
+      if (pieces === undefined) continue;
+      const span = Math.max(range.end, ...pieces.map((piece) => piece.at + piece.target.end - piece.target.start)) - Math.min(copier, ...pieces.map((piece) => piece.at));
+      if (best === undefined || pieces.length < best.pieces.length || (pieces.length === best.pieces.length && span < best.span)) best = { copier, pieces, span };
+    }
+    if (best === undefined) return { refusal: "room" };
+    if (best.pieces.length <= copies) return best;
+    copies = best.pieces.length;
+  }
+  return { refusal: "copies" };
 }
 
 /** What Exomizer makes of a packed loader. */

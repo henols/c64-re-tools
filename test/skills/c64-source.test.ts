@@ -186,7 +186,7 @@ test("the loader plan puts the copier on free pages, and a loader that would loa
   const byteAt = () => 0;
   const header: string[] = [];
   const large = planLoader({ segments: [{ start: 0x1000, end: 0xdfff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x1000, header });
-  assert.equal(large.packed, true);
+  assert.deepEqual(large.packed, { start: 0x0b00 });
   assert.equal(large.copier, 0x0b00, "the highest free page with room below the segment");
   const plan = planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }, { start: 0xc000, end: 0xc3ff, files: ["b.asm"] }], byteAt, state: state(), entry: 0x0810, header });
   assert.equal(plan.copier, 0xc400);
@@ -203,7 +203,7 @@ test("an image too large for one loader file gets a packed loader: the copier at
   const byteAt = (address: number) => address & 0xff;
   const header: string[] = [];
   const plan = planLoader({ segments: [{ start: 0x0300, end: 0x0fff, files: ["a.asm"] }, { start: 0x2000, end: 0xffff, files: ["b.asm"] }], byteAt, state: state(), entry: 0x0810, entryName: "start", header });
-  assert.equal(plan.packed, true);
+  assert.deepEqual(plan.packed, { start: 0x1b00 });
   assert.equal(plan.copier, 0x1b00, "the highest free page with room for the copier and the bytes of pages 0-3");
   // 167 bytes of copier code, a table of 2 copies and its end, then 766 + 256 bytes of pages 0-3.
   assert.equal(plan.end, 0x1b00 + 167 + 2 * 7 + 2 + 766 + 256 - 1);
@@ -226,15 +226,44 @@ test("an image too large for one loader file gets a packed loader: the copier at
   assert.equal(unaligned.end, 0x1235 + 167 + 7 + 2 + 1022 - 1);
   assert.deepEqual(unaligned.copies.map((copy) => copy.what), ["entry state $0002-$03ff"]);
 
-  // Without a free range, the refusal names the end past $ffff, the size and the free ranges.
+  // Without free room, the refusal names the end past $ffff, the sizes and the free ranges.
   assert.throws(
     () => planLoader({ segments: [{ start: 0x0400, end: 0x0bff, files: ["a.asm"] }, { start: 0x0c10, end: 0xffff, files: ["b.asm"] }], byteAt, state: state(), entry: 0x0810, header }),
     (error: Error) => {
       assert.ok(error instanceof WireFailure);
-      assert.equal(error.message, "The plain loader would end past $ffff, after $cfff: loading it would write the I/O area. A packed loader needs 1198 free bytes in one range for its copier and the bytes of pages 0-3, in $0400-$9fff or $c000-$cfff outside the segments. The largest free ranges there: $0c00-$0c0f (16 bytes). Write the loader by hand.");
+      assert.equal(error.message, "The plain loader would end past $ffff, after $cfff: loading it would write the I/O area. A packed loader needs one free range of 176 bytes or more for its copier, and 1022 more free bytes for pages 0-3, in $0400-$9fff or $c000-$cfff outside the segments. The largest free ranges there: $0c00-$0c0f (16 bytes). Write the loader by hand.");
       return true;
     },
   );
+});
+
+test("with real ACME, a packed loader puts the copier in one free range and pages 0-3 in pieces in other ranges, with the image bytes between them", { skip: acmeSkip }, async () => {
+  // Found in a field run on a 57 KB game: no free range held the copier and pages 0-3 together.
+  // Free: $c000-$c2ff and $c400-$c5ff. The copier with a part of pages 0-3 fills $c000-$c2ff; the rest goes to $c400.
+  const byteAt = (address: number) => (address * 3) & 0xff;
+  const pages = Uint8Array.from({ length: 0x400 }, (_, index) => (index * 13 + 5) & 0xff);
+  const segments = [{ start: 0x0400, end: 0xbfff }, { start: 0xc300, end: 0xc3ff }, { start: 0xc600, end: 0xffff }];
+  const plan = planLoader({ segments: segments.map((segment) => ({ ...segment, files: [] })), byteAt, state: state({ pages }), entry: 0x0810, header: [] });
+  assert.deepEqual(plan.packed, { start: 0xc000 });
+  assert.equal(plan.copier, 0xc000);
+  assert.deepEqual(
+    plan.copies.map((copy) => [copy.what, copy.target.start, copy.target.end, copy.source.start]),
+    [
+      ["entry state $0002-$03ff, bytes $0002-$024a", 0x0002, 0x024a, 0xc000 + 167 + 2 * 7 + 2],
+      ["entry state $0002-$03ff, bytes $024b-$03ff", 0x024b, 0x03ff, 0xc400],
+    ],
+  );
+  assert.equal(plan.end, 0xc400 + 0x03ff - 0x024b);
+  const contents = [Buffer.from(plan.text)];
+  const { result, attachments } = await assemble({ files: [{ path: "loader.asm", size: contents[0]!.length }], entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
+  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+  const program = attachments![0]!;
+  assert.equal(program.readUInt16LE(0), 0xc000);
+  assert.equal(program.length - 2, plan.end - 0xc000 + 1);
+  const memory = new Int16Array(0x10000).fill(-1);
+  program.subarray(2).forEach((byte, offset) => (memory[0xc000 + offset] = byte));
+  for (let address = 0xc300; address <= 0xc3ff; address++) assert.equal(memory[address], byteAt(address), "the build keeps the bytes of the segment between the ranges");
+  assert.equal(simulate(memory, plan.copies, (address) => pages[address]!), undefined);
 });
 
 test("a loader that stops early names the first copier byte that is not the file's byte, and else the first byte that a copy did not write", () => {
@@ -254,7 +283,7 @@ test("a loader that stops early names the first copier byte that is not the file
   assert.equal(stopCause(ram, plan, 0xa000, file, true, expected), "The copy of segment $1000-$10ff wrote $99 at $1020, not $20.");
   // The packed form: the unpack puts the copier in place.
   ram[0xc010] = 0x00;
-  assert.equal(stopCause(ram, { ...plan, end: 0xc0ff, packed: true }, 0xc000, (address) => file(address + 0xa000 - 0xc000), false, expected), `The copier at $c010 holds $00, not $${file(0xa010).toString(16).padStart(2, "0")} of the build of loader.asm: the unpack did not write it.`);
+  assert.equal(stopCause(ram, { ...plan, end: 0xc0ff, packed: { start: 0xc000 } }, 0xc000, (address) => file(address + 0xa000 - 0xc000), false, expected), `The copier at $c010 holds $00, not $${file(0xa010).toString(16).padStart(2, "0")} of the build of loader.asm: the unpack did not write it.`);
 });
 
 /** Runs the copy table at the end of an assembled loader on a memory model, as the copier does. */
@@ -355,7 +384,7 @@ test("with real ACME and Exomizer, a 62 KiB image with RAM at $d000-$dfff packs 
   const rendered = render(layout(source), new Set(), []);
   const pages = Uint8Array.from({ length: 0x400 }, (_, index) => (index * 13 + 5) & 0xff);
   const plan = planLoader({ segments: segments.map((segment) => ({ ...segment, files: [] })), byteAt: source.byteAt, state: state({ pages }), entry: 0x0810, header: [] });
-  assert.equal(plan.packed, true);
+  assert.deepEqual(plan.packed, { start: 0xc000 });
   assert.equal(plan.copier, 0xc000);
   const build = async (files: Array<{ name: string; text: string }>, entrySource: string) => {
     const contents = files.map((file) => Buffer.from(file.text));

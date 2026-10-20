@@ -144,7 +144,7 @@ The entry state is the state of the base release. Thus the script builds and che
 
 A loader file that loads into $d000 or higher writes the I/O area. When the image is too large for one loader file, `loader.asm` has the packed form. The packed form needs Exomizer. It has these differences:
 
-- `loader.asm` holds only the copier and the bytes below $0400: pages $0002-$03ff of the entry state and the parts of segments there. The copier is at a free address, `loader.copier`. The segments at $0400 and higher are not in `loader.asm`.
+- `loader.asm` holds only the copier and the bytes below $0400: pages $0002-$03ff of the entry state and the parts of segments there. The copier is in one free range, at `loader.copier`. The bytes below $0400 go into free ranges. When one range is too small, they go into more ranges, and each piece is a copy. Between these ranges, `loader.asm` holds the bytes of the image. The segments at $0400 and higher are not in `loader.asm`.
 - The script packs the build of `main.asm` from $0400 and the build of `loader.asm` into `loader.prg` with Exomizer. Where the two builds overlap, the bytes of `loader.asm` are in `loader.prg`.
 - `10 SYS` starts the unpacker. The unpacker writes all bytes, also at $d000-$dfff. Then it jumps to the copier with all RAM visible ($01 = $34).
 - The unpacker uses the zero page and $0334-$03ff. Thus the copier writes pages $0002-$03ff after the unpack. Then it does steps 4 to 6.
@@ -158,7 +158,7 @@ To make the packed loader for other switch values, do these steps:
 2. Build the copier with the c64-assembler skill: `assembler.ts build src loader.asm --out build/copier.prg`.
 3. Pack the two files with the c64-packer skill: `packer.ts pack build/main.prg build/copier.prg --entry '$c000' --exit-memory '$34' --out build/loader.prg`. The comment at the start of `loader.asm` gives the `--entry` value.
 
-These commands do not work when a segment starts below $0400. Then the build of `main.asm` has bytes in the area of the unpacker. Use `generate --loader` for the base release.
+These commands do not work when a segment starts below $0400. Then the build of `main.asm` has bytes in the area of the unpacker. They also do not work when a patch is between the ranges of `loader.asm`, because there `loader.asm` has the bytes of the image. In these cases, use `generate --loader` for the base release.
 
 ## Export for a new application
 
@@ -302,7 +302,7 @@ Do not store:
 - `dataOnly`: this is not a failure. If the space has code, give `--entry` or classify the code with the c64-knowledge skill. Then generate again.
 - `entriesInData`: an analyzer region of data hides the code at the entry. If the entry is code, record a code region at the entry with the c64-knowledge skill, for example `classify '$0500-$05ff' code`. A region of the user or the LLM replaces the analyzer region. Then generate again.
 - `loader.verified: false` with a `reason`: the script did not make the loader. The script still writes and checks the source. When no copy order or no free pages exist, or the loader needs too many copies, the reason gives the ranges. Capture the program again with fewer segments, or write the loader by hand.
-- `loader.verified: false` with a `reason` about the packed form: the image is too large for one loader file. If the reason tells that Exomizer is not installed, stop the task. Give the message to the user. If no free range has space for the copier, the reason gives the largest free ranges. Write the loader by hand. If the unpack check of Exomizer fails, give the reason to the user.
+- `loader.verified: false` with a `reason` about the packed form: the image is too large for one loader file. If the reason tells that Exomizer is not installed, stop the task. Give the message to the user. If the free ranges are too small for the copier and the bytes below $0400, the reason gives the largest free ranges. Write the loader by hand. If the unpack check of Exomizer fails, give the reason to the user.
 - `loader.verified: false` with `differences`: the loader ran, and `differences` gives the bytes and registers that are not equal.
 - `loader.verified: false` with `stop`: the loader did not get to its copier or to its jump. `stop` gives the address where it stopped and `port`, the value of $01. `history` gives the last 16 instructions. `cause` gives the first byte of the copier that is not equal to its byte in the loader file. For a packed loader, `cause` gives the first byte of the copier that the unpack did not write. If the copier ran, `cause` can also give the first byte that a copy did not write correctly.
 - `export` with `stage: "original"`: the source of the knowledge does not pass. Run `generate`, and correct the knowledge until `generate` gives PASS.
