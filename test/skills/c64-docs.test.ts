@@ -90,7 +90,8 @@ function project(root = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-"))): { ro
     ]),
   );
   // The program goes into the knowledge first: the reference decodes its tables and draws its graphics.
-  assert.equal(knowledge(root, "image", "game.prg").status, 0);
+  // --project . makes a new folder of a group a project.
+  assert.equal(knowledge(root, "image", "game.prg", "--project", ".").status, 0);
   assert.equal(knowledge(root, "apply", "batch.json").status, 0);
   const revision = revisionOf(root);
   writeSource(root, revision, {
@@ -410,6 +411,18 @@ test("docs.ts link in a group folder: a label names the project of a name, the p
   const second = link(group, "README.md", "v1/README.md", "v1/docs", "--source", "src");
   assert.equal(second.json.result, "PASS", JSON.stringify(second.json));
   assert.deepEqual(second.json.linked, { links: 0, pages: [] });
+
+  // --project names the group folder or a project of the group, relative to the working directory.
+  const named = link(group, "README.md", "--source", "src", "--project", ".");
+  assert.equal(named.json.result, "PASS", JSON.stringify(named.json));
+  assert.deepEqual(named.json.group, { folder: ".", projects: ["v1", "v2"] });
+  const version = link(group, "README.md", "docs", "--source", "src", "--project", "v1");
+  assert.equal(version.json.result, "PASS", JSON.stringify(version.json));
+  assert.deepEqual(version.json.group, { folder: "..", projects: ["v1", "v2"] });
+  // A folder of pages leaves out the dot folders: .c64-re-tools/ holds the scratch of the agent.
+  writeFileSync(join(group, "v1/.c64-re-tools/local/notes.md"), "[a draft](missing.md)\n");
+  const walked = link(group, "README.md", "v1", "--source", "src");
+  assert.equal(walked.json.result, "PASS", JSON.stringify(walked.json));
 
   // From a project of the group: the paths are relative to the project, and a link may go to the group and the other projects.
   const v1 = join(group, "v1");

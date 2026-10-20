@@ -21,7 +21,7 @@ import { parseArgs } from "node:util";
 
 import { c64AddressOf, formatC64Address, SPACE_PATTERN, SYMBOL_NAME, type AddressRange } from "./c64.ts";
 import { isRefusal, Refusal, splitMessage, type ErrorCode } from "./errors.ts";
-import { checkOutputPath, projectRoot, resolveProjectPath, useProject, type OutputKind } from "./project.ts";
+import { checkOutputPath, projectRoot, resolveProjectPath, resolveReadPath, useProject, type OutputKind } from "./project.ts";
 import { STOP_AND_ASK } from "./protocol/messages.ts";
 import { elapsedMs, startTrace, trace, type TraceFields } from "./trace.ts";
 
@@ -342,7 +342,7 @@ export function listed<T, U = T>(items: readonly T[], max: number, show: (item: 
 
 /** The conventions in the help of every script. */
 export const CONVENTIONS = `Addresses are $ and 1 to 4 hex digits, for example '$c000' or '$fb', or a name: a symbol, else an analyzer name that only one analyzer gives. A range is <start>-<end>, for example '$c000-$cfff'. Quote them in a shell.
-Paths are relative to the project folder. Every script takes --project <folder>: the project folder, relative to the working directory. Without it, the script uses the nearest folder at or above the working directory that holds .c64-re-tools/.
+Paths are relative to the project folder. Every script takes --project <folder>: the project folder, relative to the working directory. Without it, the script uses the nearest folder at or above the working directory that holds .c64-re-tools/. In a group folder, give --project with a project of the group. A path that a command only reads can go into another project of the group, for example ../v1/original/game.prg.
 Each command prints one JSON envelope: {ok: true, command, body, hint?, nextAction?} with exit status 0, or {ok: false, command?, code, error, hint?, nextAction?} with exit status 2.`;
 
 function optionLabel(name: string, spec: OptionSpec): string {
@@ -444,11 +444,16 @@ function asksHelp(argv: readonly string[]): boolean {
   return (end < 0 ? argv : argv.slice(0, end)).includes("--help");
 }
 
-/** Refuses a path that is not relative to the project folder or that leads out of it. A refusal of the project lookup itself passes on. */
-function checkPath(text: string, what: string): void {
+/**
+ * Refuses a path that is not relative to the project folder or that leads out
+ * of it; a path that the command only reads can also lead into the group folder
+ * of the project. A refusal of the project lookup itself passes on.
+ */
+function checkPath(text: string, what: string, read = false): void {
   const root = projectRoot();
   try {
-    resolveProjectPath(text, root);
+    if (read) resolveReadPath(text, root);
+    else resolveProjectPath(text, root);
   } catch (error) {
     if (isRefusal(error)) throw new UsageError(`${what}: ${error.message}`);
     throw error;
@@ -606,7 +611,7 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
       if (spec.kind === "space" && !SPACE_PATTERN.test(text)) throw new UsageError(`--${name} must be c64, drive8, or bank0 to bank255, not ${JSON.stringify(text)}`);
       if (spec.kind === "choice" && !(spec.choices ?? []).includes(text)) throw new UsageError(`--${name} must be one of ${(spec.choices ?? []).join(", ")}, not ${JSON.stringify(text)}`);
       if (spec.kind === "path") {
-        if (spec.output === undefined) checkPath(text, `--${name}`);
+        if (spec.output === undefined) checkPath(text, `--${name}`, true);
         else checkOutput(text, `--${name}`, spec.output);
       }
     }

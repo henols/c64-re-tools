@@ -79,7 +79,7 @@ test("a routine saved from program A is found in program B at another address, a
   ok("c64-knowledge", "knowledge.ts", ["image", "a.prg", "--project", "game-a"]);
   ok("c64-knowledge", "knowledge.ts", ["apply", "named.json", "--reason", "the sound driver", "--project", "game-a"]);
 
-  // The routine goes to the library beside the projects; --library is relative to the working directory.
+  // The routine goes to the library beside the projects; --library is relative to the project folder.
   const saved = ok("c64-provenance", "provenance.ts", ["routine", "$1000", "--library", "../library", "--project", "game-a"]);
   assert.deepEqual({ routine: saved.routine, out: saved.out, start: saved.start, end: saved.end, length: saved.length }, { routine: "play", out: "../library/play.json", start: "$1000", end: "$1026", length: 39 });
   // The routine file shows as a written file: its size and SHA-256 are those of the file.

@@ -160,11 +160,11 @@ Some releases of a program have a different layout. Their code is at different a
 
 1. Make the group folder in the git repository. Do not put `.c64-re-tools/` in it.
 2. Ask the user before you move a project folder. Then move the current project into `<game>/v1/`. The project knowledge keeps its paths relative to the project folder. Thus the knowledge stays valid after the move.
-3. Make a project folder for the new version, for example `<game>/v2/`. Start at stage 2 with the file of that release.
+3. Make a project folder for the new version, for example `<game>/v2/`. Start at stage 2 with the file of that release. From the group folder, give `--project v2`. In the empty folder `v2/`, give `--project .`. The first write makes the project.
 4. Keep the releases with the same layout in one version. Record them as releases with switches. For example, `v2` holds a base release and a second release from a different crack.
-5. Save the routines of `v1` to the routine library in `<game>/library/`. In stage 7 of `v2`, match the program against that library. Then `v2` gets the names of `v1` for the same routines.
+5. Save the routines of `v1` to the routine library in `<game>/library/`. Give `--library ../library`, because `--library` is relative to the project folder. In stage 7 of `v2`, match the program against that library. Then `v2` gets the names of `v1` for the same routines.
 6. Use the same folders in each version, for example `src` and `docs/reference`.
-7. From the group folder, give `--project v1` or `--project v2` to each script.
+7. From the group folder, give `--project v1` or `--project v2` to each script. A script can read a file of another version, for example `../v1/original/<file>`. Use this to compare the releases of two versions. Record each release only in the project of its version.
 8. Write the facts that the versions share one time, in the pages of the group folder. The pages of each version tell only how that version works.
 
 ## Knowledge

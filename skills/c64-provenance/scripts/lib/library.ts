@@ -5,7 +5,7 @@
 // suggests its names there as an apply batch. Nothing here writes knowledge.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
@@ -14,7 +14,7 @@ import { formatC64Address, instructionLength } from "#src/c64.ts";
 import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
 import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, OPERAND_SELECTS, type OperandSelect, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
-import { checkOutputPath, isInside, knowledgePart, PROJECT_DIRECTORY } from "#src/project.ts";
+import { checkOutputPath, isInside, knowledgePart, LOCAL_DIRECTORY, PROJECT_DIRECTORY } from "#src/project.ts";
 
 /** A routine shorter than this is not saved and not searched: its bytes occur by chance. */
 export const MIN_ROUTINE = 16;
@@ -294,8 +294,10 @@ export function parseRoutine(text: string, file: string): Routine {
 /**
  * Refuses a library folder to write that is inside the project `root`, also
  * through a symbolic link, when the output check of every script refuses it
- * (checkOutputPath): for example a folder in the knowledge. A folder outside
- * the project gets no check.
+ * (checkOutputPath): for example a folder in the knowledge. A new library
+ * folder in the project is refused too, except in .c64-re-tools/local/: the
+ * other projects cannot match against it. A folder outside the project gets no
+ * check.
  */
 function checkLibraryOutput(path: string, root: string): void {
   let existing = path;
@@ -310,6 +312,10 @@ function checkLibraryOutput(path: string, root: string): void {
       if (part !== undefined) {
         throw new Refusal("invalid-input", `--library: ${shown} is in ${part}, the knowledge of the project. Only the commands that change the project knowledge write it: a write there destroys the knowledge. Give a library folder beside the projects, for example ../library.`);
       }
+      // For example --library library from the folder above the projects: it names a folder in the project.
+      if (existing !== path && existsSync(join(base, PROJECT_DIRECTORY)) && !isInside(join(base, PROJECT_DIRECTORY, LOCAL_DIRECTORY), target)) {
+        throw new Refusal("invalid-input", `--library: there is no library folder ${shown} in the project folder, and a new library must not be in the project folder, because the other projects cannot match against it there. --library is relative to the project folder. Give a library folder beside the projects, for example ../library.`);
+      }
       checkOutputPath(shown, "folder", { root: base, what: "--library" });
       return;
     }
@@ -317,10 +323,10 @@ function checkLibraryOutput(path: string, root: string): void {
 }
 
 /**
- * The library folder that --library names, relative to the working directory
- * like --project (D71). A library is a plain folder, never a project. With
- * `create`, a missing folder is made; a folder inside the project must pass
- * the output check of every script, which refuses the knowledge.
+ * The library folder that --library names, relative to `cwd`: the scripts
+ * give the project folder, as for every path. A library is a plain folder,
+ * never a project. With `create`, a missing folder is made; a folder inside
+ * the project must pass checkLibraryOutput.
  */
 export function libraryFolder(folder: string, options: { create: boolean; cwd?: string }): string {
   if (folder.length === 0) throw new Refusal("invalid-input", "The library folder must not be empty.", { hint: "Give a library folder beside the projects, for example ../library." });

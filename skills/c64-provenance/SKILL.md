@@ -58,6 +58,8 @@ To get the command list, run the script with no arguments.
 
 - Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
+- In a group folder, each version of a program is a project. The script refuses the group folder and each folder in it that is not a project. Give `--project` with a project of the group, for example `--project v1`.
+- A path that a command only reads can go into another project of the group, for example `../v1/original/game.prg`. The command writes only in its own project.
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
@@ -247,6 +249,7 @@ Traps:
 - Error `invalid-input` with "no user or LLM name": give `--name`.
 - Error `conflict`: the library has a routine with that name. Give another `--name`, or give `--replace` to write over it.
 - Error `invalid-input` with "is a project folder": the library folder is a project. Give a folder beside the projects.
+- Error `invalid-input` with "a new library must not be in the project folder": the library folder does not exist, and it is in the project. Give a folder beside the projects, for example `../library`.
 
 ### `match`
 

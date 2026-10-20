@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { Refusal } from "./errors.ts";
-import { findProject, groupAt, groupOf, namedProject, newProjectFolder, projectRelative, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
+import { findProject, groupAt, groupOf, namedProject, newProjectFolder, projectRelative, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath, resolveReadFile, resolveReadPath } from "./project.ts";
 
 const root = process.cwd();
 
@@ -215,5 +215,40 @@ test("a group is a folder of a git repository, in no project, with projects in i
     assert.equal(groupAt(join(game, "v1")), undefined, "a project is no group");
     assert.equal(groupAt(join(game, "docs")), undefined, "no project in it");
     assert.equal(groupOf(game), undefined, "the repository holds no project");
+  });
+});
+
+test("in a group, the lookup refuses a folder that is no project, a group folder is no project, and a read reaches the other versions", () => {
+  withHome((home) => {
+    const repository = join(home, "games");
+    const game = join(repository, "fist");
+    for (const version of ["v1", "v2"]) mkdirSync(join(game, version, ".c64-re-tools"), { recursive: true });
+    mkdirSync(join(repository, ".git"));
+    mkdirSync(join(game, "docs", "pages"), { recursive: true });
+    mkdirSync(join(game, "v3"));
+    writeFileSync(join(game, "v1", "game.prg"), "x");
+    writeFileSync(join(repository, "other.prg"), "x");
+    symlinkSync(join(repository, "other.prg"), join(game, "v2", "outside-link"));
+
+    // A folder of the group that is no project: a write there would make it a project of the group.
+    assert.throws(() => findProject(join(game, "docs", "pages")), refusal("invalid-input", /docs\/pages is in the group folder .*fist, and it is not a project folder\. The projects of the group are \.\.\/\.\.\/v1, \.\.\/\.\.\/v2\. Give --project <folder> with one of them\. To make this folder a new project of the group, give the folder itself: \.$/));
+    assert.throws(() => findProject(join(game, "v3")), refusal("invalid-input", /The projects of the group are \.\.\/v1, \.\.\/v2/));
+    assert.throws(() => resolveProject(undefined, join(game, "docs"), { remedy: "Give project: <folder>" }), refusal("invalid-input", /Give project: <folder> with one of them/));
+    assert.equal(findProject(join(game, "v1")), join(game, "v1"));
+    // A new version is named with its folder.
+    assert.equal(resolveProject("v3", game), join(game, "v3"));
+    // The group folder is no project.
+    assert.throws(() => resolveProject(".", game, { remedy: "Give project: <folder>" }), refusal("invalid-input", /fist is a group folder, not a project folder\. These folders in it are projects: v1, v2\. Give project: <folder> with one of them\.$/));
+    assert.equal(existsSync(join(game, ".c64-re-tools")), false);
+
+    // A read of a version reaches the group folder; a write does not.
+    const v2 = join(game, "v2");
+    assert.equal(resolveReadPath("../v1/game.prg", v2), join(game, "v1", "game.prg"));
+    assert.equal(resolveReadFile("../v1/game.prg", v2), realpathSync(join(game, "v1", "game.prg")));
+    assert.throws(() => resolveReadPath("../../other.prg", v2), /leads out of the group folder of the project/);
+    assert.throws(() => resolveReadFile("outside-link", v2), /leads out of the group folder of the project through a symbolic link/);
+    assert.throws(() => resolveProjectPath("../v1/game.prg", v2), /leads out of the project folder/);
+    // A project in no group reads only in its folder.
+    assert.throws(() => resolveReadPath("../games/other.prg", join(home, "alone")), /leads out of the project folder/);
   });
 });

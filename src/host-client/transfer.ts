@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { checkOutputPath, isInside, projectRoot, resolveProject, resolveProjectFile, writeProblem } from "../project.ts";
+import { checkOutputPath, isInside, projectRoot, readGroup, resolveProject, resolveProjectFile, resolveReadFile, writeProblem } from "../project.ts";
 import { isRefusal } from "../errors.ts";
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
@@ -45,13 +45,14 @@ export function readProjectFile(path: string, options: { root?: string; what?: s
   const root = options.root ?? currentProject();
   let real: string;
   try {
-    real = resolveProjectFile(path, root);
+    real = resolveReadFile(path, root);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new WireFailure("not-found", `${options.what === undefined ? "" : `${options.what}: `}There is no file at ${path} in the project folder.`);
     }
     if (isRefusal(error) && error.code === "invalid-input") {
-      throw new WireFailure("invalid-input", `${options.what ?? path}: give a path relative to the project folder that stays inside it, not ${path}.`);
+      const where = readGroup(root) === undefined ? "it" : "its group folder";
+      throw new WireFailure("invalid-input", `${options.what ?? path}: give a path relative to the project folder that stays inside ${where}, not ${path}.`);
     }
     throw error;
   }

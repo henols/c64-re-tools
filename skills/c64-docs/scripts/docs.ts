@@ -15,7 +15,7 @@ import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
 import { currentRevision, listComments, listModules, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { groupAt, groupOf, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
+import { groupOf, namedGroup, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
 import { checkLinks, linkPage, type Files, type LinkContext, type Names, type Problem } from "./lib/links.ts";
 import { buildReference, GENERATED_MARK } from "./lib/reference.ts";
@@ -124,7 +124,7 @@ interface Scope {
   group: ProjectGroup | undefined;
   /** The folder of the given pages, relative to root: the project of the run, or "" for root itself. */
   base: string;
-  /** True when the run is in the group folder and no --project names it: nextAction gives it. */
+  /** True when the run is on the group folder: the project lookup refuses it, so nextAction gives it as --project. */
   unnamed: boolean;
 }
 
@@ -141,13 +141,11 @@ function linkScope(): Scope {
   try {
     root = projectRoot();
   } catch (error) {
-    // The project lookup refuses a folder with projects in it: in a group folder, link works on the group.
-    const group = groupAt(process.cwd());
+    // The project lookup refuses a group folder: given with --project or as the working directory, link works on the group.
+    const group = namedGroup();
     if (group === undefined) throw error;
     return { root: group.root, group, base: "", unnamed: true };
   }
-  const at = groupAt(root);
-  if (at !== undefined) return { root, group: at, base: "", unnamed: false };
   const group = groupOf(root);
   if (group === undefined) return { root, group, base: "", unnamed: false };
   return { root: group.root, group, base: basename(root), unnamed: false };
@@ -212,6 +210,8 @@ function link(call: Call): Reply {
     const walk = (relative: string) => {
       for (const entry of readdirSync(join(real, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
         const path = posix.join(relative, entry.name);
+        // A dot folder is no documentation: .c64-re-tools/ holds the knowledge and the scratch of the agent, .git/ the history.
+        if (entry.isDirectory() && entry.name.startsWith(".")) continue;
         if (entry.isDirectory()) walk(path);
         else if (entry.name.endsWith(".md")) found.push(posix.join(directory, path));
       }
