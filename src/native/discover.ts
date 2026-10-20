@@ -127,15 +127,25 @@ const VICE_FLAWS = [
       "A program that compares the full byte of a joystick port also waits forever. " +
       "A KERNAL tape LOAD of a .tap image stops after FOUND, with no LOADING, and the C64 shows READY. The fix is in the next VICE release, and in VICE nightly builds now (SVN r45971 or later). " +
       "Install the latest VICE when this matters.",
+    noRevision:
+      "This VICE 3.10 shows no SVN revision: it is the 3.10 release, or a build from source without its revision. " +
+      "To build a nightly from source, run configure with SVN_REVISION_OVERRIDE=<revision>, so that x64sc -version shows the revision (for example x64sc (VICE 3.10 SVN r46290)).",
   },
 ] as const;
 
-/** The known flaws of this VICE version. */
+/**
+ * The known flaws of this VICE version. A build of the last flawed
+ * major.minor with no revision can be a nightly that has the fix: its
+ * flaw text tells how to build it with the revision.
+ */
 export function viceFlaws(version: ViceVersion): ViceFlaw[] {
   return VICE_FLAWS.filter((flaw) => {
     const newer = version.major > flaw.upTo.major || (version.major === flaw.upTo.major && version.minor > flaw.upTo.minor);
     return !newer && (version.revision === undefined || version.revision < flaw.fixedRevision);
-  }).map((flaw) => ({ text: flaw.text, breaks: flaw.breaks }));
+  }).map((flaw) => {
+    const last = version.major === flaw.upTo.major && version.minor === flaw.upTo.minor;
+    return { text: last && version.revision === undefined ? `${flaw.text} ${flaw.noRevision}` : flaw.text, breaks: flaw.breaks };
+  });
 }
 
 export function isOlderThanMinimum(version: { major: number; minor: number }): boolean {

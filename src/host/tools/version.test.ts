@@ -75,3 +75,9 @@ test("a known VICE flaw is named for the versions that have it, and not for a bu
   assert.deepEqual(viceFlaws({ major: 3, minor: 11 }), []);
   assert.deepEqual(viceFlaws({ major: 4, minor: 0 }), []);
 });
+
+test("a VICE 3.10 with no revision is told how to build a nightly with its revision", () => {
+  assert.match(viceFlaws({ major: 3, minor: 10 })[0]!.text, /no SVN revision.*SVN_REVISION_OVERRIDE=<revision>/);
+  assert.doesNotMatch(viceFlaws({ major: 3, minor: 10, revision: 45970 })[0]!.text, /SVN_REVISION_OVERRIDE/, "the revision is known");
+  assert.doesNotMatch(viceFlaws({ major: 3, minor: 9 })[0]!.text, /SVN_REVISION_OVERRIDE/, "no 3.9 build has the fix");
+});

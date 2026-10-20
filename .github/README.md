@@ -52,6 +52,16 @@ MCP server, and it runs ACME, DXA, Ghidra, Exomizer and c64run through its skill
 You need Node.js 24 or newer and VICE 3.9 or later (`x64sc`, `c1541`, `petcat`)
 with its ROM files. Use the latest VICE release.
 
+VICE 3.10 and older have a joystick and keyboard flaw (VICE bug #2202). The
+nightly builds (SVN r45971 or later) have the fix. When you compile VICE from
+source, give `configure` the SVN revision of the source, or the Host Runtime
+cannot see the fix:
+
+```
+SVN_REVISION_OVERRIDE=46290 ./configure ...
+x64sc -version    # x64sc (VICE 3.10 SVN r46290)
+```
+
 Start the Host Runtime, and leave it running:
 
 ```
