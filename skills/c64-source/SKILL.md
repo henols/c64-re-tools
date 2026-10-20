@@ -69,7 +69,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 | Flag | Command | Effect |
 |---|---|---|
-| `--out <dir>` | `generate` | The folder for the source files. It is necessary. The script writes over the files of an earlier run. It removes a generated `.asm` file that this run does not write. A run without `--loader` keeps `loader.asm` and `loader.prg` of an earlier run. |
+| `--out <dir>` | `generate` | The folder for the source files. It is necessary. The script writes over the files of an earlier run. It removes a generated `.asm` file that this run does not write. A run without `--loader` keeps `loader.asm` and `loader.prg` of an earlier run. `staleLoader` tells when they are of another knowledge revision. |
 | `--entry <address>` | `generate` | An address where code starts. Give the flag again for more addresses. There is no default. |
 | `--space <space>` | `generate` | The knowledge space: `c64`, `drive8`, or `bank0` to `bank255`. The default is `c64`. The coverage, `--loader` and the platform names apply only to `c64`. |
 | `--loader` | `generate` | Also write `loader.asm` and `loader.prg`. It needs a capture in the knowledge. The default is no loader. |
@@ -114,6 +114,7 @@ To make the source better, change the project knowledge. Then generate again.
 - `patchesNotWritten`: each patch that the source does not have, with its range, `switch` and `reason`.
 - `switches`, `default`, `releases`: the checks of the switches. See "Switches and releases".
 - `loader`: the check of the loader. See "The loader".
+- `staleLoader`: a run without `--loader` kept `loader.asm` and `loader.prg` of another knowledge revision. `files` gives the files. `revision` gives the revision of `loader.asm`. Without `revision`, `loader.asm` does not give one. `noEntryState: true` tells that the knowledge has no entry state for a new loader.
 
 `result` is `FAIL` for each of these:
 
@@ -141,6 +142,7 @@ Do these actions for the findings:
 | `invalid-input` that names a symbol or a module | Change that symbol or module in the project knowledge. |
 | `conflict` | The knowledge has conflicts from a git merge. Merge the open changes of the project knowledge. Then run the command again. |
 | A list with `rest` | Give a larger `--max-listed`. For `notExecuted`, read the file in `rest`. |
+| `staleLoader` | The loader can copy bytes that are not the bytes of the source. Run `nextAction`, which generates with `--loader`. With `noEntryState: true`, remove the files when the build does not use them. |
 
 #### The source files
 
@@ -244,6 +246,7 @@ The entry state is the state of the base release. Thus the script builds and che
 - `verified: true`: the check ran `loader.prg` to its jump to the entry. There, the memory, $00/$01, the registers and the VIC-II are equal to the entry state. The raster line and the CIA values are also equal. An interrupt can run right at the entry, as in the original program.
 - `limits`: each CIA value that the loader cannot set as it was at the entry. An old capture has no CIA values. Then capture the program again at its entry point.
 - `packed`: `packedBytes` and `unpackedBytes` of the packed form.
+- When the check of `loader.prg` cannot run, the script removes `loader.prg`. `loader.asm` stays. `reason` tells why the check did not run.
 
 Do these actions when `verified` is `false`:
 
@@ -252,6 +255,7 @@ Do these actions when `verified` is `false`:
 | `reason` about the copy order, the free pages or the count of copies | The reason gives the ranges. Capture the program again with fewer segments, or write the loader by hand. |
 | `reason` about the packed form | If a tool is missing, stop the task and give the message to the user. If the free ranges are too small, write the loader by hand. If the check of the unpack fails, give the reason to the user. |
 | `reason` that the source does not assemble | Correct the source first. The loader includes the source. |
+| `reason` that the check of `loader.prg` did not run | Stop the task and give the reason to the user. When the user tells you that the emulator is available, run the same command again. |
 | `differences` | The loader ran. The list gives the bytes and the registers that are not equal. |
 | `stop` | The loader did not get to its copier or its jump. `stop` gives the address and `port`, the value of $01. `history` gives the last 16 instructions. `cause` gives the first byte of the copier or of a copy that is not correct. |
 
