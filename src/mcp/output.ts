@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { projectFolder, writeReported, type Written } from "../host-client/transfer.ts";
 
-export const OutInput = z.string().min(1).describe("write the data to this file, relative to the project folder. An existing file is overwritten. The tool description tells what the result then gives");
+export const OutInput = z.string().min(1).describe("write the data to this file, relative to the project folder. An existing file is overwritten. The result then gives the file (out), the number of bytes (bytes) and a SHA-256 (sha256) in place of the data");
 
 /** The project of a tool with a path. */
 export const ProjectInput = z
@@ -17,9 +17,9 @@ export const ProjectInput = z
 
 /** The fields of a result with out, optional in an output schema that also has the inline form. */
 export const WrittenOutput = {
-  out: z.string().optional(),
-  bytes: z.number().int().min(0).optional(),
-  sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  out: z.string().optional().describe("with out: the file that the tool wrote"),
+  bytes: z.number().int().min(0).optional().describe("with out: the number of bytes in the file"),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/).optional().describe("with out: the SHA-256 of the file"),
 };
 
 /** Lines as file text: each line ends with a newline, and no lines give an empty file. */

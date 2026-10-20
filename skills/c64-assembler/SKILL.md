@@ -1,6 +1,6 @@
 ---
 name: c64-assembler
-description: Use this skill to assemble C64 6510 source code with the ACME assembler and write the program (PRG) into the project. It reports source errors with file and line, and the symbols with their addresses or values. Use it to build a rebuilt or new program. Do not use it to run the program. Give the PRG to the c64-emulator skill for that.
+description: Use this skill to assemble C64 6510 source code with the ACME assembler and write the program (PRG) into the project. It reports source errors with file and line, and the symbols with their addresses or values. Use it to build a rebuilt or new program. Do not use it to run the program. Give the PRG to the emulator skill for that.
 ---
 
 # c64-assembler
@@ -73,7 +73,7 @@ The target CPU is the 6510. The output is a C64 PRG, or the bytes only with `--p
    - Kind `constant` has a value outside `loadRange`. It gives the `value` as `$` and four or more hex digits. A label in a `!pseudopc` block can be a constant, because its value is the run address, not the load address.
    - `used` is `false` when the source does not use the symbol.
 4. If `result` is `FAIL` and `assembled` is `false`, read `diagnostics`. Each one has a severity, a file, a line and a message. Correct the source and run the script again.
-5. To run the program, give the PRG path to the c64-emulator skill.
+5. To run the program, give the PRG path to the emulator skill.
 
 The source of the c64-source skill has switches in `config.asm`. Without an option, the build uses the values in `config.asm`. With the defaults, this is the clean program without copy protection, trainers, cheats and crack changes, and with all corrections. This build can differ from the program in the knowledge, so `--compare` can give `FAIL`. Use `--release <label> --compare` to check the build of a release. To put in the patches of the switch `TRAINER`, set `TRAINER = 1` in `config.asm`. Do not use `--define` for a switch: ACME stops with `Symbol already defined`.
 
@@ -109,7 +109,7 @@ With `--compare`, `compare` gives `identical` and `segments`: one check for each
 
 ## Handoffs
 
-- Run or debug the program → c64-emulator
+- Run or debug the program → emulator
 - Compare the rebuild with the original → c64-testing
 - Pack the program into one small PRG that unpacks itself → c64-packer
 - Write a new program, or add a feature or a fix → c64-development

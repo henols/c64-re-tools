@@ -128,10 +128,10 @@ The exit status is 0, also with conflicts.
 
 ## Failure and conflicts
 
-- A conflict: the analyzer finds code where the knowledge has data, or data where the knowledge has code. The knowledge stays unchanged. Find the correct answer with the c64-emulator skill, then correct the knowledge with the c64-knowledge skill.
+- A conflict: the analyzer finds code where the knowledge has data, or data where the knowledge has code. The knowledge stays unchanged. Find the correct answer with the emulator skill, then correct the knowledge with the c64-knowledge skill.
 - A conflict with the problem "another address has this name": the knowledge has the generated name at a different address. The knowledge stays unchanged.
 - A false reference through a vector: the code jumps through a vector, for example `JMP ($0408)`, and the program writes the vector at run time. The analyzer follows the bytes that the program has there. Do these steps:
-  1. Find the real targets with the c64-emulator skill, or in a coverage file.
+  1. Find the real targets with the emulator skill, or in a coverage file.
   2. If the vector bytes are also code at another time, classify them as `dual-use`.
   3. Remove the false reference with `unreference`. It does not come back.
   4. Add a `jump` reference from the JMP to each real target, and name each target as a routine.
@@ -143,7 +143,7 @@ The exit status is 0, also with conflicts.
 
 ## Handoffs
 
-- Runtime behavior → c64-emulator
+- Runtime behavior → emulator
 - Names and classifications → c64-knowledge
 - The meaning of a C64 hardware address → c64-memory-map
 - Source code from the knowledge → c64-source

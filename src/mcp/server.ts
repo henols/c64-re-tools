@@ -274,10 +274,15 @@ function packageVersion(): string {
 const INSTRUCTIONS =
   "These tools control one live Commodore 64 emulator that belongs to this session. " +
   "An address is a dollar sign and 1 to 4 hex digits, for example $c000 or $fb. A result gives four hex digits. " +
-  "An error is {\"error\": {\"code\", \"message\"}}. " +
+  "An error is {\"error\": {\"code\", \"message\"}}. The message tells what is wrong and what to do. " +
   "Memory data is lowercase hex without separators. " +
   "Other register values and chip values are decimal numbers. " +
-  "A read does not change the run state of the machine.";
+  "A read does not change the run state of the machine. " +
+  "Space c64 is the computer. Space drive8 is the CPU of the 1541 disk drive. " +
+  "Memory view cpu gives what the CPU sees now, with ROM and I/O where the memory configuration puts them. Memory view ram gives the RAM under them. " +
+  "A write to memory or registers needs a stopped CPU: stop it with c64_execution action pause. " +
+  "Paths are relative to the project folder, the folder that holds .c64-re-tools/. " +
+  "With out, a tool writes a large result to a project file in place of the result.";
 
 export function createMcpServer(options: { tools: readonly ToolDefinition[]; session: SessionSource; log?: (line: string) => void }): Server {
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));

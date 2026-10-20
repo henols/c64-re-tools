@@ -87,7 +87,7 @@ The script reads T64 and CRT files itself. The host runtime is not necessary for
 - T64: `directory` and `read`. Many T64 files have a wrong end address. Then the entry has `fixedSize: true`, and the size comes from the position of the next file.
 - CRT: `directory` and `crt`. The script reads hardware types 0 (normal 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) and 32 (EasyFlash). It refuses other types by name. `crt` writes `crt.json` and one PRG for each CHIP packet, for example `bank3-8000.prg`.
 - A cartridge bank uses the same addresses as other banks. Analyze each bank PRG with c64-static-analysis and `--space bank3`, and record its knowledge in space `bank3`.
-- TAP: a TAP file holds tape signals, and turbo loaders have their own formats. The script does not read it. Start it with the c64-emulator skill, or capture its parts with `loads` of the c64-unpacker skill.
+- TAP: a TAP file holds tape signals, and turbo loaders have their own formats. The script does not read it. Start it with the emulator skill, or capture its parts with `loads` of the c64-unpacker skill.
 
 ## Result
 
@@ -110,4 +110,4 @@ A file that is not `closed` was not written fully. Its data can be incomplete.
 - Packed program → c64-unpacker
 - Machine code, also a cartridge bank → c64-static-analysis
 - A TAP file → c64-unpacker
-- Run the program → c64-emulator
+- Run the program → emulator

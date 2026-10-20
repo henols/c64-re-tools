@@ -20,7 +20,7 @@ node .claude/skills/c64-field-debug/scripts/note.ts --kind <kind> --component <n
 | Option | Meaning |
 |---|---|
 | `--kind` | `bug`, `confusion`, `doc`, `missing`, `workaround`, `thought`, `comprehension` or `praise`. |
-| `--component` | The skill, the script or the MCP tool. Examples: `c64-emulator`, `assembler.ts`, `c64_screen`. Default: `general`. |
+| `--component` | The skill, the script or the MCP tool. Examples: `emulator`, `assembler.ts`, `c64_screen`. Default: `general`. |
 | `--severity` | `low`, `medium` or `high`. Default: `medium`. |
 | `--by` | `llm` (default) or `user`. |
 | `--intent` | What you wanted to do. |

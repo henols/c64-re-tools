@@ -85,7 +85,7 @@ With `--frames`, a PRG starts with autostart and RUN. An image starts from its b
    - A range with `none` in each release is not used in this run. Run more frames or other steps before you decide.
    - `run.skipped`: the releases have no differences, so no release ran.
 5. Examine each important difference:
-   - Disassemble the bytes of each release with the c64-emulator skill, or analyze them with the c64-static-analysis skill.
+   - Disassemble the bytes of each release with the emulator skill, or analyze them with the c64-static-analysis skill.
    - Find what the change does, for example a trainer, a removed copy protection, or a changed text.
 6. Decide which bytes are probably the original application. Use more than the byte comparison: the code, the text, and the history of the releases.
 7. Record each release with `release` of the c64-knowledge skill. The base release is the program of the knowledge.
@@ -143,7 +143,7 @@ Do these steps:
 3. Run c64-static-analysis. Without code regions, `deadCode` is empty, and `residue` can include code.
 4. Run `leftovers`. When you have two or more releases, also compare them.
 5. Read `text` first: names, dates, greetings and credits. Then read `copies`, `residue`, `basic` and `deadCode`.
-6. Examine each important finding with the c64-emulator skill or the c64-static-analysis skill.
+6. Examine each important finding with the emulator skill or the c64-static-analysis skill.
 7. Record each confirmed finding with the c64-knowledge skill. Do not remove a leftover from the program: a rebuild keeps it. Only the data of a cracktro goes out, with `capture --exclude` of the c64-unpacker skill. Classify a confirmed PETSCII text as a `petscii` region, and a screen code text as a `screen` region. Classify other text as `bytes`. Write a comment that tells what the leftover is.
 
 Read the findings with care:
@@ -226,7 +226,7 @@ The runtime evidence and the leftovers are evidence only. The script does not de
 
 - Get releases from disk images → c64-disk
 - Unpack a packed release → c64-unpacker
-- Run or examine the different code → c64-emulator
+- Run or examine the different code → emulator
 - Analyze the different code → c64-static-analysis
 - Record a conclusion → c64-knowledge
 - Apply the batch of `match` → c64-knowledge

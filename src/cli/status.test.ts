@@ -23,7 +23,7 @@ test("status names the version of the installed skills, warns on another version
     plugins: {
       "c64-re-tools": {
         scope: "project",
-        items: [skill("c64-knowledge", true), skill("c64-emulator", false), { harness: "claude", kind: "mcp", name: "c64-re-tools", files: [".mcp.json"], detail: { mergeKey: "mcpServers", names: ["c64-re-tools"] } }],
+        items: [skill("c64-knowledge", true), skill("emulator", false), { harness: "claude", kind: "mcp", name: "c64-re-tools", files: [".mcp.json"], detail: { mergeKey: "mcpServers", names: ["c64-re-tools"] } }],
       },
     },
   });

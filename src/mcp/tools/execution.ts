@@ -75,6 +75,7 @@ export const c64RunUntil = defineTool({
     "reached tells if the target occurred. stopReason tells why the CPU stopped: target, breakpoint, watchpoint, jam (a JAM opcode) or timeout. " +
     "pointId gives the id of the breakpoint or watchpoint that stopped the CPU. " +
     "space tells which CPU stopped: c64, or drive8 for a stop in the disk drive. pc is the address in that space. " +
+    "The drive can execute a few more instructions before it stops. " +
     "With observe, the result also gives what c64_observe gives at the stop, in observed. " +
     `With history (1 to ${MAX_HISTORY}), it also gives the last instructions before the stop, as c64_cpu_history gives them. ` +
     "Thus one call runs to a place and reads the machine there. " +

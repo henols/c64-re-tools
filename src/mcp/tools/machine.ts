@@ -76,7 +76,7 @@ export const c64Reset = defineTool({
   description:
     "Reset the C64. Mode soft is the reset button. Mode hard is a power cycle that also resets the disk drive. " +
     "With run false (the default), the CPU stops at the first instruction of the reset routine, and the result gives that program counter (pc). " +
-    "With run true, the C64 starts normally. Breakpoints and watchpoints stay.",
+    "With run true, the C64 starts normally. Breakpoints and watchpoints stay. The c64_timing stopwatch starts again from zero.",
   inputSchema: z
     .object({
       mode: z.enum(RESET_MODES).describe("soft is the reset button. hard is a power cycle"),

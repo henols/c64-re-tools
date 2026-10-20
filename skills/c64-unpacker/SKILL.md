@@ -99,12 +99,12 @@ The scripts refuse a step in the form of version 2.0, for example `{ "runUntil":
 2. Run `trace`. It gives the evidence from the run. `writtenThenExecuted` lists the ranges that the program wrote and then executed. Read `packing`:
    - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code. `runningRange` is the written code that runs at the end of the trace. When the trace ends in ROM code, for example in an interrupt, it is the written code that runs next. Its `start` is code that runs after the unpacking. It is not always the entry point of the program. When no written code runs in 50 more frames, the result has no `runningRange` and no `suggestedUntil`.
    - `unclear`: the program executed a small quantity of code that it wrote. This can be code that changes itself.
-   - `unlikely`: the program executed no code that it wrote. If the program waits for a key or a joystick, it can move code after that input. Then use the c64-emulator skill.
+   - `unlikely`: the program executed no code that it wrote. If the program waits for a key or a joystick, it can move code after that input. Then use the emulator skill.
 3. Find the address where the unpacked program starts:
    - Run `stages`. The `entry` of the last stage is usually the start of the program. A routine that a stage writes and calls is part of that stage when it returns to the stage.
    - Or use `runningRange.start` from `trace`, or `suggestedUntil`. The CPU gets to `suggestedUntil` after the unpacking.
-   - Or use the c64-emulator skill: set a breakpoint after the unpack loop, or look at the last JMP of the unpacker.
-   - Disassemble the code at the address with the c64-emulator skill. Make sure that it is the start of the program. The start of a program often sets the stack pointer, the interrupts and the vectors.
+   - Or use the emulator skill: set a breakpoint after the unpack loop, or look at the last JMP of the unpacker.
+   - Disassemble the code at the address with the emulator skill. Make sure that it is the start of the program. The start of a program often sets the stack pointer, the interrupts and the vectors.
    - A program can be relocated and not packed. Then a short copier moves the code and jumps to it. The moved code is the last stage. Make sure that the `entry` of the last stage is not code that the program writes later. An example is a routine that the program makes at run time. Disassemble the entry to make sure.
 4. Run `capture` with that address and a directory in `--out`. Give the same `--steps` as before. The directory gets:
    - `image.bin`: all 64 KiB of RAM at the entry.
@@ -162,7 +162,7 @@ For `loads`: `captures`, with the name, the PC, the segments, `differsFromReset`
 
 - `traced: false` or `followed: false`: the emulator did not load the program into memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
 - `traced: false` or `followed: false` with `stopReason`: the CPU stopped before the frames ran, for example at a JAM instruction. `pc` gives the address. Make sure that `--entry` is the start of the code that the file holds at that time, and that the steps are correct.
-- `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the c64-emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step.
+- `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step.
 - A step did not reach its target: the reason names the step. Change the step or give it more frames.
 - `loaded: false` with an empty `captures` and the reason `BASIC ran no program line`: the PRG has no BASIC start line. Use `capture` with `--entry`.
 - `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited for a key at the READY prompt or at an INPUT statement. For a tape image, read `emulatorFlaw`. A known VICE flaw can stop a tape load. Tell the user to install the latest VICE.
@@ -174,4 +174,4 @@ For `loads`: `captures`, with the name, the PC, the segments, `differsFromReset`
 ## Handoffs
 
 - Unpacked machine code → c64-static-analysis
-- Find the start address at run time → c64-emulator
+- Find the start address at run time → emulator

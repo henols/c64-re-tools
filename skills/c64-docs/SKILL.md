@@ -71,7 +71,7 @@ node <skill>/scripts/docs.ts link README.md docs --source src --check
 3. Run `docs.ts generate`. Read `index.md` of the reference. A module with no routines, or a routine with no comment, shows what the knowledge does not have yet.
 4. Make the plan of the pages. Start from the modules and the call graphs. Find the main loop, the interrupt chain, the dispatch tables, the state machines and the data formats. Each subsystem gets one page in `docs/`. The entry page `README.md` in the project folder lists the pages. Use the page types in `references/page-types.md`.
 5. Collect the facts about the development and the copy protection. These facts are the most interesting parts for a reader, so look for them carefully. Read the leftover spaces and their comments in the knowledge. If the knowledge has none, run `provenance.ts leftovers` of c64-provenance. For two or more releases, run `provenance.ts compare` of c64-provenance to separate the program from the changes of each release. Find each check of the copy protection in the code, and the effect of a failed check. These facts go into the development section, the copy protection section and their pages. Do not examine the cracks in detail. They are not part of the program.
-6. Write each page. Read the code and the knowledge for each fact. Run the program with c64-testing or c64-emulator when a fact needs a run. Explain each part before you name the code. Link only the main parts: write `` `draw_room` `$09BC` `` for a link, and `` `draw_room` `` for each other mention. Mark each fact with its evidence. Several subagents can write the pages at the same time, one page each. Give each subagent `references/page-types.md` and `references/style.md`.
+6. Write each page. Read the code and the knowledge for each fact. Run the program with c64-testing or the emulator skill when a fact needs a run. Explain each part before you name the code. Link only the main parts: write `` `draw_room` `$09BC` `` for a link, and `` `draw_room` `` for each other mention. Mark each fact with its evidence. Several subagents can write the pages at the same time, one page each. Give each subagent `references/page-types.md` and `references/style.md`.
 7. Record each new fact in the knowledge first: a name, a comment, a region or a module. Then the source and the reference show it too. A fact only in a page is lost at the next change of the knowledge.
 8. Run `docs.ts link`. Read `problems` and correct each one. Then run `docs.ts link --check`. Make sure that `result` is `PASS`.
 9. When the project folder is in a workspace with other projects, find `README.md` at the root of the workspace. This page lists each program of the workspace. Add one row for the program, with a link to `<project>/README.md` and one sentence. If the page does not exist, make it. Use the workspace index in `references/page-types.md`. `docs.ts link` does not read this page, because the page is not in the project folder.
@@ -156,6 +156,6 @@ Do not store:
 
 - Names, comments, regions and modules → c64-knowledge
 - The source and its source map → c64-source
-- A fact that needs a run → c64-testing or c64-emulator
+- A fact that needs a run → c64-testing or emulator
 - Leftovers, traces of the development and the differences of releases → c64-provenance
 - What an address of the C64 is → c64-memory-map

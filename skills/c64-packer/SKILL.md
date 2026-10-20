@@ -60,7 +60,7 @@ node <skill>/scripts/packer.ts pack build/loader.prg build/main.prg --entry '$04
 2. Find the entry. For a BASIC program at $0801 with `SYS`, the script finds it. Else, use the start address of the program, for example the entry of the program in the knowledge.
 3. Find the value of $01 that the program needs at its start. Give `--exit-memory` when the program uses RAM under BASIC or KERNAL and does not set $01 itself.
 4. Run the script.
-5. If `result` is `PASS`, the packed PRG is at `out`. Give it to the c64-emulator skill and run it with RUN. Make sure that the program starts and works.
+5. If `result` is `PASS`, the packed PRG is at `out`. Give it to the emulator skill and run it with RUN. Make sure that the program starts and works.
 6. If `result` is `FAIL`, read `check`. Do not use the packed program. The script does not write it.
 7. If `result` is `INCONCLUSIVE`, the check did not hold all bytes of the inputs. Run the packed program in the emulator and examine the memory of the segments that are `not covered`.
 
@@ -102,6 +102,6 @@ Other fields:
 ## Handoffs
 
 - Assemble the program before the pack → c64-assembler
-- Run the packed program → c64-emulator
+- Run the packed program → emulator
 - Put the packed program on a disk image → c64-disk
 - Unpack a packed program → c64-unpacker

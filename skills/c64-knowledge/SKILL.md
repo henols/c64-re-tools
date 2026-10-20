@@ -357,7 +357,7 @@ A revert makes a new revision. The history stays complete.
 
 ## Handoffs
 
-- Runtime evidence → c64-emulator
+- Runtime evidence → emulator
 - Static evidence → c64-static-analysis
 - Source from the knowledge → c64-source
 - Names of routines that other programs share → c64-provenance

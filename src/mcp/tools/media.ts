@@ -29,7 +29,9 @@ export const c64Autostart = defineTool({
     "Both joysticks are centred first: joystick port 1 uses the keyboard lines, and a held direction changes the RUN that the autostart types. " +
     "Without index, a disk image loads like LOAD\"*\",8,1. index selects one directory entry by its number in the c64-disk directory list (0 is the first entry). " +
       "The tool refuses an index of a DEL entry, or an index after the last entry. " +
-    "The machine runs when this tool returns, and the load continues.",
+    "The machine runs when this tool returns, and the load continues. The emulator keeps warp mode on until it types RUN. " +
+    "A key in that time stops the autostart, so c64_keyboard refuses keys until then. Run frames with c64_execution advance-frames until c64_status gives warp false. " +
+    "The c64_timing stopwatch starts again from zero.",
   inputSchema: z
     .object({
       path: ProjectPath,
@@ -107,7 +109,7 @@ export const c64Snapshot = defineTool({
     .object({
       action: z.enum(["save", "restore", "list", "remove"]),
       name: TransientName.optional().describe("save and remove, and restore without file: 1 to 64 letters, digits, dots, underscores or hyphens"),
-      out: OutInput.optional().describe("save only: also write the snapshot to this project file, for example snapshots/room0.vsf. An existing file is overwritten"),
+      out: OutInput.optional().describe("save only: also write the snapshot to this project file, for example snapshots/room0.vsf. An existing file is overwritten. The result then also gives the file, the number of bytes and a SHA-256"),
       file: ProjectPath.optional().describe("restore only: a .vsf file in the project, in place of name"),
       project: ProjectInput.optional().describe("save with out, and restore with file: the project folder, relative to the folder where the agent started. Give it when that folder is not in a project and has projects below it"),
     })

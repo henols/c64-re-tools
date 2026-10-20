@@ -24,7 +24,7 @@ This skill uses the other skills. It does not use the host runtime or the emulat
 | Work | Skill |
 |---|---|
 | Assemble the source to a PRG, with errors and symbols | c64-assembler |
-| Run, look, debug and measure | c64-emulator |
+| Run, look, debug and measure | emulator |
 | Tests with expected values (`expect` steps in a run), and original against rebuild | c64-testing |
 | The meaning of an address or a register, and an include of the platform names | c64-memory-map |
 | Patches and switches of a rebuilt program, names and comments | c64-knowledge |
@@ -88,11 +88,11 @@ Do these steps for each small part of the program:
 1. Find the meaning of each register with c64-memory-map. Make an include of the platform names with `memory-map.ts export --out src/hw.a`. Include it with `!source`. Do not type the addresses of registers yourself.
 2. Write the code for one part.
 3. Build it with c64-assembler: `assembler.ts build src main.a --out build/<name>.prg --out-symbols build/<name>.json`. Change the source at the file and the line of each error.
-4. Start it with `c64_autostart` of c64-emulator. Look at the screen with `c64_screen`. Read the screen memory, not only the image.
+4. Start it with `c64_autostart` of the emulator skill. Look at the screen with `c64_screen`. Read the screen memory, not only the image.
 5. Write the `expect` steps of this part in a run file. Give `"symbols": "build/<name>.json"`, so that a step can use the labels of the source.
 6. Run all run files in `tests/` with `testing.ts run`. Go to the next part only when each run gives PASS.
 
-To find a defect, use c64-emulator:
+To find a defect, use the emulator skill:
 
 - Stop at the code with `c64_breakpoint`, or at a write to a variable with `c64_watchpoint`.
 - Get to a state with `c64_run_until`.
@@ -101,13 +101,13 @@ To find a defect, use c64-emulator:
 
 Find the cause before you change the code. Do not change code at random until a test passes.
 
-When the user must play or look at the program, use the window procedure of c64-emulator. Open the window, tell the user what to do, wait, and close the window.
+When the user must play or look at the program, use the window procedure of the emulator skill.
 
 ### B. A feature or a fix in source that a person wrote
 
 1. Write a run file with an `expect` step that shows the defect or the missing feature.
 2. Run it with `testing.ts run`. Make sure that it gives FAIL. A test that gives PASS before the change does not test the change.
-3. For a defect, find the cause with c64-emulator.
+3. For a defect, find the cause with the emulator skill.
 4. Change the source. Build it with c64-assembler.
 5. Run the new run file and all other run files in `tests/`. Each run must give PASS.
 
@@ -120,7 +120,7 @@ A rebuilt program gets its source from the knowledge. A change is a switch and i
    - A fix: `fix`, for example `FIX_FLICKER`. The default build has it.
    - A trainer or a cheat: `trainer` or `cheat`. The default build does not have it.
    - Another feature: `change`, for example `HISCORE`. Ask the user if the default build must have it. Give `--default 1` or `--default 0`.
-3. Find the code to change with c64-knowledge (`at`, `regions`) and c64-emulator.
+3. Find the code to change with c64-knowledge (`at`, `regions`) and the emulator skill.
 4. Write the code in a file in `.c64-re-tools/local/`. Write the patch with `knowledge.ts patch '<range>' <SWITCH> --code-file <file>` of c64-knowledge. The code must fit in the range.
 5. If the code does not fit, write a short patch with a `jsr` to the new code. Put the new code in a second patch of the same switch, in a range that the program does not use. The range must have evidence: `provenance.ts leftovers` of c64-provenance, or code that no run executed and that the program cannot reach. If no range has this evidence, stop and ask the user.
 6. Make the source again with `source.ts generate --out src` of c64-source. The checks `check`, `switches`, `default` and `releases` must pass. A switch must not give `overflow` or `does not assemble`.
@@ -162,14 +162,14 @@ A program that builds, with a run file in `tests/` for each acceptance check, an
 - A skill reports `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not make a replacement for the tool or the host runtime, for example your own assembler or emulator script.
 - A tool gives a wrong result: tell the user the defect and the evidence, and wait for the user. Do not make a workaround.
 - A test gives FAIL: change the program until the test gives PASS. Do not change the expected value to make the test pass. Change an expected value only when the user changes the acceptance check.
-- A run gives FAIL because a `runUntil` did not get to its target: the program did not get to that state. Find why with c64-emulator.
-- The program reads the keyboard hardware, and a key does not arrive: read the keyboard text of c64-emulator. Do not change the program to make it accept a key.
+- A run gives FAIL because a `runUntil` did not get to its target: the program did not get to that state. Find why with the emulator skill.
+- The program reads the keyboard hardware, and a key does not arrive: read the description of `c64_keyboard`. Do not change the program to make it accept a key.
 - A patch does not fit, and no unused range has evidence: stop and ask the user.
 
 ## Handoffs
 
 - Assemble → c64-assembler
-- Run, debug and measure → c64-emulator
+- Run, debug and measure → emulator
 - Tests with expected values, and original against rebuild → c64-testing
 - The meaning of an address or a register → c64-memory-map
 - Patches, names and comments → c64-knowledge

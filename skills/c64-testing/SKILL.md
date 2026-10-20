@@ -165,7 +165,7 @@ The script refuses a snapshot that does not restore in its emulator. An example 
    - `FAIL`: `differences` lists each difference with the checkpoint and the item. A memory item gives `bytes`: the count of the bytes that differ, and the first of these bytes. Each byte has the address, the original value and the rebuild value. `--max-listed` sets how many bytes it lists (default 50). `memory.json` in `--out` has all of them. Another item gives the original value and the rebuild value.
    - Each value has one form. The pc and each address are `$xxxx`. Memory is lowercase hex. Other register values and chip values are decimal numbers.
    - `INCONCLUSIVE`: `reason` tells why the script could not compare. This is not a failure of the program.
-7. For a FAIL, examine the first difference with the c64-emulator skill.
+7. For a FAIL, examine the first difference with the emulator skill.
 
 ## Knowledge
 
@@ -195,7 +195,7 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 - INCONCLUSIVE, `step N (kind): ...`: the step failed on one side. `reason` names the step and why.
 - `invalid-input` that names the 2.0 form: a step, a memory item or a recording has a form of version 2.0. An example is `"at"` in place of `"address"`. The message gives the form to write. Change the file. Record a recording of version 2.0 again.
 - `not-found` before the run: a file of the scenario or the run file is missing, for example the rebuild program. Build the rebuild, or change the path.
-- INCONCLUSIVE, "did not reach the checkpoint": one side did not reach the checkpoint in the frame limit. Find the reason with the c64-emulator skill. Do not report a FAIL.
+- INCONCLUSIVE, "did not reach the checkpoint": one side did not reach the checkpoint in the frame limit. Find the reason with the emulator skill. Do not report a FAIL.
 - INCONCLUSIVE, "has no symbol": one side has no symbol with that name. Add the name to the knowledge or to the rebuild source.
 - INCONCLUSIVE, "no emulator" or "could not run": the host runtime or the emulator failed. Tell the user the message.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
@@ -208,7 +208,7 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 - INCONCLUSIVE, "is not the program of the recording": the program file changed after the recording. Record the session again.
 - A record result FAIL with `recorded` false: `reason` names the step that did not complete. Examples are a `runUntil` that did not reach its target, and a `type` step with too many keys. Change the step.
 - A record result with `executed` 0: the program never read its input from RAM, so the coverage map is empty. The recording can still replay.
-- A FAIL from a replay: compare the two RAM files of `--out` with `testing.ts diff`. Then examine the first different state item with the c64-emulator skill.
+- A FAIL from a replay: compare the two RAM files of `--out` with `testing.ts diff`. Then examine the first different state item with the emulator skill.
 - A program that loads more files from a disk: the replay core has no disk drive. Use a test scenario in the emulator.
 - A byte that cannot be the same on both sides, for example a read-only collision register: use `exclude` with the reason. Do not use `exclude` to hide a real difference.
 
@@ -216,7 +216,7 @@ Do not add a mask or a tolerance only to make a test pass. A tolerance must have
 
 ## Handoffs
 
-- Find the cause of a difference → c64-emulator
+- Find the cause of a difference → emulator
 - Find the code that causes it → c64-static-analysis
 - Rebuild after a correction → c64-assembler
 - Write or change a program, with expect steps as its tests → c64-development

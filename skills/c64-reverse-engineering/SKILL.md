@@ -72,7 +72,7 @@ Select the path for the scope:
 | The files on a disk image, or a file to extract | c64-disk |
 | A BASIC program, and where it starts machine code | c64-basic |
 | A program that can be packed or crunched | c64-unpacker |
-| What the program does at run time: values, input, timing, screen | c64-emulator |
+| What the program does at run time: values, input, timing, screen | emulator |
 | The routines, code, data and references of the program | c64-static-analysis |
 | The platform meaning of an address or a register | c64-memory-map |
 | Differences between releases of the program | c64-provenance `compare`, then c64-knowledge `release`, `switch` and `patch` |
@@ -96,7 +96,7 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 2. Get | c64-disk: list the disk. Extract the start file into `original/`. | The start file is in the project. |
 | 3. Start | c64-basic: find the SYS address of the BASIC start. | You have the entry address. |
 | 4. Unpack | c64-unpacker: examine the program with `unpacker.ts inspect`, `trace` and `stages`. Capture a packed program with `unpacker.ts capture` into `.c64-re-tools/local/`. When a segment is the data of a cracktro and the program does not read it, capture again with `--exclude` for that range. Then c64-knowledge: put the capture, or the PRG of a program without a packer, into the knowledge with `knowledge.ts image`. | `program` of c64-knowledge shows the segments and the entry. |
-| 5. Run | First record: ask the user to play each part that the scope names, with `testing.ts record --play` of c64-testing. Tell the user which parts. Record a part yourself only when the sessions of the user do not have it. Put the recordings in `tests/recordings/`. Then use c64-emulator and `testing.ts run` of c64-testing for the parts that a recording cannot have. Write a coverage map for each part into `.c64-re-tools/local/`. Then c64-knowledge: add the maps and the `coverage.bin` of each recording with `knowledge.ts coverage`. | `program` of c64-knowledge lists a coverage map for each part that the scope names. |
+| 5. Run | First record: ask the user to play each part that the scope names, with `testing.ts record --play` of c64-testing. Tell the user which parts. Record a part yourself only when the sessions of the user do not have it. Put the recordings in `tests/recordings/`. Then use the emulator skill and `testing.ts run` of c64-testing for the parts that a recording cannot have. Write a coverage map for each part into `.c64-re-tools/local/`. Then c64-knowledge: add the maps and the `coverage.bin` of each recording with `knowledge.ts coverage`. | `program` of c64-knowledge lists a coverage map for each part that the scope names. |
 | 6. Analyze | c64-static-analysis: `static-analysis.ts analyze`. It reads the program and the coverage from the knowledge. | No coverage conflict is open. |
 | 7. Name | c64-provenance: if the workspace has a library, find its routines with `provenance.ts match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
 | 8. Releases and switches | c64-knowledge: record the base release with `knowledge.ts release <label> --file original/<file> --base`. For a capture, copy its folder to `original/<label>/` first, because git ignores `.c64-re-tools/local/`. Record each other release. c64-provenance: compare the releases with `provenance.ts compare`, and find leftovers with `provenance.ts leftovers`. c64-knowledge: record a switch for each copy protection, trainer, cheat, crack change and correction, and a patch for each of its ranges. Record each leftover as a region with a comment. | `knowledge.ts switches` lists each switch. Each difference between the releases is in a patch, or the answer gives it as an exception. |
@@ -179,7 +179,7 @@ A clear answer for the scope, with the durable conclusions in the project knowle
 - A tool gives a wrong result, and the exit check of a stage cannot be true. Tell the user the defect and the evidence, and wait for the user. Do not make a workaround, for example a change to a generated file. When the user accepts an exception, give the defect and the exception in the answer of stage 12.
 - If the evidence does not support a conclusion, keep the unknown and get more evidence. Do not make up a meaning.
 - Before you replace current knowledge from the user or the LLM, read its history and the evidence for it.
-- A conflict from the static analysis: find the correct answer at run time with the c64-emulator skill.
+- A conflict from the static analysis: find the correct answer at run time with the emulator skill.
 - A test that is INCONCLUSIVE does not show a defect. Find why the test could not compare.
 
 ## Handoffs

@@ -65,7 +65,7 @@ Write a value for `decode` and `--bank` as `$` and hex digits, as a decimal numb
 1. Run `at` for the addresses in the code or the question.
 2. Read `kind`:
    - `platform`: the C64 gives the address a meaning. Read `name` and `meaning`.
-   - `application`: the address has no platform meaning. The program decides its use. Find its use with the c64-static-analysis or c64-emulator skill.
+   - `application`: the address has no platform meaning. The program decides its use. Find its use with the c64-static-analysis or emulator skill.
 3. For an I/O register, `mirrorOf` shows the register that a mirror address repeats. `visible` tells that an address in `$D000`-`$DFFF` is visible only when `$01` shows I/O at `$D000`. This area holds the chip registers, the color RAM and the cartridge I/O areas.
 4. For a byte in a multi-byte entry, for example the high byte of a vector, `entryStart` gives the first address of the entry.
 5. To understand a value in a register, run `decode`. For the memory configuration, decode the value of `$01`.
@@ -95,5 +95,5 @@ Some registers have a different meaning for a read and for a write, for example 
 
 ## Handoffs
 
-- The value of an address at run time → c64-emulator
+- The value of an address at run time → emulator
 - A conclusion about the application → c64-knowledge

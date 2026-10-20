@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -362,6 +362,16 @@ test("the server lists exactly the public tools with object input and output sch
   const read = tools.find((tool) => tool.name === "c64_memory_read")!;
   assert.deepEqual((read.inputSchema.required as string[]).sort(), ["address", "size"]);
   await client.close();
+});
+
+test("every MCP tool that a skill names is a public tool", () => {
+  const skills = resolve(import.meta.dirname, "../../skills");
+  const docs = readdirSync(skills, { recursive: true, encoding: "utf8" }).filter((path) => path.endsWith(".md"));
+  for (const doc of docs) {
+    for (const [name] of readFileSync(join(skills, doc), "utf8").matchAll(/\bc64_[a-z][a-z_]*/g)) {
+      assert.ok((PUBLIC_TOOLS as readonly string[]).includes(name), `${doc} names ${name}, which is not a tool`);
+    }
+  }
 });
 
 test("c64_status returns the domain result directly, with pc only when stopped", async () => {

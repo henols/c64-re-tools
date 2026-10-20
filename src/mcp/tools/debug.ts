@@ -44,7 +44,8 @@ export const c64Breakpoint = defineTool({
     "Action add sets one at address in space c64 or drive8. With a condition, it stops only when the condition is true. " +
     "add returns the new id. Breakpoints and watchpoints take their ids from one counter, so the ids of one kind can have gaps. " +
     "Actions remove, enable and disable take that id. remove returns removed true and the id. Action list gives all breakpoints. Each breakpoint shows its condition, when it has one. " +
-    "Breakpoints stay through a reset.",
+    "Breakpoints stay through a reset. " +
+    "In space drive8, the drive can execute a few more instructions before it stops. pc in the stop result is the drive address where it stopped.",
   inputSchema: z
     .object({
       action: z.enum(CHECKPOINT_ACTIONS),
@@ -87,7 +88,8 @@ export const c64Watchpoint = defineTool({
     `Action add sets one from start to end (at most ${MAX_WATCH_SIZE} bytes, end defaults to start), with access read, write or read-write. ` +
     "With a condition, it stops only when the condition is true. For a write, a memory condition sees the memory after the write. " +
     "add returns the new id. Breakpoints and watchpoints take their ids from one counter, so the ids of one kind can have gaps. " +
-    "Actions remove, enable and disable take that id. remove returns removed true and the id. Action list gives all watchpoints. Each watchpoint shows its condition, when it has one.",
+    "Actions remove, enable and disable take that id. remove returns removed true and the id. Action list gives all watchpoints. Each watchpoint shows its condition, when it has one. " +
+    "In space drive8, the drive can execute a few more instructions before it stops. pc in the stop result is the drive address where it stopped.",
   inputSchema: z
     .object({
       action: z.enum(CHECKPOINT_ACTIONS),
@@ -139,6 +141,7 @@ export const c64CpuHistory = defineTool({
     "Each entry gives the address, the bytes, the instruction and the registers a, x, y and sp before the instruction executed. " +
     "In space c64, it also gives the raster line and cycle when the instruction started. " +
     "With out, it writes the entries as text lines to that project file, and the result gives the file in place of the entries. " +
+    "After a JAM, the emulator records no history until the next reset. If the CPU ran again after a snapshot restore, this tool refuses. Then use c64_reset, or use c64_trace. " +
     "This does not change the run state of the machine.",
   inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput, out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({
@@ -349,7 +352,7 @@ export const c64Memmap = defineTool({
       start: AddressInput.optional().describe("read and summary. Default $0000"),
       end: AddressInput.optional().describe("read and summary. Default $ffff"),
       maxRanges: z.number().int().min(1).max(MAX_MEMMAP_RANGES).optional().describe("read without out only. Default 256"),
-      out: OutInput.optional().describe("read only: write a coverage map to this project file, one byte for each address. An existing file is overwritten"),
+      out: OutInput.optional().describe("read only: write a coverage map to this project file, one byte for each address. An existing file is overwritten. The result then gives the file, the number of bytes and a SHA-256"),
       project: ProjectInput.optional().describe("read with out only: the project folder, relative to the folder where the agent started. Give it when that folder is not in a project and has projects below it"),
     })
     .strict(),
