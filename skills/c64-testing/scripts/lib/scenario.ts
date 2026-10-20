@@ -391,8 +391,14 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
   const at = (location: Location) => resolve(location, symbols, side);
   // Each side starts from a hard reset, stopped at the reset vector, with the control ports released.
   await client.reset({ mode: "hard", run: false });
-  await client.joystick({ port: 1, direction: "center", fire: false });
-  await client.joystick({ port: 2, direction: "center", fire: false });
+  for (const port of [1, 2] as const) {
+    try {
+      await client.joystick({ port, direction: "center", fire: false });
+    } catch (error) {
+      // A VICE whose joystick input is broken refuses it, and so holds no joystick: the port is released already.
+      if (!isRefusal(error) || error.code !== "not-implemented") throw error;
+    }
+  }
   let checkpoint = 0;
   for (const [index, step] of scenario.steps.entries()) {
     if (step.side !== undefined && step.side !== side) continue;
