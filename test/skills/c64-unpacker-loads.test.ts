@@ -79,8 +79,8 @@ test("a capture block holds the changed RAM under the I/O area, which the map gi
   const map = new Uint8Array(0x10000);
   map.fill(COVERAGE.ioWrite, 0xd000, 0xe000);
   after.fill(0x42, 0xd000, 0xe000);
-  after[0xd020] = 0; // written with the value that was there: VICE start RAM
-  assert.deepEqual(captureBlocks(before, after, map, true, []), [{ start: 0xd000, end: 0xdfff, bytes: 4095 }]);
+  after[0xd020] = 0; // written with the value that was there: VICE start RAM, still in the block
+  assert.deepEqual(captureBlocks(before, after, map, true, []), [{ start: 0xd000, end: 0xdfff, bytes: 4096 }]);
   // A register write that changed no RAM is no block.
   const registers = new Uint8Array(0x10000);
   registers.fill(COVERAGE.ioWrite, 0xd000, 0xd030);

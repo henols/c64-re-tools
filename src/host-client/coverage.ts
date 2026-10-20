@@ -23,12 +23,26 @@ export async function readCoverage(session: Pick<ViceSessionClient, "memmap">, s
 export const IO_RAM = { start: 0xd000, end: 0xdfff } as const;
 
 /**
- * Marks as RAM writes the bytes of the RAM under the I/O area that changed
- * between two reads of it, in a map from $0000. That RAM changes only by a
- * write with the I/O area banked out. `before` and `after` hold $d000-$dfff.
+ * Marks the RAM writes under the I/O area in a map from $0000, from two reads
+ * of that RAM. The RAM there changes only by a write with the I/O area banked
+ * out. A run of written or changed bytes is RAM written when one byte of it
+ * changed: a byte written with the value that was there is part of it too.
+ * A run of register writes changes no RAM. `before` and `after` hold $d000-$dfff.
  */
 export function markIoRamWrites(map: Uint8Array, before: Uint8Array, after: Uint8Array): void {
-  for (let offset = 0; offset <= IO_RAM.end - IO_RAM.start; offset++) if (before[offset] !== after[offset]) map[IO_RAM.start + offset]! |= COVERAGE.ramWrite;
+  const size = IO_RAM.end - IO_RAM.start + 1;
+  const written = (offset: number) => before[offset] !== after[offset] || (map[IO_RAM.start + offset]! & (COVERAGE.ioWrite | COVERAGE.ramWrite)) !== 0;
+  for (let start = 0; start < size; ) {
+    if (!written(start)) {
+      start++;
+      continue;
+    }
+    let end = start;
+    let changed = false;
+    for (; end < size && written(end); end++) changed ||= before[end] !== after[end];
+    if (changed) for (let offset = start; offset < end; offset++) map[IO_RAM.start + offset]! |= COVERAGE.ramWrite;
+    start = end;
+  }
 }
 
 /** Runs of RAM that a program wrote, at least `minimum` bytes each, in a map from $0000. */
