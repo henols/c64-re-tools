@@ -14,6 +14,7 @@ check "Ghidra runs" bash -c "\"\$C64RT_GHIDRA/support/analyzeHeadless\" 2>&1 | g
 check "Ghidra has a decompiler for this machine" bash -c "ls \"\$C64RT_GHIDRA\"/Ghidra/Features/Decompiler/os/linux_*/decompile"
 check "the tools are stamped with the toolkit version" bash -c "test -s /usr/local/share/c64-re-tools/tools.version && ls /usr/local/share/c64-re-tools/stamps/dxa /usr/local/share/c64-re-tools/stamps/exomizer /usr/local/share/c64-re-tools/stamps/c64run /usr/local/share/c64-re-tools/stamps/ghidra"
 check "a start with the same version installs no tools" bash -c "! /usr/local/share/c64-re-tools/project.sh update 2>&1 | grep 'installing the native tools'"
+check "a start with the same version asks for no restart" bash -c "! /usr/local/share/c64-re-tools/project.sh update 2>&1 | grep 'Restart the agent session'"
 check "the toolkit is installed in the project" bash -c "ls .claude/skills/c64-reverse-engineering/SKILL.md .mcp.json"
 
 reportResults

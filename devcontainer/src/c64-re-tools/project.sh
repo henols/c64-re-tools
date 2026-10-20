@@ -5,7 +5,8 @@
 # the tools and the skills are always of the same version.
 #   project.sh tools     the native tools only (at image build, as root)
 #   project.sh install   the native tools, then the toolkit into the project (after create)
-#   project.sh update    the same at each start; on a failure the installed copy stays
+#   project.sh update    the same at each start; on a failure the installed copy stays.
+#                        A new version tells the user to restart the agent session.
 # npx runs with --prefer-online: its cached package data can be minutes old and
 # not know a version that the registry just named.
 
@@ -87,12 +88,21 @@ case "${1:-}" in
         exec npx --prefer-online -y "@henols/c64-re-tools@${VERSION}" install --target "${TARGET}"
         ;;
     update)
+        BEFORE="$(cat "${SHARE}/tools.version" 2> /dev/null || true)"
         if ! resolve; then
             say "the registry ${REGISTRY} gave no version for the channel ${CHANNEL}; the installed copy stays."
         elif ! tools; then
             say "the native tools of ${VERSION} did not install; the installed tools and toolkit stay."
         else
-            npx --prefer-online -y "@henols/c64-re-tools@${VERSION}" update --target "${TARGET}" || say "the update failed; the installed copy stays."
+            if ! npx --prefer-online -y "@henols/c64-re-tools@${VERSION}" update --target "${TARGET}"; then
+                say "the update failed; the installed copy stays."
+            elif [[ -n "${BEFORE}" && "${BEFORE}" != "${VERSION}" ]]; then
+                say "updated from ${BEFORE} to ${VERSION}. Restart the agent session so that its MCP server runs ${VERSION}."
+                # The MCP server runs the npm tag of its version: from a prerelease to a release, @next becomes @latest.
+                if [[ "${BEFORE}" == *-* && "${VERSION}" != *-* ]]; then
+                    say "${VERSION} is a release and newer than the newest prerelease, so the MCP server uses @latest."
+                fi
+            fi
         fi
         ;;
     *)
