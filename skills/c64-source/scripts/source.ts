@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 
-import { Refusal } from "#src/errors.ts";
+import { isRefusal, Refusal } from "#src/errors.ts";
 import { type AddressRange, coverageSeedKinds, findHandoffs, formatC64Address, parseTokenized, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { readImage, type Image } from "#src/host-client/image.ts";
@@ -38,7 +38,7 @@ import { isoCet } from "#src/time.ts";
 import { zipFiles } from "#src/zip.ts";
 import { listed, OPTIONS, runScript, UsageError, type Call } from "#src/script.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, planLoader, rasterLine, loaderState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./lib/loader.ts";
+import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, packLoader, planLoader, rasterLine, loaderState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan, type PackedLoader } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
 import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
 import { CONFIG_FILE, configText, configValues, entriesInData, entryOutsideImage, hasSwitchFile, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
@@ -54,6 +54,8 @@ const DATA_ONLY = "The knowledge has no entry, routine, code region or executed 
 
 /** The copies of a full 64 KiB take about 140 frames. */
 const LOADER_FRAMES = 1500;
+/** CPU cycles of one PAL frame: 312 lines of 63 cycles. */
+const PAL_FRAME_CYCLES = 312 * 63;
 
 /** The knowledge of one space that the source uses, read once. With `analyzerNames`, an address without a name takes its first analyzer name. */
 function readKnowledge(space: Space, analyzerNames = false) {
@@ -506,7 +508,16 @@ interface LoaderRun {
 /** The history entries that a stop of the loader gives, so the agent sees the last instructions. */
 const STOP_HISTORY = 16;
 
-async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image: ProgramImage, state: EntryState, jump: number, copierSource: number, expected: (address: number) => number): Promise<LoaderRun> {
+/** How the check of the loader runs it: the copier's address in the loader file, the file byte there, and the frames to the copier. */
+interface LoaderRunPlan {
+  jump: number;
+  copierSource: number;
+  fileByte: (address: number) => number;
+  copierFrames: number;
+}
+
+async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image: ProgramImage, state: EntryState, run: LoaderRunPlan, expected: (address: number) => number): Promise<LoaderRun> {
+  const { jump, copierSource, fileByte } = run;
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     await client.reset({ mode: "hard", run: false });
@@ -517,11 +528,11 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
       const ram = await readRam(client, 0x0000, 0x10000);
       const port = Buffer.from((await client.memoryRead({ address: 0x0001, size: 1, space: "c64", view: "cpu" })).data, "hex")[0]!;
       const history = (await client.cpuHistory({ limit: STOP_HISTORY, space: "c64" })).entries.map((entry) => `${formatC64Address(entry.address)}  ${entry.text}`);
-      const cause = stopCause(ram, plan, copierSource, (address) => program[2 + address - 0x0801]!, copied, expected);
+      const cause = stopCause(ram, plan, copierSource, fileByte, copied, expected);
       const port01 = `$${port.toString(16).padStart(2, "0")}`;
       return { verified: false, differences: [`The loader did not get to ${what}; it stopped at ${formatC64Address(pc)}.`], stop: { pc: formatC64Address(pc), port: port01, ...(cause === undefined ? {} : { cause }), history } };
     };
-    const copier = await client.runUntil({ target: { kind: "address", address: plan.copier, space: "c64" }, timeoutFrames: RUN_LIMIT_FRAMES });
+    const copier = await client.runUntil({ target: { kind: "address", address: plan.copier, space: "c64" }, timeoutFrames: run.copierFrames });
     if (!copier.reached) return await stopped(copier.pc, false, `its copier at ${formatC64Address(plan.copier)}`);
     const atJump = await client.runUntil({ target: { kind: "address", address: jump, space: "c64" }, timeoutFrames: LOADER_FRAMES });
     if (!atJump.reached) return await stopped(atJump.pc, true, `its jump to the entry at ${formatC64Address(jump)}`);
@@ -696,7 +707,7 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
       const entryName = laid.names.get(image.entry!);
       loader = planLoader({ segments, byteAt: image.byteAt, state, entry: image.entry!, ...(entryName === undefined ? {} : { entryName }), switches: hasSwitchFile(laid), macros: laid.macros.length > 0, header: options.loaderHeader ?? [] });
     } catch (error) {
-      if (!(error instanceof WireFailure)) throw error;
+      if (!isRefusal(error)) throw error;
       loaderRefused = error.message;
     }
   }
@@ -740,7 +751,7 @@ async function buildLoader(files: Array<{ name: string; text: string }>, laid: L
     for (let address = block.range.start; address <= block.range.end; address++) if (memory[block.packedAt + address - block.range.start] !== block.bytes(address)) return true;
     return false;
   });
-  if (loaderBuilt.start !== 0x0801 || loaderBuilt.start + program.length - 3 !== loader.end || wrongPacking !== undefined) {
+  if (loaderBuilt.start !== (loader.packed === true ? loader.copier : 0x0801) || loaderBuilt.start + program.length - 3 !== loader.end || wrongPacking !== undefined) {
     throw new WireFailure("operation-failed", `The assembled loader does not have the planned layout${wrongPacking === undefined ? "" : ` (${wrongPacking.what})`}. This is a defect of the c64-source script.`);
   }
   const symbolValue = (name: string) => {
@@ -894,12 +905,28 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   // The entry state is the state of the base release: the loader is built and checked with it.
   const loaderBuilt = await buildLoader(files, laid, loader, image, state, baseValues);
   if ("diagnostics" in loaderBuilt) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics } }, removed, failed: true };
-  const { program, jump, copierSource, expected } = loaderBuilt;
+  const { jump, copierSource, expected } = loaderBuilt;
+  const copierBuild = loaderBuilt.program;
+  const fileByte = (address: number) => copierBuild[2 + address - (loader.packed === true ? loader.copier : 0x0801)]!;
+  // The packed form: Exomizer packs the build of main.asm with the copier. Without Exomizer, or when its check fails, there is no loader.prg.
+  let packed: PackedLoader | undefined;
+  if (loader.packed === true) {
+    try {
+      packed = await packLoader(built.program, copierBuild, loader, localToolContext());
+    } catch (error) {
+      if (!isRefusal(error)) throw error;
+      return { output: { ...output, loader: { verified: false, reason: `loader.asm has the packed form, and the pack with Exomizer failed. ${error.message}` } }, removed, failed: true };
+    }
+  }
+  const program = packed?.program ?? copierBuild;
   const loaderPath = `${out}/loader.prg`;
   written.push(writeReported(loaderPath, program, { what: "--out" }));
-  const ran = await runLoader(loaderPath, program, loader, image, state, jump, copierSource, expected);
+  // The unpack runs before the copier.
+  const copierFrames = packed === undefined ? RUN_LIMIT_FRAMES : packed.cycles === undefined ? LOADER_FRAMES : RUN_LIMIT_FRAMES + Math.ceil(packed.cycles / PAL_FRAME_CYCLES);
+  const ran = await runLoader(loaderPath, program, loader, image, state, { jump, copierSource, fileByte, copierFrames }, expected);
   output.loader = {
     program: loaderPath,
+    ...(packed === undefined ? {} : { packed: { packedBytes: packed.packedBytes, unpackedBytes: packed.unpackedBytes } }),
     copies: loader.copies.map((copy) => ({ what: copy.what, to: `${formatC64Address(copy.target.start)}-${formatC64Address(copy.target.end)}` })),
     copier: formatC64Address(loader.copier),
     stackByte: formatC64Address(loader.stackByte),
@@ -1112,6 +1139,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   let loaderOutput: Record<string, unknown> | undefined;
   if (state !== undefined) {
     if (exported.loader === undefined) return { result: "FAIL", stage: "loader", reason: exported.loaderRefused ?? "The loader could not be planned." };
+    if (exported.loader.packed === true) return { result: "FAIL", stage: "loader", reason: "The program is too large for one loader file, and export does not make the packed form of the loader." };
     const loaderBuilt = await buildLoader(exported.files, exported.laid, exported.loader, derived.program, state, new Map());
     if ("diagnostics" in loaderBuilt) return { result: "FAIL", stage: "loader", reason: "loader.asm does not assemble. This is a defect of the c64-source script.", diagnostics: loaderBuilt.diagnostics };
     baseline = { program: loaderBuilt.program, symbols: loaderBuilt.symbols, entryFile: "loader.asm" };

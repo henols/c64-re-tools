@@ -5,12 +5,17 @@
 // pointer, A, X, Y and the flags, and jumps to the entry. The copies run
 // from a free page with SEI and all RAM visible, in an order where no copy
 // overwrites the packed bytes of a copy that has not run yet. The plan is
-// simulated here before the emulator runs it.
+// simulated here before the emulator runs it. An image too large for one
+// loader file gets the packed form: Exomizer unpacks the program and the
+// copier, and the copier writes only pages $0002-$03ff.
 
-import { type AddressRange, formatC64Address, formatC64Byte } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, formatC64Byte, prgRange } from "#src/c64.ts";
+import { compareBuild, mergedPrograms } from "#src/compare.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState } from "#src/host-client/entry-state.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
+import { pack } from "#src/native/exomizer.ts";
+import type { ToolContext } from "#src/native/run.ts";
 
 export interface EntryState {
   pc: number;
@@ -104,6 +109,8 @@ export interface LoaderPlan {
   text: string;
   /** The CIA timers and masks that the loader sets, when the entry state has them. */
   cia?: CiaPlan;
+  /** The packed form: loader.asm holds only the copier and pages 0-3, and Exomizer packs it with the build of main.asm. */
+  packed?: boolean;
 }
 
 /**
@@ -185,15 +192,19 @@ const underRom = (address: number) => (address >= 0xa000 && address <= 0xbfff) |
 /**
  * Why a loader stopped before its jump, from the RAM after the stop: the first
  * byte of the moved copier that is not the byte of the loader file, else, when
- * the copier ran, the first byte that a copy did not write as planned.
+ * the copier ran, the first byte that a copy did not write as planned. In the
+ * packed form the unpack puts the copier in place, and `fileByte` gives the
+ * build of loader.asm.
  */
 export function stopCause(ram: Uint8Array, plan: LoaderPlan, copierSource: number, fileByte: (address: number) => number, copied: boolean, expected: (address: number) => number): string | undefined {
   for (let offset = 0; offset <= plan.end - copierSource; offset++) {
     const got = ram[plan.copier + offset]!;
     const wanted = fileByte(copierSource + offset);
     if (got === wanted) continue;
+    const at = formatC64Address(plan.copier + offset);
+    if (plan.packed === true) return `The copier at ${at} holds ${formatC64Byte(got)}, not ${formatC64Byte(wanted)} of the build of loader.asm: the unpack did not write it.`;
     const rom = underRom(copierSource + offset) ? `; ${formatC64Address(copierSource + offset)} is under a ROM, so the move read the ROM` : "";
-    return `The copier at ${formatC64Address(plan.copier + offset)} holds ${formatC64Byte(got)}, not ${formatC64Byte(wanted)} from ${formatC64Address(copierSource + offset)} of the loader file${rom}.`;
+    return `The copier at ${at} holds ${formatC64Byte(got)}, not ${formatC64Byte(wanted)} from ${formatC64Address(copierSource + offset)} of the loader file${rom}.`;
   }
   if (!copied) return undefined;
   for (const copy of plan.copies) {
@@ -380,11 +391,33 @@ const plus = (label: string, offset: number) => (offset === 0 ? label : `${label
 /** The label of the copier in the loader file, which the stub moves to its two pages. */
 export const COPIER_SOURCE = "loader_copier_src";
 
-/** Plans the loader: the packed layout, the copy order and the copier page, and writes loader.asm. Refuses by name when no plan exists. */
+/** A block of the loader: a segment with its files, or bytes of pages 0-3. */
+interface Block {
+  what: string;
+  range: AddressRange;
+  files?: string[];
+  pseudo: number;
+  bytes: (address: number) => number;
+}
+
+/** The block's bytes as !byte lines of 16. */
+function byteLines(range: AddressRange, bytes: (address: number) => number): string[] {
+  const lines: string[] = [];
+  for (let address = range.start; address <= range.end; address += 16) {
+    const last = Math.min(range.end, address + 15);
+    lines.push(`        !byte ${Array.from({ length: last - address + 1 }, (_, offset) => formatC64Byte(bytes(address + offset))).join(",")}`);
+  }
+  return lines;
+}
+
+/**
+ * Plans the loader: the packed layout, the copy order and the copier page, and writes loader.asm.
+ * An image too large for one loader file gets the packed form (see planPacked). Refuses by name when no plan exists.
+ */
 export function planLoader(input: LoaderInput): LoaderPlan {
   const { state } = input;
   // What the copies write: each segment without $00/$01, which the loader sets last, and pages $0002-$03ff where no segment is.
-  const blocks: Array<{ what: string; range: AddressRange; files?: string[]; pseudo: number; bytes: (address: number) => number }> = [];
+  const blocks: Block[] = [];
   for (const segment of input.segments) blocks.push({ what: `segment ${show(segment)}`, range: segment, files: segment.files, pseudo: segment.start, bytes: input.byteAt });
   for (const part of subtract({ start: 0x0002, end: 0x03ff }, input.segments)) {
     blocks.push({ what: `entry state ${show(part)}`, range: part, pseudo: part.start, bytes: (address) => state.pages[address]! });
@@ -408,13 +441,14 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   }
   const cia = ciaSection(state);
   const ciaSize = cia === undefined ? 0 : cia.ops.reduce((sum, op) => sum + op.bytes, 0);
-  // The CIA part takes room from the copy table in the copier's two pages.
-  const maxCopies = Math.min(MAX_COPIES, Math.floor((COPIER_LIMIT - COPIER_CODE_SIZE - (state.vic === undefined ? 0 : VIC_SIZE) - ciaSize - 2) / COPY_ENTRY));
-  if (plain.length > maxCopies) throw new WireFailure("invalid-input", `The loader needs ${plain.length} copies; it can do at most ${maxCopies}. Join segments in the unpacker capture (--range) or write the loader by hand.`);
+  const codeSize = COPIER_CODE_SIZE + (state.vic === undefined ? 0 : VIC_SIZE) + ciaSize;
   const copierImage = at;
-  const copierSize = COPIER_CODE_SIZE + (state.vic === undefined ? 0 : VIC_SIZE) + ciaSize + COPY_ENTRY * plain.length + 2;
-  const end = copierImage + copierSize - 1;
-  if (end > LOAD_LIMIT) throw new WireFailure("invalid-input", `The loader would end at ${formatC64Address(end)}, after ${formatC64Address(LOAD_LIMIT)}: loading it would write the I/O area. The image is too large for one loader file.`);
+  const end = copierImage + codeSize + COPY_ENTRY * plain.length + 2 - 1;
+  // The end can be past $ffff, which is no address.
+  if (end > LOAD_LIMIT) return planPacked(input, blocks, cia, codeSize, `The plain loader would end ${end > 0xffff ? "past $ffff" : `at ${formatC64Address(end)}`}, after ${formatC64Address(LOAD_LIMIT)}: loading it would write the I/O area.`);
+  // The CIA part takes room from the copy table in the copier's two pages.
+  const maxCopies = Math.min(MAX_COPIES, Math.floor((COPIER_LIMIT - codeSize - 2) / COPY_ENTRY));
+  if (plain.length > maxCopies) throw new WireFailure("invalid-input", `The loader needs ${plain.length} copies; it can do at most ${maxCopies}. Join segments in the unpacker capture (--range) or write the loader by hand.`);
 
   const order = copyOrder(plain);
   if (order === undefined) {
@@ -456,20 +490,155 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   for (const block of blocks) {
     lines.push("", `; ${block.what}`, blockLabel(block.range.start, "from"), `!pseudopc ${formatC64Address(block.pseudo)} {`, blockLabel(block.range.start, "to"));
     if (block.files !== undefined) for (const file of block.files) lines.push(`!source "${file}"`);
-    else {
-      for (let address = block.range.start; address <= block.range.end; address += 16) {
-        const last = Math.min(block.range.end, address + 15);
-        lines.push(`        !byte ${Array.from({ length: last - address + 1 }, (_, offset) => formatC64Byte(block.bytes(address + offset))).join(",")}`);
-      }
-    }
+    else lines.push(...byteLines(block.range, block.bytes));
     lines.push("}", blockLabel(block.range.start, "end"));
   }
-  const [port0, port1] = state.port;
-  lines.push(
+  lines.push("", `; The copier runs at ${formatC64Address(copier)}. The flags pass through ${formatC64Address(stackByte)}, the free stack byte below the stack pointer.`, COPIER_SOURCE, `!pseudopc ${formatC64Address(copier)} {`);
+  lines.push(...copierLines(state, cia, stackByte, input.entryName ?? formatC64Address(input.entry)));
+  copies.forEach((copy, index) => {
+    // A block that starts at $0000 skips $00/$01, which the loader sets last.
+    const start = copyBlocks[index]!;
+    const skip = copy.target.start - start;
+    const [from, end, to] = [blockLabel(start, "from"), blockLabel(start, "end"), blockLabel(start, "to")];
+    const length = skip === 0 ? `${end} - ${from}` : `${end} - ${from} - ${skip}`;
+    const read = copy.backward ? `${end} - 1` : plus(from, skip);
+    const write = copy.backward ? `${to} + ${end} - ${from} - 1` : plus(to, skip);
+    lines.push(`        !word ${length}, ${read}, ${write} : !byte ${copy.backward ? 1 : 0} ; ${copy.what}`);
+  });
+  lines.push("        !word 0", "}", "}");
+
+  return {
+    blocks: blocks.map((block, index) => ({ what: block.what, range: block.range, packedAt: packedAt[index]!, bytes: block.bytes })),
+    copies,
+    copier,
+    stackByte,
+    end,
+    text: `${lines.join("\n")}\n`,
+    ...(cia === undefined ? {} : { cia: cia.plan }),
+  };
+}
+
+/** Where the packed form puts its copier with the bytes of pages 0-3: the copier sets $01 to $35 and to the entry's value, so it is not under a ROM or the I/O area. */
+const PACKED_AREAS: readonly AddressRange[] = [
+  { start: 0x0400, end: 0x9fff },
+  { start: 0xc000, end: 0xcfff },
+];
+/** The free ranges that a refusal of the packed form names. */
+const SHOWN_FREE = 8;
+
+/**
+ * The packed form of the loader, for an image too large for one loader file:
+ * Exomizer packs the build of main.asm (from $0400) and the build of
+ * loader.asm into loader.prg, which starts at the copier with all RAM
+ * visible ($01 = $34). loader.asm holds only the copier, at its free range,
+ * and the bytes of pages $0002-$03ff: the unpacker of Exomizer uses the zero
+ * page and $0334-$03ff, so the copier writes them after the unpack.
+ */
+function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof ciaSection>, codeSize: number, tooLarge: string): LoaderPlan {
+  const { state } = input;
+  // The parts below $0400 without $00/$01, which the loader sets last.
+  const low = blocks.flatMap((block) => {
+    const range = { start: Math.max(block.range.start, 0x0002), end: Math.min(block.range.end, 0x03ff) };
+    if (range.start > range.end) return [];
+    const cut = range.start !== block.range.start || range.end !== block.range.end;
+    return [{ what: cut ? `${block.what}, part ${show(range)}` : block.what, range, bytes: block.bytes }];
+  });
+  const maxCopies = Math.floor((256 - 2) / COPY_ENTRY);
+  if (low.length > maxCopies) throw new WireFailure("invalid-input", `${tooLarge} A packed loader needs ${low.length} copies below $0400; it can do at most ${maxCopies}. Join segments in the unpacker capture (--range) or write the loader by hand.`);
+  const tableEnd = codeSize + COPY_ENTRY * low.length + 2;
+  const size = tableEnd + low.reduce((sum, block) => sum + block.range.end - block.range.start + 1, 0);
+  const free = PACKED_AREAS.flatMap((area) => subtract(area, input.segments));
+  const fits = (start: number) => free.some((range) => start >= range.start && start + size - 1 <= range.end);
+  // A free page of the plain copier first, else the start of a free range.
+  const copier = [...COPIER_PAGES, ...free.map((range) => range.start)].find(fits);
+  if (copier === undefined) {
+    const largest = [...free].sort((a, b) => b.end - b.start - (a.end - a.start)).slice(0, SHOWN_FREE);
+    const ranges = largest.length === 0 ? "none" : largest.map((range) => `${show(range)} (${range.end - range.start + 1} bytes)`).join(", ");
+    throw new WireFailure("invalid-input", `${tooLarge} A packed loader needs ${size} free bytes in one range for its copier and the bytes of pages 0-3, in $0400-$9fff or $c000-$cfff outside the segments. The largest free ranges there: ${ranges}. Write the loader by hand.`);
+  }
+  let at = copier + tableEnd;
+  const packed = low.map((block) => {
+    const packedAt = at;
+    at += block.range.end - block.range.start + 1;
+    return { ...block, packedAt };
+  });
+  // The sources are at $0400 or higher and the targets below: any order works.
+  const copies: Copy[] = packed.map((block) => ({ what: block.what, target: block.range, source: { start: block.packedAt, end: block.packedAt + block.range.end - block.range.start }, backward: false }));
+  const stackByte = 0x0100 + state.sp;
+  const lines: string[] = [
+    ...input.header.map((line) => `; ${line}`),
+    "; The image is too large for one loader file, so this is the packed form. c64-packer packs the",
+    `; build of main.asm and the build of this file into loader.prg, with --entry '${formatC64Address(copier)}' and --exit-memory '$34'.`,
+    "; The unpacker of Exomizer uses the zero page and $0334-$03ff, so the copier writes pages $0002-$03ff after the unpack.",
+    "",
+    "!cpu 6510",
     "",
     `; The copier runs at ${formatC64Address(copier)}. The flags pass through ${formatC64Address(stackByte)}, the free stack byte below the stack pointer.`,
+    `* = ${formatC64Address(copier)}`,
     COPIER_SOURCE,
-    `!pseudopc ${formatC64Address(copier)} {`,
+    // The entry by its address: main.asm, which has its label, is not in this build.
+    ...copierLines(state, cia, stackByte, `${formatC64Address(input.entry)}${input.entryName === undefined ? "" : ` ; ${input.entryName} in main.asm`}`),
+  ];
+  for (const copy of copies) {
+    const [from, end] = [blockLabel(copy.target.start, "from"), blockLabel(copy.target.start, "end")];
+    lines.push(`        !word ${end} - ${from}, ${from}, ${formatC64Address(copy.target.start)} : !byte 0 ; ${copy.what}`);
+  }
+  lines.push("        !word 0", "}");
+  for (const block of packed) lines.push("", `; ${block.what}`, blockLabel(block.range.start, "from"), ...byteLines(block.range, block.bytes), blockLabel(block.range.start, "end"));
+  return {
+    blocks: packed.map((block) => ({ what: block.what, range: block.range, packedAt: block.packedAt, bytes: block.bytes })),
+    copies,
+    copier,
+    stackByte,
+    end: copier + size - 1,
+    text: `${lines.join("\n")}\n`,
+    ...(cia === undefined ? {} : { cia: cia.plan }),
+    packed: true,
+  };
+}
+
+/** What Exomizer makes of a packed loader. */
+export interface PackedLoader {
+  /** loader.prg: it loads at $0801 and starts with RUN. */
+  program: Buffer;
+  packedBytes: number;
+  unpackedBytes: number;
+  /** The CPU cycles of the unpack, when Exomizer gives them. */
+  cycles?: number;
+}
+
+/**
+ * Packs the build of main.asm from $0400 and the build of loader.asm (the
+ * copier wins where they overlap) with the entry at the copier and $01 = $34,
+ * and checks the unpack in the emulator of Exomizer: every byte of the two
+ * builds, and the jump to the copier. Refuses by name when it does not hold.
+ */
+export async function packLoader(main: Uint8Array, copier: Uint8Array, plan: LoaderPlan, context: ToolContext): Promise<PackedLoader> {
+  // The unpacker uses pages 0-3; the copier writes them.
+  const program = prgRange(main);
+  const skip = Math.max(0, 0x0400 - program.start);
+  const parts = [...(skip < program.body.length ? [{ start: program.start + skip, body: program.body.subarray(skip) }] : []), prgRange(copier)];
+  const prg = (part: { start: number; body: Uint8Array }) => Buffer.concat([Buffer.from([part.start & 0xff, part.start >> 8]), part.body]);
+  const packed = await pack({ programs: parts.map(prg), entry: plan.copier, exitMemory: 0x34 }, context);
+  if (packed.entry !== plan.copier) throw new WireFailure("operation-failed", `The unpack in the emulator of Exomizer jumps to ${formatC64Address(packed.entry)}, not to the copier at ${formatC64Address(plan.copier)}.`);
+  const reference = mergedPrograms(parts);
+  const wrong = compareBuild(packed.unpacked, reference).segments.find((segment) => segment.result !== "identical");
+  if (wrong !== undefined) {
+    const first = wrong.firstDifference === undefined ? "" : `: the first is ${wrong.firstDifference.address}, ${wrong.firstDifference.built} and not ${wrong.firstDifference.reference}`;
+    throw new WireFailure("operation-failed", `The unpack in the emulator of Exomizer does not give ${wrong.start}-${wrong.end} of main.asm and loader.asm (${wrong.result}${first}).`);
+  }
+  const unpackedBytes = reference.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
+  return { program: packed.program, packedBytes: packed.program.length, unpackedBytes, ...(packed.cycles === undefined ? {} : { cycles: packed.cycles }) };
+}
+
+/**
+ * The copier: its copies by the table, the VIC-II and CIA parts, then $00/$01,
+ * the stack pointer, the flags and A/X/Y, and the jump to the entry. It ends
+ * with the label of the table; the caller writes the table and closes the zone.
+ */
+function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stackByte: number, jumpTarget: string): string[] {
+  const [port0, port1] = state.port;
+  return [
     "!zone loader_copier {",
     "        lda #$34",
     "        sta $01",
@@ -540,7 +709,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     `        ldy #${formatC64Byte(state.y)}`,
     "        plp",
     // A global label: the check of the loader stops here, before an interrupt can run.
-    `${LOADER_JUMP} jmp ${input.entryName ?? formatC64Address(input.entry)}`,
+    `${LOADER_JUMP} jmp ${jumpTarget}`,
     ".count  !word 0",
     ".index  !byte 0",
     ".back   !byte 0",
@@ -551,28 +720,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
           `.vicval !byte ${VIC_DISPLAY_REGISTERS.map((item) => formatC64Byte(state.vic!.registers[item.register]!)).join(",")}`,
         ]),
     ".table",
-  );
-  copies.forEach((copy, index) => {
-    // A block that starts at $0000 skips $00/$01, which the loader sets last.
-    const start = copyBlocks[index]!;
-    const skip = copy.target.start - start;
-    const [from, end, to] = [blockLabel(start, "from"), blockLabel(start, "end"), blockLabel(start, "to")];
-    const length = skip === 0 ? `${end} - ${from}` : `${end} - ${from} - ${skip}`;
-    const read = copy.backward ? `${end} - 1` : plus(from, skip);
-    const write = copy.backward ? `${to} + ${end} - ${from} - 1` : plus(to, skip);
-    lines.push(`        !word ${length}, ${read}, ${write} : !byte ${copy.backward ? 1 : 0} ; ${copy.what}`);
-  });
-  lines.push("        !word 0", "}", "}");
-
-  return {
-    blocks: blocks.map((block, index) => ({ what: block.what, range: block.range, packedAt: packedAt[index]!, bytes: block.bytes })),
-    copies,
-    copier,
-    stackByte,
-    end,
-    text: `${lines.join("\n")}\n`,
-    ...(cia === undefined ? {} : { cia: cia.plan }),
-  };
+  ];
 }
 
 /**

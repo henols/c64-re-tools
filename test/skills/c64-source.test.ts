@@ -13,19 +13,27 @@ import { after, test } from "node:test";
 
 import { COVERAGE, instructionLength } from "../../src/c64.ts";
 import { assemble } from "../../src/native/acme.ts";
-import { ACME, findTool } from "../../src/native/discover.ts";
+import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ciaSection, copyOrder, loaderLimits, planLoader, loaderState, simulate, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { ciaSection, copyOrder, loaderLimits, packLoader, planLoader, loaderState, simulate, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { WireFailure } from "../../src/protocol/messages.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
 import { configValues, entriesInData, entryOutsideImage, layout, render, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
+import { seededBytes } from "../kit.ts";
 
 let acmeSkip: string | false = false;
 try {
   findTool(ACME);
 } catch {
   acmeSkip = "ACME is not installed: install acme or set C64RT_ACME to run these tests";
+}
+let exomizerSkip: string | false = acmeSkip;
+try {
+  findTool(EXOMIZER);
+} catch {
+  exomizerSkip ||= "Exomizer is not installed: install exomizer or set C64RT_EXOMIZER to run these tests";
 }
 let ghidraSkip: string | false = acmeSkip;
 try {
@@ -174,10 +182,12 @@ test("the copy order lets no copy write over a source that is still to be copied
   assert.equal(simulate(memory, ordered, (address) => (address >= 0x2000 ? address & 0xff : (address + 0x100) & 0xff)), undefined);
 });
 
-test("the loader plan refuses a loader that would load into the I/O area, and puts the copier on free pages", () => {
+test("the loader plan puts the copier on free pages, and a loader that would load into the I/O area gets the packed form", () => {
   const byteAt = () => 0;
   const header: string[] = [];
-  assert.throws(() => planLoader({ segments: [{ start: 0x1000, end: 0xdfff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x1000, header }), /after \$cfff/);
+  const large = planLoader({ segments: [{ start: 0x1000, end: 0xdfff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x1000, header });
+  assert.equal(large.packed, true);
+  assert.equal(large.copier, 0x0b00, "the highest free page with room below the segment");
   const plan = planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }, { start: 0xc000, end: 0xc3ff, files: ["b.asm"] }], byteAt, state: state(), entry: 0x0810, header });
   assert.equal(plan.copier, 0xc400);
   assert.equal(plan.stackByte, 0x01f6);
@@ -186,6 +196,45 @@ test("the loader plan refuses a loader that would load into the I/O area, and pu
   assert.doesNotMatch(plan.text, /macros\.asm/);
   const withMacros = planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x0810, header, macros: true });
   assert.match(withMacros.text, /^!source "constants\.asm"\n!source "macros\.asm"\n/m, "the source of the loader has the macros");
+});
+
+test("an image too large for one loader file gets a packed loader: the copier at a free range writes only the parts below $0400", () => {
+  // Found in a field run on a 62 KB game: the end of the plain loader was past $ffff, and the address check threw instead of a reason.
+  const byteAt = (address: number) => address & 0xff;
+  const header: string[] = [];
+  const plan = planLoader({ segments: [{ start: 0x0300, end: 0x0fff, files: ["a.asm"] }, { start: 0x2000, end: 0xffff, files: ["b.asm"] }], byteAt, state: state(), entry: 0x0810, entryName: "start", header });
+  assert.equal(plan.packed, true);
+  assert.equal(plan.copier, 0x1b00, "the highest free page with room for the copier and the bytes of pages 0-3");
+  // 167 bytes of copier code, a table of 2 copies and its end, then 766 + 256 bytes of pages 0-3.
+  assert.equal(plan.end, 0x1b00 + 167 + 2 * 7 + 2 + 766 + 256 - 1);
+  assert.deepEqual(
+    plan.copies.map((copy) => [copy.what, copy.target.start, copy.target.end, copy.source.start]),
+    [
+      ["entry state $0002-$02ff", 0x0002, 0x02ff, 0x1b00 + 183],
+      ["segment $0300-$0fff, part $0300-$03ff", 0x0300, 0x03ff, 0x1b00 + 183 + 766],
+    ],
+  );
+  assert.match(plan.text, /\n\* = \$1b00\nloader_copier_src\n!zone loader_copier \{\n/);
+  assert.match(plan.text, /\nc64_source_loader_jump jmp \$0810 ; start in main\.asm\n/, "main.asm, which has the label, is not in this build");
+  assert.match(plan.text, /\n {8}!word loader_end_0300 - loader_from_0300, loader_from_0300, \$0300 : !byte 0 ; segment \$0300-\$0fff, part \$0300-\$03ff\n/);
+  assert.match(plan.text, /--entry '\$1b00' and --exit-memory '\$34'/);
+  assert.doesNotMatch(plan.text, /!source|!pseudopc/, "the segments are not in loader.asm");
+
+  // Without a free page with room, the copier goes to the start of a free range.
+  const unaligned = planLoader({ segments: [{ start: 0x0400, end: 0x1234, files: ["a.asm"] }, { start: 0x1700, end: 0xffff, files: ["b.asm"] }], byteAt, state: state(), entry: 0x0810, header });
+  assert.equal(unaligned.copier, 0x1235);
+  assert.equal(unaligned.end, 0x1235 + 167 + 7 + 2 + 1022 - 1);
+  assert.deepEqual(unaligned.copies.map((copy) => copy.what), ["entry state $0002-$03ff"]);
+
+  // Without a free range, the refusal names the end past $ffff, the size and the free ranges.
+  assert.throws(
+    () => planLoader({ segments: [{ start: 0x0400, end: 0x0bff, files: ["a.asm"] }, { start: 0x0c10, end: 0xffff, files: ["b.asm"] }], byteAt, state: state(), entry: 0x0810, header }),
+    (error: Error) => {
+      assert.ok(error instanceof WireFailure);
+      assert.equal(error.message, "The plain loader would end past $ffff, after $cfff: loading it would write the I/O area. A packed loader needs 1198 free bytes in one range for its copier and the bytes of pages 0-3, in $0400-$9fff or $c000-$cfff outside the segments. The largest free ranges there: $0c00-$0c0f (16 bytes). Write the loader by hand.");
+      return true;
+    },
+  );
 });
 
 test("a loader that stops early names the first copier byte that is not the file's byte, and else the first byte that a copy did not write", () => {
@@ -203,6 +252,9 @@ test("a loader that stops early names the first copier byte that is not the file
   ram[0x1020] = 0x99;
   assert.equal(stopCause(ram, plan, 0xa000, file, false, expected), undefined, "the copier did not run, so the copies are not checked");
   assert.equal(stopCause(ram, plan, 0xa000, file, true, expected), "The copy of segment $1000-$10ff wrote $99 at $1020, not $20.");
+  // The packed form: the unpack puts the copier in place.
+  ram[0xc010] = 0x00;
+  assert.equal(stopCause(ram, { ...plan, end: 0xc0ff, packed: true }, 0xc000, (address) => file(address + 0xa000 - 0xc000), false, expected), `The copier at $c010 holds $00, not $${file(0xa010).toString(16).padStart(2, "0")} of the build of loader.asm: the unpack did not write it.`);
 });
 
 /** Runs the copy table at the end of an assembled loader on a memory model, as the copier does. */
@@ -289,6 +341,43 @@ test("with real ACME, the loader stub switches the BASIC ROM out before it moves
   assert.deepEqual([...program.subarray(2 + 0x080d - 0x0801, 2 + 0x0812 - 0x0801)], [0x78, 0xa9, 0x34, 0x85, 0x01], "sei, lda #$34, sta $01");
   const copierSource = result.symbols!.find((symbol) => symbol.name === "loader_copier_src")!;
   assert.ok(copierSource.kind === "address" && copierSource.address >= 0xa000, "the copier lies under the BASIC ROM");
+});
+
+test("with real ACME and Exomizer, a 62 KiB image with RAM at $d000-$dfff packs into loader.prg that unpacks to every byte and jumps to the copier", { skip: exomizerSkip, timeout: 600_000 }, async () => {
+  // $0801-$bfff and $c800-$ffff: the copier with pages 0-3 goes to $c000.
+  const segments = [{ start: 0x0801, end: 0xbfff }, { start: 0xc800, end: 0xffff }];
+  // Bytes that pack badly to $5fff and under the I/O area, NOPs elsewhere. Exomizer takes minutes for some regular patterns.
+  const memory = new Uint8Array(0x10000);
+  for (const segment of segments) memory.fill(0xea, segment.start, segment.end + 1);
+  memory.set(seededBytes(3, 0x6000 - 0x0801), 0x0801);
+  memory.set(seededBytes(4, 0x1000), 0xd000);
+  const source: SourceInput = { ...input([0], 0x0801, { regions: segments.map((segment) => ({ ...segment, type: "bytes" as const })) }), segments, byteAt: (address) => memory[address]! };
+  const rendered = render(layout(source), new Set(), []);
+  const pages = Uint8Array.from({ length: 0x400 }, (_, index) => (index * 13 + 5) & 0xff);
+  const plan = planLoader({ segments: segments.map((segment) => ({ ...segment, files: [] })), byteAt: source.byteAt, state: state({ pages }), entry: 0x0810, header: [] });
+  assert.equal(plan.packed, true);
+  assert.equal(plan.copier, 0xc000);
+  const build = async (files: Array<{ name: string; text: string }>, entrySource: string) => {
+    const contents = files.map((file) => Buffer.from(file.text));
+    const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource, includeDirs: [], defines: {} }, contents, localToolContext());
+    assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+    return attachments![0]!;
+  };
+  const files = [...rendered.files, { name: "loader.asm", text: plan.text }];
+  const main = await build(files, "main.asm");
+  const copier = await build(files, "loader.asm");
+  assert.equal(copier.readUInt16LE(0), 0xc000);
+  assert.equal(copier.length - 2, plan.end - 0xc000 + 1, "the build has the planned size");
+  // The copies of the copier give pages $0002-$03ff.
+  const after = new Int16Array(0x10000).fill(-1);
+  copier.subarray(2).forEach((byte, offset) => (after[0xc000 + offset] = byte));
+  assert.equal(simulate(after, plan.copies, (address) => pages[address]!), undefined);
+
+  // The unpack in the emulator of Exomizer gives every byte of both builds, also under the I/O area, and jumps to the copier; else packLoader refuses.
+  const packed = await packLoader(main, copier, plan, localToolContext());
+  assert.equal(packed.program.readUInt16LE(0), 0x0801);
+  assert.equal(packed.unpackedBytes, 0x10000 - 0x0801, "main.asm with its gap, which the copier covers");
+  assert.ok(packed.packedBytes < packed.unpackedBytes, JSON.stringify({ packed: packed.packedBytes }));
 });
 
 test("an entry state file is read with its flags as PLP reads them, and a wrong one is refused", () => {

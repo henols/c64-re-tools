@@ -140,6 +140,26 @@ The script simulates the copies first. Then it runs `loader.prg` in the emulator
 
 The entry state is the state of the base release. Thus the script builds and checks `loader.prg` with the switch values of the base release. For a loader of the default build, build `loader.asm` with the c64-assembler skill and no option.
 
+### The packed loader
+
+A loader file that loads into $d000 or higher writes the I/O area. When the image is too large for one loader file, `loader.asm` has the packed form. The packed form needs Exomizer. It has these differences:
+
+- `loader.asm` holds only the copier and the bytes below $0400: pages $0002-$03ff of the entry state and the parts of segments there. The copier is at a free address, `loader.copier`. The segments at $0400 and higher are not in `loader.asm`.
+- The script packs the build of `main.asm` from $0400 and the build of `loader.asm` into `loader.prg` with Exomizer. Where the two builds overlap, the bytes of `loader.asm` are in `loader.prg`.
+- `10 SYS` starts the unpacker. The unpacker writes all bytes, also at $d000-$dfff. Then it jumps to the copier with all RAM visible ($01 = $34).
+- The unpacker uses the zero page and $0334-$03ff. Thus the copier writes pages $0002-$03ff after the unpack. Then it does steps 4 to 6.
+- The jump to the entry uses the address of the entry, not its label. The build of `loader.asm` does not include `main.asm`.
+
+The script checks the unpack in the emulator of Exomizer. All bytes of the two builds must be correct, and the unpacker must jump to the copier. Then the script runs `loader.prg` in the emulator, as for the plain loader. `loader.packed` gives `packedBytes` and `unpackedBytes`.
+
+To make the packed loader for other switch values, do these steps:
+
+1. Build the program with the c64-assembler skill: `assembler.ts build src main.asm --out build/main.prg`.
+2. Build the copier with the c64-assembler skill: `assembler.ts build src loader.asm --out build/copier.prg`.
+3. Pack the two files with the c64-packer skill: `packer.ts pack build/main.prg build/copier.prg --entry '$c000' --exit-memory '$34' --out build/loader.prg`. The comment at the start of `loader.asm` gives the `--entry` value.
+
+These commands do not work when a segment starts below $0400. Then the build of `main.asm` has bytes in the area of the unpacker. Use `generate --loader` for the base release.
+
 ## Export for a new application
 
 `export` writes the program of the knowledge as the start of a new program: a new project folder and a zip file of it. A person changes the source of the new project directly. The c64-export skill gives the full procedure.
@@ -255,7 +275,7 @@ Do not store:
 - `switches`: the build of each switch that has patches. Each item has `kind`, `default`, `base`, the `define` for the c64-assembler skill and the patches. `result` is the result of the build with the switch at the value that is not `base`. `fits` tells that the build is good, and `changedBytes` counts the changed bytes. `overflow` tells that the code of a patch is longer than its range. `changes outside` gives the first byte outside the ranges that changed. `does not assemble` gives the diagnostics of ACME. `insideNames` lists the labels inside a patch. Code that writes to one of these labels changes the patch when the switch is on.
 - `default`: the default build. `in` lists the switches whose patches are in. `result` and `changedBytes` are as in `switches`.
 - `releases`: the build of each release. Each item has `label`, `base`, `file`, the `define` and the `result`. `identical` tells that the build gives the bytes of the file. `different` gives the segments that differ. `layout differs` tells that the release has other segments than the program: patches cannot move code, so this result does not fail the run. `file changed` tells that the file is not the file that the knowledge recorded. `does not assemble` gives the diagnostics of ACME.
-- `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`. `limits` lists the CIA values that the loader cannot set. An entry state from an old capture has no CIA values. Then `limits` tells you to capture the program again. When the script cannot make the loader, `loader` has `verified: false` and a `reason`. The loader includes the source. Thus a source that does not assemble to the program also stops the loader.
+- `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`. A packed loader also has `packed` with `packedBytes` and `unpackedBytes`. `limits` lists the CIA values that the loader cannot set. An entry state from an old capture has no CIA values. Then `limits` tells you to capture the program again. When the script cannot make the loader, `loader` has `verified: false` and a `reason`. The loader includes the source. Thus a source that does not assemble to the program also stops the loader.
 
 `result` is `PASS` when the source is identical and the emulator check of the loader passes. `result` is `FAIL` for a failed check and for an entry in no segment. These also give `FAIL`:
 
@@ -282,8 +302,9 @@ Do not store:
 - `dataOnly`: this is not a failure. If the space has code, give `--entry` or classify the code with the c64-knowledge skill. Then generate again.
 - `entriesInData`: an analyzer region of data hides the code at the entry. If the entry is code, record a code region at the entry with the c64-knowledge skill, for example `classify '$0500-$05ff' code`. A region of the user or the LLM replaces the analyzer region. Then generate again.
 - `loader.verified: false` with a `reason`: the script did not make the loader. The script still writes and checks the source. When no copy order or no free pages exist, or the loader needs too many copies, the reason gives the ranges. Capture the program again with fewer segments, or write the loader by hand.
+- `loader.verified: false` with a `reason` about the packed form: the image is too large for one loader file. If the reason tells that Exomizer is not installed, stop the task. Give the message to the user. If no free range has space for the copier, the reason gives the largest free ranges. Write the loader by hand. If the unpack check of Exomizer fails, give the reason to the user.
 - `loader.verified: false` with `differences`: the loader ran, and `differences` gives the bytes and registers that are not equal.
-- `loader.verified: false` with `stop`: the loader did not get to its copier or to its jump. `stop` gives the address where it stopped and `port`, the value of $01. `history` gives the last 16 instructions. `cause` gives the first byte of the copier that is not equal to its byte in the loader file. If the copier ran, `cause` can also give the first byte that a copy did not write correctly.
+- `loader.verified: false` with `stop`: the loader did not get to its copier or to its jump. `stop` gives the address where it stopped and `port`, the value of $01. `history` gives the last 16 instructions. `cause` gives the first byte of the copier that is not equal to its byte in the loader file. For a packed loader, `cause` gives the first byte of the copier that the unpack did not write. If the copier ran, `cause` can also give the first byte that a copy did not write correctly.
 - `export` with `stage: "original"`: the source of the knowledge does not pass. Run `generate`, and correct the knowledge until `generate` gives PASS.
 - `export` with `stage: "switches"`: the build with the export values changes bytes outside the patches, or a patch does not fit. Read `build`. Correct the patches.
 - `export` refuses two switches that change one range: the export puts both alternatives in. Give all but one of them the kind `change` and the default of the base release with `switch` of the c64-knowledge skill.

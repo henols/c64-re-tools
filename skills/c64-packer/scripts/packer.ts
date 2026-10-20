@@ -6,7 +6,7 @@
 import { posix } from "node:path";
 
 import { findHandoffs, formatC64Address, parseTokenized, prgRange } from "#src/c64.ts";
-import { compareBuild, type Reference } from "#src/compare.ts";
+import { compareBuild, mergedPrograms } from "#src/compare.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
@@ -27,24 +27,6 @@ function sysEntry(program: Uint8Array): number | string {
   if (sys === undefined) return "Its BASIC program has no SYS.";
   if (!("address" in sys)) return `Its SYS in line ${sys.line} has the argument ${sys.expression}, which needs run-time values.`;
   return sys.address;
-}
-
-/** The inputs merged in load order, as the reference of the check: a later file wins where two overlap. */
-function merged(programs: ReadonlyArray<{ start: number; body: Uint8Array }>): Reference {
-  const memory = new Uint8Array(0x10000);
-  const loaded = new Uint8Array(0x10000);
-  for (const { start, body } of programs) {
-    memory.set(body, start);
-    loaded.fill(1, start, start + body.length);
-  }
-  const segments: Array<{ start: number; end: number }> = [];
-  for (let address = 0; address < 0x10000; address++) {
-    if (loaded[address] === 0) continue;
-    const last = segments.at(-1);
-    if (last !== undefined && last.end === address - 1) last.end = address;
-    else segments.push({ start: address, end: address });
-  }
-  return { segments, byteAt: (address) => memory[address]! };
 }
 
 const samePath = (a: string, b: string) => posix.normalize(a.replaceAll("\\", "/")) === posix.normalize(b.replaceAll("\\", "/"));
@@ -88,7 +70,7 @@ await runScript({
         const exitMemory = call.count("exit-memory");
         const packed = await pack({ programs: programs.map((program) => program.bytes), entry, ...(exitMemory === undefined ? {} : { exitMemory }) }, localToolContext());
 
-        const reference = merged(programs);
+        const reference = mergedPrograms(programs);
         const check = compareBuild(packed.unpacked, reference);
         const entryReached = packed.entry === entry;
         const different = !entryReached || check.segments.some((segment) => segment.result === "different");

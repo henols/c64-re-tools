@@ -47,3 +47,21 @@ export function compareBuild(prg: Uint8Array, program: Reference): { identical: 
   });
   return { identical: checks.every((check) => check.result === "identical"), segments: checks };
 }
+
+/** PRG files merged in load order, as the reference of a check: a later file wins where two overlap. */
+export function mergedPrograms(programs: ReadonlyArray<{ start: number; body: Uint8Array }>): Reference {
+  const memory = new Uint8Array(0x10000);
+  const loaded = new Uint8Array(0x10000);
+  for (const { start, body } of programs) {
+    memory.set(body, start);
+    loaded.fill(1, start, start + body.length);
+  }
+  const segments: Array<{ start: number; end: number }> = [];
+  for (let address = 0; address < 0x10000; address++) {
+    if (loaded[address] === 0) continue;
+    const last = segments.at(-1);
+    if (last !== undefined && last.end === address - 1) last.end = address;
+    else segments.push({ start: address, end: address });
+  }
+  return { segments, byteAt: (address) => memory[address]! };
+}
