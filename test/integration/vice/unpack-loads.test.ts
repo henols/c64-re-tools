@@ -123,3 +123,35 @@ test("loads of a PRG without a BASIC start line gives loaded false, an empty cap
   assert.deepEqual([json.result, json.loaded, json.captures], ["FAIL", false, []]);
   assert.match(json.reason, /^After RUN, BASIC ran no program line in \d+ frames\. loads starts a PRG with RUN, so it needs a program with a BASIC start line, for example 10 SYS 2061\. For a PRG without a BASIC start, use capture with --entry\.$/);
 });
+
+test("a capture holds the RAM under the I/O area that the program wrote, and leaves out an --exclude range", { skip: liveSkip, timeout: 300_000 }, async () => {
+  const supervisor = new ProcessSupervisor();
+  supervisor.installExitGuard();
+  server ??= await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  // 10 SYS 2061; with all RAM ($01 = $34) it fills $d000-$d0ff and $c000-$c0ff with $5a, then waits at $0824.
+  const io = Uint8Array.from([
+    0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00,
+    0x78, 0xa9, 0x34, 0x85, 0x01, 0xa2, 0x00, // $080d: SEI; LDA #$34; STA $01; LDX #0
+    0xa9, 0x5a, 0x9d, 0x00, 0xd0, 0x9d, 0x00, 0xc0, 0xe8, 0xd0, 0xf5, // $0814: LDA #$5A; STA $D000,X; STA $C000,X; INX; BNE $0814
+    0xa9, 0x37, 0x85, 0x01, 0x58, 0x4c, 0x24, 0x08, // $081f: LDA #$37; STA $01; CLI; JMP $0824
+  ]);
+  writeFileSync(join(project, "io.prg"), io);
+  writeFileSync(join(project, "io.json"), JSON.stringify([{ runUntil: { target: { kind: "address", address: "$0824" }, timeoutFrames: 600 } }, { capture: "io" }]));
+  const child = spawn(process.execPath, [...process.execArgv, script, "loads", "io.prg", "--steps", "io.json", "--out", "io", "--min-block", "1", "--exclude", "$c000-$c0ff"], {
+    cwd: project,
+    env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  let stdout = "";
+  child.stdout.on("data", (chunk) => (stdout += chunk));
+  const [status] = (await once(child, "exit")) as [number | null];
+  assert.equal(status, 0, stdout);
+  const json = JSON.parse(stdout) as { captures: Array<{ segments: Array<{ start: string; end: string }>; excluded?: Array<{ start: string; end: string }> }> };
+  const [capture] = json.captures;
+  assert.ok(capture!.segments.some((segment) => segment.start === "$d000" && segment.end === "$d0ff"), `the RAM under the I/O area is a segment: ${JSON.stringify(capture!.segments)}`);
+  assert.ok(!capture!.segments.some((segment) => segment.start <= "$c0ff" && segment.end >= "$c000"), `the excluded range is no segment: ${JSON.stringify(capture!.segments)}`);
+  assert.deepEqual(capture!.excluded, [{ start: "$c000", end: "$c0ff" }]);
+  const image = JSON.parse(readFileSync(join(project, "io", "io", "image.json"), "utf8")) as { excluded: unknown };
+  assert.deepEqual(image.excluded, [{ start: "$c000", end: "$c0ff" }]);
+  assert.deepEqual([...readFileSync(join(project, "io", "io", "segment-d000-d0ff.prg")).subarray(2, 6)], [0x5a, 0x5a, 0x5a, 0x5a]);
+});

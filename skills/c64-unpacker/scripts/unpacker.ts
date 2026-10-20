@@ -8,7 +8,7 @@
 
 import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, READ, WRITE } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
-import { readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
+import { IO_RAM, markIoRamWrites, readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { readActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
@@ -226,6 +226,14 @@ async function follow(
   const basic = basicStart(bytes);
   const notStarted = await startLoaded(client, program, bytes, options.entry);
   if (notStarted !== undefined) return { stages: [], frames: 0, reached: false, failed: notStarted };
+  // The map gives a write to the RAM under the I/O area as an I/O write: a compare of that RAM at each stage end finds them.
+  const readIoRam = () => readRam(client, IO_RAM.start, IO_RAM.end - IO_RAM.start + 1);
+  let ioRam = await readIoRam();
+  const markIoRam = async (map: Uint8Array) => {
+    const now = await readIoRam();
+    markIoRamWrites(map, ioRam, now);
+    ioRam = now;
+  };
   // The frames of each step end where a scenario's do: the first step counts from RUN, a later one from where it starts.
   let anchor: { line: number; cycle: number } | undefined = await rasterAt(client);
   const framed = () => (anchor === undefined ? {} : { anchor });
@@ -244,6 +252,7 @@ async function follow(
   let stage = { map: new Uint8Array(0x10000), own: new Set<number>(), called: [] as AddressRange[] };
   const startStage = async (next: number, last: Uint8Array) => {
     mergeMaps(stage.map, last);
+    await markIoRam(stage.map);
     found.push({ entry, firstFrame, frames: total - firstFrame, wrote: stageWrote(stage.map), next });
     entry = next;
     firstFrame = total;
@@ -434,6 +443,7 @@ async function follow(
   else reached = await trackTo(options.until, left);
   await client.snapshot({ action: "remove", name: STAGE_SNAPSHOT }).catch(() => undefined);
   mergeMaps(stage.map, await readCoverage(client));
+  await markIoRam(stage.map);
   found.push({ entry, firstFrame, frames: total - firstFrame, wrote: stageWrote(stage.map) });
   return { stages: found, frames: total, reached, ...(halted === undefined ? {} : { halted }) };
 }
@@ -562,6 +572,7 @@ const PROGRAM = { name: "<program>", help: "a PRG file, relative to the project 
 const FRAMES: OptionSpec = { ...OPTIONS.frames, max: 30_000, default: 3000, help: "run the program for n frames (default 3000)" };
 const ENTRY: OptionSpec = { ...OPTIONS.entry, help: "start the program here in place of RUN" };
 const STEPS: OptionSpec = { ...OPTIONS.steps, help: "action steps (JSON) that run right after the program starts, for example to press a key in an intro or to get through a menu" };
+const EXCLUDE: OptionSpec = { kind: "range", value: "<start>-<end>", multiple: true, help: "a range to leave out of the segments, for example bytes that a crack left and the program never reads" };
 const MIN_STAGE: OptionSpec = { kind: "count", value: "<bytes>", min: 1, max: 0x10000, default: 64, help: "a stage starts when the CPU executes a block of at least this many bytes that the stage before wrote (default 64)" };
 
 /** The result of a command: PASS, or FAIL with the reason. */
@@ -611,7 +622,7 @@ const COMMANDS: CommandSpec[] = [
       until: { kind: "address", value: "<address>", required: true, help: "the unpacked entry point" },
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the capture, relative to the project folder" },
       range: { ...OPTIONS.range, help: "one segment in place of the found ones" },
-      exclude: { kind: "range", value: "<start>-<end>", multiple: true, help: "a range to leave out of the segments, for example bytes that a crack left and the program never reads" },
+      exclude: EXCLUDE,
       "timeout-frames": { ...OPTIONS["timeout-frames"], max: 30_000, default: 3000, help: "stop the wait for --until after n frames (default 3000)" },
       entry: ENTRY,
       steps: STEPS,
@@ -639,8 +650,9 @@ const COMMANDS: CommandSpec[] = [
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the captures, relative to the project folder" },
       drive: { kind: "flag", help: "also write the 2 KiB drive RAM as drive8.prg, for knowledge space drive8" },
       "min-block": { kind: "count", value: "<bytes>", min: 1, max: 0x10000, default: 64, help: "write a changed block of at least this many bytes (default 64)" },
+      exclude: EXCLUDE,
     },
-    run: async (call) => outcome(await loads(call.subject(0), { out: call.string("out")!, steps: readLoadSteps(call.string("steps")!), drive: call.flag("drive"), minBlock: call.count("min-block")! })),
+    run: async (call) => outcome(await loads(call.subject(0), { out: call.string("out")!, steps: readLoadSteps(call.string("steps")!), drive: call.flag("drive"), minBlock: call.count("min-block")!, exclude: call.ranges("exclude") })),
   },
 ];
 

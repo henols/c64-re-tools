@@ -33,7 +33,7 @@ node <skill>/scripts/unpacker.ts loads original/game.d64 --steps .c64-re-tools/l
 | `--until '$c000'` | `capture`: the address where the unpacked program starts. The capture stops there after the steps. To capture a later arrival at the address, add a `runUntil` step to an address after the first arrival. |
 | `--out .c64-re-tools/local/capture` | `capture` and `loads`: the folder for the result, relative to the project folder. |
 | `--range '$c000-$cfff'` | `capture` only: write this range as the one segment. Without it, the segments are the blocks that the stages wrote. The range must hold the `--until` address. |
-| `--exclude '$a000-$a9ff'` | `capture` only: remove this range from the segments. You can give it more than once. `image.json` lists the ranges in `excluded`. The range must not hold the `--until` address. |
+| `--exclude '$a000-$a9ff'` | `capture` and `loads`: remove this range from the segments. You can give it more than once. `image.json` lists the ranges in `excluded`. For `capture`, the range must not hold the `--until` address. |
 | `--timeout-frames 3000` | `capture` only: how many frames the program can run before the capture stops (default 3000). |
 | `--frames 3000` | `trace` and `stages`: how many frames the program runs (default 3000). |
 | `--entry '$c000'` | `trace`, `stages` and `capture`: start the program at this address. Without it, the script types RUN. A file that is not a BASIC program at `$0801` needs it. |
@@ -43,7 +43,7 @@ node <skill>/scripts/unpacker.ts loads original/game.d64 --steps .c64-re-tools/l
 | `--min-block 64` | `loads` only: the smallest block of changed memory that becomes a segment (default 64). The result counts smaller changes as `smallChanges`. |
 | `--min-stage 64` | `stages` and `capture`: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). It does not change `wrote` or the segments. |
 
-The capture reads RAM, also the RAM under the ROMs and the I/O area. The script refuses an option that the command does not use. It refuses a wrong `--range` or `--exclude` before the emulator starts.
+The capture reads RAM, also the RAM under the ROMs and the I/O area. A segment can be in the RAM under the I/O area at `$d000`-`$dfff`. VICE shows each write there as an I/O write. Thus the script compares that RAM at the end of each stage or capture. The script refuses an option that the command does not use. It refuses a wrong `--range` or `--exclude` before the emulator starts.
 
 A steps file is a JSON list of steps. Each step has the input of the MCP tool of the same action. An address in a step can be a name. The script refuses an unknown name before the emulator starts. The message gives the file and the step. For example, wait 50 frames and type a space:
 
@@ -134,7 +134,7 @@ A multi-load program loads more parts from the disk while it runs, for example o
 ]
 ```
 
-2. Run `loads` with the steps file and a directory in `--out`. Add `--drive` when the program has its own drive code, for example a fast loader.
+2. Run `loads` with the steps file and a directory in `--out`. Add `--drive` when the program has its own drive code, for example a fast loader. Add `--exclude` for each range of a loader, an intro or a loading picture that the program does not read. The script removes these ranges from the segments of each capture.
 3. Each capture writes `<out>/<name>/` with `image.bin`, `image.json`, `entry_state.json` and a PRG for each segment. It removes the segment PRGs and the `drive8.prg` of an earlier capture that the new `image.json` does not list. A segment is a block of RAM from `$0400` that the program changed after the capture before. The first capture also has the program itself.
 4. Put the part that you work on into the knowledge with `image <out>/<name>/image.json` of the c64-knowledge skill.
 5. With `--drive`, `drive8.prg` is the drive RAM at `$0000`-`$07ff`. Put it into the knowledge with `image <out>/<name>/drive8.prg --space drive8`. Then analyze it with c64-static-analysis and `--space drive8`.

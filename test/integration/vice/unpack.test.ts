@@ -238,3 +238,20 @@ test("a routine that the program writes and calls, and that returns, starts no s
   assert.deepEqual(found.map((stage) => [stage.entry, stage.next]), [["$080d", undefined]], JSON.stringify(found));
   assert.deepEqual(fromScreen(found[0]!.wrote), [{ start: "$4100", end: "$4101" }, { start: "$9e00", end: "$9e7f" }], "the two counters of the program are small blocks");
 });
+
+test("a capture holds the RAM under the I/O area that a stage wrote", { skip: liveSkip, timeout: 180_000 }, async () => {
+  // 10 SYS 2061; with all RAM ($01 = $34) it fills $d000-$d0ff with $5a, then waits at $0821.
+  writeFileSync(
+    join(project, "io.prg"),
+    Uint8Array.from([
+      0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00,
+      0x78, 0xa9, 0x34, 0x85, 0x01, 0xa2, 0x00, // $080d: SEI; LDA #$34; STA $01; LDX #0
+      0xa9, 0x5a, 0x9d, 0x00, 0xd0, 0xe8, 0xd0, 0xf8, // $0814: LDA #$5A; STA $D000,X; INX; BNE $0814
+      0xa9, 0x37, 0x85, 0x01, 0x58, 0x4c, 0x21, 0x08, // $081c: LDA #$37; STA $01; CLI; JMP $0821
+    ]),
+  );
+  const { status, json } = await unpack("capture", "io.prg", "--until", "$0821", "--out", "unpacked/io", "--timeout-frames", "200");
+  assert.equal(status, 0, JSON.stringify(json));
+  const segments = json.segments as Array<{ start: string; end: string }>;
+  assert.ok(segments.some((segment) => segment.start === "$d000" && segment.end === "$d0ff"), `the RAM under the I/O area is a segment: ${JSON.stringify(segments)}`);
+});

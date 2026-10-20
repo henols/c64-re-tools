@@ -4,9 +4,9 @@
 // image with its entry state, and with --drive the drive RAM as a PRG for
 // knowledge space drive8. No tool guesses where a load ends: the steps decide.
 
-import { COVERAGE, formatC64Address } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, formatC64Address } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
-import { readCoverage } from "#src/host-client/coverage.ts";
+import { IO_RAM, markIoRamWrites, readCoverage } from "#src/host-client/coverage.ts";
 import { ACTION_STEP_KINDS, checkActionStep, checkStepNames, isObject, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
@@ -88,6 +88,17 @@ export function changedBlocks(before: Uint8Array, after: Uint8Array, map: Uint8A
   return blocks.filter((block) => block.changed).map(({ start, end, bytes }) => ({ start, end, bytes }));
 }
 
+/**
+ * The blocks of a capture: the changed blocks, also in the RAM under the I/O
+ * area, which the map gives as I/O writes. An excluded range holds no write,
+ * so it cuts the blocks and counts in no small change. Changes `map`.
+ */
+export function captureBlocks(before: Uint8Array, after: Uint8Array, map: Uint8Array, writesKnown: boolean, exclude: readonly AddressRange[]): Array<{ start: number; end: number; bytes: number }> {
+  markIoRamWrites(map, before.subarray(IO_RAM.start, IO_RAM.end + 1), after.subarray(IO_RAM.start, IO_RAM.end + 1));
+  for (const range of exclude) map.fill(0, range.start, range.end + 1);
+  return changedBlocks(before, after, map, 16, writesKnown);
+}
+
 const hex4 = (value: number) => value.toString(16).padStart(4, "0");
 
 /**
@@ -96,7 +107,7 @@ const hex4 = (value: number) => value.toString(16).padStart(4, "0");
  * `drive` the drive RAM as drive8.prg. Blocks below `minBlock` bytes are
  * counted, not written: a game changes its variables all the time.
  */
-export async function loads(program: string, options: { out: string; steps: LoadStep[]; drive: boolean; minBlock: number }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+export async function loads(program: string, options: { out: string; steps: LoadStep[]; drive: boolean; minBlock: number; exclude: AddressRange[] }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     // A clean machine at the READY prompt shows what the program changed at each capture. The run goes on after a capture, so it is read first.
@@ -159,7 +170,7 @@ export async function loads(program: string, options: { out: string; steps: Load
         for (let address = load; address < Math.min(0x10000, load + loadedProgram.length - 2); address++) map[address]! |= COVERAGE.ramWrite;
         loadedProgram = undefined;
       }
-      const blocks = changedBlocks(previous, memory, map, 16, writesKnown);
+      const blocks = captureBlocks(previous, memory, map, writesKnown, options.exclude);
       const segments = blocks.filter((block) => block.end - block.start + 1 >= options.minBlock);
       const small = blocks.filter((block) => !segments.includes(block)).reduce((sum, block) => sum + block.bytes, 0);
       const state = await machineState(client);
@@ -186,6 +197,7 @@ export async function loads(program: string, options: { out: string; steps: Load
           capture: step.capture,
           entry: formatC64Address(registers.pc),
           segments: segments.map((segment, at) => ({ ...showRange(segment), file: files[at] })),
+          ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
           vectors,
           image: "image.bin",
           ...(drive === undefined ? {} : { drive }),
@@ -204,6 +216,7 @@ export async function loads(program: string, options: { out: string; steps: Load
         pc: formatC64Address(registers.pc),
         ...(keyWait ? { keyWait: true } : {}),
         segments: segments.map(showRange),
+        ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
         differsFromReset: entry.differsFromReset,
         ...(small === 0 ? {} : { smallChanges: small }),
         ...(drive === undefined ? {} : { drive: drive.file }),

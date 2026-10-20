@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
-import { changedBlocks, readLoadSteps } from "../../skills/c64-unpacker/scripts/lib/loads.ts";
+import { captureBlocks, changedBlocks, readLoadSteps } from "../../skills/c64-unpacker/scripts/lib/loads.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
 
@@ -70,4 +70,28 @@ test("with known writes, a capture block keeps the bytes written with the value 
     { start: 0x2000, end: 0x207f, bytes: 128 },
     { start: 0x20c0, end: 0x20ff, bytes: 64 },
   ]);
+});
+
+test("a capture block holds the changed RAM under the I/O area, which the map gives as I/O writes", () => {
+  // A loader copies 4 KiB to $d000-$dfff with $01 = $00, and the game writes the VIC-II registers.
+  const before = new Uint8Array(0x10000);
+  const after = new Uint8Array(0x10000);
+  const map = new Uint8Array(0x10000);
+  map.fill(COVERAGE.ioWrite, 0xd000, 0xe000);
+  after.fill(0x42, 0xd000, 0xe000);
+  after[0xd020] = 0; // written with the value that was there: VICE start RAM
+  assert.deepEqual(captureBlocks(before, after, map, true, []), [{ start: 0xd000, end: 0xdfff, bytes: 4095 }]);
+  // A register write that changed no RAM is no block.
+  const registers = new Uint8Array(0x10000);
+  registers.fill(COVERAGE.ioWrite, 0xd000, 0xd030);
+  assert.deepEqual(captureBlocks(before, before, registers, true, []), []);
+});
+
+test("an excluded range cuts the capture blocks and counts in no small change", () => {
+  const before = new Uint8Array(0x10000);
+  const after = new Uint8Array(0x10000);
+  const map = new Uint8Array(0x10000);
+  map.fill(COVERAGE.ramWrite, 0xbf00, 0xc400);
+  after.fill(0x11, 0xbf00, 0xc400);
+  assert.deepEqual(captureBlocks(before, after, map, true, [{ start: 0xc000, end: 0xc3ff }]), [{ start: 0xbf00, end: 0xbfff, bytes: 256 }]);
 });

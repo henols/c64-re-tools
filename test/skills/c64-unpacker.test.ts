@@ -101,6 +101,8 @@ test("inspect, trace, stages and capture take a PRG: a disk image and a file pas
   assert.equal(refused("stages", "packed.prg", "--steps", "raster.json"), "--steps raster.json: step 2: stages takes a runUntil step only with an address target without a condition. Use frames steps, or capture");
   writeFileSync(join(project, "parts.json"), JSON.stringify([{ wait: 10 }, { capture: "a" }]));
   assert.equal(refused("loads", "game.d64", "--steps", "parts.json", "--out", "parts"), "--steps parts.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil, capture");
+  writeFileSync(join(project, "part.json"), JSON.stringify([{ capture: "a" }]));
+  assert.equal(refused("loads", "game.d64", "--steps", "part.json", "--out", "parts", "--exclude", "$a9ff-$a000"), "--exclude ends at $a000, before its start $a9ff");
 });
 
 test("the memory map is read again from next until no more ranges follow", async () => {

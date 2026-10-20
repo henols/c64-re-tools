@@ -19,6 +19,18 @@ export async function readCoverage(session: Pick<ViceSessionClient, "memmap">, s
   return map;
 }
 
+/** The I/O area. VICE maps every write there as an I/O write, also one with the RAM banked in by $01. */
+export const IO_RAM = { start: 0xd000, end: 0xdfff } as const;
+
+/**
+ * Marks as RAM writes the bytes of the RAM under the I/O area that changed
+ * between two reads of it, in a map from $0000. That RAM changes only by a
+ * write with the I/O area banked out. `before` and `after` hold $d000-$dfff.
+ */
+export function markIoRamWrites(map: Uint8Array, before: Uint8Array, after: Uint8Array): void {
+  for (let offset = 0; offset <= IO_RAM.end - IO_RAM.start; offset++) if (before[offset] !== after[offset]) map[IO_RAM.start + offset]! |= COVERAGE.ramWrite;
+}
+
 /** Runs of RAM that a program wrote, at least `minimum` bytes each, in a map from $0000. */
 export function writtenBlocks(map: Uint8Array, minimum: number): CodeRange[] {
   const blocks: CodeRange[] = [];
