@@ -1,6 +1,6 @@
 ---
 name: c64-docs
-description: Writes the documentation of a C64 program. You write the pages by the method of this skill. The script generates the reference pages from the project knowledge and the generated source. The pages put first the development of the program and its copy protection, in depth, with the findings and what each one means in practice. They explain how the program works, with links to the main parts of the source, and they list the releases in short. Use it to document a program after its rebuilt source is identical to the original. Use it to keep the documentation correct after a change to the project knowledge. It does not change the project knowledge, and it does not run the program.
+description: Writes the documentation of a C64 program. You write the pages by the method of this skill. The script generates the reference pages from the project knowledge and the generated source. The pages put first the development of the program and its copy protection, in depth, with the findings and what each one means in practice. They explain how the program works, with links to the main parts of the source, and they list the releases in short. They tell the history of a crack only when the crack left traces in the program. Use it to document a program after its rebuilt source is identical to the original. Use it to keep the documentation correct after a change to the project knowledge. It does not change the project knowledge, and it does not run the program.
 ---
 
 # C64 documentation
@@ -212,7 +212,8 @@ Errors:
    - Read the leftover spaces and their comments in the project knowledge. If the knowledge has none, find the leftovers of the development in the program.
    - For two or more releases, compare the releases. Then you can separate the program from the changes of each release.
    - Find each check of the copy protection in the code, and the effect of a failed check.
-   - Do not examine the cracks in detail. They are not part of the program.
+   - Find the traces of each crack in the program. The bytes that the compare of the releases shows are the start. Examples are a check that the crack changed, a group text in the program, and bytes in memory that the program now uses.
+   - Do not examine the intro, the mover or the relocator of a crack. They are not part of the program.
 6. Write each page. Read the code and the knowledge for each fact. When a fact needs a run, run the program in a test run or in the emulator. Explain each part before you name the code. Link only the main parts. Mark each fact with its evidence. Several subagents can write the pages at the same time, one page each. Give each subagent `<skill>/references/page-types.md` and `<skill>/references/style.md`.
 7. Record each new fact in the project knowledge first: a name, a comment, a region or a module. Then the source and the reference show it too. A fact that is only in a page is lost at the next change of the knowledge.
 8. Run `link`. Correct each problem. Then run `link` with `--check`. Make sure that `result` is `PASS`.

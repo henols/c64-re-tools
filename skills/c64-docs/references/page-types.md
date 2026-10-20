@@ -14,7 +14,16 @@ The most interesting parts for a reader are the development of the program and i
 4. **Findings.** The bugs and the facts that a reader does not expect. Write a bulleted list, not a table. Each item has a title in bold, the facts and the evidence. It also has a link to the page with the details. Then tell what the finding means in practice. Examples are what a player sees, what a test or a fix can use, and what a preservation project must know. Mark an idea that no run showed as **Conclusion**.
 5. **How the program works.** A short walk through the program, from the start to the main loop. Tell what the program does at each stage and why. Use one mermaid diagram of the layers and one of the flow of the player. Under the diagrams, a numbered list tells how the layers work together. Link only the entry of each layer, for example the cold start, the main loop and the interrupt. Use about 5 to 8 links in the full section.
 6. **The pages.** A table with one row for each page: the link and one sentence about its content. The sentences have no links to the code.
-7. **The releases.** A short section. A small table gives each known release: the label, the file and the SHA-256 of the file. Then one line for each crack tells what it adds around the program, and the bytes of the program that it changed. Do not describe the intro, the mover or the relocator of a crack in detail. They are not part of the program.
+7. **The releases.** A small table gives each known release: the label, the file and the SHA-256 of the file. Then one line for each crack tells the group, what the crack adds around the program, and the bytes of the program that it changed. When a crack left a trace in the program that is interesting, give it a short paragraph. Tell what the trace is, how you identified it, and what it means in practice. Link the code of the trace one time. A group that left no such trace gets only its line. Do not describe the intro, the mover or the relocator of a crack. They are not part of the program.
+
+   Examples of traces that are interesting:
+
+   - A crack changed a check or other code of the program.
+   - The program now uses bytes that a crack left in memory.
+   - A group made its release from the crack of a different group.
+   - A release is a memory dump of a program that ran.
+   - A crack put a text or a tag into the program.
+   - A crack damaged a part of the program, for example a level that does not load.
 8. **The rebuild.** Which release is the base release, the program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. A table of the switches of the project knowledge: the name, the kind, the default and the releases that have the switch on. How to build the default program and each release. Which scenarios compare the original with the rebuild.
 9. **Still open.** What is not known yet, and which run can find it.
 10. **The reference.** One line with a link to `docs/reference/index.md`.
@@ -69,6 +78,8 @@ flowchart TB
 ## The releases
 
 <A small table of the releases, and one line for each crack.>
+
+<For each crack with a trace in the program: one short paragraph about the trace, how you know, and what it means in practice.>
 
 ## The rebuild
 
@@ -221,7 +232,7 @@ One page, `docs/protection.md`, that explains the copy protection of the program
 1. **The scheme.** How the original protection works as a whole. Tell about the disk or the loader, and the marks that the loader leaves in memory. Tell which keys the program compares.
 2. **Each check.** For each check, tell where it is and when it runs. Tell what it compares, and how the program hides it. Link the code of the check one time. Use a table for a summary of the checks, without links.
 3. **The effect of a failed check.** What the program does when a check fails. Examples are a crash at once, a slow change of code, damaged data and a wipe of memory. Tell how long the effect takes to show.
-4. **The releases.** In one or two sentences: which checks still run in each release.
+4. **The releases.** In one or two sentences: which checks still run in each release. When a crack changed bytes of the program to stop a check, tell which bytes, and link the code of the change one time.
 5. **The rebuild.** The switch that turns the protection off, the bytes that it changes, and the scenarios that show that the program runs without it.
 6. **Still open.** The checks that no run reached, and the run that can reach them.
 
