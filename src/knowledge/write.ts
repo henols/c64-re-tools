@@ -509,6 +509,10 @@ function classifyStep(db: DatabaseSync, change: Change, origin: Origin, request:
   clearRange(db, change, request.start, request.end, space);
   change.insertRegion({ space, start: request.start, end: request.end, type: request.type, ...(request.element === undefined ? {} : { element: request.element }), origin });
   liftRegionSuppressions(db, change, request.start, request.end, space);
+  // Data is not code: an analyzer reference from there is false code. dual-use bytes are also code.
+  if (!CODE_REGION_TYPES.includes(request.type) && request.type !== "dual-use") {
+    change.close('"references"', "space = ? AND from_address BETWEEN ? AND ? AND origin NOT IN ('user', 'llm')", space, request.start, request.end);
+  }
   const previous = overlapping.filter((row) => row.origin !== origin);
   const current = regionsOverlapping(db, request.start, request.end, space);
   return previous.length === 0 ? { current } : { current, previous };

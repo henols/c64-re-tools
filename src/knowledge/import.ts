@@ -30,7 +30,7 @@ import {
   type RegionRow,
   type SymbolRow,
 } from "./read.ts";
-import { ANALYZERS, CODE_REGION_TYPES, DEFAULT_SPACE, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Analyzer, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
+import { ANALYZERS, CODE_REGION_TYPES, DEFAULT_SPACE, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SEMANTIC_ORIGINS, SYMBOL_KINDS, type Analyzer, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
 import { Change, checkAddress, checkSpace, subtract, SYMBOL_NAME, type Evidence } from "./write.ts";
 
 
@@ -107,7 +107,10 @@ export interface ImportResult {
   /** The analyzer's own rows from an older version that the run closed in symbols: only `retired` counts. */
   symbols: ImportCounts;
   regions: ImportCounts;
-  references: ImportCounts;
+  references: ImportCounts & {
+    /** Findings from an address in a data region of the user, the LLM or a heuristic: false code, not written. */
+    inData: number;
+  };
   conflicts: ImportConflict[];
 }
 
@@ -429,15 +432,35 @@ function keepPiece(desired: Map<string, { start: number; end: number; type: Regi
   desired.set(`${joined.start}-${joined.end}`, joined);
 }
 
+/** Origins whose data regions are not code: an analyzer reference from there is false code. */
+const DATA_HOLDS_NO_REFERENCES = new Set<Origin>([...SEMANTIC_ORIGINS, "heuristic"]);
+
+/** True for an address in a data region of the user, the LLM or a heuristic, other than the analyzer itself; dual-use bytes are also code. */
+function inDataRegion(db: DatabaseSync, analyzer: Analyzer, coverage: AddressRange[], space: Space): (address: number) => boolean {
+  const data = coverage
+    .flatMap((range) => regionsOverlapping(db, range.start, range.end, space))
+    .filter((row) => row.origin !== analyzer && DATA_HOLDS_NO_REFERENCES.has(row.origin) && !isCode(row.type) && row.type !== "dual-use");
+  return (address) => data.some((row) => row.start <= address && address <= row.end);
+}
+
+/**
+ * References replace the analyzer's own in its coverage. A reference from a
+ * data region of the user, the LLM or a heuristic comes from bytes that the
+ * analyzer decoded as code by mistake: it is not imported, and the analyzer's
+ * own reference from there closes.
+ */
 function importReferences(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
   const space = findings.space ?? DEFAULT_SPACE;
   const key = (reference: { from: number; to: number; kind: ReferenceKind }) => `${reference.from}|${reference.to}|${reference.kind}`;
-  const wanted = new Map(findings.references.map((reference) => [key(reference), reference]));
+  const inData = inDataRegion(db, analyzer, coverage, space);
+  const kept = findings.references.filter((reference) => !inData(reference.from));
+  result.references.inData = findings.references.length - kept.length;
+  const wanted = new Map(kept.map((reference) => [key(reference), reference]));
   for (const range of coverage) {
     for (const own of ownReferences(db, analyzer, range, space)) {
       if (wanted.has(key(own))) continue;
-      if (!findings.authoritative.references) continue;
+      if (!findings.authoritative.references && !inData(own.from)) continue;
       change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ? AND origin = ?", space, own.from, own.to, own.kind, analyzer);
       result.references.retired++;
     }
@@ -460,7 +483,7 @@ export function importFindings(db: DatabaseSync, findings: NormalizedFindings, c
   const coverage = validateFindings(findings);
   return transaction(db, () => {
     const change = new Change(db, { origin: findings.analyzer, ...context }, `import-${findings.analyzer}`);
-    const result: ImportResult = { revision: null, names: counts(), symbols: counts(), regions: counts(), references: counts(), conflicts: [] };
+    const result: ImportResult = { revision: null, names: counts(), symbols: counts(), regions: counts(), references: { ...counts(), inData: 0 }, conflicts: [] };
     importNames(db, change, findings, coverage, result);
     importRegions(db, change, findings, coverage, result);
     importReferences(db, change, findings, coverage, result);

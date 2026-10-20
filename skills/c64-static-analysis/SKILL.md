@@ -100,7 +100,7 @@ The script records only structure: code and data regions, analyzer names, and th
 - `analyzer`: `dxa` or `ghidra`. `space` is in `body` only for a space that is not `c64`.
 - `revision`: the revision of the findings, or `null` when the knowledge did not change.
 - `coverage`: the ranges that the analyzer examined.
-- `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `symbols.retired` counts the old symbols of the analyzer that became analyzer names.
+- `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `references.inData` counts the references that the script did not record, because they start in a data region of the user, the LLM or a heuristic. The analyzer decoded these data bytes as code. `symbols.retired` counts the old symbols of the analyzer that became analyzer names.
 - `conflicts`: each place where the analyzer and the project knowledge disagree. `problem` tells the disagreement.
 - `coverageSeeds`: only with coverage. `entryPoints` and `used` give how many entry points the coverage gave, and how many the analysis used. `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
 - `coverageConflicts`: only with coverage. Each analyzer data region where the coverage shows executed code.

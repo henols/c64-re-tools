@@ -99,7 +99,7 @@ test("stale references inside the coverage retire; references from outside stay"
     }),
   );
   const result = importFindings(db, findings("ghidra", 0x2100, 0x21ff, { references: [{ from: 0x2110, to: 0x3000, kind: "read" }] }));
-  assert.deepEqual(result.references, { added: 0, changed: 0, retired: 1, unchanged: 1, suppressed: 0 });
+  assert.deepEqual(result.references, { added: 0, changed: 0, retired: 1, unchanged: 1, suppressed: 0, inData: 0 });
   assert.deepEqual(
     listReferences(db).map((reference) => [reference.from, reference.to, reference.kind]),
     [
@@ -128,8 +128,12 @@ test("a targeted region re-analysis keeps the parts outside its coverage", () =>
   assert.deepEqual(changed.regions, { added: 0, changed: 1, retired: 0, unchanged: 0, suppressed: 0 });
 });
 
-test("semantic knowledge is kept; only a code/data disagreement is a conflict", () => {
+test("semantic knowledge is kept; only a code/data disagreement is a conflict; a reference from data is false code", () => {
   const db = fresh();
+  // An earlier run decoded the bytes at $5810 as code.
+  importFindings(db, findings("ghidra", 0x2000, 0x5fff, { references: [{ from: 0x5810, to: 0xc84c, kind: "read" }] }));
+  importFindings(db, findings("heuristic", 0x5800, 0x58ff, { regions: [{ start: 0x5800, end: 0x58ff, type: "bytes" }] }));
+  classifyRegion(db, { origin: "user" }, { start: 0x5900, end: 0x59ff, type: "dual-use" });
   renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "update_player", kind: "routine" });
   renameSymbol(db, { origin: "user" }, { address: 0x3000, name: "player_x", kind: "variable" });
   classifyRegion(db, { origin: "llm" }, { start: 0x4000, end: 0x403f, type: "sprite" });
@@ -145,7 +149,22 @@ test("semantic knowledge is kept; only a code/data disagreement is a conflict", 
         { start: 0x4000, end: 0x40ff, type: "bytes" },
         { start: 0x5000, end: 0x50ff, type: "code" },
       ],
+      references: [
+        { from: 0x2100, to: 0x3000, kind: "call" },
+        { from: 0x5010, to: 0xd684, kind: "read" },
+        { from: 0x5810, to: 0xc84c, kind: "read" },
+        { from: 0x5910, to: 0x4000, kind: "read" },
+      ],
     }),
+  );
+  assert.deepEqual(result.references, { added: 2, changed: 0, retired: 1, unchanged: 0, suppressed: 0, inData: 2 }, "the run closes its old reference from heuristic data");
+  assert.deepEqual(
+    listReferences(db).map((reference) => [reference.from, reference.to, reference.origin]),
+    [
+      [0x2100, 0x3000, "ghidra"],
+      [0x5910, 0x4000, "ghidra"],
+    ],
+    "the references from the user bitmap and the heuristic bytes are not imported; code and dual-use bytes keep theirs",
   );
   assert.equal(symbolAt(db, 0x2100)?.name, "update_player");
   assert.equal(symbolAt(db, 0x3000)?.name, "player_x");
@@ -160,7 +179,32 @@ test("semantic knowledge is kept; only a code/data disagreement is a conflict", 
     [0x4000, 0x403f, "sprite", "llm"],
     [0x4040, 0x40ff, "bytes", "ghidra"],
     [0x5000, 0x50ff, "bitmap", "user"],
+    [0x5800, 0x58ff, "bytes", "heuristic"],
+    [0x5900, 0x59ff, "dual-use", "user"],
   ]);
+});
+
+test("a data region of the user closes the analyzer references from it; references of the user and from dual-use bytes stay", () => {
+  const db = fresh();
+  importFindings(
+    db,
+    findings("ghidra", 0x6000, 0x61ff, {
+      references: [
+        { from: 0x6010, to: 0x1000, kind: "read" },
+        { from: 0x6110, to: 0x1000, kind: "read" },
+      ],
+    }),
+  );
+  addReference(db, { origin: "user" }, { from: 0x6020, to: 0x1000, kind: "jump" });
+  classifyRegion(db, { origin: "user" }, { start: 0x6000, end: 0x60ff, type: "bitmap" });
+  classifyRegion(db, { origin: "user" }, { start: 0x6100, end: 0x61ff, type: "dual-use" });
+  assert.deepEqual(
+    listReferences(db).map((reference) => [reference.from, reference.origin]),
+    [
+      [0x6020, "user"],
+      [0x6110, "ghidra"],
+    ],
+  );
 });
 
 test("an analyzer does not replace another analyzer; a contradiction is a conflict", () => {
@@ -188,8 +232,18 @@ test("a non-authoritative category adds facts but retires none", () => {
   const partial = findings("ghidra", 0x2000, 0x20ff, { references: [{ from: 0x2020, to: 0x3001, kind: "write" }] });
   partial.authoritative.references = false;
   const result = importFindings(db, partial);
-  assert.deepEqual(result.references, { added: 1, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
+  assert.deepEqual(result.references, { added: 1, changed: 0, retired: 0, unchanged: 0, suppressed: 0, inData: 0 });
   assert.equal(listReferences(db).length, 2);
+});
+
+test("a non-authoritative run still closes its own reference from heuristic data", () => {
+  const db = fresh();
+  importFindings(db, findings("ghidra", 0x7000, 0x70ff, { references: [{ from: 0x7010, to: 0x3000, kind: "read" }] }));
+  importFindings(db, findings("heuristic", 0x7000, 0x70ff, { regions: [{ start: 0x7000, end: 0x70ff, type: "bytes" }] }));
+  const partial = findings("ghidra", 0x7000, 0x70ff);
+  partial.authoritative.references = false;
+  assert.equal(importFindings(db, partial).references.retired, 1);
+  assert.deepEqual(listReferences(db), []);
 });
 
 test("an analyzer name that a symbol has elsewhere is no conflict: it is a second name", () => {
