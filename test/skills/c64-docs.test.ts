@@ -56,8 +56,8 @@ function writeSource(root: string, revision: string, files: Record<string, Array
  * table at $2000 to two handlers; counter at $02 is outside the image; ship is
  * one sprite at $2040, and font is a charset of two characters at $2080.
  */
-function project(): { root: string; revision: string } {
-  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-"));
+function project(root = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-"))): { root: string; revision: string } {
+  mkdirSync(root, { recursive: true });
   projects.push(root);
   const body = new Uint8Array(0x2090 - 0x1000);
   // The RTS table: handler_a-1 ($101f), handler_b-1 ($1027).
@@ -369,4 +369,70 @@ test("docs.ts link reports a page that is a symbolic link to no file or out of t
   const refused = link(root, "elsewhere", "--source", "src");
   assert.equal(refused.status, 2);
   assert.match(String((refused.json.error as { message: string }).message), /elsewhere leads out of the project folder/);
+});
+
+test("docs.ts link in a group folder: a label names the project of a name, the pages link into each project, and a link out of the group is a problem", () => {
+  const group = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-group-"));
+  projects.push(group);
+  mkdirSync(join(group, ".git"));
+  for (const version of ["v1", "v2"]) {
+    project(join(group, version));
+    assert.equal(generate(join(group, version), "src", "--out", "docs/reference").status, 0);
+  }
+  writeFileSync(join(group, "README.md"), "`v1:main` `$1000` and `v2:main` `$1000`, see [v1](v1/README.md).\n\n# Wrong\n\n`main` `$1000`, `v3:main` `$1000` and [out](../elsewhere.md).\n");
+  writeFileSync(join(group, "v1/README.md"), "`main` `$1000` calls `v2:draw` `$1010`. See [the versions](../README.md).\n");
+
+  // From the group folder: the shared page and the pages of a project; --source and --reference are in each project.
+  const first = link(group, "README.md", "v1/README.md", "v1/docs", "--source", "src");
+  assert.equal(first.status, 0, JSON.stringify(first.json));
+  assert.equal(first.json.result, "FAIL");
+  assert.deepEqual(first.json.group, { folder: ".", projects: ["v1", "v2"] });
+  assert.equal(first.json.reference, "docs/reference");
+  assert.match(String(first.envelope.nextAction), /docs\.ts link README\.md v1\/README\.md v1\/docs --source src --project \S+$/, "the next run names the group folder");
+  const shared = readFileSync(join(group, "README.md"), "utf8").split("\n");
+  assert.equal(shared[0], "[`v1:main` `$1000`](v1/src/main_code.asm#L5) and [`v2:main` `$1000`](v2/src/main_code.asm#L5), see [v1](v1/README.md).", "the label stays in the text");
+  assert.equal(shared[4], "`main` `$1000`, `v3:main` `$1000` and [out](../elsewhere.md).");
+  assert.equal(readFileSync(join(group, "v1/README.md"), "utf8"), "[`main` `$1000`](src/main_code.asm#L5) calls [`v2:draw` `$1010`](../v2/src/main_code.asm#L9). See [the versions](../README.md).\n");
+  const problems = (first.json.problems as { listed: Array<{ at: string; project: string; kind: string; message: string }> }).listed;
+  assert.deepEqual(
+    problems.map((problem) => [problem.at, problem.project, problem.kind]),
+    [
+      ["README.md:5", "shared", "unlabelled-name"],
+      ["README.md:5", "shared", "unknown-label"],
+      ["README.md:5", "shared", "outside-group"],
+    ],
+  );
+  assert.match(problems[0]!.message, /^`main` \$1000: A page of the group folder must name the project of each name\. .*`v1:name`/);
+  assert.match(problems[1]!.message, /^`v3:main` \$1000: v3 is no project of the group folder\. The projects are v1, v2\./);
+
+  // A second run writes nothing: the label in the text finds the project again.
+  writeFileSync(join(group, "README.md"), `${shared[0]}\n`);
+  const second = link(group, "README.md", "v1/README.md", "v1/docs", "--source", "src");
+  assert.equal(second.json.result, "PASS", JSON.stringify(second.json));
+  assert.deepEqual(second.json.linked, { links: 0, pages: [] });
+
+  // From a project of the group: the paths are relative to the project, and a link may go to the group and the other projects.
+  const v1 = join(group, "v1");
+  const own = link(v1, "README.md", "docs", "--source", "src", "--check");
+  assert.equal(own.json.result, "PASS", JSON.stringify(own.json));
+  assert.deepEqual(own.json.group, { folder: "..", projects: ["v1", "v2"] });
+
+  // A line that moves in v2 makes the link of the v1 page not up to date.
+  const map = JSON.parse(readFileSync(join(group, "v2/src/source-map.json"), "utf8")) as { labels: Array<{ name: string; line: number }> };
+  map.labels.find((label) => label.name === "draw")!.line = 8;
+  writeFileSync(join(group, "v2/src/source-map.json"), JSON.stringify(map));
+  const moved = link(v1, "README.md", "docs", "--source", "src", "--check");
+  assert.equal(moved.json.result, "FAIL");
+  assert.deepEqual(moved.json.notUpToDate, { links: 1, pages: ["README.md"] });
+  assert.deepEqual(link(v1, "README.md", "--source", "src").json.linked, { links: 1, pages: ["README.md"] });
+  assert.match(readFileSync(join(v1, "README.md"), "utf8"), /\(\.\.\/v2\/src\/main_code\.asm#L8\)/);
+
+  // A link out of the group, and a file of another project that is not there.
+  writeFileSync(join(v1, "README.md"), "[out](../../elsewhere.md) and [v2](../v2/MISSING.md).\n");
+  const out = link(v1, "README.md", "--source", "src");
+  const outProblems = (out.json.problems as { listed: Array<{ at: string; project: string; kind: string; message: string }> }).listed;
+  assert.deepEqual(outProblems.map((problem) => [problem.at, problem.project, problem.kind]), [["README.md:1", "v1", "outside-group"], ["README.md:1", "v1", "missing-file"]]);
+  assert.match(outProblems[1]!.message, /there is no \.\.\/v2\/MISSING\.md\.$/);
+  // A page of the run must be in the project of the run.
+  assert.equal(link(v1, "../README.md", "--source", "src").status, 2);
 });

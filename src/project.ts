@@ -131,6 +131,52 @@ export function namedProject(folder: string, cwd: string = process.cwd()): strin
 }
 
 /**
+ * A group folder: a folder of a git repository, in no project, that holds
+ * projects, for example one project for each version of a game. Its pages can
+ * link into each project, and a page of a project into the other projects.
+ */
+export interface ProjectGroup {
+  root: string;
+  /** The absolute folder of each project in the group, by its folder name, sorted. */
+  projects: Map<string, string>;
+}
+
+/** True when `folder` or a folder above it holds .git. */
+function inRepository(folder: string): boolean {
+  return foldersUpFrom(folder).some((each) => existsSync(join(each, ".git")));
+}
+
+/**
+ * The group at `folder`: its folders that are projects and are not a git
+ * repository of their own. Undefined when `folder` is the home folder, is in a
+ * project, is in no git repository, or holds no project.
+ */
+export function groupAt(folder: string): ProjectGroup | undefined {
+  const root = resolve(folder);
+  if (root === homedir() || dirname(root) === root) return undefined;
+  if (foldersUpFrom(root).some(isProject) || !inRepository(root)) return undefined;
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+  const projects = new Map<string, string>();
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    const path = join(root, entry.name);
+    if (isProject(path) && !existsSync(join(path, ".git"))) projects.set(entry.name, path);
+  }
+  return projects.size === 0 ? undefined : { root, projects };
+}
+
+/** The group of the project `root`: the folder above it, when that is a group that holds the project. */
+export function groupOf(root: string): ProjectGroup | undefined {
+  const group = groupAt(dirname(resolve(root)));
+  return group?.projects.get(basename(resolve(root))) === resolve(root) ? group : undefined;
+}
+
+/**
  * The folder of a new project that `folder` names, relative to the project
  * `currentRoot` or absolute, and the zip file beside it (`<folder>.zip`). The
  * folder must not exist or be empty. It must be outside the current project

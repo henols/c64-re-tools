@@ -89,9 +89,9 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 6. Analyze | Analyze the program statically. The analysis reads the program and the coverage from the project knowledge. | No coverage conflict is open. |
 | 7. Name | If the workspace has a routine library, match the program against it. Apply the matches to the project knowledge. Then name each routine in the scope and give it a comment. Find the platform addresses in the memory map of the C64. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
 | 8. Releases and switches | For a capture, copy its folder to `original/<label>/` first, because git ignores `.c64-re-tools/local/`. Record the original file as the base release in the project knowledge. Record each other release. Compare the releases. Find the leftovers. Record a switch for each copy protection, trainer, cheat, crack change and correction. Record a patch for each range of a switch. Record each leftover as a region with a comment. | The project knowledge lists each switch. Each difference between the releases is in a patch, or the answer gives it as an exception. |
-| 9. Generate | Generate the source from the project knowledge into `src`. For an unpacked program, also generate the loader. | The result of the generation is PASS. Each release with the result `layout differs` is an exception in the answer. |
+| 9. Generate | Generate the source from the project knowledge into `src`. For an unpacked program, also generate the loader. | The result of the generation is PASS. Each release with the result `layout differs` is a version with a project of its own, or an exception in the answer. See "Versions of one program". |
 | 10. Build and test | Build the base release into `build/`, and compare it with the original. Build the default build. Run the test scenarios in `tests/`. Replay each recording on the rebuild. For each replay, give the checkpoint routine, the state and the random state with the names of stage 7. | The criteria of stage 1 are true. |
-| 11. Document | When the criteria ask for documentation, generate it into `README.md` and `docs/`. Then link it. | The link check of the documentation gives PASS. |
+| 11. Document | When the criteria ask for documentation, generate it into `README.md` and `docs/`. For versions in a group folder, also write the shared pages of the group folder. Then link the pages. | The link check of the documentation gives PASS. |
 | 12. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
 
 In stage 5, make the recordings before you change the program. A recording needs no names, and its coverage gives the analysis of stage 6 more code. If you cannot get to a part of the program, ask the user how to get to it. Do stages 7 to 9 again until the source is clear. Each generation writes the source again.
@@ -143,6 +143,29 @@ Commit each folder of the layout and `.c64-re-tools/knowledge/`. The knowledge h
 If the project has a layout, use that layout.
 
 A workspace with several projects keeps its routine library in `library/` beside the projects. The library is not a project folder.
+
+### Versions of one program
+
+Some releases of a program have a different layout. Their code is at different addresses, so patches cannot hold the differences. Each of these releases is a version of the program. Give each version a project of its own in a group folder:
+
+```
+<game>/          the group folder: not a project
+  README.md      the shared entry page: the program, each version, and how the versions differ
+  docs/          the shared pages: the development, the changes between the versions, the releases, the disk layout
+  library/       the routine library of the versions
+  tools/         the scripts for the formats of the program, for all versions
+  v1/            the project of the first version, with the project layout
+  v2/            the project of the second version, with the project layout
+```
+
+1. Make the group folder in the git repository. Do not put `.c64-re-tools/` in it.
+2. Ask the user before you move a project folder. Then move the current project into `<game>/v1/`. The project knowledge keeps its paths relative to the project folder. Thus the knowledge stays valid after the move.
+3. Make a project folder for the new version, for example `<game>/v2/`. Start at stage 2 with the file of that release.
+4. Keep the releases with the same layout in one version. Record them as releases with switches. For example, `v2` holds a base release and a second release from a different crack.
+5. Save the routines of `v1` to the routine library in `<game>/library/`. In stage 7 of `v2`, match the program against that library. Then `v2` gets the names of `v1` for the same routines.
+6. Use the same folders in each version, for example `src` and `docs/reference`.
+7. From the group folder, give `--project v1` or `--project v2` to each script.
+8. Write the facts that the versions share one time, in the pages of the group folder. The pages of each version tell only how that version works.
 
 ## Knowledge
 

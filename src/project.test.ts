@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { Refusal } from "./errors.ts";
-import { findProject, namedProject, newProjectFolder, projectRelative, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
+import { findProject, groupAt, groupOf, namedProject, newProjectFolder, projectRelative, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "./project.ts";
 
 const root = process.cwd();
 
@@ -195,4 +195,25 @@ test("projectRelative gives one spelling of a project path", () => {
   assert.equal(projectRelative("runs//x/../a.bin", root), "runs/a.bin");
   assert.equal(projectRelative(join("runs", "a.bin"), root), "runs/a.bin");
   assert.throws(() => projectRelative("../a.bin", root), /leads out of the project folder/);
+});
+
+test("a group is a folder of a git repository, in no project, with projects in it; a project with its own .git is no member", () => {
+  withHome((home) => {
+    const repository = join(home, "games");
+    const game = join(repository, "fist");
+    for (const version of ["v2", "v1"]) mkdirSync(join(game, version, ".c64-re-tools"), { recursive: true });
+    mkdirSync(join(game, "own", ".c64-re-tools"), { recursive: true });
+    mkdirSync(join(game, "own", ".git"));
+    mkdirSync(join(game, "docs"));
+    assert.equal(groupAt(game), undefined, "no git repository");
+    mkdirSync(join(repository, ".git"));
+    const group = groupAt(game);
+    assert.equal(group?.root, game);
+    assert.deepEqual([...group!.projects], [["v1", join(game, "v1")], ["v2", join(game, "v2")]]);
+    assert.equal(groupOf(join(game, "v1"))?.root, game);
+    assert.equal(groupOf(join(game, "own")), undefined);
+    assert.equal(groupAt(join(game, "v1")), undefined, "a project is no group");
+    assert.equal(groupAt(join(game, "docs")), undefined, "no project in it");
+    assert.equal(groupOf(game), undefined, "the repository holds no project");
+  });
 });

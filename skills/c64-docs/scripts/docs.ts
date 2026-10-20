@@ -6,7 +6,7 @@
 // every link and image of the pages.
 
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { join, posix } from "node:path";
+import { basename, join, posix } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
@@ -15,9 +15,9 @@ import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
 import { currentRevision, listComments, listModules, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { resolveProjectFile, resolveProjectPath } from "#src/project.ts";
+import { groupAt, groupOf, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
-import { checkLinks, linkPage, type Files, type Problem } from "./lib/links.ts";
+import { checkLinks, linkPage, type Files, type LinkContext, type Names, type Problem } from "./lib/links.ts";
 import { buildReference, GENERATED_MARK } from "./lib/reference.ts";
 import { readSourceMap } from "./lib/source-map.ts";
 
@@ -108,162 +108,257 @@ function generate(call: Call): Reply {
 /** A name outside the image covers the addresses up to the next name, at most this many. */
 const MAX_BODY = 256;
 
-const isDirectory = (path: string) => {
-  const real = resolveProjectPath(path);
+const isDirectory = (path: string, root = projectRoot()) => {
+  const real = resolveProjectPath(path, root);
   return existsSync(real) && statSync(real).isDirectory();
 };
 
-function markdownFiles(directory: string): string[] {
-  if (!isDirectory(directory)) throw new WireFailure("not-found", `There is no directory ${directory} in the project folder.`);
-  let root: string;
-  try {
-    root = resolveProjectFile(directory);
-  } catch {
-    throw new WireFailure("invalid-input", `${directory} leads out of the project folder through a symbolic link.`);
-  }
-  const found: string[] = [];
-  const walk = (relative: string) => {
-    for (const entry of readdirSync(join(root, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const path = posix.join(relative, entry.name);
-      if (entry.isDirectory()) walk(path);
-      else if (entry.name.endsWith(".md")) found.push(posix.join(directory, path));
-    }
-  };
-  walk("");
-  return found;
+/**
+ * The folder of a link run. Without a group it is the project. With a group
+ * it is the group folder: the paths of the run are relative to it, and a page
+ * can link into each project of the group.
+ */
+interface Scope {
+  /** The absolute folder that the paths of the run are relative to. */
+  root: string;
+  group: ProjectGroup | undefined;
+  /** The folder of the given pages, relative to root: the project of the run, or "" for root itself. */
+  base: string;
+  /** True when the run is in the group folder and no --project names it: nextAction gives it. */
+  unnamed: boolean;
 }
 
-/** The text of each file that the run read: a page, a source file or a reference page is read once. */
-const texts = new Map<string, string | undefined>();
+/** A project of the run, and its folder relative to the root of the run. */
+interface Member {
+  /** The folder name in a group; undefined without a group. */
+  label: string | undefined;
+  root: string;
+  prefix: string;
+}
 
-const files: Files = {
-  inside: (path) => {
-    try {
-      resolveProjectPath(path);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  exists: (path) => {
-    try {
-      resolveProjectFile(path);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  text: (path) => {
-    if (texts.has(path)) return texts.get(path);
-    let text: string | undefined;
-    try {
-      const real = resolveProjectFile(path);
-      text = statSync(real).isFile() ? readFileSync(real, "utf8") : undefined;
-    } catch {
-      text = undefined;
-    }
-    texts.set(path, text);
-    return text;
-  },
-};
+function linkScope(): Scope {
+  let root: string;
+  try {
+    root = projectRoot();
+  } catch (error) {
+    // The project lookup refuses a folder with projects in it: in a group folder, link works on the group.
+    const group = groupAt(process.cwd());
+    if (group === undefined) throw error;
+    return { root: group.root, group, base: "", unnamed: true };
+  }
+  const at = groupAt(root);
+  if (at !== undefined) return { root, group: at, base: "", unnamed: false };
+  const group = groupOf(root);
+  if (group === undefined) return { root, group, base: "", unnamed: false };
+  return { root: group.root, group, base: basename(root), unnamed: false };
+}
 
-/** A .md entry of a directory that is a symbolic link to no file, or to a file outside the project. */
-const unreadable = (page: string): Problem => ({ page, line: 1, kind: "missing-file", message: `${page} is a symbolic link to no file or to a file outside the project folder.` });
+/** True when `path` is `directory` or below it; every path is below "". */
+const within = (path: string, directory: string | undefined) => directory !== undefined && (directory === "" || path === directory || path.startsWith(`${directory}/`));
 
 function link(call: Call): Reply {
   const check = call.flag("check");
+  const scope = linkScope();
+  const { root, group } = scope;
+  const folder = group !== undefined && scope.base === "" ? "the group folder" : "the project folder";
+  const toRun = (path: string) => posix.normalize(posix.join(scope.base, path));
+  const shown = (path: string) => (scope.base === "" ? path : posix.relative(scope.base, path));
+  const members: Member[] = group === undefined ? [{ label: undefined, root, prefix: "" }] : [...group.projects].map(([label, project]) => ({ label, root: project, prefix: label }));
+  const memberOf = (path: string) => members.find((member) => within(path, member.prefix));
+
+  /** The text of each file that the run read: a page, a source file or a reference page is read once. */
+  const texts = new Map<string, string | undefined>();
+  const files: Files = {
+    inside: (path) => {
+      try {
+        resolveProjectPath(path, root);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    exists: (path) => {
+      try {
+        resolveProjectFile(path, root);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    text: (path) => {
+      if (texts.has(path)) return texts.get(path);
+      let text: string | undefined;
+      try {
+        const real = resolveProjectFile(path, root);
+        text = statSync(real).isFile() ? readFileSync(real, "utf8") : undefined;
+      } catch {
+        text = undefined;
+      }
+      texts.set(path, text);
+      return text;
+    },
+    group: group !== undefined,
+    shown,
+  };
+  const markdownFiles = (directory: string): string[] => {
+    if (!isDirectory(directory, root)) throw new WireFailure("not-found", `There is no directory ${shown(directory)} in ${folder}.`);
+    let real: string;
+    try {
+      real = resolveProjectFile(directory, root);
+    } catch {
+      throw new WireFailure("invalid-input", `${shown(directory)} leads out of ${folder} through a symbolic link.`);
+    }
+    const found: string[] = [];
+    const walk = (relative: string) => {
+      for (const entry of readdirSync(join(real, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+        const path = posix.join(relative, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name.endsWith(".md")) found.push(posix.join(directory, path));
+      }
+    };
+    walk("");
+    return found;
+  };
+  /** A .md entry of a directory that is a symbolic link to no file, or to a file outside the folder of the run. */
+  const unreadable = (page: string): Problem => ({ page, line: 1, kind: "missing-file", message: `${shown(page)} is a symbolic link to no file or to a file outside ${folder}.` });
+
   const given = [...new Set(call.subjects.map((path) => posix.normalize(path)))];
-  for (const path of given) if (!files.inside(path)) throw new UsageError(`<page> must be a path relative to the project folder that stays inside it, not ${path}`);
-  for (const path of given) {
-    if (!path.endsWith(".md") && files.exists(path) && !isDirectory(path)) throw new UsageError(`<pages> takes .md files and directories, not ${path}`);
-  }
-  const directories = given.filter((path) => !path.endsWith(".md") || isDirectory(path));
-  const map = readSourceMap(call.string("source")!);
+  const pagesGiven = given.map(toRun);
+  given.forEach((path, index) => {
+    if (!within(pagesGiven[index]!, scope.base) || !files.inside(pagesGiven[index]!)) throw new UsageError(`<page> must be a path relative to ${folder} that stays inside it, not ${path}`);
+  });
+  given.forEach((path, index) => {
+    const page = pagesGiven[index]!;
+    if (!page.endsWith(".md") && files.exists(page) && !isDirectory(page, root)) throw new UsageError(`<pages> takes .md files and directories, not ${path}`);
+  });
+  const directories = pagesGiven.filter((path) => !path.endsWith(".md") || isDirectory(path, root));
+  // --source and --reference are relative to each project folder: the projects of a group have the same layout.
+  const inProjectFolder = (name: string, value: string) => {
+    const path = posix.normalize(value.replaceAll("\\", "/"));
+    if (posix.isAbsolute(path) || /^[A-Za-z]:/.test(path) || path === ".." || path.startsWith("../")) throw new UsageError(`--${name} must be a path relative to the project folder that stays inside it, not ${value}`);
+    return path;
+  };
+  const source = inProjectFolder("source", call.string("source")!);
   const givenReference = call.string("reference");
-  // The default reference: the reference/ folder in a given folder, or beside a given page.
-  const besides = given.map((path) => (directories.includes(path) ? path : posix.dirname(path)));
-  const reference = givenReference === undefined ? besides.map((path) => posix.join(path, "reference")).find((path) => isDirectory(path)) : posix.normalize(givenReference);
+  const checkedReference = givenReference === undefined ? undefined : inProjectFolder("reference", givenReference);
+  // The default reference: the reference/ folder in a given folder, or beside a given page, of a project.
+  const besides = pagesGiven.map((path) => (directories.includes(path) ? path : posix.dirname(path)));
+  const foundReference = besides.map((path) => posix.join(path, "reference")).find((path) => memberOf(path) !== undefined && isDirectory(path, root));
+  const reference = checkedReference !== undefined ? checkedReference : foundReference === undefined ? undefined : foundReference.slice(memberOf(foundReference)!.prefix.length).replace(/^\//, "");
+  const referenceOf = (member: Member) => (reference === undefined ? undefined : posix.join(member.prefix, reference));
   const problems: Problem[] = [];
-  const db = openForRead();
-  let symbols;
-  let revision;
-  try {
-    revision = currentRevision(db);
-    symbols = listSymbols(db, undefined, undefined, undefined, map.space);
-  } finally {
-    db?.close();
-  }
-  if (map.revision !== revision) {
-    problems.push({ page: map.pathOf("source-map.json"), line: 1, kind: "stale-reference", message: `The source is from knowledge revision ${map.revision}, and the knowledge is at ${revision}. Generate the source and the reference again, then run docs.ts link.` });
-  }
-  const addresses = new Map<string, number>();
-  for (const label of map.labels) addresses.set(label.name, label.address);
-  for (const symbol of symbols) addresses.set(symbol.name, symbol.address);
-  // A routine runs to the next routine; any other name to the next name of the knowledge, in its file, and outside the image at most MAX_BODY bytes.
-  const routines = symbols.filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address).sort((a, b) => a - b);
-  const named = [...new Set(symbols.map((symbol) => symbol.address))].sort((a, b) => a - b);
-  const kinds = new Map(symbols.map((symbol) => [symbol.name, symbol.kind]));
-  const bodyEnds = new Map<string, number | undefined>();
-  const bodyEnd = (name: string) => {
-    if (bodyEnds.has(name)) return bodyEnds.get(name);
-    const address = addresses.get(name);
-    let end: number | undefined;
-    if (address !== undefined) {
-      const next = ((kinds.get(name) === "routine" ? routines : named).find((other) => other > address) ?? 0x10000) - 1;
-      const file = map.lineOf(address)?.file;
-      if (file === undefined) end = Math.min(next, address + MAX_BODY - 1);
-      else {
-        end = address;
-        while (end < next && map.lineOf(end + 1)?.file === file) end++;
+
+  /** The names of a project, read the first time a page needs them. A project with given pages is read before the pages. */
+  const loaded = new Map<Member, Names>();
+  const load = (member: Member, required: boolean): Names => {
+    const done = loaded.get(member);
+    if (done !== undefined) return done;
+    const of = member.label === undefined ? "" : ` of the project ${member.label}`;
+    const inProject = (path: string) => posix.join(member.prefix, path);
+    let map;
+    try {
+      map = readSourceMap(source, member.root);
+    } catch (error) {
+      if (member.label === undefined || !(error instanceof WireFailure)) throw error;
+      throw new WireFailure(error.code, `In the project ${member.label}: ${error.message}`);
+    }
+    const db = openForRead(member.root);
+    let symbols;
+    let revision;
+    try {
+      revision = currentRevision(db);
+      symbols = listSymbols(db, undefined, undefined, undefined, map.space);
+    } finally {
+      db?.close();
+    }
+    if (map.revision !== revision) {
+      problems.push({ page: inProject(map.pathOf("source-map.json")), line: 1, kind: "stale-reference", message: `The source${of} is from knowledge revision ${map.revision}, and the knowledge is at ${revision}. Generate the source and the reference again, then run docs.ts link.` });
+    }
+    const addresses = new Map<string, number>();
+    for (const label of map.labels) addresses.set(label.name, label.address);
+    for (const symbol of symbols) addresses.set(symbol.name, symbol.address);
+    // A routine runs to the next routine; any other name to the next name of the knowledge, in its file, and outside the image at most MAX_BODY bytes.
+    const routines = symbols.filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address).sort((a, b) => a - b);
+    const named = [...new Set(symbols.map((symbol) => symbol.address))].sort((a, b) => a - b);
+    const kinds = new Map(symbols.map((symbol) => [symbol.name, symbol.kind]));
+    const bodyEnds = new Map<string, number | undefined>();
+    const bodyEnd = (name: string) => {
+      if (bodyEnds.has(name)) return bodyEnds.get(name);
+      const address = addresses.get(name);
+      let end: number | undefined;
+      if (address !== undefined) {
+        const next = ((kinds.get(name) === "routine" ? routines : named).find((other) => other > address) ?? 0x10000) - 1;
+        const file = map.lineOf(address)?.file;
+        if (file === undefined) end = Math.min(next, address + MAX_BODY - 1);
+        else {
+          end = address;
+          while (end < next && map.lineOf(end + 1)?.file === file) end++;
+        }
+      }
+      bodyEnds.set(name, end);
+      return end;
+    };
+    const nameAt = new Map(symbols.map((symbol) => [symbol.address, symbol.name]));
+    /** The routine, else the name, whose body holds an address. */
+    const placeOf = (address: number) => {
+      for (const list of [routines, named]) {
+        let start: number | undefined;
+        for (const other of list) if (other <= address) start = other;
+        const name = start === undefined ? undefined : nameAt.get(start);
+        if (name !== undefined && (bodyEnd(name) ?? start!) >= address) return name;
+      }
+      return undefined;
+    };
+
+    // The pages of the reference: each must be from the revision of the source.
+    const referenceDirectory = referenceOf(member);
+    const referencePages = referenceDirectory === undefined || (!required && !isDirectory(referenceDirectory, root)) ? [] : markdownFiles(referenceDirectory);
+    for (const page of referencePages) {
+      const text = files.text(page);
+      if (text === undefined) {
+        problems.push(unreadable(page));
+        continue;
+      }
+      const stamp = /^<!-- Generated by c64-docs from knowledge revision (\S+) /.exec(text);
+      if (text.startsWith(GENERATED_MARK) && stamp !== null && stamp[1] !== map.revision) {
+        problems.push({ page, line: 1, kind: "stale-reference", message: `${shown(page)} is from knowledge revision ${stamp[1]}, and the source${of} from ${map.revision}. Run docs.ts generate again.` });
       }
     }
-    bodyEnds.set(name, end);
-    return end;
+    const names: Names = {
+      addressOf: (name) => addresses.get(name),
+      codeOf: (name) => {
+        const label = map.labelOf(name);
+        return label === undefined ? undefined : `${inProject(map.pathOf(label.file))}#L${label.line}`;
+      },
+      bodyEnd,
+      placeOf,
+      lineOf: (address) => {
+        const line = map.lineOf(address);
+        return line === undefined ? undefined : `${inProject(map.pathOf(line.file))}#L${line.line}`;
+      },
+    };
+    loaded.set(member, names);
+    return names;
   };
-  const nameAt = new Map(symbols.map((symbol) => [symbol.address, symbol.name]));
-  /** The routine, else the name, whose body holds an address. */
-  const placeOf = (address: number) => {
-    for (const list of [routines, named]) {
-      let start: number | undefined;
-      for (const other of list) if (other <= address) start = other;
-      const name = start === undefined ? undefined : nameAt.get(start);
-      if (name !== undefined && (bodyEnd(name) ?? start!) >= address) return name;
-    }
-    return undefined;
-  };
+  for (const member of members) if (pagesGiven.some((page) => memberOf(page) === member)) load(member, true);
 
-  // The pages of the reference: each must be from the revision of the source.
-  const referencePages = reference === undefined ? [] : markdownFiles(reference);
-  for (const page of referencePages) {
-    const text = files.text(page);
-    if (text === undefined) {
-      problems.push(unreadable(page));
-      continue;
+  const labels = members.map((member) => member.label!);
+  const namesFor = (page: string) => (label: string | undefined): ReturnType<LinkContext["names"]> => {
+    if (group === undefined) return label === undefined ? load(members[0]!, false) : undefined;
+    if (label === undefined) {
+      const own = memberOf(page);
+      if (own !== undefined) return load(own, false);
+      return { kind: "unlabelled-name", message: `A page of the group folder must name the project of each name. Write the folder of the project before the name, for example \`${labels[0]}:name\`.` };
     }
-    const stamp = /^<!-- Generated by c64-docs from knowledge revision (\S+) /.exec(text);
-    if (text.startsWith(GENERATED_MARK) && stamp !== null && stamp[1] !== map.revision) {
-      problems.push({ page, line: 1, kind: "stale-reference", message: `${page} is from knowledge revision ${stamp[1]}, and the source from ${map.revision}. Run docs.ts generate again.` });
-    }
-  }
-  const inside = (path: string, directory: string | undefined) => directory !== undefined && (path === directory || path.startsWith(`${directory}/`));
-  const context = {
-    addressOf: (name: string) => addresses.get(name),
-    codeOf: (name: string) => {
-      const label = map.labelOf(name);
-      return label === undefined ? undefined : `${map.pathOf(label.file)}#L${label.line}`;
-    },
-    bodyEnd,
-    placeOf,
-    lineOf: (address: number) => {
-      const line = map.lineOf(address);
-      return line === undefined ? undefined : `${map.pathOf(line.file)}#L${line.line}`;
-    },
-    managed: (path: string) => inside(path, posix.normalize(map.directory)) || inside(path, reference),
+    const member = members.find((each) => each.label === label);
+    if (member === undefined) return { kind: "unknown-label", message: `${label} is no project of the group folder. The projects are ${labels.join(", ")}. Correct the label.` };
+    return load(member, false);
   };
+  const managed = (path: string) => members.some((member) => within(path, posix.join(member.prefix, source)) || within(path, referenceOf(member)));
 
-  const pages = [...new Set(given.flatMap((path) => {
+  const pages = [...new Set(pagesGiven.flatMap((path) => {
     if (directories.includes(path)) return markdownFiles(path);
-    if (files.text(path) === undefined) throw new WireFailure("not-found", `There is no file ${path} in the project folder.`);
+    if (files.text(path) === undefined) throw new WireFailure("not-found", `There is no file ${shown(path)} in ${folder}.`);
     return [path];
   }))];
   const changedPages: string[] = [];
@@ -276,25 +371,32 @@ function link(call: Call): Reply {
     }
     // A generated page is right by its making: it is only checked.
     const generated = text.startsWith(GENERATED_MARK);
-    const linked = generated ? { text, changed: 0, problems: [] } : linkPage(text, { page, ...context });
+    const linked = generated ? { text, changed: 0, problems: [] } : linkPage(text, { page, names: namesFor(page), managed });
     problems.push(...linked.problems, ...checkLinks(page, linked.text, files));
     if (linked.changed === 0) continue;
     links += linked.changed;
-    changedPages.push(page);
+    changedPages.push(shown(page));
     if (check) continue;
-    writeProjectFile(page, Buffer.from(linked.text, "utf8"));
+    writeProjectFile(page, Buffer.from(linked.text, "utf8"), { root });
     texts.set(page, linked.text);
   }
   const byKind: Record<string, number> = {};
   for (const problem of problems) byKind[problem.kind] = (byKind[problem.kind] ?? 0) + 1;
-  const shownProblems = listed(problems, call.count("max-listed")!, (problem) => ({ at: `${problem.page}:${problem.line}`, kind: problem.kind, message: problem.message }));
+  const shownProblems = listed(problems, call.count("max-listed")!, (problem) => ({
+    at: `${shown(problem.page)}:${problem.line}`,
+    ...(group === undefined ? {} : { project: memberOf(problem.page)?.label ?? "shared" }),
+    kind: problem.kind,
+    message: problem.message,
+  }));
   const output: Record<string, unknown> = {
+    ...(group === undefined ? {} : { group: { folder: scope.base === "" ? "." : "..", projects: labels } }),
     pages: pages.length,
     reference: reference ?? "none",
     ...(check ? { notUpToDate: { links, pages: changedPages } } : { linked: { links, pages: changedPages } }),
     problems: { byKind, ...shownProblems },
   };
-  const again = (withCheck: boolean) => call.next("link", ...call.subjects, "--source", call.string("source")!, ...(givenReference === undefined ? [] : ["--reference", givenReference]), ...(withCheck ? ["--check"] : []));
+  const again = (withCheck: boolean) =>
+    call.next("link", ...call.subjects, "--source", call.string("source")!, ...(givenReference === undefined ? [] : ["--reference", givenReference]), ...(withCheck ? ["--check"] : []), ...(scope.unnamed ? ["--project", root] : []));
   const hints: string[] = [];
   let nextAction: string | undefined;
   if (reference === undefined) hints.push("No reference/ folder is in or beside the given pages, so the links to the reference are not checked. Give --reference <dir>, or run generate first.");
@@ -332,14 +434,15 @@ await runScript({
     {
       name: "link",
       summary: "Links each name with its address in the pages to its line in the source, and checks every link and image. result is FAIL when a page has a problem, or with --check when a link is not up to date.",
-      subjects: [{ name: "<page>", help: ".md files and folders of the documentation, relative to the project folder, for example README.md docs. link reads each file and every .md file below each folder", list: true }],
+      subjects: [{ name: "<page>", help: ".md files and folders of the documentation, relative to the project folder or the group folder, for example README.md docs. link reads each file and every .md file below each folder", list: true }],
       options: {
-        source: { ...SOURCE, required: true },
-        reference: { kind: "path", value: "<dir>", help: "the folder of the reference pages of generate. The default is the first reference/ folder in a given folder or beside a given page" },
+        // Text, not a path of the run: in a group, each project has the source and the reference at this path.
+        source: { kind: "text", value: "<dir>", help: `${SOURCE.help}. In a group, the same folder in each project`, required: true },
+        reference: { kind: "text", value: "<dir>", help: "the folder of the reference pages of generate, relative to the project folder; in a group, the same folder in each project. The default is the first reference/ folder in a given folder or beside a given page" },
         check: { kind: "flag", help: "write nothing. FAIL when a link is not up to date or a page has a problem" },
         "max-listed": OPTIONS["max-listed"],
       },
-      notes: "A name in backticks with its address in backticks after it, for example `draw_room` `$09BC`, becomes one link to the line of the name in the source. A name without an address gets no link. A name gets one link in each section, and a table gets no links.",
+      notes: "A name in backticks with its address in backticks after it, for example `draw_room` `$09BC`, becomes one link to the line of the name in the source. A name without an address gets no link. A name gets one link in each section, and a table gets no links. In a group folder, write the folder of the project before the name, for example `v2:draw_room` `$09BC`.",
       run: link,
     },
   ],

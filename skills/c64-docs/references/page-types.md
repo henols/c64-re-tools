@@ -97,6 +97,49 @@ Reverse-engineered C64 games. Each game has its own folder with the original dis
 | [Bruce Lee](bruce_lee/README.md) | Datasoft 1984. How the program works, from the cold start to the last room. |
 ```
 
+## 2b. The group entry page
+
+A program with two or more versions in a group folder has one `README.md` in the group folder. It tells the parts of the program that the versions share. Each version has its own entry page in its project folder. The group entry page has these parts, in this order:
+
+1. **One paragraph.** What the program is, who made it and when, and which versions the documentation is for. Under it, one line defines the evidence marks.
+2. **The versions.** A table with one row for each version: the link to its entry page, the releases of the version, and its entry address. Under the table, tell how the versions are different and why the versions need a project each.
+3. **The development**, **The copy protection** and **Findings**, as in the entry page of section 1, for the facts that the versions share. Write the label of the version before each name, for example `` `v1:speech_irq` `$29C8` ``.
+4. **The pages.** A table of the shared pages in `docs/`, for example the development, the changes between the versions, the releases and the disk layout.
+5. **Still open.**
+
+Each fact goes in one place. A fact of all versions goes in the group entry page or a shared page. A fact of one version goes in the pages of that version.
+
+```markdown
+# <Program>
+
+<What the program is. The authors and the year. The versions that this documentation is for.>
+
+**Evidence.** **Observed** marks a fact that a run showed. **Code** marks a fact from the code only. **Conclusion** marks an interpretation.
+
+## The versions
+
+| Version | Releases | Entry |
+|---|---|---|
+| [v1](v1/README.md) | <release> | `$1158` |
+| [v2](v2/README.md) | <base release>, <release> | `$115A` |
+
+<How the versions are different: the moved code and data, with the labelled names.> The details are on [docs/versions.md](docs/versions.md).
+
+## The development
+
+...
+
+## The pages
+
+| Page | Content |
+|---|---|
+| [docs/development.md](docs/development.md) | **The development.** <one sentence> |
+
+## Still open
+
+- <question> — <the run that can answer it>
+```
+
 ## 3. The subsystem page
 
 One page for each subsystem, for example the main loop, the interrupt chain, the room generation or the sound player. It has these parts:

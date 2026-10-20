@@ -30,12 +30,12 @@ export interface SourceMap {
   pathOf: (file: string) => string;
 }
 
-/** Reads <directory>/source-map.json. A missing map is a refusal with the remedy. */
-export function readSourceMap(directory: string): SourceMap {
+/** Reads <directory>/source-map.json of the project `root`. A missing map is a refusal with the remedy. */
+export function readSourceMap(directory: string, root?: string): SourceMap {
   const path = posix.join(directory, SOURCE_MAP_FILE);
   let text: string;
   try {
-    text = readProjectFile(path).bytes.toString("utf8");
+    text = readProjectFile(path, root === undefined ? {} : { root }).bytes.toString("utf8");
   } catch (error) {
     if (error instanceof WireFailure && error.code === "not-found") {
       throw new WireFailure("not-found", `There is no ${path}. Generate the source from the project knowledge into ${directory}. That also writes the source map.`);

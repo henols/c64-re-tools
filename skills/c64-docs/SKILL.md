@@ -28,6 +28,7 @@ To get the command list, run the script with no arguments.
 | Check that each link is up to date, and write nothing | `link README.md docs --source src --check` |
 | Link the pages when the reference is in a folder with another name | `link README.md docs --source src --reference docs/lookup` |
 | Link one page | `link docs/main_loop.md --source src` |
+| In a group folder, link the shared pages and the pages of each project | `link README.md docs v1/README.md v1/docs v2/README.md v2/docs --source src` |
 
 ---
 
@@ -60,6 +61,17 @@ Get the values for the commands from these places:
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and its snapshot files. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
+### The group folder
+
+A group folder holds one project for each version of a program. It also holds the pages that the versions share.
+
+- A group folder is a folder in a git repository. It holds one or more project folders. It is not a project, and it is not in a project.
+- Each project folder in the group folder is a project of the group. The label of the project is the name of its folder, for example `v1`. A project folder that holds `.git` is not a project of the group.
+- The shared pages are `README.md` and `docs/` of the group folder.
+- A page in the group folder can link to each file in the group folder. A link out of the group folder is a problem.
+- Give each project the same folder for the source and the same folder for the reference, for example `src` and `docs/reference`. `--source` and `--reference` apply to each project.
+- To link the shared pages, run `link` in the group folder. Give the pages relative to the group folder. From a different folder, give `--project <group folder>`.
+
 ---
 
 ## Flags
@@ -69,8 +81,8 @@ Each flag applies only to the commands in the table. On another command, the scr
 | Flag | Command | Effect |
 |---|---|---|
 | `--out <dir>` | `generate` | Required. The folder of the reference, relative to the project folder. `generate` writes only there. It refuses to start when the folder holds a page that it did not write. |
-| `--source <dir>` | `link` | Required. The folder of the generated source, with its `source-map.json`. |
-| `--reference <dir>` | `link` | The folder of the reference. The default is the first `reference` folder in a given folder or beside a given page, for example `docs/reference`. |
+| `--source <dir>` | `link` | Required. The folder of the generated source, with its `source-map.json`, relative to the project folder. In a group folder, each project has its source in this folder. |
+| `--reference <dir>` | `link` | The folder of the reference, relative to the project folder. In a group folder, each project has its reference in this folder. The default is the first `reference` folder in a given folder or beside a given page, for example `docs/reference`. |
 | `--check` | `link` | Write nothing. `result` is `FAIL` when a link is not up to date or a page has a problem. Off by default. |
 | `--max-listed <n>` | `generate`, `link` | List at most `n` items in each list. The default is 50. The count is always in the body. |
 
@@ -115,6 +127,7 @@ Errors and their actions:
 
 - The reference draws each sprite, bitmap and charset region, and it decodes each table. To get the image of a graphic or the entries of a table, classify its region in the project knowledge. Do not write a script that draws or decodes them.
 - A script of the project decodes only a format of the program, for example a packed map or a music stream. Put the script in `tools/` of the project. Its output files are the assets, for example in `assets/rooms/`.
+- When two or more projects of a group folder use the script, put it in `tools/` of the group folder. The script takes the paths of its input and output files as arguments.
 - When the code of the program makes the data, run that code in a test run. Read the memory, or capture the screen. Do not write a 6502 emulator in the script.
 
 ---
@@ -141,13 +154,25 @@ These are the forms that it changes. The examples are for a page in `docs/`. In 
 - When the line of a name moves, `link` writes the link again. A link that you made to another target stays as you wrote it.
 - `link` checks each link and image. The file must exist. A `#anchor` must exist in the page. A `#L` line must exist in the file.
 
+In a group folder, a label names the project of a name. Write the label and a colon before the name. The label stays in the text. The examples are for `README.md` of the group folder.
+
+| You write | `link` writes |
+|---|---|
+| `` `v1:draw_room` `$09BC` `` | `` [`v1:draw_room` `$09BC`](v1/src/room_draw.asm#L6) ``: one link to the line of the name in the source of `v1`. |
+| `` `draw_room` `$09BC` `` | No link. In a shared page, each name needs a label. |
+
+- In a page of a project, a name without a label is a name of that project. To link a name of a different project of the group, write its label, for example `` `v2:draw_room` `$0A10` ``.
+- When the line of a name moves in the different project, `link` writes the link again. Thus link to the source of a different project only with a label. `link` does not move a `#L` link that you wrote.
+- `` `v1:draw_room` `` and `` `v2:draw_room` `` are two names. Each can get one link in a section.
+
 `body` holds:
 
 - `result`: `PASS` when no page has a problem. `FAIL` when a page has a problem, or with `--check` when a link is not up to date.
 - `pages`: the count of the pages that it read.
 - `reference`: the folder of the reference, or `none`.
 - `linked`: `links`, the count of the links that it wrote, and `pages`, the pages that it changed. With `--check`, `notUpToDate` has the same fields for the links that are not up to date.
-- `problems`: `byKind`, `count`, `listed` and `rest`. Each item has `at` (the page and the line), `kind` and `message`.
+- `problems`: `byKind`, `count`, `listed` and `rest`. Each item has `at` (the page and the line), `kind` and `message`. In a group folder, each item also has `project`: the label of the project of the page, or `shared`.
+- `group`: only in a group folder. `folder` is the group folder, relative to the folder of the pages. `projects` holds the labels.
 
 `hint` and `nextAction`:
 
@@ -164,10 +189,16 @@ Do this for each `kind` of problem:
 | `repeated-link` | The name has a link in the section already. Remove the address from this mention. |
 | `link-in-table` | A name with its address is in a table row. Remove the address in the table. Link the name in the text above the table. |
 | `missing-file`, `missing-anchor`, `missing-line` | The link goes to nothing. Correct the link. An image of an asset must exist in the project. |
-| `outside-project` | The link goes out of the project folder. Correct the link. |
-| `stale-reference` | The source or the reference is older than the project knowledge. Do steps 2 and 3 of the workflow again. |
+| `outside-project` | The link goes out of the project folder, and the project is not in a group folder. Correct the link. |
+| `outside-group` | The link goes out of the group folder. Correct the link. |
+| `unknown-label` | No project of the group folder has the label. `message` gives the labels. Correct the label. |
+| `unlabelled-name` | A shared page gives a name and its address without a label. Write the label of the project before the name. |
+| `stale-reference` | The source or the reference is older than the project knowledge. `message` names the project. Do steps 2 and 3 of the workflow again for that project. |
 
-Errors: `not-found` names a page or a folder that is not in the project folder. `invalid-input` names a file that is not a `.md` file, or a folder that goes out of the project folder through a symbolic link. Correct the paths.
+Errors:
+
+- `not-found` names a page or a folder that is not in the project folder or the group folder. `invalid-input` names a file that is not a `.md` file, or a folder that goes out through a symbolic link. Correct the paths.
+- `not-found` that starts with `In the project <label>`: that project has no source map in `--source`. Generate the source of that project. Then run `link` again.
 
 ---
 
@@ -185,7 +216,12 @@ Errors: `not-found` names a page or a folder that is not in the project folder. 
 6. Write each page. Read the code and the knowledge for each fact. When a fact needs a run, run the program in a test run or in the emulator. Explain each part before you name the code. Link only the main parts. Mark each fact with its evidence. Several subagents can write the pages at the same time, one page each. Give each subagent `<skill>/references/page-types.md` and `<skill>/references/style.md`.
 7. Record each new fact in the project knowledge first: a name, a comment, a region or a module. Then the source and the reference show it too. A fact that is only in a page is lost at the next change of the knowledge.
 8. Run `link`. Correct each problem. Then run `link` with `--check`. Make sure that `result` is `PASS`.
-9. When the project folder is in a workspace with other projects, find `README.md` at the root of the workspace. This page lists each program of the workspace. Add one row for the program, with a link to `<project>/README.md` and one sentence. If the page does not exist, make it. Use the workspace index in `<skill>/references/page-types.md`. `link` does not read this page, because the page is not in the project folder.
+9. When the project folder is in a workspace with other projects, find `README.md` at the root of the workspace. This page lists each program of the workspace. Add one row for the program, with a link to `<project>/README.md` and one sentence. If the page does not exist, make it. Use the workspace index in `<skill>/references/page-types.md`. When the workspace folder is a group folder, run `link README.md --source src` in it to check the links of this page. Else `link` does not read this page.
+9b. When the program has two or more versions in a group folder, write the shared pages in the group folder. Use the group entry page in `<skill>/references/page-types.md`.
+   - Write the development, the differences between the versions, the releases and the disk layout one time, in the shared pages.
+   - The pages of each project tell only how its version works.
+   - In a shared page, write the label of the project before each name.
+   - Run `link` in the group folder for the shared pages and the pages of each project.
 10. After each change to the project knowledge, do steps 2, 3 and 8 again. Then the links go to the new lines.
 
 Do not keep the pages, or the facts that are only in the pages, in the project knowledge.
@@ -236,5 +272,5 @@ To get the subjects and the flags of one command, run `<command> --help`. Then `
 
 ## Reference
 
-- `<skill>/references/page-types.md`: the page types, with the parts of each type and a template. The types are the entry page, the workspace index, the subsystem page and the entity sections. Other types are the data-format page, the development page and the copy protection page. It also has the conventions block.
+- `<skill>/references/page-types.md`: the page types, with the parts of each type and a template. The types are the entry page, the workspace index, the group entry page, the subsystem page and the entity sections. Other types are the data-format page, the development page and the copy protection page. It also has the conventions block.
 - `<skill>/references/style.md`: the rules for the text of the pages. They tell how to explain, and how to write the names and the links. They also give the evidence marks, the diagrams and the images.
