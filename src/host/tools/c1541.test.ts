@@ -7,7 +7,8 @@ import { test } from "node:test";
 import { ProcessSupervisor } from "../../native/processes.ts";
 import { Workspace } from "../../native/staging.ts";
 import { WireFailure } from "../../protocol/messages.ts";
-import { C1541Session, fileData, parseBam, parseChain, parseDirectory, parseFreeBlocks, parseInfo, READS_PER_CALL, unreferencedSectors } from "./c1541.ts";
+import { MAX_DISK_SECTORS } from "../../protocol/tools.ts";
+import { C1541Session, fileData, parseBam, parseChain, parseDirectory, parseFreeBlocks, parseInfo, READS_PER_CALL, sectorsToRead, unreferencedSectors } from "./c1541.ts";
 
 const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
 
@@ -66,6 +67,24 @@ test("unreferenced sectors are the used sectors that no chain holds, in track an
     { track: 2, sector: 1 },
   ]);
   assert.deepEqual(unreferencedSectors(tracks, [{ track: 1, sector: 3 }, { track: 2, sector: 0 }, { track: 2, sector: 1 }, { track: 2, sector: 19 }]), []);
+});
+
+test("a sectors request reads the given sectors in their order, then the unreferenced ones; a sector outside the disk or too many are refused", () => {
+  const tracks = [
+    { track: 1, freeSectors: [1, 2], usedSectors: [0] },
+    { track: 2, freeSectors: [0], usedSectors: [1] },
+  ];
+  assert.deepEqual(sectorsToRead([{ track: 2, sector: 0 }, { track: 1, sector: 2 }], [{ track: 2, sector: 1 }], tracks), [
+    { track: 2, sector: 0 },
+    { track: 1, sector: 2 },
+    { track: 2, sector: 1 },
+  ]);
+  assert.deepEqual(sectorsToRead([], [], tracks), []);
+  for (const outside of [{ track: 1, sector: 3 }, { track: 3, sector: 0 }, { track: 0, sector: 0 }]) {
+    assert.throws(() => sectorsToRead([outside], [], tracks), (error: unknown) => failsWith("invalid-input")(error) && /The disk has no track/.test((error as Error).message), JSON.stringify(outside));
+  }
+  const many = Array.from({ length: MAX_DISK_SECTORS + 1 }, () => ({ track: 1, sector: 0 }));
+  assert.throws(() => sectorsToRead(many, [], tracks), failsWith("limit-exceeded"));
 });
 
 function block(fill: (bytes: Buffer) => void): Buffer {

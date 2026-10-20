@@ -1,6 +1,6 @@
 ---
 name: c64-disk
-description: Examines a C64 disk image (D64, D71, D81 or G64), a T64 tape file or a CRT cartridge file. It extracts files from it into the project. It shows the directory, the BAM, the directory entry of a file and the sector chain of a file. It writes each bank of a cartridge as a PRG. Use it when a program comes as a disk image, a tape file or a cartridge file. Use it to find the sectors that a loader reads directly. It does not run the program, it does not decode BASIC, and it does not change the disk image.
+description: Examines a C64 disk image (D64, D71, D81 or G64), a T64 tape file or a CRT cartridge file. It extracts files from it into the project. It shows the directory, the BAM, the directory entry of a file and the sector chain of a file. It writes the bytes of sectors to a file. It writes each bank of a cartridge as a PRG. Use it when a program comes as a disk image, a tape file or a cartridge file. Use it to find the sectors that a loader reads directly. It does not run the program, it does not decode BASIC, and it does not change the disk image.
 ---
 
 # C64 disk
@@ -28,6 +28,8 @@ To get the command list, run the script with no arguments.
 | Get the type, the size and the first block of one file | `entry original/game.d64 GAME` |
 | Get the track and the sector of each block of one file | `chain original/game.d64 GAME` |
 | Find the used sectors that no file uses | `bam original/game.d64` |
+| Write the bytes of the used sectors that no file uses | `sectors original/game.d64 --unreferenced --out .c64-re-tools/local/hidden.bin` |
+| Write the bytes of some sectors | `sectors original/game.d64 18/0 20/5 --out .c64-re-tools/local/sectors.bin` |
 | Get the files of a tape | `directory original/game.t64` |
 | Extract one file of a tape | `read original/game.t64 GAME --out extracted/game.prg` |
 | Get the banks of a cartridge | `directory original/game.crt` |
@@ -41,7 +43,7 @@ To get the command list, run the script with no arguments.
   |---|---|
   | `directory` | `.d64`, `.d71`, `.d81`, `.g64`, `.t64`, `.crt` |
   | `read` | `.d64`, `.d71`, `.d81`, `.g64`, `.t64` |
-  | `bam`, `entry`, `chain` | `.d64`, `.d71`, `.d81`, `.g64` |
+  | `bam`, `entry`, `chain`, `sectors` | `.d64`, `.d71`, `.d81`, `.g64` |
   | `crt` | `.crt` |
 
 - `<name>` is a file name from the result of `directory`. Write the name in the same form as the directory shows it. The letter case of a name is not important.
@@ -76,7 +78,8 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 | Flag | Command | Effect |
 |---|---|---|
-| `--out <file>` | `read` | The file to write, relative to the project folder. Required. |
+| `--out <file>` | `read`, `sectors` | The file to write, relative to the project folder. Required. |
+| `--unreferenced` | `sectors` | Write also the used sectors that no file uses, after the given sectors. |
 | `--out <dir>` | `crt` | The folder for the bank files and `crt.json`, relative to the project folder. Required. |
 
 ---
@@ -99,6 +102,8 @@ Do not record the directory list in the project knowledge.
 
 `body.tracks` gives the `freeSectors` and the `usedSectors` of each track. `body.unreferenced` lists the used sectors that no file uses. The list does not include the header, the directory and the BAM blocks. These sectors can hold data that a loader reads directly.
 
+When `body.unreferenced` is not empty, `nextAction` is the `sectors` command that writes their bytes.
+
 ### `entry <image> <name>`
 
 `body` holds `found: true` and `entry`: the `name`, `type`, `blocks`, `closed`, `locked`, `startTrack` and `startSector` of the file. Use it when the disk structure is important, for example for a loader that reads sectors directly.
@@ -119,6 +124,16 @@ Writes the bytes of one file at `--out`. A PRG file keeps its 2-byte load addres
 
 For a cartridge file, the script refuses `read`. Use `crt`.
 
+### `sectors <image> [<track>/<sector>...]`
+
+Writes the 256 bytes of each sector at `--out`, in the given sequence. Give each sector as `<track>/<sector>` in decimal, for example `18/1`. With `--unreferenced`, the file also gets the used sectors that no file uses, after the given sectors. Give at least one sector or `--unreferenced`.
+
+`body.count` is the number of sectors. `body.sectors` gives the `track`, the `sector` and the `offset` of each sector in the file. `body` also holds the written file as `out`, `bytes` and `sha256`.
+
+When the disk has no used sectors that no file uses and you give no sectors, the script writes no file. Then `body.count` is 0, and `hint` tells it.
+
+- `invalid-input` with "The disk has no track": the disk does not have that sector. Run `bam` and give a sector that it shows.
+
 ### `crt <file.crt>`
 
 Writes one PRG for each CHIP packet of the cartridge, for example `bank3-8000.prg`. It also writes `crt.json` with the header and the packets. The script reads hardware types 0 (normal 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) and 32 (EasyFlash).
@@ -134,7 +149,7 @@ All banks use the same addresses. Thus `hint` tells you to analyze each bank PRG
 1. Run `directory`. Find the file in `entries`.
 2. Run `read` to extract the file. For a cartridge, run `crt`.
 3. Run `entry` or `chain` only when the disk structure is important.
-4. Run `bam` only to find the used sectors that no file uses.
+4. Run `bam` only to find the used sectors that no file uses. Then run `sectors --unreferenced` to examine their bytes.
 5. Give the extracted file to the next task. Decode a BASIC program, unpack a packed program, or disassemble machine code.
 
 ---

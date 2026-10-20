@@ -12,7 +12,7 @@ import { join } from "node:path";
 
 import { petsciiNameToText, textToPetsciiName } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
-import { CBM_FILE_TYPES, type C1541Params, type C1541Result, type CbmFileType, type DiskFile, type DiskSector } from "../../protocol/tools.ts";
+import { CBM_FILE_TYPES, MAX_DISK_SECTORS, type C1541Params, type C1541Result, type CbmFileType, type DiskFile, type DiskSector } from "../../protocol/tools.ts";
 import { Workspace } from "../../native/staging.ts";
 import { C1541, findTool } from "../../native/discover.ts";
 import { requireMinimumVersion } from "./version.ts";
@@ -173,6 +173,23 @@ export function unreferencedSectors(tracks: ReadonlyArray<{ track: number; usedS
   return tracks.flatMap(({ track, usedSectors }) => usedSectors.filter((sector) => !known.has(`${track}/${sector}`)).map((sector) => ({ track, sector })));
 }
 
+/**
+ * The sectors of a sectors request: the given ones in their order, then the
+ * unreferenced ones. Refuses a sector that the disk does not have (the BAM
+ * shows each sector of each track) and more than MAX_DISK_SECTORS sectors.
+ */
+export function sectorsToRead(given: readonly DiskSector[], unreferenced: readonly DiskSector[], tracks: ReadonlyArray<{ track: number; freeSectors: number[]; usedSectors: number[] }>): DiskSector[] {
+  const sectors = [...given, ...unreferenced];
+  for (const at of sectors) {
+    const row = tracks[at.track - 1];
+    if (row === undefined || at.sector >= row.freeSectors.length + row.usedSectors.length) {
+      throw new WireFailure("invalid-input", `The disk has no track ${at.track} sector ${at.sector}. Give a track and a sector that the BAM shows.`);
+    }
+  }
+  if (sectors.length > MAX_DISK_SECTORS) throw new WireFailure("limit-exceeded", `The request reads ${sectors.length} sectors, and one request reads at most ${MAX_DISK_SECTORS}. Give fewer sectors.`);
+  return sectors;
+}
+
 const toFile = (entry: DiskEntry): DiskFile => ({ name: entry.name, type: entry.type, blocks: entry.blocks, closed: entry.closed, locked: entry.locked });
 
 const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((byte, index) => byte === b[index]);
@@ -250,15 +267,22 @@ export async function inspect(params: C1541Params, image: Buffer, context: ToolC
 
     const headerChain = await c1541.chain(layout.header);
     const directory = parseDirectory(await c1541.blocks(headerChain), layout);
-    if (params.action === "bam") {
+    if (params.action === "bam" || params.action === "sectors") {
       const tracks = parseBam(await c1541.run(["-bam"]), info.tracks);
-      // Every sector that the header, the directory or a file holds; a file without blocks has no chain.
-      const referenced = [...headerChain, ...(RESERVED[info.format] ?? [])];
-      for (const entry of directory.entries) {
-        if (entry.startTrack !== 0) referenced.push(...(await c1541.chain({ track: entry.startTrack, sector: entry.startSector })));
-        if (entry.sideStart !== undefined) referenced.push(...(await c1541.chain(entry.sideStart)));
+      let unreferenced: DiskSector[] = [];
+      if (params.action === "bam" || params.unreferenced === true) {
+        // Every sector that the header, the directory or a file holds; a file without blocks has no chain.
+        const referenced = [...headerChain, ...(RESERVED[info.format] ?? [])];
+        for (const entry of directory.entries) {
+          if (entry.startTrack !== 0) referenced.push(...(await c1541.chain({ track: entry.startTrack, sector: entry.startSector })));
+          if (entry.sideStart !== undefined) referenced.push(...(await c1541.chain(entry.sideStart)));
+        }
+        unreferenced = unreferencedSectors(tracks, referenced);
       }
-      return { result: { action: "bam", tracks, unreferenced: unreferencedSectors(tracks, referenced) } };
+      if (params.action === "bam") return { result: { action: "bam", tracks, unreferenced } };
+      const sectors = sectorsToRead(params.sectors ?? [], unreferenced, tracks);
+      const data = Buffer.concat(sectors.length === 0 ? [] : await c1541.blocks(sectors));
+      return { result: { action: "sectors", sectors, bytes: data.length }, attachments: [data] };
     }
     if (params.action === "directory") {
       const { diskName, diskId, dosType, entries } = directory;

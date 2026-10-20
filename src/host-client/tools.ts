@@ -4,7 +4,7 @@
 // ACME, DXA and Ghidra themselves through src/native.
 
 import { ProtocolError, WireFailure } from "../protocol/messages.ts";
-import { DISK_IMAGE_TYPES, validateToolResult, type C1541Result, type DiskAction, type DiskImageType, type PetcatResult, type ToolOperation, type ToolOperations, type HostInfo, type ToolStatus } from "../protocol/tools.ts";
+import { DISK_IMAGE_TYPES, validateToolResult, type C1541Result, type DiskAction, type DiskImageType, type DiskSector, type PetcatResult, type ToolOperation, type ToolOperations, type HostInfo, type ToolStatus } from "../protocol/tools.ts";
 import { HostConnection } from "./connect.ts";
 import { readPrg } from "./image.ts";
 import { readProjectFile } from "./transfer.ts";
@@ -59,9 +59,12 @@ export interface InspectDiskRequest {
   action: DiskAction;
   /** entry, chain and read: the file name as the directory shows it. */
   name?: string;
+  /** sectors: the blocks to read in this order, then with unreferenced each used sector that no file holds. */
+  sectors?: DiskSector[];
+  unreferenced?: boolean;
 }
 
-/** c1541.inspect: a found read also returns the file's bytes. */
+/** c1541.inspect: a found read also returns the file's bytes, and sectors the blocks, 256 bytes each. */
 export async function inspectDisk(request: InspectDiskRequest, options: ToolCallOptions = {}): Promise<C1541Result & { data?: Buffer }> {
   const file = readProjectFile(request.image);
   if (!(DISK_IMAGE_TYPES as readonly string[]).includes(file.type)) {
@@ -69,8 +72,10 @@ export async function inspectDisk(request: InspectDiskRequest, options: ToolCall
   }
   const params: ToolOperations["c1541.inspect"]["params"] = { action: request.action, imageType: file.type as DiskImageType };
   if (request.name !== undefined) params.name = request.name;
+  if (request.sectors !== undefined) params.sectors = request.sectors;
+  if (request.unreferenced !== undefined) params.unreferenced = request.unreferenced;
   const { result, attachments } = await callTool("c1541.inspect", params, [file.bytes], options);
-  return result.action === "read" && result.found ? { ...result, data: attachments[0]! } : result;
+  return (result.action === "read" && result.found) || result.action === "sectors" ? { ...result, data: attachments[0]! } : result;
 }
 
 /** petcat.decode: the C64 BASIC V2 listing of a project program and its machine-code handoffs. Refuses a file that is no PRG as readPrg does. */
@@ -86,6 +91,6 @@ export async function hostTools(options: ToolCallOptions = {}): Promise<{ host: 
 
 /** Skill scripts see failures and wire limits through the host-client, never the private protocol module. */
 export { WireFailure } from "../protocol/messages.ts";
-export { DISK_ACTIONS, DISK_IMAGE_TYPES } from "../protocol/tools.ts";
+export { DISK_ACTIONS, DISK_BLOCK_BYTES, DISK_IMAGE_TYPES, MAX_DISK_SECTORS } from "../protocol/tools.ts";
 export { JOYSTICK_DIRECTIONS, MAX_BASELINES, MAX_EXECUTION_COUNT, MAX_KEYBOARD_BYTES, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_TIMEOUT_FRAMES, maskCoversFrame } from "../protocol/vice.ts";
 export { MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, type TraceHit, type TraceKind } from "../protocol/vice.ts";

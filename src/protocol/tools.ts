@@ -13,7 +13,7 @@ export const MAX_TREE_FILES = 4096;
 
 export const DISK_IMAGE_TYPES = ["d64", "d71", "d81", "g64"] as const;
 export type DiskImageType = (typeof DISK_IMAGE_TYPES)[number];
-export const DISK_ACTIONS = ["directory", "bam", "entry", "chain", "read"] as const;
+export const DISK_ACTIONS = ["directory", "bam", "entry", "chain", "read", "sectors"] as const;
 export type DiskAction = (typeof DISK_ACTIONS)[number];
 export const CBM_FILE_TYPES = ["del", "seq", "prg", "usr", "rel", "unknown"] as const;
 export type CbmFileType = (typeof CBM_FILE_TYPES)[number];
@@ -24,7 +24,15 @@ export interface C1541Params {
   imageType: DiskImageType;
   /** entry, chain and read only: the file name as petsciiNameToText shows it. */
   name?: string;
+  /** sectors only: the blocks to read, in this order; with unreferenced, then each used sector that no file holds (see bam). */
+  sectors?: DiskSector[];
+  unreferenced?: boolean;
 }
+
+/** The most blocks of one sectors request, more than a disk image holds: a D81 has 3200. */
+export const MAX_DISK_SECTORS = 4096;
+/** The size of a disk block. */
+export const DISK_BLOCK_BYTES = 256;
 
 export interface DiskFile {
   name: string;
@@ -49,7 +57,9 @@ export type C1541Result =
   | { action: "chain"; found: true; sectors: DiskSector[] }
   | { action: "read"; found: false }
   /** The file's bytes are the reply's attachment. */
-  | { action: "read"; found: true; name: string; bytes: number };
+  | { action: "read"; found: true; name: string; bytes: number }
+  /** The blocks of the sectors, 256 bytes each in this order, are the reply's attachment. */
+  | { action: "sectors"; sectors: DiskSector[]; bytes: number };
 
 /** petcat.decode takes no fields: the program bytes are the request's one attachment. */
 export type PetcatParams = Record<string, never>;
@@ -119,11 +129,22 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
   if (!isObject(params)) invalid("parameters must be an object");
   switch (op) {
     case "c1541.inspect": {
-      onlyFields(params, ["action", "imageType", "name"]);
+      onlyFields(params, ["action", "imageType", "name", "sectors", "unreferenced"]);
       if (!isOneOf(DISK_ACTIONS, params.action)) invalid(`action must be one of ${DISK_ACTIONS.join(", ")}`);
       if (!isOneOf(DISK_IMAGE_TYPES, params.imageType)) invalid(`imageType must be one of ${DISK_IMAGE_TYPES.join(", ")}`);
       oneFile(attachments, "the disk image");
       const result: C1541Params = { action: params.action, imageType: params.imageType };
+      if (params.action === "sectors") {
+        const { sectors, unreferenced } = params;
+        if (sectors !== undefined && (!Array.isArray(sectors) || !sectors.every(isTrackSector))) invalid("sectors must be a list of track and sector numbers from 0 to 255");
+        if (sectors !== undefined && sectors.length > MAX_DISK_SECTORS) invalid(`sectors holds at most ${MAX_DISK_SECTORS} sectors`);
+        if (unreferenced !== undefined && typeof unreferenced !== "boolean") invalid("unreferenced must be true or false");
+        if ((sectors === undefined || sectors.length === 0) && unreferenced !== true) invalid("action sectors needs sectors, unreferenced, or both");
+        if (sectors !== undefined) result.sectors = sectors.map((at) => ({ track: at.track, sector: at.sector }));
+        if (unreferenced === true) result.unreferenced = true;
+      } else if (params.sectors !== undefined || params.unreferenced !== undefined) {
+        invalid(`action ${params.action} takes no sectors`);
+      }
       const named = params.action === "entry" || params.action === "chain" || params.action === "read";
       if (!named) {
         if (params.name !== undefined) invalid(`action ${params.action} takes no name`);
@@ -198,7 +219,7 @@ function isDiskFile(value: unknown): value is DiskFile {
 }
 
 function isC1541Result(value: Fields, attachments: readonly Uint8Array[]): boolean {
-  const carries = value.action === "read" && value.found === true ? 1 : 0;
+  const carries = (value.action === "read" && value.found === true) || value.action === "sectors" ? 1 : 0;
   if (attachments.length !== carries) return false;
   switch (value.action) {
     case "directory":
@@ -226,6 +247,14 @@ function isC1541Result(value: Fields, attachments: readonly Uint8Array[]): boole
       return value.found === false || (value.found === true && Array.isArray(value.sectors) && value.sectors.every(isTrackSector));
     case "read":
       return value.found === false || (value.found === true && typeof value.name === "string" && value.bytes === attachments[0]!.length);
+    case "sectors":
+      return (
+        Array.isArray(value.sectors) &&
+        value.sectors.length <= MAX_DISK_SECTORS &&
+        value.sectors.every(isTrackSector) &&
+        value.bytes === value.sectors.length * DISK_BLOCK_BYTES &&
+        value.bytes === attachments[0]!.length
+      );
   }
   return false;
 }

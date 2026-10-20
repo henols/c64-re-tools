@@ -4,7 +4,7 @@
 
 import { formatC64Address } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
-import { DISK_IMAGE_TYPES, inspectDisk } from "#src/host-client/tools.ts";
+import { DISK_BLOCK_BYTES, DISK_IMAGE_TYPES, inspectDisk, MAX_DISK_SECTORS } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { OPTIONS, reply, runScript, type Call, type SubjectSpec } from "#src/script.ts";
 import { parseCrt, parseT64, tapeFile } from "./lib/containers.ts";
@@ -75,6 +75,16 @@ function cartridge(image: string) {
 /** A command that takes only a disk image. */
 const diskOnly = (call: Call, action: string) => kindFor(action, call.subject(0), ["disk"]);
 
+/** A sector as <track>/<sector> in decimal, for example 18/1. */
+function sectorOf(text: string): { track: number; sector: number } {
+  const match = /^(\d{1,3})\/(\d{1,3})$/.exec(text);
+  const [track, sector] = [Number(match?.[1]), Number(match?.[2])];
+  if (match === null || track < 1 || track > 255 || sector > 255) {
+    throw new Refusal("invalid-input", `${text} is not a sector. Give <track>/<sector> in decimal, for example 18/1.`);
+  }
+  return { track, sector };
+}
+
 await runScript({
   name: "disk",
   summary: "Inspects a disk image and extracts files into the project. It also reads T64 tape files and CRT cartridge files. A CRT can have hardware type 0 (normal 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) or 32 (EasyFlash).",
@@ -101,9 +111,16 @@ await runScript({
       name: "bam",
       summary: "The free and used sectors of each track, and the used sectors that no file holds.",
       subjects: [IMAGE],
-      run: (call) => {
+      run: async (call) => {
         diskOnly(call, "bam");
-        return inspect(call, "bam");
+        const image = call.subject(0);
+        const output = (await inspect(call, "bam")) as { unreferenced: unknown[] };
+        if (output.unreferenced.length === 0) return output;
+        const base = image.split("/").at(-1)!.replace(/\.[^.]*$/, "");
+        return reply(output, {
+          hint: "Write the unreferenced sectors to a file to examine their bytes.",
+          nextAction: call.next("sectors", image, "--unreferenced", "--out", `.c64-re-tools/local/${base}-unreferenced.bin`),
+        });
       },
     },
     {
@@ -144,6 +161,29 @@ await runScript({
         const result = await inspectDisk({ image, action: "read", name });
         if (result.action !== "read" || !result.found) throw noFile(image, name);
         return { name: result.name, ...writeReported(out, result.data!, { what: "--out" }) };
+      },
+    },
+    {
+      name: "sectors",
+      summary: "Writes the 256 bytes of each given sector into one file, in the given order. It can also write the used sectors that no file holds.",
+      subjects: [IMAGE, { name: "<track>/<sector>", help: "a sector in decimal, for example 18/1. Give more sectors to write them in that order", optional: true, list: true }],
+      options: {
+        unreferenced: { kind: "flag", help: "write also the used sectors that no file holds, as bam lists them, after the given sectors" },
+        out: { ...OPTIONS.out, output: "file", value: "<file>", help: "the file to write, relative to the project folder", required: true },
+      },
+      run: async (call) => {
+        diskOnly(call, "sectors");
+        const image = call.subject(0);
+        const out = call.string("out")!;
+        const sectors = call.rest(1).map(sectorOf);
+        const unreferenced = call.flag("unreferenced");
+        if (sectors.length === 0 && !unreferenced) throw new Refusal("invalid-input", "sectors needs a sector or --unreferenced. Give <track>/<sector>, for example 18/1, or --unreferenced.");
+        if (sectors.length > MAX_DISK_SECTORS) throw new Refusal("limit-exceeded", `${sectors.length} sectors are too many. Give at most ${MAX_DISK_SECTORS} sectors.`);
+        const result = await inspectDisk({ image, action: "sectors", sectors, ...(unreferenced ? { unreferenced } : {}) });
+        if (result.action !== "sectors") throw new Refusal("operation-failed", "The disk inspection gave no sectors.");
+        const index = result.sectors.map((at, position) => ({ track: at.track, sector: at.sector, offset: position * DISK_BLOCK_BYTES }));
+        if (index.length === 0) return reply({ count: 0, sectors: [] }, { hint: "The disk has no used sectors that no file holds. The script wrote no file." });
+        return { count: index.length, sectors: index, ...writeReported(out, result.data!, { what: "--out" }) };
       },
     },
     {

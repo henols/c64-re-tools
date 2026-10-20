@@ -3,18 +3,20 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import { textToPetscii } from "../../../src/c64.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
+import { createToolDispatcher } from "../../../src/host/tools/index.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { WireFailure } from "../../../src/protocol/messages.ts";
-import { buildD64 } from "../../fixtures/d64.ts";
+import { buildD64, offsetOf } from "../../fixtures/d64.ts";
 import { BORDER_LOOP_END, BORDER_LOOP_START, borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 let session: ViceSessionHandle;
+const supervisor = new ProcessSupervisor();
 before(async () => {
   if (liveSkip !== false) return;
-  const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
   session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
 });
@@ -122,4 +124,31 @@ test("a key while the autostart still loads is refused, and taken once the progr
   }
   for (let wait = 0; wait < 40 && (await session.handle("status", {})).warp; wait++) await session.handle("execution", { action: "advance-frames", count: 25, space: "c64" });
   assert.deepEqual(await session.handle("keyboard", { data: "20" }), { queuedBytes: 1 });
+});
+
+test("the bytes that a sectors request gives for a sector that no file holds are the bytes that the drive reads there", { skip: liveSkip, timeout: 120_000 }, async () => {
+  const image = buildD64([{ name: "LOOP", bytes: borderLoopPrg }], "HIDDEN", [{ track: 20, sector: 5 }]);
+  const marker = Buffer.from(Array.from({ length: 256 }, (_, index) => (index * 7 + 3) & 0xff));
+  marker.copy(image, offsetOf(20, 5));
+  const tools = createToolDispatcher({ supervisor, env: liveEnv(), log: liveLog });
+  const { result, attachments } = await tools("c1541.inspect", { action: "sectors", imageType: "d64", unreferenced: true }, [image], new AbortController().signal);
+  assert.deepEqual(result, { action: "sectors", sectors: [{ track: 20, sector: 5 }], bytes: 256 });
+  assert.deepEqual(attachments?.[0], marker);
+
+  // A loader that reads the sector directly: BASIC sends U1 for track 20 sector 5 into a drive buffer.
+  await session.handle("reset", { mode: "hard", run: true });
+  assert.deepEqual(await session.handle("diskAttach", { type: "d64" }, [image]), { attached: true });
+  const ready = [0x12, 0x05, 0x01, 0x04, 0x19, 0x2e];
+  const screenHas = async (pattern: number[]) => (await session.handle("memorySearch", { start: 0x0400, end: 0x07e7, pattern, space: "c64", view: "cpu", maxResults: 2 })).matches.length;
+  for (let wait = 0; wait < 100 && (await screenHas(ready)) === 0; wait++) await new Promise((resolve) => setTimeout(resolve, 100));
+  const line = textToPetscii('open15,8,15:open2,8,2,"#":print#15,"u1 2 0 20 5"\n');
+  await session.handle("keyboard", { data: Buffer.from(line).toString("hex") });
+  let found: number[] = [];
+  for (let wait = 0; wait < 200 && found.length === 0; wait++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    found = (await session.handle("memorySearch", { start: 0x0300, end: 0x07ff, pattern: [...marker.subarray(0, 16)], space: "drive8", view: "cpu", maxResults: 2 })).matches;
+  }
+  assert.equal(found.length, 1, "the drive buffer holds the sector");
+  const read = await session.handle("memoryRead", { address: found[0]!, size: 256, space: "drive8", view: "cpu" });
+  assert.equal(read.data, marker.toString("hex"));
 });

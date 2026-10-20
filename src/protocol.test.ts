@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { encodeFrame, MAX_ATTACHMENT_BYTES, MAX_FRAME_BYTES, MessageReader } from "./protocol/framing.ts";
 import { checkHello, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseClientMessage, parseHostMessage, ProtocolError, shownMessage, STOP_AND_ASK, WireFailure, withStopAndAsk } from "./protocol/messages.ts";
-import { isRelativePath, validateToolParams, validateToolResult } from "./protocol/tools.ts";
+import { isRelativePath, MAX_DISK_SECTORS, validateToolParams, validateToolResult } from "./protocol/tools.ts";
 import { attachmentCount, MAX_MASK_RECTANGLES, validateViceParams, validateViceResult } from "./protocol/vice.ts";
 import { FrameDecoder } from "./protocol/framing.testkit.ts";
 
@@ -397,6 +397,34 @@ test("c1541.inspect parameters and results are validated", () => {
   const bam = { action: "bam", tracks: [{ track: 1, freeSectors: [1], usedSectors: [0] }], unreferenced: [{ track: 1, sector: 0 }] };
   assert.deepEqual(validateToolResult("c1541.inspect", bam, []), bam);
   assert.throws(() => validateToolResult("c1541.inspect", { action: "bam", tracks: bam.tracks }, []), ProtocolError, "unreferenced is necessary");
+});
+
+test("c1541.inspect sectors takes sectors, unreferenced or both, and its blocks come as the one attachment", () => {
+  const image = [Buffer.alloc(174848)];
+  const sectors = [{ track: 18, sector: 0 }, { track: 1, sector: 0 }];
+  assert.deepEqual(validateToolParams("c1541.inspect", { action: "sectors", imageType: "d64", sectors }, image), { action: "sectors", imageType: "d64", sectors });
+  assert.deepEqual(validateToolParams("c1541.inspect", { action: "sectors", imageType: "d64", unreferenced: true }, image), { action: "sectors", imageType: "d64", unreferenced: true });
+  assert.deepEqual(validateToolParams("c1541.inspect", { action: "sectors", imageType: "d64", sectors, unreferenced: true }, image), { action: "sectors", imageType: "d64", sectors, unreferenced: true });
+  for (const params of [
+    { action: "sectors", imageType: "d64" },
+    { action: "sectors", imageType: "d64", sectors: [] },
+    { action: "sectors", imageType: "d64", unreferenced: false },
+    { action: "sectors", imageType: "d64", unreferenced: "yes" },
+    { action: "sectors", imageType: "d64", sectors: [{ track: 256, sector: 0 }] },
+    { action: "sectors", imageType: "d64", sectors: [{ track: 18 }] },
+    { action: "sectors", imageType: "d64", sectors: "18/0" },
+    { action: "sectors", imageType: "d64", sectors: Array.from({ length: MAX_DISK_SECTORS + 1 }, () => ({ track: 18, sector: 0 })) },
+    { action: "bam", imageType: "d64", sectors },
+    { action: "read", imageType: "d64", name: "GAME", unreferenced: true },
+  ]) {
+    assert.throws(() => validateToolParams("c1541.inspect", params, image), WireFailure, JSON.stringify(params).slice(0, 120));
+  }
+  const result = { action: "sectors", sectors, bytes: 512 };
+  assert.deepEqual(validateToolResult("c1541.inspect", result, [Buffer.alloc(512)]), result);
+  assert.deepEqual(validateToolResult("c1541.inspect", { action: "sectors", sectors: [], bytes: 0 }, [Buffer.alloc(0)]).action, "sectors");
+  assert.throws(() => validateToolResult("c1541.inspect", result, [Buffer.alloc(511)]), ProtocolError, "the byte count must match");
+  assert.throws(() => validateToolResult("c1541.inspect", { ...result, bytes: 256 }, [Buffer.alloc(256)]), ProtocolError, "256 bytes for each sector");
+  assert.throws(() => validateToolResult("c1541.inspect", result, []), ProtocolError, "the blocks are necessary");
 });
 
 test("c1541.inspect and petcat.decode refuse an empty attachment in the same words", () => {

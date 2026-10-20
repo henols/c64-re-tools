@@ -14,9 +14,9 @@ import { startHostServer, type HostServer } from "../../src/host/server.ts";
 import { C1541, findTool } from "../../src/native/discover.ts";
 import { createToolDispatcher } from "../../src/host/tools/index.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
-import { buildD64 } from "../fixtures/d64.ts";
+import { buildD64, offsetOf } from "../fixtures/d64.ts";
 import { borderLoopPrg } from "../fixtures/prg/border-loop.ts";
-import { readEnvelope } from "../kit.ts";
+import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 
 let skip: string | false = false;
 try {
@@ -28,7 +28,11 @@ try {
 const script = resolve(import.meta.dirname, "../../skills/c64-disk/scripts/disk.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-disk-"));
 mkdirSync(join(project, "original"));
-writeFileSync(join(project, "original", "game.d64"), buildD64([{ name: "LOOP", bytes: borderLoopPrg }], "GAME DISK", [{ track: 20, sector: 5 }, { track: 1, sector: 0 }]));
+const gameDisk = buildD64([{ name: "LOOP", bytes: borderLoopPrg }], "GAME DISK", [{ track: 20, sector: 5 }, { track: 1, sector: 0 }]);
+// The sectors that no file holds have their own bytes, as a loader that reads them directly finds them.
+gameDisk.fill(0xaa, offsetOf(1, 0), offsetOf(1, 0) + 256);
+gameDisk.fill(0x55, offsetOf(20, 5), offsetOf(20, 5) + 256);
+writeFileSync(join(project, "original", "game.d64"), gameDisk);
 let server: HostServer | undefined;
 after(async () => {
   await server?.close();
@@ -50,7 +54,7 @@ async function hostEnv(): Promise<string> {
   return `${server.host}:${server.port}`;
 }
 
-async function disk(...args: string[]): Promise<{ status: number | null; json: Record<string, any> }> {
+async function disk(...args: string[]): Promise<{ status: number | null; json: Record<string, any>; envelope: ScriptEnvelope }> {
   const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: await hostEnv() }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
@@ -58,7 +62,7 @@ async function disk(...args: string[]): Promise<{ status: number | null; json: R
   child.stderr.on("data", (chunk) => (stderr += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(stderr, "");
-  return { status, json: readEnvelope(stdout, status).json };
+  return { status, ...readEnvelope(stdout, status) };
 }
 
 test("the directory lists the disk and its files", { skip }, async () => {
@@ -87,7 +91,7 @@ test("entry and chain give the file's blocks", { skip }, async () => {
 });
 
 test("bam gives each track and the used sectors that no file holds", { skip }, async () => {
-  const { status, json } = await disk("bam", "original/game.d64");
+  const { status, json, envelope } = await disk("bam", "original/game.d64");
   assert.equal(status, 0, JSON.stringify(json));
   const tracks = json.tracks as Array<{ track: number; usedSectors: number[] }>;
   assert.equal(tracks.length, 35);
@@ -96,6 +100,30 @@ test("bam gives each track and the used sectors that no file holds", { skip }, a
     { track: 1, sector: 0 },
     { track: 20, sector: 5 },
   ]);
+  assert.match(envelope.nextAction ?? "", /disk\.ts sectors original\/game\.d64 --unreferenced --out \.c64-re-tools\/local\/game-unreferenced\.bin/);
+});
+
+test("sectors writes the blocks in the given order, then the used sectors that no file holds, and gives the index", { skip }, async () => {
+  const { status, json } = await disk("sectors", "original/game.d64", "18/0", "--unreferenced", "--out", "extracted/hidden.bin");
+  assert.equal(status, 0, JSON.stringify(json));
+  assert.equal(json.count, 3);
+  assert.deepEqual(json.sectors, [
+    { track: 18, sector: 0, offset: 0 },
+    { track: 1, sector: 0, offset: 256 },
+    { track: 20, sector: 5, offset: 512 },
+  ]);
+  assert.equal(json.out, "extracted/hidden.bin");
+  assert.equal(json.bytes, 768);
+  const written = readFileSync(join(project, "extracted", "hidden.bin"));
+  assert.deepEqual(written.subarray(0, 256), gameDisk.subarray(offsetOf(18, 0), offsetOf(18, 0) + 256));
+  assert.ok(written.subarray(256, 512).every((byte) => byte === 0xaa));
+  assert.ok(written.subarray(512).every((byte) => byte === 0x55));
+  const one = await disk("sectors", "original/game.d64", "20/5", "--out", "extracted/one.bin");
+  assert.deepEqual(one.json.sectors, [{ track: 20, sector: 5, offset: 0 }]);
+  const outside = await disk("sectors", "original/game.d64", "36/0", "--out", "extracted/outside.bin");
+  assert.equal(outside.status, 2);
+  assert.equal((outside.json.error as { code: string }).code, "invalid-input");
+  assert.equal(existsSync(join(project, "extracted", "outside.bin")), false);
 });
 
 test("bad calls are refused before anything is sent", { skip }, async () => {
@@ -105,6 +133,9 @@ test("bad calls are refused before anything is sent", { skip }, async () => {
     ["directory", "original/game.d64", "LOOP"],
     ["read", "original/game.d64", "LOOP", "--out", "../escape.prg"],
     ["entry", "original/game.d64"],
+    ["sectors", "original/game.d64", "--out", "extracted/none.bin"],
+    ["sectors", "original/game.d64", "18/x", "--out", "extracted/none.bin"],
+    ["sectors", "original/game.d64", "18/0"],
   ]) {
     const { status, json } = await disk(...args);
     assert.equal(status, 2, args.join(" "));

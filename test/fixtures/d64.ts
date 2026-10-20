@@ -7,7 +7,8 @@ function sectorsPerTrack(track: number): number {
   return track <= 17 ? 21 : track <= 24 ? 19 : track <= 30 ? 18 : 17;
 }
 
-function offsetOf(track: number, sector: number): number {
+/** The byte offset of a sector in the image. */
+export function offsetOf(track: number, sector: number): number {
   let offset = 0;
   for (let earlier = 1; earlier < track; earlier++) offset += sectorsPerTrack(earlier) * 256;
   return offset + sector * 256;

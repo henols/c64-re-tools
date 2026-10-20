@@ -105,6 +105,18 @@ test("a disk request sends the image with its type and gets a read file back as 
   await assert.rejects(inspectDisk({ image: "media/game.D64", action: "directory", name: "X" }, { env }), failsWith("invalid-input"));
 });
 
+test("a sectors request sends the sectors and the unreferenced flag, and gets the blocks back as data", async () => {
+  const seen: unknown[] = [];
+  const blocks = Buffer.alloc(512, 0x55);
+  const env = await host(async (op, params) => {
+    seen.push({ op, params });
+    return { result: { action: "sectors", sectors: [{ track: 18, sector: 0 }, { track: 20, sector: 5 }], bytes: 512 }, attachments: [blocks] } as never;
+  });
+  const read = await inspectDisk({ image: "media/game.D64", action: "sectors", sectors: [{ track: 18, sector: 0 }], unreferenced: true }, { env });
+  assert.deepEqual(read, { action: "sectors", sectors: [{ track: 18, sector: 0 }, { track: 20, sector: 5 }], bytes: 512, data: blocks });
+  assert.deepEqual(seen, [{ op: "c1541.inspect", params: { action: "sectors", imageType: "d64", sectors: [{ track: 18, sector: 0 }], unreferenced: true } }]);
+});
+
 test("a BASIC request sends the program and gets the decoded listing", async () => {
   const decoded = { decoded: true, loadAddress: 0x0801, basicEnd: 0x0803, listing: "", lines: [], handoffs: [] };
   const env = await host(async (op, params, attachments) => {
