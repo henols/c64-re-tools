@@ -70,7 +70,7 @@ test("a routine saved from program A is found in program B at another address, a
     { op: "rename", address: "$1000", name: "play", kind: "routine" },
     { op: "rename", address: "$1014", name: "set_pointer", kind: "routine" },
     { op: "rename", address: "$1020", name: "voice_table", kind: "data" },
-    { op: "comment", address: "$1014", placement: "line", text: "Point A/Y at the voice table." },
+    { op: "comment", address: "$1014", placement: "line", text: "Point A/Y at the voice table at $1020 for the copy to $d400." },
     { op: "operand", address: "$1014", select: "lo", symbol: "voice_table" },
     { op: "operand", address: "$1016", select: "hi", symbol: "voice_table" },
     { op: "module", start: "$1000", file: "sound.asm", title: "The sound driver" },
@@ -99,17 +99,19 @@ test("a routine saved from program A is found in program B at another address, a
   assert.equal(matchRun.status, 0, JSON.stringify(matchRun.json));
   const matched = matchRun.json;
   assert.deepEqual(matched.matches, { count: 1, listed: [{ routine: "play", start: "$3000", end: "$3026", shift: 0x2000, differing: [{ address: "$3005", library: "$d400", program: "$d407" }] }] });
-  assert.deepEqual({ ...matched.batch, bytes: undefined, sha256: undefined }, { bytes: undefined, sha256: undefined, out: ".c64-re-tools/local/match.json", writes: 9, known: 0, leftOut: { count: 0, listed: [] } });
-  assert.match(matchRun.envelope.hint!, /Apply the changes in \.c64-re-tools\/local\/match\.json to the project knowledge\./);
+  assert.deepEqual({ ...matched.batch, bytes: undefined, sha256: undefined }, { bytes: undefined, sha256: undefined, out: ".c64-re-tools/local/match.json", writes: 9, known: 0, leftOut: { count: 0, listed: [] }, check: { count: 1, listed: [{ routine: "play", address: "$3014", comment: "Point A/Y at the voice table at $3020 for the copy to $d400.", outside: ["$d400"] }] } });
+  assert.match(matchRun.envelope.hint!, /Apply the changes in \.c64-re-tools\/local\/match\.json to the project knowledge\. First examine batch\.check:/);
 
   // The agent applies the batch as the LLM.
   ok("c64-knowledge", "knowledge.ts", ["apply", ".c64-re-tools/local/match.json", "--reason", "names of library routines", "--project", "game-b"]);
   const at = ok("c64-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]);
   assert.equal(at.symbol.name, "set_pointer");
   assert.equal(at.symbol.origin, "llm");
+  // The address in the comment moved with the routine.
+  assert.deepEqual(at.comments.map((comment: { text: string }) => comment.text), ["Point A/Y at the voice table at $3020 for the copy to $d400."]);
   // A second match finds that B already has every name.
   const again = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--out", ".c64-re-tools/local/match.json", "--project", "game-b"]);
-  assert.deepEqual({ ...again.batch, bytes: undefined, sha256: undefined }, { bytes: undefined, sha256: undefined, out: ".c64-re-tools/local/match.json", writes: 0, known: 9, leftOut: { count: 0, listed: [] } });
+  assert.deepEqual({ ...again.batch, bytes: undefined, sha256: undefined }, { bytes: undefined, sha256: undefined, out: ".c64-re-tools/local/match.json", writes: 0, known: 9, leftOut: { count: 0, listed: [] }, check: { count: 0, listed: [] } });
 
   if (generateSkip !== false) {
     t.diagnostic(generateSkip);
@@ -121,5 +123,5 @@ test("a routine saved from program A is found in program B at another address, a
     .filter((file) => file.endsWith(".asm"))
     .map((file) => readFileSync(join(workspace, "game-b", ".c64-re-tools", "local", "src", file), "utf8"))
     .join("\n");
-  for (const line of [/^play$/m, /^set_pointer$/m, /^voice_table$/m, /lda #<voice_table/, /ldy #>voice_table/, /jsr set_pointer/, /Point A\/Y at the voice table\./]) assert.match(source, line);
+  for (const line of [/^play$/m, /^set_pointer$/m, /^voice_table$/m, /lda #<voice_table/, /ldy #>voice_table/, /jsr set_pointer/, /Point A\/Y at the voice table at \$3020 for the copy to \$d400\./]) assert.match(source, line);
 });

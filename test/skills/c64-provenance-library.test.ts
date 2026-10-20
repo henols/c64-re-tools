@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "../../src/knowledge/read.ts";
 import { Refusal } from "../../src/errors.ts";
-import { findRoutine, libraryFolder, parseRoutine, readLibrary, routineFrom, routineText, saveRoutine, suggest, type ProgramKnowledge, type RoutineSource } from "../../skills/c64-provenance/scripts/lib/library.ts";
+import { findRoutine, libraryFolder, parseRoutine, readLibrary, routineFrom, routineText, saveRoutine, suggest, type ProgramKnowledge, type Routine, type RoutineSource } from "../../skills/c64-provenance/scripts/lib/library.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-library-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -236,11 +236,10 @@ test("the batch names the routine at its program addresses, with the operand exp
   ]);
 });
 
-test("the batch leaves out user and LLM rows, names used elsewhere, removals, a second copy, and operands without their name", () => {
+test("the batch leaves out user and LLM rows, names used elsewhere, removals, and operands without their name", () => {
   const { routine } = routineFrom(source());
   const memory = new Uint8Array(0x10000);
   memory.set(routineBytes(0x3000), 0x3000);
-  memory.set(routineBytes(0x3800), 0x3800);
   const image = { segments: [{ start: 0x3000, end: 0x3fff }], byteAt: (address: number) => memory[address]! };
   const program = knowledgeOf({
     symbols: [
@@ -256,7 +255,6 @@ test("the batch leaves out user and LLM rows, names used elsewhere, removals, a 
   assert.deepEqual(
     leftOut.map((item) => [item.address, item.op ?? "", item.reason]),
     [
-      ["$3800", "", "a second copy of the routine; the first is at $3000"],
       ["$3014", "rename", "the program names it init_sound (user)"],
       ["$3020", "rename", "the program uses the name voice_table at $2000"],
       ["$3020", "classify", "the program has the words region $3020-$3021 (user)"],
@@ -267,8 +265,106 @@ test("the batch leaves out user and LLM rows, names used elsewhere, removals, a 
   );
   assert.deepEqual(batch.map((write) => write.op), ["classify", "classify", "reference"]);
 
-  const removed = suggest([{ routine, matches: findRoutine(routine, image).slice(0, 1) }], knowledgeOf({ suppressed: [0x3000] }), image, new Map());
+  const removed = suggest([{ routine, matches: findRoutine(routine, image) }], knowledgeOf({ suppressed: [0x3000] }), image, new Map());
   assert.deepEqual(removed.leftOut[0], { routine: "play", address: "$3000", op: "rename", reason: "a removal of a name holds there" });
+});
+
+/**
+ * A short routine of program v1 at `start`, all its bytes fixed: LDA #`value`
+ * eight times. Each value gives a routine that occurs once.
+ */
+function uniqueRoutine(name: string, start: number, value: number): Routine {
+  return {
+    name,
+    from: { program: "v1", image: "v1.prg", start },
+    bytes: Uint8Array.from({ length: 16 }, (_, index) => (index % 2 === 0 ? 0xa9 : value)),
+    instructions: [0, 2, 4, 6, 8, 10, 12, 14],
+    relocations: [],
+    variable: [],
+    symbols: [{ at: 0, name, kind: "routine" }],
+    regions: [],
+    comments: [],
+    references: [],
+    operands: [],
+  };
+}
+
+/** A fill routine of program v1 at $2010: LDA abs five times and RTS, its ten operand bytes variable, so it fits at many places. */
+const FILL_BYTES = [0xad, 0x00, 0x00, 0xad, 0x00, 0x00, 0xad, 0x00, 0x00, 0xad, 0x00, 0x00, 0xad, 0x00, 0x00, 0x60];
+const fill: Routine = {
+  ...uniqueRoutine("fill_row", 0x2010, 0),
+  bytes: Uint8Array.from(FILL_BYTES),
+  instructions: [0, 3, 6, 9, 12, 15],
+  variable: [1, 2, 4, 5, 7, 8, 10, 11, 13, 14],
+  comments: [{ at: 0, placement: "line", text: "Fills the row $2010-$201F of the colour RAM at $d800." }],
+};
+
+/** Bytes where the fill routine fits two times, at `at` and at `at` + 1. */
+const TWO_FILLS = [0xad, 0xad, 0x00, 0xad, 0xad, 0x00, 0xad, 0xad, 0x00, 0xad, 0xad, 0x00, 0xad, 0xad, 0x00, 0x60, 0x60];
+
+/** An image of the segment $3000-$3fff with the given bytes at their addresses, and zero bytes between. */
+function imageOf(places: Array<[number, readonly number[]]>): { segments: Array<{ start: number; end: number }>; byteAt: (address: number) => number } {
+  const memory = new Uint8Array(0x10000);
+  for (const [at, bytes] of places) memory.set(bytes, at);
+  return { segments: [{ start: 0x3000, end: 0x3fff }], byteAt: (address) => memory[address]! };
+}
+
+test("match keeps the copies of a short routine that overlap", () => {
+  const image = imageOf([[0x3010, FILL_BYTES], [0x3100, TWO_FILLS]]);
+  assert.deepEqual(findRoutine(fill, image).map((match) => [match.start, match.shift]), [[0x3010, 0x1000], [0x3100, 0x10f0], [0x3101, 0x10f1]]);
+});
+
+test("a routine with several copies gets its names at the copy that has the shift of its neighbours in the library", () => {
+  // The block $2000-$202f of v1 moved by $1000; two other places also fit the fill routine.
+  const left = uniqueRoutine("draw_left", 0x2000, 1);
+  const right = uniqueRoutine("draw_right", 0x2020, 2);
+  const image = imageOf([[0x3000, [...left.bytes]], [0x3010, FILL_BYTES], [0x3020, [...right.bytes]], [0x3100, TWO_FILLS]]);
+  const found = [left, fill, right].map((routine) => ({ routine, matches: findRoutine(routine, image) }));
+  const { batch, leftOut, check } = suggest(found, knowledgeOf(), image, new Map());
+  assert.deepEqual(batch, [
+    { op: "rename", address: "$3000", name: "draw_left", kind: "routine" },
+    { op: "rename", address: "$3010", name: "fill_row", kind: "routine" },
+    { op: "comment", address: "$3010", placement: "line", text: "Fills the row $3010-$301F of the colour RAM at $d800." },
+    { op: "rename", address: "$3020", name: "draw_right", kind: "routine" },
+  ]);
+  const reason = "another copy of the routine; the copy at $3010 has the shift 4096 of its library neighbours draw_left and draw_right";
+  assert.deepEqual(leftOut, [
+    { routine: "fill_row", address: "$3100", reason },
+    { routine: "fill_row", address: "$3101", reason },
+  ]);
+  // The address of the colour RAM is outside the routine: the agent examines the comment.
+  assert.deepEqual(check, [{ routine: "fill_row", address: "$3010", comment: "Fills the row $3010-$301F of the colour RAM at $d800.", outside: ["$d800"] }]);
+
+  // At the border of a moved block, one neighbour is enough when only one copy has its shift.
+  const moved = uniqueRoutine("draw_right", 0x2020, 2);
+  const border = imageOf([[0x3000, [...left.bytes]], [0x3010, FILL_BYTES], [0x3500, [...moved.bytes]], [0x3100, TWO_FILLS]]);
+  const chosen = suggest([left, fill, moved].map((routine) => ({ routine, matches: findRoutine(routine, border) })), knowledgeOf(), border, new Map());
+  assert.ok(chosen.batch.some((write) => write.name === "fill_row" && write.address === "$3010"));
+  assert.match(chosen.leftOut[0]!.reason, /the copy at \$3010 has the shift 4096 of its library neighbour draw_left$/);
+
+  // The moved comment is the comment that the program has already: it is known, not written.
+  const known = suggest(found, knowledgeOf({ comments: [{ ...row, address: 0x3010, placement: "line", text: "Fills the row $3010-$301F of the colour RAM at $d800." }] }), image, new Map());
+  assert.equal(known.known, 1);
+  assert.deepEqual(known.check, []);
+});
+
+test("a routine with several copies gets no names when the shift of no neighbour chooses one copy", () => {
+  const left = uniqueRoutine("draw_left", 0x2000, 1);
+  const right = uniqueRoutine("draw_right", 0x2020, 2);
+  const ambiguous = (found: Array<{ routine: Routine; matches: ReturnType<typeof findRoutine> }>, image: ReturnType<typeof imageOf>) => {
+    const { batch, leftOut } = suggest(found, knowledgeOf(), image, new Map());
+    assert.ok(!batch.some((write) => write.name === "fill_row" || write.op === "comment"), JSON.stringify(batch));
+    assert.deepEqual(
+      leftOut.map((item) => [item.address, item.reason]),
+      ["$3010", "$3100", "$3101"].map((address) => [address, "ambiguous: 3 copies of the routine, and the shift of no library neighbour chooses one copy"]),
+    );
+  };
+  // The neighbours moved by $1000 and by $10f1, and a copy has each shift.
+  const split = imageOf([[0x3000, [...left.bytes]], [0x3010, FILL_BYTES], [0x3100, TWO_FILLS], [0x3111, [...right.bytes]]]);
+  ambiguous([left, fill, right].map((routine) => ({ routine, matches: findRoutine(routine, split) })), split);
+  // A library without neighbours of the routine.
+  const alone = imageOf([[0x3010, FILL_BYTES], [0x3100, TWO_FILLS]]);
+  ambiguous([{ routine: fill, matches: findRoutine(fill, alone) }], alone);
 });
 
 test("the library is a plain folder: routine refuses a name that exists, and a project folder is no library", () => {

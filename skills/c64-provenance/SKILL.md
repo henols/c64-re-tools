@@ -261,20 +261,24 @@ Finds each routine of the library in the program of the project knowledge.
 - `library` and `routines`: the library folder and the number of routines in it.
 - `matches`: each item has `routine`, `start`, `end` and `shift`. `shift` is the address in the program minus the address in the library.
 - `differing` in each match: each operand that addresses something outside the routine and that is different. It gives the value in the `library` and in the `program`. Examine each one. For example, the program can use other variables or another SID voice.
-- `batch`: only with `--out`. `out`, `bytes` and `sha256` give the batch file. `writes` counts its writes. `known` counts the writes that the project knowledge has already. `leftOut` lists the writes that the script left out, and why.
+- `batch`: only with `--out`. `out`, `bytes` and `sha256` give the batch file. `writes` counts its writes. `known` counts the writes that the project knowledge has already. `leftOut` lists the writes that the script left out, and why. `check` lists each comment of the batch that gives an address outside its routine. Each item has `routine`, `address`, `comment` and the `outside` addresses. Such an address can be different in this program. Examine each comment, and correct its text in the batch file if it is necessary.
 
 The batch has the names, regions, comments, references and operand expressions of each routine at its address in the program. The script leaves out a write in these conditions:
 
 - The program has a user or LLM row at that place.
 - The program uses the name at another address.
 - A removal holds at that place.
-- The routine occurs two times. Only the first copy gets the names.
+- The routine occurs more than one time, and the script did not choose this copy.
 - The script left out the name that an operand expression uses, or the expression does not give the operand in the program.
+
+A routine can occur more than one time. Then the script finds the nearest routines before and after it in the library that occur only one time. The script writes the names at the copy that has the shift of one of these routines. If no copy or more than one copy has such a shift, the script writes no names for the routine. Then `batch.leftOut` gives each copy with the reason `ambiguous`.
+
+An address `$xxxx` in a comment moves with the routine when the address is in the routine. An address outside the routine does not move, and `batch.check` gives the comment.
 
 `hint` and `nextAction`:
 
 - Without `--out`, with matches: `nextAction` runs `match` with `--out`. Examine `differing` of each match first.
-- With `--out`, with writes: `hint` tells you to apply the changes in the batch file to the project knowledge. Read `batch.leftOut` first. Apply the changes as one revision of the LLM.
+- With `--out`, with writes: `hint` tells you to apply the changes in the batch file to the project knowledge. Read `batch.leftOut` first. When `batch.check` has comments, `hint` tells you to examine them first. Apply the changes as one revision of the LLM.
 - No match: `hint` tells that a packed program can hold a routine in a packed form. Unpack the program, put it into the project knowledge, and run `match` again.
 
 Traps:
@@ -325,7 +329,7 @@ Traps:
 1. Put the program into the project knowledge, and name the routine there.
 2. Run `routine`. Read `leftOut`.
 3. In another project, put the program into the project knowledge. Run `match`.
-4. Run `match` with `--out`. Read `batch.leftOut`.
+4. Run `match` with `--out`. Read `batch.leftOut` and `batch.check`.
 5. Apply the changes in the batch file to the project knowledge.
 
 ---

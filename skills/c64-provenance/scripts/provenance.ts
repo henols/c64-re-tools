@@ -522,13 +522,14 @@ function matchCommand(call: Call): unknown {
   } finally {
     db?.close();
   }
-  const { batch, known, leftOut } = suggestions;
+  const { batch, known, leftOut, check } = suggestions;
   const written = writeReported(out, batch.length === 0 ? "[]\n" : `[\n${batch.map((write) => ` ${JSON.stringify(write)}`).join(",\n")}\n]\n`, { what: "--out" });
-  const body = { ...result, batch: { ...written, writes: batch.length, known, leftOut: list(leftOut) } };
+  const body = { ...result, batch: { ...written, writes: batch.length, known, leftOut: list(leftOut), check: list(check) } };
   // The batch is applied by the knowledge, not by this script: the hint gives the task, not a command.
   if (matches.length === 0) return reply(body, { hint: noMatch });
   if (batch.length === 0) return reply(body, { hint: withNote(body, "The batch has no writes. The project knowledge has the names of the found routines already, or batch.leftOut tells why the script left out a write.") });
-  return reply(body, { hint: withNote(body, `Apply the changes in ${out} to the project knowledge.`) });
+  const review = check.length === 0 ? "" : " First examine batch.check: each comment there gives an address outside its routine, which can be different in this program. Correct the comment text in the batch file when it is different.";
+  return reply(body, { hint: withNote(body, `Apply the changes in ${out} to the project knowledge.${review}`) });
 }
 
 const LIBRARY = { kind: "text", value: "<folder>", required: true, help: "the library: a plain folder of routine files beside the projects, relative to the project folder, for example ../library" } as const;

@@ -405,7 +405,8 @@ function relocated(relocation: Relocation, start: number, part: 0 | 1): number |
 /**
  * The places where the routine occurs in the image: its fixed bytes equal,
  * each relocation pointing into the routine at one shift, and the variable
- * bytes free. Matches do not overlap.
+ * bytes free. Matches can overlap: a short routine with many variable bytes
+ * can fit at several places close together, and each place is a candidate.
  */
 export function findRoutine(routine: Routine, image: Searched, origin = routine.from.start): Match[] {
   const length = routine.bytes.length;
@@ -442,7 +443,6 @@ export function findRoutine(routine: Routine, image: Searched, origin = routine.
         if (library !== program) differing.push({ address: start + offset, library, program, size: size as 1 | 2 });
       }
       matches.push({ routine: routine.name, start, shift: start - origin, differing });
-      start += length - 1;
     }
   }
   return matches;
@@ -472,14 +472,79 @@ export interface Skipped {
   reason: string;
 }
 
+/** A comment of the batch that names an address outside its routine: that address can be different in the program. */
+export interface Check {
+  routine: string;
+  address: string;
+  comment: string;
+  outside: string[];
+}
+
 export interface Suggestions {
   batch: BatchWrite[];
   /** Writes that the program already has. */
   known: number;
   leftOut: Skipped[];
+  check: Check[];
 }
 
 const semantic = (row: { origin: string }) => isSemantic(row.origin);
+
+/**
+ * The copy of each routine that gets its names, and the copies left out. A
+ * routine with one match is named there. For a routine with several matches,
+ * the routines of the same library program that matched once give the shift:
+ * the nearest one below it and the nearest one above it, by their start in that
+ * program. A copy fits when its shift is the shift of one of these two
+ * neighbours: code that moved as a block keeps the shift of its neighbours, and
+ * at the border of a block only one side has it. The routine is named only when
+ * exactly one copy fits. With no neighbour, with no fitting copy, or with a
+ * fitting copy for each of two different neighbour shifts, no copy is named.
+ */
+function chooseCopies(found: ReadonlyArray<{ routine: Routine; matches: Match[] }>): Array<{ chosen?: Match; leftOut: Skipped[] }> {
+  const show = formatC64Address;
+  const unique = found.filter(({ matches }) => matches.length === 1);
+  return found.map(({ routine, matches }) => {
+    if (matches.length <= 1) return { ...(matches[0] === undefined ? {} : { chosen: matches[0] }), leftOut: [] };
+    const beside = unique.filter((item) => item.routine !== routine && item.routine.from.program === routine.from.program);
+    const below = beside.filter((item) => item.routine.from.start < routine.from.start).sort((a, b) => b.routine.from.start - a.routine.from.start)[0];
+    const above = beside.filter((item) => item.routine.from.start > routine.from.start).sort((a, b) => a.routine.from.start - b.routine.from.start)[0];
+    const neighbours = [below, above].filter((item) => item !== undefined);
+    const copies = [...matches].sort((a, b) => a.start - b.start);
+    const fitting = copies.filter((match) => neighbours.some((item) => item.matches[0]!.shift === match.shift));
+    if (fitting.length !== 1) {
+      return { leftOut: copies.map((match) => ({ routine: routine.name, address: show(match.start), reason: `ambiguous: ${copies.length} copies of the routine, and the shift of no library neighbour chooses one copy` })) };
+    }
+    const chosen = fitting[0]!;
+    const by = neighbours.filter((item) => item.matches[0]!.shift === chosen.shift).map((item) => item.routine.name);
+    const reason = `another copy of the routine; the copy at ${show(chosen.start)} has the shift ${chosen.shift} of its library neighbour${by.length === 1 ? "" : "s"} ${by.join(" and ")}`;
+    return { chosen, leftOut: copies.filter((match) => match !== chosen).map((match) => ({ routine: routine.name, address: show(match.start), reason })) };
+  });
+}
+
+/** A $xxxx address in a comment: four hex digits, not more. */
+const COMMENT_ADDRESS = /\$([0-9a-fA-F]{4})(?![0-9a-fA-F])/g;
+
+/**
+ * The comment text in the program: each $xxxx address inside the library range
+ * of the routine moves by the shift, with upper-case digits when the text has
+ * them. The addresses outside that range stay, and are returned as `outside`.
+ */
+function movedComment(text: string, routine: Routine, shift: number): { text: string; outside: string[] } {
+  const first = routine.from.start;
+  const last = first + routine.bytes.length - 1;
+  const outside = new Set<string>();
+  const moved = text.replace(COMMENT_ADDRESS, (whole, digits: string) => {
+    const value = Number.parseInt(digits, 16);
+    if (value < first || value > last) {
+      outside.add(formatC64Address(value));
+      return whole;
+    }
+    const shown = formatC64Address(value + shift);
+    return /[A-F]/.test(digits) ? shown.toUpperCase() : shown;
+  });
+  return { text: moved, outside: [...outside] };
+}
 
 /**
  * The names, regions, comments, references and operand expressions of each
@@ -487,11 +552,15 @@ const semantic = (row: { origin: string }) => isSemantic(row.origin);
  * the program already has is counted as known. A write that would replace a
  * user or LLM row, take a name that the program uses elsewhere, undo a
  * removal, or give an operand that is not in the image, is left out with the
- * reason. Only the first match of a routine gets its names.
+ * reason. A routine with several matches gets its names at the copy that
+ * chooseCopies gives, or nowhere. Each $xxxx address of a comment inside the
+ * routine moves with it; a written comment with an address outside the routine
+ * is in `check`.
  */
 export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[] }>, program: ProgramKnowledge, image: Searched, platform: ReadonlyMap<string, number>): Suggestions {
   const batch: BatchWrite[] = [];
   const leftOut: Skipped[] = [];
+  const check: Check[] = [];
   let known = 0;
   const show = formatC64Address;
   /** The names that are at their place after the batch: written here or known. */
@@ -499,11 +568,12 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
   const symbolsHere = new Map<number, string>();
   const regionsHere: Array<{ start: number; end: number }> = [];
 
-  for (const { routine, matches } of found) {
-    const [first, ...others] = [...matches].sort((a, b) => a.start - b.start);
-    for (const other of others) leftOut.push({ routine: routine.name, address: show(other.start), reason: `a second copy of the routine; the first is at ${show(first!.start)}` });
-    if (first === undefined) continue;
-    const at = (offset: number) => first.start + offset;
+  const copies = chooseCopies(found);
+  for (const [index, { routine }] of found.entries()) {
+    const { chosen, leftOut: others } = copies[index]!;
+    leftOut.push(...others);
+    if (chosen === undefined) continue;
+    const at = (offset: number) => chosen.start + offset;
     const skip = (address: number, op: string, reason: string) => leftOut.push({ routine: routine.name, address: show(address), op, reason });
 
     for (const symbol of routine.symbols) {
@@ -544,9 +614,13 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
     for (const comment of routine.comments) {
       const address = at(comment.at);
       const existing = program.commentsAt(address).find((item) => item.placement === comment.placement);
-      if (existing?.text === comment.text) known++;
+      const { text, outside } = movedComment(comment.text, routine, chosen.shift);
+      if (existing?.text === text) known++;
       else if (existing !== undefined) skip(address, "comment", `the program has a ${comment.placement} comment there (${existing.origin})`);
-      else batch.push({ op: "comment", address: show(address), placement: comment.placement, text: comment.text });
+      else {
+        batch.push({ op: "comment", address: show(address), placement: comment.placement, text });
+        if (outside.length > 0) check.push({ routine: routine.name, address: show(address), comment: text, outside });
+      }
     }
 
     for (const reference of routine.references) {
@@ -590,7 +664,7 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
       });
     }
   }
-  return { batch, known, leftOut };
+  return { batch, known, leftOut, check };
 }
 
 /** Why the expression is not the operand of the instruction at `address` in the image, or undefined when it is. */
