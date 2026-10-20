@@ -43,7 +43,7 @@ import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { listed, OPTIONS, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
-import { compareReleases, identicalShare, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
+import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
 import { findRoutine, libraryFolder, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
 import { watchRelease, type Start } from "./lib/runtime.ts";
 import { findLeftovers } from "./lib/leftovers.ts";
@@ -100,7 +100,10 @@ function readRelease(name: string, shift: number): LoadedRelease {
   };
 }
 
-/** compare: the releases byte by byte, and with --frames the first access of each difference in each release. */
+/** Most blocks and ranges that a list of --align shows. */
+const MAX_ALIGNED = 64;
+
+/** compare: the releases byte by byte, with --align a map of two releases in blocks, and with --frames the first access of each difference in each release. */
 async function compare(call: Call): Promise<unknown> {
   const positionals = call.subjects;
   if (positionals.length < 2) throw new UsageError("compare needs two or more releases");
@@ -117,12 +120,40 @@ async function compare(call: Call): Promise<unknown> {
   const frames = call.count("frames");
   const stepsFile = call.string("steps");
   if (stepsFile !== undefined && frames === undefined) throw new UsageError("--steps works only with --frames");
+  const aligned = call.flag("align");
+  const minBlock = call.count("min-block");
+  if (minBlock !== undefined && !aligned) throw new UsageError("--min-block works only with --align");
+  if (aligned) {
+    if (shifts.size > 0) throw new UsageError("--align does not work with --shift: --align finds the shift of each block itself. Remove --shift");
+    if (frames !== undefined) throw new UsageError("--align does not work with --frames: --align gives no differences to run. Run --frames without --align");
+    if (positionals.length !== 2) throw new UsageError(`--align maps two releases, not ${positionals.length}. Give two releases`);
+  }
   const steps: ActionStep[] = stepsFile === undefined ? [] : readActionSteps(stepsFile, "--steps", knowledgeAt());
   const loaded = positionals.map((path, index) => readRelease(path, shifts.get(index + 1) ?? 0));
   const releases = loaded.map((item) => item.release);
   const range = call.range("range");
   const comparison = compareReleases(releases, range === undefined ? {} : { from: range.start, to: range.end });
   const share = identicalShare(comparison.identicalBytes, comparison.differingBytes);
+  const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const compared = {
+    releases: loaded.map((item) => ({ name: item.release.name, shift: item.shift, segments: item.release.segments.map(show) })),
+    common: comparison.common.map(show),
+    identicalBytes: comparison.identicalBytes,
+    differingBytes: comparison.differingBytes,
+    identicalShare: share,
+  };
+  if (aligned) {
+    // Code added and data moved: one shift for the release cannot fit, so each block of equal bytes gets its own.
+    const alignment = align(releases[0]!, releases[1]!, range ?? { start: 0x0000, end: 0xffff }, minBlock ?? 16);
+    const capped = <T>(name: string, items: T[]) => ({ [name]: items.slice(0, MAX_ALIGNED), ...(items.length > MAX_ALIGNED ? { [`more${name[0]!.toUpperCase()}${name.slice(1)}`]: items.length - MAX_ALIGNED } : {}) });
+    return {
+      ...compared,
+      alignedShare: alignment.alignedShare,
+      ...capped("blocks", alignment.blocks.map((block) => ({ a: show(block.a), b: show(block.b), shift: block.shift, bytes: block.bytes }))),
+      ...capped("onlyInA", alignment.onlyInA.map(show)),
+      ...capped("onlyInB", alignment.onlyInB.map(show)),
+    };
+  }
   // A poor match at the load addresses can mean that the releases are placed differently.
   // Each release gets its best shifts: data that stayed can outvote code that moved, so one is not enough.
   const applied = loaded.map((item) => item.shift);
@@ -165,11 +196,7 @@ async function compare(call: Call): Promise<unknown> {
   }
 
   return {
-    releases: loaded.map((item) => ({ name: item.release.name, shift: item.shift, segments: item.release.segments.map((segment) => ({ start: formatC64Address(segment.start), end: formatC64Address(segment.end) })) })),
-    common: comparison.common.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
-    identicalBytes: comparison.identicalBytes,
-    differingBytes: comparison.differingBytes,
-    identicalShare: share,
+    ...compared,
     differences: comparison.differences.map((difference, index) => ({
       start: formatC64Address(difference.start),
       end: formatC64Address(difference.end),
@@ -460,7 +487,7 @@ const LIBRARY = { kind: "text", value: "<folder>", required: true, help: "the li
 const COMMANDS: CommandSpec[] = [
   {
     name: "compare",
-    summary: "Compares releases byte by byte, in their common ranges, and suggests shifts when they are placed differently.",
+    summary: "Compares releases byte by byte, in their common ranges, and suggests shifts when they are placed differently. With --align, maps two releases with moved code in blocks of equal bytes, each with its own shift.",
     subjects: [{ name: "<release>", help: "knowledge (the program in the knowledge), a PRG at its load address, or an image.json of the c64-unpacker skill with the entry_state.json beside it. Two or more", list: true }],
     options: {
       shift: {
@@ -472,6 +499,8 @@ const COMMANDS: CommandSpec[] = [
         example: (given) => `2:${given !== undefined && /^-\d+$/.test(given) ? given : "-256"}`,
       },
       range: { ...OPTIONS.range, help: "compare only the addresses from start to end" },
+      align: { kind: "flag", help: "map the first release to the second in blocks of equal bytes, each with its own shift, for releases with added code and moved data. Two releases; not with --shift or --frames" },
+      "min-block": { kind: "count", value: "<n>", min: 8, max: 0x10000, help: "with --align: the fewest bytes in a block (default 16)" },
       frames: { ...OPTIONS.frames, max: MAX_EXECUTION_COUNT, help: "run each release in its own emulator for n frames, and give each listed difference its first access and whether it changed" },
       steps: { ...OPTIONS.steps, help: "with --frames: action steps (JSON) to run before the frames" },
     },

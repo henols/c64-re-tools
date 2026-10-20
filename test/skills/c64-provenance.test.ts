@@ -7,8 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE } from "../../src/c64.ts";
-import { compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
+import { COVERAGE, formatC64Address } from "../../src/c64.ts";
+import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
 import { separate } from "../../src/knowledge/separate.ts";
 import { seededBytes } from "../kit.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
@@ -119,6 +119,68 @@ test("the script compares PRG files and applies a shift", () => {
   assert.match(refused(["release.prg", "moved.prg", "--shift", "2-256"]).message, /^--shift must be <release>:<bytes>, for example 2:-256, not 2-256\n/);
   // A bare negative number is not taken as an option: the message gives the form with that number, not --shift=-1280.
   assert.match(refused(["release.prg", "moved.prg", "--shift", "-1280"]).message, /^--shift needs a value of the form <release>:<bytes>: give --shift <release>:<bytes>, for example --shift 2:-1280, not -1280\n/);
+});
+
+// Two builds of one game: X M Y R Z, and X I Y M Z. I is inserted, R is removed, and M moved past Y.
+const part = { x: seededBytes(0x1001, 256), m: seededBytes(0x1002, 64), y: seededBytes(0x1003, 512), r: seededBytes(0x1004, 24), z: seededBytes(0x1005, 256), i: seededBytes(0x1006, 32) };
+const buildA = Buffer.concat([part.x, part.m, part.y, part.r, part.z]);
+const buildB = Buffer.concat([part.x, part.i, part.y, part.m, part.z]);
+
+test("align maps two builds in blocks with their own shifts: a moved block crosses, an inserted and a removed block are in no block", () => {
+  const result = align(at("a", 0x1000, buildA), at("b", 0x1000, buildB), { start: 0x0000, end: 0xffff }, 16);
+  assert.deepEqual(
+    result.blocks.map((block) => [block.a.start, block.a.end, block.b.start, block.b.end, block.shift, block.bytes]),
+    [
+      [0x1000, 0x10ff, 0x1000, 0x10ff, 0, 256],
+      [0x1100, 0x113f, 0x1320, 0x135f, 0x220, 64],
+      [0x1140, 0x133f, 0x1120, 0x131f, -32, 512],
+      [0x1358, 0x1457, 0x1360, 0x145f, 8, 256],
+    ],
+  );
+  assert.deepEqual(result.onlyInA, [{ start: 0x1340, end: 0x1357 }]);
+  assert.deepEqual(result.onlyInB, [{ start: 0x1100, end: 0x111f }]);
+  assert.equal(result.alignedShare, identicalShare(2 * 1088, 24 + 32));
+  // --min-block drops a short block: M is then removed in a and inserted in b.
+  const long = align(at("a", 0x1000, buildA), at("b", 0x1000, buildB), { start: 0x0000, end: 0xffff }, 100);
+  assert.deepEqual(long.blocks.map((block) => block.shift), [0, -32, 8]);
+  assert.deepEqual(long.onlyInA, [{ start: 0x1100, end: 0x113f }, { start: 0x1340, end: 0x1357 }]);
+  assert.deepEqual(long.onlyInB, [{ start: 0x1100, end: 0x111f }, { start: 0x1320, end: 0x135f }]);
+  // Only the bytes in the range count.
+  assert.deepEqual(align(at("a", 0x1000, buildA), at("b", 0x1000, buildB), { start: 0x1000, end: 0x10ff }, 16).blocks.map((block) => [block.a.start, block.a.end, block.shift]), [[0x1000, 0x10ff, 0]]);
+});
+
+test("compare --align maps two image.json files, and refuses --shift, and --min-block without --align", () => {
+  const image = (folder: string, bytes: Uint8Array) => {
+    const memory = new Uint8Array(0x10000);
+    memory.set(bytes, 0x1000);
+    mkdirSync(join(project, folder), { recursive: true });
+    writeFileSync(join(project, folder, "image.bin"), memory);
+    writeFileSync(join(project, folder, "image.json"), JSON.stringify({ image: "image.bin", segments: [{ start: "$1000", end: formatC64Address(0x1000 + bytes.length - 1) }] }));
+  };
+  image("build-a", buildA);
+  image("build-b", buildB);
+  const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
+  const compare = (args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, "compare", "build-a/image.json", "build-b/image.json", ...args], { cwd: project, encoding: "utf8" });
+  const run = compare(["--align"]);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const result = JSON.parse(run.stdout) as Record<string, any>;
+  assert.deepEqual(result.blocks[1], { a: { start: "$1100", end: "$113f" }, b: { start: "$1320", end: "$135f" }, shift: 544, bytes: 64 });
+  assert.equal(result.blocks.length, 4);
+  assert.deepEqual(result.onlyInA, [{ start: "$1340", end: "$1357" }]);
+  assert.deepEqual(result.onlyInB, [{ start: "$1100", end: "$111f" }]);
+  assert.equal(result.alignedShare, 0.975);
+  assert.ok(result.identicalShare < 0.5, "the same addresses differ after the inserted block");
+  assert.equal(result.suggestedShifts, undefined, "no shift suggestions in align mode");
+  assert.equal(result.differences, undefined);
+  const ranged = JSON.parse(compare(["--align", "--min-block", "100", "--range", "$1100-$13ff"]).stdout) as Record<string, any>;
+  assert.deepEqual(ranged.blocks.map((block: { shift: number }) => block.shift), [-32, 8], "M is too short, and Z is cut at the end of the range");
+  const refused = (args: string[]) => {
+    const failed = compare(args);
+    assert.equal(failed.status, 2, failed.stdout);
+    return (JSON.parse(failed.stdout) as { error: { code: string; message: string } }).error;
+  };
+  assert.match(refused(["--align", "--shift", "2:-32"]).message, /^--align does not work with --shift/);
+  assert.match(refused(["--min-block", "20"]).message, /^--min-block works only with --align/);
 });
 
 test("compare refuses a disk, tape or cartridge image with the remedy, as the unpacker does", () => {

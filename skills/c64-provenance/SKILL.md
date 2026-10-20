@@ -20,6 +20,7 @@ This skill does not change project knowledge.
 - Two or more releases, relative to the project folder. A release is `knowledge` (the program in the knowledge), a PRG file, or an `image.json` from c64-unpacker capture with its `entry_state.json` beside it. Extract releases from disk images with the c64-disk skill. Unpack packed releases with the c64-unpacker skill first.
 - Optional: an address range to compare.
 - Optional: a shift for a release that loads at a different address.
+- Optional: `--align`, to map two releases with moved code in blocks of equal bytes.
 - Optional: a number of frames to run each release, and a steps file.
 - For one release: the program, the coverage and the other knowledge of the project. Put the program and the coverage in with `image` and `coverage` of the c64-knowledge skill.
 - For the library: the program and the other knowledge of its project, and the library folder.
@@ -31,6 +32,7 @@ The script compares the releases locally. Only `--frames` uses the host runtime:
 ```
 node <skill>/scripts/provenance.ts compare releases/a.prg releases/b.prg releases/c.prg
 node <skill>/scripts/provenance.ts compare releases/a.prg releases/b.prg --shift 2:-256 --range '$0900-$09ff'
+node <skill>/scripts/provenance.ts compare releases/a/image.json releases/b/image.json --align --range '$0400-$bfff'
 node <skill>/scripts/provenance.ts compare knowledge .c64-re-tools/local/b/image.json --frames 600 --steps .c64-re-tools/local/start-game.json
 node <skill>/scripts/provenance.ts separate --out .c64-re-tools/local/separate.json
 node <skill>/scripts/provenance.ts leftovers --out .c64-re-tools/local/leftovers.json
@@ -40,12 +42,23 @@ node <skill>/scripts/provenance.ts leftovers --out .c64-re-tools/local/leftovers
 |---|---|
 | `--shift 2:-256` | Move release 2 (the first release is 1) by -256 bytes. Use it again for more releases. Give one shift for each release. |
 | `--range '$0900-$09ff'` | Compare only the addresses in this range. |
+| `--align` | Map release 1 to release 2 in blocks of equal bytes. Each block has its own shift. Give two releases. Do not use it with `--shift` or `--frames`. |
+| `--min-block 24` | With `--align`: the minimum number of bytes in a block. The default is 16. |
 | `--frames 600` | Run each release for this many frames, and give each listed difference its runtime evidence. |
 | `--steps .c64-re-tools/local/start-game.json` | With `--frames`: a JSON list of action steps to run before the frames, for example a key to start the game. The steps are the steps of a c64-unpacker steps file. |
 
 The script puts each PRG at its load address. An image has bytes only in its segments. The script compares the addresses where all releases have bytes.
 
 With `--shift`, the addresses of `segments`, `common` and `differences` are the release addresses plus the `shift` of the release. The `start` and `end` of `runtime` are the addresses in the release itself, without the shift.
+
+Use `--align` for two releases with added code and moved data. One shift does not fit them, and the shift suggestions are not useful. The map tells what each block of one release is in the other release. With `--align`, the result has the map, not `differences` and not the shift suggestions:
+
+- `blocks`: the blocks of equal bytes, in the order of their addresses in release 1. `a` is the range in release 1. `b` is the range in release 2. `bytes` is the length of the block.
+- `shift`: the address in `b` minus the address in `a`. The address of a byte in release 2 is its address in release 1 plus the `shift` of its block. The blocks can have a different order in release 2, because code moved.
+- `onlyInA`: the ranges of release 1 that no block holds. Release 2 does not have these bytes, or it has other bytes there.
+- `onlyInB`: the ranges of release 2 that no block holds. Release 2 added these bytes, or it changed them.
+- `alignedShare`: the share of the bytes of the two releases that a block holds, with 3 decimals.
+- Each list shows at most 64 items. `moreBlocks`, `moreOnlyInA` and `moreOnlyInB` give the number of the items that the list does not show. Use `--range` to see them.
 
 With `--frames`, a PRG starts with autostart and RUN. An image starts from its bytes: the script writes the segments and the entry state from `entry_state.json` into the emulator, and starts at the entry. Watchpoints on each difference stop the run at its first access.
 
@@ -74,7 +87,7 @@ With `--frames`, a PRG starts with autostart and RUN. An image starts from its b
 ## Workflow
 
 1. Run the script on the releases.
-2. Read `identicalShare`. If it is low and `suggestedShifts` is present, the releases are at different addresses. Run the script again with a `--shift` of `suggestedShifts`. `shiftsNotSuggested` tells why a found shift does not fit in `$0000-$ffff`.
+2. Read `identicalShare`. If it is low and `suggestedShifts` is present, the releases are at different addresses. Run the script again with a `--shift` of `suggestedShifts`. `shiftsNotSuggested` tells why a found shift does not fit in `$0000-$ffff`. If no shift gives a high `identicalShare`, the code and the data can be at other addresses in each release. Then run the script again with `--align`.
 
    `suggestedShifts` has at most 3 shifts for each release. The shift with the most `matchingSequences` is first. Data that did not move and code that moved give different shifts. Try each shift. `current: true` marks the shift of this run.
 3. Read `differences`. Each one has an address range, the bytes of each release, and `groups`: the releases that have the same bytes there.
@@ -201,7 +214,7 @@ Record a confirmed conclusion as a normal comment, region, symbol, release, swit
 
 ## Result
 
-The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes. `identicalShare` has 3 decimals. It is 1 only when no byte differs. `identicalBytes` and `differingBytes` give the counts. `common` gives the ranges where all releases have bytes. `releases` gives the segments and the `shift` of each release. With `--frames`, each difference also has `runtime`, and `run` tells if each release started, or why not.
+The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes. `identicalShare` has 3 decimals. It is 1 only when no byte differs. `identicalBytes` and `differingBytes` give the counts. `common` gives the ranges where all releases have bytes. `releases` gives the segments and the `shift` of each release. With `--frames`, each difference also has `runtime`, and `run` tells if each release started, or why not. With `--align`, the result has `blocks`, `onlyInA`, `onlyInB` and `alignedShare` in place of `differences`.
 
 For `leftovers`: the lists of findings, with `entry`, `roots` and the number of `stages`. `noStages` and `noCoverage` tell which knowledge is missing. Without a root, `roots` tells why `deadCode` is empty.
 
