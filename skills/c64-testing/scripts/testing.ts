@@ -146,6 +146,7 @@ const COMMANDS: CommandSpec[] = [
     summary: "Runs the steps of a run file in its own emulator and writes what they ask for into --out: screens, coverage maps, snapshot files, traces, and results.json with the observations and the expectations. result is FAIL when a step did not run or an expect step found a value that differs.",
     subjects: [{ name: "<run.json>", help: "a run file, relative to the project folder. See references/scenario-format.md, section Runs" }],
     options: { out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the files of the steps and results.json" } },
+    notes: 'A run file is one JSON object. It must have name, start and steps. name is a non-empty string. start is { "program": "<file.prg>" }, { "program": "<file.prg>", "load": true } or { "snapshot": "<file.vsf>" }. steps is a list with at least one step. Optional: symbols ("knowledge", "none" (default) or a JSON file) and videoStandard ("pal" (default) or "ntsc"). The script refuses other keys.',
     run: async (call) => {
       const { output, failed } = await runFile(call.subject(0), call.string("out")!);
       if (!failed) return { result: "PASS", ...output };

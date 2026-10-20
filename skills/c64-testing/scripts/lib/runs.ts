@@ -55,6 +55,10 @@ interface Run {
 }
 
 const OWN_KINDS = ["snapshot", "save", "screen", "coverage", "observe", "expect", "trace"] as const;
+/** The keys of a run file: name, start and steps are required. */
+const RUN_KEYS = ["name", "start", "steps", "symbols", "videoStandard"];
+const RUN_FIELDS = "A run file has name, start and steps, and optionally symbols and videoStandard";
+const START_FORMS = '{ "program": "<file.prg>" }, { "program": "<file.prg>", "load": true } or { "snapshot": "<file.vsf>" }';
 const TRACE_KEYS = ["trace", "points", "frames", "maxHits"];
 const OBSERVE_KEYS = ["observe", "memory", "registers", "vicii", "sprites"];
 const EXPECT_KEYS = ["expect", "memory", "registers"];
@@ -111,14 +115,16 @@ function readRun(path: string): Run {
   const fail = (message: string): never => {
     throw new Refusal("invalid-input", `run ${path}: ${message}`);
   };
-  if (!isObject(value)) return fail("is not a JSON object");
-  if (typeof value.name !== "string" || value.name === "") fail("needs a name");
-  if (value.videoStandard !== undefined && value.videoStandard !== "pal" && value.videoStandard !== "ntsc") fail("videoStandard must be pal or ntsc");
+  if (!isObject(value)) return fail(`is not a JSON object. ${RUN_FIELDS}`);
+  for (const key of Object.keys(value)) if (!RUN_KEYS.includes(key)) fail(`has the key ${key}. ${RUN_FIELDS}`);
+  if (typeof value.name !== "string" || value.name === "") fail('name must be a non-empty string, for example "rooms"');
+  if (value.videoStandard !== undefined && value.videoStandard !== "pal" && value.videoStandard !== "ntsc") fail('videoStandard must be "pal" or "ntsc"');
   const start = value.start;
-  if (!isObject(start) || (typeof start.program !== "string") === (typeof start.snapshot !== "string")) fail("start needs program or snapshot");
-  if (isObject(start) && start.load !== undefined && typeof start.load !== "boolean") fail("start.load must be true or false");
-  if (value.symbols !== undefined && typeof value.symbols !== "string") fail("symbols must be knowledge, none or a JSON file");
-  if (!Array.isArray(value.steps) || value.steps.length === 0) fail("needs steps");
+  if (!isObject(start) || (typeof start.program !== "string") === (typeof start.snapshot !== "string")) return fail(`start must be ${START_FORMS}`);
+  for (const key of Object.keys(start)) if (!(typeof start.program === "string" ? ["program", "load"] : ["snapshot"]).includes(key)) fail(`start has the key ${key}. start must be ${START_FORMS}`);
+  if (start.load !== undefined && typeof start.load !== "boolean") fail("start.load must be true or false");
+  if (value.symbols !== undefined && typeof value.symbols !== "string") fail('symbols must be "knowledge", "none" or a JSON file');
+  if (!Array.isArray(value.steps) || value.steps.length === 0) fail("steps must be a list with at least one step");
   const labels = new Set<string>();
   (value.steps as unknown[]).forEach((step, index) => {
     const at = `step ${index + 1}`;

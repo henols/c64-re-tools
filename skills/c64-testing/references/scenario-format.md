@@ -90,11 +90,11 @@ A `pc` value is an address. Compare `pc` only when both programs have the code a
 
 A run file is one JSON object in a project file. It has:
 
-- `name`: a short name.
-- `start`: `{ "program": "game.prg" }` to autostart a program with a BASIC start line, `{ "program": "game.prg", "load": true }` to load it with the CPU stopped (set `pc` in a step), or `{ "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" }`.
+- `name`: required. A short name, a non-empty string.
+- `start`: required. `{ "program": "game.prg" }` to autostart a program with a BASIC start line, `{ "program": "game.prg", "load": true }` to load it with the CPU stopped (set `pc` in a step), or `{ "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" }`.
 - `symbols`: optional, `knowledge`, `none` (default), or a JSON file as for a subject. Without `symbols`, a run has no names: give `"symbols": "knowledge"` to use the names of the knowledge.
 - `videoStandard`: optional, `pal` (default) or `ntsc`.
-- `steps`: the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage`, `trace`, `observe` and `expect`.
+- `steps`: required. At least one step. The steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage`, `trace`, `observe` and `expect`.
 
 The run steps have these effects:
 
@@ -172,6 +172,8 @@ Example: visit two rooms from the same start.
 ## Checks
 
 The script checks the scenario before it does a step. A step with an unknown key or a wrong value stops the script with `invalid-input`. The message names the step.
+
+A scenario file or a run file with an unknown key also stops the script with `invalid-input`. The message names the key and gives the keys of the file. A missing or wrong `name`, `start` or `steps` gives the form of that key.
 
 The script also examines each file before it does a step: the program and the symbols of each side, and each snapshot file. A missing file stops the script with `not-found`. A program that is not a PRG, for example a disk image, stops the script with `invalid-input`. A snapshot file that is not a `.vsf` snapshot file also stops the script with `invalid-input`. The message names the step and the file.
 

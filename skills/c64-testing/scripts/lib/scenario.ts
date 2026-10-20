@@ -109,6 +109,10 @@ const STEP_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", ...AC
 /** The step kinds that a scenario runs: press is for the replay core only. */
 const SHOWN_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", ...VICE_STEP_KINDS, "observe"];
 
+/** The keys of a scenario file: all but videoStandard are required. */
+const SCENARIO_KEYS = ["name", "original", "rebuild", "steps", "videoStandard"];
+const SCENARIO_FIELDS = "A scenario file has name, original, rebuild and steps, and optionally videoStandard";
+
 /** The keys each kind of step can have. */
 const STEP_KEYS: Record<string, readonly string[]> = {
   observe: ["observe", "memory", "registers", "screen", "vicii", "sprites"],
@@ -130,15 +134,18 @@ export function readScenario(path: string): Scenario {
   const fail = (message: string): never => {
     throw new Refusal("invalid-input", `scenario ${path}: ${message}`);
   };
-  if (!isObject(value)) return fail("is not a JSON object");
+  if (!isObject(value)) return fail(`is not a JSON object. ${SCENARIO_FIELDS}`);
+  for (const key of Object.keys(value)) if (!SCENARIO_KEYS.includes(key)) fail(`has the key ${key}. ${SCENARIO_FIELDS}`);
   const scenario = value as unknown as Scenario;
-  if (typeof scenario.name !== "string" || scenario.name === "") fail("needs a name");
-  if (scenario.videoStandard !== undefined && scenario.videoStandard !== "pal" && scenario.videoStandard !== "ntsc") fail("videoStandard must be pal or ntsc");
+  if (typeof scenario.name !== "string" || scenario.name === "") fail('name must be a non-empty string, for example "player moves left"');
+  if (scenario.videoStandard !== undefined && scenario.videoStandard !== "pal" && scenario.videoStandard !== "ntsc") fail('videoStandard must be "pal" or "ntsc"');
   for (const side of SIDES) {
-    const subject = scenario[side];
-    if (typeof subject?.program !== "string" || typeof subject.symbols !== "string") fail(`${side} needs a program and symbols`);
+    const subject: unknown = scenario[side];
+    const form = `${side} must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file`;
+    if (!isObject(subject) || typeof subject.program !== "string" || typeof subject.symbols !== "string") return fail(form);
+    for (const key of Object.keys(subject)) if (key !== "program" && key !== "symbols") fail(`${side} has the key ${key}. ${form}`);
   }
-  if (!Array.isArray(scenario.steps) || scenario.steps.length === 0) fail("needs steps");
+  if (!Array.isArray(scenario.steps) || scenario.steps.length === 0) fail("steps must be a list with at least one step");
   const labels = new Set<string>();
   let screens = 0;
   scenario.steps.forEach((step: unknown, index) => {

@@ -136,6 +136,14 @@ Traps:
 
 The script does the steps of the run file on one program, with no comparison. It writes the files of the steps and `results.json` into `--out`. One run replaces many emulator calls, for example a visit to each room of a game.
 The run starts from a program or from a snapshot file. To continue from the state of the emulator, save that state to a snapshot file in the emulator. Then start the run from that file.
+
+A run file must have `name`, `start` and `steps`:
+
+```json
+{ "name": "rooms", "start": { "program": "game.prg" }, "steps": [{ "frames": 100 }, { "screen": "title" }] }
+```
+
+`symbols` and `videoStandard` are optional. The section "Runs" of `references/scenario-format.md` gives each key and step.
 Before the run starts, the script examines the run file, each file that it names and each name of the steps. The section "Checks" of `references/scenario-format.md` gives each refusal.
 
 `body` holds:

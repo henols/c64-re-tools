@@ -227,7 +227,7 @@ test("the checklist refuses a bad scenario and, with the usage text, no scenario
     assert.equal(run.status, 2, args.join(" "));
     return (readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } }).error;
   };
-  assert.deepEqual(call("bad.json"), { code: "invalid-input", message: "scenario bad.json: needs a name" });
+  assert.deepEqual(call("bad.json"), { code: "invalid-input", message: 'scenario bad.json: name must be a non-empty string, for example "player moves left"' });
   const none = call();
   assert.equal(none.code, "invalid-input");
   assert.match(none.message, /^checklist needs <scenario\.json>\.\.\.\.? To get the usage, run testing\.ts checklist --help\.$/);
@@ -242,6 +242,37 @@ test("a run refuses a bad call before it opens an emulator", () => {
     const run = call(...args);
     assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
   }
+});
+
+test("a run file and a scenario name a missing field with its form, and refuse a key that they do not have", () => {
+  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+  const run = (value: unknown) => {
+    writeFileSync(join(project, "fields.json"), JSON.stringify(value));
+    const done = spawnSync(process.execPath, [...process.execArgv, script, "run", "fields.json", "--out", "out"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+    assert.equal(done.status, 2, done.stdout);
+    return (readEnvelope(done.stdout, done.status).json as { error: { code: string; message: string } }).error.message;
+  };
+  const good = { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }] };
+  const fields = "A run file has name, start and steps, and optionally symbols and videoStandard";
+  const forms = '{ "program": "<file.prg>" }, { "program": "<file.prg>", "load": true } or { "snapshot": "<file.vsf>" }';
+  assert.equal(run({ start: good.start, steps: good.steps }), 'run fields.json: name must be a non-empty string, for example "rooms"');
+  assert.equal(run({ ...good, start: {} }), `run fields.json: start must be ${forms}`);
+  assert.equal(run({ ...good, start: { snapshot: "s.vsf", load: true } }), `run fields.json: start has the key load. start must be ${forms}`);
+  assert.equal(run({ ...good, steps: [] }), "run fields.json: steps must be a list with at least one step");
+  assert.equal(run({ ...good, program: "game.prg" }), `run fields.json: has the key program. ${fields}`);
+  assert.equal(run([]), `run fields.json: is not a JSON object. ${fields}`);
+  const message = (value: unknown) => {
+    try {
+      readScenario(scenarioFile("fields.json", value));
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return assert.fail("not refused");
+  };
+  assert.equal(message({ ...valid, symbols: "knowledge" }), "scenario fields.json: has the key symbols. A scenario file has name, original, rebuild and steps, and optionally videoStandard");
+  assert.equal(message({ ...valid, rebuild: { program: "build/game.prg" } }), 'scenario fields.json: rebuild must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file');
+  assert.equal(message({ ...valid, original: { ...valid.original, load: true } }), 'scenario fields.json: original has the key load. original must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file');
+  assert.equal(message({ ...valid, steps: [] }), "scenario fields.json: steps must be a list with at least one step");
 });
 
 test("diff gives the changed ranges of two memory files and the changed items of two observations of one run", () => {
