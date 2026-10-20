@@ -29,8 +29,9 @@
   // Docker Desktop (macOS, Windows) and Podman do not need it; remove it for Podman.
   "runArgs": ["--add-host=host.docker.internal:host-gateway"],
 
-  // The page of a c64-testing run (default port 6465), for the browser on your computer.
-  "forwardPorts": [6465],
+  // Publishes the page of a c64-testing play run (port 6465) on this computer only, at http://localhost:6465/.
+  // When 6465 is in use on this computer (two containers), change the first 6465 and open that port.
+  "appPort": ["127.0.0.1:6465:6465"],
 
   "containerEnv": {
     // "pal" or "ntsc": the video standard of the C64.

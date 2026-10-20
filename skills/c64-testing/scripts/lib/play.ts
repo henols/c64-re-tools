@@ -4,7 +4,7 @@
 // session without one. The reads of the program keep the input, so the
 // recording needs nothing from the page. RESTORE is no read: it is an event
 // of the recording (see record in recording.ts). The page listens on every
-// address: in a dev container, a forward of the port from the host needs that.
+// address: the port that a dev container publishes to the host needs that.
 
 import { createServer, type ServerResponse } from "node:http";
 
