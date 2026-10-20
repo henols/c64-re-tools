@@ -16,12 +16,12 @@ after(async () => {
   for (const fake of fakes) fake.close();
 });
 
-async function startSession(options: SessionOptions = {}) {
+async function startSession(options: SessionOptions = {}, log: (line: string) => void = () => {}) {
   const fake = new FakeVice();
   fakes.push(fake);
   const process = await fake.start();
   processes.push(process);
-  const session = await ViceSession.start(process, "pal", () => {}, options);
+  const session = await ViceSession.start(process, "pal", log, options);
   fake.commands.length = 0;
   fake.textCommands.length = 0;
   return { fake, session, process };
@@ -634,13 +634,23 @@ test("an autostart centres the held joysticks first and names them", async () =>
   await session.close();
 });
 
-test("keyboard and joystick results name the known VICE flaws of the session, and only then", async () => {
-  const { session } = await startSession({ flaws: ["Bits 5-7 read low.", "Another flaw."] });
-  assert.deepEqual(await session.handle("joystick", { port: 2, direction: "center", fire: true }), { port: 2, direction: "center", fire: true, emulatorFlaw: "Bits 5-7 read low. Another flaw." });
-  assert.deepEqual(await session.handle("keyboard", { data: "52" }), { queuedBytes: 1, emulatorFlaw: "Bits 5-7 read low. Another flaw." });
+test("a tool that a known VICE flaw breaks is not implemented for the caller, and the host console names the flaw", async () => {
+  const logged: string[] = [];
+  const { fake, session } = await startSession({ flaws: [{ text: "VICE 3.10 holds bits 5-7 low (VICE bug #2202).", breaks: ["joystick", "tape"] }] }, (line) => logged.push(line));
+  const ports = [...fake.joyport];
+  const joystick = await session.handle("joystick", { port: 2, direction: "up", fire: false }).catch((error: Error & { code: string }) => error);
+  assert.equal((joystick as { code: string }).code, "not-implemented");
+  assert.match((joystick as Error).message, /^Joystick input is not implemented in this setup\. .*Give this message to the user\.$/);
+  assert.doesNotMatch((joystick as Error).message, /VICE|3\.10|#2202/, "the caller learns no VICE version");
+  assert.deepEqual(fake.joyport, ports, "no joystick reached VICE");
+  await assert.rejects(session.handle("autostart", { type: "tap", index: 0, run: true }, [Buffer.from("C64-TAPE-RAW")]), { code: "not-implemented", message: /^The load of a tape image is not implemented in this setup\./ });
+  assert.match(logged.join("\n"), /c64_joystick was used, and this VICE does not support it\. VICE 3\.10 holds bits 5-7 low/);
+  assert.match(logged.join("\n"), /c64_autostart of a tape image was used, and this VICE does not support it\./);
+  assert.deepEqual(await session.handle("keyboard", { data: "52" }), { queuedBytes: 1 }, "the keyboard works");
+  assert.deepEqual(await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]), { state: "running" }, "a PRG loads");
   await session.close();
   const plain = await startSession({ flaws: [] });
-  assert.deepEqual(await plain.session.handle("keyboard", { data: "52" }), { queuedBytes: 1 });
+  assert.deepEqual(await plain.session.handle("joystick", { port: 2, direction: "center", fire: true }), { port: 2, direction: "center", fire: true });
   await plain.session.close();
 });
 

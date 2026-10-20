@@ -118,8 +118,6 @@ export async function loads(program: string, options: { out: string; steps: Load
     let loadedProgram: Buffer | undefined;
     /** False while the map holds the writes of the KERNAL RAM test. */
     let writesKnown = true;
-    /** A known flaw of the host's VICE version that a tape load meets. */
-    let emulatorFlaw: string | undefined;
     if (program.toLowerCase().endsWith(".prg")) {
       const { bytes } = readProjectFile(program);
       if (!(await autostartLoaded(client, program, bytes))) return { output: { loaded: false, reason: `The program was not in memory after ${LOAD_LIMIT_FRAMES} frames.`, captures: [] }, failed: true };
@@ -138,7 +136,7 @@ export async function loads(program: string, options: { out: string; steps: Load
       // A disk, tape or cartridge: VICE loads and starts it. The RAM test of the KERNAL puts back what it writes.
       previous = await readRam(client, 0x0000, 0x10000);
       await client.memmap({ action: "clear" });
-      ({ emulatorFlaw } = await client.autostart({ path: program, index: 0, run: true }));
+      await client.autostart({ path: program, index: 0, run: true });
       writesKnown = false;
       if (!program.toLowerCase().endsWith(".crt")) {
         // The map starts again where the KERNAL LOAD starts, after the RAM test: then it holds only what the program wrote.
@@ -228,7 +226,7 @@ export async function loads(program: string, options: { out: string; steps: Load
     if (captures.length > 0 && captures.every((capture) => (capture.segments as unknown[]).length === 0)) {
       const waits = captures.some((capture) => capture.keyWait === true) ? " The C64 waited for a key at READY. or at an INPUT statement, so the load ended or did not start." : "";
       const reason = `No capture has a segment: the program changed no block of RAM from ${formatC64Address(FIRST_SEGMENT_ADDRESS)} on.${waits}`;
-      return { output: { loaded: false, reason, captures, ...(emulatorFlaw === undefined ? {} : { emulatorFlaw }) }, failed: true };
+      return { output: { loaded: false, reason, captures }, failed: true };
     }
     return { output: { loaded: true, captures }, failed: false };
   } finally {

@@ -8,7 +8,7 @@ import type { ViceOperation, ViceOperations } from "./vice.ts";
 /** Private Host Runtime protocol identifier. */
 export const HOST_PROTOCOL_ID = "c64-re-tools-host" as const;
 /** Bumped on any incompatible change; a mismatch fails the handshake. */
-export const HOST_PROTOCOL_VERSION = 3;
+export const HOST_PROTOCOL_VERSION = 4;
 /** After ready, the client pings this often, on every connection. */
 export const HEARTBEAT_INTERVAL_MS = 10_000;
 /** Either side closes a connection that has sent nothing for this long. */

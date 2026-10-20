@@ -108,7 +108,7 @@ async function main(): Promise<number> {
   log(`VICE ${vice.major}.${vice.minor}${vice.revision === undefined ? "" : ` r${vice.revision}`} starts`);
   const flaws = viceFlaws(vice);
   // A known VICE flaw is named, not worked around.
-  for (const flaw of flaws) log(`Known VICE flaw: ${flaw}`);
+  for (const flaw of flaws) log(`Known VICE flaw: ${flaw.text}`);
 
   let server;
   try {

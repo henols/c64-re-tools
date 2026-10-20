@@ -7,7 +7,6 @@ import { keyboardBytes } from "../../host-client/steps.ts";
 import { TOOL_INPUTS } from "../inputs.ts";
 import { defineTool } from "../server.ts";
 
-const EMULATOR_FLAW = z.string().optional().describe("a known flaw of the emulator version that affects input, and the version that fixes it");
 
 export const c64Keyboard = defineTool({
   name: "c64_keyboard",
@@ -19,9 +18,9 @@ export const c64Keyboard = defineTool({
     'Mode text types text, for example "RUN\\n". Letters of either case type the normal (unshifted) key. A line break types RETURN. ' +
     "Mode petscii types PETSCII codes 1 to 255 in bytes, for example [147] to clear the screen. " +
     "While c64_autostart loads a program, this tool refuses keys: see c64_autostart. " +
-    "This does not change the run state of the machine. emulatorFlaw in the result names a known flaw of the emulator version that affects input, and the version that fixes it.",
+    "This does not change the run state of the machine.",
   inputSchema: TOOL_INPUTS.keyboard,
-  outputSchema: z.object({ queuedBytes: z.number().int().min(1).max(MAX_KEYBOARD_BYTES), emulatorFlaw: EMULATOR_FLAW }),
+  outputSchema: z.object({ queuedBytes: z.number().int().min(1).max(MAX_KEYBOARD_BYTES) }),
   readOnly: false,
   async run(input, session) {
     // The schema checked the keys: keyboardBytes gives bytes here.
@@ -36,9 +35,9 @@ export const c64Joystick = defineTool({
   description:
     "Set the joystick in control port 1 or 2: a direction (or center) and the fire button. " +
     "The C64 sees this state until you change it. To release the joystick, set direction center and fire false. " +
-    "Most games read port 2. This does not change the run state of the machine. emulatorFlaw in the result names a known flaw of the emulator version that affects input, and the version that fixes it.",
+    "Most games read port 2. This does not change the run state of the machine.",
   inputSchema: TOOL_INPUTS.joystick,
-  outputSchema: z.object({ port: z.union([z.literal(1), z.literal(2)]), direction: z.enum(JOYSTICK_DIRECTIONS), fire: z.boolean(), emulatorFlaw: EMULATOR_FLAW }),
+  outputSchema: z.object({ port: z.union([z.literal(1), z.literal(2)]), direction: z.enum(JOYSTICK_DIRECTIONS), fire: z.boolean() }),
   readOnly: false,
   async run(input, session) {
     return session.joystick(input);

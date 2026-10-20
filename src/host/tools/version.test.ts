@@ -68,7 +68,8 @@ test("a caller that cancels does not cancel the version check that another calle
 
 test("a known VICE flaw is named for the versions that have it, and not for a build with the fix", () => {
   assert.equal(viceFlaws({ major: 3, minor: 9 }).length, 1);
-  assert.match(viceFlaws({ major: 3, minor: 10 })[0]!, /VICE bug #2202/);
+  assert.match(viceFlaws({ major: 3, minor: 10 })[0]!.text, /VICE bug #2202/);
+  assert.deepEqual(viceFlaws({ major: 3, minor: 10 })[0]!.breaks, ["joystick", "tape"]);
   assert.equal(viceFlaws({ major: 3, minor: 10, revision: 45970 }).length, 1);
   assert.deepEqual(viceFlaws({ major: 3, minor: 10, revision: 45971 }), [], "a nightly build with the fix");
   assert.deepEqual(viceFlaws({ major: 3, minor: 11 }), []);

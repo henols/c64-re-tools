@@ -99,16 +99,28 @@ export function viceVersionOf(text: string): ViceVersion | undefined {
   return { major: Number(match[1]), minor: Number(match[2]), ...(match[3] === undefined ? {} : { revision: Number(match[3]) }) };
 }
 
+/** What a VICE flaw stops from working: joystick input, or the load of a tape image. */
+export type ViceFeature = "joystick" | "tape";
+
+/** A known VICE flaw: the text for the person at the host, and what it stops from working. */
+export interface ViceFlaw {
+  text: string;
+  breaks: readonly ViceFeature[];
+}
+
 /**
  * Known flaws of VICE versions that c64-re-tools still runs on. A flaw
- * is not worked around: it is named with the VICE version that fixes it.
- * `upTo` is the last flawed major.minor; `fixedRevision` the first SVN
- * revision with the fix, for builds from VICE's source tree.
+ * is not worked around: the tools that it breaks refuse with
+ * not-implemented, and the host names the flaw and the VICE version that
+ * fixes it on its console. `upTo` is the last flawed major.minor;
+ * `fixedRevision` the first SVN revision with the fix, for builds from
+ * VICE's source tree.
  */
 const VICE_FLAWS = [
   {
     upTo: { major: 3, minor: 10 },
     fixedRevision: 45971,
+    breaks: ["joystick", "tape"],
     text:
       "VICE 3.10 and older hold bits 5-7 of CIA 1 ports A and B low with the joystick device that c64-re-tools uses (VICE bug #2202). " +
       "$DC00 and $DC01 read $1F with no input. A program that waits for one key of the keyboard matrix (for example LDA $DC01 / CMP #$EF for SPACE) waits forever. " +
@@ -118,12 +130,12 @@ const VICE_FLAWS = [
   },
 ] as const;
 
-/** The known flaws of this VICE version, as text for a person or an agent. */
-export function viceFlaws(version: ViceVersion): string[] {
+/** The known flaws of this VICE version. */
+export function viceFlaws(version: ViceVersion): ViceFlaw[] {
   return VICE_FLAWS.filter((flaw) => {
     const newer = version.major > flaw.upTo.major || (version.major === flaw.upTo.major && version.minor > flaw.upTo.minor);
     return !newer && (version.revision === undefined || version.revision < flaw.fixedRevision);
-  }).map((flaw) => flaw.text);
+  }).map((flaw) => ({ text: flaw.text, breaks: flaw.breaks }));
 }
 
 export function isOlderThanMinimum(version: { major: number; minor: number }): boolean {

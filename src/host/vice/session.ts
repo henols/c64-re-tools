@@ -31,6 +31,7 @@ import { decodeProgramCounter, MonitorConnectionError, MonitorError, MonitorTime
 import { decodeCia, decodeSid, decodeSprite, decodeVicii } from "./chips.ts";
 import { compareFrames, differenceImage } from "./screen.ts";
 import { isRefusal } from "../../errors.ts";
+import type { ViceFeature, ViceFlaw } from "../../native/discover.ts";
 import { checkMedia, hasSignature } from "../../media.ts";
 import { launchVice, startErrorLines, type ViceMode, type ViceProcess } from "./process.ts";
 import { TextMonitorError, TextMonitorTimeoutError } from "./text-monitor.ts";
@@ -125,11 +126,17 @@ export interface SessionOptions {
   launch?: ViceLauncher;
   /** Makes the host remove a path if it dies; returns the release. */
   ownPath?: (path: string) => () => void;
-  /** The known flaws of this VICE version; keyboard and joystick results name them. */
-  flaws?: readonly string[];
+  /** The known flaws of this VICE version: the tools that a flaw breaks refuse with not-implemented. */
+  flaws?: readonly ViceFlaw[];
   /** Lists the entries of a disk image, so an autostart index is checked first. Without it, VICE gets the index unchecked. */
   directory?: DiskDirectory;
 }
+
+/** The refusal of a tool that a known VICE flaw breaks: what does not work, and what to do. */
+const BROKEN_MESSAGES: Record<ViceFeature, string> = {
+  joystick: "Joystick input is not implemented in this setup. Do not use the joystick in this task. Give this message to the user.",
+  tape: "The load of a tape image is not implemented in this setup. Do not load tape images in this task. Give this message to the user.",
+};
 
 export type DiskDirectory = (type: DiskImageType, image: Buffer) => Promise<DiskFile[]>;
 
@@ -154,8 +161,8 @@ export class ViceSession implements ViceSessionHandle {
   #mode: ViceMode = "headless";
   readonly #videoStandard: VideoStandard;
   readonly #log: (line: string) => void;
-  /** The known VICE flaws that keyboard and joystick input meet, as one text, or undefined. */
-  readonly #inputFlaw: string | undefined;
+  /** What the known VICE flaws break, each with the text of its flaw. */
+  readonly #broken: ReadonlyMap<ViceFeature, string>;
   readonly #untilReturnLimitMs: number;
   readonly #stepLimitMs: number;
   readonly #launch: ViceLauncher | undefined;
@@ -264,7 +271,7 @@ export class ViceSession implements ViceSessionHandle {
     this.#stepLimitMs = options.stepLimitMs ?? RUNNING_COMMAND_TIMEOUT_MS;
     this.#launch = options.launch;
     this.#directory = options.directory;
-    this.#inputFlaw = options.flaws === undefined || options.flaws.length === 0 ? undefined : options.flaws.join(" ");
+    this.#broken = new Map((options.flaws ?? []).flatMap((flaw) => flaw.breaks.map((feature) => [feature, flaw.text] as const)));
     this.#workDir = mkdtempSync(join(tmpdir(), "c64-re-tools-session-"));
     this.#releaseWorkDir = options.ownPath?.(this.#workDir) ?? (() => {});
     this.#watch(vice);
@@ -423,6 +430,7 @@ export class ViceSession implements ViceSessionHandle {
         return this.#programLoad(params as ViceOperations["programLoad"]["params"], onlyAttachment(attachments));
       case "autostart": {
         const { type, index, run } = params as ViceOperations["autostart"]["params"];
+        if (type === "tap") this.#refuseBroken("tape", "c64_autostart of a tape image");
         const bytes = onlyAttachment(attachments);
         checkMedia(type, bytes);
         if (index > 0 && this.#directory !== undefined && isOneOf(DISK_IMAGE_TYPES, type)) checkDirectoryEntry(await this.#directory(type, bytes), index);
@@ -449,7 +457,7 @@ export class ViceSession implements ViceSessionHandle {
         this.#replaceStaged(stagedKind(type), file);
         // A reset sets the CPU clock back, so the stopwatch starts again.
         this.#timingStart = 0n;
-        return { state: "running", ...(type === "tap" && this.#inputFlaw !== undefined ? { emulatorFlaw: this.#inputFlaw } : {}), ...(centred.length === 0 ? {} : { joysticksCentred: centred }) };
+        return { state: "running", ...(centred.length === 0 ? {} : { joysticksCentred: centred }) };
       }
       case "diskAttach": {
         const { type } = params as ViceOperations["diskAttach"]["params"];
@@ -472,7 +480,7 @@ export class ViceSession implements ViceSessionHandle {
           );
         }
         await this.#observe(() => this.#machine.feedKeyboard(bytes));
-        return { queuedBytes: bytes.length, ...(this.#inputFlaw === undefined ? {} : { emulatorFlaw: this.#inputFlaw }) };
+        return { queuedBytes: bytes.length };
       }
       case "breakpoint":
         return this.#breakpoint(params as BreakpointParams);
@@ -557,10 +565,11 @@ export class ViceSession implements ViceSessionHandle {
       case "observe":
         return this.#observeAll(params as ObserveParams);
       case "joystick": {
+        this.#refuseBroken("joystick", "c64_joystick");
         const joystick = params as JoystickState;
         await this.#observe(() => this.#machine.setJoystick(joystick));
         this.#joysticks.set(joystick.port, joystick);
-        return { ...joystick, ...(this.#inputFlaw === undefined ? {} : { emulatorFlaw: this.#inputFlaw }) };
+        return joystick;
       }
       case "warp": {
         const { enabled } = params as ViceOperations["warp"]["params"];
@@ -1170,6 +1179,17 @@ export class ViceSession implements ViceSessionHandle {
     };
     this.#watchpoints.set(point.id, point);
     return publicView(point);
+  }
+
+  /**
+   * Refuses a tool that a known flaw of this VICE breaks: not-implemented for
+   * the caller, without the VICE version, and the flaw on the host console.
+   */
+  #refuseBroken(feature: ViceFeature, tool: string): void {
+    const flaw = this.#broken.get(feature);
+    if (flaw === undefined) return;
+    this.#log(`${tool} was used, and this VICE does not support it. ${flaw}`);
+    throw new WireFailure("not-implemented", BROKEN_MESSAGES[feature]);
   }
 
   /**
@@ -1818,7 +1838,7 @@ export function viceSessionFactory(options: {
   env?: NodeJS.ProcessEnv;
   log?: (line: string) => void;
   /** The known flaws of the VICE version that the host checked at start. */
-  flaws?: readonly string[];
+  flaws?: readonly ViceFlaw[];
   directory?: DiskDirectory;
 }): ViceSessionFactory {
   return async ({ videoStandard, log = options.log ?? (() => {}) }) => {

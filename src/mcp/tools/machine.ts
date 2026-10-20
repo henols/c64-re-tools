@@ -3,7 +3,6 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { PACKAGE } from "../../package.ts";
 import { VIDEO_STANDARDS } from "../../protocol/messages.ts";
 import { POINT_STOP_REASONS, RESET_MODES, RUN_STATES, SPACES, WINDOW_ACTIONS } from "../../protocol/vice.ts";
 import { AddressOutput, defineTool } from "../server.ts";
@@ -16,8 +15,7 @@ export const c64Status = defineTool({
     "and if warp mode is on. It also tells if the emulator window is open (window). " +
     "When the CPU has stopped, the result also gives the program counter (pc). " +
     "When a breakpoint, a watchpoint or a JAM opcode stopped the CPU, stopReason tells which, and pointId gives the id of the breakpoint or watchpoint. " +
-    "cartridge is true while a cartridge from c64_autostart is attached: a reset keeps it, and an autostart of another file detaches it. " +
-    "version is the c64-re-tools version of this MCP server.",
+    "cartridge is true while a cartridge from c64_autostart is attached: a reset keeps it, and an autostart of another file detaches it.",
   inputSchema: z.object({}).strict(),
   outputSchema: z.object({
     state: z.enum(RUN_STATES),
@@ -29,7 +27,6 @@ export const c64Status = defineTool({
     pointId: z.number().int().min(1).optional().describe("the id of the breakpoint or watchpoint that stopped the CPU"),
     space: z.enum(SPACES).optional().describe("with pc: c64, or drive8 when a breakpoint or watchpoint in the disk drive stopped the CPU. pc is the address in that space"),
     cartridge: z.boolean().describe("true while a cartridge from c64_autostart is attached"),
-    version: z.string().describe("the c64-re-tools version of this MCP server"),
   }),
   readOnly: true,
   async run(_input, session) {
@@ -40,7 +37,6 @@ export const c64Status = defineTool({
       warp: status.warp,
       window: status.window,
       cartridge: status.cartridge,
-      version: PACKAGE.version,
       ...(status.pc === undefined ? {} : { pc: formatC64Address(status.pc) }),
       ...(status.stopReason === undefined ? {} : { stopReason: status.stopReason }),
       ...(status.pointId === undefined ? {} : { pointId: status.pointId }),

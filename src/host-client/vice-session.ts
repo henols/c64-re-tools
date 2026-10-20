@@ -134,7 +134,7 @@ export class ViceSessionClient {
   }
 
   /** Autostarts a project program or image, as VICE's autostart does. `root` is the project folder; it stays on this side. */
-  async autostart(params: { path: string; index: number; run: boolean; root?: string }): Promise<{ state: RunState; emulatorFlaw?: string }> {
+  async autostart(params: { path: string; index: number; run: boolean; root?: string }): Promise<{ state: RunState }> {
     const file = readProjectFile(params.path, params.root === undefined ? { what: "path" } : { root: params.root, what: "path" });
     return this.#request("autostart", { type: file.type, index: params.index, run: params.run }, [file.bytes]);
   }

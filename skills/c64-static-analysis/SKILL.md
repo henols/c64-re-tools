@@ -112,7 +112,7 @@ The script never replaces a name or a region from the user or the LLM. DXA and G
 
 A `heuristic` region replaces the part of a DXA or Ghidra region where it lies, because an idiom is specific evidence about those bytes. DXA and Ghidra never replace a `heuristic` region. If they find code there, the result shows a conflict. A heuristic table can be too long or too short, because the script cannot know its length. Correct it with the c64-knowledge skill. Your region replaces it, and a removal holds.
 
-A new analysis replaces the earlier facts of the same analyzer in the analyzed range, also its analyzer names. The history keeps the earlier facts. Knowledge from an older version can have analyzer names as symbols. A new analysis moves the names of that analyzer to its analyzer names.
+A new analysis replaces the earlier facts of the same analyzer in the analyzed range, also its analyzer names. The history keeps the earlier facts.
 
 A fact that the user or the LLM removes does not come back. The next analysis does not write a fact at that place, and counts it as `suppressed`. To remove a wrong fact, use the c64-knowledge skill.
 

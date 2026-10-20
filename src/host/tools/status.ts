@@ -41,7 +41,7 @@ export async function hostStatus(context: ToolContext, started?: ViceVersion): P
   // VICE runs with its known flaws; status names them.
   const vice = checked[0]!;
   const version = vice.runs ? viceVersionOf(vice.version ?? "") : undefined;
-  const flaws = version === undefined ? [] : viceFlaws(version);
+  const flaws = version === undefined ? [] : viceFlaws(version).map((flaw) => flaw.text);
   if (flaws.length > 0) checked[0] = { ...vice, flaws };
   return { result: { host: { version: PACKAGE.version, platform: platform(), release: release(), arch: arch() }, tools: checked } };
 }

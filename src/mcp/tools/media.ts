@@ -42,7 +42,6 @@ export const c64Autostart = defineTool({
     .strict(),
   outputSchema: z.object({
     state: z.enum(RUN_STATES),
-    emulatorFlaw: z.string().optional().describe("for a tape image: a known flaw of this VICE version that stops a tape load"),
     joysticksCentred: z.array(z.union([z.literal(1), z.literal(2)])).optional().describe("the joystick ports that held a direction or fire and were centred before the reset"),
   }),
   readOnly: false,

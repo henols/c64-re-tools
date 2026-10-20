@@ -13,9 +13,12 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { readPng } from "../../../src/graphics.testkit.ts";
+import { checkViceStarts } from "../../../src/host/vice/process.ts";
+import { viceFlaws } from "../../../src/native/discover.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { FRAMES_SEEN, joystickCounterPrg, LEFT_SEEN } from "../../fixtures/prg/joystick-counter.ts";
 import { startMcp } from "../../kit.ts";
-import { liveSkip, startHost, stopHosts } from "./live.ts";
+import { liveEnv, liveSkip, startHost, stopHosts } from "./live.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-scenario-"));
 after(async () => {
@@ -67,13 +70,26 @@ async function scenario(client: Client) {
   return { loaded, reached, advanced, counters, registers, png: png.toString("base64"), after };
 }
 
-test("a scenario of load, input, run-until, frame advance, reads and a capture gives the same results twice", { skip: liveSkip, timeout: 180_000 }, async () => {
+test("a scenario of load, input, run-until, frame advance, reads and a capture gives the same results twice", { skip: liveSkip, timeout: 180_000 }, async (t) => {
   mkdirSync(join(project, "build"));
   writeFileSync(join(project, "build", "counter.prg"), joystickCounterPrg);
+  // The version as the host reads it: a VICE whose known flaw breaks the joystick refuses it.
+  const supervisor = new ProcessSupervisor();
+  supervisor.installExitGuard();
+  const joystickBroken = viceFlaws(await checkViceStarts({ supervisor, env: liveEnv() })).some((flaw) => flaw.breaks.includes("joystick"));
 
   const host = await startHost();
   const { client } = await startMcp(host.address, { cwd: project });
   try {
+    if (joystickBroken) {
+      const refused = (await client.callTool({ name: "c64_joystick", arguments: { port: 2, direction: "left" } })) as CallToolResult;
+      const text = JSON.stringify(refused.content);
+      assert.equal(refused.isError, true);
+      assert.match(text, /not-implemented/);
+      assert.doesNotMatch(text, /VICE|3\.\d+|#2202/, "the agent learns no VICE version");
+      t.skip("this VICE has a flaw that breaks the joystick: c64_joystick is not implemented");
+      return;
+    }
     const first = await scenario(client);
     const second = await scenario(client);
     assert.deepEqual(second, first);

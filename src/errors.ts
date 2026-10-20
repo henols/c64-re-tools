@@ -17,6 +17,7 @@ export const ERROR_CODES = [
   "stale-revision",
   "invalid-database",
   "unsupported-schema",
+  "not-implemented",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

@@ -27,7 +27,7 @@ Use only the MCP tools. Each MCP session has its own machine. Nothing else can c
 
 | Need | C64 tool |
 |---|---|
-| Run state, warp mode, window, version of the MCP server | `c64_status` |
+| Run state, warp mode, window | `c64_status` |
 | Reset, power cycle | `c64_reset` |
 | Fast emulation | `c64_warp` |
 | Show the machine to the user in a window, hide it again | `c64_window` |
@@ -121,6 +121,7 @@ If you cannot get the machine into the necessary state, say which state you coul
 An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do. Obey the message. These rules also apply:
 
 - `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
+- `not-implemented`: the tool does not work in this setup. Give the message to the user. Do not use that tool or step again in this task.
 - `machine-unavailable` with a message that names a pause or a dialog in the window: do not send more operations. Give the message to the user. When the user tells you that the emulator runs again, do the operation again.
 - `machine-unavailable` for a different cause: wait a few seconds. Then do the operation again one time. If you get the same error again, stop the task. Tell the user to restart the c64-re-tools MCP server, and wait for the user.
 - `machine-state-lost`: do not use results from before the error. Do what the message tells. Then read the machine state again.

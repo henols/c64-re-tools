@@ -199,6 +199,7 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 - INCONCLUSIVE, "has no symbol": one side has no symbol with that name. Add the name to the knowledge or to the rebuild source.
 - INCONCLUSIVE, "no emulator" or "could not run": the emulator failed. Tell the user the message.
 - `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
+- `not-implemented`: the tool does not work in this setup. Give the message to the user. Do not use that tool or step again in this task.
 - A FAIL with only a `screen` difference: add `vicii` or `sprites` to the observation to find which chip state is different.
 - A program that uses random numbers: set the random seed with a `write` step on both sides. If that is not possible, observe only values that do not depend on the random numbers.
 - The two sides start differently, for example the original after a cracked intro. Give the steps that only one side needs a `side`. Then make the memory the same with a `normalize` step. It writes the entry state of the capture in the knowledge.

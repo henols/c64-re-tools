@@ -165,11 +165,12 @@ For `loads`: `captures`, with the name, the PC, the segments, `differsFromReset`
 - `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step.
 - A step did not reach its target: the reason names the step. Change the step or give it more frames.
 - `loaded: false` with an empty `captures` and the reason `BASIC ran no program line`: the PRG has no BASIC start line. Use `capture` with `--entry`.
-- `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited for a key at the READY prompt or at an INPUT statement. For a tape image, read `emulatorFlaw`. It names a known flaw of the emulator that can stop a tape load. Give it to the user.
+- `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited for a key at the READY prompt or at an INPUT statement.
 - Do not name a packer from weak evidence. The script never names one.
 - Some programs unpack in more than one stage. Run `stages` to find each stage. Capture at the entry of the last stage. Make sure that it is the application and not a second unpacker.
 - `not-found` or `invalid-input`: a path or an argument is wrong. Read the message.
 - `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
+- `not-implemented`: the tool does not work in this setup. Give the message to the user. Do not use that tool or step again in this task.
 
 ## Handoffs
 
