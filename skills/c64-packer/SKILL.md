@@ -64,6 +64,8 @@ node <skill>/scripts/packer.ts pack build/loader.prg build/main.prg --entry '$04
 6. If `result` is `FAIL`, read `check`. Do not use the packed program. The script does not write it.
 7. If `result` is `INCONCLUSIVE`, the check did not hold all bytes of the inputs. Run the packed program in the emulator and examine the memory of the segments that are `not covered`.
 
+The packed program starts the unpacker with `SYS 2061`, at $080d. A BASIC program at $0801 often has its entry at $080d too. Then the CPU gets to $080d two times: first before the unpack, then at the start of the program. To examine the program at its entry in the emulator, stop at $080d, run one frame, and stop at $080d again.
+
 The unpacker uses $0334 to $03ff and the zero page while it runs. A program that loads into these addresses can fail. Then Exomizer stops with an error, or the check gives `FAIL`.
 
 ## Knowledge
