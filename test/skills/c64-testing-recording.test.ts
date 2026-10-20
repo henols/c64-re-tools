@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
@@ -56,9 +56,81 @@ test("a record file needs a program and steps the replay core can do; a checkpoi
     badKey: { ...valid, steps: [{ press: "£" }] },
     badInput: { ...valid, inputs: ["$c000"] },
     badRange: { ...valid, inputs: ["$de00-$e000"] },
+    badCoverage: { ...valid, coverage: "game_start" },
+    coverageNumber: { ...valid, coverage: 0x1aed },
   })) {
     assert.throws(() => readRecordFile(file(`${name}.json`, bad)), Refusal, name);
   }
+});
+
+test("the coverage of a record file starts at the first input read, at the program start, or at an address", () => {
+  assert.equal(readRecordFile(file("input.json", valid)).coverage, "input");
+  assert.equal(readRecordFile(file("start.json", { ...valid, coverage: "start" })).coverage, "start");
+  assert.equal(readRecordFile(file("address.json", { ...valid, coverage: "$1AED" })).coverage, "$1AED");
+  assert.throws(() => readRecordFile(file("named.json", { ...valid, coverage: "game_start" })), {
+    code: "invalid-input",
+    message: 'record file named.json: coverage must be "input" (default), "start" or a $ address such as "$1aed", not "game_start"',
+  });
+});
+
+/**
+ * A stand-in replay core for record: it answers each command with the machine
+ * state, writes the files that record and coverage name, logs the commands,
+ * and answers coverage status with `from`.
+ */
+function recordingCore(name: string, from: string): { path: string; log: string } {
+  const path = join(project, name);
+  const log = join(project, `${name}.log`);
+  const state = "ok tick=982800 sync=1 pc=1aed a=00 x=00 y=00 s=fd p=16 line=0 cycle=7 hash=0123abcd";
+  writeFileSync(
+    path,
+    [
+      "#!/bin/sh",
+      "while read cmd rest; do",
+      `  echo "$cmd $rest" >> ${log}`,
+      '  case "$cmd" in',
+      '    version) echo "ok c64run protocol=3 chips=test" ;;',
+      '    inputs|joy|key|write) echo "ok" ;;',
+      '    record) [ "$rest" = off ] || : > "$rest"; echo "ok" ;;',
+      '    sites) echo "ok unknown=0" ;;',
+      '    coverage) case "$rest" in',
+      `        status) echo "${from}" ;;`,
+      '        on*|off) echo "ok" ;;',
+      '        *) head -c 65536 /dev/zero > "$rest"; echo "ok" ;;',
+      "      esac ;;",
+      "    quit) exit 0 ;;",
+      `    *) echo "${state}" ;;`,
+      "  esac",
+      "done",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(path, 0o755);
+  return { path, log };
+}
+
+test("record starts the coverage as the record file tells, and the summary gives where it started", { skip: process.platform === "win32" ? "the stand-in replay core is a shell script" : false }, () => {
+  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
+  const record = (name: string, coverage: string | undefined, from: string) => {
+    const core = recordingCore(`c64run-${name}`, from);
+    const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), "record", file(`${name}.json`, { name, program: "game.prg", symbols: "none", ...(coverage === undefined ? {} : { coverage }), steps: [{ frames: 10 }] }), "--out", `tests/recordings/${name}`], {
+      cwd: project,
+      encoding: "utf8",
+      env: { ...process.env, C64RT_C64RUN: core.path },
+    });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    const commands = readFileSync(core.log, "utf8").split("\n");
+    // The coverage starts after the program is in memory: the start of the C64 itself is never in the map.
+    assert.ok(commands.findIndex((line) => line.startsWith("coverage on")) > commands.map((line) => line.startsWith("write ")).lastIndexOf(true), commands.join(", "));
+    return { body: readEnvelope(run.stdout, run.status).json, commands };
+  };
+  const input = record("by-input", undefined, "ok from tick=982800 pc=1aed");
+  assert.ok(input.commands.includes("coverage on-input"));
+  assert.deepEqual(input.body.coverageFrom, { frame: 50, pc: "$1aed" });
+  assert.ok(record("by-start", "start", "ok from tick=982800 pc=e5d4").commands.includes("coverage on"));
+  const address = record("by-address", "$1aed", "ok not-started");
+  assert.ok(address.commands.includes("coverage on-pc 1aed"));
+  assert.deepEqual([address.body.recorded, address.body.coverageFrom, address.body.executed], [true, null, 0]);
 });
 
 test("a state item of the command line is a name or an address with an optional size", () => {

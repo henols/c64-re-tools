@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { isRefusal, Refusal } from "#src/errors.ts";
-import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, renamedField, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
@@ -57,8 +57,21 @@ export interface RecordFile {
   /** The comparison that a replay uses when it gets none: the checkpoint routine and the state. */
   compare?: Comparison;
   inputs: string[];
+  /** Where the coverage map starts: "input", "start", or a "$xxxx" address (see COVERAGE_COMMANDS). */
+  coverage: string;
   steps: ActionStep[];
 }
+
+/**
+ * The commands of the replay core that start the coverage map. "input": at the
+ * first input read of code in RAM, after a loader or a relocation. "start":
+ * when the program starts, with RUN (or the registers step of load true). An
+ * address: at the first execution of that address.
+ */
+const COVERAGE_COMMANDS = new Map([
+  ["input", "coverage on-input"],
+  ["start", "coverage on"],
+]);
 
 /**
  * What a replay compares: the state at each entry of a routine, for example the
@@ -193,7 +206,7 @@ export function readRecordFile(path: string): RecordFile {
     return fail((error as Error).message);
   }
   if (!isObject(value)) return fail("it must be a JSON object");
-  const known = ["name", "program", "symbols", "load", "checkpoint", "state", "pin", "inputs", "steps"];
+  const known = ["name", "program", "symbols", "load", "checkpoint", "state", "pin", "inputs", "coverage", "steps"];
   for (const key of Object.keys(value)) if (!known.includes(key)) fail(`it has the key ${key}; a record file has ${known.join(", ")}`);
   if (typeof value.name !== "string" || value.name === "") fail("name must be a short text");
   if (typeof value.program !== "string" || value.program === "") fail("program must be a PRG file in the project");
@@ -205,6 +218,10 @@ export function readRecordFile(path: string): RecordFile {
   const pin = value.pin === undefined ? undefined : checkState(value.pin, fail, "pin");
   const compare = value.checkpoint === undefined ? undefined : { checkpoint: value.checkpoint as string, state: checkState(value.state, fail), ...(pin === undefined ? {} : { pin }) };
   const inputs = checkInputs(value.inputs, fail);
+  const coverage = value.coverage ?? "input";
+  if (typeof coverage !== "string" || (!COVERAGE_COMMANDS.has(coverage) && c64AddressOf(coverage) === undefined)) {
+    fail(`coverage must be "input" (default), "start" or a $ address such as "$1aed", not ${JSON.stringify(coverage)}`);
+  }
   if (!Array.isArray(value.steps) || value.steps.length === 0) fail("steps must be a list with at least one step");
   const steps = (value.steps as unknown[]).map((raw, index) => {
     const at = `step ${index + 1}`;
@@ -219,6 +236,7 @@ export function readRecordFile(path: string): RecordFile {
     load: value.load === true,
     ...(compare === undefined ? {} : { compare }),
     inputs,
+    coverage: coverage as string,
     steps,
   };
 }
@@ -444,6 +462,8 @@ export interface RecordOutcome {
   recording: Recording;
   reads: Uint8Array;
   coverage: Uint8Array;
+  /** The cycle and the instruction at which the coverage map started; none when it never started. */
+  coverageFrom?: { tick: number; pc: number };
   /** Why the session did not complete (a runUntil that did not reach its target). */
   reason?: string;
 }
@@ -471,11 +491,10 @@ export async function record(
   const coverage = workspace.path(RECORDING_FILES.coverage);
   await core.init();
   await core.command(`inputs ${inputsArgument(file.inputs)}`);
-  // The coverage starts at the first input read of code in RAM: then the program has done its
-  // own start (a loader, a relocation), so the map holds the work of the program.
-  await core.command("coverage on-input");
   await core.command(`record ${reads}`);
   await startProgram(core, prg, file.load ?? false);
+  // From READY on: the start of the C64 itself is never in the map.
+  await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hex(parseC64Address(file.coverage))}`);
   const events: RecordedEvent[] = [];
   const masks = [0, 0];
   let reason: string | undefined;
@@ -532,6 +551,7 @@ export async function record(
     return { site: `$${site}`, addr: `$${addr}`, reads: Number(reads), rom: kind === "rom" };
   });
   await core.command("record off");
+  const from = /from tick=(\d+) pc=([0-9a-f]{4})/.exec(await core.command("coverage status"));
   await core.command(`coverage ${coverage}`);
   const recording: Recording = {
     format: RECORDING_FORMAT,
@@ -547,7 +567,13 @@ export async function record(
     ticks: end.tick,
     hash: end.hash,
   };
-  return { recording, reads: readFileSync(reads), coverage: readFileSync(coverage), ...(reason === undefined ? {} : { reason }) };
+  return {
+    recording,
+    reads: readFileSync(reads),
+    coverage: readFileSync(coverage),
+    ...(from === null ? {} : { coverageFrom: { tick: Number(from[1]), pc: Number.parseInt(from[2]!, 16) } }),
+    ...(reason === undefined ? {} : { reason }),
+  };
 }
 
 /** One side of a replay. */

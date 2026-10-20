@@ -26,6 +26,10 @@ A record file is one JSON object in a project file.
 - `load`: optional. With `false` (default), the program must load at `$0801` with a BASIC start line, and the C64 types `RUN`. With `true`, the program goes into memory and the C64 stays at READY. Then a `registers` step with `pc` starts the program.
 - `checkpoint`, `state` and `pin`: optional. The comparison that a replay uses when the replay gives none. `checkpoint` is the name or `$` address of a routine. Each entry of the routine is a checkpoint. `state` is 1 to 16 memory items that the checkpoints compare. `pin` is the random state in RAM. An item is a name, a `$` address, or `{ "address", "size" }` with a size from 1 to 4096. Give `checkpoint` and `state` together.
 - `inputs`: optional. The I/O addresses (or ranges such as `$de00-$dfff`) whose reads are input. The default is `$dc00` and `$dc01`: the joystick ports and the keyboard matrix. It also has `$d419` to `$d41c` (the paddles, and the noise and envelope of SID voice 3), and `$de00-$dfff` (no device: the last byte on the bus). Add `$d012` or a CIA timer only for a program that reads a seed there and does not wait in a loop on it.
+- `coverage`: optional. Where the coverage map starts:
+  - `input` (default): at the first input read of code in RAM. The start-up code of the program, for example a loader, a relocation or an initialization, is not in the map.
+  - `start`: when the program starts, after `RUN` or at the `registers` step of `load` `true`.
+  - A `$` address, for example `"$1aed"`: at the first execution of that address.
 - `steps`: the steps.
 
 ## Steps
@@ -99,7 +103,7 @@ The page sends input only between Start and End. The input of the page goes into
 |---|---|
 | `recording.json` | The program and its SHA-256, the symbols, and the comparison of the record file. Also the inputs, the events, the input sites, the cycles of the session and the state hash at its end. |
 | `reads.txt` | One line `<site> <addr> <from> <value>` for each change of the value at a site. From the read with the index `<from>`, the reads at `<site>` from `<addr>` get `<value>`. One line `end <site> <addr> <count>` for each site gives its number of reads. |
-| `coverage.bin` | The coverage map of the session: 65536 bytes, one for each address, in the format of the coverage maps of the emulator. It starts at the first input read of code in RAM, thus after a loader or a relocation. |
+| `coverage.bin` | The coverage map of the session: 65536 bytes, one for each address, in the format of the coverage maps of the emulator. It starts where the key `coverage` of the record file tells. The code before that point has no marks. |
 
 A site is the address of the instruction that reads. The values are hex. `<from>` and `<count>` are decimal.
 

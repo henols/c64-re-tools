@@ -27,7 +27,7 @@
 #include "systems/c1541.h"
 #include "systems/c64.h"
 
-#define C64RUN_PROTOCOL 2
+#define C64RUN_PROTOCOL 3
 // Keys that chips has no code for: each SHIFT alone, and the up arrow.
 #define C64RUN_KEY_LSHIFT 0x11
 #define C64RUN_KEY_RSHIFT 0x12
@@ -73,6 +73,7 @@ static int watch_hit;
 
 static int area(uint16_t addr);
 static int coverage_on, coverage_armed_input;
+static void coverage_start(uint16_t pc);
 
 static site_t* site_for(uint16_t pc, uint16_t addr) {
     for (int i = 0; i < site_count; i++) if (sites[i].pc == pc && sites[i].addr == addr) return &sites[i];
@@ -106,7 +107,7 @@ static void input_read(uint16_t pc, uint16_t addr) {
         if (replaying) { M6502_SET_DATA(pins, idle_value(addr)); replay_unknown++; }
         return;
     }
-    if (coverage_armed_input && !s->rom) { coverage_armed_input = 0; coverage_on = 1; }
+    if (coverage_armed_input && !s->rom) { coverage_armed_input = 0; coverage_start(pc); }
     const uint64_t index = s->count++;
     if (replaying) {
         if (s->nruns == 0) {
@@ -140,7 +141,25 @@ enum { COV_RAM_R = 1, COV_RAM_W = 2, COV_RAM_X = 4, COV_ROM_R = 8, COV_ROM_X = 1
 static uint8_t coverage[0x10000];
 // Set by "coverage on-checkpoint": the map starts at the first sample. coverage_armed_input,
 // set by "coverage on-input": the map starts at the first input read of code in RAM.
-static int coverage_armed;
+// coverage_armed_pc, set by "coverage on-pc": the map starts at the first opcode fetch at coverage_pc.
+static int coverage_armed, coverage_armed_pc;
+static uint16_t coverage_pc;
+// Where the map started: the tick and the pc of the instruction ("coverage status").
+static int coverage_started;
+static uint64_t coverage_from_tick;
+static uint16_t coverage_from_pc;
+
+static void coverage_start(uint16_t pc) {
+    coverage_on = coverage_started = 1;
+    coverage_from_tick = ticks;
+    coverage_from_pc = pc;
+}
+
+// Clears the map and every way that it can start.
+static void coverage_reset(void) {
+    memset(coverage, 0, sizeof coverage);
+    coverage_on = coverage_armed = coverage_armed_input = coverage_armed_pc = coverage_started = 0;
+}
 
 // 0: RAM, 1: ROM, 2: I/O, as the CPU sees the address now (the CPU port bits).
 static int area(uint16_t addr) {
@@ -205,7 +224,7 @@ static void sample(void) {
     }
     fputc('\n', sample_file);
     samples++;
-    if (coverage_armed) { coverage_armed = 0; coverage_on = 1; }
+    if (coverage_armed) { coverage_armed = 0; coverage_start(sample_pc); }
     if (sample_stop && samples >= sample_stop) halted = 1;
 }
 
@@ -222,6 +241,7 @@ static void tick(void) {
     if (sync) {
         last_sync_pc = addr;
         if (sample_file && addr == sample_pc && decoded) sample();
+        if (coverage_armed_pc && addr == coverage_pc && decoded) { coverage_armed_pc = 0; coverage_start(addr); }
     }
     if (read && !sync && decoded && sys.io_mapped && (addr & 0xF000) == 0xD000 && input_addr[addr & 0x0FFF]) {
         input_read(last_sync_pc, addr);
@@ -420,11 +440,10 @@ int main(int argc, char** argv) {
             halted = 0;
             sample_stop = 0;
             maps = 0;
-            coverage_on = coverage_armed = coverage_armed_input = 0;
+            coverage_reset();
             if (pin_file) { fclose(pin_file); pin_file = NULL; }
             if (record_file) { fclose(record_file); record_file = NULL; }
             if (sample_file) { fclose(sample_file); sample_file = NULL; }
-            memset(coverage, 0, sizeof coverage);
             const char* problem = init(dir);
             if (problem) printf("err init: %s\n", problem); else status("ok");
         } else if (!strcmp(cmd, "quit")) {
@@ -468,6 +487,9 @@ int main(int argc, char** argv) {
             M6502_SET_DATA(pins, mem_rd(&sys.mem_cpu, pc));
             m6502_set_pc(&sys.cpu, pc);
             last_sync_pc = pc;
+            // The prefetch is the opcode fetch at pc: it does not pass through tick.
+            if (coverage_armed_pc && pc == coverage_pc) { coverage_armed_pc = 0; coverage_start(pc); }
+            if (coverage_on) cover(pc, 1, 1);
             status("ok");
         } else if (!strcmp(cmd, "run")) {
             // run <tick>: run to the absolute tick (a tick in the past does nothing)
@@ -617,12 +639,26 @@ int main(int argc, char** argv) {
             pin_file = fopen(a1, "r");
             if (pin_file) printf("ok ranges=%d\n", pin_ranges); else printf("err pin: cannot read %s\n", a1);
         } else if (!strcmp(cmd, "coverage")) {
-            // coverage on | on-checkpoint | on-input | off | <file>: start now, at the next sample,
-            // at the first input read of code in RAM; stop; or write the 65536-byte map
-            if (!strcmp(a1, "on")) { memset(coverage, 0, sizeof coverage); coverage_on = 1; coverage_armed = coverage_armed_input = 0; printf("ok\n"); }
-            else if (!strcmp(a1, "on-checkpoint")) { memset(coverage, 0, sizeof coverage); coverage_on = coverage_armed_input = 0; coverage_armed = 1; printf("ok\n"); }
-            else if (!strcmp(a1, "on-input")) { memset(coverage, 0, sizeof coverage); coverage_on = coverage_armed = 0; coverage_armed_input = 1; printf("ok\n"); }
-            else if (!strcmp(a1, "off")) { coverage_on = coverage_armed = coverage_armed_input = 0; printf("ok\n"); }
+            // coverage on | on-checkpoint | on-input | on-pc <pc hex> | off | status | <file>: start
+            // now, at the next sample, at the first input read of code in RAM, at the first opcode
+            // fetch at pc; stop; where the map started ("ok from tick=<n> pc=<hex>" or "ok
+            // not-started"); or write the 65536-byte map
+            unsigned pc;
+            if (!strcmp(a1, "on")) { coverage_reset(); coverage_start(last_sync_pc); printf("ok\n"); }
+            else if (!strcmp(a1, "on-checkpoint")) { coverage_reset(); coverage_armed = 1; printf("ok\n"); }
+            else if (!strcmp(a1, "on-input")) { coverage_reset(); coverage_armed_input = 1; printf("ok\n"); }
+            else if (!strcmp(a1, "on-pc")) {
+                if (sscanf(a2, "%x", &pc) != 1 || pc > 0xFFFF) { printf("err coverage: give on-pc and a pc\n"); continue; }
+                coverage_reset();
+                coverage_armed_pc = 1;
+                coverage_pc = (uint16_t)pc;
+                printf("ok\n");
+            }
+            else if (!strcmp(a1, "off")) { coverage_on = coverage_armed = coverage_armed_input = coverage_armed_pc = 0; printf("ok\n"); }
+            else if (!strcmp(a1, "status")) {
+                if (coverage_started) printf("ok from tick=%llu pc=%04x\n", (unsigned long long)coverage_from_tick, coverage_from_pc);
+                else printf("ok not-started\n");
+            }
             else printf(write_file(a1, coverage, sizeof coverage) ? "ok\n" : "err coverage: cannot write %s\n", a1);
         } else if (!strcmp(cmd, "palette")) {
             // palette: the 16 colours as RRGGBB

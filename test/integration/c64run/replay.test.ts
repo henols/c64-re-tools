@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
+import { READY_FRAMES } from "../../../src/host-client/entry-state.ts";
 import { C64RUN, findTool } from "../../../src/native/discover.ts";
 import { joystickCounterPrg } from "../../fixtures/prg/joystick-counter.ts";
 import { readEnvelope } from "../../kit.ts";
@@ -58,23 +59,21 @@ writeFileSync(join(project, "counter.json"), JSON.stringify(symbols(0xc000)));
 writeFileSync(join(project, "moved.prg"), counterAt(0xc400));
 writeFileSync(join(project, "moved.json"), JSON.stringify(symbols(0xc400)));
 writeFileSync(join(project, "right.prg"), counterAt(0xc000, { countRight: true }));
-writeFileSync(
-  join(project, "walk.json"),
-  JSON.stringify({
-    name: "left for 30 frames",
-    program: "counter.prg",
-    symbols: "counter.json",
-    load: true,
-    steps: [
-      { registers: { pc: "start" } },
-      { frames: 20 },
-      { joystick: { port: 2, direction: "left" } },
-      { frames: 30 },
-      { joystick: { port: 2, direction: "center" } },
-      { frames: 20 },
-    ],
-  }),
-);
+const walk = {
+  name: "left for 30 frames",
+  program: "counter.prg",
+  symbols: "counter.json",
+  load: true,
+  steps: [
+    { registers: { pc: "start" } },
+    { frames: 20 },
+    { joystick: { port: 2, direction: "left" } },
+    { frames: 30 },
+    { joystick: { port: 2, direction: "center" } },
+    { frames: 20 },
+  ],
+};
+writeFileSync(join(project, "walk.json"), JSON.stringify(walk));
 
 // The comparison comes at replay time: the recording has no names.
 const compare = ["--checkpoint", "count", "--state", "$c100:2"];
@@ -89,11 +88,40 @@ test("a session records with no checkpoint, and replays on the original to the c
   const coverage = readFileSync(join(project, "tests/recordings/walk/coverage.bin"));
   assert.equal(coverage.length, 65536);
   assert.equal(coverage[0xc015]! & 4, 4, "the counter loop is executed in the map");
+  // By default the map starts at the first input read of the program: its start-up code has no marks.
+  assert.equal((recorded.result.coverageFrom as { pc: string }).pc, "$c018");
+  assert.deepEqual([coverage[0xc000]! & 4, coverage[0xdc00]! & 0x40], [0, 0], "the start-up code and its write are not in the map");
   const self = script("replay", ["tests/recordings/walk"]);
   assert.deepEqual([self.status, self.result.result], [0, "PASS"]);
   const counted = script("replay", ["tests/recordings/walk", ...compare]);
   assert.equal(counted.status, 0, JSON.stringify(counted.result));
   assert.ok((counted.result.checkpoints as number) >= 65, `${counted.result.checkpoints} checkpoints`);
+});
+
+test("the coverage of a record file starts at the program start, or at the first execution of an address", { skip, timeout: 120_000 }, () => {
+  const record = (name: string, coverage: string) => {
+    writeFileSync(join(project, `${name}.json`), JSON.stringify({ ...walk, coverage }));
+    const recorded = script("record", [`${name}.json`, "--out", `tests/recordings/${name}`]);
+    assert.equal(recorded.status, 0, JSON.stringify(recorded.result));
+    assert.equal(recorded.result.recorded, true);
+    return { result: recorded.result, map: readFileSync(join(project, `tests/recordings/${name}/coverage.bin`)) };
+  };
+  // From the program start: the start-up code and its write of $dc00 are in the map.
+  const start = record("walk-start", "start");
+  assert.equal(start.map[0xc000]! & 4, 4, "the start-up code is executed in the map");
+  assert.equal(start.map[0xdc00]! & 0x40, 0x40, "the I/O write of the start-up code is in the map");
+  assert.equal((start.result.coverageFrom as { frame: number }).frame, READY_FRAMES);
+  // From the count of the loop: the start-up code before it has no marks.
+  const count = record("walk-count", "$c015");
+  assert.deepEqual([count.map[0xc000]! & 4, count.map[0xc015]! & 4], [0, 4]);
+  assert.equal((count.result.coverageFrom as { pc: string }).pc, "$c015");
+  // The pc of a registers step: its first instruction is in the map.
+  const entry = record("walk-entry", "$c000");
+  assert.deepEqual([entry.map[0xc000]! & 4, entry.map[0xdc00]! & 0x40], [4, 0x40]);
+  assert.equal((entry.result.coverageFrom as { pc: string }).pc, "$c000");
+  // Code that never runs: the map stays empty, and the session still records.
+  const never = record("walk-never", "$c0ff");
+  assert.deepEqual([never.result.coverageFrom, never.result.executed], [null, 0]);
 });
 
 test("a session is deterministic: two recordings of one record file are the same, byte for byte", { skip, timeout: 120_000 }, () => {
