@@ -5,25 +5,70 @@
 // The command word comes first. The subjects are the files, addresses, ranges or
 // names that the command acts on. Everything else is a named option; an option
 // with a name from OPTIONS has the same meaning and parser in every script.
-// A script prints one JSON object on one line. An error is
-// {"error":{"code","message"}}. Exit status: 0 done or PASS, 1 FAIL, 2 error,
-// 3 INCONCLUSIVE. Nothing is thrown out of a script: every failure becomes an error.
+// A script prints one JSON envelope on one line:
+//
+//   {ok: true, command, body, hint?, nextAction?}            exit status 0
+//   {ok: false, command?, code, error, hint?, nextAction?}   exit status 2
+//
+// A verdict (PASS, FAIL, INCONCLUSIVE) is in the body: a check that fails is a
+// command that worked. error is one sentence: what is wrong. hint tells what to
+// do. nextAction is a full command line that runs from any directory. With no
+// arguments or with --help, the command is "help" and the body is the usage.
+// Nothing is thrown out of a script: every failure becomes an error envelope.
 
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { c64AddressOf, formatC64Address, SPACE_PATTERN, SYMBOL_NAME, type AddressRange } from "./c64.ts";
-import { isRefusal, Refusal, type ErrorCode } from "./errors.ts";
+import { isRefusal, Refusal, splitMessage, type ErrorCode } from "./errors.ts";
 import { checkOutputPath, projectRoot, resolveProjectPath, useProject, type OutputKind } from "./project.ts";
-import { shownMessage } from "./protocol/messages.ts";
+import { STOP_AND_ASK } from "./protocol/messages.ts";
 import { elapsedMs, startTrace, trace, type TraceFields } from "./trace.ts";
 
 /** A wrong command line: an invalid-input refusal that also shows the usage of the command. */
 export class UsageError extends Refusal {
   override name = "UsageError";
 
-  constructor(message: string) {
-    super("invalid-input", message);
+  constructor(message: string, options: { hint?: string } = {}) {
+    super("invalid-input", message, options);
   }
+}
+
+/** A result with a hint or a next command for the envelope. A command returns it in place of the bare body. */
+export class Reply {
+  readonly body: unknown;
+  readonly hint?: string;
+  readonly nextAction?: string;
+
+  constructor(body: unknown, extra: { hint?: string | undefined; nextAction?: string | undefined }) {
+    this.body = body;
+    if (extra.hint !== undefined) this.hint = extra.hint;
+    if (extra.nextAction !== undefined) this.nextAction = extra.nextAction;
+  }
+}
+
+export function reply(body: unknown, extra: { hint?: string | undefined; nextAction?: string | undefined }): Reply {
+  return new Reply(body, extra);
+}
+
+/** A word for a POSIX shell: as it is when that is safe, else in single quotes. */
+export function shellWord(word: string): string {
+  return /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * The full command line of this script with `args`: node, the absolute path of
+ * the script, the args, and --project with the absolute project folder when
+ * there is one. It runs from any directory.
+ */
+export function commandLine(args: readonly string[]): string {
+  let project: string | undefined;
+  try {
+    project = projectRoot();
+  } catch {
+    project = undefined;
+  }
+  return ["node", resolve(process.argv[1] ?? ""), ...args, ...(project === undefined ? [] : ["--project", project])].map(shellWord).join(" ");
 }
 
 /** A fault of the toolkit, not of the call: a script that declares its options wrong. */
@@ -167,6 +212,11 @@ export class Call {
     this.#names = names;
   }
 
+  /** The full command line of `command` of this script with `args`, for nextAction. */
+  next(command: string, ...args: string[]): string {
+    return commandLine([command, ...args]);
+  }
+
   /** The knowledge space of the command: --space, else c64. */
   get space(): string {
     return ("space" in this.#options ? this.string("space") : undefined) ?? "c64";
@@ -290,11 +340,10 @@ export function listed<T, U = T>(items: readonly T[], max: number, show: (item: 
 // ---------------------------------------------------------------------------
 // Usage
 
-/** The text at the end of every usage. */
-export const CONTRACT_USAGE = `Addresses are $ and 1 to 4 hex digits, for example '$c000' or '$fb', or a name: a symbol, else an analyzer name that only one analyzer gives. A range is <start>-<end>, for example '$c000-$cfff'. Quote them in a shell.
+/** The conventions in the help of every script. */
+export const CONVENTIONS = `Addresses are $ and 1 to 4 hex digits, for example '$c000' or '$fb', or a name: a symbol, else an analyzer name that only one analyzer gives. A range is <start>-<end>, for example '$c000-$cfff'. Quote them in a shell.
 Paths are relative to the project folder. Every script takes --project <folder>: the project folder, relative to the working directory. Without it, the script uses the nearest folder at or above the working directory that holds .c64-re-tools/.
-The result is one JSON object on one line. An error is {"error":{"code":"...","message":"..."}}.
-Exit status: 0 done or PASS, 1 FAIL, 2 error, 3 INCONCLUSIVE.`;
+Each command prints one JSON envelope: {ok: true, command, body, hint?, nextAction?} with exit status 0, or {ok: false, command?, code, error, hint?, nextAction?} with exit status 2.`;
 
 function optionLabel(name: string, spec: OptionSpec): string {
   return spec.kind === "flag" ? `--${name}` : `--${name} ${spec.value ?? "<value>"}`;
@@ -313,32 +362,33 @@ function synopsis(script: string, command: CommandSpec): string {
   return parts.join(" ");
 }
 
-function table(rows: Array<[string, string]>): string[] {
-  const width = Math.max(0, ...rows.map(([label]) => label.length)) + 2;
-  return rows.map(([label, help]) => `  ${label.padEnd(width)}${help}`);
+/** The help body of one command: its synopsis, subjects and options. */
+export function commandHelp(script: ScriptSpec, command: CommandSpec): Record<string, unknown> {
+  return {
+    command: command.name,
+    synopsis: synopsis(script.name, command),
+    summary: command.summary,
+    subjects: (command.subjects ?? []).map((subject) => ({ name: subject.list ? `${subject.name}...` : subject.name, help: subject.help, ...(subject.optional ? { optional: true } : {}) })),
+    options: Object.entries(command.options ?? {}).map(([name, spec]) => ({
+      flag: optionLabel(name, spec),
+      help: spec.help,
+      ...(spec.required ? { required: true } : {}),
+      ...(spec.multiple ? { repeatable: true } : {}),
+      ...(spec.default === undefined ? {} : { default: spec.default }),
+    })),
+    ...(command.notes === undefined ? {} : { notes: command.notes }),
+    conventions: CONVENTIONS,
+  };
 }
 
-export function commandUsage(script: ScriptSpec, command: CommandSpec): string {
-  const rows: Array<[string, string]> = [
-    ...(command.subjects ?? []).map((subject): [string, string] => [subject.name, subject.help]),
-    ...Object.entries(command.options ?? {}).map(([name, spec]): [string, string] => [optionLabel(name, spec), `${spec.help}${spec.multiple ? " (repeatable)" : ""}`]),
-  ];
-  return [synopsis(script.name, command), "", command.summary, ...(rows.length === 0 ? [] : ["", ...table(rows)]), ...(command.notes === undefined ? [] : ["", command.notes]), "", CONTRACT_USAGE].join("\n");
-}
-
-export function scriptUsage(script: ScriptSpec): string {
-  return [
-    `${script.name}.ts <command> [subjects...] [options]`,
-    "",
-    script.summary,
-    "",
-    "Commands:",
-    ...table(script.commands.map((command) => [command.name, command.summary])),
-    "",
-    `Give ${script.name}.ts <command> --help for the subjects and options of one command.`,
-    "",
-    CONTRACT_USAGE,
-  ].join("\n");
+/** The help body of a script: its commands. */
+export function scriptHelp(script: ScriptSpec): Record<string, unknown> {
+  return {
+    script: `${script.name}.ts`,
+    summary: script.summary,
+    commands: script.commands.map((command) => ({ name: command.name, summary: command.summary, synopsis: synopsis(script.name, command) })),
+    conventions: CONVENTIONS,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -434,11 +484,16 @@ function refuseSplitRange(command: CommandSpec, options: Readonly<Record<string,
   }
 }
 
+/** a, b and c. */
+function wordList(words: readonly string[]): string {
+  return words.length === 1 ? words[0]! : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
+}
+
 /** The options of a command for a message: --a, --b and --c, or a word that it has none. */
 function optionList(options: Readonly<Record<string, OptionSpec>>): string {
   const names = Object.keys(options).map((name) => `--${name}`);
-  if (names.length === 0) return "It takes no options";
-  return `Its options are ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`}`;
+  if (names.length === 0) return "The command takes no options";
+  return `Its options are ${wordList(names)}`;
 }
 
 /** True for a word that the command line reads as an option: - and one or more characters. A lone - is a subject (standard input). */
@@ -450,7 +505,7 @@ const isOptionWord = (word: string) => word.length > 1 && word.startsWith("-");
  * does not have, a flag with a value, an option without its value, a value
  * that starts with -, and a range option in two parts.
  */
-function refuseOptionWords(command: CommandSpec, options: Readonly<Record<string, OptionSpec>>, argv: readonly string[]): void {
+function refuseOptionWords(script: ScriptSpec, command: CommandSpec, options: Readonly<Record<string, OptionSpec>>, argv: readonly string[]): void {
   const end = argv.indexOf("--");
   const words = end < 0 ? argv : argv.slice(0, end);
   for (let index = 0; index < words.length; index++) {
@@ -462,7 +517,11 @@ function refuseOptionWords(command: CommandSpec, options: Readonly<Record<string
     const equals = word.indexOf("=");
     const name = equals < 0 ? word.slice(2) : word.slice(2, equals);
     const spec = options[name];
-    if (spec === undefined) throw new UsageError(`${command.name} has no option --${name}. ${optionList(options)}`);
+    if (spec === undefined) {
+      const takers = script.commands.filter((other) => other.options !== undefined && name in other.options).map((other) => other.name);
+      const where = takers.length === 0 ? `No command of ${script.name}.ts takes --${name}.` : `--${name} is an option of ${wordList(takers)}.`;
+      throw new UsageError(`${command.name} has no option --${name}.`, { hint: `${where} ${optionList(options)}.` });
+    }
     if (spec.kind === "flag") {
       if (equals >= 0) throw new UsageError(`--${name} is a flag: give --${name} without a value`);
       continue;
@@ -509,7 +568,7 @@ function checkOutput(text: string, what: string, kind: OutputKind): void {
 export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readonly string[]): Call {
   const options = commandOptions(command);
   refuseSplitRange(command, options, argv);
-  refuseOptionWords(command, options, argv);
+  refuseOptionWords(script, command, options, argv);
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -561,27 +620,35 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
 // ---------------------------------------------------------------------------
 // Running
 
-/** The exit status of a result: 1 for FAIL, 3 for INCONCLUSIVE, else 0. */
-function exitStatusOf(result: unknown): number {
-  const outcome = (result as { result?: unknown } | null | undefined)?.result;
-  return outcome === "FAIL" ? 1 : outcome === "INCONCLUSIVE" ? 3 : 0;
+/** A hint for a body with a cut list: the rest of the first list that has one. */
+function cutListHint(body: unknown): string | undefined {
+  const lists = (value: unknown, depth: number): string | undefined => {
+    if (typeof value !== "object" || value === null || depth > 2) return undefined;
+    const rest = (value as { rest?: unknown; count?: unknown }).rest;
+    if (typeof rest === "string" && typeof (value as { count?: unknown }).count === "number") return rest;
+    for (const item of Object.values(value)) {
+      const found = lists(item, depth + 1);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  const rest = lists(body, 0);
+  return rest === undefined ? undefined : `A list in the body is cut: count gives its full size. To get the rest, give ${rest}.`;
 }
 
-/** What the envelope needs of a script: its name for messages, and the usage for a wrong command line. */
+/** What the envelope needs of a script. */
 interface Envelope {
   name: string;
-  /** The usage to show for a wrong command line, by the command that was found (or undefined). */
-  usage: (command: string | undefined) => string;
-  /** Runs with the command line without --project. Calls found() with the command once it is known. Returns the value to print; { text } for help. */
+  /** Runs with the command line without --project. Calls found() with the command once it is known. Returns the body, or a Reply. */
   perform: (argv: string[], found: (command: string) => void) => unknown;
 }
 
 /**
  * The envelope of every script. It takes --project and runs the script. It
- * prints the result as one JSON line. Every failure, also one outside the
- * command (an exception or a rejection that nothing caught), prints one
- * {"error":{code,message}} line with exit status 2. A refusal keeps its code; a
- * wrong command line is invalid-input with the usage; any other failure is
+ * prints one JSON envelope line. Every failure, also one outside the command
+ * (an exception or a rejection that nothing caught), prints an ok:false
+ * envelope with exit status 2. A refusal keeps its code; a wrong command line
+ * is invalid-input with the help command as nextAction; any other failure is
  * operation-failed, and its stack goes to the trace only.
  */
 async function envelope(script: Envelope): Promise<void> {
@@ -590,7 +657,7 @@ async function envelope(script: Envelope): Promise<void> {
   let printed = false;
   let commandName: string | undefined;
 
-  const print = (value: unknown, status: number) => {
+  const print = (value: Record<string, unknown>, status: number) => {
     if (printed) return;
     printed = true;
     process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -599,20 +666,28 @@ async function envelope(script: Envelope): Promise<void> {
 
   const fail = (error: unknown) => {
     let code: ErrorCode;
-    let message: string;
-    if (error instanceof UsageError) {
-      code = "invalid-input";
-      message = `${error.message}\n\n${script.usage(commandName)}`;
-    } else if (isRefusal(error)) {
+    let shown: { error: string; hint?: string };
+    let nextAction: string | undefined;
+    if (isRefusal(error)) {
       code = error.code;
-      message = shownMessage(error);
+      const stop = code === "installation-incomplete";
+      const message = stop && error.message.endsWith(STOP_AND_ASK) ? error.message.slice(0, -STOP_AND_ASK.length).trim() : error.message;
+      shown = splitMessage(message, (error as { hint?: string }).hint);
+      if (stop) shown = { error: shown.error, hint: shown.hint === undefined ? STOP_AND_ASK : `${shown.hint} ${STOP_AND_ASK}` };
+      if (error instanceof UsageError) {
+        const help = `To get the usage, run ${script.name}.ts${commandName === undefined ? "" : ` ${commandName}`} --help.`;
+        shown = { error: shown.error, hint: shown.hint === undefined ? help : `${shown.hint} ${help}` };
+        nextAction = commandLine(commandName === undefined ? [] : [commandName, "--help"]);
+      }
     } else {
       code = "operation-failed";
       const where = commandName === undefined ? `${script.name}.ts` : `${script.name}.ts ${commandName}`;
-      message = `${where} failed inside c64-re-tools: ${error instanceof Error ? error.message : String(error)}. This is a fault of the toolkit, not of the call. Set C64RT_TRACE to get its details in the trace.`;
+      const text = (error instanceof Error ? error.message : String(error)).replace(/\.$/, "");
+      shown = { error: `${where} failed inside c64-re-tools: ${text}.`, hint: "This is a fault of the toolkit, not of the call. Give this message to the user. Set C64RT_TRACE to get its details in the trace." };
     }
+    const message = shown.hint === undefined ? shown.error : `${shown.error} ${shown.hint}`;
     trace().event("script.end", { ms: elapsedMs(started), status: 2, error: { code, message }, ...(isRefusal(error) ? {} : { stack: error instanceof Error ? error.stack : String(error) }) } as TraceFields);
-    print({ error: { code, message } }, 2);
+    print({ ok: false, ...(commandName === undefined ? {} : { command: commandName }), code, error: shown.error, ...(shown.hint === undefined ? {} : { hint: shown.hint }), ...(nextAction === undefined ? {} : { nextAction }) }, 2);
   };
 
   // A failure that nothing caught, for example in a callback of a child process: one error line, then the end.
@@ -630,9 +705,10 @@ async function envelope(script: Envelope): Promise<void> {
     const result = await script.perform(argv, (command) => {
       commandName = command;
     });
-    const status = exitStatusOf(result);
-    print(result ?? {}, status);
-    trace().event("script.end", { ms: elapsedMs(started), status, result });
+    const { body, hint, nextAction } = result instanceof Reply ? result : { body: result ?? {}, hint: undefined, nextAction: undefined };
+    const shownHint = hint ?? cutListHint(body);
+    print({ ok: true, command: commandName ?? "help", body: body ?? {}, ...(shownHint === undefined ? {} : { hint: shownHint }), ...(nextAction === undefined ? {} : { nextAction }) }, 0);
+    trace().event("script.end", { ms: elapsedMs(started), status: 0, result: body });
   } catch (error) {
     fail(error);
   }
@@ -642,20 +718,27 @@ async function envelope(script: Envelope): Promise<void> {
 export async function runScript(script: ScriptSpec): Promise<void> {
   await envelope({
     name: script.name,
-    usage: (name) => {
-      const command = script.commands.find((item) => item.name === name);
-      return command === undefined ? scriptUsage(script) : commandUsage(script, command);
-    },
     perform: (argv, found) => {
       const [first, ...rest] = argv;
-      if (first === undefined || first.startsWith("-")) {
-        if (asksHelp(argv)) return { text: scriptUsage(script) };
-        throw new UsageError(`give a command: ${script.commands.map((command) => command.name).join(", ")}`);
+      const help = `To get the subjects and the options of one command, run ${script.name}.ts <command> --help.`;
+      if (first === undefined) {
+        found("help");
+        return reply(scriptHelp(script), { hint: help });
+      }
+      if (first.startsWith("-")) {
+        if (asksHelp(argv)) {
+          found("help");
+          return reply(scriptHelp(script), { hint: help });
+        }
+        throw new UsageError(`${first} comes before the command.`, { hint: `Give a command first: ${wordList(script.commands.map((command) => command.name))}.` });
       }
       const command = script.commands.find((item) => item.name === first);
-      if (command === undefined) throw new UsageError(`${first} is not a command of ${script.name}.ts. The commands are ${script.commands.map((item) => item.name).join(", ")}`);
+      if (command === undefined) throw new UsageError(`${first} is not a command of ${script.name}.ts.`, { hint: `The commands are ${wordList(script.commands.map((item) => item.name))}.` });
       found(command.name);
-      if (asksHelp(rest)) return { text: commandUsage(script, command) };
+      if (asksHelp(rest)) {
+        found("help");
+        return commandHelp(script, command);
+      }
       return command.run(parseCall(script, command, rest));
     },
   });
