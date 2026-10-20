@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { mcpServerFor } from "../../distribution/package.ts";
+import { PACKAGE } from "../../src/package.ts";
 import { encodeFrame } from "../../src/protocol/framing.ts";
 import { FrameDecoder } from "../../src/protocol/framing.testkit.ts";
 import { readEnvelope } from "../kit.ts";
@@ -95,7 +96,7 @@ test("status reports a Host Runtime that accepts the connection but drops the re
     const decoder = new FrameDecoder();
     socket.on("data", (chunk) => {
       for (const message of decoder.push(chunk) as Array<{ type: string }>) {
-        if (message.type === "hello") socket.write(encodeFrame({ type: "ready" }));
+        if (message.type === "hello") socket.write(encodeFrame({ type: "ready", release: PACKAGE.version }));
         else socket.destroy();
       }
     });

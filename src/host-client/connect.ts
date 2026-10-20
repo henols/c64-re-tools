@@ -4,7 +4,7 @@ import { connect as connectTcp, type Socket } from "node:net";
 
 import { encodeFrame, MessageReader } from "../protocol/framing.ts";
 import { elapsedMs, trace } from "../trace.ts";
-import { DEFAULT_HOST_PORT, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseHostMessage, ProtocolError, WireFailure, withStopAndAsk, type Hello, type HostMessage, type Ping, type Request, type Role, type VideoStandard } from "../protocol/messages.ts";
+import { DEFAULT_HOST_PORT, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, checkRelease, parseHostMessage, ProtocolError, WireFailure, withStopAndAsk, type Hello, type HostMessage, type Ping, type Request, type Role, type VideoStandard } from "../protocol/messages.ts";
 import { PACKAGE } from "../package.ts";
 
 export interface Endpoint {
@@ -133,6 +133,8 @@ export class HostConnection {
     env?: NodeJS.ProcessEnv;
     /** Stops the connect and the handshake at once; the open then fails and its socket is closed. */
     signal?: AbortSignal;
+    /** The package version that this client gives in hello; PACKAGE.version when not given. */
+    release?: string;
   }): Promise<HostConnection> {
     const signal = options.signal;
     const started = performance.now();
@@ -151,7 +153,8 @@ export class HostConnection {
     if (socket === undefined) throw unreachable();
 
     const connection = new HostConnection(socket);
-    const hello: Hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: options.role };
+    const release = options.release ?? PACKAGE.version;
+    const hello: Hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release, role: options.role };
     if (options.videoStandard !== undefined) hello.videoStandard = options.videoStandard;
 
     const stop = () => void connection.close();
@@ -175,6 +178,13 @@ export class HostConnection {
       throw stopped();
     }
 
+    // The host checks the release of hello; the client checks the release of ready too, so neither side relies on the other.
+    const mismatch = !(answer instanceof Error) && answer.type === "ready" ? checkRelease(release, answer.release) : undefined;
+    if (mismatch !== undefined) {
+      trace().event("host.handshake-failed", { role: options.role, ms: elapsedMs(started), ...mismatch });
+      await connection.close();
+      throw new WireFailure(mismatch.code, mismatch.message);
+    }
     if (!(answer instanceof Error) && answer.type === "ready") {
       trace().event("host.ready", { role: options.role, ms: elapsedMs(started) });
       connection.#startHeartbeat();

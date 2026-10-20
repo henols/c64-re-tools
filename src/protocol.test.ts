@@ -2,16 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { encodeFrame, MAX_ATTACHMENT_BYTES, MAX_FRAME_BYTES, MessageReader } from "./protocol/framing.ts";
-import { checkHello, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseClientMessage, parseHostMessage, ProtocolError, shownMessage, STOP_AND_ASK, WireFailure, withStopAndAsk } from "./protocol/messages.ts";
+import { checkHello, checkRelease, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseClientMessage, parseHostMessage, ProtocolError, shownMessage, STOP_AND_ASK, WireFailure, withStopAndAsk } from "./protocol/messages.ts";
 import { isRelativePath, MAX_DISK_SECTORS, validateToolParams, validateToolResult } from "./protocol/tools.ts";
 import { attachmentCount, MAX_MASK_RECTANGLES, validateViceParams, validateViceResult } from "./protocol/vice.ts";
 import { FrameDecoder } from "./protocol/framing.testkit.ts";
 
-const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: "vice-session" } as const;
+const RELEASE = "2.1.4";
+const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release: RELEASE, role: "vice-session" } as const;
 
 test("a frame is a 4-byte big-endian length followed by UTF-8 JSON", () => {
-  const frame = encodeFrame({ type: "ready" });
-  const body = Buffer.from('{"type":"ready"}', "utf8");
+  const frame = encodeFrame({ type: "ready", release: RELEASE });
+  const body = Buffer.from('{"type":"ready","release":"2.1.4"}', "utf8");
   assert.equal(frame.readUInt32BE(0), body.length);
   assert.deepEqual(frame.subarray(4), body);
 });
@@ -50,6 +51,9 @@ test("client messages are validated", () => {
   assert.deepEqual(parseClientMessage(hello), hello);
   assert.deepEqual(parseClientMessage({ ...hello, videoStandard: "ntsc" }), { ...hello, videoStandard: "ntsc" });
   assert.throws(() => parseClientMessage({ ...hello, role: "admin" }), ProtocolError);
+  assert.throws(() => parseClientMessage({ ...hello, release: 2 }), ProtocolError);
+  const { release: _release, ...older } = hello;
+  assert.deepEqual(parseClientMessage(older), older, "a client of an older protocol version sends no release; the handshake refuses it");
   assert.throws(() => parseClientMessage({ ...hello, videoStandard: "secam" }), ProtocolError);
   assert.throws(() => parseClientMessage({ type: "hello", role: "tool" }), ProtocolError);
   assert.throws(() => parseClientMessage({ type: "request", id: -1, op: "status", params: {} }), ProtocolError);
@@ -60,7 +64,9 @@ test("client messages are validated", () => {
 });
 
 test("host messages are validated", () => {
-  assert.deepEqual(parseHostMessage({ type: "ready" }), { type: "ready" });
+  assert.deepEqual(parseHostMessage({ type: "ready", release: RELEASE }), { type: "ready", release: RELEASE });
+  assert.throws(() => parseHostMessage({ type: "ready" }), ProtocolError);
+  assert.throws(() => parseHostMessage({ type: "ready", release: 2 }), ProtocolError);
   assert.deepEqual(parseHostMessage({ type: "pong" }), { type: "pong" });
   const error = { code: "machine-unavailable", message: "VICE did not start" };
   assert.deepEqual(parseHostMessage({ type: "error", error }), { type: "error", error });
@@ -70,23 +76,50 @@ test("host messages are validated", () => {
   assert.throws(() => parseHostMessage({ type: "reply", id: 3, error: { code: "boom", message: "x" } }), ProtocolError);
 });
 
-test("a hello from another protocol version is installation-incomplete without naming versions", () => {
-  assert.equal(checkHello(hello), undefined);
-  for (const other of [{ ...hello, version: HOST_PROTOCOL_VERSION - 1 }, { ...hello, version: HOST_PROTOCOL_VERSION + 1 }, { ...hello, protocol: "something-else" }]) {
-    const failure = checkHello(other);
+test("a hello from another protocol version or release is installation-incomplete without naming versions", () => {
+  assert.equal(checkHello(hello, RELEASE), undefined);
+  const { release: _release, ...noRelease } = hello;
+  for (const [other, host] of [
+    [{ ...hello, version: HOST_PROTOCOL_VERSION - 1 }, RELEASE],
+    [{ ...hello, version: HOST_PROTOCOL_VERSION + 1 }, RELEASE],
+    [{ ...hello, protocol: "something-else" }, RELEASE],
+    [noRelease, RELEASE],
+    [hello, "2.1.5"],
+    [hello, "2.1.3"],
+  ] as const) {
+    const failure = checkHello(other, host);
     assert.equal(failure?.code, "installation-incomplete");
     assert.doesNotMatch(failure.message, /\b\d+\b|protocol/);
   }
 });
 
 test("a version refusal names the older side and how to update it", () => {
-  const olderHost = checkHello({ ...hello, version: HOST_PROTOCOL_VERSION + 1 })!.message;
+  const olderHost = checkHello({ ...hello, version: HOST_PROTOCOL_VERSION + 1 }, RELEASE)!.message;
   assert.match(olderHost, /host runtime is from an older release/);
   assert.match(olderHost, /start it again with the same npx command/);
-  const olderClient = checkHello({ ...hello, version: HOST_PROTOCOL_VERSION - 1 })!.message;
+  const olderClient = checkHello({ ...hello, version: HOST_PROTOCOL_VERSION - 1 }, RELEASE)!.message;
   assert.match(olderClient, /This client is from an older release/);
   assert.match(olderClient, /Restart the agent session/);
   assert.match(olderClient, /c64-re-tools update/);
+});
+
+test("a release mismatch at the same protocol version names the older side; a development checkout passes against any release", () => {
+  const older = (client: string, host: string) => {
+    const failure = checkRelease(client, host);
+    return failure === undefined ? "none" : /^The c64-re-tools host runtime is from an older release/.test(failure.message) ? "host" : "client";
+  };
+  assert.equal(older("2.1.4", "2.1.4"), "none");
+  assert.equal(older("2.1.4", "2.1.3"), "host");
+  assert.equal(older("2.1.4", "2.2.0"), "client");
+  assert.equal(older("2.10.0", "2.9.9"), "host", "numbers, not text");
+  assert.equal(older("2.2.0", "2.2.0-rc.1"), "host", "a prerelease comes before its release");
+  assert.equal(older("2.2.0-rc.2", "2.2.0-rc.10"), "client");
+  assert.equal(older("2.2.0-rc.1", "2.2.0"), "client");
+  assert.equal(older("0.0.0-development", "0.0.0-development"), "none");
+  assert.equal(older("0.0.0-development", "2.1.4"), "none");
+  assert.equal(older("2.1.4", "0.0.0-development"), "none");
+  assert.equal(checkHello({ ...hello, release: "0.0.0-development" }, RELEASE), undefined);
+  assert.match(checkHello(hello, "2.1.5")!.message, /Restart the agent session, so that npx starts the newest MCP server/);
 });
 
 test("operation parameters are validated with invalid-input", () => {
@@ -238,8 +271,8 @@ test("bad attachment announcements and empty or overlong attachment frames are r
   assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [MAX_ATTACHMENT_BYTES, 1] })), ProtocolError);
   assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [2] }, frameOf(Buffer.from("abc")))), /runs past/);
   assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [2] }, frameOf(Buffer.alloc(0)))), /attachment frame is empty/);
-  assert.throws(() => encodeFrame({ type: "ready" }, [Buffer.alloc(MAX_ATTACHMENT_BYTES + 1)]), ProtocolError);
-  assert.throws(() => new FrameDecoder().push(encodeFrame({ type: "ready" }, [Buffer.from("x")])), /unexpected attachments/);
+  assert.throws(() => encodeFrame({ type: "ready", release: RELEASE }, [Buffer.alloc(MAX_ATTACHMENT_BYTES + 1)]), ProtocolError);
+  assert.throws(() => new FrameDecoder().push(encodeFrame({ type: "ready", release: RELEASE }, [Buffer.from("x")])), /unexpected attachments/);
 });
 
 test("media parameters are validated with invalid-input", () => {

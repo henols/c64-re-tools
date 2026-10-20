@@ -15,6 +15,19 @@ const HEADER_BYTES = 4;
 /** Total attachment bytes one message may carry. */
 export const MAX_ATTACHMENT_BYTES = 16 * 1024 * 1024;
 
+/** A message that encodeFrame cannot send: its body or its attachments are larger than the limit. */
+export class FrameTooLarge extends ProtocolError {
+  override name = "FrameTooLarge";
+  readonly bytes: number;
+  readonly limit: number;
+
+  constructor(what: string, bytes: number, limit: number) {
+    super(`${what} of ${bytes} bytes exceed${what === "frame" ? "s" : ""} ${limit}`);
+    this.bytes = bytes;
+    this.limit = limit;
+  }
+}
+
 function frame(body: Uint8Array): Buffer {
   const header = Buffer.allocUnsafe(HEADER_BYTES);
   header.writeUInt32BE(body.length, 0);
@@ -24,10 +37,10 @@ function frame(body: Uint8Array): Buffer {
 /** Encodes one message and its attachments as one buffer, so writes never interleave. */
 export function encodeFrame(message: ClientMessage | HostMessage, attachments: readonly Uint8Array[] = []): Buffer {
   const total = attachments.reduce((sum, attachment) => sum + attachment.length, 0);
-  if (total > MAX_ATTACHMENT_BYTES) throw new ProtocolError(`attachments of ${total} bytes exceed ${MAX_ATTACHMENT_BYTES}`);
+  if (total > MAX_ATTACHMENT_BYTES) throw new FrameTooLarge("attachments", total, MAX_ATTACHMENT_BYTES);
   const announced = attachments.length === 0 ? message : { ...message, attachments: attachments.map((attachment) => attachment.length) };
   const body = Buffer.from(JSON.stringify(announced), "utf8");
-  if (body.length > MAX_FRAME_BYTES) throw new ProtocolError(`frame of ${body.length} bytes exceeds ${MAX_FRAME_BYTES}`);
+  if (body.length > MAX_FRAME_BYTES) throw new FrameTooLarge("frame", body.length, MAX_FRAME_BYTES);
   const frames = [frame(body)];
   for (const attachment of attachments) {
     for (let offset = 0; offset < attachment.length; offset += MAX_FRAME_BYTES) {

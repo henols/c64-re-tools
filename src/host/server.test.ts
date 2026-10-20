@@ -5,13 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { encodeFrame } from "../protocol/framing.ts";
+import { encodeFrame, MAX_FRAME_BYTES } from "../protocol/framing.ts";
 import { HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, type ClientMessage, WireFailure } from "../protocol/messages.ts";
 import { FrameDecoder } from "../protocol/framing.testkit.ts";
+import { PACKAGE } from "../package.ts";
 import { startTrace, TRACE_VARIABLE } from "../trace.ts";
 import { ListenError, parsePort, startHostServer, stopSignal, type HostServer, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
 
-const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: "vice-session" } as const;
+const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release: PACKAGE.version, role: "vice-session" } as const;
 
 /** A raw framed client: no host-client code, so these tests pin the wire. */
 class RawClient {
@@ -113,7 +114,7 @@ test("a vice-session handshake starts one session and answers ready", async () =
   const log: StubLog = { started: [], closed: 0 };
   const client = await RawClient.open(await serve(stubFactory(log)));
   client.send({ ...hello, videoStandard: "ntsc" });
-  assert.deepEqual(await client.next(), { type: "ready" });
+  assert.deepEqual(await client.next(), { type: "ready", release: PACKAGE.version });
   assert.deepEqual(log.started, [{ videoStandard: "ntsc" }]);
   client.end();
 });
@@ -137,6 +138,31 @@ test("a protocol version mismatch is refused as installation-incomplete and clos
   assert.equal(await client.next(), undefined);
   await client.closed;
   assert.equal(log.started.length, 0, "no emulator may start for a mismatched client");
+});
+
+test("a client of another release, or one that gives no release, is refused as installation-incomplete before an emulator starts", async () => {
+  const log: StubLog = { started: [], closed: 0 };
+  const server = await startHostServer({ port: 0, createViceSession: stubFactory(log), release: "2.1.5" });
+  servers.push(server);
+  const { release: _release, ...noRelease } = hello;
+  for (const [sent, older] of [
+    [{ ...hello, release: "2.1.4" }, /This client is from an older release/],
+    [{ ...hello, release: "2.2.0" }, /host runtime is from an older release/],
+    [noRelease, /This client is from an older release/],
+  ] as const) {
+    const client = await RawClient.open(server);
+    client.send(sent);
+    const reply = (await client.next()) as { type: string; error: { code: string; message: string } };
+    assert.equal(reply.type, "error");
+    assert.equal(reply.error.code, "installation-incomplete");
+    assert.match(reply.error.message, older);
+    await client.closed;
+  }
+  assert.equal(log.started.length, 0, "no emulator may start for a mismatched client");
+  const client = await RawClient.open(server);
+  client.send({ ...hello, release: "2.1.5" });
+  assert.deepEqual(await client.next(), { type: "ready", release: "2.1.5" });
+  client.end();
 });
 
 test("a malformed frame closes the connection and its session", async () => {
@@ -223,6 +249,32 @@ test("an unexpected session exception becomes operation-failed without internals
   client.end();
 });
 
+test("a result too large for one reply is refused as limit-exceeded with its size, logged, and the connection serves on", async () => {
+  const lines: string[] = [];
+  const factory = stubFactory({ started: [], closed: 0 }, {
+    async handle(op, params) {
+      if (op === "memoryRead") return { address: (params as { address: number }).address, data: "00".repeat(MAX_FRAME_BYTES) } as never;
+      return { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false } as never;
+    },
+  });
+  const server = await startHostServer({ port: 0, createViceSession: factory, log: (line) => lines.push(line) });
+  servers.push(server);
+  const client = await RawClient.open(server);
+  client.send(hello);
+  await client.next();
+  client.send({ type: "request", id: 3, op: "memoryRead", params: { address: 0, size: 1, space: "c64", view: "cpu" } });
+  const reply = (await client.next()) as { id: number; error: { code: string; message: string } };
+  assert.equal(reply.id, 3);
+  assert.equal(reply.error.code, "limit-exceeded");
+  assert.match(reply.error.message, new RegExp(`is \\d+ bytes, more than the ${MAX_FRAME_BYTES} bytes`));
+  assert.match(reply.error.message, /Ask for less in one call/);
+  assert.ok(lines.some((line) => /the reply to memoryRead is too large to send: frame of \d+ bytes exceeds/.test(line)), lines.join("\n"));
+  assert.ok(!lines.some((line) => /operation memoryRead failed/.test(line)), "no generic failure line");
+  client.send({ type: "request", id: 4, op: "status", params: {} });
+  assert.equal(((await client.next()) as { id: number }).id, 4);
+  client.end();
+});
+
 test("a session that fails to start is reported and the connection closed", async () => {
   const client = await RawClient.open(
     await serve(async () => {
@@ -251,7 +303,7 @@ test("a ping is answered with pong and never reaches the session", async () => {
   let handled = 0;
   const client = await RawClient.open(await serve(stubFactory(log, { handle: async () => (handled++, {}) as never })));
   client.send(hello);
-  assert.deepEqual(await client.next(), { type: "ready" });
+  assert.deepEqual(await client.next(), { type: "ready", release: PACKAGE.version });
   client.send({ type: "ping" });
   assert.deepEqual(await client.next(), { type: "pong" });
   assert.equal(handled, 0);
@@ -268,7 +320,7 @@ test("a ready client that sends nothing for the heartbeat timeout is closed with
   const log: StubLog = { started: [], closed: 0 };
   const client = await RawClient.open(await serve(stubFactory(log), undefined, 100));
   client.send(hello);
-  assert.deepEqual(await client.next(), { type: "ready" });
+  assert.deepEqual(await client.next(), { type: "ready", release: PACKAGE.version });
   // Silent, like a client behind a connection that vanished without a close.
   await client.closed;
   await waitFor(() => log.closed === 1);
@@ -346,7 +398,7 @@ test("a tool connection is ready without starting an emulator", async () => {
   const log: StubLog = { started: [], closed: 0 };
   const client = await RawClient.open(await serve(stubFactory(log)));
   client.send({ ...hello, role: "tool" });
-  assert.deepEqual(await client.next(), { type: "ready" });
+  assert.deepEqual(await client.next(), { type: "ready", release: PACKAGE.version });
   client.send({ type: "request", id: 1, op: "status", params: {} });
   assert.equal(((await client.next()) as { error: { code: string } }).error.code, "invalid-input");
   assert.equal(log.started.length, 0);
@@ -429,7 +481,7 @@ test("a session factory that throws at once is reported, and the host keeps serv
   await client.closed;
   const next = await RawClient.open(server);
   next.send(hello);
-  assert.deepEqual(await next.next(), { type: "ready" });
+  assert.deepEqual(await next.next(), { type: "ready", release: PACKAGE.version });
   next.end();
 });
 

@@ -1,7 +1,8 @@
 import { createServer, type Server, type Socket } from "node:net";
 
-import { encodeFrame, MessageReader } from "../protocol/framing.ts";
+import { encodeFrame, FrameTooLarge, MessageReader } from "../protocol/framing.ts";
 import { isRefusal } from "../errors.ts";
+import { PACKAGE } from "../package.ts";
 import { checkHello, isOneOf, HEARTBEAT_TIMEOUT_MS, parseClientMessage, ProtocolError, type HostMessage, type ReceivedRequest, type VideoStandard, type WireError, WireFailure } from "../protocol/messages.ts";
 import { TOOL_OPERATIONS, validateToolParams, type ToolOperation, type ToolOperations } from "../protocol/tools.ts";
 import { attachmentCount, VICE_OPERATIONS, validateViceParams, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
@@ -47,6 +48,8 @@ export interface HostServerOptions {
   /** How long a ready connection may send nothing (no request, no ping) before it is closed with its session. */
   heartbeatTimeoutMs?: number;
   log?: (line: string) => void;
+  /** The package version that the host compares with the client's and gives in ready; PACKAGE.version when not given. */
+  release?: string;
 }
 
 export interface HostServer {
@@ -86,6 +89,7 @@ class Connection {
 
   readonly #socket: Socket;
   readonly #options: HostServerOptions;
+  readonly #release: string;
   readonly #log: (line: string) => void;
   readonly #handshakeTimer: NodeJS.Timeout;
   /** Runs from ready on; every received frame restarts it. */
@@ -96,6 +100,7 @@ class Connection {
   constructor(socket: Socket, options: HostServerOptions, log: (line: string) => void) {
     this.#socket = socket;
     this.#options = options;
+    this.#release = options.release ?? PACKAGE.version;
     // Every line names its connection, so the console shows which client starts and stops what.
     this.#log = (line) => log(`connection ${this.#id}: ${line}`);
     this.closed = new Promise((resolve) => (this.#resolveClosed = resolve));
@@ -133,7 +138,27 @@ class Connection {
   }
 
   #send(message: HostMessage, attachments: readonly Uint8Array[] = []): void {
-    if (this.#state !== "closed" && !this.#socket.destroyed) this.#socket.write(encodeFrame(message, attachments));
+    this.#write(encodeFrame(message, attachments));
+  }
+
+  #write(frame: Buffer): void {
+    if (this.#state !== "closed" && !this.#socket.destroyed) this.#socket.write(frame);
+  }
+
+  /** Sends a result. A result too large for the wire is refused with its size and a remedy, and the host log tells it. */
+  #reply(request: ReceivedRequest, result: unknown, attachments: readonly Uint8Array[]): void {
+    let frame: Buffer;
+    try {
+      frame = encodeFrame({ type: "reply", id: request.id, result }, attachments);
+    } catch (error) {
+      if (!(error instanceof FrameTooLarge)) throw error;
+      this.#log(`the reply to ${request.op} is too large to send: ${error.message}`);
+      throw new WireFailure(
+        "limit-exceeded",
+        `The result of this call is ${error.bytes} bytes, more than the ${error.limit} bytes that one reply can hold. Ask for less in one call: a smaller range, count or limit.`,
+      );
+    }
+    this.#write(frame);
   }
 
   /** Ends the host's side after a refusal; a client that does not close its side in time is cut off. */
@@ -171,7 +196,7 @@ class Connection {
     if (this.#state === "handshake") {
       if (message.type !== "hello") throw new ProtocolError("first message is not hello");
       clearTimeout(this.#handshakeTimer);
-      const mismatch = checkHello(message);
+      const mismatch = checkHello(message, this.#release);
       if (mismatch !== undefined) {
         this.#log(`refusing a client: ${mismatch.message}`);
         trace().event("connection.refused", { connection: this.#id, role: message.role, ...mismatch });
@@ -183,7 +208,7 @@ class Connection {
       if (message.role === "tool") {
         this.#isTool = true;
         this.#state = "open";
-        this.#send({ type: "ready" });
+        this.#send({ type: "ready", release: this.#release });
         this.#log("ready for tool requests");
         trace().event("connection.ready", { connection: this.#id, role: "tool" });
         this.#restartHeartbeat();
@@ -211,7 +236,7 @@ class Connection {
     if (session === undefined || this.#state === "closed") return;
     this.#session = session;
     this.#state = "open";
-    this.#send({ type: "ready" });
+    this.#send({ type: "ready", release: this.#release });
     this.#log(`VICE session ready after ${Math.round(performance.now() - started)} ms`);
     trace().event("connection.ready", { connection: this.#id, role: "vice-session", videoStandard, ms: elapsedMs(started) });
     this.#restartHeartbeat();
@@ -265,7 +290,7 @@ class Connection {
         }
         result = await session.handle(op, params, attachments, replyAttachments);
       }
-      this.#send({ type: "reply", id: request.id, result }, replyAttachments);
+      this.#reply(request, result, replyAttachments);
       record({ ok: true, result });
     } catch (error) {
       if (!isRefusal(error)) {

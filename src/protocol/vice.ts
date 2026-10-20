@@ -261,6 +261,13 @@ export interface TraceResult {
   pc: number;
 }
 
+/**
+ * A trace result on the wire: the hits are the count, and the hits themselves
+ * come as the one attachment, a JSON list (traceHitsFromAttachment). Thousands
+ * of hits do not fit in one message.
+ */
+export type TraceReply = Omit<TraceResult, "hits"> & { hits: number };
+
 export interface BacktraceFrame {
   /** The routine's entry address. */
   address: number;
@@ -524,7 +531,7 @@ export interface ViceOperations {
   breakpoint: { params: BreakpointParams; result: Breakpoint | PointRemoved | { breakpoints: Breakpoint[] } };
   watchpoint: { params: WatchpointParams; result: Watchpoint | PointRemoved | { watchpoints: Watchpoint[] } };
   cpuHistory: { params: { limit: number; space: Space }; result: { entries: HistoryEntry[] } };
-  trace: { params: { points: TracePoint[]; frames: number; maxHits: number }; result: TraceResult };
+  trace: { params: { points: TracePoint[]; frames: number; maxHits: number }; result: TraceReply };
   backtrace: { params: { depth: number; space: Space }; result: { frames: BacktraceFrame[] } };
   /** `cycles` is a decimal string. */
   timing: { params: { action: (typeof TIMING_ACTIONS)[number] }; result: { started: boolean } | { cycles: string } };
@@ -1266,25 +1273,7 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       break;
     }
     case "trace": {
-      const ok =
-        Array.isArray(value.hits) &&
-        isInteger(value.frames, 0, MAX_TRACE_FRAMES) &&
-        isOneOf(TRACE_ENDS, value.end) &&
-        isInteger(value.pc, 0, 0xffff) &&
-        value.hits.every(
-          (hit) =>
-            isObject(hit) &&
-            isInteger(hit.point, 0, MAX_TRACE_POINTS - 1) &&
-            isInteger(hit.pc, 0, 0xffff) &&
-            isHexData(hit.bytes) &&
-            typeof hit.text === "string" &&
-            (["a", "x", "y", "sp"] as const).every((name) => isInteger(hit[name], 0, 0xff)) &&
-            isInteger(hit.frame, 0, MAX_TRACE_FRAMES) &&
-            isInteger(hit.rasterLine, 0, 511) &&
-            isInteger(hit.rasterCycle, 0, 127) &&
-            (hit.address === undefined || isInteger(hit.address, 0, 0xffff)) &&
-            (hit.value === undefined || isInteger(hit.value, 0, 0xff)),
-        );
+      const ok = isInteger(value.hits, 0, MAX_TRACE_HITS) && isInteger(value.frames, 0, MAX_TRACE_FRAMES) && isOneOf(TRACE_ENDS, value.end) && isInteger(value.pc, 0, 0xffff);
       if (!ok) throw new ProtocolError("trace result is malformed");
       break;
     }
@@ -1454,4 +1443,35 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       throw new ProtocolError(`unknown operation: ${String(op)}`);
   }
   return value as unknown as ViceOperations[O]["result"];
+}
+
+/** The hits of a trace reply from its attachment: a JSON list of `count` hits. Throws ProtocolError. */
+export function traceHitsFromAttachment(attachments: readonly Buffer[], count: number): TraceHit[] {
+  const [bytes] = attachments;
+  if (bytes === undefined || attachments.length !== 1) throw new ProtocolError("trace reply has no hits attachment");
+  let hits: unknown;
+  try {
+    hits = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new ProtocolError("trace hits are not valid JSON");
+  }
+  const ok =
+    Array.isArray(hits) &&
+    hits.length === count &&
+    hits.every(
+      (hit) =>
+        isObject(hit) &&
+        isInteger(hit.point, 0, MAX_TRACE_POINTS - 1) &&
+        isInteger(hit.pc, 0, 0xffff) &&
+        isHexData(hit.bytes) &&
+        typeof hit.text === "string" &&
+        (["a", "x", "y", "sp"] as const).every((name) => isInteger(hit[name], 0, 0xff)) &&
+        isInteger(hit.frame, 0, MAX_TRACE_FRAMES) &&
+        isInteger(hit.rasterLine, 0, 511) &&
+        isInteger(hit.rasterCycle, 0, 127) &&
+        (hit.address === undefined || isInteger(hit.address, 0, 0xffff)) &&
+        (hit.value === undefined || isInteger(hit.value, 0, 0xff)),
+    );
+  if (!ok) throw new ProtocolError("trace hits are malformed");
+  return hits as TraceHit[];
 }

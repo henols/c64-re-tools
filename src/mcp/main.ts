@@ -3,9 +3,10 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { ViceSessionClient } from "../host-client/vice-session.ts";
-import { elapsedMs, startTrace, trace } from "../trace.ts";
+import { startTrace, trace } from "../trace.ts";
 import { VIDEO_STANDARDS, WireFailure, type VideoStandard } from "../protocol/messages.ts";
-import { createMcpServer, type SessionSource } from "./server.ts";
+import { createMcpServer } from "./server.ts";
+import { sessionSource } from "./session-source.ts";
 import { debugTools } from "./tools/debug.ts";
 import { executionTools } from "./tools/execution.ts";
 import { inputTools } from "./tools/input.ts";
@@ -42,76 +43,13 @@ function videoStandard(env: NodeJS.ProcessEnv): VideoStandard {
   throw new WireFailure("installation-incomplete", "C64RT_VIDEO must be pal or ntsc. Fix the MCP server configuration and restart it.");
 }
 
-/**
- * One session at a time (1 MCP = 1 session = 1 VICE). It opens at start; if
- * that fails (for example the host was not running yet), the next tool call
- * tries again. When the host connection is lost, the next call opens a new
- * session. A lost session that the emulator answered first gives its
- * machine-state-lost once, unless a pending call got it already. Close stops
- * an open that is still waiting for the host at once.
- */
-function sessionSource(): { get: SessionSource; close(): Promise<void> } {
-  let opening: Promise<ViceSessionClient> | undefined;
-  let lostNotice: WireFailure | undefined;
-  let closed = false;
-  const stop = new AbortController();
-  const open = () => {
-    const started = performance.now();
-    const current = (async () => ViceSessionClient.open({ videoStandard: videoStandard(process.env), signal: stop.signal }))();
-    opening = current;
-    void current.then(
-      (client) => {
-        trace().event("session.opened", { ms: elapsedMs(started) });
-        void client.closed.then(() => drop(current, client));
-      },
-      () => {},
-    );
-    current.catch((error: unknown) => {
-      log(`session not opened: ${error instanceof Error ? error.message : String(error)}`);
-      if (opening === current) opening = undefined;
-    });
-    return current;
-  };
-  /** Forgets a lost session, once; the next call opens a new one. */
-  const drop = (current: Promise<ViceSessionClient>, client: ViceSessionClient) => {
-    if (closed || opening !== current) return;
-    log("the connection to the host runtime was lost; the next call opens a new session");
-    opening = undefined;
-    if (client.answered) lostNotice = client.unreportedLoss;
-  };
-  open();
-  const get = async (): Promise<ViceSessionClient> => {
-    if (closed) throw new WireFailure("machine-unavailable", "The C64 session is shutting down.");
-    if (lostNotice !== undefined) {
-      const notice = lostNotice;
-      lostNotice = undefined;
-      throw notice;
-    }
-    const current = opening ?? open();
-    const client = await current;
-    if (!client.lost) return client;
-    // The loss is known here before the close event reaches drop.
-    drop(current, client);
-    return get();
-  };
-  return {
-    get,
-    async close() {
-      closed = true;
-      stop.abort();
-      const session = await opening?.catch(() => undefined);
-      await session?.close();
-    },
-  };
-}
-
 async function main(): Promise<void> {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     process.stdout.write(`${HELP}\n`);
     return;
   }
   startTrace("mcp", { warn: log });
-  const session = sessionSource();
+  const session = sessionSource((signal) => ViceSessionClient.open({ videoStandard: videoStandard(process.env), signal }), log);
   const server = createMcpServer({ tools: [...machineTools, ...executionTools, ...debugTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools], session: session.get, log });
 
   let stopping = false;

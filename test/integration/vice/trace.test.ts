@@ -9,18 +9,25 @@ import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
+import { MAX_FRAME_BYTES } from "../../../src/protocol/framing.ts";
+import { MAX_TRACE_FRAMES, MAX_TRACE_HITS } from "../../../src/protocol/vice.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
-let server: HostServer | undefined;
+const servers: HostServer[] = [];
 after(async () => {
-  await server?.close();
+  for (const server of servers) await server.close();
 });
 
-test("a trace records the writes to a register with the instruction and the raster line, and the IRQ entries of each frame", { skip: liveSkip, timeout: 300_000 }, async () => {
+async function openClient(): Promise<ViceSessionClient> {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
-  const client = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${server.host}:${server.port}` } });
+  const server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  servers.push(server);
+  return ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${server.host}:${server.port}` } });
+}
+
+test("a trace records the writes to a register with the instruction and the raster line, and the IRQ entries of each frame", { skip: liveSkip, timeout: 300_000 }, async () => {
+  const client = await openClient();
   try {
     // To READY, then $c000 LDA $d011 / AND #$ef / STA $d011 / LDX #$40 / DEX / BNE $c00a / JMP $c000.
     await client.execution({ action: "advance-frames", count: 150, space: "c64" });
@@ -53,6 +60,25 @@ test("a trace records the writes to a register with the instruction and the rast
     assert.deepEqual([...new Set(irqs.hits.map((hit) => hit.pc))], [0xea31]);
     const frames = irqs.hits.map((hit) => hit.frame);
     assert.ok(frames[0]! <= 1 && frames.every((frame, index) => index === 0 || frame >= frames[index - 1]!), `frames count from 0 and go up: ${frames}`);
+    assert.equal((await client.status()).state, "stopped", "the trace leaves the machine stopped");
+  } finally {
+    await client.close();
+  }
+});
+
+test("a trace of the most hits, more than one message holds, comes back whole", { skip: liveSkip, timeout: 600_000 }, async () => {
+  const client = await openClient();
+  try {
+    // To READY, then the tight loop $c000 STA $d020 / JMP $c000: thousands of writes in each frame.
+    await client.execution({ action: "advance-frames", count: 150, space: "c64" });
+    await client.memoryWrite({ address: 0xc000, data: "8d20d04c00c0", space: "c64", view: "ram" });
+    await client.registersSet("c64", { pc: 0xc000, flags: { i: true } });
+
+    const writes = await client.trace({ points: [{ kind: "write", start: 0xd020, end: 0xd020 }], frames: MAX_TRACE_FRAMES, maxHits: MAX_TRACE_HITS });
+    assert.equal(writes.end, "hits", JSON.stringify({ ...writes, hits: writes.hits.length }));
+    assert.equal(writes.hits.length, MAX_TRACE_HITS);
+    assert.ok(JSON.stringify(writes.hits).length > MAX_FRAME_BYTES, "the hits are more than one message holds");
+    assert.ok(writes.hits.every((hit) => hit.pc === 0xc000 && hit.address === 0xd020));
     assert.equal((await client.status()).state, "stopped", "the trace leaves the machine stopped");
   } finally {
     await client.close();

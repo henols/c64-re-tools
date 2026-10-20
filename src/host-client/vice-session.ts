@@ -2,7 +2,7 @@
 // one VICE. Exposes C64-domain operations only.
 
 import { ProtocolError, WireFailure, type VideoStandard } from "../protocol/messages.ts";
-import { MAX_MEMORY_READ, validateViceResult, type Breakpoint, type BreakpointParams, type PointRemoved, type Watchpoint, type WatchpointParams, type ExecutionParams, type ExecutionResult, type JoystickState, type MachineStatus, type MemmapRange, type MemoryWriteParams, type ProfileEntry, type RegisterValues, type ResetMode, type RunState, type RunTarget, type RunUntilResult, type MemoryReadParams, type MemoryReadResult, type Registers, type Space, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
+import { MAX_MEMORY_READ, traceHitsFromAttachment, validateViceResult, type TraceResult, type Breakpoint, type BreakpointParams, type PointRemoved, type Watchpoint, type WatchpointParams, type ExecutionParams, type ExecutionResult, type JoystickState, type MachineStatus, type MemmapRange, type MemoryWriteParams, type ProfileEntry, type RegisterValues, type ResetMode, type RunState, type RunTarget, type RunUntilResult, type MemoryReadParams, type MemoryReadResult, type Registers, type Space, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
 import { HostConnection } from "./connect.ts";
 import { readProjectFile } from "./transfer.ts";
 
@@ -179,8 +179,15 @@ export class ViceSessionClient {
   }
 
   /** Records each hit of the points while the program runs on. */
-  trace(params: ViceOperations["trace"]["params"]): Promise<ViceOperations["trace"]["result"]> {
-    return this.#request("trace", params);
+  async trace(params: ViceOperations["trace"]["params"]): Promise<TraceResult> {
+    const { result, attachments } = await this.#requestWithAttachments("trace", params);
+    try {
+      return { ...result, hits: traceHitsFromAttachment(attachments, result.hits) };
+    } catch (error) {
+      if (!(error instanceof ProtocolError)) throw error;
+      this.#fail();
+      throw new WireFailure("operation-failed", "The c64-re-tools host runtime sent an invalid reply.");
+    }
   }
 
   backtrace(params: ViceOperations["backtrace"]["params"]): Promise<ViceOperations["backtrace"]["result"]> {

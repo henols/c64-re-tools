@@ -23,6 +23,7 @@ const SID = {
   volume: 15,
 };
 const PNG = Buffer.from("png").toString("base64");
+const TRACE_HITS = [{ point: 0, pc: 0x09c1, bytes: "8d11d0", text: "STA $d011", a: 0x8b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 279, rasterCycle: 22, address: 0xd011, value: 0x8b }];
 
 // Media operations read project files relative to the working directory: each test runs in the project.
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-contract-"));
@@ -33,8 +34,14 @@ beforeEach(() => process.chdir(project));
 // Windows cannot remove the current directory.
 afterEach(() => process.chdir(home));
 
-/** One example per operation: how the client calls it, what the session must see, what it answers. */
-const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Promise<unknown>; params: unknown; result: unknown; attachments?: number }> = {
+/**
+ * One example per operation: how the client calls it, what the session must see, what it answers.
+ * With reply, the session answers that result and those attachments, and the client gives result.
+ */
+const EXAMPLES: Record<
+  ViceOperation,
+  { call: (client: ViceSessionClient) => Promise<unknown>; params: unknown; result: unknown; attachments?: number; reply?: { result: unknown; attachments: Buffer[] } }
+> = {
   status: { call: (c) => c.status(), params: {}, result: { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0x2100 } },
   memoryRead: {
     call: (c) => c.memoryRead({ address: 0x2000, size: 2, space: "c64", view: "cpu" }),
@@ -108,7 +115,8 @@ const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Pro
   trace: {
     call: (c) => c.trace({ points: [{ kind: "write", start: 0xd011, end: 0xd011 }], frames: 2, maxHits: 10 }),
     params: { points: [{ kind: "write", start: 0xd011, end: 0xd011 }], frames: 2, maxHits: 10 },
-    result: { hits: [{ point: 0, pc: 0x09c1, bytes: "8d11d0", text: "STA $d011", a: 0x8b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 279, rasterCycle: 22, address: 0xd011, value: 0x8b }], frames: 2, end: "frames", pc: 0x0440 },
+    result: { hits: TRACE_HITS, frames: 2, end: "frames", pc: 0x0440 },
+    reply: { result: { hits: 1, frames: 2, end: "frames", pc: 0x0440 }, attachments: [Buffer.from(JSON.stringify(TRACE_HITS))] },
   },
   backtrace: { call: (c) => c.backtrace({ depth: 4, space: "c64" }), params: { depth: 4, space: "c64" }, result: { frames: [{ address: 0x2100, returnAddress: 0x1980 }] } },
   timing: { call: (c) => c.timing("read"), params: { action: "read" }, result: { cycles: "1234" } },
@@ -149,9 +157,11 @@ test("every operation crosses the real host boundary with its parameters and res
   server = await startHostServer({
     port: 0,
     createViceSession: async () => ({
-      async handle(op, params, attachments) {
+      async handle(op, params, attachments, reply) {
         seen.set(op, { params, attachments: attachments?.length ?? 0 });
-        return EXAMPLES[op].result as never;
+        const example = EXAMPLES[op];
+        reply?.push(...(example.reply?.attachments ?? []));
+        return (example.reply?.result ?? example.result) as never;
       },
       async close() {},
     }),

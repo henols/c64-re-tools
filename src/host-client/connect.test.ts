@@ -6,6 +6,7 @@ import { after, test, type TestContext } from "node:test";
 import { encodeFrame } from "../protocol/framing.ts";
 import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, STOP_AND_ASK, WireFailure, type HostMessage } from "../protocol/messages.ts";
 import { FrameDecoder } from "../protocol/framing.testkit.ts";
+import { PACKAGE } from "../package.ts";
 import { DEFAULT_READY_TIMEOUT_MS, HostConnection, hostEndpoints } from "./connect.ts";
 
 test("the default endpoints are loopback, then the Docker and Podman host bridges", () => {
@@ -61,7 +62,7 @@ async function closedPort(): Promise<NodeJS.ProcessEnv> {
 const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
 
 test("a ready host yields an open connection", async () => {
-  const connection = await HostConnection.open({ role: "vice-session", env: await fakeHost({ type: "ready" }) });
+  const connection = await HostConnection.open({ role: "vice-session", env: await fakeHost({ type: "ready", release: PACKAGE.version }) });
   await connection.close();
 });
 
@@ -88,6 +89,27 @@ test("a host that is not running is machine-unavailable for every role and names
   );
 });
 
+test("a ready host of another release is refused as installation-incomplete and closed; a development checkout passes", async () => {
+  await assert.rejects(HostConnection.open({ role: "vice-session", env: await fakeHost({ type: "ready", release: "2.1.3" }), release: "2.1.4" }), (error: unknown) => {
+    assert.ok(failsWith("installation-incomplete")(error));
+    assert.match((error as Error).message, /host runtime is from an older release/);
+    return true;
+  });
+  await assert.rejects(HostConnection.open({ role: "tool", env: await fakeHost({ type: "ready", release: "2.2.0" }), release: "2.1.4" }), (error: unknown) => {
+    assert.ok(failsWith("installation-incomplete")(error));
+    assert.match((error as Error).message, /Restart the agent session, so that npx starts the newest MCP server/);
+    return true;
+  });
+  await (await HostConnection.open({ role: "vice-session", env: await fakeHost({ type: "ready", release: "2.1.4" }), release: "0.0.0-development" })).close();
+});
+
+test("a ready without a release is installation-incomplete", async () => {
+  const body = Buffer.from(JSON.stringify({ type: "ready" }));
+  const header = Buffer.alloc(4);
+  header.writeUInt32BE(body.length, 0);
+  await assert.rejects(HostConnection.open({ role: "vice-session", env: await fakeHost(Buffer.concat([header, body])) }), failsWith("installation-incomplete"));
+});
+
 test("a host speaking another protocol is installation-incomplete", async () => {
   const header = Buffer.alloc(4);
   header.writeUInt32BE(3, 0);
@@ -106,7 +128,7 @@ async function heartbeatHost(answer: () => boolean): Promise<{ env: NodeJS.Proce
     const decoder = new FrameDecoder();
     socket.on("data", (chunk) => {
       for (const message of decoder.push(chunk) as Array<{ type: string }>) {
-        if (message.type === "hello") socket.write(encodeFrame({ type: "ready" }));
+        if (message.type === "hello") socket.write(encodeFrame({ type: "ready", release: PACKAGE.version }));
         if (message.type === "ping") {
           pings++;
           if (answer()) socket.write(encodeFrame({ type: "pong" }));
@@ -159,7 +181,7 @@ test("a host that stops answering closes the connection with a reason", async (t
 });
 
 test("a message handler that throws closes the connection with a named reason instead of crashing the process", async () => {
-  const connection = await HostConnection.open({ role: "vice-session", env: await fakeHost({ type: "ready" }) });
+  const connection = await HostConnection.open({ role: "vice-session", env: await fakeHost({ type: "ready", release: PACKAGE.version }) });
   connection.onMessage(() => {
     throw new TypeError("handler broke");
   });

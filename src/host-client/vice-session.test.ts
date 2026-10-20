@@ -3,9 +3,10 @@ import { once } from "node:events";
 import { createServer, type Server, type Socket } from "node:net";
 import { after, test } from "node:test";
 
-import { encodeFrame } from "../protocol/framing.ts";
+import { encodeFrame, MAX_FRAME_BYTES } from "../protocol/framing.ts";
 import { WireFailure, type Request } from "../protocol/messages.ts";
 import { FrameDecoder } from "../protocol/framing.testkit.ts";
+import { PACKAGE } from "../package.ts";
 import { LostBeforeAnswer, ViceSessionClient } from "./vice-session.ts";
 
 const servers: Server[] = [];
@@ -19,7 +20,7 @@ async function fakeHost(onRequest: (socket: Socket, request: Request) => void): 
     const decoder = new FrameDecoder();
     socket.on("data", (chunk) => {
       for (const message of decoder.push(chunk) as Array<{ type: string }>) {
-        if (message.type === "hello") socket.write(encodeFrame({ type: "ready" }));
+        if (message.type === "hello") socket.write(encodeFrame({ type: "ready", release: PACKAGE.version }));
         else onRequest(socket, message as Request);
       }
     });
@@ -39,6 +40,37 @@ test("a malformed result is refused and the connection dropped", async () => {
   await assert.rejects(client.status(), failsWith("operation-failed"));
   await client.closed;
   await assert.rejects(client.status(), failsWith("machine-state-lost"));
+});
+
+const HIT = { point: 0, pc: 0xc005, bytes: "8d11d0", text: "STA $d011", a: 0x1b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 100, rasterCycle: 20, address: 0xd011, value: 0x1b };
+const TRACE = { points: [{ kind: "write" as const, start: 0xd011, end: 0xd011 }], frames: 3000, maxHits: 20_000 };
+
+test("trace hits come as the attachment of the reply, also many more than one message holds", async () => {
+  const hits = Array.from({ length: 20_000 }, (_, index) => ({ ...HIT, frame: Math.floor(index / 10) }));
+  const env = await fakeHost((socket, request) =>
+    socket.write(encodeFrame({ type: "reply", id: request.id, result: { hits: hits.length, frames: 2000, end: "hits", pc: 0xc008 } }, [Buffer.from(JSON.stringify(hits))])),
+  );
+  const client = await ViceSessionClient.open({ videoStandard: "pal", env });
+  try {
+    assert.ok(JSON.stringify(hits).length > MAX_FRAME_BYTES);
+    assert.deepEqual(await client.trace(TRACE), { hits, frames: 2000, end: "hits", pc: 0xc008 });
+  } finally {
+    await client.close();
+  }
+});
+
+test("trace hits that are malformed, or not as many as the reply tells, are refused and the connection dropped", async () => {
+  for (const [count, attachments] of [
+    [1, []],
+    [2, [Buffer.from(JSON.stringify([HIT]))]],
+    [1, [Buffer.from(JSON.stringify([{ ...HIT, a: 256 }]))]],
+    [1, [Buffer.from("[{")]],
+  ] as const) {
+    const env = await fakeHost((socket, request) => socket.write(encodeFrame({ type: "reply", id: request.id, result: { hits: count, frames: 1, end: "frames", pc: 0 } }, attachments)));
+    const client = await ViceSessionClient.open({ videoStandard: "pal", env });
+    await assert.rejects(client.trace(TRACE), failsWith("operation-failed"));
+    await client.closed;
+  }
 });
 
 test("losing the host before the emulator answered fails pending and later operations as a call to do again", async () => {

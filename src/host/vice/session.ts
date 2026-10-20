@@ -516,8 +516,12 @@ export class ViceSession implements ViceSessionHandle {
         return this.#snapshotFile(params as ViceOperations["snapshotFile"]["params"], attachments, reply);
       case "cpuHistory":
         return this.#cpuHistory(params as ViceOperations["cpuHistory"]["params"]);
-      case "trace":
-        return this.#trace(params as ViceOperations["trace"]["params"]);
+      case "trace": {
+        // The hits go as an attachment: thousands of them do not fit in one message.
+        const { hits, ...traced } = await this.#trace(params as ViceOperations["trace"]["params"]);
+        reply.push(Buffer.from(JSON.stringify(hits), "utf8"));
+        return { ...traced, hits: hits.length };
+      }
       case "backtrace": {
         const { depth, space } = params as ViceOperations["backtrace"]["params"];
         return this.#observe(async () => {

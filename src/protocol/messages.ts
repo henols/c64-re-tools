@@ -8,7 +8,7 @@ import type { ViceOperation, ViceOperations } from "./vice.ts";
 /** Private Host Runtime protocol identifier. */
 export const HOST_PROTOCOL_ID = "c64-re-tools-host" as const;
 /** Bumped on any incompatible change; a mismatch fails the handshake. */
-export const HOST_PROTOCOL_VERSION = 4;
+export const HOST_PROTOCOL_VERSION = 5;
 /** After ready, the client pings this often, on every connection. */
 export const HEARTBEAT_INTERVAL_MS = 10_000;
 /** Either side closes a connection that has sent nothing for this long. */
@@ -38,6 +38,8 @@ export interface Hello {
   type: "hello";
   protocol: string;
   version: number;
+  /** The package version of the client (see checkRelease). A client of an older protocol version sends none. */
+  release?: string;
   role: Role;
   /** vice-session only; fixed for the session. */
   videoStandard?: VideoStandard;
@@ -45,6 +47,8 @@ export interface Hello {
 
 export interface Ready {
   type: "ready";
+  /** The package version of the host (see checkRelease). */
+  release: string;
 }
 
 /** Sent instead of `ready` when the handshake fails; the host then closes. */
@@ -155,11 +159,13 @@ export function parseClientMessage(value: unknown): ReceivedClientMessage {
     if (typeof value.protocol !== "string" || typeof value.version !== "number") {
       throw new ProtocolError("hello lacks protocol or version");
     }
+    if (value.release !== undefined && typeof value.release !== "string") throw new ProtocolError("hello has a release that is not a string");
     if (!isOneOf(ROLES, value.role)) throw new ProtocolError("hello has an unknown role");
     if (value.videoStandard !== undefined && !isOneOf(VIDEO_STANDARDS, value.videoStandard)) {
       throw new ProtocolError("hello has an unknown video standard");
     }
     const hello: Hello = { type: "hello", protocol: value.protocol, version: value.version, role: value.role };
+    if (value.release !== undefined) hello.release = value.release;
     if (value.videoStandard !== undefined) hello.videoStandard = value.videoStandard;
     return hello;
   }
@@ -176,7 +182,10 @@ export function parseClientMessage(value: unknown): ReceivedClientMessage {
 /** Validates a message the client received. Throws ProtocolError on any contract break. */
 export function parseHostMessage(value: unknown): HostMessage {
   if (!isObject(value)) throw new ProtocolError("message is not an object");
-  if (value.type === "ready") return { type: "ready" };
+  if (value.type === "ready") {
+    if (typeof value.release !== "string") throw new ProtocolError("ready lacks the release");
+    return { type: "ready", release: value.release };
+  }
   if (value.type === "pong") return { type: "pong" };
   if (value.type === "error") {
     if (!isWireError(value.error)) throw new ProtocolError("handshake error is malformed");
@@ -194,13 +203,71 @@ export function parseHostMessage(value: unknown): HostMessage {
   throw new ProtocolError("unknown message type");
 }
 
-/** Checks a hello against this build's protocol. Returns the failure to send, or undefined. */
+const OLDER_HOST: WireError = {
+  code: "installation-incomplete",
+  message:
+    "The c64-re-tools host runtime is from an older release than this client. " +
+    "Stop the host runtime and start it again with the same npx command. npx then starts the newest release.",
+};
+const OLDER_CLIENT: WireError = {
+  code: "installation-incomplete",
+  message:
+    "This client is from an older release of c64-re-tools than the host runtime. " +
+    "Restart the agent session, so that npx starts the newest MCP server. " +
+    "For the skill scripts, run c64-re-tools update in the project.",
+};
+
+/** A development checkout (0.0.0-development) can run against any release; the protocol version still applies. */
+function isDevelopment(release: string): boolean {
+  return release.startsWith("0.0.0-");
+}
+
+/** The numbers and the prerelease of a version such as 2.1.4 or 2.2.0-rc.1, for the order of releases. */
+function releaseOrder(release: string): { core: number[]; prerelease: string[] } {
+  const [core = "", ...rest] = release.split("-");
+  const prerelease = rest.join("-");
+  return { core: core.split(".").map((part) => Number(part) || 0), prerelease: prerelease === "" ? [] : prerelease.split(".") };
+}
+
+/** Negative when release a is older than b, as semantic versioning orders them. */
+function compareReleases(a: string, b: string): number {
+  const left = releaseOrder(a);
+  const right = releaseOrder(b);
+  for (let index = 0; index < 3; index++) {
+    const difference = (left.core[index] ?? 0) - (right.core[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  // A prerelease comes before its release.
+  if (left.prerelease.length === 0 || right.prerelease.length === 0) return right.prerelease.length - left.prerelease.length;
+  for (let index = 0; index < Math.max(left.prerelease.length, right.prerelease.length); index++) {
+    const l = left.prerelease[index];
+    const r = right.prerelease[index];
+    if (l === undefined || r === undefined) return l === undefined ? -1 : 1;
+    if (l === r) continue;
+    const numeric = /^\d+$/.test(l) && /^\d+$/.test(r);
+    return numeric ? Number(l) - Number(r) : l < r ? -1 : 1;
+  }
+  return 0;
+}
+
 /**
- * Refuses a client of another protocol version, and names the older side and
- * how to update it. A release that changes the wire increments the protocol
- * version, so the first client of a new release refuses an older host.
+ * Refuses a client and a host of different releases, and names the older side
+ * and how to update it. The protocol version is bumped by hand and a release
+ * can change the wire without it, so both sides also compare their package
+ * versions. A development checkout passes against any release.
  */
-export function checkHello(hello: Hello): WireError | undefined {
+export function checkRelease(client: string, host: string): WireError | undefined {
+  if (client === host || isDevelopment(client) || isDevelopment(host)) return undefined;
+  return { ...(compareReleases(host, client) < 0 ? OLDER_HOST : OLDER_CLIENT) };
+}
+
+/**
+ * Checks a hello against this build's protocol and the host's release
+ * (`release`). Returns the failure to send, or undefined. Refuses a client of
+ * another protocol version or release, and names the older side and how to
+ * update it.
+ */
+export function checkHello(hello: Hello, release: string): WireError | undefined {
   if (hello.protocol !== HOST_PROTOCOL_ID) {
     return {
       code: "installation-incomplete",
@@ -209,24 +276,9 @@ export function checkHello(hello: Hello): WireError | undefined {
         "Install the same c64-re-tools release for both and restart the host runtime.",
     };
   }
-  if (hello.version > HOST_PROTOCOL_VERSION) {
-    return {
-      code: "installation-incomplete",
-      message:
-        "The c64-re-tools host runtime is from an older release than this client. " +
-        "Stop the host runtime and start it again with the same npx command. npx then starts the newest release.",
-    };
-  }
-  if (hello.version < HOST_PROTOCOL_VERSION) {
-    return {
-      code: "installation-incomplete",
-      message:
-        "This client is from an older release of c64-re-tools than the host runtime. " +
-        "Restart the agent session, so that npx starts the newest MCP server. " +
-        "For the skill scripts, run c64-re-tools update in the project.",
-    };
-  }
-  return undefined;
+  if (hello.version > HOST_PROTOCOL_VERSION) return { ...OLDER_HOST };
+  if (hello.version < HOST_PROTOCOL_VERSION || hello.release === undefined) return { ...OLDER_CLIENT };
+  return checkRelease(hello.release, release);
 }
 
 export function invalid(message: string): never {
