@@ -22,9 +22,7 @@ This skill does not change the knowledge.
 - The program in the knowledge. Put it in with `image` of the c64-knowledge skill. The reference decodes the tables and shows the graphics from it.
 - The entry page `README.md` and the directory of the other pages, for example `docs`. The reference goes into a directory of its own, for example `docs/reference`.
 
-## Tools / execution path
-
-The script runs on this machine. It does not use the emulator or the host runtime.
+## Tools
 
 ```
 node <skill>/scripts/docs.ts generate src --out docs/reference
@@ -107,7 +105,7 @@ node <skill>/scripts/docs.ts link README.md docs --source src --check
 
 - The reference draws each sprite, bitmap and charset region, and it decodes each table. To get the image of a graphic or the entries of a table, classify its region with c64-knowledge. Do not write a script that draws or decodes them.
 - A script of the project decodes only a format of the program, for example a packed map or a music stream. Put the script in `tools/` of the project. Its output files are the assets, for example in `assets/rooms/`.
-- When the code of the program makes the data, run that code in VICE with a run of c64-testing. Observe the memory, or capture the screen. Do not write a 6502 emulator in the script.
+- When the code of the program makes the data, run that code with a run of c64-testing. Observe the memory, or capture the screen. Do not write a 6502 emulator in the script.
 
 In the call graph, a solid arrow is a call, a thick arrow is a table entry, and a dotted arrow is a jump. A table entry goes from each routine that reads the table to each target in code. A table of data addresses gives no arrow.
 

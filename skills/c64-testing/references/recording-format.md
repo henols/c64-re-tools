@@ -101,7 +101,7 @@ The page sends input only between Start and End. The input of the page goes into
 
 A site is the address of the instruction that reads. The values are hex. `<from>` and `<count>` are decimal.
 
-`testing.ts replay` checks `recording.json` before the replay core starts. A recording of version 2.0 can have events or a comparison in the old form, for example `"at"` in place of `"address"`. The script refuses it with `invalid-input`. The message names the event, the old field and the form to write. Record the session again.
+`testing.ts replay` checks `recording.json` before the replay starts. A recording of version 2.0 can have events or a comparison in the old form, for example `"at"` in place of `"address"`. The script refuses it with `invalid-input`. The message names the event, the old field and the form to write. Record the session again.
 
 ## Replay
 

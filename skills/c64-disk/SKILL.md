@@ -18,9 +18,7 @@ This skill does not change the disk image and does not change project knowledge.
 - To extract a file: the output path, relative to the project folder.
 - A T64 tape file or a CRT cartridge file, relative to the project folder.
 
-## Tools / execution path
-
-The script sends a disk image to the host runtime. The host runs c1541 and sends the result back. The script writes an extracted file into the project. It reads T64 and CRT files itself.
+## Tools
 
 ```
 node <skill>/scripts/disk.ts <command> <image> [name] [--out <file>]
@@ -82,8 +80,6 @@ A downstream skill records the meaning of the extracted content.
 
 ## Tapes and cartridges
 
-The script reads T64 and CRT files itself. The host runtime is not necessary for them.
-
 - T64: `directory` and `read`. Many T64 files have a wrong end address. Then the entry has `fixedSize: true`, and the size comes from the position of the next file.
 - CRT: `directory` and `crt`. The script reads hardware types 0 (normal 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) and 32 (EasyFlash). It refuses other types by name. `crt` writes `crt.json` and one PRG for each CHIP packet, for example `bank3-8000.prg`.
 - A cartridge bank uses the same addresses as other banks. Analyze each bank PRG with c64-static-analysis and `--space bank3`, and record its knowledge in space `bank3`.
@@ -99,8 +95,8 @@ The directory, the BAM, an entry or a sector chain as JSON.
 
 - `not-found`: the image file is missing, or the image has no file with that name. Read the directory again and compare the names.
 - `media-error`: the image, the T64 file or the CRT file has a defect, or its content is not of its type. A CRT with a hardware type that the script does not read also gives `media-error`. The message tells the problem, for example a sector chain that loops. Tell the user. Do not change the file.
-- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
-- `invalid-input`: an argument or a path is wrong. A file with an extension that the command does not take is also wrong. The message gives each type that the command takes. Read the message and correct the call.
+- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
+- `invalid-input`: an argument or a path is wrong. A file with an extension that the command does not take is also wrong. The message gives each type that the command takes. Read the message and change the call.
 
 A file that is not `closed` was not written fully. Its data can be incomplete.
 

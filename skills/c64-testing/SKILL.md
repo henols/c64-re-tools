@@ -17,9 +17,9 @@ A PASS proves only the behavior that the scenario does and observes. It does not
 - The symbols of each side. For the original, the project knowledge. For the rebuild, the JSON output of the c64-assembler skill in a file.
 - A scenario file: the steps, the checkpoints and the observations. See [references/scenario-format.md](references/scenario-format.md).
 
-## Tools / execution path
+## Tools
 
-The script starts one emulator through the host runtime. It runs the scenario on the original and then on the rebuild. Before each side, it does a hard reset of the emulator. The CPU then stops at the reset vector.
+The script runs the scenario on the original and then on the rebuild. Before each side, it does a hard reset. The CPU then stops at the reset vector.
 
 ```
 node <skill>/scripts/testing.ts test tests/moves-left.json --out .c64-re-tools/local/results/moves-left
@@ -30,7 +30,7 @@ node <skill>/scripts/testing.ts checklist tests/moves-left.json --item 'FIRE sta
 
 `testing.ts checklist` gives a Markdown checklist for a human tester in `text`.
 
-Before the emulator starts, `testing.ts test` examines each file that the scenario names: the program and the symbols of each side, and each snapshot file. A missing file gives `not-found`. A program must be a PRG. The script refuses a disk, tape or cartridge image.
+Before the test starts, `testing.ts test` examines each file that the scenario names: the program and the symbols of each side, and each snapshot file. A missing file gives `not-found`. A program must be a PRG. The script refuses a disk, tape or cartridge image.
 
 ### Runs
 
@@ -53,7 +53,7 @@ The run file gives where to start (a program, or a snapshot file), the steps, an
 | `{ "observe": "all3", "memory": "all" }` | Write all 64 KiB of RAM to `all3.bin`, also the RAM under the ROMs and the I/O area. |
 | `{ "expect": "title", "memory": [{ "address": "$0400", "text": "HELLO" }], "registers": { "a": 0 } }` | Compare memory and registers with the expected values. `data` gives hex bytes, `text` gives screen codes. `mask` compares only some bits. A value that is not equal does not stop the run. |
 
-Each step that writes a file must have its own file name. The script refuses a run where two steps write the same file, for example `{ "coverage": "x" }` and `{ "observe": "x", "memory": "all" }`, which both write `x.bin`. The script also examines the start program and each snapshot file before the emulator starts.
+Each step that writes a file must have its own file name. The script refuses a run where two steps write the same file, for example `{ "coverage": "x" }` and `{ "observe": "x", "memory": "all" }`, which both write `x.bin`. The script also examines the start program and each snapshot file before the run starts.
 
 A memory item can have `"view": "ram"`. Then it reads the RAM under the ROMs and the I/O area, for example code at `$e000` under the KERNAL. The default view `cpu` reads as the CPU sees memory. An item larger than 4096 bytes goes into its own `.bin` file, and `results.json` gives the file name.
 
@@ -63,7 +63,7 @@ See [references/scenario-format.md](references/scenario-format.md), section Runs
 
 A recording keeps a session of the original program, for example a play through some rooms of a game. A replay gives the same input to a rebuild and compares the game state. Make the recordings early, before you change the program. A recording needs no names. Its coverage also helps the static analysis.
 
-`testing.ts record` and `testing.ts replay` run the replay core `c64run` on this machine, not the emulator of the host runtime. The replay core has no disk drive. The program must be a PRG file.
+The emulator tools cannot examine the C64 of a recording or a replay. That C64 has no disk drive. The program must be a PRG file.
 
 Ask the user to play first. Tell the user which parts of the program the recordings must have, for example each room, a fight and a lost life. Make a scripted recording only for a part that the sessions of the user do not have, or when the user cannot play.
 
@@ -72,7 +72,7 @@ node <skill>/scripts/testing.ts record tests/record/start.json --out tests/recor
 ```
 
 - With `--play`, a person plays the program after the steps of the record file. The steps can start the program, for example a key for an intro.
-- The script writes the address of a page to stderr. Give the address to the user. In a dev container, the port of the page (default 6465) must be forwarded.
+- The script writes the address of a page to stderr. Give the address to the user.
 - The page shows the screen after the steps. The C64 is frozen until the user presses Enter or clicks Start. Tell the user to read the screen first.
 - Give `--joystick` the port that the program reads: port 2 is `$DC00`, and port 1 is `$DC01`. Find the port in the code or in the knowledge. If you do not know the port, use 2. Tell the user that F9 changes the port.
 - The page has the full C64 keyboard and the joystick. F10 changes the arrow keys and space between the joystick and the C64 keys. A gamepad is always the joystick. See the key maps in [references/recording-format.md](references/recording-format.md).
@@ -98,7 +98,7 @@ A checkpoint is one entry of a routine. Use a routine that the program executes 
 
 The input is the reads of the joystick ports and the keyboard matrix. It is also the reads of the four SID registers that a program can read: the paddles, the noise of voice 3 and its envelope. It is also the reads of `$DE00`-`$DFFF`, where a C64 without a cartridge gives the last byte on the bus. On a replay, the n-th read of each instruction gets the value of the n-th read in the recording. Thus a rebuild with different timing gets the same input and the same SID random numbers. A `press`, `joystick` or `frames` step is input. A `type`, `write`, `registers` or `runUntil` step is not input. The replay does that step again at the same read of the program.
 
-A replay is deterministic. The replay core has no random source and no clock: the same recording gives the same session, to the cycle. Sometimes the recording has no value for a read of an input. Then the read gets a fixed value: `$FF` for the joystick, keyboard and paddle registers, `$00` for the others. `idleReads` in the result counts these reads on the rebuild. On the original, such a read makes the result INCONCLUSIVE.
+A replay is deterministic. A replay has no random source and no clock: the same recording gives the same session, to the cycle. Sometimes the recording has no value for a read of an input. Then the read gets a fixed value: `$FF` for the joystick, keyboard and paddle registers, `$00` for the others. `idleReads` in the result counts these reads on the rebuild. On the original, such a read makes the result INCONCLUSIVE.
 
 Control each source of random numbers:
 
@@ -119,7 +119,7 @@ node <skill>/scripts/testing.ts diff .c64-re-tools/local/runs/rooms/results.json
 
 `testing.ts diff` tells what changed between two states of one kind. Use it in place of your own compare script.
 
-- Two snapshot files: the script restores each one in its own emulator. It gives the changed ranges of the RAM and of the colour RAM, and the changed VIC-II, CIA, SID and CPU registers.
+- Two snapshot files: the changed ranges of the RAM and of the colour RAM, and the changed VIC-II, CIA, SID and CPU registers.
 - Two memory files of a run: the changed ranges. For a file of less than 64 KiB, `--address` gives the address of its first byte.
 - Two observations of runs, also of one run: the changed memory items and registers. `compared` gives the count of items that both observations have. With `compared: 0`, `reason` tells what each observation has. Then the diff compared nothing, and the observations are not equal.
 
@@ -127,7 +127,7 @@ For two snapshot files, `$00` and `$01` are the CPU port of the snapshot: the di
 
 `registers` gives each changed register and chip value. `cpu.pc` is a `$` address. Each CPU flag is `cpu.flags.<flag>`, for example `cpu.flags.c`, with `true` or `false`.
 
-The script refuses a snapshot that does not restore in its emulator. An example is a PAL snapshot with `--ntsc`. Give `--ntsc` only for snapshots of an NTSC machine.
+The script refuses a snapshot that does not restore. An example is a PAL snapshot with `--ntsc`. Give `--ntsc` only for snapshots of an NTSC machine.
 
 `--gap N` joins ranges across N equal bytes. `--out` writes all ranges and all changed registers to a project file. The file uses the names of the result.
 
@@ -197,19 +197,19 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 - `not-found` before the run: a file of the scenario or the run file is missing, for example the rebuild program. Build the rebuild, or change the path.
 - INCONCLUSIVE, "did not reach the checkpoint": one side did not reach the checkpoint in the frame limit. Find the reason with the emulator skill. Do not report a FAIL.
 - INCONCLUSIVE, "has no symbol": one side has no symbol with that name. Add the name to the knowledge or to the rebuild source.
-- INCONCLUSIVE, "no emulator" or "could not run": the host runtime or the emulator failed. Tell the user the message.
-- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
+- INCONCLUSIVE, "no emulator" or "could not run": the emulator failed. Tell the user the message.
+- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
 - A FAIL with only a `screen` difference: add `vicii` or `sprites` to the observation to find which chip state is different.
 - A program that uses random numbers: set the random seed with a `write` step on both sides. If that is not possible, observe only values that do not depend on the random numbers.
 - The two sides start differently, for example the original after a cracked intro. Give the steps that only one side needs a `side`. Then make the memory the same with a `normalize` step. It writes the entry state of the capture in the knowledge.
 - Frame counts drift by one frame between the sides: the sides got to the same address at different raster positions. Do not sync on an IRQ handler. Sync on a value that the IRQ changes, with a `runUntil` `memory` target. Or sync on an `address` target with a `raster` condition.
-- INCONCLUSIVE, "does not reproduce": the original does not end the session with the recorded state. Record the session again with this `c64run`.
+- INCONCLUSIVE, "does not reproduce": the original does not end the session with the recorded state. Record the session again.
 - INCONCLUSIVE, "never came to the checkpoint": the original did not execute the checkpoint routine in the session. Give another routine.
 - INCONCLUSIVE, "is not the program of the recording": the program file changed after the recording. Record the session again.
 - A record result FAIL with `recorded` false: `reason` names the step that did not complete. Examples are a `runUntil` that did not reach its target, and a `type` step with too many keys. Change the step.
 - A record result with `executed` 0: the program never read its input from RAM, so the coverage map is empty. The recording can still replay.
 - A FAIL from a replay: compare the two RAM files of `--out` with `testing.ts diff`. Then examine the first different state item with the emulator skill.
-- A program that loads more files from a disk: the replay core has no disk drive. Use a test scenario in the emulator.
+- A program that loads more files from a disk: a recording has no disk drive. Use a test scenario in the emulator.
 - A byte that cannot be the same on both sides, for example a read-only collision register: use `exclude` with the reason. Do not use `exclude` to hide a real difference.
 
 Do not add a mask or a tolerance only to make a test pass. A tolerance must have a reason in the behavior of the program.

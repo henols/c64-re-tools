@@ -156,11 +156,11 @@ Example: visit two rooms from the same start.
 
 ## Checks
 
-The script checks the scenario before it starts the emulator. A step with an unknown key or a wrong value stops the script with `invalid-input`. The message names the step.
+The script checks the scenario before it does a step. A step with an unknown key or a wrong value stops the script with `invalid-input`. The message names the step.
 
-The script also examines each file before it starts the emulator: the program and the symbols of each side, and each snapshot file. A missing file stops the script with `not-found`. A program that is not a PRG, for example a disk image, stops the script with `invalid-input`. A snapshot file that does not start with the signature of a VICE snapshot file also stops the script with `invalid-input`. The message names the step and the file.
+The script also examines each file before it does a step: the program and the symbols of each side, and each snapshot file. A missing file stops the script with `not-found`. A program that is not a PRG, for example a disk image, stops the script with `invalid-input`. A snapshot file that does not start with the signature of a VICE snapshot file also stops the script with `invalid-input`. The message names the step and the file.
 
-A run also examines each name of its steps before it starts the emulator. An unknown name stops the run with `invalid-input`, and the message names the step. In a scenario, a side that does not have a name gives INCONCLUSIVE, and `reason` names the step.
+A run also examines each name of its steps before it does a step. An unknown name stops the run with `invalid-input`, and the message names the step. In a scenario, a side that does not have a name gives INCONCLUSIVE, and `reason` names the step.
 
 A step in the form of version 2.0 stops the script with `invalid-input`. The message names the old field and gives the step to write. For example, the script refuses `{ "runUntil": { "at": "main_loop" }, "timeoutFrames": 300 }` and gives `{"runUntil": {"target": {"kind": "address", "address": "main_loop"}, "timeoutFrames": 300}}`. A memory item with `at` gets the same refusal: write `address`.
 

@@ -26,8 +26,7 @@
     "tools/",
     "distribution/package.ts",
     "distribution/plugin.ts",
-    "LICENSE",
-    "README.md"
+    "LICENSE"
   ],
   "engines": {
     "node": ">=24.0.0"

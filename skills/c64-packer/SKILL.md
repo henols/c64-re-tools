@@ -1,6 +1,6 @@
 ---
 name: c64-packer
-description: Use this skill to pack and crunch a C64 program with Exomizer into one PRG that unpacks itself and starts with RUN. It can merge more PRG files into one program. It unpacks the result in an emulator and checks each byte and the entry before it writes the PRG. Use it to make a small release file of a rebuilt or new program. Do not use it to unpack a packed program. Use the c64-unpacker skill for that.
+description: Use this skill to pack and crunch a C64 program with Exomizer into one PRG that unpacks itself and starts with RUN. It can merge more PRG files into one program. It checks each byte and the entry of the result before it writes the PRG. Use it to make a small release file of a rebuilt or new program. Do not use it to unpack a packed program. Use the c64-unpacker skill for that.
 ---
 
 # c64-packer
@@ -9,7 +9,7 @@ description: Use this skill to pack and crunch a C64 program with Exomizer into 
 
 Pack and crunch PRG files of the project with Exomizer into one PRG. The PRG loads at $0801, starts with RUN, unpacks the program and jumps to its entry. Check the result before you use it.
 
-This skill does not assemble the program, does not run it in VICE and does not change project knowledge.
+This skill does not assemble the program, does not run it in the emulator and does not change project knowledge.
 
 ## Inputs
 
@@ -18,9 +18,7 @@ This skill does not assemble the program, does not run it in VICE and does not c
 - The entry: the address where the program starts after the unpack. If the first PRG is a BASIC program at $0801 with `SYS` and a number, the script uses that address.
 - Optional: the value of $01 when the program starts.
 
-## Tools / execution path
-
-The script runs Exomizer on this machine. Exomizer packs the files with `sfx`. Then the script unpacks the result with `desfx` in the 6502 emulator of Exomizer. It compares the unpacked bytes with the bytes of the inputs, and the jump address with the entry. The host runtime is not necessary.
+## Tools
 
 ```
 node <skill>/scripts/packer.ts pack build/game.prg --out build/game-packed.prg
@@ -29,7 +27,7 @@ node <skill>/scripts/packer.ts pack build/loader.prg build/main.prg --entry '$04
 
 | Option | Meaning |
 |---|---|
-| `--entry '$0400'` | The address where the program starts after the unpack. It must be `$0400` or higher. A name of the knowledge is also correct. Without it, the script uses the `SYS` address of the BASIC line of the first input. |
+| `--entry '$0400'` | The address where the program starts after the unpack. It must be `$0400` or higher. It can also be a name of the knowledge. Without it, the script uses the `SYS` address of the BASIC line of the first input. |
 | `--exit-memory '$35'` | The value of $01 when the program starts, `$34` to `$37`. Without it, the value is `$37`: BASIC, KERNAL and I/O. With it, the program starts with interrupts off. |
 
 ### Calling the script
@@ -66,7 +64,7 @@ node <skill>/scripts/packer.ts pack build/loader.prg build/main.prg --entry '$04
 
 The packed program starts the unpacker with `SYS 2061`, at $080d. A BASIC program at $0801 often has its entry at $080d too. Then the CPU gets to $080d two times: first before the unpack, then at the start of the program. To examine the program at its entry in the emulator, stop at $080d, run one frame, and stop at $080d again.
 
-The unpacker uses $0334 to $03ff and the zero page while it runs. A program that loads into these addresses can fail. Then Exomizer stops with an error, or the check gives `FAIL`.
+The unpacker uses $0334 to $03ff and the zero page while it runs. A program that loads into these addresses can fail. Then the script gives `operation-failed`, or the check gives `FAIL`.
 
 ## Knowledge
 
@@ -83,11 +81,11 @@ Do not store:
 
 - `PASS`: the packed program unpacks to the bytes of all inputs and jumps to the entry. The PRG is at `out`.
 - `FAIL`: the packed program unpacks to different bytes, or jumps to a different address. The script did not write a file.
-- `INCONCLUSIVE`: the emulator of Exomizer keeps only the largest range that the unpacker wrote. Bytes of the inputs outside that range have no check. This occurs when the inputs have gaps between them. The PRG is at `out`.
+- `INCONCLUSIVE`: the check has only the largest range that the unpacker wrote. Bytes of the inputs outside that range have no check. This occurs when the inputs have gaps between them. The PRG is at `out`.
 
 Other fields:
 - `packedBytes` and `unpackedBytes`: the size of the packed PRG and of the bytes of the inputs. `percent` is the packed size as a percentage of the unpacked size.
-- `unpackSeconds`: the time of the unpack in the emulator of Exomizer, in seconds at the PAL clock. A real C64 can need more time.
+- `unpackSeconds`: the time of the unpack, in seconds at the PAL clock. A real C64 can need more time.
 - `inputs`: each input with its `loadRange` and its `bytes`.
 - `check.entry`: the address where the unpacker jumped.
 - `check.segments`: one check for each segment of the merged inputs. The `result` of a segment is `identical`, `different` with `firstDifference`, or `not covered`. `firstDifference` gives the `address`, the unpacked byte (`built`) and the input byte (`reference`).
@@ -97,8 +95,8 @@ Other fields:
 - `FAIL`: do not use the packed program. Read `check`. Give the call and the result to the user.
 - `invalid-input` with `Give --entry`: the first input has no BASIC line with `SYS` and a number. Give `--entry`.
 - `invalid-input` for the entry: the entry is below $0400. The unpacker runs there. A program with an entry below $0400 needs a different packer.
-- `operation-failed` with `Exomizer could not pack the program`: read the last output of Exomizer in the message. Correct the inputs, or give the message to the user.
-- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
+- `operation-failed` with `Exomizer could not pack the program`: read the last output of Exomizer in the message. Change the inputs, or give the message to the user.
+- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
 - `not-found`: there is no file at an input path. Give a path relative to the project folder.
 
 ## Handoffs

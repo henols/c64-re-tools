@@ -16,9 +16,7 @@ This skill does not read the emulator and does not change project knowledge.
 - One or more addresses.
 - Or a register and a value to decode.
 
-## Tools / execution path
-
-The script looks up local reference data. It does not use the host runtime.
+## Tools
 
 ```
 node <skill>/scripts/memory-map.ts at '$d020' '$0314' '$ffd2'

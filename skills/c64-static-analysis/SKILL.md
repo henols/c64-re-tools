@@ -16,9 +16,9 @@ Find the static structure of a C64 program. Record the structure in the project 
 - Entry points: addresses where code starts, for example the SYS address from the c64-basic skill. Routine symbols in the knowledge are entry points too. Ghidra needs at least one. DXA finds the SYS of a BASIC start by itself.
 - Optional: routines to decompile (Ghidra), or a file for the listing (DXA).
 
-## Tools / execution path
+## Tools
 
-The script reads the program, the coverage and the current knowledge, and runs DXA or Ghidra on this machine. The host runtime is not necessary. The script records the result in the project knowledge, `.c64-re-tools/knowledge/`.
+The script reads the program, the coverage and the current knowledge. It records the result in the project knowledge, `.c64-re-tools/knowledge/`.
 
 ```
 node <skill>/scripts/static-analysis.ts analyze --analyzer dxa --out-listing .c64-re-tools/local/game.lst
@@ -138,8 +138,8 @@ The exit status is 0, also with conflicts.
 - `invalid-input` with a message about an entry point: no entry point is inside the program for Ghidra. Give one with `--entry`.
 - `stale-revision`: the knowledge changed during the analysis. The script recorded nothing. Run the analysis again.
 - `operation-failed` with a message about an incomplete result or listing: the analyzer did not give a complete result. The script recorded nothing. Tell the user.
-- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
-- `notDecompiled`: Ghidra did not decompile these routines. Each entry has the reason. If the reason says that the decompiler did not start, tell the user the remedy in the reason. On macOS, Ghidra has no native decompiler until the user builds it: `./gradlew buildNatives` in the `support/gradle` directory of Ghidra.
+- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
+- `notDecompiled`: Ghidra did not decompile these routines. Each entry has the reason. If the reason says that the decompiler did not start, tell the user the remedy in the reason.
 
 ## Handoffs
 

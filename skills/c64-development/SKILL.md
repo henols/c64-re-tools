@@ -17,9 +17,9 @@ This skill does not do the specialist work itself.
 - The acceptance checks: what the user must see or what memory must hold when the work is complete.
 - The project: its source, its tests and its knowledge.
 
-## Tools / execution path
+## Tools
 
-This skill uses the other skills. It does not use the host runtime or the emulator directly.
+This skill uses the other skills. It does not use the emulator tools directly.
 
 | Work | Skill |
 |---|---|
@@ -159,7 +159,7 @@ A program that builds, with a run file in `tests/` for each acceptance check, an
 
 ## Failure and conflicts
 
-- A skill reports `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not make a replacement for the tool or the host runtime, for example your own assembler or emulator script.
+- A skill reports `installation-incomplete` or `machine-unavailable`: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own assembler or emulator script.
 - A tool gives a wrong result: tell the user the defect and the evidence, and wait for the user. Do not make a workaround.
 - A test gives FAIL: change the program until the test gives PASS. Do not change the expected value to make the test pass. Change an expected value only when the user changes the acceptance check.
 - A run gives FAIL because a `runUntil` did not get to its target: the program did not get to that state. Find why with the emulator skill.

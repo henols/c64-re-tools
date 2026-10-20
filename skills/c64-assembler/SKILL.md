@@ -18,9 +18,7 @@ This skill does not run the program and does not change project knowledge.
 - The output path: where to write the PRG, relative to the project folder.
 - Optional include directories, symbol definitions and a start address.
 
-## Tools / execution path
-
-The script runs ACME on this machine. It copies the source root to a temporary directory, assembles it there and writes the program into the project. The host runtime is not necessary.
+## Tools
 
 ```
 node <skill>/scripts/assembler.ts build src main.a --out build/game.prg
@@ -38,7 +36,7 @@ node <skill>/scripts/assembler.ts build src main.a --out build/game.prg
 | `--max-listed 200` | Show at most 200 symbols in the result. The default is 50. `symbols.count` gives the count of all symbols. |
 | `--out-symbols build/game.json` | Write the symbols to this file as `{"symbols": [...]}`. Without `--all-symbols`, the file does not have the constants that the source does not use. Give this file to the c64-testing skill as the symbols of the rebuild. |
 
-The script copies the full source root. Put all files that the program includes under it. Version control directories stay out.
+Put all files that the program includes under the source root.
 
 The target CPU is the 6510. The output is a C64 PRG, or the bytes only with `--plain`.
 
@@ -103,7 +101,7 @@ With `--compare`, `compare` gives `identical` and `segments`: one check for each
 
 - `FAIL` with `assembled: false`: the source has errors. Correct the source.
 - `FAIL` with `assembled: true`: the build is not identical to the program in the knowledge. Read `compare.segments`.
-- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
+- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
 - `invalid-input`: an option or a path is wrong. Read the message and correct the call.
 - `not-found`: the source root has no main source file with that name, or no folder with files for an `--include`. Give a path relative to the source root.
 
@@ -112,4 +110,4 @@ With `--compare`, `compare` gives `identical` and `segments`: one check for each
 - Run or debug the program → emulator
 - Compare the rebuild with the original → c64-testing
 - Pack the program into one small PRG that unpacks itself → c64-packer
-- Write a new program, or add a feature or a fix → c64-development
+- Write a new program, or add a feature or a correction → c64-development

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Branding assets are in [`assets/branding/`](assets/branding/README.md). The root README and human-facing docs use the compact transparent logo; keep skill instructions and test prompts free of decorative branding.
+Branding assets are in [`assets/branding/`](assets/branding/README.md). The README and human-facing docs use the compact transparent logo; keep skill instructions and test prompts free of decorative branding.
 
 **c64-re-tools** — an agent-friendly Commodore 64 engineering toolkit for
 reverse engineering unknown applications and for developing, debugging,
@@ -16,7 +16,7 @@ when the emulator misbehaves.
 
 ## Status
 
-Released as 2.0.0. `README.md` is the user documentation. Do not add design
+Released as 2.0.0. `.github/README.md` is the user documentation (GitHub shows it on the repository page). It stays out of the npm package: the agent side gets only skills and tools, never the README. Do not add design
 documents, plans or decision numbers to the repository.
 
 Architecture in one line: one MCP process owns one VICE instance and is

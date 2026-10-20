@@ -15,9 +15,7 @@ This skill does not run the program and does not change project knowledge.
 
 - The program: a PRG file, relative to the project folder.
 
-## Tools / execution path
-
-The script sends the program to the host runtime. The host decodes it with petcat and finds the handoffs.
+## Tools
 
 ```
 node <skill>/scripts/basic.ts list extracted/game.prg
@@ -74,7 +72,7 @@ The listing and the handoff addresses.
 
 - `invalid-input` with "is no BASIC program": the file is not a BASIC program. Usually the file is machine code. Give it to the c64-static-analysis skill. A memory dump also gives this error: its first two bytes are not a load address, and its bytes go past `$ffff`.
 - An empty `handoffs` list: the BASIC does not start machine code with SYS or USR. Do not make up a handoff. Look for a POKE into a vector or a LOAD of another file in the listing.
-- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
+- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
 - `not-found` or another `invalid-input`: the path or an argument is wrong. Read the message and correct the call.
 
 ## Handoffs

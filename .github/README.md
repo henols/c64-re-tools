@@ -1,6 +1,6 @@
 # c64-re-tools
 
-<img src="assets/branding/c64-re-tools-transparent.svg" alt="C64 RE Tools" width="440">
+<img src="../assets/branding/c64-re-tools-transparent.svg" alt="C64 RE Tools" width="440">
 
 
 Let an AI agent work on Commodore 64 programs. The agent drives a real VICE
@@ -140,4 +140,4 @@ directory in `containerEnv` of the `devcontainer.json`.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](../LICENSE).

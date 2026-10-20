@@ -25,9 +25,7 @@ This skill does not change project knowledge.
 - For one release: the program, the coverage and the other knowledge of the project. Put the program and the coverage in with `image` and `coverage` of the c64-knowledge skill.
 - For the library: the program and the other knowledge of its project, and the library folder.
 
-## Tools / execution path
-
-The script compares the releases locally. Only `--frames` uses the host runtime: each release runs in its own emulator.
+## Tools
 
 ```
 node <skill>/scripts/provenance.ts compare releases/a.prg releases/b.prg releases/c.prg
@@ -60,7 +58,7 @@ Use `--align` for two releases with added code and moved data. One shift does no
 - `alignedShare`: the share of the bytes of the two releases that a block holds, with 3 decimals.
 - Each list shows at most 64 items. `moreBlocks`, `moreOnlyInA` and `moreOnlyInB` give the number of the items that the list does not show. Use `--range` to see them.
 
-With `--frames`, a PRG starts with autostart and RUN. An image starts from its bytes: the script writes the segments and the entry state from `entry_state.json` into the emulator, and starts at the entry. Watchpoints on each difference stop the run at its first access.
+With `--frames`, a PRG starts with autostart and RUN. An image starts at its entry, with the entry state from `entry_state.json`. The run records the first access to each difference.
 
 ### Calling the script
 
@@ -226,7 +224,7 @@ The runtime evidence and the leftovers are evidence only. The script does not de
 - Do not call a byte original only because one release has it. A majority of releases is also not proof.
 - `common` is empty: the releases do not cover the same addresses. Use `--shift`, or compare a range that all releases cover.
 - `run.releases` shows `started: false`: a PRG without a BASIC start, or an image without `entry_state.json`. The reason tells which. The other releases still give evidence.
-- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own emulator script.
+- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own emulator script.
 - `moreDifferences: true`: the script shows only the first differences. Use `--range` to see the others.
 - `not-found`: the project has no file at that path.
 - `not-found` from `match`: the library folder does not exist, or it has no routine files. Save a routine with `routine` first.

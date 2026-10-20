@@ -22,9 +22,9 @@ This skill does not do the specialist work itself.
   - reverse engineer and rebuild the whole program
 - The current project knowledge.
 
-## Tools / execution path
+## Tools
 
-This skill uses the other skills. It does not use the host runtime or the emulator directly.
+This skill uses the other skills. It does not use the emulator tools directly.
 
 ### Project folder
 
@@ -175,7 +175,7 @@ A clear answer for the scope, with the durable conclusions in the project knowle
 
 ## Failure and conflicts
 
-- A skill reports `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
+- A skill reports `installation-incomplete` or `machine-unavailable`: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
 - A tool gives a wrong result, and the exit check of a stage cannot be true. Tell the user the defect and the evidence, and wait for the user. Do not make a workaround, for example a change to a generated file. When the user accepts an exception, give the defect and the exception in the answer of stage 12.
 - If the evidence does not support a conclusion, keep the unknown and get more evidence. Do not make up a meaning.
 - Before you replace current knowledge from the user or the LLM, read its history and the evidence for it.

@@ -7,7 +7,7 @@ description: Use this skill to read, write, correct and review the durable knowl
 
 ## Purpose
 
-Read, write, correct and review the durable understanding of a C64 project. The knowledge also holds the program: its bytes, its entry state and the stages of its unpacker. It holds the coverage of the runs too. The other skills read the program and the coverage from the knowledge. The knowledge is text in `.c64-re-tools/knowledge/` in the project folder: one JSON line for each row. Commit that folder with git. The script keeps an index of the text in `.c64-re-tools/local/knowledge.db` and makes the index again when the text changes. Do not commit the index.
+Read, write, correct and review the durable understanding of a C64 project. The knowledge also holds the program: its bytes, its entry state and the stages of its unpacker. It holds the coverage of the runs too. The other skills read the program and the coverage from the knowledge. The knowledge is text in `.c64-re-tools/knowledge/` in the project folder: one JSON line for each row. Commit that folder with git. The index of the text is `.c64-re-tools/local/knowledge.db`. Do not commit the index.
 
 This skill is the only write path for conclusions of the user and the LLM. It does not run an emulator or an analyzer. Write the knowledge only with the script. The script checks each write. Do not write or edit the files in `.c64-re-tools/knowledge/` or the index yourself.
 
@@ -21,7 +21,7 @@ One of these:
 - a capture of the c64-unpacker skill, a PRG, or coverage maps to put into the knowledge
 - a request to see the history or a revision.
 
-## Tools / execution path
+## Tools
 
 ```
 node <skill>/scripts/knowledge.ts <command> [subjects] [options]
@@ -223,7 +223,7 @@ Give one selector:
 | `--value <symbol>` | The symbol plus the offset | `lda bar_colours-1,x` |
 | `--expr <text>` | ACME expression text with names and numbers | `lda #(sprite_bank + 5*64) / 64` |
 
-- The address is the start of an instruction in a code region. The script decodes the instructions from the start of the region, as `listing` does. It refuses an address in no code region and an operand byte of an instruction. Classify the code first.
+- The address is the start of an instruction in a code region, as `listing` shows it. The script refuses an address in no code region and an operand byte of an instruction. Classify the code first.
 - `--offset` adds a whole number to the symbol. Write a negative offset as `--offset=-1`.
 - A name is a symbol of the knowledge or a platform name of the c64-memory-map skill.
 - `--expr` takes `$`, `%` and decimal numbers, names, brackets, the operators `+ - * / % << >> >>> & | XOR`, and `<`, `>`, `-` and `!` before an operand.

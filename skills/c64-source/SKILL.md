@@ -1,6 +1,6 @@
 ---
 name: c64-source
-description: Use this skill to generate ACME source code for a C64 program from the project knowledge. The knowledge holds the program, its entry state, the coverage and the names. The script runs Ghidra for the instructions and writes the source files. It checks with ACME that the source assembles to the same bytes as the program. It can also write a loader that sets the entry state of an unpacked program. It can also export the program as the start of a new program. The export is a new project with one value for each switch and without unused code. Use it to make a rebuild. Do not edit the generated files. Change the knowledge and generate again.
+description: Use this skill to generate ACME source code for a C64 program from the project knowledge. The knowledge holds the program, its entry state, the coverage and the names. The script writes the source files. It checks that the source assembles to the same bytes as the program. It can also write a loader that sets the entry state of an unpacked program. It can also export the program as the start of a new program. The export is a new project with one value for each switch and without unused code. Use it to make a rebuild. Do not edit the generated files. Change the knowledge and generate again.
 ---
 
 # c64-source
@@ -15,13 +15,11 @@ This skill does not change the knowledge.
 
 - The program in the knowledge. Put it in with `image` of the c64-knowledge skill: a capture of the c64-unpacker skill, or a PRG.
 - The output directory for the source files, relative to the project folder.
-- Optional entry points for Ghidra.
+- Optional entry points of code.
 - Optional: the coverage in the knowledge. Add it with `coverage` of the c64-knowledge skill.
 - For the loader: the entry state of a capture in the knowledge.
 
-## Tools / execution path
-
-The script runs Ghidra and ACME on this machine. With `--loader`, it also runs the loader in the emulator through the host runtime.
+## Tools
 
 ```
 node <skill>/scripts/source.ts generate --out src
@@ -32,13 +30,13 @@ node <skill>/scripts/source.ts generate --out src --loader
 | Option | Meaning |
 |---|---|
 | `--out src` | The directory for the source files. The script writes over the files that it generated before. It removes a generated `.asm` file that this run does not write. A run without `--loader` keeps `loader.asm` and `loader.prg` of an earlier run. |
-| `--entry '$080d'` | An entry point for Ghidra. Use it again for more entry points. The entry of the program, the routines and the code regions in the knowledge are entry points too. |
+| `--entry '$080d'` | An address where code starts. Use it again for more entry points. The entry of the program, the routines and the code regions in the knowledge are entry points too. |
 | `--analyzer-names` | Name an address that has no symbol and no platform name with its analyzer name, for example `FUN_17e2`. The order is heuristic, Ghidra, then DXA. Without it, the source makes its own names, for example `l_17e2`. |
 | `--space drive8` | Generate the source of drive code or a cartridge bank from the knowledge of that space. The coverage, `--loader` and the platform names are only for `c64`. |
 | `--loader` | Also write `loader.asm` and `loader.prg`. This needs a capture in the knowledge, with its entry and its entry state. |
 | `--max-listed 20` | List at most this number of items in each list. The default is 50. The counts are always in the result. |
 
-When the knowledge has coverage, code that no run executed gets the line `; not executed` with its range. `notExecuted` lists it. The executed code is also a seed for Ghidra. Thus the source has the code after a JSR to a routine that Ghidra thinks does not return.
+When the knowledge has coverage, code that no run executed gets the line `; not executed` with its range. `notExecuted` lists it. The executed code is always instructions in the source.
 
 ### Calling the script
 
@@ -83,7 +81,7 @@ When the knowledge has coverage, code that no run executed gets the line `; not 
 - A label or a constant gets the name of the address in the knowledge. Without a knowledge name, it gets the platform name of the c64-memory-map skill, for example `EXTCOL` or `CHROUT`. A platform name wins over a name from an analyzer (`dxa`, `ghidra` or `heuristic`), for example `EXTCOL` over `ld020`. A `user` or `llm` name wins over a platform name. An address in the program without a name gets `l_xxxx`.
 - The source uses the names of a ROM only when the program uses that ROM. When the knowledge has coverage, a ROM is in use when a run executed code of it. A read of ROM bytes as data does not count. Without coverage, `$01` of the entry state tells which ROMs are in. When the program uses neither ROM, the zero page and pages 2 and 3 get no system names. `romNamesLeftOut` gives the ROMs that the source did not name, and the evidence. An operand expression or a macro use with such a name gets that reason.
 - `sta $d011  ; $d011: yScroll 3, rows 25, displayEnabled` is a store of an immediate to a register that the c64-memory-map skill decodes. The side comment gives the decoded value. A side comment in the knowledge replaces it.
-- Code regions, and the instructions that Ghidra decodes outside of data regions, become instructions.
+- Code regions, and the decoded instructions outside of data regions, become instructions.
 - Data regions become data by their type: `!byte`, `!word`, `!pet`, `!scr`, `!fill`, tables of labels, and sprite bytes in binary.
 - `lda+2 $0012` is an absolute operand below $0100. `+1` is a zero-page operand with a label.
 - `sta NMINV+1` is an address inside a platform entry of more than one byte, for example the high byte of a vector.
@@ -92,7 +90,7 @@ When the knowledge has coverage, code that no run executed gets the line `; not 
 - `lda #<irq_handler` and `lda bar_colours-1,x` are operand expressions of the knowledge. The script writes each name of an expression with the name of its address in the source. An operand expression in a non-immediate mode that starts with a bracket gets `0+` before it, because ACME reads `(...)` as indirect.
 - `; = <irq_handler` at the end of an instruction with a number: the source cannot use this operand expression. `operandsAsNumbers` gives the reason.
 - `!byte` with an instruction as its comment: ACME writes this instruction with a different opcode. The bytes keep the source identical.
-- `not decoded` marks bytes in a code region that Ghidra did not decode.
+- `not decoded` marks bytes in a code region that the script did not decode.
 - `; not executed $xxxx-$yyyy` starts code that no run of the coverage executed. The range is the same as in `not_executed.json`.
 - `+inc16 ptr` is a use of a macro of the knowledge. `macros.asm` holds the macros. `main.asm` and `loader.asm` include it. The comments inside a use go to its side comment.
 - `!zone patch_PROTECTION_100e` starts a patch of the knowledge. The condition is the state that the program does not have. It is `!if TRAINER` when the base release has the switch off. It is `!if PROTECTION = 0` when the base release has it on. The block has the code of the patch and NOP to the end of the range. `else` has the original code. The labels inside the range come before the zone as `name = * + n`. Thus all builds have them.
@@ -136,21 +134,21 @@ The copy table, the copier and the jump to the entry use labels, not numbers. `l
 
 The flags go through the free stack byte below the stack pointer (`stackByte`). The loader changes this byte. The loader does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. `loader.limits` names each CIA value that the loader cannot set as it was at the entry. A program that reads the SID voice 3 for random numbers can still differ in a scenario. A raster sync does not change a timer or the SID. Then observe after the program sets up its own random numbers. To sync the original and the rebuild in a test, see the sync rules of the c64-testing skill.
 
-The script simulates the copies first. Then it runs `loader.prg` in the emulator to its jump to the entry. It compares the memory, $00/$01, the registers, the screen registers of the VIC-II, the VIC bank and the raster line with the entry state there. It also compares the CIA timers, latches and interrupt masks. `loader.verified: true` tells that all of them are equal. An interrupt can run right at the entry, as in the original program.
+The script runs `loader.prg` to its jump to the entry. It compares the memory, $00/$01, the registers, the screen registers of the VIC-II, the VIC bank and the raster line with the entry state there. It also compares the CIA timers, latches and interrupt masks. `loader.verified: true` tells that all of them are equal. An interrupt can run right at the entry, as in the original program.
 
 The entry state is the state of the base release. Thus the script builds and checks `loader.prg` with the switch values of the base release. For a loader of the default build, build `loader.asm` with the c64-assembler skill and no option.
 
 ### The packed loader
 
-A loader file that loads into $d000 or higher writes the I/O area. When the image is too large for one loader file, `loader.asm` has the packed form. The packed form needs Exomizer. It has these differences:
+A loader file that loads into $d000 or higher writes the I/O area. When the image is too large for one loader file, `loader.asm` has the packed form. It has these differences:
 
 - `loader.asm` holds only the copier and the bytes below $0400: pages $0002-$03ff of the entry state and the parts of segments there. The copier is in one free range, at `loader.copier`. The bytes below $0400 go into free ranges. When one range is too small, they go into more ranges, and each piece is a copy. Between these ranges, `loader.asm` holds the bytes of the image. The segments at $0400 and higher are not in `loader.asm`.
-- The script packs the build of `main.asm` from $0400 and the build of `loader.asm` into `loader.prg` with Exomizer. Where the two builds overlap, the bytes of `loader.asm` are in `loader.prg`.
+- The script packs the build of `main.asm` from $0400 and the build of `loader.asm` into `loader.prg`. Where the two builds overlap, the bytes of `loader.asm` are in `loader.prg`.
 - `10 SYS` starts the unpacker. The unpacker writes all bytes, also at $d000-$dfff. Then it jumps to the copier with all RAM visible ($01 = $34).
 - The unpacker uses the zero page and $0334-$03ff. Thus the copier writes pages $0002-$03ff after the unpack. Then it does steps 4 to 6.
 - The jump to the entry uses the address of the entry, not its label. The build of `loader.asm` does not include `main.asm`.
 
-The script checks the unpack in the emulator of Exomizer. All bytes of the two builds must be correct, and the unpacker must jump to the copier. Then the script runs `loader.prg` in the emulator, as for the plain loader. `loader.packed` gives `packedBytes` and `unpackedBytes`.
+The script checks the unpack. All bytes of the two builds must be correct, and the unpacker must jump to the copier. Then the script checks `loader.prg` as for the plain loader. `loader.packed` gives `packedBytes` and `unpackedBytes`.
 
 To make the packed loader for other switch values, do these steps:
 
@@ -186,7 +184,7 @@ The script does these steps. It writes nothing until all the checks pass.
    - `change`: its default.
 3. It builds the program with these values. This build can change bytes only in the patches.
 4. It finds the free ranges. Each free range gets the bytes $00 and the label `free_xxxx`. No address moves.
-5. It makes the source of the new program. ACME must assemble the source to the new program byte by byte. For a capture with an entry state, the script also makes `loader.asm` and simulates its copies. It does not run the loader in the emulator.
+5. It makes the source of the new program. The source must assemble to the new program byte by byte. For a capture with an entry state, the script also makes `loader.asm` and checks its copies. It does not run the loader.
 6. It writes the new project and the zip file.
 
 ### The free ranges
@@ -260,13 +258,13 @@ Do not store:
 - `removed`: the files of an earlier run that the script removed from `--out` and did not write again.
 - `instructions`, `dataBytes` and `undecodedBytes`.
 - `labels`: `named` labels from the knowledge and `generated` labels `l_xxxx`.
-- `entriesInData`: each `--entry` in a data region of the knowledge, with the `region` and its `origin`. Ghidra does not decode an entry in a data region.
+- `entriesInData`: each `--entry` in a data region of the knowledge, with the `region` and its `origin`. The script does not decode an entry in a data region.
 - `asBytes`: the instructions that the source has as bytes.
 - `operandExpressions`: the count of instructions that the source has with an operand expression.
-- `operandsAsNumbers`: the operand expressions that the source has as a number with a side comment, each with its `address`, `expression` and `reason`. An expression becomes a number when no instruction with an operand value is at the address, or when a name has no address. An expression that ACME refuses or does not assemble to the program also becomes a number. Then the script assembles the source again, at most six times.
+- `operandsAsNumbers`: the operand expressions that the source has as a number with a side comment, each with its `address`, `expression` and `reason`. An expression becomes a number when no instruction with an operand value is at the address, or when a name has no address. An expression that does not assemble to the program also becomes a number.
 - `unusedModules`: modules in the knowledge whose start is in no segment of the program. Often this tells that the program does not hold code that the knowledge describes.
 - `entryOutside`: the entry is in no segment of the program in the knowledge, with a `reason`. The capture does not hold the program.
-- `dataOnly`: the knowledge has no entry, no routine, no code region and no executed address in the space. Thus the source has only data, and Ghidra does not run. A table or a key page in a cartridge bank is an example.
+- `dataOnly`: the knowledge has no entry, no routine, no code region and no executed address in the space. Thus the source has only data. A table or a key page in a cartridge bank is an example.
 - `notExecuted`: when the knowledge has coverage, the count of instructions that no run executed, the count of their ranges, and the first ranges. `rest` names the file `not_executed.json` in `--out` when the list is not complete. This file has all of the ranges. Each range has its source `file` and the `routine` before it. `files` counts the ranges in each file.
 - `macroUses`: the count of macro uses that the source has.
 - `macrosAsInstructions`: the macro uses that the source has as instructions, each with its `start`, `end`, `macro` and `reason`.
@@ -277,7 +275,7 @@ Do not store:
 - `releases`: the build of each release. Each item has `label`, `base`, `file`, the `define` and the `result`. `identical` tells that the build gives the bytes of the file. `different` gives the segments that differ. `layout differs` tells that the release has other segments than the program: patches cannot move code, so this result does not fail the run. `file changed` tells that the file is not the file that the knowledge recorded. `does not assemble` gives the diagnostics of ACME.
 - `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`. A packed loader also has `packed` with `packedBytes` and `unpackedBytes`. `limits` lists the CIA values that the loader cannot set. An entry state from an old capture has no CIA values. Then `limits` tells you to capture the program again. When the script cannot make the loader, `loader` has `verified: false` and a `reason`. The loader includes the source. Thus a source that does not assemble to the program also stops the loader.
 
-`result` is `PASS` when the source is identical and the emulator check of the loader passes. `result` is `FAIL` for a failed check and for an entry in no segment. These also give `FAIL`:
+`result` is `PASS` when the source is identical and the check of the loader passes. `result` is `FAIL` for a failed check and for an entry in no segment. These also give `FAIL`:
 
 - a patch that the source does not have
 - a switch or a default build that does not fit
@@ -302,14 +300,14 @@ Do not store:
 - `dataOnly`: this is not a failure. If the space has code, give `--entry` or classify the code with the c64-knowledge skill. Then generate again.
 - `entriesInData`: an analyzer region of data hides the code at the entry. If the entry is code, record a code region at the entry with the c64-knowledge skill, for example `classify '$0500-$05ff' code`. A region of the user or the LLM replaces the analyzer region. Then generate again.
 - `loader.verified: false` with a `reason`: the script did not make the loader. The script still writes and checks the source. When no copy order or no free pages exist, or the loader needs too many copies, the reason gives the ranges. Capture the program again with fewer segments, or write the loader by hand.
-- `loader.verified: false` with a `reason` about the packed form: the image is too large for one loader file. If the reason tells that Exomizer is not installed, stop the task. Give the message to the user. If the free ranges are too small for the copier and the bytes below $0400, the reason gives the largest free ranges. Write the loader by hand. If the unpack check of Exomizer fails, give the reason to the user.
+- `loader.verified: false` with a `reason` about the packed form: the image is too large for one loader file. If the reason tells that a tool is missing, stop the task. Give the message to the user. If the free ranges are too small for the copier and the bytes below $0400, the reason gives the largest free ranges. Write the loader by hand. If the unpack check fails, give the reason to the user.
 - `loader.verified: false` with `differences`: the loader ran, and `differences` gives the bytes and registers that are not equal.
 - `loader.verified: false` with `stop`: the loader did not get to its copier or to its jump. `stop` gives the address where it stopped and `port`, the value of $01. `history` gives the last 16 instructions. `cause` gives the first byte of the copier that is not equal to its byte in the loader file. For a packed loader, `cause` gives the first byte of the copier that the unpack did not write. If the copier ran, `cause` can also give the first byte that a copy did not write correctly.
 - `export` with `stage: "original"`: the source of the knowledge does not pass. Run `generate`, and correct the knowledge until `generate` gives PASS.
 - `export` with `stage: "switches"`: the build with the export values changes bytes outside the patches, or a patch does not fit. Read `build`. Correct the patches.
 - `export` refuses two switches that change one range: the export puts both alternatives in. Give all but one of them the kind `change` and the default of the base release with `switch` of the c64-knowledge skill.
 - `export` refuses `--drop`: read the message. It names the code that stays and goes to the range or reads it, or the code or region that the range cuts.
-- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disassembler or emulator script.
+- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disassembler or emulator script.
 
 ## Handoffs
 

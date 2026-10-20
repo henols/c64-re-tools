@@ -53,7 +53,7 @@ export const c64Window = defineTool({
   name: "c64_window",
   title: "Emulator window",
   description:
-    "Show the C64 in a window on the host, or hide it again. The emulator has no window until you open one. " +
+    "Show the C64 in a window, or hide it again. The emulator has no window until you open one. " +
     "Open the window when the user must type, play or look at the C64. Then tell the user. Wait until the user tells you that they finished. " +
     "Then close the window. The machine, the disk in drive 8, breakpoints, watchpoints, joysticks, warp mode and c64_timing go along. " +
     "The run state of the machine does not change. The result names the data that does not go along (notCarried). " +
@@ -98,7 +98,7 @@ export const c64Warp = defineTool({
   name: "c64_warp",
   title: "Warp mode",
   description:
-    "Turn warp mode on or off. In warp mode the C64 runs as fast as the host can run it. " +
+    "Turn warp mode on or off. In warp mode the C64 runs as fast as possible. " +
     "Warp mode does not change what the C64 does. This does not change the run state of the machine.",
   inputSchema: z.object({ enabled: z.boolean().describe("true turns warp mode on") }).strict(),
   outputSchema: z.object({ enabled: z.boolean() }),

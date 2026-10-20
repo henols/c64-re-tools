@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
-import { parseTargets, removeEmptyDirectories, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp } from "./cleanup.ts";
+import { parseTargets, removeDroppedItems, removeEmptyDirectories, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp } from "./cleanup.ts";
 
 const ESC = String.fromCharCode(27);
 
@@ -142,6 +142,58 @@ test("a directory in the root whose name starts with two dots is inside the root
     mkdirSync(join(root, "..x", "deep"), { recursive: true });
     removeEmptyDirectories(join(root, "..x", "deep"), root);
     assert.deepEqual(readdirSync(root), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an install removes the skill files of the earlier version that it no longer has, and keeps the rest", () => {
+  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-dropped-"));
+  try {
+    const write = (path: string) => {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), "x");
+    };
+    const skill = (harness: string, name: string, files: string[]) => ({ harness, kind: "skill", name, files });
+    const before = [
+      skill("claude", "c64-emulator", [".claude/skills/c64-emulator/SKILL.md", ".claude/skills/shared.md"]),
+      skill("claude", "c64-disk", [".claude/skills/c64-disk/SKILL.md"]),
+      skill("codex", "c64-emulator", [".agents/skills/c64-emulator/SKILL.md"]),
+      { harness: "claude", kind: "mcp", name: "c64-re-tools", files: [".mcp.json"] },
+    ];
+    for (const item of before) for (const file of item.files) write(file);
+    write(".claude/skills/c64-emulator/notes.md");
+    // The new install: claude only, c64-emulator renamed to emulator, and no MCP item recorded.
+    const after = [skill("claude", "emulator", [".claude/skills/emulator/SKILL.md", ".claude/skills/shared.md"]), skill("claude", "c64-disk", [".claude/skills/c64-disk/SKILL.md"])];
+    for (const item of after) for (const file of item.files) write(file);
+    write(".ap-sdk/install-manifest.json");
+    writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: after } } }));
+
+    assert.deepEqual(removeDroppedItems(before, "project", root), ["c64-emulator"]);
+    const exists = (path: string) => readdirSync(dirname(join(root, path))).includes(path.split("/").at(-1)!);
+    assert.equal(exists(".claude/skills/c64-emulator/SKILL.md"), false);
+    assert.equal(exists(".claude/skills/c64-emulator/notes.md"), true, "a file that no install wrote stays");
+    assert.equal(exists(".claude/skills/shared.md"), true, "a file that the new install also wrote stays");
+    assert.equal(exists(".agents/skills/c64-emulator/SKILL.md"), true, "a harness that this install did not write stays");
+    assert.equal(exists(".mcp.json"), true, "an MCP file stays");
+    assert.equal(exists(".claude/skills/c64-disk/SKILL.md"), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the directories of a removed skill go when nothing else is in them", () => {
+  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-dropped-"));
+  try {
+    mkdirSync(join(root, ".claude", "skills", "old", "scripts"), { recursive: true });
+    writeFileSync(join(root, ".claude", "skills", "old", "SKILL.md"), "x");
+    writeFileSync(join(root, ".claude", "skills", "old", "scripts", "old.ts"), "x");
+    mkdirSync(join(root, ".claude", "skills", "new"), { recursive: true });
+    mkdirSync(join(root, ".ap-sdk"));
+    const after = [{ harness: "claude", kind: "skill", name: "new", files: [".claude/skills/new/SKILL.md"] }];
+    writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: after } } }));
+    removeDroppedItems([{ harness: "claude", kind: "skill", name: "old", files: [".claude/skills/old/SKILL.md", ".claude/skills/old/scripts/old.ts"] }], "project", root);
+    assert.deepEqual(readdirSync(join(root, ".claude", "skills")), ["new"]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

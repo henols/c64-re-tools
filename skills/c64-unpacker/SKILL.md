@@ -16,7 +16,7 @@ This skill does not change project knowledge.
 - The program: a PRG file, relative to the project folder. `inspect`, `trace`, `stages` and `capture` refuse a disk, tape or cartridge image. For such an image, use `loads`, or get the PRG with `disk.ts read` of the c64-disk skill.
 - For a capture: the address where the unpacked program starts, and the directory for the result.
 
-## Tools / execution path
+## Tools
 
 ```
 node <skill>/scripts/unpacker.ts inspect original/game.prg
@@ -26,7 +26,7 @@ node <skill>/scripts/unpacker.ts capture original/game.prg --until '$c000' --out
 node <skill>/scripts/unpacker.ts loads original/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts --drive
 ```
 
-`inspect` examines the file locally. `trace`, `stages`, `capture` and `loads` start their own emulator through the host runtime and start the program. `trace` runs the program and finds the memory that the program wrote and then executed. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). `wrote` lists each block that the stage wrote, also a small block. `capture` stops the program when the CPU gets to the `--until` address. In `stages` and `capture`, a `frames` step and a `runUntil` step to an address without a condition count as run time. `stages` refuses a different `runUntil` step.
+`inspect` examines the file and does not run the program. `trace`, `stages`, `capture` and `loads` run the program. `trace` runs the program and finds the memory that the program wrote and then executed. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). `wrote` lists each block that the stage wrote, also a small block. `capture` stops the program when the CPU gets to the `--until` address. In `stages` and `capture`, a `frames` step and a `runUntil` step to an address without a condition count as run time. `stages` refuses a different `runUntil` step.
 
 | Option | Meaning |
 |---|---|
@@ -43,9 +43,9 @@ node <skill>/scripts/unpacker.ts loads original/game.d64 --steps .c64-re-tools/l
 | `--min-block 64` | `loads` only: the smallest block of changed memory that becomes a segment (default 64). The result counts smaller changes as `smallChanges`. |
 | `--min-stage 64` | `stages` and `capture`: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). It does not change `wrote` or the segments. |
 
-The capture reads RAM, also the RAM under the ROMs and the I/O area. A segment can be in the RAM under the I/O area at `$d000`-`$dfff`. VICE shows each write there as an I/O write. Thus the script compares that RAM at the end of each stage or capture. The script refuses an option that the command does not use. It refuses a wrong `--range` or `--exclude` before the emulator starts.
+The capture reads RAM, also the RAM under the ROMs and the I/O area. A segment can be in the RAM under the I/O area at `$d000`-`$dfff`. The script refuses an option that the command does not use. It refuses a wrong `--range` or `--exclude` before the program runs.
 
-A steps file is a JSON list of steps. Each step has the input of the MCP tool of the same action. An address in a step can be a name. The script refuses an unknown name before the emulator starts. The message gives the file and the step. For example, wait 50 frames and type a space:
+A steps file is a JSON list of steps. Each step has the input of the MCP tool of the same action. An address in a step can be a name. The script refuses an unknown name before the program runs. The message gives the file and the step. For example, wait 50 frames and type a space:
 
 ```json
 [{ "frames": 50 }, { "type": { "mode": "text", "text": " " } }]
@@ -120,7 +120,7 @@ The scripts refuse a step in the form of version 2.0, for example `{ "runUntil":
 
 ## Multi-load programs
 
-A multi-load program loads more parts from the disk while it runs, for example one part for each level. Use `loads` to capture each part. The program can be a PRG, or a disk, tape or cartridge image that VICE starts. `loads` starts a PRG with RUN. Thus the PRG must have a BASIC start line. For a PRG without a BASIC start line, use `capture` with `--entry`.
+A multi-load program loads more parts from the disk while it runs, for example one part for each level. Use `loads` to capture each part. The program can be a PRG, or a disk, tape or cartridge image. `loads` starts a PRG with RUN. Thus the PRG must have a BASIC start line. For a PRG without a BASIC start line, use `capture` with `--entry`.
 
 1. Write a steps file. Put a `capture` step after each point where a part is in memory, for example:
 
@@ -139,7 +139,7 @@ A multi-load program loads more parts from the disk while it runs, for example o
 4. Put the part that you work on into the knowledge with `image <out>/<name>/image.json` of the c64-knowledge skill.
 5. With `--drive`, `drive8.prg` is the drive RAM at `$0000`-`$07ff`. Put it into the knowledge with `image <out>/<name>/drive8.prg --space drive8`. Then analyze it with c64-static-analysis and `--space drive8`.
 
-VICE records no memory access map for the drive CPU. Thus no tool gives coverage of drive code.
+No tool gives coverage of drive code.
 
 ## Knowledge
 
@@ -160,16 +160,16 @@ For `loads`: `captures`, with the name, the PC, the segments, `differsFromReset`
 
 ## Failure and conflicts
 
-- `traced: false` or `followed: false`: the emulator did not load the program into memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
-- `traced: false` or `followed: false` with `stopReason`: the CPU stopped before the frames ran, for example at a JAM instruction. `pc` gives the address. Make sure that `--entry` is the start of the code that the file holds at that time, and that the steps are correct.
+- `traced: false` or `followed: false`: the C64 did not load the program into memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
+- `traced: false` or `followed: false` with `stopReason`: the CPU stopped before the frames ran, for example at a JAM instruction. `pc` gives the address. Make sure that `--entry` is the start of the code that the file holds at that time, and that the steps have no error.
 - `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step.
 - A step did not reach its target: the reason names the step. Change the step or give it more frames.
 - `loaded: false` with an empty `captures` and the reason `BASIC ran no program line`: the PRG has no BASIC start line. Use `capture` with `--entry`.
-- `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited for a key at the READY prompt or at an INPUT statement. For a tape image, read `emulatorFlaw`. A known VICE flaw can stop a tape load. Tell the user to install the latest VICE.
+- `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited for a key at the READY prompt or at an INPUT statement. For a tape image, read `emulatorFlaw`. It names a known flaw of the emulator that can stop a tape load. Give it to the user.
 - Do not name a packer from weak evidence. The script never names one.
 - Some programs unpack in more than one stage. Run `stages` to find each stage. Capture at the entry of the last stage. Make sure that it is the application and not a second unpacker.
 - `not-found` or `invalid-input`: a path or an argument is wrong. Read the message.
-- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
+- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
 
 ## Handoffs
 

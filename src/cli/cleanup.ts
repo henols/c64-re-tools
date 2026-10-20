@@ -177,6 +177,36 @@ export function tidyAfterUninstall(items: readonly InstallItem[], scope: Scope, 
   }
 }
 
+/**
+ * After an install or update: deletes the files of the items that the
+ * earlier install made and this one no longer has, for example a skill that
+ * a version renamed, then the directories that they leave empty. Only the
+ * harnesses that this install wrote count, and an MCP item never goes: its
+ * file holds other servers too. A file that this install also wrote stays.
+ * Returns the names of the removed items.
+ */
+export function removeDroppedItems(before: readonly InstallItem[], scope: Scope, cwd = process.cwd()): string[] {
+  const root = scopeRoot(scope, cwd);
+  const absolute = (file: string) => (isAbsolute(file) ? file : resolve(root, file));
+  const after = installedItems(scope, undefined, cwd);
+  const key = (item: InstallItem) => `${item.harness}/${item.kind}/${item.name}`;
+  const kept = new Set(after.map(key));
+  const harnesses = new Set(after.map((item) => item.harness));
+  const keptFiles = new Set(after.flatMap((item) => item.files.map(absolute)));
+  const dropped = before.filter((item) => item.kind !== "mcp" && harnesses.has(item.harness) && !kept.has(key(item)));
+  const directories = new Set<string>();
+  for (const item of dropped) {
+    for (const file of item.files.map(absolute)) {
+      if (keptFiles.has(file) || !isWithin(root, file)) continue;
+      if (existsSync(file)) unlinkSync(file);
+      directories.add(dirname(file));
+    }
+  }
+  // Deepest first, so a parent is tried after its children.
+  for (const directory of [...directories].sort((a, b) => b.length - a.length)) removeEmptyDirectories(directory, root);
+  return [...new Set(dropped.map((item) => item.name))];
+}
+
 const ANSI = new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g");
 
 /** AP SDK's report without its Windsurf MCP line and that line's detail, for when the CLI undid that item. */

@@ -21,7 +21,7 @@ The MCP server knows the machine and the emulator. Its instructions, its tool de
 
 A tool takes addresses, not names. The server instructions give the address format. Get the address of a name with `knowledge.ts at <name>` of the c64-knowledge skill.
 
-## Tools / execution path
+## Tools
 
 Use only the MCP tools. Each MCP session has its own machine. Nothing else can change that machine.
 
@@ -91,7 +91,7 @@ The emulator has no window. When the user must type, play or look at the machine
 3. Wait until the user tells you that they finished.
 4. Close the window with `c64_window` action `close`.
 
-The result field `notCarried` names the data that the move cleared.
+The result field `notCarried` names the data that the open or the close cleared.
 
 ## Knowledge
 
@@ -120,7 +120,7 @@ If you cannot get the machine into the necessary state, say which state you coul
 
 An error is `{"error": {"code": "...", "message": "..."}}`. The message tells what is wrong and what to do. Obey the message. These rules also apply:
 
-- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script. Do not try to repair the installation.
+- `installation-incomplete` or `machine-unavailable`: stop the task. Give the message to the user and wait for the user. Do not install, start or change a tool yourself. Do not make a replacement for the tool, for example your own disk parser, disassembler or emulator script.
 - `machine-unavailable` with a message that names a pause or a dialog in the window: do not send more operations. Give the message to the user. When the user tells you that the emulator runs again, do the operation again.
 - `machine-unavailable` for a different cause: wait a few seconds. Then do the operation again one time. If you get the same error again, stop the task. Tell the user to restart the c64-re-tools MCP server, and wait for the user.
 - `machine-state-lost`: do not use results from before the error. Do what the message tells. Then read the machine state again.

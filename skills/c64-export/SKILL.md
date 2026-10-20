@@ -17,9 +17,9 @@ This skill does not change the rebuilt project or its knowledge.
 - The folder of the new project. It must be new or empty, and no project can hold it. Use a folder beside the project, for example `../game-new`.
 - Optional: the coverage of the runs in the knowledge. Without coverage, nothing becomes free by itself.
 
-## Tools / execution path
+## Tools
 
-This skill uses the other skills. It does not use the host runtime directly.
+This skill uses the other skills.
 
 | Work | Skill |
 |---|---|
@@ -75,7 +75,7 @@ A new project folder and a zip file of it. Its build is identical to its baselin
 - `export` gives FAIL with `stage`: read `reason`. The c64-source skill tells what to do for each stage.
 - `export` refuses the folder: give a new or empty folder outside every project. Remove a folder or a zip file of an earlier export only when this task made it.
 - A test of the new project gives FAIL: the export dropped a range that the program uses. Remove the folder and the zip file. Run `export` again with `--keep` for the range, then test again.
-- A skill reports `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the whole task. Give the message to the user and wait for the user. Do not make a replacement for the tool or the host runtime.
+- A skill reports `installation-incomplete` or `machine-unavailable`: stop the whole task. Give the message to the user and wait for the user. Do not continue with other skills. Do not install, start or change a tool yourself. Do not make a replacement for the tool.
 
 ## Handoffs
 
@@ -84,4 +84,4 @@ A new project folder and a zip file of it. Its build is identical to its baselin
 - Switches and the code at an address → c64-knowledge
 - The build of the new project → c64-assembler
 - The tests of the new project → c64-testing
-- A new feature or a fix in the new project → c64-development
+- A new feature or a correction in the new project → c64-development

@@ -13,7 +13,7 @@ import { localToolStatus } from "../native/status.ts";
 import { isRefusal } from "../errors.ts";
 import { startTrace } from "../trace.ts";
 import { runApSdk } from "./ap-sdk.ts";
-import { installedItems, parseTargets, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp, type Scope } from "./cleanup.ts";
+import { installedItems, parseTargets, removeDroppedItems, tidyAfterUninstall, type Scope, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp } from "./cleanup.ts";
 import { hostStatusLines, installedLines, toolLines } from "./status.ts";
 
 const HELP = `c64-re-tools: Commodore 64 reverse engineering and development
@@ -86,11 +86,15 @@ async function main(argv: string[]): Promise<number> {
     case "install":
     case "update": {
       const before = windsurfBefore();
+      const earlier = installedItems(scope, targets);
       const { code, output } = await apSdk("install", flags);
       // A project install leaves the home directory as it was.
       const note = scope === "project" && (targets === undefined || targets.includes("windsurf")) ? undoWindsurfProjectMcp(before) : undefined;
       process.stdout.write(note === undefined ? output : withoutWindsurfMcp(output));
       if (note !== undefined) console.log(`  ${note}\n`);
+      // A skill that this version renamed or dropped must not stay next to the new ones.
+      const removed = code === 0 ? removeDroppedItems(earlier, scope) : [];
+      if (removed.length > 0) console.log(`  Removed, because this version no longer has them: ${removed.join(", ")}\n`);
       return code;
     }
     case "uninstall": {
