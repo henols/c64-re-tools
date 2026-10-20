@@ -33,6 +33,9 @@ test("a path that leaves the workspace or reuses a file is refused", { skip: pro
   try {
     assert.throws(() => workspace.path("../x"), WireFailure);
     assert.throws(() => workspace.path("/etc/passwd"), WireFailure);
+    // The source root of an assembly can be a folder of the staged tree, never a path with "..".
+    assert.equal(workspace.path("source/src"), join(workspace.root, "source", "src"));
+    assert.throws(() => workspace.path("source/src/../.."), WireFailure);
     workspace.materialize("source", [{ path: "a.a", size: 1 }], [Buffer.from("a")]);
     // A link planted in the workspace is not written through.
     symlinkSync("/tmp", join(workspace.root, "source", "b.a"));

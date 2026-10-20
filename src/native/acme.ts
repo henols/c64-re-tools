@@ -2,7 +2,7 @@
 // diagnostics and symbols, and a validated C64 PRG as the result.
 
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { isAbsolute, join, posix, relative, sep } from "node:path";
 
 import { formatC64Address } from "../c64.ts";
 import { WireFailure } from "../protocol/messages.ts";
@@ -29,12 +29,31 @@ const TIMEOUT_MS = 60_000;
 /** True for a relative path that stays inside the source root: no absolute path, no drive letter and no "..". */
 const insideSourceRoot = (path: string) => isRelativePath(path) && !/^[A-Za-z]:/.test(path);
 
-/** Refuses an entry source or include directory that ACME could read outside the source root, by name. */
+/** The path of a staged file or directory from the top of the staged tree, for a path relative to the source root. Can start with "..". */
+const fromTree = (sourceDir: string, path: string) => posix.normalize(posix.join(sourceDir, path));
+
+/** The path from the source root to a path from the top of the staged tree. */
+const fromSourceRoot = (sourceDir: string, path: string) => posix.relative(`/${sourceDir}`, `/${path}`);
+
+/**
+ * True for an include directory that stays inside the staged tree: a relative
+ * path of names, "." and "..", with no drive letter and no backslash, that
+ * does not go above the top of the tree from the source root.
+ */
+function insideTree(sourceDir: string, path: string): boolean {
+  if (!path.split("/").every((part) => part === "." || part === ".." || isRelativePath(part)) || /^[A-Za-z]:/.test(path)) return false;
+  const inside = fromTree(sourceDir, path);
+  return inside !== ".." && !inside.startsWith("../") && !posix.isAbsolute(inside);
+}
+
+/** Refuses an entry source or include directory that ACME could read outside the staged tree, by name. */
 export function checkAcmeParams(params: AcmeParams): void {
+  const sourceDir = params.sourceDir ?? "";
+  if (sourceDir !== "" && !insideSourceRoot(sourceDir)) throw new WireFailure("invalid-input", `The source directory ${sourceDir} is not a relative path inside the staged tree.`);
   if (!insideSourceRoot(params.entrySource)) throw new WireFailure("invalid-input", `The entry source ${params.entrySource} is not a relative path inside the source root.`);
   if (params.entrySource.startsWith("-")) throw new WireFailure("invalid-input", `The entry source ${params.entrySource} starts with a hyphen, which ACME reads as an option. Give the file a different name.`);
   for (const directory of params.includeDirs) {
-    if (!insideSourceRoot(directory)) throw new WireFailure("invalid-input", `The include directory ${directory} is not a relative path inside the source root.`);
+    if (!insideTree(sourceDir, directory)) throw new WireFailure("invalid-input", `The include directory ${directory} is not a relative path inside the staged source files.`);
   }
 }
 
@@ -50,17 +69,29 @@ export function acmeArguments(executable: string, params: AcmeParams, outputDire
 
 const DIAGNOSTIC = /^(Error|Warning|Serious error) - File (.+?), line (\d+)(?: \(.*?\))?: (.*)$/;
 
-/** Parses ACME's "Error - File main.a, line 4 (Zone ...): message" lines. Files become source-root relative. */
-export function parseDiagnostics(output: string, sourceRoot: string): Diagnostic[] {
+/**
+ * Parses ACME's "Error - File main.a, line 4 (Zone ...): message" lines. Files
+ * become source-root relative: an absolute path through `tree`, the top of
+ * the staged tree, and a name that ACME found in an include directory
+ * through the staged files, in the order that ACME searches them.
+ */
+export function parseDiagnostics(output: string, tree: string, params: Pick<AcmeParams, "files" | "includeDirs" | "sourceDir"> = { files: [], includeDirs: [] }): Diagnostic[] {
+  const sourceDir = params.sourceDir ?? "";
+  const staged = new Set(params.files.map((file) => file.path));
+  const sourcePath = (file: string): string => {
+    if (isAbsolute(file)) {
+      const inside = relative(tree, file);
+      return inside.startsWith("..") || isAbsolute(inside) ? "(outside the source files)" : fromSourceRoot(sourceDir, inside.split(sep).join("/"));
+    }
+    if (staged.has(fromTree(sourceDir, file))) return file;
+    const directory = params.includeDirs.find((candidate) => staged.has(fromTree(sourceDir, posix.join(candidate, file))));
+    return directory === undefined ? file : fromSourceRoot(sourceDir, fromTree(sourceDir, posix.join(directory, file)));
+  };
   const diagnostics: Diagnostic[] = [];
   for (const line of output.split(/\r?\n/)) {
     const match = DIAGNOSTIC.exec(line.trim());
     if (match !== null) {
-      let file = match[2]!;
-      if (isAbsolute(file)) {
-        const inside = relative(sourceRoot, file);
-        file = inside.startsWith("..") || isAbsolute(inside) ? "(outside the source root)" : inside.split(sep).join("/");
-      }
+      const file = sourcePath(match[2]!);
       diagnostics.push({ severity: match[1] === "Warning" ? "warning" : "error", file, line: Number(match[3]), message: match[4]! });
     } else if (/^(Error|Serious error|Warning)\b/.test(line.trim())) {
       diagnostics.push({ severity: line.trim().startsWith("Warning") ? "warning" : "error", message: line.trim() });
@@ -96,11 +127,13 @@ export async function assemble(
   const executable = findTool(ACME, context.env);
   const workspace = Workspace.create(context.supervisor);
   try {
-    const source = workspace.materialize("source", params.files, files);
+    const tree = workspace.materialize("source", params.files, files);
+    // ACME runs in the source root, which can be a folder of the staged tree.
+    const source = params.sourceDir === undefined || params.sourceDir === "" ? tree : workspace.path(`source/${params.sourceDir}`);
     // A fresh output directory, so no stale file can pass for this run's output.
     const output = workspace.directory("out");
     const run = await runToolOrFail("ACME", "The assembly", { argv: acmeArguments(executable, params, output), cwd: source, timeoutMs: TIMEOUT_MS }, context);
-    const diagnostics = parseDiagnostics(`${run.stdout}\n${run.stderr}`, source);
+    const diagnostics = parseDiagnostics(`${run.stdout}\n${run.stderr}`, tree, params);
     const programPath = join(output, PROGRAM);
     if (run.code !== 0) {
       if (diagnostics.every((diagnostic) => diagnostic.severity !== "error")) {

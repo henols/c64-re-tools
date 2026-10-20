@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
-import { readProjectFile, readProjectTree, writeProjectFile } from "./transfer.ts";
+import { readProjectFile, readProjectTree, readSourceTree, writeProjectFile } from "./transfer.ts";
 
 const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-transfer-"));
 const project = join(sandbox, "project");
@@ -104,6 +104,35 @@ test("a directory link to a sibling directory in the source root is followed", (
     { path: "alias/macros.a", size: 6 },
     { path: "common/macros.a", size: 6 },
   ]);
+});
+
+test("a source tree starts at the lowest folder of the source root and its include folders, and holds only their files", () => {
+  const game = join(project, "game");
+  mkdirSync(join(game, "src", "lib"), { recursive: true });
+  mkdirSync(join(game, "build"), { recursive: true });
+  mkdirSync(join(game, "art"), { recursive: true });
+  writeFileSync(join(game, "src", "boot.asm"), "boot");
+  writeFileSync(join(game, "src", "lib", "macros.asm"), "macros");
+  writeFileSync(join(game, "build", "tables.asm"), "tables");
+  writeFileSync(join(game, "art", "title.bin"), "art");
+  const read = readSourceTree("game/src", ["../build", "lib", "../build/"], { root: project });
+  assert.deepEqual(read.files, [
+    { path: "src/boot.asm", size: 4 },
+    { path: "src/lib/macros.asm", size: 6 },
+    { path: "build/tables.asm", size: 6 },
+  ]);
+  assert.deepEqual(read.contents.map(String), ["boot", "macros", "tables"]);
+  assert.equal(read.sourceDir, "src");
+  assert.deepEqual(read.includeDirs, ["../build", "lib", "../build"]);
+  // Without an include folder outside it, the tree is the source root as readProjectTree reads it.
+  assert.deepEqual(readSourceTree("game/src", ["lib"], { root: project }), { ...readProjectTree("game/src", { root: project }), sourceDir: "", includeDirs: ["lib"] });
+  for (const folder of ["../../..", join(game, "build")]) {
+    assert.throws(() => readSourceTree("game/src", [folder], { root: project }), (error: unknown) => failsWith("invalid-input")(error) && (error as Error).message.startsWith(`The include folder ${folder} is outside the project folder.`));
+  }
+  for (const folder of ["../nope", "boot.asm", "../empty"]) {
+    if (folder === "../empty") mkdirSync(join(game, "empty"));
+    assert.throws(() => readSourceTree("game/src", [folder], { root: project }), (error: unknown) => failsWith("not-found")(error) && (error as Error).message.startsWith(`There is no include folder ${folder} with files in the project folder.`));
+  }
 });
 
 test("a write through a folder link out of the project is refused before a folder is made", () => {

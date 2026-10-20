@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -107,10 +107,31 @@ test("bad options are refused before anything is sent", { skip: acmeSkip }, asyn
     assert.equal(status, 2, args.join(" "));
     assert.equal((json.error as { code: string }).code, "invalid-input");
   }
-  const missing = await assembleScript("build", "src", "main.a", "--include", "nolib", "--out", "build/none.prg");
-  assert.equal(missing.status, 2);
-  assert.deepEqual(missing.json.error, { code: "not-found", message: "There is no include folder nolib with files in the source root src. Give --include a folder relative to the source root." });
+  for (const folder of ["nolib", "../nolib", "main.a"]) {
+    const missing = await assembleScript("build", "src", "main.a", "--include", folder, "--out", "build/none.prg");
+    assert.equal(missing.status, 2, folder);
+    assert.deepEqual(missing.json.error, { code: "not-found", message: `There is no include folder ${folder} with files in the project folder. Give an include folder relative to the source root, inside the project folder.` });
+  }
+  for (const folder of ["../..", "/usr/share"]) {
+    const outside = await assembleScript("build", "src", "main.a", "--include", folder, "--out", "build/none.prg");
+    assert.equal(outside.status, 2, folder);
+    assert.deepEqual(outside.json.error, { code: "invalid-input", message: `The include folder ${folder} is outside the project folder. Give an include folder relative to the source root, inside the project folder.` });
+  }
   assert.equal(existsSync(join(project, "build", "none.prg")), false);
+});
+
+test("an include folder beside the source root holds generated source: build src boot.asm --include ../build", { skip: acmeSkip }, async () => {
+  mkdirSync(join(project, "build"), { recursive: true });
+  writeFileSync(join(project, "src", "boot.asm"), "!source \"consts.a\"\n* = $c000\n!source \"tables.asm\"\n        lda #MAX\n        rts\n");
+  writeFileSync(join(project, "build", "tables.asm"), "        lda #$12\n");
+  const { status, json } = await assembleScript("build", "src", "boot.asm", "--include", "../build", "--include", "lib", "--out", "build/boot.prg");
+  assert.equal(status, 0, JSON.stringify(json));
+  assert.equal(json.result, "PASS");
+  assert.deepEqual([...readFileSync(join(project, "build", "boot.prg"))], [0x00, 0xc0, 0xa9, 0x12, 0xa9, 0x0a, 0x60]);
+  writeFileSync(join(project, "build", "tables.asm"), "        lda #$123\n");
+  const failed = await assembleScript("build", "src", "boot.asm", "--include", "../build", "--include", "lib", "--out", "build/boot.prg");
+  assert.equal(failed.json.result, "FAIL");
+  assert.deepEqual((failed.json.diagnostics as Array<{ file: string; line: number }>).map(({ file, line }) => ({ file, line })), [{ file: "../build/tables.asm", line: 1 }]);
 });
 
 test("a missing ACME is refused with the stop instruction", async () => {

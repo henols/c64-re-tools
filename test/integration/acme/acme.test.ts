@@ -2,7 +2,7 @@
 // Skipped (never passed) when ACME is not installed on this machine.
 
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -27,8 +27,9 @@ const supervisor = new ProcessSupervisor();
 supervisor.installExitGuard();
 after(() => rmSync(project, { recursive: true, force: true }));
 
+/** Stages src, or with a sourceDir the whole project, so that src is a folder of the staged tree. */
 async function run(params: Omit<AcmeParams, "files" | "includeDirs" | "defines"> & Partial<AcmeParams>) {
-  const tree = readProjectTree("src", { root: project });
+  const tree = readProjectTree(params.sourceDir === undefined ? "src" : ".", { root: project });
   const { result, attachments } = await assemble({ includeDirs: [], defines: {}, ...params, files: tree.files }, tree.contents, { supervisor, signal: new AbortController().signal });
   return { ...result, program: attachments?.[0] };
 }
@@ -44,6 +45,19 @@ test("the fixture assembles to a PRG with its load range and symbols", { skip: a
   assert.deepEqual(byName.get("MAX"), { name: "MAX", kind: "constant", value: 10, used: true });
   assert.equal(byName.get("UNUSED_CONSTANT")?.used, false);
   assert.equal(byName.get("RESULT")?.kind, "constant", "$c100 is outside the program");
+});
+
+test("an include folder beside the source root assembles, and its diagnostics name the file from the source root", { skip: acmeSkip }, async () => {
+  mkdirSync(join(project, "build"), { recursive: true });
+  writeFileSync(join(project, "src", "boot.a"), "* = $c000\n!source \"gen.a\"\n        rts\n");
+  writeFileSync(join(project, "build", "gen.a"), "        lda #$12\n");
+  const result = await run({ sourceDir: "src", entrySource: "boot.a", includeDirs: ["../build"] });
+  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+  assert.deepEqual([...result.program!], [0x00, 0xc0, 0xa9, 0x12, 0x60]);
+  writeFileSync(join(project, "build", "gen.a"), "        lda #$123\n");
+  const failed = await run({ sourceDir: "src", entrySource: "boot.a", includeDirs: ["../build"] });
+  assert.equal(failed.assembled, false);
+  assert.deepEqual(failed.diagnostics.map(({ file, line }) => ({ file, line })), [{ file: "../build/gen.a", line: 1 }]);
 });
 
 test("defines and setPc reach the assembly", { skip: acmeSkip }, async () => {

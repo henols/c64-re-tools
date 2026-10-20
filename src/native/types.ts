@@ -10,17 +10,20 @@ import { type SourceTree } from "../protocol/tools.ts";
 
 export interface Diagnostic {
   severity: "error" | "warning" | "note";
-  /** Relative to the source root; absent when the message has no source location. */
+  /** Relative to the source root, with ".." for a file of an include folder outside it; absent when the message has no source location. */
   file?: string;
   line?: number;
   message: string;
 }
 
 export interface AcmeParams {
+  /** Relative to the top of the staged tree. */
   files: SourceTree;
+  /** The source root, where ACME runs, relative to the top of the staged tree; absent or "" when the source root is the top. */
+  sourceDir?: string;
   /** Relative to the source root. */
   entrySource: string;
-  /** Directories relative to the source root. */
+  /** Directories relative to the source root. A directory can start with ".." when it stays inside the staged tree. */
   includeDirs: string[];
   defines: Record<string, number | boolean>;
   setPc?: number;

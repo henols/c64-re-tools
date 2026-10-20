@@ -3,7 +3,7 @@
 
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { dirname, extname, join, relative, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { checkOutputPath, isInside, projectRoot, resolveProject, resolveProjectFile, writeProblem } from "../project.ts";
 import { isRefusal } from "../errors.ts";
@@ -177,4 +177,57 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
   };
   walk(sourceRoot, sourceRoot, new Set([sourceRoot]));
   return { files, contents };
+}
+
+/** A path from `from` to `to`, with /. */
+const posixRelative = (from: string, to: string) => relative(from, to).split(sep).join("/");
+
+/**
+ * Reads a source root and its include folders as one source tree for
+ * staging, as readProjectTree does. An include folder is relative to the
+ * source root and can be anywhere in the project folder. The tree starts at
+ * the lowest folder that holds all these folders, but it holds only their
+ * files. `sourceDir` is the source root in the tree, "" at its top, and
+ * `includeDirs` are the include folders relative to the source root.
+ */
+export function readSourceTree(sourceRoot: string, includes: readonly string[], options: { root?: string } = {}): { files: SourceTree; contents: Buffer[]; sourceDir: string; includeDirs: string[] } {
+  const projectRootPath = options.root ?? currentProject();
+  const sourceTree = readProjectTree(sourceRoot, { root: projectRootPath });
+  const project = realpathSync(projectRootPath);
+  const source = resolveProjectFile(sourceRoot, projectRootPath);
+  const missing = (folder: string) => new WireFailure("not-found", `There is no include folder ${folder} with files in the project folder. Give an include folder relative to the source root, inside the project folder.`);
+  const folders = includes.map((folder) => {
+    const outside = new WireFailure("invalid-input", `The include folder ${folder} is outside the project folder. Give an include folder relative to the source root, inside the project folder.`);
+    if (isAbsolute(folder)) throw outside;
+    const candidate = resolve(source, folder);
+    if (!isInside(project, candidate)) throw outside;
+    let real: string;
+    try {
+      real = realpathSync(candidate);
+    } catch {
+      throw missing(folder);
+    }
+    if (!isInside(project, real)) throw outside;
+    if (!statSync(real).isDirectory()) throw missing(folder);
+    return { folder, real };
+  });
+  let top = source;
+  for (const { real } of folders) while (!isInside(top, real)) top = dirname(top);
+  // Each folder is read once: a folder inside another comes with the files of that folder.
+  const roots = [...new Set([source, ...folders.map(({ real }) => real)])];
+  const files: SourceTree = [];
+  const contents: Buffer[] = [];
+  for (const root of roots.filter((root) => !roots.some((other) => other !== root && isInside(other, root)))) {
+    const tree = root === source ? sourceTree : readProjectTree(posixRelative(project, root) || ".", { root: project });
+    const prefix = posixRelative(top, root);
+    files.push(...tree.files.map((file) => ({ ...file, path: prefix === "" ? file.path : `${prefix}/${file.path}` })));
+    contents.push(...tree.contents);
+  }
+  if (files.length > MAX_TREE_FILES) throw new WireFailure("limit-exceeded", `The source root and the include folders have more than ${MAX_TREE_FILES} files.`);
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_ATTACHMENT_BYTES) throw new WireFailure("limit-exceeded", `The source root and the include folders hold more than ${MAX_ATTACHMENT_BYTES} bytes.`);
+  for (const { folder, real } of folders) {
+    const inside = posixRelative(top, real);
+    if (!files.some((file) => inside === "" || file.path.startsWith(`${inside}/`))) throw missing(folder);
+  }
+  return { files, contents, sourceDir: posixRelative(top, source), includeDirs: folders.map(({ real }) => posixRelative(source, real) || ".") };
 }

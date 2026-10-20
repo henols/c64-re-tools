@@ -25,6 +25,7 @@ To get the command list, run the script with no arguments.
 |---|---|
 | Build the program from the source | `build src main.a --out build/game.prg` |
 | Build a source that includes files from a folder | `build src main.a --out build/game.prg --include lib` |
+| Build a source that includes a file that you generated into a folder next to the source root | `build src boot.asm --out build/boot.prg --include ../build` |
 | Build a source that sets no start address | `build src main.a --out build/game.prg --set-pc '$0801'` |
 | Check that the rebuild is identical to the program in the project knowledge | `build src main.asm --out build/game.prg --compare` |
 | Build a release and check it against the file of that release | `build src main.asm --out build/original.prg --release ORIGINAL --compare` |
@@ -37,7 +38,8 @@ To get the command list, run the script with no arguments.
 
 ## The source and the program
 
-- `<source-root>` is the folder in the project that holds all the source files of the program. Put each file that the program includes under the source root. The script cannot read a file outside it.
+- `<source-root>` is the folder in the project that holds the source files of the program. The script reads only the files in the source root and in the include folders.
+- An include folder is a path relative to the source root, inside the project folder. It can be outside the source root, for example `--include ../build`.
 - `<entry>` is the main source file, relative to the source root. It normally sets its start address, for example `* = $0801`. If it does not, give `--set-pc`.
 - For a source that you generated from the project knowledge, the source root is the folder of that source. The entry is `main.asm`.
 - `--out` is the path of the program, relative to the project folder.
@@ -77,7 +79,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | Flag | Command | Effect |
 |---|---|---|
 | `--out <file.prg>` | `build` | Required. The path of the program, relative to the project folder. |
-| `--include <dir>` | `build` | An include folder, relative to the source root. Give the flag again for each folder. The default is no include folder. |
+| `--include <dir>` | `build` | An include folder: a path relative to the source root, inside the project folder. Give the flag again for each folder. The default is no include folder. |
 | `--define NAME=VALUE` | `build` | An assembler symbol: an integer, also `$` and hex digits, or `true` or `false`. Give the flag again for each symbol. Do not use it for a switch. |
 | `--set-pc <address>` | `build` | The start address when the source does not set one, for example `'$0801'`. |
 | `--release <label>` | `build` | Build a release of the project knowledge. Each switch gets the value of that release. With `--compare`, the reference is the file of the release. |
@@ -109,7 +111,7 @@ Assembles the source and writes the program to `--out`.
   - `used` is `false` when the source does not use the symbol.
 - `symbolsFile`: the file of `--out-symbols`, with `out`, `bytes` and `sha256`.
 - `unusedConstants`: the count of the constants that the list does not include. It is not in the body with `--all-symbols`.
-- `diagnostics`: each item has `severity` (`error`, `warning` or `note`), `file`, `line` and `message`. `file` and `line` are not in an item without a location in the source.
+- `diagnostics`: each item has `severity` (`error`, `warning` or `note`), `file`, `line` and `message`. `file` is relative to the source root. A file in an include folder outside the source root starts with `../`. `file` and `line` are not in an item without a location in the source.
 - `compare`: only with `--compare`. `identical` is `true` when each segment is identical. `segments` has one item for each segment of the reference program, with `start`, `end` and `result`:
   - `identical`.
   - `different`, with `differences` and `firstDifference`. `firstDifference` gives `address`, and the byte of the build (`built`) and of the reference (`reference`), each as `$` and two hex digits.
@@ -123,6 +125,7 @@ Do as the result tells:
 - `hint` tells that `symbols` is cut: give a larger `--max-listed`, or `--out-symbols <file.json>` for the full list.
 - Error `not-found` names the entry: give the main source file relative to the source root.
 - Error `not-found` names an include folder: give `--include` a folder with files, relative to the source root.
+- Error `invalid-input` names an include folder: the folder is outside the project folder. Give `--include` a folder inside the project folder.
 - Error `not-found` names a release: the project knowledge has no release with that label. Record the release in the project knowledge, or give the label of a recorded release.
 - Error `not-found` tells that the knowledge has no program: put the program bytes into the project knowledge. Then use `--compare` again.
 - Error `invalid-input`: an option or a path is wrong. Do as `hint` tells. The script refuses `--space` without `--compare` or `--release`.

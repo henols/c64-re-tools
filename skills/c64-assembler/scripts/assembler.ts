@@ -1,12 +1,10 @@
 // The c64-assembler script: assembles project source with ACME, which it runs
 // itself, and writes the program into the project.
 
-import { posix } from "node:path";
-
 import { formatC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { readImage } from "#src/host-client/image.ts";
-import { readProjectTree, writeReported } from "#src/host-client/transfer.ts";
+import { readSourceTree, writeReported } from "#src/host-client/transfer.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { requireProgram } from "#src/knowledge/program.ts";
@@ -42,7 +40,7 @@ await runScript({
       ],
       options: {
         out: { ...OPTIONS.out, output: "file", value: "<file.prg>", help: "where to write the program, relative to the project folder", required: true },
-        include: { kind: "text", value: "<dir>", multiple: true, help: "an include folder, relative to the source root" },
+        include: { kind: "text", value: "<dir>", multiple: true, help: "an include folder: a path relative to the source root, inside the project folder" },
         define: { kind: "text", value: "NAME=VALUE", multiple: true, help: "an assembler symbol: an integer ($hex allowed) or true/false" },
         "set-pc": { kind: "address", value: "<address>", help: "the start address when the source sets none, for example '$0801'" },
         release: { kind: "text", value: "<label>", help: `build a release of the knowledge: defines ${RELEASE_DEFINE}<label>=1, so each switch has the value of that release. With --compare, the reference is the file of the release` },
@@ -77,19 +75,11 @@ await runScript({
           }
         }
         const setPc = call.address("set-pc");
-        const tree = readProjectTree(sourceRoot);
-        if (!tree.files.some((file) => file.path === entry)) throw new Refusal("not-found", `${entry} is not a file in ${sourceRoot}. Give the main source file relative to the source root.`);
-        // ACME sees only the files of the source root: an include folder holds some of them. A path out of the root is refused later.
-        for (const folder of call.strings("include")) {
-          const inside = posix.normalize(folder.replaceAll("\\", "/")).replace(/\/+$/, "");
-          if (inside === "." || inside === ".." || inside.startsWith("../") || posix.isAbsolute(inside)) continue;
-          if (!tree.files.some((file) => file.path.startsWith(`${inside}/`))) {
-            throw new Refusal("not-found", `There is no include folder ${folder} with files in the source root ${sourceRoot}. Give --include a folder relative to the source root.`);
-          }
-        }
-        const params: AcmeParams = { files: tree.files, entrySource: entry, includeDirs: call.strings("include"), defines: { ...releaseDefine, ...Object.fromEntries(call.strings("define").map(parseDefine)) }, ...(setPc === undefined ? {} : { setPc }) };
+        const { contents, ...tree } = readSourceTree(sourceRoot, call.strings("include"));
+        if (!tree.files.some((file) => file.path === (tree.sourceDir === "" ? entry : `${tree.sourceDir}/${entry}`))) throw new Refusal("not-found", `${entry} is not a file in ${sourceRoot}. Give the main source file relative to the source root.`);
+        const params: AcmeParams = { ...tree, entrySource: entry, defines: { ...releaseDefine, ...Object.fromEntries(call.strings("define").map(parseDefine)) }, ...(setPc === undefined ? {} : { setPc }) };
 
-        const { result, attachments } = await assemble(params, tree.contents, localToolContext());
+        const { result, attachments } = await assemble(params, contents, localToolContext());
         if (!result.assembled) return reply({ result: "FAIL", assembled: false, diagnostics: result.diagnostics }, { hint: "The source has errors, and no program was written. Correct the source at the file and the line of each diagnostic. Then run build again." });
         const plain = call.flag("plain");
         const written = writeReported(out, plain ? attachments![0]!.subarray(2) : attachments![0]!, { what: "--out" });
