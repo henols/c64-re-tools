@@ -1,8 +1,24 @@
 #!/bin/bash
-# The checks of every scenario: the native tools run, and the toolkit is in the project.
+# The checks of every scenario: the native tools run, and the toolkit of the
+# channel is in the project.
 set -e
 # shellcheck disable=SC1091
 source dev-container-features-test-lib
+# shellcheck disable=SC1091
+. /usr/local/share/c64-re-tools/feature.env
+
+# The version that the channel names now: latest, or for next the newer of the
+# npm next and latest versions. A prerelease goes to the npm tag next, a release to latest.
+TAGS="$(curl -fsSL https://registry.npmjs.org/-/package/@henols%2fc64-re-tools/dist-tags)"
+LATEST="$(printf '%s' "${TAGS}" | grep -o '"latest":"[^"]*"' | cut -d'"' -f4)"
+NEXT="$(printf '%s' "${TAGS}" | grep -o '"next":"[^"]*"' | cut -d'"' -f4 || true)"
+VERSION="${LATEST}"
+if [[ "${CHANNEL}" == next && -n "${NEXT}" && "${NEXT%%-*}" != "${LATEST}" \
+    && "$(printf '%s\n%s\n' "${LATEST}" "${NEXT%%-*}" | sort -V | tail -1)" == "${NEXT%%-*}" ]]; then
+    VERSION="${NEXT}"
+fi
+TAG=latest
+[[ "${VERSION}" == *-* ]] && TAG=next
 
 check "ACME runs" bash -c "acme --version | grep 'This is ACME, release 0.97'"
 check "dxa runs" bash -c "dxa -h 2>&1 | grep 'v0.1.5 -- symbolic'"
@@ -16,5 +32,8 @@ check "the tools are stamped with the toolkit version" bash -c "test -s /usr/loc
 check "a start with the same version installs no tools" bash -c "! /usr/local/share/c64-re-tools/project.sh update 2>&1 | grep 'installing the native tools'"
 check "a start with the same version asks for no restart" bash -c "! /usr/local/share/c64-re-tools/project.sh update 2>&1 | grep 'Restart the agent session'"
 check "the toolkit is installed in the project" bash -c "ls .claude/skills/c64-reverse-engineering/SKILL.md .mcp.json"
+check "the tools are of the channel ${CHANNEL}: ${VERSION}" bash -c "test \"\$(cat /usr/local/share/c64-re-tools/tools.version)\" = '${VERSION}'"
+check "the skills are of the channel ${CHANNEL}: ${VERSION}" bash -c "grep -F '\"version\": \"${VERSION}\"' .claude/skills/c64-knowledge/package.json"
+check "the MCP server runs the npm tag ${TAG}" bash -c "grep -F -- '--package=@henols/c64-re-tools@${TAG}\"' .mcp.json"
 
 reportResults

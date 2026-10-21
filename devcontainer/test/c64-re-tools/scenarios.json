@@ -6,5 +6,9 @@
   "noble": {
     "image": "mcr.microsoft.com/devcontainers/base:noble",
     "features": { "c64-re-tools": { "channel": "latest" } }
+  },
+  "next": {
+    "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+    "features": { "c64-re-tools": { "channel": "next" } }
   }
 }
