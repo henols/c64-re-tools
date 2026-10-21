@@ -126,11 +126,10 @@ test("switches and macros: the original stays identical, each switch fits, and t
   assert.deepEqual([...readFileSync(join(project, "build", "trained.prg")).subarray(2 + 0x0b, 2 + 0x0e)], [0xea, 0xea, 0xea], "lives stay");
 
   // The analyzer finds the set16 at $1017 and knows the two uses of inc16 in the knowledge.
-  const analyzed = ok("c64-static-analysis", "static-analysis.ts", ["analyze", "--entry", "$1000", "--out-macro-batch", ".c64-re-tools/local/macros.json"]);
+  const analyzed = ok("c64-static-analysis", "static-analysis.ts", ["analyze", "--entry", "$1000", "--apply-macros"]);
   const macros = analyzed.idioms.candidates.macros;
   assert.deepEqual(macros.listed, [{ macro: "set16", start: "$1017", end: "$101e", args: ["ptr", "start"], text: "+set16 ptr, start" }]);
-  assert.deepEqual([macros.known, macros.leftOut, macros.batch.writes], [2, undefined, 2], "the set16 macro and its use");
-  ok("c64-knowledge", "knowledge.ts", ["apply", ".c64-re-tools/local/macros.json"]);
+  assert.deepEqual([macros.known, macros.leftOut, macros.writes], [2, undefined, 2], "the set16 macro and its use");
   const again = ok("c64-source", "source.ts", ["generate", "--out", "src"]);
   assert.equal(again.check.identical, true);
   assert.equal(again.macroUses, 2);

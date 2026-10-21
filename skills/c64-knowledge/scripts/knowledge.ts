@@ -17,7 +17,7 @@ import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { addCoverage, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
+import { addCoverage, operandImages as programImages, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
 import { startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
   analyzerNamesAt,
@@ -361,23 +361,9 @@ function imageRequest(path: string, space: string): ImageRequest {
   return request;
 }
 
-/**
- * The program of each space in the knowledge that operand, patch and macro
- * use writes in that space are checked against, with the platform names. A
- * byte outside the segments of the program is not in it. Each program is
- * read once, when a write in its space needs it.
- */
+/** The programs that operand, patch and macro use writes are checked against, with the platform names. */
 function operandImages(db: DatabaseSync): (space: string) => OperandImage {
-  const images = new Map<string, OperandImage>();
-  return (space) => {
-    const known = images.get(space);
-    if (known !== undefined) return known;
-    const image = requireProgram(db, space);
-    const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
-    const made: OperandImage = { byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined), platform: new Map(platformNames().map((entry) => [entry.name, entry.address])) };
-    images.set(space, made);
-    return made;
-  };
+  return programImages(db, new Map(platformNames().map((entry) => [entry.name, entry.address])));
 }
 
 /** An offset: a whole number in decimal or $ hex, with an optional minus sign. */
@@ -1134,22 +1120,25 @@ const WRITE_COMMANDS: CommandSpec[] = [
       }
       if (!Array.isArray(parsed)) throw new Refusal("invalid-input", `The batch ${path} is not a JSON list of writes. Give a list such as [{"op": "rename", "address": "$2100", "name": "update_player"}].`);
       const operations = parsed.map((item, index) => batchOperation(call, item, `write ${index + 1}`));
-      return (db) => {
-        const applied = applyBatch(db, { ...context, image: operandImages(db) }, operations);
-        // replaced: each write that replaced a row of another origin, with that row as previous gives it for one write.
-        const replaced = applied.steps.flatMap((step, index) => (step.previous === undefined ? [] : [{ write: index + 1, op: operations[index]!.op, previous: shownPrevious(step.previous) }]));
-        return { revision: applied.revision, writes: applied.steps.length, replaced };
-      };
+      return (db) => applied(db, context, operations);
     },
   ),
 ];
 
-/** join: the batches of agents that worked in parallel, as one batch for apply. It writes no knowledge. */
+/** Applies the writes of a batch as one revision, and gives the revision, the count and each row of another origin that a write replaced. */
+function applied(db: DatabaseSync, context: WriteContext, operations: BatchOperation[]) {
+  const result = applyBatch(db, { ...context, image: operandImages(db) }, operations);
+  // replaced: each write that replaced a row of another origin, with that row as previous gives it for one write.
+  const replaced = result.steps.flatMap((step, index) => (step.previous === undefined ? [] : [{ write: index + 1, op: operations[index]!.op, previous: shownPrevious(step.previous) }]));
+  return { revision: result.revision, writes: result.steps.length, replaced };
+}
+
+/** join: the batches of agents that worked in parallel, as one list of writes. With --apply, it writes them as one revision. */
 const JOIN: CommandSpec = {
   name: "join",
-  summary: "Joins the batches of agents that worked in parallel into one batch for apply. It writes no knowledge.",
+  summary: "Joins the batches of agents that worked in parallel into one list of writes, and shows it. With --apply, it writes the list as one revision, or nothing when one write is refused.",
   subjects: [{ name: "<batch>", help: 'a batch: a list of writes, or {"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}', list: true }],
-  options: { ...SPACE, out: { ...OPTIONS.out, output: "file", value: "<file>", help: "the joined batch, relative to the project folder", required: true } },
+  options: { ...WRITE, apply: { kind: "flag", help: "write the joined writes to the project knowledge as one revision. Without it, the result only shows them" }, ...LIST },
   notes: "At an address in the owner range of a batch, its name, comment, operand and module win, and its regions come last. One name or one module file at two addresses writes nothing.",
   run: (call) => {
     if (call.subjects.length < 2) throw new UsageError("join needs two or more batch files.");
@@ -1186,9 +1175,10 @@ const JOIN: CommandSpec = {
       const clash = (item: JoinClash) => `${item.what} ${item.value} at ${item.places.map((place) => `${formatC64Address(place.address)} (${place.file})`).join(" and ")}${item.space === DEFAULT_SPACE ? "" : ` in ${item.space}`}`;
       throw new Refusal("conflict", `The batches give one ${joined.clashes.map(clash).join(", one ")}. Nothing was written. Give each name and each module file one address in the batches, then join again.`);
     }
-    const out = call.string("out")!;
-    const body = { writes: joined.ops.length, repeated: joined.repeated, choices: joined.choices.map(choice), ...writeReported(out, `${JSON.stringify(joined.ops.map(batchJson), null, 1)}\n`, { what: "--out" }) };
-    return reply(body, { hint: "Examine each item of choices. Then apply the joined batch.", nextAction: call.next("apply", out) });
+    const shown = { repeated: joined.repeated, choices: joined.choices.map(choice) };
+    if (call.flag("apply")) return { ...withWrite((db) => applied(db, contextOf(call), joined.ops)), ...shown };
+    const body = { writes: listed(joined.ops.map(batchJson), call.count("max-listed")!, (write) => write, MORE), ...shown };
+    return reply(body, { hint: "Examine each item of choices and writes. Then nextAction writes them to the project knowledge as one revision.", nextAction: call.next("join", ...call.subjects, "--apply") });
   },
 };
 

@@ -11,7 +11,7 @@ import { type AddressRange, COVERAGE, formatC64Address } from "../c64.ts";
 
 import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
 import { coverageRuns } from "./read.ts";
-import { checkSpace, write, type Evidence, type WriteContext } from "./write.ts";
+import { checkSpace, write, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
 
 /** The 64 KiB of one space: offset n is address n. */
 const SIZE = 0x10000;
@@ -277,4 +277,23 @@ export function programCoverage(db: DatabaseSync | undefined, space: Space = DEF
     else for (let address = row.start_address; address <= row.end_address; address++) map[address]! |= KIND_BITS[row.kind];
   }
   return { map, selfModified };
+}
+
+/**
+ * The program of each space in the knowledge that operand, patch and macro
+ * use writes in that space are checked against, with the platform names. A
+ * byte outside the segments of the program is not in it. Each program is
+ * read once, when a write in its space needs it.
+ */
+export function operandImages(db: DatabaseSync, platform: ReadonlyMap<string, number>): (space: string) => OperandImage {
+  const images = new Map<string, OperandImage>();
+  return (space) => {
+    const known = images.get(space);
+    if (known !== undefined) return known;
+    const image = requireProgram(db, space);
+    const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
+    const made: OperandImage = { byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined), platform };
+    images.set(space, made);
+    return made;
+  };
 }

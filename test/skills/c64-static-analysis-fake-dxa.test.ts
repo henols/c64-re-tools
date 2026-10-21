@@ -165,12 +165,18 @@ test("a macro candidate names no platform name of a ROM that the program does no
   };
   // Without coverage or entry state, the program uses both ROMs: TXTPTR names the address.
   assert.deepEqual(await argsOf(false), ["TXTPTR", "$3000"]);
-  // The batch has the macro and its use; the hint tells to apply it, and the body has no command of another script.
-  const batched = await analyze(join(scratch, "set16-false"), dxa, "--out-macro-batch", "analysis/macros.json");
-  assert.equal(batched.status, 0, JSON.stringify(batched.json));
-  const batch = (batched.json.idioms as { candidates: { macros: { batch: Record<string, unknown> } } }).candidates.macros.batch;
-  assert.deepEqual([batch.out, batch.writes, batch.apply], ["analysis/macros.json", 2, undefined]);
-  assert.equal(batched.envelope.hint, "Apply the changes in analysis/macros.json to the project knowledge. Then generate the source again.");
+  // Without --apply-macros, the hint tells how to write the candidates; with it, the macro and its use are one revision.
+  const shown = await analyze(join(scratch, "set16-false"), dxa);
+  assert.equal(shown.envelope.hint, "Examine idioms.candidates.macros. To write them to the project knowledge, run the analysis again with --apply-macros.");
+  const applied = await analyze(join(scratch, "set16-false"), dxa, "--apply-macros");
+  assert.equal(applied.status, 0, JSON.stringify(applied.json));
+  const macros = (applied.json.idioms as { candidates: { macros: Record<string, unknown> } }).candidates.macros;
+  assert.equal(macros.writes, 2);
+  assert.equal(typeof macros.revision, "string");
+  assert.equal(applied.envelope.hint, "The project knowledge has the macro candidates now. Generate the source again.");
+  // The use is in the knowledge now: the next analysis knows it.
+  const again = await analyze(join(scratch, "set16-false"), dxa);
+  assert.equal((again.json.idioms as { candidates: { macros: { known?: number } } }).candidates.macros.known, 1);
   // The coverage shows no ROM code executed: c64-source leaves TXTPTR out, so the candidate has the number.
   assert.deepEqual(await argsOf(true), ["$7a", "$3000"]);
 });

@@ -106,9 +106,8 @@ test("two versions in a group folder: each script runs on its version, v2 reads 
   refused("c64-provenance", "provenance.ts", ["compare", "../../outside.prg", "game.prg", "--project", "v2"], /stays inside its group folder/);
 
   // The names of v1 go to v2 through the library, at the moved addresses.
-  const matched = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--out", ".c64-re-tools/local/match.json", "--project", "v2"]);
+  const matched = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--apply", "--project", "v2"]);
   assert.deepEqual(matched.matches.listed.map((match: Record<string, unknown>) => ({ routine: match.routine, start: match.start, shift: match.shift })), [{ routine: "play", start: "$1015", shift: 5 }]);
-  ok("c64-knowledge", "knowledge.ts", ["apply", ".c64-re-tools/local/match.json", "--reason", "the names of v1", "--project", "v2"]);
   assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$1029", "--project", "v2"]).symbol.name, "set_pointer");
   assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$1024"], join(group, "v1")).symbol.name, "set_pointer");
 

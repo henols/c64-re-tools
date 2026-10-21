@@ -58,7 +58,8 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` |
 | Write instructions as one use of a macro | `use '$1005-$100a' inc16 --args ptr` |
 | Do many writes as one revision | `apply .c64-re-tools/local/batch.json` |
-| Make one batch from the batches of parallel agents | `join a.json b.json --out .c64-re-tools/local/joined.json` |
+| Show the batches of parallel agents as one list of writes | `join a.json b.json` |
+| Write the batches of parallel agents as one revision | `join a.json b.json --apply` |
 | Read the history of an address or a name | `history '$2100'` |
 | Read the last revisions | `revisions` |
 | Go back to an earlier state | `revert 20261015T2145` |
@@ -107,9 +108,13 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--reason <text>` | All commands in "Change the knowledge" | Why you make the change. The revision keeps it, and `history` shows it. |
 | `--evidence <kind:ref>` | All commands in "Change the knowledge" | One thing that the change rests on: `coverage:<map>`, `test:<file>`, `file:<file>` or `note:<text>`. You can give it more than one time. |
 | `--expect-revision <revision>` | All commands in "Change the knowledge" | Refuse the change when the knowledge changed after this revision. Give the `revision` of your last read. |
+| `--by <user\|llm>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
+| `--reason <text>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
+| `--evidence <kind:ref>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
+| `--expect-revision <revision>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
 | `--range <start>-<end>` | `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `uses`, `export` | Only the rows in this range. The default is all addresses. |
 | `--origin <origin>` | `search`, `symbols`, `regions`, `comments`, `references`, `modules`, `operands`, `patches`, `macros`, `uses`, `export` | Only the rows of these origins: `user`, `llm`, `dxa`, `ghidra`, `heuristic`, `semantic` (user and llm), `analyzer` (dxa, ghidra and heuristic), or a comma list. The default is all origins. |
-| `--max-listed <n>` | `search`, `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `switches`, `releases`, `macros`, `uses`, `spaces`, `history`, `revisions`, `revision`, `listing` | The most items in each list of the body. The default is 50. The counts are always complete. |
+| `--max-listed <n>` | `search`, `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `switches`, `releases`, `macros`, `uses`, `spaces`, `history`, `revisions`, `revision`, `listing`, `join` | The most items in each list of the body. The default is 50. The counts are always complete. |
 | `--kind <kind>` | `symbols`, `rename` | The symbol kind: `label`, `routine`, `variable`, `data` or `vector`. A read gives all kinds by default. A new symbol without `--kind` is a `label`. A `rename` without `--kind` keeps the kind of the symbol. |
 | `--kind <kind>` | `references` | Only references of this kind: `call`, `jump`, `read`, `write`, `reference` or `pointer`. |
 | `--kind <kind>` | `switch` | Necessary. The switch kind: `protection`, `trainer`, `cheat`, `crack`, `fix` or `change`. |
@@ -121,7 +126,8 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--macro <name>` | `history` | The history of a macro in place of an address. |
 | `--name <name>` | `history` | The history of a name in place of an address. |
 | `--before <revision>` | `revisions` | Only the revisions before this one. |
-| `--out <file>` | `export`, `join` | Necessary. The JSON file to write. |
+| `--out <file>` | `export` | Necessary. The JSON file to write. |
+| `--apply` | `join` | Write the joined writes to the project knowledge as one revision. Without it, `join` writes nothing. |
 | `--out <file>` | `listing` | Write the listing as text to this file in place of the lines in the body. |
 | `--element <n>` | `classify` | The bytes of one element of a table. The length of the range must be a multiple of it. |
 | `--title <text>` | `module` | The title of the file. A `module` write without a title keeps the title that the module has. |
@@ -572,7 +578,6 @@ A macro writes a run of instructions as one line of the source, for example `+in
 | `unuse` | `start` |
 
 - The script checks an `operand`, `patch` or `use` write against the program of its space.
-- Apply a batch from a library match or an idiom search in the same way. Read the notes of the result that wrote the batch first.
 
 ### `revert <revision>`
 
@@ -590,19 +595,20 @@ A macro writes a run of instructions as one line of the source, for example `+in
 
 ## Batches of parallel agents
 
-When more agents name the program at the same time, give each agent one range of addresses. Each agent writes one batch file and does not apply it. A batch has the form `{"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}`. `ops` holds the writes, as for `apply`. The owner ranges must not overlap.
+When more agents name the program at the same time, give each agent one range of addresses. Each agent writes one batch file in `.c64-re-tools/local/` and does not apply it. A batch has the form `{"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}`. `ops` holds the writes, as for `apply`. The owner ranges must not overlap.
 
 ### `join <batch>...`
 
-- `join` makes one batch from two or more batch files. It writes no knowledge.
-- `body` holds `writes`, `repeated`, `choices`, `out`, `bytes` and `sha256`.
+- `join` makes one list of writes from two or more batch files. Without `--apply`, it writes no knowledge.
+- Without `--apply`, `body` holds `writes`, `repeated` and `choices`. `writes` lists the joined writes.
+- With `--apply`, `join` writes the joined writes as one revision, or nothing when the knowledge refuses one write. Then `body` holds `revision`, `writes`, `replaced`, `repeated` and `choices`, as for `apply`.
 - `choices` lists each place where the batches gave different values, with the value that stays.
 - At an address in the owner range of a batch, the name, the comment, the operand and the module of that batch stay. At an address that no batch owns, the first batch in the command stays.
 - A batch can give an address a name that `join` replaces. Then `join` also replaces that name in the operand expressions and macro arguments of that batch.
 - The regions of the owner come after the regions of the other batches. Thus the regions of the owner stay where they overlap.
 - A name from a batch stays when another batch removes the symbol at that address.
 - When one name or one module file is at two addresses, `join` writes nothing and gives the error `conflict`. The `error` names the addresses and the batches. Correct the batches. Then do `join` again.
-- The `hint` tells you to examine `choices`. `nextAction` is the `apply` command for the joined batch. Run it when the choices agree with your task.
+- Without `--apply`, the `hint` tells you to examine `choices` and `writes`. `nextAction` is the same `join` with `--apply`. Run it when the choices agree with your task.
 
 ---
 

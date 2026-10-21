@@ -2,7 +2,7 @@
 // with one <name>.json for each routine, outside every project. A routine holds
 // its bytes, which of its bytes move with it, and its knowledge at offsets from
 // its start, so match finds it in another program at another address and
-// suggests its names there as an apply batch. Nothing here writes knowledge.
+// suggests its names there as writes of the knowledge. Nothing here writes knowledge.
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
@@ -468,7 +468,7 @@ export interface ProgramKnowledge {
   referenceSuppressed: (reference: { from: number; to: number; kind: ReferenceKind }) => boolean;
 }
 
-/** One write of an apply batch, in the form of knowledge.ts apply. */
+/** One change of match, as the result shows it: a write of the knowledge with its addresses as $ text. */
 export type BatchWrite = Record<string, string | number> & { op: string };
 
 export interface Skipped {
@@ -478,7 +478,7 @@ export interface Skipped {
   reason: string;
 }
 
-/** A comment of the batch that names an address outside its routine: that address can be different in the program. */
+/** A comment of the changes that names an address outside its routine: that address can be different in the program. */
 export interface Check {
   routine: string;
   address: string;
@@ -487,7 +487,7 @@ export interface Check {
 }
 
 export interface Suggestions {
-  batch: BatchWrite[];
+  writes: BatchWrite[];
   /** Writes that the program already has. */
   known: number;
   leftOut: Skipped[];
@@ -554,7 +554,7 @@ function movedComment(text: string, routine: Routine, shift: number): { text: st
 
 /**
  * The names, regions, comments, references and operand expressions of each
- * matched routine at its program addresses, as an apply batch. A write that
+ * matched routine at its program addresses, as writes of the knowledge. A write that
  * the program already has is counted as known. A write that would replace a
  * user or LLM row, take a name that the program uses elsewhere, undo a
  * removal, or give an operand that is not in the image, is left out with the
@@ -564,12 +564,12 @@ function movedComment(text: string, routine: Routine, shift: number): { text: st
  * is in `check`.
  */
 export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[] }>, program: ProgramKnowledge, image: Searched, platform: ReadonlyMap<string, number>): Suggestions {
-  const batch: BatchWrite[] = [];
+  const writes: BatchWrite[] = [];
   const leftOut: Skipped[] = [];
   const check: Check[] = [];
   let known = 0;
   const show = formatC64Address;
-  /** The names that are at their place after the batch: written here or known. */
+  /** The names that are at their place after the changes: written here or known. */
   const placed = new Map<string, number>();
   const symbolsHere = new Map<number, string>();
   const regionsHere: Array<{ start: number; end: number }> = [];
@@ -591,11 +591,11 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
         placed.set(symbol.name, address);
       } else if (existing !== undefined && semantic(existing)) skip(address, "rename", `the program names it ${existing.name} (${existing.origin})`);
       else if (elsewhere !== undefined && elsewhere.address !== address) skip(address, "rename", `the program uses the name ${symbol.name} at ${show(elsewhere.address)}`);
-      else if (placed.has(symbol.name) && placed.get(symbol.name) !== address) skip(address, "rename", `the batch gives the name ${symbol.name} to ${show(placed.get(symbol.name)!)}`);
-      else if (symbolsHere.has(address)) skip(address, "rename", `the batch names it ${symbolsHere.get(address)}`);
+      else if (placed.has(symbol.name) && placed.get(symbol.name) !== address) skip(address, "rename", `the changes give the name ${symbol.name} to ${show(placed.get(symbol.name)!)}`);
+      else if (symbolsHere.has(address)) skip(address, "rename", `the changes name it ${symbolsHere.get(address)}`);
       else if (program.symbolSuppressed(address)) skip(address, "rename", "a removal of a name holds there");
       else {
-        batch.push({ op: "rename", address: show(address), name: symbol.name, kind: symbol.kind });
+        writes.push({ op: "rename", address: show(address), name: symbol.name, kind: symbol.kind });
         placed.set(symbol.name, address);
         symbolsHere.set(address, symbol.name);
       }
@@ -609,10 +609,10 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
       else if (overlapping.some(semantic)) {
         const other = overlapping.find(semantic)!;
         skip(start, "classify", `the program has the ${other.type} region ${show(other.start)}-${show(other.end)} (${other.origin})`);
-      } else if (regionsHere.some((item) => item.start <= end && item.end >= start)) skip(start, "classify", "the batch classifies an overlapping range");
+      } else if (regionsHere.some((item) => item.start <= end && item.end >= start)) skip(start, "classify", "the changes classify an overlapping range");
       else if (program.regionSuppressed(start, end)) skip(start, "classify", "a removal of a region holds there");
       else {
-        batch.push({ op: "classify", start: show(start), end: show(end), type: region.type, ...(region.element === undefined ? {} : { element: region.element }) });
+        writes.push({ op: "classify", start: show(start), end: show(end), type: region.type, ...(region.element === undefined ? {} : { element: region.element }) });
         regionsHere.push({ start, end });
       }
     }
@@ -624,7 +624,7 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
       if (existing?.text === text) known++;
       else if (existing !== undefined) skip(address, "comment", `the program has a ${comment.placement} comment there (${existing.origin})`);
       else {
-        batch.push({ op: "comment", address: show(address), placement: comment.placement, text });
+        writes.push({ op: "comment", address: show(address), placement: comment.placement, text });
         if (outside.length > 0) check.push({ routine: routine.name, address: show(address), comment: text, outside });
       }
     }
@@ -633,7 +633,7 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
       const wanted = { from: at(reference.from), to: at(reference.to), kind: reference.kind };
       if (program.referencesFrom(wanted.from).some((item) => item.to === wanted.to && item.kind === wanted.kind)) known++;
       else if (program.referenceSuppressed(wanted)) skip(wanted.from, "reference", "a removal of this reference holds");
-      else batch.push({ op: "reference", from: show(wanted.from), to: show(wanted.to), kind: wanted.kind });
+      else writes.push({ op: "reference", from: show(wanted.from), to: show(wanted.to), kind: wanted.kind });
     }
 
     const own = new Set(routine.symbols.map((symbol) => symbol.name));
@@ -660,7 +660,7 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
         skip(address, "operand", problem);
         continue;
       }
-      batch.push({
+      writes.push({
         op: "operand",
         address: show(address),
         select: operand.select,
@@ -670,7 +670,7 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
       });
     }
   }
-  return { batch, known, leftOut, check };
+  return { writes, known, leftOut, check };
 }
 
 /** Why the expression is not the operand of the instruction at `address` in the image, or undefined when it is. */

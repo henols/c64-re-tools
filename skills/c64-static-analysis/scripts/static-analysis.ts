@@ -13,7 +13,8 @@ import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS } from "#src/native/types.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
-import { analyzedBytes, programCoverage, requireProgram } from "#src/knowledge/program.ts";
+import { analyzedBytes, operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
+import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import { importFindings, runProvenance, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
@@ -32,14 +33,15 @@ const ALL_NAMES = "a larger --max-listed. The project knowledge has all of them 
 
 /**
  * The result with a hint for what the agent does next: conflicts to examine,
- * analyzer data over executed code to classify, and a macro batch to apply.
+ * analyzer data over executed code to classify, and macro candidates to write.
  * The envelope adds the sentence for a cut list.
  */
-function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, batch: { out: string; writes: number } | undefined) {
+function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }) {
   const hints: string[] = [];
   if (conflicts > 0) hints.push("The analysis and the project knowledge disagree at each place in conflicts. Find the correct answer in the emulator. Then correct the project knowledge.");
   if (coverageConflicts > 0) hints.push("The coverage shows executed code in each range of coverageConflicts. Classify each range as code, or as dual-use when its bytes are also data, in the project knowledge.");
-  if (batch !== undefined && batch.writes > 0) hints.push(`Apply the changes in ${batch.out} to the project knowledge. Then generate the source again.`);
+  if (typeof macros.revision === "string") hints.push("The project knowledge has the macro candidates now. Generate the source again.");
+  else if (!macros.applied && macros.candidates > 0) hints.push("Examine idioms.candidates.macros. To write them to the project knowledge, run the analysis again with --apply-macros.");
   if (hints.length === 0) return body;
   return reply(body, { hint: hints.join(" ") });
 }
@@ -73,11 +75,11 @@ function showMacro(candidate: MacroCandidate) {
  * the ROMs that the program uses, as c64-source names them. A candidate is left out when
  * a name or a reference target is inside it, or a patch or a use overlaps it:
  * c64-source would write its instructions. The same use in the knowledge is
- * known. With `batchPath`, the candidates go to an apply batch with the
- * macros they need; a macro of the catalogue that the knowledge has with
- * another body leaves its candidates out of the batch.
+ * known. The writes are the candidates with the macros they need. A macro of
+ * the catalogue that the knowledge has with another body leaves its
+ * candidates out of the writes.
  */
-function macroCandidates(space: string, byteAt: ImageByte, batchPath: string | undefined, romUse: RomUse) {
+function macroCandidates(space: string, byteAt: ImageByte, romUse: RomUse) {
   const db = openForRead();
   try {
     // The platform names that c64-source uses: a name of a ROM that the program does not use is no arg.
@@ -98,33 +100,20 @@ function macroCandidates(space: string, byteAt: ImageByte, batchPath: string | u
       else if ([...named].some((address) => address > candidate.start && address <= candidate.end) || patches.some((patch) => overlaps(patch, candidate)) || uses.some((use) => overlaps(use, candidate))) leftOut++;
       else candidates.push(candidate);
     }
-    if (batchPath === undefined) return { candidates, known, leftOut };
-    // A macro of the catalogue goes into the batch unless the knowledge has it; with another body, its uses stay out.
+    // A macro of the catalogue goes into the writes unless the knowledge has it; with another body, its uses stay out.
     const macros = new Map(listMacros(db, undefined, space).map((macro) => [macro.name, macro]));
-    const batch: Array<Record<string, unknown>> = [];
-    const batched: MacroCandidate[] = [];
+    const writes: BatchOperation[] = [];
     const other = new Set<string>();
     for (const idiom of CATALOGUE.filter((item) => candidates.some((candidate) => candidate.macro === item.name))) {
       const existing = macros.get(idiom.name);
-      if (existing === undefined) batch.push({ op: "macro", name: idiom.name, params: idiom.params, body: idiom.body, comment: idiom.comment, ...(space === DEFAULT_SPACE ? {} : { space }) });
+      if (existing === undefined) writes.push({ op: "macro", space, name: idiom.name, params: [...idiom.params], body: idiom.body, comment: idiom.comment });
       else if (existing.params.join(",") !== idiom.params.join(",") || existing.body !== idiom.body) other.add(idiom.name);
     }
     for (const candidate of candidates) {
       if (other.has(candidate.macro)) continue;
-      batched.push(candidate);
-      batch.push({ op: "use", start: formatC64Address(candidate.start), end: formatC64Address(candidate.end), macro: candidate.macro, args: candidate.args, ...(space === DEFAULT_SPACE ? {} : { space }) });
+      writes.push({ op: "use", space, start: candidate.start, end: candidate.end, macro: candidate.macro, args: candidate.args });
     }
-    const written = batch.length > 0 ? writeReported(batchPath, `${JSON.stringify(batch, null, 1)}\n`, { what: "--out-macro-batch" }) : { out: batchPath };
-    return {
-      candidates,
-      known,
-      leftOut,
-      batch: {
-        ...written,
-        writes: batch.length,
-        ...(other.size === 0 ? {} : { otherMacros: [...other].map((name) => `The knowledge has another macro ${name}: its candidates are not in the batch.`) }),
-      },
-    };
+    return { candidates, known, leftOut, writes, otherMacros: [...other].map((name) => `The knowledge has another macro ${name}: its candidates are not written.`) };
   } finally {
     db?.close();
   }
@@ -194,7 +183,7 @@ async function analyze(call: Call): Promise<unknown> {
   const analyzer = call.string("analyzer") as "dxa" | "ghidra";
   const listingPath = call.string("out-listing");
   const instructionsPath = call.string("out-instructions");
-  const batchPath = call.string("out-macro-batch");
+  const applyMacros = call.flag("apply-macros");
   if (analyzer === "dxa" && decompile.length > 0) throw new UsageError("--decompile works only with --analyzer ghidra");
   if (analyzer === "ghidra" && listingPath !== undefined) throw new UsageError("--out-listing works only with --analyzer dxa");
   if (analyzer === "dxa" && instructionsPath !== undefined) throw new UsageError("--out-instructions works only with --analyzer ghidra");
@@ -241,7 +230,10 @@ async function analyze(call: Call): Promise<unknown> {
   const idiomsResult = () => {
     const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: "Idioms in the program" }));
     // The macro candidates read the code regions after both imports.
-    const macros = macroCandidates(space, byteAt, batchPath, romUseOfProgram(coverage, program.state));
+    const macros = macroCandidates(space, byteAt, romUseOfProgram(coverage, program.state));
+    // With --apply-macros, the candidates and their macros are a third revision of the LLM.
+    const platformNamed = new Map(platformNames().map((entry) => [entry.name, entry.address]));
+    const written = applyMacros && macros.writes.length > 0 ? withWrite((db) => applyBatch(db, { origin: "llm", description: "Macro candidates in the program", image: operandImages(db, platformNamed) }, macros.writes)) : undefined;
     // Platform pitfalls are C64 facts: drive code and banks get none. Pitfalls and pointers read the code regions after both imports.
     const codeDb = openForRead();
     const code = listRegions(codeDb, undefined, "code", undefined, space);
@@ -264,10 +256,11 @@ async function analyze(call: Call): Promise<unknown> {
           pointers: listed(pointers, max, showPointer, "a larger --max-listed"),
           pitfalls: listed(pitfalls, max, showPitfall, "a larger --max-listed"),
           macros: {
-            ...listed(macros.candidates, max, showMacro, "a larger --max-listed, or --out-macro-batch <file>"),
+            ...listed(macros.candidates, max, showMacro, "a larger --max-listed"),
             ...(macros.known === 0 ? {} : { known: macros.known }),
             ...(macros.leftOut === 0 ? {} : { leftOut: macros.leftOut }),
-            ...(macros.batch === undefined ? {} : { batch: macros.batch }),
+            ...(written === undefined ? {} : { revision: written.revision, writes: macros.writes.length }),
+            ...(macros.otherMacros.length === 0 ? {} : { otherMacros: macros.otherMacros }),
           },
         },
       },
@@ -315,7 +308,7 @@ async function analyze(call: Call): Promise<unknown> {
       labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), ALL_NAMES),
       ...(written === undefined ? {} : { listing: written }),
     };
-    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, found.idioms.candidates.macros.batch);
+    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision });
   }
 
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
@@ -349,7 +342,7 @@ async function analyze(call: Call): Promise<unknown> {
       ? {}
       : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: withRemedy(item.reason) })) }),
   };
-  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, found.idioms.candidates.macros.batch);
+  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision });
 }
 
 await runScript({
@@ -368,7 +361,7 @@ await runScript({
         "max-listed": { ...OPTIONS["max-listed"], help: "list at most n labels, functions or candidates (default 50, 0 for none). The counts are always given, and the knowledge has all labels and functions" },
         "out-listing": { kind: "path", output: "file", value: "<file>", help: "dxa: write the disassembly listing to this project file" },
         "out-instructions": { kind: "path", output: "file", value: "<file>", help: "ghidra: write every instruction (address, bytes, mnemonic, mode, operand, target, executed) to this project file as JSON" },
-        "out-macro-batch": { kind: "path", output: "file", value: "<file>", help: "write the macro candidates (the macros and their uses) to this project file as a batch of changes to the project knowledge" },
+        "apply-macros": { kind: "flag", help: "write the macro candidates (the macros and their uses) to the project knowledge as one revision of the LLM" },
       },
       notes: "The program and the coverage come from the project knowledge: put them into the project knowledge first. The executed code of the coverage gives entry points. Routine symbols in the knowledge are entry points too. Ghidra needs at least one entry point. DXA finds the SYS of a BASIC start by itself.",
       run: analyze,

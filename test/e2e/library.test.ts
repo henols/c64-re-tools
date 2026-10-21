@@ -95,23 +95,27 @@ test("a routine saved from program A is found in program B at another address, a
 
   // Program B: match finds the routine $2000 bytes higher, with the other SID register listed.
   ok("c64-knowledge", "knowledge.ts", ["image", "b.prg", "--project", "game-b"]);
-  const matchRun = script("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--out", ".c64-re-tools/local/match.json", "--project", "game-b"]);
+  const matchRun = script("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--project", "game-b"]);
   assert.equal(matchRun.status, 0, JSON.stringify(matchRun.json));
   const matched = matchRun.json;
   assert.deepEqual(matched.matches, { count: 1, listed: [{ routine: "play", start: "$3000", end: "$3026", shift: 0x2000, differing: [{ address: "$3005", library: "$d400", program: "$d407" }] }] });
-  assert.deepEqual({ ...matched.batch, bytes: undefined, sha256: undefined }, { bytes: undefined, sha256: undefined, out: ".c64-re-tools/local/match.json", writes: 9, known: 0, leftOut: { count: 0, listed: [] }, check: { count: 1, listed: [{ routine: "play", address: "$3014", comment: "Point A/Y at the voice table at $3020 for the copy to $d400.", outside: ["$d400"] }] } });
-  assert.match(matchRun.envelope.hint!, /Apply the changes in \.c64-re-tools\/local\/match\.json to the project knowledge\. First examine batch\.check:/);
+  assert.deepEqual({ ...matched.changes, writes: matched.changes.writes.count }, { writes: 9, known: 0, leftOut: { count: 0, listed: [] }, check: { count: 1, listed: [{ routine: "play", address: "$3014", comment: "Point A/Y at the voice table at $3020 for the copy to $d400.", outside: ["$d400"] }] } });
+  assert.deepEqual(matched.changes.writes.listed[0], { op: "rename", address: "$3000", name: "play", kind: "routine" });
+  assert.match(matchRun.envelope.hint!, /Then nextAction writes the changes to the project knowledge\. Then examine changes\.check:/);
+  assert.match(matchRun.envelope.nextAction!, / match --library \.\.\/library --apply /);
+  assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]).symbol, undefined, "without --apply, match writes nothing");
 
-  // The agent applies the batch as the LLM.
-  ok("c64-knowledge", "knowledge.ts", ["apply", ".c64-re-tools/local/match.json", "--reason", "names of library routines", "--project", "game-b"]);
+  // With --apply, match writes the changes as one revision of the LLM.
+  const applied = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--apply", "--project", "game-b"]);
+  assert.equal(typeof applied.changes.revision, "string");
   const at = ok("c64-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]);
   assert.equal(at.symbol.name, "set_pointer");
   assert.equal(at.symbol.origin, "llm");
   // The address in the comment moved with the routine.
   assert.deepEqual(at.comments.map((comment: { text: string }) => comment.text), ["Point A/Y at the voice table at $3020 for the copy to $d400."]);
   // A second match finds that B already has every name.
-  const again = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--out", ".c64-re-tools/local/match.json", "--project", "game-b"]);
-  assert.deepEqual({ ...again.batch, bytes: undefined, sha256: undefined }, { bytes: undefined, sha256: undefined, out: ".c64-re-tools/local/match.json", writes: 0, known: 9, leftOut: { count: 0, listed: [] }, check: { count: 0, listed: [] } });
+  const again = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--project", "game-b"]);
+  assert.deepEqual(again.changes, { writes: { count: 0, listed: [] }, known: 9, leftOut: { count: 0, listed: [] }, check: { count: 0, listed: [] } });
 
   if (generateSkip !== false) {
     t.diagnostic(generateSkip);

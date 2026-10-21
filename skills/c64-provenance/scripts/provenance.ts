@@ -10,7 +10,7 @@
 
 import { basename } from "node:path";
 
-import { type AddressRange, c64AddressOf, formatC64Address } from "#src/c64.ts";
+import { type AddressRange, c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
 import { readImage } from "#src/host-client/image.ts";
@@ -18,8 +18,9 @@ import { readActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { openForRead } from "#src/knowledge/database.ts";
-import { programCoverage, requireProgram } from "#src/knowledge/program.ts";
+import { openForRead, withWrite } from "#src/knowledge/database.ts";
+import { operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
+import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import {
   commentsAt,
   currentRevision,
@@ -38,13 +39,13 @@ import {
   symbolNamed,
   symbolSuppressed,
 } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
-import { findRoutine, libraryFolder, readLibrary, routineFrom, saveRoutine, suggest } from "./lib/library.ts";
+import { findRoutine, libraryFolder, readLibrary, routineFrom, saveRoutine, suggest, type BatchWrite } from "./lib/library.ts";
 import { watchRelease, type Start } from "./lib/runtime.ts";
 import { findLeftovers } from "./lib/leftovers.ts";
 import { separate, type Root } from "#src/knowledge/separate.ts";
@@ -462,10 +463,14 @@ function routineCommand(call: Call): unknown {
   }
 }
 
-/** match: finds the routines of the library in the program of the knowledge, and with --out writes their names there as an apply batch (D71). */
+/**
+ * match: finds the routines of the library in the program of the knowledge,
+ * and shows the changes that give the program their names. With --apply it
+ * writes the changes to the knowledge as one revision.
+ */
 function matchCommand(call: Call): unknown {
   const library = call.string("library")!;
-  const out = call.string("out");
+  const apply = call.flag("apply");
   const max = call.count("max-listed")!;
   const list = <T>(items: T[]) => listed(items, max);
   const routines = readLibrary(libraryFolder(library, { create: false, cwd: projectRoot() }));
@@ -493,13 +498,7 @@ function matchCommand(call: Call): unknown {
   const result: Record<string, unknown> = { library, routines: routines.length, matches: list(matches) };
   const noMatch = "No routine of the library is in the program. A packed program can hold a routine in a packed form. Unpack the program, put the unpacked program into the project knowledge, and run match again.";
   const withNote = (shown: unknown, hint: string) => [cutNote(shown, undefined), hint].filter((part) => part !== undefined).join(" ");
-  if (out === undefined) {
-    if (matches.length === 0) return reply(result, { hint: noMatch });
-    return reply(result, {
-      hint: withNote(result, "Examine differing of each match. Then nextAction writes the names of the found routines as a batch of changes."),
-      nextAction: call.next("match", "--library", library, "--out", ".c64-re-tools/local/match.json"),
-    });
-  }
+  if (matches.length === 0) return reply(result, { hint: noMatch });
   const db = openForRead();
   let suggestions: ReturnType<typeof suggest>;
   try {
@@ -522,14 +521,25 @@ function matchCommand(call: Call): unknown {
   } finally {
     db?.close();
   }
-  const { batch, known, leftOut, check } = suggestions;
-  const written = writeReported(out, batch.length === 0 ? "[]\n" : `[\n${batch.map((write) => ` ${JSON.stringify(write)}`).join(",\n")}\n]\n`, { what: "--out" });
-  const body = { ...result, batch: { ...written, writes: batch.length, known, leftOut: list(leftOut), check: list(check) } };
-  // The batch is applied by the knowledge, not by this script: the hint gives the task, not a command.
-  if (matches.length === 0) return reply(body, { hint: noMatch });
-  if (batch.length === 0) return reply(body, { hint: withNote(body, "The batch has no writes. The project knowledge has the names of the found routines already, or batch.leftOut tells why the script left out a write.") });
-  const review = check.length === 0 ? "" : " First examine batch.check: each comment there gives an address outside its routine, which can be different in this program. Correct the comment text in the batch file when it is different.";
-  return reply(body, { hint: withNote(body, `Apply the changes in ${out} to the project knowledge.${review}`) });
+  const { writes, known, leftOut, check } = suggestions;
+  const changes: Record<string, unknown> = { writes: list(writes), known, leftOut: list(leftOut), check: list(check) };
+  const body = { ...result, changes };
+  if (writes.length === 0) return reply(body, { hint: withNote(body, "There are no changes. The project knowledge has the names of the found routines already, or changes.leftOut tells why the script left out a write.") });
+  const review = check.length === 0 ? "" : " Then examine changes.check: each comment there gives an address outside its routine, which can be different in this program. Correct such a comment in the project knowledge.";
+  if (!apply) {
+    return reply(body, { hint: withNote(body, `Examine differing of each match, and changes.writes and changes.leftOut. Then nextAction writes the changes to the project knowledge.${review}`), nextAction: call.next("match", "--library", library, "--apply") });
+  }
+  const platformNamed = new Map(platformNames().map((entry) => [entry.name, entry.address]));
+  const applied = withWrite((write) => applyBatch(write, { origin: "llm", description: `Names of the routines of the library ${library}`, image: operandImages(write, platformNamed) }, writes.map(toOperation)));
+  changes.revision = applied.revision;
+  return reply(body, { hint: withNote(body, `The project knowledge has the changes in revision ${applied.revision}.${review}`) });
+}
+
+/** A change of match as a write of the knowledge: its addresses as numbers, in the C64 space. */
+function toOperation(write: BatchWrite): BatchOperation {
+  const parsed: Record<string, unknown> = { ...write, space: DEFAULT_SPACE };
+  for (const key of ["address", "start", "end", "from", "to"]) if (typeof write[key] === "string") parsed[key] = parseC64Address(write[key]);
+  return parsed as unknown as BatchOperation;
 }
 
 const LIBRARY = { kind: "text", value: "<folder>", required: true, help: "the library: a plain folder of routine files beside the projects, relative to the project folder, for example ../library" } as const;
@@ -589,7 +599,7 @@ const COMMANDS: CommandSpec[] = [
     summary: "Finds each routine of the library in the program of the knowledge: the opcodes and other fixed bytes equal, and the addresses into the routine moved by one shift.",
     options: {
       library: { ...LIBRARY, help: "the library folder, relative to the project folder, for example ../library" },
-      out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the names of the routines at the found addresses as a batch of changes for the project knowledge" },
+      apply: { kind: "flag", help: "write the changes to the project knowledge as one revision of the LLM. Without it, the result only shows the changes" },
       "max-listed": OPTIONS["max-listed"],
     },
     run: matchCommand,

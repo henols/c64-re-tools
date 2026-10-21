@@ -216,10 +216,10 @@ function knowledgeOf(rows: { symbols?: SymbolRow[]; regions?: RegionRow[]; comme
   };
 }
 
-test("the batch names the routine at its program addresses, with the operand expressions that fit the image", () => {
+test("the changes name the routine at its program addresses, with the operand expressions that fit the image", () => {
   const { routine } = routineFrom(source());
   const image = program(0x3000, 0xd500);
-  const { batch, known, leftOut } = suggest([{ routine, matches: findRoutine(routine, image) }], knowledgeOf(), image, new Map());
+  const { writes: batch, known, leftOut } = suggest([{ routine, matches: findRoutine(routine, image) }], knowledgeOf(), image, new Map());
   assert.deepEqual(leftOut, []);
   assert.equal(known, 0);
   assert.deepEqual(batch, [
@@ -250,7 +250,7 @@ test("the batch leaves out user and LLM rows, names used elsewhere, removals, an
     regions: [{ ...row, start: 0x3020, end: 0x3021, type: "words", origin: "user" }],
     comments: [{ ...row, address: 0x3014, placement: "line", text: "Another text." }],
   });
-  const { batch, known, leftOut } = suggest([{ routine, matches: findRoutine(routine, image) }], program, image, new Map());
+  const { writes: batch, known, leftOut } = suggest([{ routine, matches: findRoutine(routine, image) }], program, image, new Map());
   assert.equal(known, 1);
   assert.deepEqual(
     leftOut.map((item) => [item.address, item.op ?? "", item.reason]),
@@ -320,7 +320,7 @@ test("a routine with several copies gets its names at the copy that has the shif
   const right = uniqueRoutine("draw_right", 0x2020, 2);
   const image = imageOf([[0x3000, [...left.bytes]], [0x3010, FILL_BYTES], [0x3020, [...right.bytes]], [0x3100, TWO_FILLS]]);
   const found = [left, fill, right].map((routine) => ({ routine, matches: findRoutine(routine, image) }));
-  const { batch, leftOut, check } = suggest(found, knowledgeOf(), image, new Map());
+  const { writes: batch, leftOut, check } = suggest(found, knowledgeOf(), image, new Map());
   assert.deepEqual(batch, [
     { op: "rename", address: "$3000", name: "draw_left", kind: "routine" },
     { op: "rename", address: "$3010", name: "fill_row", kind: "routine" },
@@ -339,7 +339,7 @@ test("a routine with several copies gets its names at the copy that has the shif
   const moved = uniqueRoutine("draw_right", 0x2020, 2);
   const border = imageOf([[0x3000, [...left.bytes]], [0x3010, FILL_BYTES], [0x3500, [...moved.bytes]], [0x3100, TWO_FILLS]]);
   const chosen = suggest([left, fill, moved].map((routine) => ({ routine, matches: findRoutine(routine, border) })), knowledgeOf(), border, new Map());
-  assert.ok(chosen.batch.some((write) => write.name === "fill_row" && write.address === "$3010"));
+  assert.ok(chosen.writes.some((write) => write.name === "fill_row" && write.address === "$3010"));
   assert.match(chosen.leftOut[0]!.reason, /the copy at \$3010 has the shift 4096 of its library neighbour draw_left$/);
 
   // The moved comment is the comment that the program has already: it is known, not written.
@@ -352,7 +352,7 @@ test("a routine with several copies gets no names when the shift of no neighbour
   const left = uniqueRoutine("draw_left", 0x2000, 1);
   const right = uniqueRoutine("draw_right", 0x2020, 2);
   const ambiguous = (found: Array<{ routine: Routine; matches: ReturnType<typeof findRoutine> }>, image: ReturnType<typeof imageOf>) => {
-    const { batch, leftOut } = suggest(found, knowledgeOf(), image, new Map());
+    const { writes: batch, leftOut } = suggest(found, knowledgeOf(), image, new Map());
     assert.ok(!batch.some((write) => write.name === "fill_row" || write.op === "comment"), JSON.stringify(batch));
     assert.deepEqual(
       leftOut.map((item) => [item.address, item.reason]),
