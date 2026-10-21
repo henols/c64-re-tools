@@ -682,6 +682,13 @@ test("a start screen of a stage has its bytes and its call in the program of tha
   assert.throws(() => setStartScreen(db, llm, { ...koala, stage: "bank1", call: 0x9200 }), /The call \$9200 is not in the program in bank1/);
   assert.throws(() => setStartScreen(db, llm, { ...koala, call: 0x9000 }), /give --stage too/);
   assert.throws(() => setStartScreen(db, llm, { ...koala, stage: "c64" }), /another space than c64/);
+  // The colours from the colour RAM of the capture: only for a stage, and in place of --colours and --colour.
+  const { colours: _colours, ...picture } = koala;
+  assert.equal(setStartScreen(db, llm, { ...picture, stage: "bank1", colourRam: true }).current.colourRam, true);
+  assert.equal(currentStartScreen(db)?.colours, undefined);
+  assert.throws(() => setStartScreen(db, llm, { ...picture, colourRam: true }), /only for a start screen of a stage/);
+  assert.throws(() => setStartScreen(db, llm, { ...koala, stage: "bank1", colourRam: true }), /do not give --colours or --colour too/);
+  assert.throws(() => setStartScreen(db, llm, { ...picture, mode: "hires", stage: "bank1", colourRam: true }), /does not use the colour RAM/);
 });
 
 test("a macro and its uses: the use is whole instructions, its args are known names, and a rename follows", () => {

@@ -287,8 +287,8 @@ export class Change {
 
   insertStartScreen(row: Omit<StartScreenRow, "revision">): void {
     this.#db
-      .prepare("INSERT INTO start_screens (id, space, mode, screen, bitmap, charset, colours, colour, border, background, stage, call_address, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.mode, row.screen, row.bitmap ?? null, row.charset ?? null, row.colours ?? null, row.colour ?? null, row.border, row.background, row.stage ?? null, row.call ?? null, row.comment ?? null, row.origin, this.id());
+      .prepare("INSERT INTO start_screens (id, space, mode, screen, bitmap, charset, colours, colour, border, background, stage, call_address, colour_ram, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.mode, row.screen, row.bitmap ?? null, row.charset ?? null, row.colours ?? null, row.colour ?? null, row.border, row.background, row.stage ?? null, row.call ?? null, row.colourRam === true ? 1 : null, row.comment ?? null, row.origin, this.id());
   }
 
   insertMacro(row: Omit<MacroRow, "revision">): void {
@@ -1066,7 +1066,7 @@ function unreleaseStep(db: DatabaseSync, change: Change, _origin: Origin, reques
   return { current: null };
 }
 
-type StartScreenRequest = InSpace & { mode: StartScreenMode; screen: number; bitmap?: number; charset?: number; colours?: number; colour?: number; border: number; background: number; stage?: Space; call?: number; comment?: string };
+type StartScreenRequest = InSpace & { mode: StartScreenMode; screen: number; bitmap?: number; charset?: number; colours?: number; colour?: number; border: number; background: number; stage?: Space; call?: number; colourRam?: boolean; comment?: string };
 
 /**
  * The rules of the VIC-II for a start screen: the screen at a 1K step, the
@@ -1099,7 +1099,11 @@ function checkStartScreen(request: StartScreenRequest): void {
     throw new Refusal("invalid-input", `A ${request.mode} start screen has a bitmap and no charset. Give --bitmap.`);
   }
   if (request.colours !== undefined && request.colour !== undefined) throw new Refusal("invalid-input", "Give the colour RAM as --colours or as --colour, not both.");
-  const colourRam = request.colours !== undefined || request.colour !== undefined;
+  if (request.colourRam === true) {
+    if (request.stage === undefined) throw new Refusal("invalid-input", "The colour RAM of a capture is only for a start screen of a stage: give --stage.");
+    if (request.colours !== undefined || request.colour !== undefined) throw new Refusal("invalid-input", "The colours come from the colour RAM of the capture: do not give --colours or --colour too.");
+  }
+  const colourRam = request.colours !== undefined || request.colour !== undefined || request.colourRam === true;
   if (request.mode === "hires" && colourRam) throw new Refusal("invalid-input", "A hires bitmap does not use the colour RAM. Remove --colours and --colour.");
   if (request.mode !== "hires" && !colourRam) throw new Refusal("invalid-input", `A ${request.mode} start screen uses the colour RAM. Give --colours with the address of its 1000 bytes, or --colour with one colour.`);
   const step = (value: number, size: number, what: string) => {
@@ -1162,6 +1166,7 @@ function startScreenStep(db: DatabaseSync, change: Change, origin: Origin, reque
     background: request.background,
     ...(request.stage === undefined ? {} : { stage: request.stage }),
     ...(request.call === undefined ? {} : { call: request.call }),
+    ...(request.colourRam === true ? { colourRam: true as const } : {}),
     ...(comment === undefined ? {} : { comment }),
     origin: origin as StartScreenRow["origin"],
   };
@@ -1635,7 +1640,7 @@ const KEYS = {
     columns: START_SCREEN_COLUMNS,
     map: toStartScreen,
     key: (row: StartScreenRow) =>
-      `${row.space}|${row.mode}|${row.screen}|${row.bitmap ?? ""}|${row.charset ?? ""}|${row.colours ?? ""}|${row.colour ?? ""}|${row.border}|${row.background}|${row.stage ?? ""}|${row.call ?? ""}|${row.comment ?? ""}|${row.origin}`,
+      `${row.space}|${row.mode}|${row.screen}|${row.bitmap ?? ""}|${row.charset ?? ""}|${row.colours ?? ""}|${row.colour ?? ""}|${row.border}|${row.background}|${row.stage ?? ""}|${row.call ?? ""}|${row.colourRam === true ? 1 : ""}|${row.comment ?? ""}|${row.origin}`,
   },
   macros: { columns: MACRO_COLUMNS, map: toMacro, key: (row: MacroRow) => `${row.space}|${row.name}|${listText(row.params)}|${row.body}|${row.comment ?? ""}|${row.origin}` },
   macro_uses: { columns: MACRO_USE_COLUMNS, map: toMacroUse, key: (row: MacroUseRow) => `${row.space}|${row.start}|${row.end}|${row.macro}|${listText(row.args)}|${row.origin}` },

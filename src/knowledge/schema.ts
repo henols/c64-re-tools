@@ -321,15 +321,17 @@ function createSchema(db: DatabaseSync): void {
         background          INTEGER NOT NULL CHECK (background BETWEEN 0 AND 15),
         stage               TEXT CHECK (stage IS NULL OR (stage <> 'c64' AND (${SPACE_CHECK.replaceAll("space", "stage")}))),
         call_address        INTEGER CHECK (call_address BETWEEN 0 AND 65535),
+        colour_ram          INTEGER CHECK (colour_ram = 1),
         comment             TEXT CHECK (comment IS NULL OR length(comment) > 0),
         origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
         valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
         valid_to_revision   TEXT REFERENCES revisions (id),
         CHECK (call_address IS NULL OR stage IS NOT NULL),
+        CHECK (colour_ram IS NULL OR (stage IS NOT NULL AND colours IS NULL AND colour IS NULL AND mode <> 'hires')),
         CHECK ((mode = 'text') = (charset IS NOT NULL)),
         CHECK ((mode = 'text') = (bitmap IS NULL)),
         CHECK (colours IS NULL OR colour IS NULL),
-        CHECK ((mode = 'hires') = (colours IS NULL AND colour IS NULL))
+        CHECK ((mode = 'hires') = (colours IS NULL AND colour IS NULL AND colour_ram IS NULL))
       );
       CREATE INDEX start_screens_space ON start_screens (space);
       CREATE TABLE macro_uses (
@@ -397,7 +399,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 11;
+export const INDEX_VERSION = 12;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

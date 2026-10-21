@@ -14,7 +14,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ACME, EXOMIZER, findTool } from "../../../src/native/discover.ts";
@@ -53,6 +53,29 @@ after(async () => {
 });
 
 const ENTRY = 0x0810;
+
+/**
+ * The files of a capture of a stage that shows a multicolour picture in VIC bank 3, with the screen at $cc00 and the
+ * bitmap at $e000: image.json, image.bin and entry_state.json with the VIC-II, CIA 2 and the colour RAM.
+ */
+function stageCapture(memory: Uint8Array, segments: ReadonlyArray<{ start: number; end: number }>, colours: Uint8Array): Record<string, Uint8Array | string> {
+  const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
+  const vic = new Uint8Array(0x2f);
+  vic.set([0x3b], 0x11);
+  vic.set([0x18], 0x16);
+  vic.set([0x38], 0x18);
+  vic.set([0x00, 0x06], 0x20);
+  return {
+    "stage/image.bin": memory,
+    "stage/image.json": JSON.stringify({ entry: hex(segments[0]!.start), image: "image.bin", segments: segments.map((segment) => ({ start: hex(segment.start), end: hex(segment.end) })) }),
+    "stage/entry_state.json": JSON.stringify({
+      registers: { pc: hex(segments[0]!.start), a: 0, x: 0, y: 0, sp: 0xf6, flags: { n: false, v: false, b: false, d: false, i: false, z: false, c: false } },
+      cpuPort: { $00: 0x2f, $01: 0x37 },
+      pages: Object.fromEntries([0, 1, 2, 3].map((page) => [hex(page << 8), "00".repeat(256)])),
+      io: { vic: { from: "$d000", bytes: Buffer.from(vic).toString("hex") }, cia2: { from: "$dd00", bytes: "fc3f3f00" }, colour: { from: "$d800", bytes: Buffer.from(colours).toString("hex") } },
+    }),
+  };
+}
 
 /** The Host Runtime of the tests, started once. */
 async function host(): Promise<HostServer> {
@@ -117,7 +140,10 @@ async function generate(memory: Uint8Array, segments: ReadonlyArray<{ start: num
   assert.equal(imported.status, 0, imported.stdout + imported.stderr);
   readEnvelope(imported.stdout, imported.status);
   if (more.coverage !== undefined) writeFileSync(join(project, "run.bin"), more.coverage);
-  for (const [name, data] of Object.entries(more.files ?? {})) writeFileSync(join(project, name), data);
+  for (const [name, data] of Object.entries(more.files ?? {})) {
+    mkdirSync(dirname(join(project, name)), { recursive: true });
+    writeFileSync(join(project, name), data);
+  }
   const commands = [...(more.commands ?? []), ...(startScreen.length > 0 ? [["start-screen", ...startScreen]] : []), ...(more.coverage === undefined ? [] : [["coverage", "run.bin"]])];
   for (const command of commands) {
     const recorded = spawnSync(process.execPath, [...process.execArgv, knowledgeScript, ...command], { cwd: project, encoding: "utf8" });
@@ -224,30 +250,26 @@ test("a start screen of a captured stage shows before the loader: the stage call
   const segments = [{ start: 0x0801, end: 0x0900 }];
   const memory = new Uint8Array(0x10000);
   for (let address = 0x0801; address <= 0x0900; address++) memory[address] = (address * 7 + 3) & 0xff;
-  // The stage in bank1: a Koala picture in VIC bank 3 (screen $cc00, bitmap $e000, colours $8328), a routine at $0a00 under
+  // The stage in bank1: a multicolour picture in VIC bank 3 with the colours in the colour RAM, a routine at $0a00 under
   // the loader file that sets an IRQ, which counts at $0a1f and goes on to the KERNAL, and a table at $3000 that nothing uses.
   const stage = new Uint8Array(0x10000);
-  const stageSegments = [{ start: 0x0a00, end: 0x0a1f }, { start: 0x3000, end: 0x30ff }, { start: 0x8328, end: 0x870f }, { start: 0xcc00, end: 0xcfe7 }, { start: 0xe000, end: 0xff3f }];
+  const stageSegments = [{ start: 0x0a00, end: 0x0a1f }, { start: 0x3000, end: 0x30ff }, { start: 0xcc00, end: 0xcfe7 }, { start: 0xe000, end: 0xff3f }];
   stage.set([0x78, 0xa9, 0x0d, 0x8d, 0x14, 0x03, 0xa9, 0x0a, 0x8d, 0x15, 0x03, 0x58, 0x60, 0xee, 0x1f, 0x0a, 0x4c, 0x31, 0xea], 0x0a00);
   stage.set(seededBytes(6, 0x100), 0x3000);
-  stage.set(seededBytes(7, 1000), 0x8328);
+  const colours = Uint8Array.from(seededBytes(7, 1000), (value) => value & 0x0f);
   stage.set(seededBytes(8, 1000), 0xcc00);
   stage.set(seededBytes(9, 8000), 0xe000);
-  const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
   const coverage = new Uint8Array(0x10000);
   for (const address of [0x0a00, 0x0a01, 0x0a03, 0x0a06, 0x0a08, 0x0a0b, 0x0a0c, 0x0a0d, 0x0a10]) coverage[address] = 1 << 2;
-  const { json, project } = await generate(memory, segments, ["--mode", "multicolour", "--screen", "$cc00", "--bitmap", "$e000", "--colours", "$8328", "--border", "0", "--background", "6", "--stage", "bank1", "--call", "$0a00"], {
-    files: {
-      "stage.bin": stage,
-      "stage.json": JSON.stringify({ image: "stage.bin", segments: stageSegments.map((segment) => ({ start: hex(segment.start), end: hex(segment.end) })) }),
-      "stage-run.bin": coverage,
-    },
+  // The start screen comes from the capture of the stage: no mode, no address and no colour.
+  const { json, project } = await generate(memory, segments, ["--stage", "bank1", "--call", "$0a00"], {
+    files: { ...stageCapture(stage, stageSegments, colours), "stage-run.bin": coverage },
     // The capture of the stage has the text of a crack in the first 4 cells of the screen: a patch of a crack switch, on in the base release of the stage, takes it out.
     commands: [
-      ["image", "stage.json", "--space", "bank1"],
+      ["image", "stage/image.json", "--space", "bank1"],
       ["coverage", "stage-run.bin", "--space", "bank1"],
       ["classify", "$3000-$30ff", "unused", "--space", "bank1"],
-      ["release", "CRACK", "--file", "stage.json", "--base", "--space", "bank1"],
+      ["release", "CRACK", "--file", "stage/image.json", "--base", "--space", "bank1"],
       ["switch", "CRACK_TEXT", "--kind", "crack", "--releases", "CRACK", "--space", "bank1"],
       ["patch", "$cc00-$cc03", "CRACK_TEXT", "--code", "!byte $11,$22,$33,$44", "--space", "bank1"],
     ],
@@ -256,8 +278,8 @@ test("a start screen of a captured stage shows before the loader: the stage call
   assert.deepEqual(json.loader.differences, []);
   assert.equal(json.loader.verified, true);
   assert.deepEqual(json.loader.startScreen && { shown: json.loader.startScreen.shown, waits: json.loader.startScreen.waits, stage: json.loader.startScreen.stage }, { shown: true, waits: true, stage: "bank1" });
-  // The routine, the colours, the screen and the bitmap: the table at $3000 stays out.
-  assert.equal(json.loader.stage?.bytes, 0x20 + 1000 + 1000 + 8000);
+  // The routine, the screen and the bitmap: the table at $3000 stays out. The colour RAM is in the show code.
+  assert.equal(json.loader.stage?.bytes, 0x20 + 1000 + 8000);
   // The program is packed while the screen shows: the stash holds at most the routine under the packed file.
   assert.notEqual(json.loader.packed, undefined);
   const inRoutine = (to: string) => to.split("-").every((address) => Number.parseInt(address.slice(1), 16) >= 0x0a00 && Number.parseInt(address.slice(1), 16) <= 0x0a1f);
@@ -277,28 +299,23 @@ test("a large program stays packed while the start screen of a stage shows, so a
   memory.fill(0xea, 0x0801, 0xc800);
   memory.set(seededBytes(10, 0x1000), 0x4000);
   const stage = new Uint8Array(0x10000);
-  const stageSegments = [{ start: 0x2000, end: 0x35ff }, { start: 0x8328, end: 0x870f }, { start: 0xcc00, end: 0xcfe7 }, { start: 0xe000, end: 0xff3f }];
+  const stageSegments = [{ start: 0x2000, end: 0x35ff }, { start: 0xcc00, end: 0xcfe7 }, { start: 0xe000, end: 0xff3f }];
   // $2000 sets an IRQ that counts at $35ff and goes on to the KERNAL; the rest of $2000-$35ff is the data of the tune.
   stage.set(seededBytes(11, 0x1600), 0x2000);
   stage.set([0x78, 0xa9, 0x0d, 0x8d, 0x14, 0x03, 0xa9, 0x20, 0x8d, 0x15, 0x03, 0x58, 0x60, 0xee, 0xff, 0x35, 0x4c, 0x31, 0xea], 0x2000);
-  stage.set(seededBytes(12, 1000), 0x8328);
+  const colours = Uint8Array.from(seededBytes(12, 1000), (value) => value & 0x0f);
   stage.set(seededBytes(13, 1000), 0xcc00);
   stage.set(seededBytes(14, 8000), 0xe000);
-  const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
   const coverage = new Uint8Array(0x10000);
   for (const address of [0x2000, 0x2001, 0x2003, 0x2006, 0x2008, 0x200b, 0x200c, 0x200d, 0x2010]) coverage[address] = 1 << 2;
-  const { json } = await generate(memory, segments, ["--mode", "multicolour", "--screen", "$cc00", "--bitmap", "$e000", "--colours", "$8328", "--border", "0", "--background", "6", "--stage", "bank1", "--call", "$2000"], {
-    files: {
-      "stage.bin": stage,
-      "stage.json": JSON.stringify({ image: "stage.bin", segments: stageSegments.map((segment) => ({ start: hex(segment.start), end: hex(segment.end) })) }),
-      "stage-run.bin": coverage,
-    },
-    commands: [["image", "stage.json", "--space", "bank1"], ["coverage", "stage-run.bin", "--space", "bank1"]],
+  const { json } = await generate(memory, segments, ["--stage", "bank1", "--call", "$2000"], {
+    files: { ...stageCapture(stage, stageSegments, colours), "stage-run.bin": coverage },
+    commands: [["image", "stage/image.json", "--space", "bank1"], ["coverage", "stage-run.bin", "--space", "bank1"]],
   });
   assert.equal(json.check.identical, true);
   assert.deepEqual(json.loader.differences, []);
   assert.equal(json.loader.verified, true);
   assert.deepEqual(json.loader.startScreen && { shown: json.loader.startScreen.shown, waits: json.loader.startScreen.waits }, { shown: true, waits: true });
-  assert.equal(json.loader.stage?.bytes, 0x1600 + 1000 + 1000 + 8000);
+  assert.equal(json.loader.stage?.bytes, 0x1600 + 1000 + 8000);
   assert.ok(json.loader.packed!.packedBytes < 0x4000, JSON.stringify(json.loader.packed));
 });

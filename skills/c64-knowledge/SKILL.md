@@ -53,7 +53,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Write the code of a switch for a range | `patch '$100e-$1010' PROTECTION --code-file no-check.asm` |
 | List the releases, switches and patches | `switches` |
 | Record the start screen of the program | `start-screen --mode multicolour --screen '$5c00' --bitmap '$6000' --colours '$8328' --border 0 --background 0` |
-| Record the start screen of a captured stage, and its tune | `start-screen --mode multicolour --screen '$cc00' --bitmap '$e000' --colours '$8328' --border 3 --background 1 --stage bank1 --call '$9000'` |
+| Record the start screen of a captured stage, and its tune | `start-screen --stage bank1 --call '$9000'` |
 | Remove the start screen | `unstart-screen` |
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` |
 | Write instructions as one use of a macro | `use '$1005-$100a' inc16 --args ptr` |
@@ -142,15 +142,15 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--body <text>` | `macro` | The body of the macro. |
 | `--body-file <file>` | `macro` | A project file with the body of the macro. |
 | `--args <x, y>` | `use` | One expression for each param of the macro, as a comma list. |
-| `--mode <mode>` | `start-screen` | Necessary. The mode of the VIC-II: `text`, `hires` or `multicolour`. |
-| `--screen <address>` | `start-screen` | Necessary. The address of the screen memory: 1000 bytes. |
+| `--mode <mode>` | `start-screen` | The mode of the VIC-II: `text`, `hires` or `multicolour`. Necessary without `--stage`. |
+| `--screen <address>` | `start-screen` | The address of the screen memory: 1000 bytes. Necessary without `--stage`. |
 | `--bitmap <address>` | `start-screen` | The address of the bitmap: 8000 bytes. `hires` and `multicolour` need it. |
 | `--charset <address>` | `start-screen` | The address of the charset: 2048 bytes. `text` needs it. |
 | `--colours <address>` | `start-screen` | The address of the 1000 bytes that the loader copies to the colour RAM. |
 | `--colour <0-15>` | `start-screen` | One colour for all of the colour RAM, in place of `--colours`. |
-| `--border <0-15>` | `start-screen` | Necessary. The border colour. |
-| `--background <0-15>` | `start-screen` | Necessary. The background colour. |
-| `--stage <space>` | `start-screen` | The space of a captured stage that holds the bytes of the screen, for example `bank1`. Without it, the bytes are in the program at the entry. |
+| `--border <0-15>` | `start-screen` | The border colour. Necessary without `--stage`. |
+| `--background <0-15>` | `start-screen` | The background colour. Necessary without `--stage`. |
+| `--stage <space>` | `start-screen` | The space of a captured stage that shows the screen, for example `bank1`. The script takes the mode, the addresses and the colours from the capture. Without it, the bytes are in the program at the entry. |
 | `--call <address>` | `start-screen` | A routine of the stage that the start screen calls before it waits, for example the start of the loading tune. It must return with RTS. It needs `--stage`. |
 
 ---
@@ -407,15 +407,30 @@ A start screen is a loading screen, a title screen or a presentation screen of t
   1. Record patches under a switch that take out the change.
   2. Use the screen as it is.
   3. Do not record a start screen.
-- The bytes of the screen must be in the program of the knowledge at the entry, or in a captured stage. Thus capture the program while the bytes of the screen are in memory.
-- When the bytes are only in a stage of the loading, do these steps:
-  1. Capture the stage while it shows the screen. Do not exclude the memory of the screen.
-  2. Put the capture into the knowledge in a space of its own, for example `image stage/image.json --space bank1`.
-  3. If the stage plays a tune or does other work during the screen, find the routine that starts it. Run the stage with coverage while that routine runs. Put the map into the knowledge with `coverage <map> --space bank1`.
-  4. Record the start screen with `--stage bank1`, and with `--call` for the routine.
-- With `--stage`, the addresses are in the program of that space. Each part and the call must be in it.
+- The bytes of the screen must be in the program of the knowledge at the entry, or in a captured stage.
+
+#### A start screen of a captured stage
+
+Use this when a stage of the loading shows the screen, and the program at the entry does not have it. Do these steps:
+
+1. Capture the stage while it shows the screen. Do not exclude the memory of the screen.
+2. Put the capture into the knowledge in a space of its own, for example `image stage/image.json --space bank1`.
+3. If the stage plays a tune or does other work during the screen, find the routine that starts it. Run the stage with coverage while that routine runs. Put the map into the knowledge with `coverage <map> --space bank1`.
+4. Record the start screen with `start-screen --stage bank1`, and with `--call` for the routine.
+
+- The script takes the mode, the screen, the bitmap or the charset, the colours and the colour RAM from the capture. Do not find the addresses or the colours yourself.
+- The generated source puts the screen in memory. It does not matter where the stage keeps its bytes, if the memory has enough room.
+- A flag that you give replaces the value of the capture. Give a flag only to correct a value.
+- A capture of an older version has no colour RAM. Then capture the stage again.
+
+#### A start screen in the program
+
+- Capture the program while the bytes of the screen are in memory.
 - Get the mode, the addresses and the colours from the VIC-II while the original program shows the screen.
-- The colour RAM is not in the capture. Find the 1000 colour bytes in the program: compare them with the colour RAM at $d800 while the original shows the screen. Give their address with `--colours`. If the program does not have them, give one colour with `--colour`.
+- Find the 1000 colour bytes in the program: compare them with the colour RAM at $d800 while the original shows the screen. Give their address with `--colours`. If the program does not have them, give one colour with `--colour`.
+
+#### The rules of the VIC-II
+
 - `text` needs `--charset`. `hires` and `multicolour` need `--bitmap`. `text` and `multicolour` need `--colours` or `--colour`. `hires` uses neither.
 - The screen is at a step of $0400, the bitmap at a step of $2000 and the charset at a step of $0800. They must be in one VIC bank of 16 KB.
 - In VIC bank 0 and 2, the VIC-II reads the character ROM at $1000-$1fff of the bank. A screen or a bitmap cannot be there. A charset at $1000 or $1800 of the bank is the character ROM.

@@ -18,6 +18,7 @@ import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, rev
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { addCoverage, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
+import { startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
   analyzerNamesAt,
   at,
@@ -177,6 +178,7 @@ const startScreen = (row: StartScreenRow) => ({
   background: row.background,
   ...(row.stage === undefined ? {} : { stage: row.stage }),
   ...(row.call === undefined ? {} : { call: formatC64Address(row.call) }),
+  ...(row.colourRam === true ? { colourRam: true } : {}),
   ...(row.comment === undefined ? {} : { comment: row.comment }),
   origin: row.origin,
   revision: row.revision,
@@ -939,42 +941,62 @@ const WRITE_COMMANDS: CommandSpec[] = [
       name: "start-screen",
       summary: "Records the start screen of the program: a loading, title or presentation screen of the program itself, in memory at the entry or in a captured stage of the loading. The loader of the generated source shows it and waits for a key or a fire button before the entry.",
       options: {
-        mode: { kind: "choice", value: "<mode>", choices: START_SCREEN_MODES, help: `one of ${START_SCREEN_MODES.join(", ")}`, required: true },
-        screen: { kind: "address", value: "<address>", help: "the screen: the 1000 characters of a text screen, or the 1000 colour bytes of a bitmap", required: true },
+        mode: { kind: "choice", value: "<mode>", choices: START_SCREEN_MODES, help: `one of ${START_SCREEN_MODES.join(", ")}. Necessary without --stage` },
+        screen: { kind: "address", value: "<address>", help: "the screen: the 1000 characters of a text screen, or the 1000 colour bytes of a bitmap. Necessary without --stage" },
         bitmap: { kind: "address", value: "<address>", help: "the 8000 bytes of the bitmap. hires and multicolour need it" },
         charset: { kind: "address", value: "<address>", help: "the 2048 bytes of the charset, or '$1000' or '$1800' for the character ROM in VIC bank 0. text needs it" },
         colours: { kind: "address", value: "<address>", help: "the 1000 bytes that the loader copies to the colour RAM" },
         colour: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "one colour for all of the colour RAM, in place of --colours" },
-        border: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the border colour", required: true },
-        background: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the background colour", required: true },
-        stage: { kind: "text", value: "<space>", help: "the space of a captured stage that holds the bytes of the screen, for example bank1. Without it, the bytes are in the program at the entry" },
+        border: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the border colour. Necessary without --stage" },
+        background: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the background colour. Necessary without --stage" },
+        stage: { kind: "text", value: "<space>", help: "the space of a captured stage that shows the screen, for example bank1. The script takes the mode, the addresses and the colours from the capture of the stage. Without it, the bytes are in the program at the entry" },
         call: { kind: "address", value: "<address>", help: "a routine of the stage that the start screen calls before it waits, for example the routine that starts the loading tune. It must return with RTS. Needs --stage" },
         comment: { kind: "text", value: "<text>", help: "what the screen is" },
       },
-      notes: "Record only a screen of the program itself, never a screen of a crack. If a release changed the screen, for example with the text of a crack, stop and ask the user how to deal with it. text and multicolour need --colours or --colour; hires uses neither. With --stage, the addresses are in the program of that space. A write replaces the start screen of the knowledge.",
+      notes: "Record only a screen of the program itself, never a screen of a crack. If a release changed the screen, for example with the text of a crack, stop and ask the user how to deal with it. text and multicolour need --colours or --colour; hires uses neither. With --stage, the script takes the screen from the capture of the stage: give only --stage, and --call for a tune. A flag that you give too replaces the value of the capture. A write replaces the start screen of the knowledge.",
     },
     (call) => {
       const context = contextOf(call);
       const commentText = call.string("comment");
-      const optional = (key: "bitmap" | "charset" | "colours") => ((value) => (value === undefined ? {} : { [key]: value }))(call.address(key));
-      const colour = call.count("colour");
+      // The values that the call gives. With --stage, the capture of the stage gives the others.
+      const given: { mode?: StartScreenMode; screen?: number; bitmap?: number; charset?: number; colours?: number; colour?: number; border?: number; background?: number } = {};
+      const mode = call.string("mode") as StartScreenMode | undefined;
+      if (mode !== undefined) given.mode = mode;
+      for (const key of ["screen", "bitmap", "charset", "colours"] as const) {
+        const value = call.address(key);
+        if (value !== undefined) given[key] = value;
+      }
+      for (const key of ["colour", "border", "background"] as const) {
+        const value = call.count(key);
+        if (value !== undefined) given[key] = value;
+      }
       const stage = call.string("stage");
       const routine = call.address("call");
-      const request = {
+      const extra = {
         space: call.space,
-        mode: call.string("mode") as StartScreenMode,
-        screen: call.address("screen")!,
-        ...optional("bitmap"),
-        ...optional("charset"),
-        ...optional("colours"),
-        ...(colour === undefined ? {} : { colour }),
-        border: call.count("border")!,
-        background: call.count("background")!,
         ...(stage === undefined ? {} : { stage }),
         ...(routine === undefined ? {} : { call: routine }),
         ...(commentText === undefined ? {} : { comment: commentText }),
       };
-      return (db) => shown(setStartScreen(db, context, request), "startScreen", startScreen);
+      const complete = (values: typeof given & { colourRam?: true }, remedy: string) => {
+        const missing = (["mode", "screen", "border", "background"] as const).filter((key) => values[key] === undefined);
+        if (missing.length > 0) throw new UsageError(`Give ${missing.map((key) => `--${key}`).join(", ")}, ${remedy}`);
+        return { ...values, mode: values.mode!, screen: values.screen!, border: values.border!, background: values.background!, ...extra };
+      };
+      if (stage === undefined) {
+        const request = complete(given, "or give --stage with the space of a captured stage that shows the screen.");
+        return (db) => shown(setStartScreen(db, context, request), "startScreen", startScreen);
+      }
+      return (db) => {
+        // The capture of the stage gives the screen. A flag of the call replaces a value of the capture, and --colours or --colour replaces the colour RAM.
+        const image = programImage(db, stage);
+        if (image === undefined) throw new Refusal("not-found", `The knowledge has no program in ${stage}. Capture the stage while it shows the start screen, and put the capture into the project knowledge with image --space ${stage}. Then record the start screen again.`);
+        const captured = mode === undefined ? startScreenOfStage(image.state, stage) : undefined;
+        const { colourRam, ...fromCapture } = captured ?? { colourRam: undefined };
+        const ownColours = given.colours !== undefined || given.colour !== undefined;
+        const request = complete({ ...fromCapture, ...(colourRam === true && !ownColours ? { colourRam } : {}), ...given }, "or give --stage alone to take the screen from the capture.");
+        return shown(setStartScreen(db, context, request), "startScreen", startScreen);
+      };
     },
   ),
   writeCommand({ name: "unstart-screen", summary: "Removes the start screen. The loader of the generated source then starts the program at once." }, (call) => {

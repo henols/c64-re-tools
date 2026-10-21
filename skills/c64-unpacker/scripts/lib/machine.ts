@@ -15,8 +15,10 @@ type Registers = Awaited<ReturnType<ViceSessionClient["registersGet"]>>;
 
 const MAX_READ = 4096;
 
-/** The I/O areas of the entry state, read without side effects. */
-export const IO_AREAS = { vic: [0xd000, 0x2f], sid: [0xd400, 0x1d], cia1: [0xdc00, 0x10], cia2: [0xdd00, 0x10] } as const;
+/** The I/O areas of the entry state, read without side effects. The colour RAM is the colours of the screen: a start screen of a captured stage uses them. */
+export const IO_AREAS = { vic: [0xd000, 0x2f], sid: [0xd400, 0x1d], cia1: [0xdc00, 0x10], cia2: [0xdd00, 0x10], colour: [0xd800, 1000] } as const;
+/** The I/O areas of chips: what differsFrom compares. The colour RAM is the content of the screen, not the state of the machine. */
+const CHIP_AREAS = ["vic", "sid", "cia1", "cia2"] as const;
 
 /** What no register read of a CIA gives. */
 export interface CiaHidden {
@@ -49,6 +51,8 @@ export async function machineState(client: ViceSessionClient): Promise<MachineSt
   const pages = await readRam(client, 0x0000, 0x400);
   const io = {} as Record<keyof typeof IO_AREAS, Buffer>;
   for (const [name, [address, size]] of Object.entries(IO_AREAS)) io[name as keyof typeof IO_AREAS] = Buffer.from((await client.ioRead(address, size)).data, "hex");
+  // The colour RAM has 4 bits: a read gives other bits above them.
+  io.colour = Buffer.from(io.colour.map((value) => value & 0x0f));
   const [cia1, cia2] = (await client.cia("both")).chips.map(({ latchA, latchB, interruptMask }) => ({ latchA, latchB, interruptMask }));
   const romVectors = Buffer.from((await client.memoryRead({ address: 0xfffa, size: 6, space: "c64", view: "cpu" })).data, "hex");
   return { port, pages, io, cia: { cia1: cia1!, cia2: cia2! }, romVectors };
@@ -79,7 +83,7 @@ export function differsFrom(state: MachineState, clean: MachineState): Array<{ a
   const compare = (base: number, entry: Buffer, reset: Buffer) => entry.forEach((value, offset) => value !== reset[offset] && differs.push({ address: formatC64Address(base + offset), entry: value, reset: reset[offset]! }));
   compare(0x0000, state.port, clean.port);
   compare(0x0002, state.pages.subarray(2), clean.pages.subarray(2));
-  for (const [name, [address]] of Object.entries(IO_AREAS)) compare(address, state.io[name as keyof typeof IO_AREAS], clean.io[name as keyof typeof IO_AREAS]);
+  for (const name of CHIP_AREAS) compare(IO_AREAS[name][0], state.io[name], clean.io[name]);
   return differs;
 }
 

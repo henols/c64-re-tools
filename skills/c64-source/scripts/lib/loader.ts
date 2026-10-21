@@ -172,7 +172,7 @@ export function startScreenPlan(row: StartScreenRow): StartScreenPlan {
     bank,
     border: row.border,
     background: row.background,
-    colourMode: row.colours !== undefined ? 2 : row.colour !== undefined ? 1 : 0,
+    colourMode: row.colours !== undefined || row.colourRam === true ? 2 : row.colour !== undefined ? 1 : 0,
   };
 }
 
@@ -191,7 +191,8 @@ export function startScreenValues(row: StartScreenRow, plan: StartScreenPlan): s
     value("background", plan.background),
     value("colour_mode", plan.colourMode),
     value("colour", row.colour ?? 0),
-    `c64_source_ss_colours = ${formatC64Address(row.colours ?? 0)}`,
+    // The colour RAM of a captured stage is in the show code: STAGE_COLOURS in stage.ts.
+    `c64_source_ss_colours = ${row.colourRam === true ? "c64_source_stage_colours" : formatC64Address(row.colours ?? 0)}`,
   ];
 }
 

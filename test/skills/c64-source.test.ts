@@ -1062,6 +1062,14 @@ test("the show stage runs where the KERNAL can be in, and puts the loader bytes 
   assert.match(plan.text, /c64_source_ss_call = \$0a00 /);
   assert.match(plan.text, new RegExp(`!word 32, \\$${at.toString(16).padStart(4, "0")}, \\$0a00 ; \\$0a00-\\$0a1f of the loader`));
   assert.match(plan.text, /jmp \$080d\n/);
+  // The colour RAM of the capture is in the show code: the start screen copies it from there.
+  const { colours: _colours, ...picture } = row;
+  const fromCapture: StartScreenRow = { ...picture, colourRam: true };
+  const withColours = planStage({ ...stageInput([{ start: 0x0801, body: new Uint8Array(0x500) }], [{ start: 0xcc00, body: new Uint8Array(1000) }]), row: fromCapture, plan: startScreenPlan(fromCapture), colourRam: Uint8Array.from({ length: 1000 }, (_, index) => index & 0x0f), codeSize: 1300 });
+  assert.match(withColours.text, /\nc64_source_ss_colour_mode = \$02\n/);
+  assert.match(withColours.text, /\nc64_source_ss_colours = c64_source_stage_colours\n/);
+  assert.match(withColours.text, /\nc64_source_stage_colours\n {8}!byte \$00,\$01,\$02,/);
+  assert.equal((withColours.text.split("\nc64_source_stage_colours\n")[1]!.split("c64_source_stage_code_end")[0]!.match(/\$[0-9a-f]{2}/g) ?? []).length, 1000);
   assert.throws(() => planStage(stageInput([{ start: 0x0400, body: new Uint8Array(0xcc00) }], [{ start: 0xe000, body: new Uint8Array(8000) }])), /The show stage needs 308 free bytes for its code in \$0400-\$9fff or \$c000-\$cfff.* The largest free ranges outside the loader and the bytes of the stage: \$d000-\$dfff \(4096 bytes\)/);
 });
 

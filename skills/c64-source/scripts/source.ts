@@ -62,6 +62,7 @@ import {
   type StartScreenPlan,
 } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
+import { capturedColourRam } from "#src/knowledge/start-screen.ts";
 import { planStage, STAGE_CODE_END, STAGE_FILE, STAGE_START, stageParts, stageText, type StageInput, type StagePart, type StagePlan } from "./lib/stage.ts";
 import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
 import { CONFIG_FILE, configText, configValues, entriesInData, entryOutsideImage, hasConfigFile, hasSwitchFile, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
@@ -544,7 +545,7 @@ interface LoaderRunPlan {
   /** The wait of the start screen and the code after it, when the loader has a start screen. */
   startScreen?: { wait: number; continue: number };
   /** The show stage of a start screen from a captured stage, which runs before the loader: its wait, the code after it, its VIC-II values and the bytes of the stage. */
-  stage?: { name: string; wait: number; continue: number; screen: StartScreenPlan; parts: StagePart[]; frames: number };
+  stage?: { name: string; wait: number; continue: number; screen: StartScreenPlan; parts: StagePart[]; colourRam?: Uint8Array; frames: number };
   copierSource: number;
   fileByte: (address: number) => number;
   copierFrames: number;
@@ -571,7 +572,7 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state:
     // on each VICE, so the check lets it wait, then sets the PC to the code after the wait.
     let screen: LoaderRun["startScreen"];
     const screenDifferences: string[] = [];
-    const showScreen = async (at: { wait: number; continue: number }, wanted: StartScreenPlan, frames: number, copied: boolean, parts: readonly StagePart[] = []): Promise<LoaderRun | undefined> => {
+    const showScreen = async (at: { wait: number; continue: number }, wanted: StartScreenPlan, frames: number, copied: boolean, parts: readonly StagePart[] = [], colourRam?: Uint8Array): Promise<LoaderRun | undefined> => {
       const labels = { wait: formatC64Address(at.wait), continue: formatC64Address(at.continue) };
       const atWait = await client.runUntil({ target: { kind: "address", address: at.wait, space: "c64" }, timeoutFrames: frames });
       if (!atWait.reached) return await stopped(atWait.pc, copied, `its start screen at ${labels.wait}`, parts.length === 0);
@@ -591,6 +592,12 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state:
         const wrong = part.body.findIndex((byte, offset) => ram[offset] !== byte);
         if (wrong >= 0) screenDifferences.push(`the stage has $${ram[wrong]!.toString(16).padStart(2, "0")} at ${formatC64Address(part.start + wrong)}, not $${part.body[wrong]!.toString(16).padStart(2, "0")}`);
       }
+      // The colour RAM of a captured stage: the first wrong colour.
+      if (colourRam !== undefined) {
+        const colours = Buffer.from((await client.ioRead(0xd800, colourRam.length)).data, "hex");
+        const wrong = colourRam.findIndex((value, offset) => (colours[offset]! & 0x0f) !== value);
+        if (wrong >= 0) screenDifferences.push(`the colour RAM has ${colours[wrong]! & 0x0f} at ${formatC64Address(0xd800 + wrong)}, not ${colourRam[wrong]}`);
+      }
       screen = { shown: screenDifferences.length === before, waits: !held.reached, ...labels, ...(run.stage === undefined ? {} : { stage: run.stage.name }) };
       if (held.reached) screenDifferences.push(`the start screen did not wait: it got to ${labels.continue} without a key or a fire button`);
       if (!held.reached) await client.registersSet("c64", { pc: at.continue });
@@ -598,7 +605,7 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state:
     };
     // The show stage of a captured stage runs before the loader.
     if (run.stage !== undefined) {
-      const stop = await showScreen(run.stage, run.stage.screen, run.stage.frames, false, run.stage.parts);
+      const stop = await showScreen(run.stage, run.stage.screen, run.stage.frames, false, run.stage.parts, run.stage.colourRam);
       if (stop !== undefined) return stop;
     }
     const copier = await client.runUntil({ target: { kind: "address", address: plan.copier, space: "c64" }, timeoutFrames: run.copierFrames });
@@ -934,9 +941,11 @@ async function buildLoader(
  * of the stage whose switch default is not its base value is in, as in the
  * default build. Pages 0-3 are left out: the unpacker of Exomizer uses them.
  */
-async function stageBytes(row: StartScreenRow): Promise<StagePart[]> {
+async function stageBytes(row: StartScreenRow): Promise<{ parts: StagePart[]; colourRam?: Uint8Array }> {
   const stage = row.stage!;
   const knowledge = readKnowledge(stage);
+  const colourRam = row.colourRam === true ? capturedColourRam(knowledge.program.state) : undefined;
+  if (row.colourRam === true && colourRam === undefined) throw new Refusal("not-found", `The start screen takes its colours from the colour RAM of the capture in ${stage}, and that capture has none. Capture the stage again while it shows the screen, and put it into the project knowledge with image --space ${stage}.`);
   const image = knowledge.program;
   const memory = Uint8Array.from(image.memory);
   const addresses = knowledge.symbols.map((symbol) => `${symbol.name} = ${formatC64Address(symbol.address)}`);
@@ -969,7 +978,7 @@ async function stageBytes(row: StartScreenRow): Promise<StagePart[]> {
     if (last !== undefined && range.start <= last.end + 1) last.end = Math.max(last.end, range.end);
     else parts.push({ ...range });
   }
-  return parts.map((range) => ({ start: range.start, body: memory.slice(range.start, range.end + 1) }));
+  return { parts: parts.map((range) => ({ start: range.start, body: memory.slice(range.start, range.end + 1) })), ...(colourRam === undefined ? {} : { colourRam }) };
 }
 
 /** What the show stage gives: loader.prg, the source of the stage, and what its check needs. */
@@ -978,6 +987,7 @@ interface BuiltStage {
   text: string;
   plan: StagePlan;
   parts: StagePart[];
+  colourRam?: Uint8Array;
   packed: PackedLoader;
   wait: number;
   continue: number;
@@ -990,7 +1000,7 @@ interface BuiltStage {
  * is in memory before it starts. Refuses by name.
  */
 async function buildStage(files: Array<{ name: string; text: string }>, laid: Layout, program: PackedLoader, row: StartScreenRow, values: ReadonlyMap<string, number>, header: string[], mark: string): Promise<BuiltStage> {
-  const stage = await stageBytes(row);
+  const { parts: stage, colourRam } = await stageBytes(row);
   // The packed program, as RUN would start it: its unpacker unpacks it over the start screen after the wait.
   const inner: StagePart[] = [{ start: 0x0801, body: program.program.subarray(2) }];
   const screen = startScreenPlan(row);
@@ -999,6 +1009,7 @@ async function buildStage(files: Array<{ name: string; text: string }>, laid: La
     innerStart: 0x080d,
     innerPort: 0x37,
     stage,
+    ...(colourRam === undefined ? {} : { colourRam }),
     row,
     plan: screen,
     settings: hasSwitchFile(laid) ? ['!source "switches.asm"'] : hasConfigFile(laid) ? ['!source "config.asm"'] : [],
@@ -1027,7 +1038,7 @@ async function buildStage(files: Array<{ name: string; text: string }>, laid: La
   const packed = await packParts(parts, plan.code, 0x37, "the loader and the start screen of the stage", "the show stage", localToolContext());
   const end = 0x0801 + packed.program.length - 3;
   if (end > 0xcfff) throw new Refusal("invalid-input", `loader.prg with the start screen of ${row.stage} would end at ${formatC64Address(end)}, after $cfff: loading it would write the I/O area. Capture the stage with less memory, so that its program holds only the start screen and the routine of the call.`);
-  return { program: packed.program, text: `${mark}\n${plan.text}`, plan, parts: stage, packed, wait: built.label(START_SCREEN_WAIT), continue: built.label(START_SCREEN_CONTINUE), screen };
+  return { program: packed.program, text: `${mark}\n${plan.text}`, plan, parts: stage, ...(colourRam === undefined ? {} : { colourRam }), packed, wait: built.label(START_SCREEN_WAIT), continue: built.label(START_SCREEN_CONTINUE), screen };
 }
 
 /** The first line of each file that generate writes. */
@@ -1230,7 +1241,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     return part.body[address - part.start]!;
   };
   const screenParts = stage === undefined ? [] : startScreenRanges(stageRow!).map(({ range }) => ({ start: range.start, body: Uint8Array.from({ length: range.end - range.start + 1 }, (_, offset) => stageByte(range.start + offset)) }));
-  const stageRun = stage === undefined ? {} : { stage: { name: stageRow!.stage!, wait: stage.wait, continue: stage.continue, screen: stage.screen, parts: screenParts, frames: unpackFrames(stage.packed.cycles) + LOADER_FRAMES } };
+  const stageRun = stage === undefined ? {} : { stage: { name: stageRow!.stage!, wait: stage.wait, continue: stage.continue, screen: stage.screen, parts: screenParts, ...(stage.colourRam === undefined ? {} : { colourRam: stage.colourRam }), frames: unpackFrames(stage.packed.cycles) + LOADER_FRAMES } };
   let ran: LoaderRun;
   try {
     ran = await runLoader(checkPath, program, loader, state, { jump, copierSource, fileByte, copierFrames, ...(startScreen === undefined ? {} : { startScreen }), ...stageRun }, expected);

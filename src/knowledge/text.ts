@@ -202,6 +202,7 @@ export const TABLES: readonly TableSpec[] = [
       field("background", "background", "integer"),
       field("stage", "stage", "text", true),
       field("call", "call_address", "address", true),
+      field("colourRam", "colour_ram", "integer", true),
       field("comment", "comment", "text", true),
       origin,
     ],

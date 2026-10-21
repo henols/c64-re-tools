@@ -257,4 +257,9 @@ test("a capture holds the RAM under the I/O area that a stage wrote", { skip: li
   assert.equal(status, 0, JSON.stringify(json));
   const segments = json.segments as Array<{ start: string; end: string }>;
   assert.ok(segments.some((segment) => segment.start === "$d000" && segment.end === "$d0ff"), `the RAM under the I/O area is a segment: ${JSON.stringify(segments)}`);
+  // The colour RAM: 1000 colours of 4 bits, which a start screen of a stage takes. It is no difference from READY.
+  const state = JSON.parse(readFileSync(join(project, "unpacked", "io", "entry_state.json"), "utf8")) as Record<string, any>;
+  assert.equal(state.io.colour.bytes.length, 1000 * 2);
+  assert.ok(/^(0[0-9a-f])+$/.test(state.io.colour.bytes), "each colour has 4 bits");
+  assert.ok(!state.differsFromReset.some((item: { address: string }) => item.address >= "$d800" && item.address <= "$dbe7"));
 });

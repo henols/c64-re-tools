@@ -202,7 +202,7 @@ The folder `--out` gets these files:
 - `image.bin`: all 64 KiB of RAM at the entry. This RAM includes the RAM under the ROMs and the I/O area. A segment can be in the RAM under the I/O area at `$d000`-`$dfff`.
 - `image.json`: the entry, the segments, the vectors and the stages. `writtenBy` of a segment tells the last stage that wrote into it.
 - One PRG for each segment.
-- `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, and the vectors. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
+- `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, the colour RAM, and the vectors. `io.colour` holds the 1000 colours at $d800. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
 
 A segment is a block that a stage wrote, also a small block. These blocks are not segments:
 
@@ -260,7 +260,7 @@ Traps:
 5. Make sure that the result is the program. The code at the entry must not be the unpacker again. A segment can be data that a loader or a cracktro left, for example intro graphics. Keep it until other evidence shows that the program does not use it. Then capture again with `--exclude` for that range.
    - Exclude each range of a cracktro that the program does not read. A rebuild has no cracktro. Also exclude a picture, an intro or a credit screen of a crack.
    - Do not exclude the start screen of the program, also when the program does not read it. An example is the loading picture of the publisher. Record it as the start screen in the project knowledge. The loader of the rebuild shows it.
-   - When the start screen is only in an earlier stage of the loading, capture that stage too, while it shows the screen. Do not exclude the memory of the screen in that capture. Put it into the project knowledge in a space of its own, for example `bank1`.
+   - When the start screen is only in an earlier stage of the loading, capture that stage too, while it shows the screen. Do not exclude the memory of the screen in that capture. Put it into the project knowledge in a space of its own, for example `bank1`. The capture holds the VIC-II registers and the colour RAM, so the start screen needs nothing more.
    - Do not exclude other unused bytes, for example leftovers of the development or an old copy of a routine. A rebuild keeps them.
    - Keep a crack change that the program reads, for example a credit text in the game. Record it as a `crack` switch in the project knowledge.
 6. Put `<out>/image.json` into the project knowledge. The knowledge keeps the segments, the entry, the entry state and the stages. After that, you do not need the files in `<out>`.

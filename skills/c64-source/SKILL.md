@@ -307,11 +307,13 @@ The loader then always has the packed form, and the start screen is a program of
 
 The program is packed while the screen shows. Thus the picture and the tune have more free memory.
 
-- `loader.prg` has only the bytes of the stage that the start screen uses. These are the screen, the bitmap, the charset and the colours. With a call, they are also each byte of the stage that is not free from the call, as in "The free ranges". A call thus needs the coverage of the stage.
+- The script puts everything in memory. It does not matter where the stage keeps its bytes, if the memory has enough room.
+- `loader.prg` has only the bytes of the stage that the start screen uses. These are the screen, the bitmap and the charset. With a call, they are also each byte of the stage that is not free from the call, as in "The free ranges". A call thus needs the coverage of the stage.
+- With colours from the colour RAM of the capture, the show code holds the 1000 colours. It copies them to the colour RAM.
 - The patches of the stage are in at the defaults of their switches. Thus a patch under a switch can remove the text of a crack from the picture.
 - `start_screen_stage.asm` holds the show code and the bytes of the stage. Do not edit it. To make `loader.prg` again, run `generate --loader`.
 - The show stage needs Exomizer. The show code needs free memory in $0400-$9fff or $c000-$cfff. When the memory is too small, the reason gives the largest free ranges.
-- The check runs `loader.prg` to `loader_start_screen_wait` of the show stage. There, it compares the VIC-II with the start screen, and the screen bytes in memory with the stage. Then it sets the PC to `loader_start_screen_continue`, and it checks the loader as usual.
+- The check runs `loader.prg` to `loader_start_screen_wait` of the show stage. There, it compares the VIC-II with the start screen, the screen bytes in memory with the stage, and the colour RAM with the capture. Then it sets the PC to `loader_start_screen_continue`, and it checks the loader as usual.
 
 #### The packed loader
 

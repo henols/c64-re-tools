@@ -27,6 +27,8 @@ export interface StageInput {
   innerPort: number;
   /** The bytes of the stage that the start screen uses, in address order, at $0400 or higher. */
   stage: StagePart[];
+  /** The colour RAM of the capture of the stage, when the start screen takes its colours from it: the show code holds it. */
+  colourRam?: Uint8Array;
   row: StartScreenRow;
   plan: StartScreenPlan;
   /** The lines that include switches.asm or config.asm, for START_SCREEN. */
@@ -50,6 +52,8 @@ export const STAGE_FILE = "start_screen_stage.asm";
 /** The labels of the show stage: its start and the end of the show code. */
 export const STAGE_START = "c64_source_stage";
 export const STAGE_CODE_END = "c64_source_stage_code_end";
+/** The label of the colour RAM of the capture in the show code. */
+export const STAGE_COLOURS = "c64_source_stage_colours";
 /** The label of a part of the stage: its first byte and the byte after it in the build of start_screen_stage.asm. */
 export const stageLabel = (start: number, part: "from" | "end") => `stage_${part}_${start.toString(16).padStart(4, "0")}`;
 
@@ -244,6 +248,7 @@ export function stageText(input: StageInput, code: number, stash: StagePlan["sta
     ...stash.map((item) => `        !word ${item.target.end - item.target.start + 1}, ${formatC64Address(item.at)}, ${formatC64Address(item.target.start)} ; ${show(item.target)} of the loader`),
     "        !word 0",
     "}",
+    ...(input.colourRam === undefined ? [] : [`; The colour RAM of the capture of ${row.stage}.`, STAGE_COLOURS, ...byteLines({ start: 0, body: input.colourRam })]),
     STAGE_CODE_END,
   ];
   for (const part of input.stage) {
