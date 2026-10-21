@@ -949,7 +949,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
         colour: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "one colour for all of the colour RAM, in place of --colours" },
         border: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the border colour. Necessary without --stage" },
         background: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the background colour. Necessary without --stage" },
-        stage: { kind: "text", value: "<space>", help: "the space of a captured stage that shows the screen, for example bank1. The script takes the mode, the addresses and the colours from the capture of the stage. Without it, the bytes are in the program at the entry" },
+        stage: { kind: "text", value: "<space>", help: "the space of the captured stage that shows the screen: loading. The script takes the mode, the addresses and the colours from the capture of the stage. Without it, the bytes are in the program at the entry" },
         call: { kind: "address", value: "<address>", help: "a routine of the stage that the start screen calls before it waits, for example the routine that starts the loading tune. It must return with RTS. Needs --stage" },
         comment: { kind: "text", value: "<text>", help: "what the screen is" },
       },
@@ -1087,7 +1087,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       name: "revert",
       summary: "Makes the knowledge the same as at one revision: all spaces, or with --space only that space. The revert is a new revision: the history stays complete.",
       subjects: [REVISION],
-      options: { space: { kind: "space", value: "<space>", help: "revert only this space: c64, drive8, or bank0 to bank255. The other spaces do not change. Without --space, every space reverts" } },
+      options: { space: { kind: "space", value: "<space>", help: "revert only this space: c64, drive8, loading, or bank0 to bank255. The other spaces do not change. Without --space, every space reverts" } },
     },
     (call) => {
       const context = contextOf(call);
@@ -1265,7 +1265,7 @@ function batchFields(fields: Record<string, unknown>, at: string, address: (text
 
 await runScript({
   name: "knowledge",
-  summary: "Reads and writes the knowledge of the project: names, regions, comments, references, the program and its coverage, and the source knowledge. A read needs no knowledge folder. Every command takes --space: c64 (the default), drive8 for 1541 drive code, or bank0 to bank255 for cartridge banks. revert without --space reverts all spaces.",
+  summary: "Reads and writes the knowledge of the project: names, regions, comments, references, the program and its coverage, and the source knowledge. A read needs no knowledge folder. Every command takes --space: c64 (the default), drive8 for 1541 drive code, loading for a captured stage of the loading, or bank0 to bank255 for cartridge banks. revert without --space reverts all spaces.",
   names: knowledgeNames,
   commands: [...READ_COMMANDS, ...WRITE_COMMANDS, JOIN],
 });

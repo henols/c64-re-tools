@@ -250,7 +250,7 @@ test("a start screen of a captured stage shows before the loader: the stage call
   const segments = [{ start: 0x0801, end: 0x0900 }];
   const memory = new Uint8Array(0x10000);
   for (let address = 0x0801; address <= 0x0900; address++) memory[address] = (address * 7 + 3) & 0xff;
-  // The stage in bank1: a multicolour picture in VIC bank 3 with the colours in the colour RAM, a routine at $0a00 under
+  // The stage in the space loading: a multicolour picture in VIC bank 3 with the colours in the colour RAM, a routine at $0a00 under
   // the loader file that sets an IRQ, which counts at $0a1f and goes on to the KERNAL, and a table at $3000 that nothing uses.
   const stage = new Uint8Array(0x10000);
   const stageSegments = [{ start: 0x0a00, end: 0x0a1f }, { start: 0x3000, end: 0x30ff }, { start: 0xcc00, end: 0xcfe7 }, { start: 0xe000, end: 0xff3f }];
@@ -262,22 +262,22 @@ test("a start screen of a captured stage shows before the loader: the stage call
   const coverage = new Uint8Array(0x10000);
   for (const address of [0x0a00, 0x0a01, 0x0a03, 0x0a06, 0x0a08, 0x0a0b, 0x0a0c, 0x0a0d, 0x0a10]) coverage[address] = 1 << 2;
   // The start screen comes from the capture of the stage: no mode, no address and no colour.
-  const { json, project } = await generate(memory, segments, ["--stage", "bank1", "--call", "$0a00"], {
+  const { json, project } = await generate(memory, segments, ["--stage", "loading", "--call", "$0a00"], {
     files: { ...stageCapture(stage, stageSegments, colours), "stage-run.bin": coverage },
     // The capture of the stage has the text of a crack in the first 4 cells of the screen: a patch of a crack switch, on in the base release of the stage, takes it out.
     commands: [
-      ["image", "stage/image.json", "--space", "bank1"],
-      ["coverage", "stage-run.bin", "--space", "bank1"],
-      ["classify", "$3000-$30ff", "unused", "--space", "bank1"],
-      ["release", "CRACK", "--file", "stage/image.json", "--base", "--space", "bank1"],
-      ["switch", "CRACK_TEXT", "--kind", "crack", "--releases", "CRACK", "--space", "bank1"],
-      ["patch", "$cc00-$cc03", "CRACK_TEXT", "--code", "!byte $11,$22,$33,$44", "--space", "bank1"],
+      ["image", "stage/image.json", "--space", "loading"],
+      ["coverage", "stage-run.bin", "--space", "loading"],
+      ["classify", "$3000-$30ff", "unused", "--space", "loading"],
+      ["release", "CRACK", "--file", "stage/image.json", "--base", "--space", "loading"],
+      ["switch", "CRACK_TEXT", "--kind", "crack", "--releases", "CRACK", "--space", "loading"],
+      ["patch", "$cc00-$cc03", "CRACK_TEXT", "--code", "!byte $11,$22,$33,$44", "--space", "loading"],
     ],
   });
   assert.equal(json.check.identical, true);
   assert.deepEqual(json.loader.differences, []);
   assert.equal(json.loader.verified, true);
-  assert.deepEqual(json.loader.startScreen && { shown: json.loader.startScreen.shown, waits: json.loader.startScreen.waits, stage: json.loader.startScreen.stage }, { shown: true, waits: true, stage: "bank1" });
+  assert.deepEqual(json.loader.startScreen && { shown: json.loader.startScreen.shown, waits: json.loader.startScreen.waits, stage: json.loader.startScreen.stage }, { shown: true, waits: true, stage: "loading" });
   // The routine, the screen and the bitmap: the table at $3000 stays out. The colour RAM is in the show code.
   assert.equal(json.loader.stage?.bytes, 0x20 + 1000 + 8000);
   // The program is packed while the screen shows: the stash holds at most the routine under the packed file.
@@ -308,9 +308,9 @@ test("a large program stays packed while the start screen of a stage shows, so a
   stage.set(seededBytes(14, 8000), 0xe000);
   const coverage = new Uint8Array(0x10000);
   for (const address of [0x2000, 0x2001, 0x2003, 0x2006, 0x2008, 0x200b, 0x200c, 0x200d, 0x2010]) coverage[address] = 1 << 2;
-  const { json } = await generate(memory, segments, ["--stage", "bank1", "--call", "$2000"], {
+  const { json } = await generate(memory, segments, ["--stage", "loading", "--call", "$2000"], {
     files: { ...stageCapture(stage, stageSegments, colours), "stage-run.bin": coverage },
-    commands: [["image", "stage/image.json", "--space", "bank1"], ["coverage", "stage-run.bin", "--space", "bank1"]],
+    commands: [["image", "stage/image.json", "--space", "loading"], ["coverage", "stage-run.bin", "--space", "loading"]],
   });
   assert.equal(json.check.identical, true);
   assert.deepEqual(json.loader.differences, []);

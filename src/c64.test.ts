@@ -15,7 +15,7 @@ test("C64 address primitives use canonical four-digit hexadecimal", () => {
   assert.equal(c64AddressOf("c000"), undefined);
   for (const text of ["d020", "$", "$12345", "$g0", " $d020"]) assert.throws(() => parseC64Address(text), (error: unknown) => error instanceof Refusal && error.code === "invalid-input", text);
   assert.throws(() => formatC64Address(0x10000), Refusal);
-  assert.ok(SPACE_PATTERN.test("bank255") && SPACE_PATTERN.test("drive8") && !SPACE_PATTERN.test("bank256") && !SPACE_PATTERN.test("drive9"));
+  assert.ok(SPACE_PATTERN.test("bank255") && SPACE_PATTERN.test("drive8") && SPACE_PATTERN.test("loading") && !SPACE_PATTERN.test("bank256") && !SPACE_PATTERN.test("drive9"));
 });
 
 test("text becomes the PETSCII the keyboard types", () => {

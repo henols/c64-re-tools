@@ -185,7 +185,7 @@ test("an address is $ and 1 to 4 hex digits, or a name in the space of the comma
   assert.match(refused(["at", "$12345"], "invalid-input").message, /^<address> must be \$ and 1 to 4 hex digits/);
   assert.match(refused(["at", "c000"], "invalid-input").message, /^<address>: c000 is not a name in the knowledge\. Give a \$ address/);
   assert.match(refused(["at", "$c000", "--entry", "12-3"], "invalid-input").message, /^--entry must be \$ and 1 to 4 hex digits/);
-  assert.match(refused(["at", "$c000", "--space", "drive9"], "invalid-input").message, /^--space must be c64, drive8, or bank0 to bank255/);
+  assert.match(refused(["at", "$c000", "--space", "drive9"], "invalid-input").message, /^--space must be c64, drive8, loading, or bank0 to bank255/);
 });
 
 test("a range is <start>-<end>, each an address, and does not end before its start", () => {

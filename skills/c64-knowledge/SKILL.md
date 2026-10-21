@@ -53,7 +53,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Write the code of a switch for a range | `patch '$100e-$1010' PROTECTION --code-file no-check.asm` |
 | List the releases, switches and patches | `switches` |
 | Record the start screen of the program | `start-screen --mode multicolour --screen '$5c00' --bitmap '$6000' --colours '$8328' --border 0 --background 0` |
-| Record the start screen of a captured stage, and its tune | `start-screen --stage bank1 --call '$9000'` |
+| Record the start screen of a captured stage, and its tune | `start-screen --stage loading --call '$9000'` |
 | Remove the start screen | `unstart-screen` |
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` |
 | Write instructions as one use of a macro | `use '$1005-$100a' inc16 --args ptr` |
@@ -72,7 +72,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 - An analyzer name is a second name from DXA, Ghidra or an idiom search, for example `FUN_17e2`. Each analyzer keeps its own name at an address. Get them from `at`, `search` or `symbols --analyzer`.
 - The generated source uses only the symbols. To use an analyzer name in the source, give the address that name with `rename`.
 - A symbol name is a label for ACME: a letter or an underscore, then letters, digits or underscores. The knowledge refuses the name of a 6502 instruction, for example `lda`, in upper or lower case.
-- A space is `c64` (the default), `drive8` for code in the 1541 drive, or `bank0` to `bank255` for cartridge banks and for a captured stage of the loading. Drive code, banks and stages use the same addresses as the C64. Thus each space has its own knowledge. A name is unique in one space.
+- A space is `c64` (the default), `drive8` for code in the 1541 drive, `loading` or `bank0` to `bank255`. `loading` is the captured stage of the loading that shows the start screen. `bank0` to `bank255` are cartridge banks. Drive code, the stage and banks use the same addresses as the C64. Thus each space has its own knowledge. A name is unique in one space.
 - A revision id has the form `20261015T214501.123-k3f9qz`. It starts with the date and the time. Give the full id, or a start of the id that only one revision has. Get the ids from `revisions`, or from the `revision` field of a result. The revision `0` is the knowledge before the first revision.
 - A file of a capture is the `image.json` that the capture of a packed program wrote. Keep the other files of the capture next to it.
 
@@ -102,7 +102,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 | Flag | Command | Effect |
 |---|---|---|
-| `--space <space>` | All commands | The space of the command: `c64`, `drive8`, or `bank0` to `bank255`. The default is `c64`. Without `--space`, `revert` reverts all spaces. |
+| `--space <space>` | All commands | The space of the command: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. The default is `c64`. Without `--space`, `revert` reverts all spaces. |
 | `--by <user\|llm>` | All commands in "Change the knowledge" | Who decided the change. The default is `llm`. Give `user` only when the user decided the change. |
 | `--reason <text>` | All commands in "Change the knowledge" | Why you make the change. The revision keeps it, and `history` shows it. |
 | `--evidence <kind:ref>` | All commands in "Change the knowledge" | One thing that the change rests on: `coverage:<map>`, `test:<file>`, `file:<file>` or `note:<text>`. You can give it more than one time. |
@@ -150,7 +150,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--colour <0-15>` | `start-screen` | One colour for all of the colour RAM, in place of `--colours`. |
 | `--border <0-15>` | `start-screen` | The border colour. Necessary without `--stage`. |
 | `--background <0-15>` | `start-screen` | The background colour. Necessary without `--stage`. |
-| `--stage <space>` | `start-screen` | The space of a captured stage that shows the screen, for example `bank1`. The script takes the mode, the addresses and the colours from the capture. Without it, the bytes are in the program at the entry. |
+| `--stage <space>` | `start-screen` | The space of the captured stage that shows the screen: `loading`. The script takes the mode, the addresses and the colours from the capture. Without it, the bytes are in the program at the entry. |
 | `--call <address>` | `start-screen` | A routine of the stage that the start screen calls before it waits, for example the start of the loading tune. It must return with RTS. It needs `--stage`. |
 
 ---
@@ -414,9 +414,9 @@ A start screen is a loading screen, a title screen or a presentation screen of t
 Use this when a stage of the loading shows the screen, and the program at the entry does not have it. Do these steps:
 
 1. Capture the stage while it shows the screen. Do not exclude the memory of the screen.
-2. Put the capture into the knowledge in a space of its own, for example `image stage/image.json --space bank1`.
-3. If the stage plays a tune or does other work during the screen, find the routine that starts it. Run the stage with coverage while that routine runs. Put the map into the knowledge with `coverage <map> --space bank1`.
-4. Record the start screen with `start-screen --stage bank1`, and with `--call` for the routine.
+2. Put the capture into the knowledge in the space `loading`: `image stage/image.json --space loading`. Do not use another space for it.
+3. If the stage plays a tune or does other work during the screen, find the routine that starts it. Run the stage with coverage while that routine runs. Put the map into the knowledge with `coverage <map> --space loading`.
+4. Record the start screen with `start-screen --stage loading`, and with `--call` for the routine.
 
 - The script takes the mode, the screen, the bitmap or the charset, the colours and the colour RAM from the capture. Do not find the addresses or the colours yourself.
 - The generated source puts the screen in memory. It does not matter where the stage keeps its bytes, if the memory has enough room.

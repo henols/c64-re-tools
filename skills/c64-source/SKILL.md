@@ -74,7 +74,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 |---|---|---|
 | `--out <dir>` | `generate` | The folder for the source files. It is necessary. The script writes over the files of an earlier run. It removes a generated `.asm` file that this run does not write. A run without `--loader` keeps `loader.asm`, `loader.prg`, `start_screen.asm` and `start_screen_stage.asm` of an earlier run. `staleLoader` tells when they are of another knowledge revision. |
 | `--entry <address>` | `generate` | An address where code starts. Give the flag again for more addresses. There is no default. |
-| `--space <space>` | `generate` | The knowledge space: `c64`, `drive8`, or `bank0` to `bank255`. The default is `c64`. `--loader` and the platform names apply only to `c64`. The coverage is the coverage of the space. |
+| `--space <space>` | `generate` | The knowledge space: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. The default is `c64`. `--loader` and the platform names apply only to `c64`. The coverage is the coverage of the space. |
 | `--loader` | `generate` | Also write `loader.asm` and `loader.prg`, and `start_screen.asm` when the knowledge has a start screen. A start screen of a captured stage also gives `start_screen_stage.asm`. The script writes `loader.prg` only after the check of the new loader ran. Else the `loader.prg` of an earlier run stays. It needs a capture in the knowledge. The default is no loader. |
 | `--analyzer-names` | `generate` | Name an address without a name of the user or the LLM, and without a platform name, with its analyzer name, for example `FUN_17e2`. Without the flag, the source makes its own name, for example `l_17e2`. |
 | `--to <folder>` | `export` | The folder of the new project. It is necessary. The script also writes `<folder>.zip` beside the folder. |
@@ -264,7 +264,8 @@ The start screen:
 
 - The start screen needs the VIC-II values of the entry state. Its screen, bitmap, charset and colours must be in a segment of the program, or in a captured stage. See "The start screen of a captured stage".
 - With a start screen, the copier uses three pages, not two.
-- `loader.prg` always shows the start screen. To start the program at once, set `START_SCREEN = 0` in `config.asm`, and assemble `loader.asm`. Do not define `START_SCREEN` on the command line of the build: `config.asm` sets it. The build of a release does not read `config.asm`, so it shows the start screen.
+- The start screen is part of the clean build only. `loader.prg` always shows it. A release build has no start screen, and `LEFTOVERS = 1` also turns it off.
+- To start the program at once, set `START_SCREEN = 0` in `config.asm`, and assemble `loader.asm`. Do not define `START_SCREEN` on the command line of the build: `config.asm` sets it.
 - A test that runs `loader.prg` stops at the start screen, because the emulator cannot press a key of the keyboard matrix. Run until `loader_start_screen_wait`. Then set the PC to `loader_start_screen_continue`.
 
 `loader` holds these fields:
@@ -293,7 +294,7 @@ Do these actions when `verified` is `false`:
 
 #### The start screen of a captured stage
 
-Often the loading stage of a program shows a picture that is not in memory at the entry. Then the knowledge has the picture in a captured stage: a space such as `bank1`. `--stage` of the start screen names that space. `--call` names a routine of the stage, for example the routine that starts the loading tune.
+Often the loading stage of a program shows a picture that is not in memory at the entry. Then the knowledge has the picture in the captured stage of the space `loading`. `--stage` of the start screen names that space. `--call` names a routine of the stage, for example the routine that starts the loading tune.
 
 The loader then always has the packed form, and the start screen is a program of its own in front of it:
 

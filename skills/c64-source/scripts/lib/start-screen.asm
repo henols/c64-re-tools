@@ -4,7 +4,8 @@
 ; The loader includes this file in its copier, with the interrupts off. The
 ; code uses no stack and writes only the I/O area, the colour RAM and its own
 ; bytes: the copies wrote pages 0-3 of the entry state already.
-; Set START_SCREEN = 0 in config.asm to start the program at once.
+; Set START_SCREEN = 0 in config.asm to start the program at once. The start
+; screen is part of the clean build only: a release and LEFTOVERS = 1 have none.
 ; loader.asm sets these values from the start screen of the knowledge:
 ;   c64_source_ss_d011, c64_source_ss_d016, c64_source_ss_d018: the VIC-II mode
 ;   c64_source_ss_bank: the VIC bank, as bits 0-1 of $dd00
@@ -19,8 +20,9 @@
 ;   wait, so each read of the keyboard and the joysticks is done with SEI.
 
 !ifndef START_SCREEN { START_SCREEN = 1 }
+!ifndef LEFTOVERS { LEFTOVERS = 0 }
 
-        lda #START_SCREEN
+        lda #START_SCREEN & (1 - LEFTOVERS)
         bne .on
         jmp .end
 .port   !byte 0

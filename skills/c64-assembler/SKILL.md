@@ -87,7 +87,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--set-pc <address>` | `build` | The start address when the source does not set one, for example `'$0801'`. |
 | `--release <label>` | `build` | Build a release of the project knowledge. Each switch gets the value of that release. With `--compare`, the reference is the file of the release. |
 | `--compare` | `build` | Compare the program byte by byte with the program in the project knowledge, or with the file of `--release`, segment by segment. Off by default. |
-| `--space <space>` | `build` | The space of the program in the project knowledge: `c64`, `drive8`, or `bank0` to `bank255`. The default is `c64`. Give it only with `--compare` or `--release`. |
+| `--space <space>` | `build` | The space of the program in the project knowledge: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. The default is `c64`. Give it only with `--compare` or `--release`. |
 | `--plain` | `build` | Write only the bytes of the program, without the 2-byte load address. Off by default. |
 | `--all-symbols` | `build` | List also the constants that the source does not use. Off by default. |
 | `--max-listed <n>` | `build` | List at most `n` symbols. The default is 50. `symbols.count` always gives the count of all symbols. |

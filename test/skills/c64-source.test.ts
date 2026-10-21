@@ -453,6 +453,9 @@ test("a start screen gives the VIC-II values from its addresses, and the loader 
 test("config.asm has START_SCREEN with the default 1 when the knowledge has a start screen, and keeps a 0", () => {
   const rendered = render(layout(input([0xea], 0x1000, { startScreen: true })), new Set(), []);
   assert.match(textOf(rendered, "config.asm"), /\n; Start screen: on by default\nSTART_SCREEN = 1 ; the loader shows the start screen/);
+  // A release is the bytes of its file: its build has no start screen.
+  const release = render(layout(input([0xea], 0x1000, { startScreen: true, releases: [{ label: "ORIGINAL", file: "original.prg", base: true }] })), new Set(), []);
+  assert.match(textOf(release, "switches.asm"), /!ifdef RELEASE_ORIGINAL \{\n {8}START_SCREEN = 0\n\}/);
   assert.equal(rendered.files.some((file) => file.name === "switches.asm"), false, "without releases there is no switches.asm");
   assert.deepEqual([...configValues(configText({ switches: [], patches: new Map(), startScreen: true, leftovers: [] }, new Map([["START_SCREEN", 0]])))], [["START_SCREEN", 0]]);
   assert.equal(render(layout(input([0xea], 0x1000)), new Set(), []).files.some((file) => file.name === "config.asm"), false);

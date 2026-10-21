@@ -33,7 +33,7 @@ export interface AddressRange {
 }
 
 /** The knowledge spaces: the C64, the 1541 drive in unit 8, and cartridge banks 0 to 255. */
-export const SPACE_PATTERN = /^(c64|drive8|bank(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$/;
+export const SPACE_PATTERN = /^(c64|drive8|loading|bank(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$/;
 
 /** VIC-II state with its addresses as $xxxx; the other values stay numbers. */
 export function formatVicii<T extends { screenAddress: number; graphicsAddress: number }>(state: T): Omit<T, "screenAddress" | "graphicsAddress"> & { screenAddress: string; graphicsAddress: string } {

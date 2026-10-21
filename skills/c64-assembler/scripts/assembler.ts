@@ -45,7 +45,7 @@ await runScript({
         "set-pc": { kind: "address", value: "<address>", help: "the start address when the source sets none, for example '$0801'" },
         release: { kind: "text", value: "<label>", help: `build a release of the knowledge: defines ${RELEASE_DEFINE}<label>=1, so each switch has the value of that release. With --compare, the reference is the file of the release` },
         compare: { kind: "flag", help: "check the program byte by byte against the program in the knowledge (or the file of --release), each segment" },
-        space: { kind: "space", value: "<space>", help: "with --compare or --release: the knowledge space of the program: c64 (the default), drive8, or bank0 to bank255" },
+        space: { kind: "space", value: "<space>", help: "with --compare or --release: the knowledge space of the program: c64 (the default), drive8, loading, or bank0 to bank255" },
         plain: { kind: "flag", help: "write the bytes only, without the 2-byte load address of a PRG" },
         "all-symbols": { kind: "flag", help: "list also the constants that the source does not use" },
         "max-listed": { ...OPTIONS["max-listed"], help: "list at most n symbols (default 50). The count is always given" },

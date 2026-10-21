@@ -88,7 +88,7 @@ export type OptionKind =
   | "number" // a value: $ and hex digits, decimal, or % and binary digits
   | "address" // $ and 1 to 4 hex digits, or a name
   | "range" // <start>-<end>, each an address
-  | "space" // c64, drive8, or bank0 to bank255
+  | "space" // c64, drive8, loading, or bank0 to bank255
   | "choice"; // one of `choices`
 
 export interface OptionSpec {
@@ -121,7 +121,7 @@ export interface OptionSpec {
 /** The options that have one meaning in every script. A command can change the help, the value and whether it is required, never the kind. */
 export const OPTIONS = {
   out: { kind: "path", value: "<path>", help: "write the output here, relative to the project folder" },
-  space: { kind: "space", value: "<space>", help: "the knowledge space: c64 (the default), drive8 for 1541 drive code, or bank0 to bank255 for a cartridge bank", default: "c64" },
+  space: { kind: "space", value: "<space>", help: "the knowledge space: c64 (the default), drive8 for 1541 drive code, loading for a captured stage of the loading, or bank0 to bank255 for a cartridge bank", default: "c64" },
   range: { kind: "range", value: "<start>-<end>", help: "only the addresses from start to end, for example '$c000-$cfff'" },
   entry: { kind: "address", value: "<address>", help: "an entry point of the program" },
   steps: { kind: "path", value: "<file>", help: "a JSON file of action steps that run after the start" },
@@ -608,7 +608,7 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
       if (text === "") throw new UsageError(`--${name} needs a value`);
       if (spec.kind === "address" && !isAddressText(text)) throw new UsageError(`--${name} must be ${ADDRESS_FORM}, not ${JSON.stringify(text)}`);
       if (spec.kind === "range" && rangeParts(text) === undefined) throw new UsageError(`--${name} must be <start>-<end>, each ${ADDRESS_FORM}, for example '$c000-$cfff', not ${JSON.stringify(text)}`);
-      if (spec.kind === "space" && !SPACE_PATTERN.test(text)) throw new UsageError(`--${name} must be c64, drive8, or bank0 to bank255, not ${JSON.stringify(text)}`);
+      if (spec.kind === "space" && !SPACE_PATTERN.test(text)) throw new UsageError(`--${name} must be c64, drive8, loading, or bank0 to bank255, not ${JSON.stringify(text)}`);
       if (spec.kind === "choice" && !(spec.choices ?? []).includes(text)) throw new UsageError(`--${name} must be one of ${(spec.choices ?? []).join(", ")}, not ${JSON.stringify(text)}`);
       if (spec.kind === "path") {
         if (spec.output === undefined) checkPath(text, `--${name}`, true);

@@ -114,7 +114,7 @@ export function isGeneratedFile(file: string): boolean {
  */
 export type Space = string;
 export const DEFAULT_SPACE: Space = "c64";
-const SPACE_CHECK = "space IN ('c64', 'drive8') OR space GLOB 'bank[0-9]' OR space GLOB 'bank[1-9][0-9]' OR space GLOB 'bank[12][0-9][0-9]'";
+const SPACE_CHECK = "space IN ('c64', 'drive8', 'loading') OR space GLOB 'bank[0-9]' OR space GLOB 'bank[1-9][0-9]' OR space GLOB 'bank[12][0-9][0-9]'";
 
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 
@@ -399,7 +399,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 12;
+export const INDEX_VERSION = 13;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

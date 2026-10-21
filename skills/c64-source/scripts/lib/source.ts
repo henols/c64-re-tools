@@ -977,7 +977,7 @@ export function configText(layout: Pick<Layout, "switches" | "patches" | "startS
     }
   }
   if (layout.startScreen) {
-    out.push("", "; Start screen: on by default", `${START_SCREEN_SWITCH} = ${values.get(START_SCREEN_SWITCH) ?? 1} ; the loader shows the start screen and waits for a key or a fire button. 0 starts the program at once`);
+    out.push("", "; Start screen: on by default", `${START_SCREEN_SWITCH} = ${values.get(START_SCREEN_SWITCH) ?? 1} ; the loader shows the start screen and waits for a key or a fire button. 0 starts the program at once. Only the clean build has it: a release and LEFTOVERS = 1 have none`);
   }
   if (layout.leftovers.length > 0) {
     const bytes = layout.leftovers.reduce((sum, range) => sum + range.end - range.start + 1, 0);
@@ -1006,6 +1006,8 @@ function switchesText(layout: Layout): string {
     out.push(`!ifdef ${RELEASE_DEFINE}${release.label} {`);
     for (const row of layout.switches) out.push(`${INDENT}${row.name} = ${row.releases.includes(release.label) ? 1 : 0}`);
     if (layout.leftovers.length > 0) out.push(`${INDENT}${LEFTOVERS_SWITCH} = 1`);
+    // The start screen is part of the clean build only: the build of a release is the bytes of its file.
+    if (layout.startScreen) out.push(`${INDENT}${START_SCREEN_SWITCH} = 0`);
     out.push("}");
   }
   if (hasConfigFile(layout)) {

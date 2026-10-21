@@ -1711,7 +1711,7 @@ await runScript({
       options: {
         out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "the folder for the source files, relative to the project folder", required: true },
         entry: { ...OPTIONS.entry, multiple: true, help: "an address where code starts. The entry of the program, the routines and the code regions of the knowledge are entry points too" },
-        space: { ...OPTIONS.space, help: "the knowledge space of the program: c64 (the default), drive8, or bank0 to bank255. --loader is for c64 only" },
+        space: { ...OPTIONS.space, help: "the knowledge space of the program: c64 (the default), drive8, loading, or bank0 to bank255. --loader is for c64 only" },
         loader: { kind: "flag", help: "also write loader.asm and loader.prg: the loader copies the segments into place, sets the entry state of the knowledge, and jumps to the entry. It is checked in the emulator. The loader leaves out the leftovers. When the check cannot run, the script keeps the loader.prg of an earlier run" },
         "analyzer-names": { kind: "flag", help: "name an address that has no name of the user or the LLM, and no platform name, with its analyzer name" },
         "max-listed": OPTIONS["max-listed"],
