@@ -24,7 +24,7 @@ The most interesting parts for a reader are the development of the program and i
    - A release is a memory dump of a program that ran.
    - A crack put a text or a tag into the program.
    - A crack damaged a part of the program, for example a level that does not load.
-8. **The rebuild.** Which release is the base release, the program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. A table of the switches of the project knowledge: the name, the kind, the default and the releases that have the switch on. How to build the default program and each release. Which scenarios compare the original with the rebuild.
+8. **The rebuild.** Which release is the base release, the program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. A table of the switches of the project knowledge: the name, the kind, the default and the releases that have the switch on. How to build the default program and each release. What the runs that compare the original with the rebuild do, in words.
 9. **Still open.** What is not known yet, and which run can find it.
 10. **The reference.** One line with a link to `docs/reference/index.md`.
 
@@ -53,7 +53,7 @@ Look for findings of these kinds. They are often the most useful to a reader:
 
 ## Findings
 
-- **<Title of the finding>.** <What happens, and why.> **Observed** in <run>. <What it means in practice, for example: a test can use it to make a run repeat (**Conclusion**).> See [combat.md](docs/combat.md).
+- **<Title of the finding>.** <What happens, and why.> **Observed** in <what the run did>. <What it means in practice, for example: a test can use it to make a run repeat (**Conclusion**).> See [combat.md](docs/combat.md).
 
 ## How the program works
 
@@ -233,7 +233,7 @@ One page, `docs/protection.md`, that explains the copy protection of the program
 2. **Each check.** For each check, tell where it is and when it runs. Tell what it compares, and how the program hides it. Link the code of the check one time. Use a table for a summary of the checks, without links.
 3. **The effect of a failed check.** What the program does when a check fails. Examples are a crash at once, a slow change of code, damaged data and a wipe of memory. Tell how long the effect takes to show.
 4. **The releases.** In one or two sentences: which checks still run in each release. When a crack changed bytes of the program to stop a check, tell which bytes, and link the code of the change one time.
-5. **The rebuild.** The switch that turns the protection off, the bytes that it changes, and the scenarios that show that the program runs without it.
+5. **The rebuild.** The switch that turns the protection off, the bytes that it changes, and the runs that show that the program operates without it. Tell in words what each run did.
 6. **Still open.** The checks that no run reached, and the run that can reach them.
 
 ## 8. The conventions block

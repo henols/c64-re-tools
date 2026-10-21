@@ -29,7 +29,9 @@ These rules apply to each page that you write. The `link` command checks the rul
   - **Code**: the code shows it, and no run showed it.
   - **Conclusion**: an interpretation of the facts.
 - Put the mark at the end of the paragraph or the list item. When the facts of a paragraph have different evidence, mark each fact.
-- Do not link to the files of a run in `.c64-re-tools/local/`. Name the run in the text when it helps a reader to do the run again. A scenario in `tests/` and a run in `runs/` are part of the project. You can link them.
+- Do not write the name of a JSON file in a page, and do not link to it. Examples are a scenario, a run file, a capture and a list that the source generation wrote. These files are input and output of the tools. They do not help a reader to understand the program.
+- Tell in words what the run did and what it showed. An example: "a run fills each leftover with `$A5` at the entry, and the memory and the screen stay the same at all 10 checkpoints (**Observed**)".
+- Do not link to a file in `.c64-re-tools/local/`.
 - Do not write a fact that you did not check in the code, the knowledge or a run. Put a question in **Still open**.
 
 ## Diagrams and images
