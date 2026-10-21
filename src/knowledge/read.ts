@@ -131,6 +131,9 @@ export interface ReleaseRow {
  * crack, that the loader of the generated source shows before the entry.
  * A text screen has a charset, a bitmap screen has a bitmap. The colour RAM
  * comes from 1000 bytes at `colours` or is one `colour`; a hires bitmap has none.
+ * Without `stage`, the bytes are in the program at the entry. With `stage`,
+ * they are in the memory of that space (a captured stage of the loading, for
+ * example), and `call` is a routine of the stage that the start screen calls.
  */
 export interface StartScreenRow {
   space: Space;
@@ -142,6 +145,8 @@ export interface StartScreenRow {
   colour?: number;
   border: number;
   background: number;
+  stage?: Space;
+  call?: number;
   comment?: string;
   origin: Extract<Origin, "user" | "llm">;
   revision: string;
@@ -197,7 +202,7 @@ export const SWITCH_COLUMNS = "space, name, kind, default_value, releases, comme
 export const RELEASE_COLUMNS = "space, label, file, sha256, base, comment, origin, valid_from_revision";
 export const MACRO_COLUMNS = "space, name, params, body, comment, origin, valid_from_revision";
 export const MACRO_USE_COLUMNS = "space, start_address, end_address, macro, args, origin, valid_from_revision";
-export const START_SCREEN_COLUMNS = "space, mode, screen, bitmap, charset, colours, colour, border, background, comment, origin, valid_from_revision";
+export const START_SCREEN_COLUMNS = "space, mode, screen, bitmap, charset, colours, colour, border, background, stage, call_address, comment, origin, valid_from_revision";
 
 export function toSymbol(row: Raw): SymbolRow {
   return { space: row.space as Space, address: row.address as number, name: row.name as string, kind: row.kind as SymbolKind, origin: row.origin as Origin, revision: row.valid_from_revision as string };
@@ -318,6 +323,8 @@ export function toStartScreen(row: Raw): StartScreenRow {
     revision: row.valid_from_revision as string,
   };
   for (const key of ["bitmap", "charset", "colours", "colour"] as const) if (row[key] !== null && row[key] !== undefined) value[key] = row[key] as number;
+  if (row.stage !== null && row.stage !== undefined) value.stage = row.stage as Space;
+  if (row.call_address !== null && row.call_address !== undefined) value.call = row.call_address as number;
   if (row.comment !== null && row.comment !== undefined) value.comment = row.comment as string;
   return value;
 }

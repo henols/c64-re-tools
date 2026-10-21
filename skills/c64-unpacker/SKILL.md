@@ -260,6 +260,7 @@ Traps:
 5. Make sure that the result is the program. The code at the entry must not be the unpacker again. A segment can be data that a loader or a cracktro left, for example intro graphics. Keep it until other evidence shows that the program does not use it. Then capture again with `--exclude` for that range.
    - Exclude each range of a cracktro that the program does not read. A rebuild has no cracktro. Also exclude a picture, an intro or a credit screen of a crack.
    - Do not exclude the start screen of the program, also when the program does not read it. An example is the loading picture of the publisher. Record it as the start screen in the project knowledge. The loader of the rebuild shows it.
+   - When the start screen is only in an earlier stage of the loading, capture that stage too, while it shows the screen. Do not exclude the memory of the screen in that capture. Put it into the project knowledge in a space of its own, for example `bank1`.
    - Do not exclude other unused bytes, for example leftovers of the development or an old copy of a routine. A rebuild keeps them.
    - Keep a crack change that the program reads, for example a credit text in the game. Record it as a `crack` switch in the project knowledge.
 6. Put `<out>/image.json` into the project knowledge. The knowledge keeps the segments, the entry, the entry state and the stages. After that, you do not need the files in `<out>`.

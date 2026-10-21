@@ -26,8 +26,8 @@ import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
 import { analyzedBytes, memoryRows, programCoverage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
-import { ANALYZER_NAME_ORDER, baseValue, currentRevision, currentStartScreen, startScreenRanges, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listReleases, listSpaces, listSwitches, listSymbols, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
+import { ANALYZER_NAME_ORDER, baseValue, currentRevision, currentStartScreen, startScreenRanges, type StartScreenRow, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listReleases, listSpaces, listSwitches, listSymbols, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { subtract, write } from "#src/knowledge/write.ts";
 import { assemble, symbolsFileText } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
@@ -43,8 +43,11 @@ import {
   COPIER_SOURCE,
   LOADER_JUMP,
   loaderLimits,
+  packedParts,
   packLoader,
+  packParts,
   planLoader,
+  startScreenPlan,
   rasterLine,
   loaderState,
   simulate,
@@ -57,8 +60,10 @@ import {
   type EntryState,
   type LoaderPlan,
   type PackedLoader,
+  type StartScreenPlan,
 } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
+import { planStage, STAGE_CODE_END, STAGE_FILE, STAGE_START, stageParts, stageText, type StageInput, type StagePart, type StagePlan } from "./lib/stage.ts";
 import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
 import { CONFIG_FILE, configText, configValues, entriesInData, entryOutsideImage, hasConfigFile, hasSwitchFile, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
 
@@ -90,8 +95,8 @@ function readKnowledge(space: Space, analyzerNames = false) {
     return {
       revision: currentRevision(db),
       program: requireProgram(db, space),
-      // The coverage is of the C64: drive code and banks have none.
-      coverage: space === DEFAULT_SPACE ? programCoverage(db)?.map : undefined,
+      // The coverage of the space: a run of the C64, or of a captured stage that coverage put into that space.
+      coverage: programCoverage(db, space)?.map,
       symbols: analyzerNames ? withAnalyzerNames(symbols, second) : symbols,
       // Analyzer routines are entry points for the decode, also without --analyzer-names.
       routines: [...symbols, ...second].filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address),
@@ -429,7 +434,7 @@ function compareBuilds(built: Assembled, ranges: readonly AddressRange[], base: 
  * from config.asm: a define of a switch is an error, because config.asm also
  * gives it a value. A switch without a value has its default.
  */
-function withValues(files: Array<{ name: string; text: string }>, laid: Pick<Layout, "switches" | "patches" | "startScreen">, values: ReadonlyMap<string, number>): Array<{ name: string; text: string }> {
+function withValues(files: Array<{ name: string; text: string }>, laid: Pick<Layout, "switches" | "patches" | "startScreen" | "leftovers">, values: ReadonlyMap<string, number>): Array<{ name: string; text: string }> {
   return files.map((file) => (file.name === CONFIG_FILE ? { ...file, text: configText(laid, values) } : file));
 }
 
@@ -524,8 +529,8 @@ interface LoaderRun {
   verified: boolean;
   differences: string[];
   stop?: { pc: string; port: string; cause?: string; history: string[] };
-  /** The start screen: shown with its VIC-II values, and still waiting after START_SCREEN_FRAMES frames. */
-  startScreen?: { shown: boolean; waits: boolean; wait: string; continue: string };
+  /** The start screen: shown with its VIC-II values, and still waiting after START_SCREEN_FRAMES frames. A start screen of a stage also has the bytes of the stage. */
+  startScreen?: { shown: boolean; waits: boolean; wait: string; continue: string; stage?: string };
 }
 
 /** The frames that the check of the loader lets the start screen wait without a key. */
@@ -539,12 +544,14 @@ interface LoaderRunPlan {
   jump: number;
   /** The wait of the start screen and the code after it, when the loader has a start screen. */
   startScreen?: { wait: number; continue: number };
+  /** The show stage of a start screen from a captured stage, which runs before the loader: its wait, the code after it, its VIC-II values and the bytes of the stage. */
+  stage?: { name: string; wait: number; continue: number; screen: StartScreenPlan; parts: StagePart[]; frames: number };
   copierSource: number;
   fileByte: (address: number) => number;
   copierFrames: number;
 }
 
-async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image: ProgramImage, state: EntryState, run: LoaderRunPlan, expected: (address: number) => number): Promise<LoaderRun> {
+async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state: EntryState, run: LoaderRunPlan, expected: (address: number) => number): Promise<LoaderRun> {
   const { jump, copierSource, fileByte } = run;
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
@@ -552,37 +559,54 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
     if (!(await autostartLoaded(client, path, program))) return { verified: false, differences: ["The loader was not in memory after autostart."] };
     await client.keyboard(textToPetscii("RUN\n"));
     // A stop before the copier or the jump gives $01, the last instructions and the first byte that is not as planned.
-    const stopped = async (pc: number, copied: boolean, what: string): Promise<LoaderRun> => {
+    // Before the show stage moves on, the copier is not in place yet: then the stop has no cause from it.
+    const stopped = async (pc: number, copied: boolean, what: string, loaderRan = true): Promise<LoaderRun> => {
       const ram = await readRam(client, 0x0000, 0x10000);
       const port = Buffer.from((await client.memoryRead({ address: 0x0001, size: 1, space: "c64", view: "cpu" })).data, "hex")[0]!;
       const history = (await client.cpuHistory({ limit: STOP_HISTORY, space: "c64" })).entries.map((entry) => `${formatC64Address(entry.address)}  ${entry.text}`);
-      const cause = stopCause(ram, plan, copierSource, fileByte, copied, expected);
+      const cause = loaderRan ? stopCause(ram, plan, copierSource, fileByte, copied, expected) : undefined;
       const port01 = `$${port.toString(16).padStart(2, "0")}`;
       return { verified: false, differences: [`The loader did not get to ${what}; it stopped at ${formatC64Address(pc)}.`], stop: { pc: formatC64Address(pc), port: port01, ...(cause === undefined ? {} : { cause }), history } };
     };
-    const copier = await client.runUntil({ target: { kind: "address", address: plan.copier, space: "c64" }, timeoutFrames: run.copierFrames });
-    if (!copier.reached) return await stopped(copier.pc, false, `its copier at ${formatC64Address(plan.copier)}`);
     // The start screen waits for a key or a fire button. The emulator cannot press a key of the keyboard matrix
     // on each VICE, so the check lets it wait, then sets the PC to the code after the wait.
     let screen: LoaderRun["startScreen"];
     const screenDifferences: string[] = [];
-    if (run.startScreen !== undefined && plan.startScreen !== undefined) {
-      const labels = { wait: formatC64Address(run.startScreen.wait), continue: formatC64Address(run.startScreen.continue) };
-      const atWait = await client.runUntil({ target: { kind: "address", address: run.startScreen.wait, space: "c64" }, timeoutFrames: LOADER_FRAMES });
-      if (!atWait.reached) return await stopped(atWait.pc, true, `its start screen at ${labels.wait}`);
-      const held = await client.runUntil({ target: { kind: "address", address: run.startScreen.continue, space: "c64" }, timeoutFrames: START_SCREEN_FRAMES });
+    const showScreen = async (at: { wait: number; continue: number }, wanted: StartScreenPlan, frames: number, copied: boolean, parts: readonly StagePart[] = []): Promise<LoaderRun | undefined> => {
+      const labels = { wait: formatC64Address(at.wait), continue: formatC64Address(at.continue) };
+      const atWait = await client.runUntil({ target: { kind: "address", address: at.wait, space: "c64" }, timeoutFrames: frames });
+      if (!atWait.reached) return await stopped(atWait.pc, copied, `its start screen at ${labels.wait}`, parts.length === 0);
+      const held = await client.runUntil({ target: { kind: "address", address: at.continue, space: "c64" }, timeoutFrames: START_SCREEN_FRAMES });
       const vic = Buffer.from((await client.ioRead(0xd000, 0x2f)).data, "hex");
       const bank = 3 - (Buffer.from((await client.ioRead(0xdd00, 1)).data, "hex")[0]! & 0x03);
-      const wanted = plan.startScreen;
+      const before = screenDifferences.length;
       const shown: Array<[number, number]> = [[0x11, wanted.d011], [0x15, 0], [0x16, wanted.d016], [0x18, wanted.d018], [0x20, wanted.border], [0x21, wanted.background]];
       for (const [register, value] of shown) {
         const mask = VIC_DISPLAY_REGISTERS.find((item) => item.register === register)!.mask;
         if ((vic[register]! & mask) !== (value & mask)) screenDifferences.push(`the start screen has ${formatC64Address(0xd000 + register)} = $${(vic[register]! & mask).toString(16).padStart(2, "0")}, not $${(value & mask).toString(16).padStart(2, "0")}`);
       }
       if (bank !== wanted.bank) screenDifferences.push(`the start screen is in VIC bank ${bank}, not ${wanted.bank}`);
-      screen = { shown: screenDifferences.length === 0, waits: !held.reached, ...labels };
+      // The bytes of the screen of a stage: the first wrong byte of each part.
+      for (const part of parts) {
+        const ram = await readRam(client, part.start, part.body.length);
+        const wrong = part.body.findIndex((byte, offset) => ram[offset] !== byte);
+        if (wrong >= 0) screenDifferences.push(`the stage has $${ram[wrong]!.toString(16).padStart(2, "0")} at ${formatC64Address(part.start + wrong)}, not $${part.body[wrong]!.toString(16).padStart(2, "0")}`);
+      }
+      screen = { shown: screenDifferences.length === before, waits: !held.reached, ...labels, ...(run.stage === undefined ? {} : { stage: run.stage.name }) };
       if (held.reached) screenDifferences.push(`the start screen did not wait: it got to ${labels.continue} without a key or a fire button`);
-      if (!held.reached) await client.registersSet("c64", { pc: run.startScreen.continue });
+      if (!held.reached) await client.registersSet("c64", { pc: at.continue });
+      return undefined;
+    };
+    // The show stage of a captured stage runs before the loader.
+    if (run.stage !== undefined) {
+      const stop = await showScreen(run.stage, run.stage.screen, run.stage.frames, false, run.stage.parts);
+      if (stop !== undefined) return stop;
+    }
+    const copier = await client.runUntil({ target: { kind: "address", address: plan.copier, space: "c64" }, timeoutFrames: run.copierFrames });
+    if (!copier.reached) return await stopped(copier.pc, false, `its copier at ${formatC64Address(plan.copier)}`);
+    if (run.startScreen !== undefined && plan.startScreen !== undefined) {
+      const stop = await showScreen(run.startScreen, plan.startScreen, LOADER_FRAMES, true);
+      if (stop !== undefined) return stop;
     }
     const atJump = await client.runUntil({ target: { kind: "address", address: jump, space: "c64" }, timeoutFrames: LOADER_FRAMES });
     if (!atJump.reached) return await stopped(atJump.pc, true, `its jump to the entry at ${formatC64Address(jump)}`);
@@ -595,8 +619,9 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
     const differences: string[] = [];
     const byte = (value: number) => `$${value.toString(16).padStart(2, "0")}`;
     const differ = (what: string, got: number, wanted: number) => got !== wanted && differences.push(`${what} is ${byte(got)}, not ${byte(wanted)}`);
-    for (const segment of image.segments) {
-      for (let address = Math.max(segment.start, 2); address <= segment.end; address++) differ(formatC64Address(address), memory[address]!, image.byteAt(address));
+    // The leftovers are not loaded: only the loaded ranges have the bytes of the build.
+    for (const part of plan.loaded) {
+      for (let address = Math.max(part.start, 2); address <= part.end; address++) differ(formatC64Address(address), memory[address]!, expected(address));
     }
     for (let address = 2; address < 0x400; address++) if (address !== plan.stackByte) differ(formatC64Address(address), memory[address]!, state.pages[address]!);
     differ("$00", port[0]!, state.port[0]);
@@ -667,7 +692,7 @@ function sourceMapText(rendered: Rendered, space: string, revision: string | nul
 const LOADER_CHECK_DIRECTORY = "loader-check";
 
 /** The files of the loader. Only a run with --loader writes them, so only such a run removes them. */
-const LOADER_FILES: ReadonlySet<string> = new Set(["loader.asm", "loader.prg", START_SCREEN_FILE]);
+const LOADER_FILES: ReadonlySet<string> = new Set(["loader.asm", "loader.prg", START_SCREEN_FILE, STAGE_FILE]);
 
 /** The start of the line of loader.asm that gives the knowledge revision of the loader. */
 const LOADER_REVISION = "Loader generated by c64-source from knowledge revision ";
@@ -736,6 +761,10 @@ interface SourceOptions {
   loaderHeader?: string[];
   /** The source of an export: no config.asm, so START_SCREEN has the default of start_screen.asm. */
   exported?: boolean;
+  /** Put the free ranges of the program into leftover files, which only LEFTOVERS = 1 builds. */
+  leftovers?: boolean;
+  /** The switch values of the build that the loader loads. The default is `values`. */
+  loaderValues?: ReadonlyMap<string, number>;
 }
 
 /**
@@ -751,6 +780,7 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
   const romUse = romUseOfProgram(coverage, image.state);
   const platform = platformNamesFor(romUse);
   const { instructions, dataOnly } = options.decoded ?? (await decode(image, knowledge, options.entries, coverage));
+  const leftovers = options.leftovers === true && !dataOnly ? leftoversOf(knowledge, instructions) : [];
   const laid = layout({
     segments: image.segments,
     byteAt: image.byteAt,
@@ -768,50 +798,23 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
     macros: knowledge.macros,
     macroUses: knowledge.macroUses,
     startScreen: knowledge.startScreen !== undefined && options.exported !== true,
+    leftovers,
     ...(coverage === undefined || !options.notExecutedMarks ? {} : { coverage }),
     // The platform names are C64 names: drive code and banks get none. A ROM that the program does not use gives none.
     ...(space === DEFAULT_SPACE ? { platform, platformLeftOut: leftOutNames(platform), describe: describeAddress, decode: decodeRegister, io: IO_RAM } : {}),
   });
   const asBytes = await probe(laid);
   const { header } = options;
-  let loader: LoaderPlan | undefined;
-  // An image without its entry has no program: the source is still written and checked, but the run fails.
-  const missingEntry = entryOutsideImage(image.entry, image.segments);
-  // A loader that cannot be planned does not stop the source: the source is written and checked, and the result says why.
-  const { state } = options;
-  let loaderRefused: string | undefined = state === undefined ? undefined : missingEntry;
-  if (state !== undefined && missingEntry === undefined) {
-    const segments = image.segments.map((segment) => ({ ...segment, files: laid.pieces.filter((piece) => piece.start >= segment.start && piece.start <= segment.end).map((piece) => piece.file) }));
-    try {
-      const entryName = laid.names.get(image.entry!);
-      loader = planLoader({
-        segments,
-        byteAt: image.byteAt,
-        state,
-        entry: image.entry!,
-        ...(entryName === undefined ? {} : { entryName }),
-        switches: hasSwitchFile(laid),
-        config: hasConfigFile(laid),
-        macros: laid.macros.length > 0,
-        header: options.loaderHeader ?? [],
-        ...(knowledge.startScreen === undefined ? {} : { startScreen: knowledge.startScreen }),
-      });
-    } catch (error) {
-      if (!isRefusal(error)) throw error;
-      loaderRefused = error.message;
-    }
-  }
   // With a mark, every file starts with it.
   const { mark } = options;
   const marked = (list: Array<{ name: string; text: string }>) => (mark === undefined ? list : list.map((file) => (file.name === CONFIG_FILE ? file : { ...file, text: `${mark}\n${file.text}` })));
   const markLines = mark === undefined ? 0 : 1;
-  const loaderFiles = loader === undefined ? [] : [{ name: "loader.asm", text: loader.text }, ...(loader.startScreen === undefined ? [] : [{ name: START_SCREEN_FILE, text: START_SCREEN_CODE }])];
   const numbers = new Map<number, string>();
   const asInstructions = new Map<number, string>();
   let rendered = render(laid, asBytes, header, numbers, asInstructions);
   if (laid.macroUses.size > 0) for (const [start, reason] of await probeUses(laid, rendered, image)) asInstructions.set(start, reason);
   if (asInstructions.size > 0) rendered = render(laid, asBytes, header, numbers, asInstructions);
-  let files = marked([...rendered.files, ...loaderFiles]);
+  let files = marked(rendered.files);
   let built = await assembleFiles(withValues(files, laid, options.values), "main.asm");
   for (let round = 0; round < ROUNDS && (rendered.expressions.length > 0 || rendered.uses.length > 0); round++) {
     const blamed = blame(rendered, built, image, markLines);
@@ -819,22 +822,83 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
     for (const [address, reason] of blamed.numbers) numbers.set(address, reason);
     for (const [start, reason] of blamed.uses) asInstructions.set(start, reason);
     rendered = render(laid, asBytes, header, numbers, asInstructions);
-    files = marked([...rendered.files, ...loaderFiles]);
+    files = marked(rendered.files);
     built = await assembleFiles(withValues(files, laid, options.values), "main.asm");
   }
-  return { romUse, instructions, dataOnly, laid, rendered, files, built, loader, missingEntry, loaderRefused };
+
+  let loader: LoaderPlan | undefined;
+  /** The build of main.asm that the loader loads: the switch values of the loader. */
+  let loaderMain: { program: Buffer; start: number } | undefined;
+  // An image without its entry has no program: the source is still written and checked, but the run fails.
+  const missingEntry = entryOutsideImage(image.entry, image.segments);
+  // A loader that cannot be planned does not stop the source: the source is written and checked, and the result says why.
+  const { state } = options;
+  let loaderRefused: string | undefined = state === undefined ? undefined : missingEntry;
+  if (state !== undefined && missingEntry === undefined) {
+    const main = options.loaderValues === undefined ? built : await assembleFiles(withValues(files, laid, options.loaderValues), "main.asm");
+    if (main.program === undefined) loaderRefused = "The source does not assemble with the switch values of the loader.";
+    else {
+      const program = main.program;
+      const start = main.start!;
+      loaderMain = { program, start };
+      try {
+        const entryName = laid.names.get(image.entry!);
+        loader = planLoader({
+          segments: loadedParts(laid, image.segments),
+          byteAt: (address) => program[2 + address - start]!,
+          state,
+          entry: image.entry!,
+          ...(entryName === undefined ? {} : { entryName }),
+          switches: hasSwitchFile(laid),
+          config: hasConfigFile(laid),
+          macros: laid.macros.length > 0,
+          header: options.loaderHeader ?? [],
+          // A start screen of a stage shows before the loader, in the show stage: the copier has none.
+          ...(knowledge.startScreen === undefined || knowledge.startScreen.stage !== undefined ? {} : { startScreen: knowledge.startScreen }),
+        });
+      } catch (error) {
+        if (!isRefusal(error)) throw error;
+        loaderRefused = error.message;
+      }
+    }
+  }
+  if (loader !== undefined) files = [...files, ...marked([{ name: "loader.asm", text: loader.text }, ...(loader.startScreen === undefined ? [] : [{ name: START_SCREEN_FILE, text: START_SCREEN_CODE }])])];
+  return { romUse, instructions, dataOnly, laid, rendered, files, built, loader, loaderMain, missingEntry, loaderRefused };
+}
+
+/** The ranges that the loader loads, each with its files: the segments without the leftovers. */
+function loadedParts(laid: Pick<Layout, "pieces">, segments: readonly AddressRange[]): Array<AddressRange & { files: string[] }> {
+  const parts: Array<AddressRange & { files: string[] }> = [];
+  for (const segment of segments) {
+    let open: (AddressRange & { files: string[] }) | undefined;
+    for (const piece of laid.pieces.filter((item) => item.start >= segment.start && item.start <= segment.end)) {
+      if (piece.leftover) {
+        open = undefined;
+        continue;
+      }
+      if (open === undefined) {
+        open = { start: piece.start, end: piece.end, files: [piece.file] };
+        parts.push(open);
+      } else {
+        open.end = piece.end;
+        open.files.push(piece.file);
+      }
+    }
+  }
+  return parts;
 }
 
 /**
  * Assembles loader.asm with the switch values and simulates its copies: the
- * loader as it loads, then every copy in its order, byte by byte. A layout
- * other than the plan is a defect of the script.
+ * loader as it loads, then every copy in its order, byte by byte. `main` is
+ * the build of main.asm with the same values: the loaded ranges must get its
+ * bytes. A layout other than the plan is a defect of the script.
  */
 async function buildLoader(
   files: Array<{ name: string; text: string }>,
   laid: Layout,
   loader: LoaderPlan,
-  image: ProgramImage,
+  main: { program: Buffer; start: number },
   state: EntryState,
   values: ReadonlyMap<string, number>,
 ): Promise<{ program: Buffer; symbols: AssembledSymbol[]; jump: number; copierSource: number; expected: (address: number) => number; startScreen?: { wait: number; continue: number } } | { diagnostics: Diagnostic[] }> {
@@ -843,7 +907,7 @@ async function buildLoader(
   const program = loaderBuilt.program;
   const memory = new Int16Array(0x10000).fill(-1);
   program.subarray(2).forEach((byte, offset) => (memory[loaderBuilt.start! + offset] = byte));
-  const expected = (address: number) => (image.segments.some((segment) => address >= segment.start && address <= segment.end) ? image.byteAt(address) : state.pages[address]!);
+  const expected = (address: number) => (loader.loaded.some((part) => address >= part.start && address <= part.end) ? main.program[2 + address - main.start]! : state.pages[address]!);
   const wrongPacking = loader.blocks.find((block) => {
     for (let address = block.range.start; address <= block.range.end; address++) if (memory[block.packedAt + address - block.range.start] !== block.bytes(address)) return true;
     return false;
@@ -863,6 +927,108 @@ async function buildLoader(
   return { program, symbols: loaderBuilt.symbols ?? [], jump, copierSource: symbolValue(COPIER_SOURCE), expected, ...(startScreen === undefined ? {} : { startScreen }) };
 }
 
+/**
+ * The bytes of a captured stage that its start screen uses: the parts of the
+ * screen, and with a call every byte of the stage that is not free when the
+ * call is the entry (freeRanges, from the coverage of the stage). Each patch
+ * of the stage whose switch default is not its base value is in, as in the
+ * default build. Pages 0-3 are left out: the unpacker of Exomizer uses them.
+ */
+async function stageBytes(row: StartScreenRow): Promise<StagePart[]> {
+  const stage = row.stage!;
+  const knowledge = readKnowledge(stage);
+  const image = knowledge.program;
+  const memory = Uint8Array.from(image.memory);
+  const addresses = knowledge.symbols.map((symbol) => `${symbol.name} = ${formatC64Address(symbol.address)}`);
+  for (const patch of knowledge.patches) {
+    const owner = knowledge.switches.find((item) => item.name === patch.switch);
+    if (owner === undefined || owner.default === owner.base) continue;
+    const length = patch.end - patch.start + 1;
+    const text = ["!cpu 6510", ...addresses, `* = ${formatC64Address(patch.start)}`, ...patch.code.split(/\r?\n/), `!fill ${length} - (* - ${formatC64Address(patch.start)}), $ea`].join("\n");
+    const built = await assembleFiles([{ name: "patch.asm", text: `${text}\n` }], "patch.asm");
+    if (built.program === undefined || built.start !== patch.start || built.program.length - 2 !== length) {
+      throw new Refusal("invalid-input", `The patch of ${patch.switch} at ${formatC64Address(patch.start)}-${formatC64Address(patch.end)} in ${stage} does not assemble to ${length} bytes: ${built.diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "it is longer than its range"}. Correct the patch in the project knowledge.`);
+    }
+    memory.set(built.program.subarray(2), patch.start);
+  }
+  const screen = startScreenRanges(row).map((part) => part.range);
+  let ranges = screen;
+  if (row.call !== undefined) {
+    if (knowledge.coverage === undefined) {
+      throw new Refusal("not-found", `The start screen calls ${formatC64Address(row.call)} of ${stage}, and the knowledge has no coverage in ${stage}. Run the stage with coverage while it calls ${formatC64Address(row.call)} and plays, and put the map into the project knowledge with coverage --space ${stage}. Then generate again.`);
+    }
+    // The call is the entry of the stage: what it does not reach and its run did not touch stays out.
+    const called = { ...knowledge, program: { ...image, entry: row.call } };
+    const { instructions } = await decode(called.program, called, [row.call], knowledge.coverage);
+    const free = leftoversOf(called, instructions, screen);
+    ranges = [...screen, ...image.segments.flatMap((segment) => subtract(segment, free))];
+  }
+  const parts: AddressRange[] = [];
+  for (const range of ranges.map((item) => ({ start: Math.max(item.start, 0x0400), end: item.end })).filter((item) => item.start <= item.end).sort((a, b) => a.start - b.start)) {
+    const last = parts.at(-1);
+    if (last !== undefined && range.start <= last.end + 1) last.end = Math.max(last.end, range.end);
+    else parts.push({ ...range });
+  }
+  return parts.map((range) => ({ start: range.start, body: memory.slice(range.start, range.end + 1) }));
+}
+
+/** What the show stage gives: loader.prg, the source of the stage, and what its check needs. */
+interface BuiltStage {
+  program: Buffer;
+  text: string;
+  plan: StagePlan;
+  parts: StagePart[];
+  packed: PackedLoader;
+  wait: number;
+  continue: number;
+  screen: StartScreenPlan;
+}
+
+/**
+ * Builds the show stage of a start screen from a captured stage: plans it,
+ * assembles start_screen_stage.asm and packs it with the loader as the loader
+ * is in memory before it starts. Refuses by name.
+ */
+async function buildStage(files: Array<{ name: string; text: string }>, laid: Layout, loader: LoaderPlan, main: { program: Buffer; start: number }, copierBuild: Buffer, row: StartScreenRow, values: ReadonlyMap<string, number>, header: string[], mark: string): Promise<BuiltStage> {
+  const stage = await stageBytes(row);
+  const inner: StagePart[] = loader.packed === undefined ? [{ start: 0x0801, body: copierBuild.subarray(2) }] : packedParts(main.program, copierBuild, loader).map((part) => ({ start: part.start, body: part.body }));
+  const screen = startScreenPlan(row);
+  const input: StageInput = {
+    inner,
+    innerStart: loader.packed === undefined ? 0x080d : loader.copier,
+    innerPort: loader.packed === undefined ? 0x37 : 0x34,
+    stage,
+    row,
+    plan: screen,
+    settings: hasSwitchFile(laid) ? ['!source "switches.asm"'] : hasConfigFile(laid) ? ['!source "config.asm"'] : [],
+    header,
+    codeSize: 0,
+  };
+  const support = [...withValues(files, laid, values).filter((file) => file.name === CONFIG_FILE || file.name === "switches.asm"), { name: START_SCREEN_FILE, text: START_SCREEN_CODE }];
+  const assembleStage = async (text: string) => {
+    const built = await assembleFiles([...support, { name: STAGE_FILE, text }], STAGE_FILE);
+    if (built.program === undefined) throw new WireFailure("operation-failed", `${STAGE_FILE} does not assemble: ${built.diagnostics.map((diagnostic) => diagnostic.message).join("; ")}. This is a defect of the script.`);
+    const labels = new Map((built.symbols ?? []).map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+    const label = (name: string) => {
+      const value = labels.get(name);
+      if (value === undefined) throw new WireFailure("operation-failed", `The build of ${STAGE_FILE} has no ${name} label. This is a defect of the script.`);
+      return value;
+    };
+    return { program: built.program, label };
+  };
+  // The size of the show code does not depend on its address: one build without a stash gives it.
+  const probe = await assembleStage(stageText(input, 0x1000, []));
+  input.codeSize = probe.label(STAGE_CODE_END) - probe.label(STAGE_START) - 2;
+  const plan = planStage(input);
+  const built = await assembleStage(plan.text);
+  if (built.label(STAGE_START) !== plan.code || built.label(STAGE_CODE_END) - plan.code !== input.codeSize + 6 * plan.stash.length + 2) throw new WireFailure("operation-failed", `The build of ${STAGE_FILE} does not have the planned layout. This is a defect of the script.`);
+  const parts = stageParts(input, plan, built.program, built.label);
+  const packed = await packParts(parts, plan.code, 0x37, "the loader and the start screen of the stage", "the show stage", localToolContext());
+  const end = 0x0801 + packed.program.length - 3;
+  if (end > 0xcfff) throw new Refusal("invalid-input", `loader.prg with the start screen of ${row.stage} would end at ${formatC64Address(end)}, after $cfff: loading it would write the I/O area. Capture the stage with less memory, so that its program holds only the start screen and the routine of the call.`);
+  return { program: packed.program, text: `${mark}\n${plan.text}`, plan, parts: stage, packed, wait: built.label(START_SCREEN_WAIT), continue: built.label(START_SCREEN_CONTINUE), screen };
+}
+
 /** The first line of each file that generate writes. */
 const GENERATED_LINE = `${GENERATED_MARK}. Do not edit: change the knowledge and generate again.`;
 
@@ -880,24 +1046,27 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   }
   // Read the entry state before the long steps, so a bad state stops the run at once.
   const state = loaderWanted ? loaderState(image.state, "the entry state of the knowledge") : undefined;
-  // Every build that is compared with the program is the build of the base release: each switch at its base value.
-  const baseValues = new Map(knowledge.switches.map((row) => [row.name, row.base]));
+  // Every build that is compared with the program is the build of the base release: each switch at its base value, with the leftovers.
+  const baseValues = new Map<string, number>([...knowledge.switches.map((row) => [row.name, row.base] as const), [LEFTOVERS_SWITCH, 1]]);
+  // config.asm keeps the value of each switch that it already has: the user sets the switches there. The loader loads that build.
+  const configPath = resolveProjectPath(`${out}/${CONFIG_FILE}`);
+  const given = existsSync(configPath) ? configValues(readFileSync(configPath, "utf8")) : new Map<string, 0 | 1>();
+  const configNames = new Set([...knowledge.switches.map((row) => row.name), START_SCREEN_SWITCH, LEFTOVERS_SWITCH]);
+  const loaderValues = new Map([...given].filter(([name]) => configNames.has(name)));
   const header = [`Generated by c64-source from knowledge revision ${knowledge.revision}${space === DEFAULT_SPACE ? "" : ` in space ${space}`}.`, "Change names, comments, regions and modules in knowledge, then generate again."];
   const loaderHeader = [`${LOADER_REVISION}${knowledge.revision}.`, "It copies the segments into place, sets the entry state and jumps to the entry."];
-  const { romUse, dataOnly, laid, rendered, files, built, loader, missingEntry, loaderRefused } = await buildSource(knowledge, {
+  const { romUse, dataOnly, laid, rendered, files, built, loader, loaderMain, missingEntry, loaderRefused } = await buildSource(knowledge, {
     space,
     entries,
     header,
     mark: GENERATED_LINE,
     values: baseValues,
     notExecutedMarks: true,
-    ...(state === undefined ? {} : { state, loaderHeader }),
+    leftovers: true,
+    ...(state === undefined ? {} : { state, loaderHeader, loaderValues }),
   });
-  // config.asm keeps the value of each switch that it already has: the user sets the switches there.
-  const configPath = resolveProjectPath(`${out}/${CONFIG_FILE}`);
-  const given = existsSync(configPath) ? configValues(readFileSync(configPath, "utf8")) : new Map<string, 0 | 1>();
-  // START_SCREEN is a switch of the start screen, with the default 1.
-  const configured = [...laid.switches, ...(laid.startScreen ? [{ name: START_SCREEN_SWITCH, default: 1 }] : [])];
+  // START_SCREEN is a switch of the start screen, with the default 1. LEFTOVERS has the default 0: the default build is the clean program.
+  const configured = [...laid.switches, ...(laid.startScreen ? [{ name: START_SCREEN_SWITCH, default: 1 }] : []), ...(laid.leftovers.length > 0 ? [{ name: LEFTOVERS_SWITCH, default: 0 }] : [])];
   const kept = new Map(configured.flatMap((row) => (given.has(row.name) ? [[row.name, given.get(row.name)!] as const] : [])));
   const notDefault = configured.flatMap((row) => (kept.has(row.name) && kept.get(row.name) !== row.default ? [{ name: row.name, value: kept.get(row.name)!, default: row.default }] : []));
   const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), loaderWanted).map((name) => `${out}/${name}`);
@@ -950,6 +1119,12 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
           notExecuted: { instructions: rendered.notExecuted.instructions, ...listed(rendered.notExecuted.ranges, max, showRange, `${out}/${NOT_EXECUTED_FILE}`) },
         }),
     ...(laid.unusedModules.length === 0 ? {} : { unusedModules: laid.unusedModules.map((module) => ({ start: formatC64Address(module.start), file: module.file })) }),
+    // The bytes that nothing uses: in leftover files, which the default build and the loader leave out.
+    ...(laid.leftovers.length === 0
+      ? knowledge.coverage === undefined && space === DEFAULT_SPACE
+        ? { leftovers: { bytes: 0, noCoverage: "The knowledge has no coverage, so no range is a leftover, and the default build and the loader have every byte of the program." } }
+        : {}
+      : { leftovers: { bytes: laid.leftovers.reduce((sum, range) => sum + range.end - range.start + 1, 0), ...listed(laid.leftovers, max, (range) => ({ ...showRange(range), bytes: range.end - range.start + 1, file: `leftover_${range.start.toString(16).padStart(4, "0")}.asm` })) } }),
     ...(rendered.expressions.length === 0 && rendered.operandsAsNumbers.length === 0 ? {} : { operandExpressions: rendered.expressions.length }),
     ...(rendered.operandsAsNumbers.length === 0
       ? {}
@@ -993,9 +1168,10 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   if (switches.length > 0) output.switches = switches;
   // The default build: the patches of each switch whose default is not its base value are in, and nothing else changes.
   let defaultFailed = false;
-  if (laid.switches.length > 0) {
+  if (laid.switches.length > 0 || laid.leftovers.length > 0) {
     const changed = laid.switches.filter((row) => row.default !== row.base);
-    const ranges = changed.flatMap((row) => withPatches.get(row.name) ?? []);
+    // The default build also leaves out the leftovers.
+    const ranges = [...changed.flatMap((row) => withPatches.get(row.name) ?? []), ...laid.leftovers];
     const built = await checkBuild(withValues(files, laid, new Map()), ranges, baseBuild);
     output.default = { in: changed.map((row) => row.name), ...built };
     defaultFailed = built.result !== "fits";
@@ -1007,25 +1183,36 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const releasesFailed = releases.some((item) => item.result !== "identical" && (item.base || item.result !== "layout differs"));
   const sourceFailed = laid.patchesNotWritten.length > 0 || switches.some((item) => item.result !== "fits") || defaultFailed || releasesFailed;
   if (loaderRefused !== undefined) return { output: { ...output, loader: notVerified({ reason: loaderRefused }) }, removed, failed: true };
-  if (loader === undefined || state === undefined) return { output, removed, failed: missingEntry !== undefined || sourceFailed };
+  if (loader === undefined || loaderMain === undefined || state === undefined) return { output, removed, failed: missingEntry !== undefined || sourceFailed };
 
-  // The entry state is the state of the base release: the loader is built and checked with it.
-  const loaderBuilt = await buildLoader(files, laid, loader, image, state, baseValues);
+  // The loader loads the build with the values of config.asm, without the leftovers. The entry state is the state of the base release.
+  const loaderBuilt = await buildLoader(files, laid, loader, loaderMain, state, loaderValues);
   if ("diagnostics" in loaderBuilt) return { output: { ...output, loader: notVerified({ reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics }) }, removed, failed: true };
   const { jump, copierSource, expected, startScreen } = loaderBuilt;
   const copierBuild = loaderBuilt.program;
   const fileByte = (address: number) => copierBuild[2 + address - (loader.packed?.start ?? 0x0801)]!;
+  // A start screen of a captured stage: the show stage packs the loader with it, so the packed form is not packed alone.
+  const stageRow = knowledge.startScreen?.stage === undefined ? undefined : knowledge.startScreen;
   // The packed form: Exomizer packs the build of main.asm with the copier. Without Exomizer, or when its check fails, there is no new loader.prg.
   let packed: PackedLoader | undefined;
-  if (loader.packed !== undefined) {
+  if (loader.packed !== undefined && stageRow === undefined) {
     try {
-      packed = await packLoader(built.program, copierBuild, loader, localToolContext());
+      packed = await packLoader(loaderMain.program, copierBuild, loader, localToolContext());
     } catch (error) {
       if (!isRefusal(error)) throw error;
       return { output: { ...output, loader: notVerified({ reason: `loader.asm has the packed form, and the pack with Exomizer failed. ${error.message}` }) }, removed, failed: true };
     }
   }
-  const program = packed?.program ?? copierBuild;
+  let stage: BuiltStage | undefined;
+  if (stageRow !== undefined) {
+    try {
+      stage = await buildStage(files, laid, loader, loaderMain, copierBuild, stageRow, loaderValues, loaderHeader, GENERATED_LINE);
+    } catch (error) {
+      if (!isRefusal(error)) throw error;
+      return { output: { ...output, loader: notVerified({ reason: `The show stage of the start screen from ${stageRow.stage} cannot be built. ${error.message}` }) }, removed, failed: true };
+    }
+  }
+  const program = stage?.program ?? packed?.program ?? copierBuild;
   // The check runs the new loader from a scratch file. Only a loader whose check ran goes to --out, so a check
   // that cannot run (no host, or a host of another release) keeps the loader.prg of an earlier run.
   ensureLocal(projectRoot());
@@ -1033,11 +1220,19 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   mkdirSync(resolveProjectPath(scratch), { recursive: true });
   const checkPath = `${scratch}/loader.prg`;
   writeFileSync(resolveProjectPath(checkPath), program);
-  // The unpack runs before the copier.
-  const copierFrames = packed === undefined ? RUN_LIMIT_FRAMES : packed.cycles === undefined ? LOADER_FRAMES : RUN_LIMIT_FRAMES + Math.ceil(packed.cycles / PAL_FRAME_CYCLES);
+  // The unpack runs before the copier, or before the show stage, which then starts the loader.
+  const unpackFrames = (cycles: number | undefined) => (cycles === undefined ? LOADER_FRAMES : RUN_LIMIT_FRAMES + Math.ceil(cycles / PAL_FRAME_CYCLES));
+  const copierFrames = stage !== undefined || packed === undefined ? RUN_LIMIT_FRAMES : unpackFrames(packed.cycles);
+  // The check compares the bytes of the screen of the stage: a routine of the stage can change its other bytes.
+  const stageByte = (address: number) => {
+    const part = stage!.parts.find((item) => address >= item.start && address < item.start + item.body.length)!;
+    return part.body[address - part.start]!;
+  };
+  const screenParts = stage === undefined ? [] : startScreenRanges(stageRow!).map(({ range }) => ({ start: range.start, body: Uint8Array.from({ length: range.end - range.start + 1 }, (_, offset) => stageByte(range.start + offset)) }));
+  const stageRun = stage === undefined ? {} : { stage: { name: stageRow!.stage!, wait: stage.wait, continue: stage.continue, screen: stage.screen, parts: screenParts, frames: unpackFrames(stage.packed.cycles) + LOADER_FRAMES } };
   let ran: LoaderRun;
   try {
-    ran = await runLoader(checkPath, program, loader, image, state, { jump, copierSource, fileByte, copierFrames, ...(startScreen === undefined ? {} : { startScreen }) }, expected);
+    ran = await runLoader(checkPath, program, loader, state, { jump, copierSource, fileByte, copierFrames, ...(startScreen === undefined ? {} : { startScreen }), ...stageRun }, expected);
   } catch (error) {
     if (!isRefusal(error)) throw error;
     const what = existsSync(resolveProjectPath(loaderPath)) ? "kept the loader.prg of an earlier run" : "wrote no loader.prg";
@@ -1046,9 +1241,22 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     rmSync(resolveProjectPath(scratch), { recursive: true, force: true });
   }
   written.push(writeReported(loaderPath, program, { what: "--out" }));
+  if (stage !== undefined) written.push(writeReported(`${out}/${STAGE_FILE}`, stage.text, { what: "--out" }), writeReported(`${out}/${START_SCREEN_FILE}`, `${GENERATED_LINE}\n${START_SCREEN_CODE}`, { what: "--out" }));
   output.loader = {
     program: loaderPath,
     ...(packed === undefined ? {} : { packed: { packedBytes: packed.packedBytes, unpackedBytes: packed.unpackedBytes } }),
+    ...(stage === undefined
+      ? {}
+      : {
+          stage: {
+            space: stageRow!.stage,
+            code: formatC64Address(stage.plan.code),
+            bytes: stage.parts.reduce((sum, part) => sum + part.body.length, 0),
+            stash: stage.plan.stash.map((item) => ({ from: formatC64Address(item.at), to: `${formatC64Address(item.target.start)}-${formatC64Address(item.target.end)}` })),
+            packedBytes: stage.packed.packedBytes,
+            unpackedBytes: stage.packed.unpackedBytes,
+          },
+        }),
     copies: loader.copies.map((copy) => ({ what: copy.what, to: `${formatC64Address(copy.target.start)}-${formatC64Address(copy.target.end)}` })),
     copier: formatC64Address(loader.copier),
     stackByte: formatC64Address(loader.stackByte),
@@ -1095,6 +1303,61 @@ function effectiveRegions(regions: SourceKnowledge["regions"]): SourceKnowledge[
   return [...semantic, ...regions.filter((region) => !isSemantic(region.origin)).flatMap((region) => clipped(region, holes))].sort((a, b) => a.start - b.start);
 }
 
+/** The names and the four-digit hex addresses that the code of a patch has: a switch can go to them, so they stay. */
+function patchTargets(code: string, addressOf: ReadonlyMap<string, number>): number[] {
+  const words = code.replace(/;.*$/gm, "").match(/\$[0-9a-fA-F]{4}\b|[A-Za-z_][A-Za-z0-9_]*/g) ?? [];
+  return words.flatMap((word) => (word.startsWith("$") ? [Number.parseInt(word.slice(1), 16)] : addressOf.has(word) ? [addressOf.get(word)!] : []));
+}
+
+/**
+ * The free ranges of a program: code that no run executed and that nothing
+ * reaches, and data that no run touched and that nothing names (planDrops).
+ * The export makes them $00; generate makes them the leftovers. `memory` and
+ * `instructions` are of the build that the ranges are free in.
+ */
+function freeRanges(knowledge: SourceKnowledge, memory: Uint8Array, instructions: ReadonlyMap<number, number>, ranges: { changed: readonly AddressRange[]; keep: readonly AddressRange[]; drop: readonly AddressRange[] }) {
+  const image = knowledge.program;
+  const addressOf = new Map(knowledge.symbols.map((symbol) => [symbol.name, symbol.address]));
+  const operandTargets = new Map<number, number[]>();
+  for (const operand of knowledge.operands) {
+    const names = operand.symbol !== undefined ? [operand.symbol] : identifiers(operand.expression ?? "");
+    const targets = names.flatMap((item) => (addressOf.has(item) ? [(addressOf.get(item)! + (operand.symbol !== undefined ? operand.offset : 0)) & 0xffff] : []));
+    if (targets.length > 0) operandTargets.set(operand.address, targets);
+  }
+  const entry = image.entry ?? basicEntry(image);
+  return planDrops({
+    segments: image.segments,
+    memory,
+    ...(entry === undefined ? {} : { entry }),
+    instructions,
+    ...(knowledge.coverage === undefined ? {} : { coverage: knowledge.coverage }),
+    regions: effectiveRegions(knowledge.regions),
+    references: knowledge.references,
+    operandTargets,
+    changed: [...ranges.changed],
+    keep: [...ranges.keep],
+    drop: [...ranges.drop],
+    routines: knowledge.symbols.filter((symbol) => symbol.kind === "routine"),
+  });
+}
+
+/**
+ * The leftovers of generate: the free ranges of the program as it is. The
+ * start screen in the program, the patches, the macro uses, what the code of a
+ * patch names and the ranges of `keep` stay, so each switch builds with
+ * LEFTOVERS = 0.
+ */
+function leftoversOf(knowledge: SourceKnowledge, instructions: ReadonlyMap<number, number>, kept: readonly AddressRange[] = []): AddressRange[] {
+  const image = knowledge.program;
+  const inImage = (range: AddressRange) => image.segments.some((segment) => range.start >= segment.start && range.end <= segment.end);
+  const addressOf = new Map(knowledge.symbols.map((symbol) => [symbol.name, symbol.address]));
+  const screenParts = knowledge.startScreen === undefined || knowledge.startScreen.stage !== undefined ? [] : startScreenRanges(knowledge.startScreen).map((part) => part.range);
+  const named = knowledge.patches.flatMap((patch) => patchTargets(patch.code, addressOf)).map((address) => ({ start: address, end: address }));
+  const keep = [...screenParts, ...kept, ...knowledge.macroUses, ...named].map((range) => ({ start: range.start, end: range.end })).filter(inImage);
+  const changed = knowledge.patches.map((patch) => ({ start: patch.start, end: patch.end })).filter(inImage);
+  return freeRanges(knowledge, image.memory, instructions, { changed, keep, drop: [] }).free.map((range) => ({ start: range.start, end: range.end }));
+}
+
 /** Every file in a folder with its path in it, with / between the parts, in path order. `skip` leaves out a folder by its path. */
 function filesIn(root: string, skip: (path: string) => boolean, folder = ""): Array<{ path: string; bytes: Buffer }> {
   const found: Array<{ path: string; bytes: Buffer }> = [];
@@ -1134,7 +1397,10 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
       db?.close();
     }
   })();
-  const knowledge = readKnowledge(DEFAULT_SPACE);
+  const read = readKnowledge(DEFAULT_SPACE);
+  // The export has only the space c64: a start screen of a captured stage stays out with that space.
+  const stageLeftOut = read.startScreen?.stage;
+  const knowledge = stageLeftOut === undefined ? read : { ...read, startScreen: undefined };
   const image = knowledge.program;
   // The VIC-II reads the start screen, and the coverage does not show those reads: it stays.
   const screenParts = knowledge.startScreen === undefined ? [] : startScreenRanges(knowledge.startScreen).map((part) => part.range);
@@ -1179,29 +1445,8 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   const decoded = await decode(bakedImage, knowledge, [], knowledge.coverage);
 
   // 4. The free ranges.
-  const addressOf = new Map(knowledge.symbols.map((symbol) => [symbol.name, symbol.address]));
-  const operandTargets = new Map<number, number[]>();
-  for (const operand of knowledge.operands) {
-    const names = operand.symbol !== undefined ? [operand.symbol] : identifiers(operand.expression ?? "");
-    const targets = names.flatMap((item) => (addressOf.has(item) ? [(addressOf.get(item)! + (operand.symbol !== undefined ? operand.offset : 0)) & 0xffff] : []));
-    if (targets.length > 0) operandTargets.set(operand.address, targets);
-  }
   const regions = effectiveRegions(knowledge.regions);
-  const entry = image.entry ?? basicEntry(image);
-  const plan = planDrops({
-    segments: image.segments,
-    memory,
-    ...(entry === undefined ? {} : { entry }),
-    instructions: decoded.instructions,
-    ...(knowledge.coverage === undefined ? {} : { coverage: knowledge.coverage }),
-    regions,
-    references: knowledge.references,
-    operandTargets,
-    changed,
-    keep,
-    drop,
-    routines: knowledge.symbols.filter((symbol) => symbol.kind === "routine"),
-  });
+  const plan = freeRanges(knowledge, memory, decoded.instructions, { changed, keep, drop });
   const free = plan.free;
   const inFree = (address: number) => free.some((range) => address >= range.start && address <= range.end);
   const overlapsAny = (start: number, end: number, ranges: readonly AddressRange[]) => ranges.some((range) => start <= range.end && range.start <= end);
@@ -1265,7 +1510,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   if (state !== undefined) {
     if (exported.loader === undefined) return { result: "FAIL", stage: "loader", reason: exported.loaderRefused ?? "The loader could not be planned." };
     if (exported.loader.packed !== undefined) return { result: "FAIL", stage: "loader", reason: "The program is too large for one loader file, and export does not make the packed form of the loader." };
-    const loaderBuilt = await buildLoader(exported.files, exported.laid, exported.loader, derived.program, state, new Map());
+    const loaderBuilt = await buildLoader(exported.files, exported.laid, exported.loader, exported.loaderMain!, state, new Map());
     if ("diagnostics" in loaderBuilt) return { result: "FAIL", stage: "loader", reason: "loader.asm does not assemble. This is a defect of the script.", diagnostics: loaderBuilt.diagnostics };
     baseline = { program: loaderBuilt.program, symbols: loaderBuilt.symbols, entryFile: "loader.asm" };
     loaderOutput = {
@@ -1343,6 +1588,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
     knowledge: kept,
     tests: { written: tests.map((test) => test.file), leftOut: listed(testsLeftOut, max, (item) => item) },
     ...(spacesLeftOut.length === 0 ? {} : { spacesLeftOut }),
+    ...(stageLeftOut === undefined ? {} : { startScreenLeftOut: `The start screen is of the captured stage in ${stageLeftOut}, and the export has only the space c64.` }),
     ...(exported.rendered.operandsAsNumbers.length === 0 ? {} : { operandsAsNumbers: listed(exported.rendered.operandsAsNumbers, max, (item) => ({ address: formatC64Address(item.address), expression: item.expression, reason: item.reason })) }),
     ...(exported.rendered.macrosAsInstructions.length === 0 ? {} : { macrosAsInstructions: listed(exported.rendered.macrosAsInstructions, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), macro: item.macro, reason: item.reason })) }),
   };
@@ -1398,6 +1644,7 @@ function generateReply(call: Call, body: Record<string, unknown>): Reply {
     again = true;
   }
   if ((body.loader as { verified?: boolean } | undefined)?.verified === false) steps.push("The loader is not verified. Read loader.reason, loader.differences and loader.stop.");
+  if ((body.leftovers as { noCoverage?: string } | undefined)?.noCoverage !== undefined && call.flag("loader")) steps.push("To leave out the bytes that nothing uses, put the coverage of the runs into the project knowledge. Then generate again.");
   if (body.dataOnly !== undefined) {
     steps.push("The source has only data. If the space has code, give --entry, or record a code region in the project knowledge.");
     again = true;
@@ -1452,8 +1699,8 @@ await runScript({
       options: {
         out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "the folder for the source files, relative to the project folder", required: true },
         entry: { ...OPTIONS.entry, multiple: true, help: "an address where code starts. The entry of the program, the routines and the code regions of the knowledge are entry points too" },
-        space: { ...OPTIONS.space, help: "the knowledge space of the program: c64 (the default), drive8, or bank0 to bank255. The coverage and --loader are for c64 only" },
-        loader: { kind: "flag", help: "also write loader.asm and loader.prg: the loader copies the segments into place, sets the entry state of the knowledge, and jumps to the entry. It is checked in the emulator. When the check cannot run, the script removes loader.prg" },
+        space: { ...OPTIONS.space, help: "the knowledge space of the program: c64 (the default), drive8, or bank0 to bank255. --loader is for c64 only" },
+        loader: { kind: "flag", help: "also write loader.asm and loader.prg: the loader copies the segments into place, sets the entry state of the knowledge, and jumps to the entry. It is checked in the emulator. The loader leaves out the leftovers. When the check cannot run, the script keeps the loader.prg of an earlier run" },
         "analyzer-names": { kind: "flag", help: "name an address that has no name of the user or the LLM, and no platform name, with its analyzer name" },
         "max-listed": OPTIONS["max-listed"],
       },

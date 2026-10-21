@@ -78,7 +78,7 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName } from "./text.ts";
 
 /** What a change rests on: a coverage run, a test or another project file with its SHA-256, or a note. */
@@ -287,8 +287,8 @@ export class Change {
 
   insertStartScreen(row: Omit<StartScreenRow, "revision">): void {
     this.#db
-      .prepare("INSERT INTO start_screens (id, space, mode, screen, bitmap, charset, colours, colour, border, background, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.mode, row.screen, row.bitmap ?? null, row.charset ?? null, row.colours ?? null, row.colour ?? null, row.border, row.background, row.comment ?? null, row.origin, this.id());
+      .prepare("INSERT INTO start_screens (id, space, mode, screen, bitmap, charset, colours, colour, border, background, stage, call_address, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.mode, row.screen, row.bitmap ?? null, row.charset ?? null, row.colours ?? null, row.colour ?? null, row.border, row.background, row.stage ?? null, row.call ?? null, row.comment ?? null, row.origin, this.id());
   }
 
   insertMacro(row: Omit<MacroRow, "revision">): void {
@@ -445,6 +445,7 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
   }
   if (switchNamed(db, request.name, space) !== undefined) throw new Refusal("conflict", `${request.name} is the name of a switch. Give the symbol another name.`);
   if (request.name === START_SCREEN_SWITCH) throw new Refusal("conflict", `${START_SCREEN_SWITCH} is the switch of the start screen in the generated source. Give the symbol another name.`);
+  if (request.name === LEFTOVERS_SWITCH) throw new Refusal("conflict", `${LEFTOVERS_SWITCH} is the switch of the leftovers in the generated source. Give the symbol another name.`);
   const release = request.name.startsWith(RELEASE_DEFINE) ? releaseLabeled(db, request.name.slice(RELEASE_DEFINE.length), space) : undefined;
   if (release !== undefined) throw new Refusal("conflict", `${request.name} builds the release ${release.label}. Give the symbol another name.`);
   if (existing !== undefined) change.close("symbols", "space = ? AND address = ?", space, request.address);
@@ -959,6 +960,7 @@ function checkSwitch(request: SwitchRequest): void {
   checkSwitchName(request.name);
   if (request.name.startsWith(RELEASE_DEFINE)) throw new Refusal("invalid-input", `A switch name does not start with ${RELEASE_DEFINE}: the build of a release defines ${RELEASE_DEFINE}<label>.`);
   if (request.name === START_SCREEN_SWITCH) throw new Refusal("invalid-input", `${START_SCREEN_SWITCH} is the switch of the start screen in the generated source. Give the switch another name.`);
+  if (request.name === LEFTOVERS_SWITCH) throw new Refusal("invalid-input", `${LEFTOVERS_SWITCH} is the switch of the leftovers in the generated source. Give the switch another name.`);
   checkOneOf(SWITCH_KINDS, request.kind, "kind");
   if (request.default !== undefined && request.default !== 0 && request.default !== 1) throw new Refusal("invalid-input", "default must be 0 or 1.");
   if (OFF_KINDS.includes(request.kind) && request.default === 1) {
@@ -1064,7 +1066,7 @@ function unreleaseStep(db: DatabaseSync, change: Change, _origin: Origin, reques
   return { current: null };
 }
 
-type StartScreenRequest = InSpace & { mode: StartScreenMode; screen: number; bitmap?: number; charset?: number; colours?: number; colour?: number; border: number; background: number; comment?: string };
+type StartScreenRequest = InSpace & { mode: StartScreenMode; screen: number; bitmap?: number; charset?: number; colours?: number; colour?: number; border: number; background: number; stage?: Space; call?: number; comment?: string };
 
 /**
  * The rules of the VIC-II for a start screen: the screen at a 1K step, the
@@ -1075,7 +1077,15 @@ type StartScreenRequest = InSpace & { mode: StartScreenMode; screen: number; bit
  */
 function checkStartScreen(request: StartScreenRequest): void {
   checkSpace(request);
-  if (spaceOf(request) !== DEFAULT_SPACE) throw new Refusal("invalid-input", "A start screen is only in the space c64.");
+  if (spaceOf(request) !== DEFAULT_SPACE) throw new Refusal("invalid-input", "A start screen is only in the space c64. Give the space of its bytes with --stage.");
+  if (request.stage !== undefined) {
+    checkSpace({ space: request.stage });
+    if (request.stage === DEFAULT_SPACE) throw new Refusal("invalid-input", "--stage is another space than c64: the space of a captured stage that holds the bytes of the start screen. Without --stage, the bytes are in the program.");
+  }
+  if (request.call !== undefined) {
+    if (request.stage === undefined) throw new Refusal("invalid-input", "--call is a routine of the stage: give --stage too.");
+    checkAddress(request.call, "call");
+  }
   checkOneOf(START_SCREEN_MODES, request.mode, "mode");
   checkAddress(request.screen, "screen");
   for (const key of ["bitmap", "charset", "colours"] as const) if (request[key] !== undefined) checkAddress(request[key], key);
@@ -1118,8 +1128,26 @@ function checkStartScreen(request: StartScreenRequest): void {
   checkCommentText(request.comment, "A start screen comment");
 }
 
+/** The bytes of a start screen of a stage, and its call, must be in the program of that space. */
+function checkStage(db: DatabaseSync, request: StartScreenRequest): void {
+  if (request.stage === undefined) return;
+  const byteAt = programBytes(db, request.stage);
+  if (byteAt(request.screen) === undefined && db.prepare("SELECT 1 FROM current_memory WHERE space = ? LIMIT 1").get(request.stage) === undefined) {
+    throw new Refusal("not-found", `The knowledge has no program in ${request.stage}. Capture the stage while it shows the start screen, and put the capture into the project knowledge with image --space ${request.stage}. Then record the start screen again.`);
+  }
+  const inStage = (range: AddressRange) => {
+    for (let address = range.start; address <= range.end; address++) if (byteAt(address) === undefined) return false;
+    return true;
+  };
+  for (const { what, range } of startScreenRanges(request)) {
+    if (!inStage(range)) throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(range.start)}-${formatC64Address(range.end)} is not in the program in ${request.stage}. Capture the stage again, and do not exclude the memory of the start screen.`);
+  }
+  if (request.call !== undefined && !inStage({ start: request.call, end: request.call })) throw new Refusal("invalid-input", `The call ${formatC64Address(request.call)} is not in the program in ${request.stage}.`);
+}
+
 function startScreenStep(db: DatabaseSync, change: Change, origin: Origin, request: StartScreenRequest): Step<StartScreenRow, StartScreenRow> {
   const space = spaceOf(request);
+  checkStage(db, request);
   const existing = currentStartScreen(db, space);
   const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
   const row: Omit<StartScreenRow, "revision"> = {
@@ -1132,6 +1160,8 @@ function startScreenStep(db: DatabaseSync, change: Change, origin: Origin, reque
     ...(request.colour === undefined ? {} : { colour: request.colour }),
     border: request.border,
     background: request.background,
+    ...(request.stage === undefined ? {} : { stage: request.stage }),
+    ...(request.call === undefined ? {} : { call: request.call }),
     ...(comment === undefined ? {} : { comment }),
     origin: origin as StartScreenRow["origin"],
   };
@@ -1605,7 +1635,7 @@ const KEYS = {
     columns: START_SCREEN_COLUMNS,
     map: toStartScreen,
     key: (row: StartScreenRow) =>
-      `${row.space}|${row.mode}|${row.screen}|${row.bitmap ?? ""}|${row.charset ?? ""}|${row.colours ?? ""}|${row.colour ?? ""}|${row.border}|${row.background}|${row.comment ?? ""}|${row.origin}`,
+      `${row.space}|${row.mode}|${row.screen}|${row.bitmap ?? ""}|${row.charset ?? ""}|${row.colours ?? ""}|${row.colour ?? ""}|${row.border}|${row.background}|${row.stage ?? ""}|${row.call ?? ""}|${row.comment ?? ""}|${row.origin}`,
   },
   macros: { columns: MACRO_COLUMNS, map: toMacro, key: (row: MacroRow) => `${row.space}|${row.name}|${listText(row.params)}|${row.body}|${row.comment ?? ""}|${row.origin}` },
   macro_uses: { columns: MACRO_USE_COLUMNS, map: toMacroUse, key: (row: MacroUseRow) => `${row.space}|${row.start}|${row.end}|${row.macro}|${listText(row.args)}|${row.origin}` },

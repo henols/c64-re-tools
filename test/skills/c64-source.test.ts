@@ -20,6 +20,7 @@ import { ciaSection, copyOrder, loaderLimits, packLoader, planLoader, loaderStat
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
 import { configText, configValues, entriesInData, entryOutsideImage, layout, render, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
+import { planStage, type StageInput } from "../../skills/c64-source/scripts/lib/stage.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 import type { StartScreenRow } from "../../src/knowledge/read.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
@@ -269,7 +270,7 @@ test("with real ACME, a packed loader puts the copier in one free range and page
 
 test("a loader that stops early names the first copier byte that is not the file's byte, and else the first byte that a copy did not write", () => {
   // Found in a field run on a 46 KB game: the only message was the address where the loader stopped.
-  const plan = { blocks: [], copies: [{ what: "segment $1000-$10ff", target: { start: 0x1000, end: 0x10ff }, source: { start: 0x0900, end: 0x09ff }, backward: false }], copier: 0xc000, stackByte: 0x01f6, end: 0xa0ff, text: "" };
+  const plan = { loaded: [{ start: 0x1000, end: 0x10ff }], blocks: [], copies: [{ what: "segment $1000-$10ff", target: { start: 0x1000, end: 0x10ff }, source: { start: 0x0900, end: 0x09ff }, backward: false }], copier: 0xc000, stackByte: 0x01f6, end: 0xa0ff, text: "" };
   const file = (address: number) => (address * 7) & 0xff;
   const expected = (address: number) => address & 0xff;
   const ram = new Uint8Array(0x10000);
@@ -373,6 +374,14 @@ test("with real ACME, the loader stub switches the BASIC ROM out before it moves
   assert.ok(copierSource.kind === "address" && copierSource.address >= 0xa000, "the copier lies under the BASIC ROM");
 });
 
+test("a plain loader with more copies than its copier can do gets the packed form, for example for many leftovers", () => {
+  // 40 parts of 4 bytes, as the leftovers between them give.
+  const segments = Array.from({ length: 40 }, (_, index) => ({ start: 0x1000 + index * 16, end: 0x1003 + index * 16, files: [] }));
+  const plan = planLoader({ segments, byteAt: () => 0xea, state: state(), entry: 0x1000, header: [] });
+  assert.notEqual(plan.packed, undefined);
+  assert.deepEqual(plan.loaded, segments.map(({ start, end }) => ({ start, end })));
+});
+
 test("with real ACME and Exomizer, a 62 KiB image with RAM at $d000-$dfff packs into loader.prg that unpacks to every byte and jumps to the copier", { skip: exomizerSkip, timeout: 600_000 }, async () => {
   // $0801-$bfff and $c800-$ffff: the copier with pages 0-3 goes to $c000.
   const segments = [{ start: 0x0801, end: 0xbfff }, { start: 0xc800, end: 0xffff }];
@@ -406,7 +415,7 @@ test("with real ACME and Exomizer, a 62 KiB image with RAM at $d000-$dfff packs 
   // The unpack in the emulator of Exomizer gives every byte of both builds, also under the I/O area, and jumps to the copier; else packLoader refuses.
   const packed = await packLoader(main, copier, plan, localToolContext());
   assert.equal(packed.program.readUInt16LE(0), 0x0801);
-  assert.equal(packed.unpackedBytes, 0x10000 - 0x0801, "main.asm with its gap, which the copier covers");
+  assert.equal(packed.unpackedBytes, 0xc000 - 0x0801 + 0x10000 - 0xc800 + plan.end - 0xc000 + 1, "the loaded ranges of main.asm and the copier: the gap between the segments is not packed");
   assert.ok(packed.packedBytes < packed.unpackedBytes, JSON.stringify({ packed: packed.packedBytes }));
 });
 
@@ -439,7 +448,7 @@ test("config.asm has START_SCREEN with the default 1 when the knowledge has a st
   const rendered = render(layout(input([0xea], 0x1000, { startScreen: true })), new Set(), []);
   assert.match(textOf(rendered, "config.asm"), /\n; Start screen: on by default\nSTART_SCREEN = 1 ; the loader shows the start screen/);
   assert.equal(rendered.files.some((file) => file.name === "switches.asm"), false, "without releases there is no switches.asm");
-  assert.deepEqual([...configValues(configText({ switches: [], patches: new Map(), startScreen: true }, new Map([["START_SCREEN", 0]])))], [["START_SCREEN", 0]]);
+  assert.deepEqual([...configValues(configText({ switches: [], patches: new Map(), startScreen: true, leftovers: [] }, new Map([["START_SCREEN", 0]])))], [["START_SCREEN", 0]]);
   assert.equal(render(layout(input([0xea], 0x1000)), new Set(), []).files.some((file) => file.name === "config.asm"), false);
 });
 
@@ -725,9 +734,9 @@ test("with real Ghidra and ACME, an operand expression that ACME assembles to ot
 test("with real Ghidra and ACME, a loader that cannot be planned still gives the checked source and says why", { skip: ghidraSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
-  // 40 segments of 4 bytes: more copies than one loader can do. The first one starts with RTS.
+  // One segment of $0400-$ffff: too large for the plain loader, and no free range for the copier of the packed form. $1000 is RTS.
   const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
-  const segments = Array.from({ length: 40 }, (_, index) => ({ start: 0x1000 + index * 16, end: 0x1003 + index * 16 }));
+  const segments = [{ start: 0x0400, end: 0xffff }];
   const memory = new Uint8Array(0x10000);
   for (const segment of segments) memory.fill(0x11, segment.start, segment.end + 1);
   memory[0x1000] = 0x60;
@@ -755,7 +764,7 @@ test("with real Ghidra and ACME, a loader that cannot be planned still gives the
   assert.equal(json.check.identical, true);
   assert.ok((json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))).includes("main.asm") && !(json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))).includes("loader.asm"));
   assert.equal(json.loader.verified, false);
-  assert.match(json.loader.reason, /needs 41 copies|needs 40 copies/);
+  assert.match(json.loader.reason, /A packed loader needs one free range of \d+ bytes or more for its copier/);
 });
 
 test("with real Ghidra and ACME, an image whose entry is in no segment gives the checked source and fails", { skip: ghidraSkip, timeout: 600_000 }, async () => {
@@ -1001,6 +1010,54 @@ async function assembleRendered(rendered: ReturnType<typeof render>, defines: Re
   );
   return { ...(result.assembled ? { bytes: [...attachments![0]!.subarray(2)] } : {}), messages: result.diagnostics.map((diagnostic) => diagnostic.message) };
 }
+
+test("a range of leftovers is a file of its own that only LEFTOVERS = 1 builds; the module that it cuts goes on in a file of its own", () => {
+  const source = patchInput([], { modules: [{ start: 0x1000, file: "game.asm", title: "The game" }], leftovers: [{ start: 0x1008, end: 0x100b }], releases: [{ label: "ORIGINAL", file: "original.prg", base: true }] });
+  const laid = layout(source);
+  assert.deepEqual(laid.pieces.map((piece) => [piece.file, piece.start, piece.end, piece.leftover]), [["game.asm", 0x1000, 0x1007, false], ["leftover_1008.asm", 0x1008, 0x100b, true], ["game_100c.asm", 0x100c, 0x1013, false]]);
+  assert.equal(laid.pieces[2]!.title, "The game, from $100c");
+  const rendered = render(laid, new Set(), []);
+  assert.match(textOf(rendered, "main.asm"), /!source "game\.asm"\n!if LEFTOVERS \{ !source "leftover_1008\.asm" \} else \{ !skip 4 \}\n!source "game_100c\.asm"\n/);
+  assert.match(textOf(rendered, "main.asm"), /!source "switches\.asm"/, "main.asm gets LEFTOVERS from switches.asm");
+  assert.match(textOf(rendered, "config.asm"), /\n; Leftovers: off by default\nLEFTOVERS = 0 ; 4 bytes in 1 leftover_xxxx\.asm file that nothing uses\./);
+  assert.match(textOf(rendered, "switches.asm"), /!ifdef RELEASE_ORIGINAL \{\n {8}LEFTOVERS = 1\n\}/, "each release has the leftovers");
+  assert.match(textOf(rendered, "leftover_1008.asm"), /^; Leftovers \$1008-\$100b: 4 bytes that nothing uses\./);
+  // A module that starts in the leftovers goes on after them.
+  const inside = layout(patchInput([], { modules: [{ start: 0x1000, file: "game.asm" }, { start: 0x100a, file: "table.asm", title: "The table" }], leftovers: [{ start: 0x1008, end: 0x100b }] }));
+  assert.deepEqual(inside.pieces.map((piece) => [piece.file, piece.start, piece.end]), [["game.asm", 0x1000, 0x1007], ["leftover_1008.asm", 0x1008, 0x100b], ["table_100c.asm", 0x100c, 0x1013]]);
+  assert.equal(inside.pieces[2]!.title, "The table, from $100c");
+  // Without releases and switches, switches.asm only includes config.asm.
+  const alone = render(layout(patchInput([], { leftovers: [{ start: 0x1008, end: 0x100b }] })), new Set(), []);
+  assert.equal(textOf(alone, "switches.asm").trimEnd().split("\n").at(-1), '!source "config.asm"');
+  assert.equal(render(layout(patchInput([])), new Set(), []).files.some((file) => file.name === "config.asm"), false, "no leftovers, no config.asm");
+});
+
+test("with real ACME, the source with LEFTOVERS = 1 gives the program, and with 0 it leaves out the leftovers and keeps every address", { skip: acmeSkip }, async () => {
+  const source = patchInput([], { leftovers: [{ start: 0x1008, end: 0x100b }] });
+  const laid = layout(source);
+  const rendered = render(laid, new Set(), []);
+  const original = Array.from({ length: 20 }, (_, offset) => source.byteAt(0x1000 + offset));
+  const withLeftovers = { ...rendered, files: rendered.files.map((file) => (file.name === "config.asm" ? { ...file, text: configText(laid, new Map([["LEFTOVERS", 1]])) } : file)) };
+  assert.deepEqual((await assembleRendered(withLeftovers)).bytes, original);
+  const clean = (await assembleRendered(rendered)).bytes!;
+  assert.equal(clean.length, original.length);
+  assert.deepEqual([...clean.slice(0, 8), ...clean.slice(12)], [...original.slice(0, 8), ...original.slice(12)], "the bytes after the leftovers keep their addresses");
+  assert.notDeepEqual(clean.slice(8, 12), original.slice(8, 12));
+});
+
+test("the show stage runs where the KERNAL can be in, and puts the loader bytes under the stage in a stash; without room it refuses with the free ranges", () => {
+  const row: StartScreenRow = { space: "c64", mode: "multicolour", screen: 0xcc00, bitmap: 0xe000, colours: 0x8328, border: 0, background: 6, stage: "bank1", call: 0x0a00, origin: "llm", revision: "r" };
+  const stageInput = (inner: StageInput["inner"], stage: StageInput["stage"]): StageInput => ({ inner, innerStart: 0x080d, innerPort: 0x37, stage, row, plan: startScreenPlan(row), settings: [], header: [], codeSize: 300 });
+  const plan = planStage(stageInput([{ start: 0x0801, body: new Uint8Array(0x500) }], [{ start: 0x0a00, body: new Uint8Array(0x20) }, { start: 0xcc00, body: new Uint8Array(1000) }]));
+  assert.equal(plan.code, 0x0400, "the first free range that the code fits");
+  assert.deepEqual(plan.stash.map((item) => item.target), [{ start: 0x0a00, end: 0x0a1f }]);
+  const at = plan.stash[0]!.at;
+  assert.ok(at >= 0x0400 + 300 + 8 && at + 0x1f <= 0x0800, "the stash is in free memory after the code");
+  assert.match(plan.text, /c64_source_ss_call = \$0a00 /);
+  assert.match(plan.text, new RegExp(`!word 32, \\$${at.toString(16).padStart(4, "0")}, \\$0a00 ; \\$0a00-\\$0a1f of the loader`));
+  assert.match(plan.text, /jmp \$080d\n/);
+  assert.throws(() => planStage(stageInput([{ start: 0x0400, body: new Uint8Array(0xcc00) }], [{ start: 0xe000, body: new Uint8Array(8000) }])), /The show stage needs 308 free bytes for its code in \$0400-\$9fff or \$c000-\$cfff.* The largest free ranges outside the loader and the bytes of the stage: \$d000-\$dfff \(4096 bytes\)/);
+});
 
 /** A switch that no release has on: off in the program and, by default, off in the build. */
 const offSwitch = (name: string): SourceSwitch => ({ name, kind: "change", default: 0, base: 0, releases: [] });

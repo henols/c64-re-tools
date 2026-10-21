@@ -12,6 +12,11 @@
 ;   c64_source_ss_colour_mode: 0 no colour RAM, 1 one colour, 2 a copy of 1000 bytes
 ;   c64_source_ss_colour: the one colour (mode 1)
 ;   c64_source_ss_colours: the address of the 1000 bytes (mode 2)
+; The show stage of a start screen from a captured stage can also set:
+;   c64_source_ss_call: a routine of the stage, for example the start of the
+;   loading tune. The code calls it with the KERNAL in and the interrupts on,
+;   after the screen shows and before the wait. The interrupts stay on in the
+;   wait, so each read of the keyboard and the joysticks is done with SEI.
 
 !ifndef START_SCREEN { START_SCREEN = 1 }
 
@@ -78,12 +83,23 @@
 }
         lda #c64_source_ss_d011
         sta $d011
+!ifdef c64_source_ss_call {
+        lda #$37
+        sta $01
+        cli
+        jsr c64_source_ss_call
+}
 
         ; Y is the phase: 0 waits until nothing is pressed, for example the
         ; RETURN of RUN; 1 waits for a press; 2 waits until it is released.
 loader_start_screen_wait
         ldy #0
-.poll   lda #$ff
+.poll
+!ifdef c64_source_ss_call {
+        ; An interrupt of the stage must not write $dc00 between a write and a read.
+        sei
+}
+        lda #$ff
         sta $dc00
         ; No keyboard row is driven: $dc01 gives joystick 1 alone.
         lda $dc01
@@ -107,12 +123,19 @@ loader_start_screen_wait
         lda $dc01
         and .joy
         bne .down
+!ifdef c64_source_ss_call {
+        cli
+}
         tya
         beq .settle
         cmp #2
         beq loader_start_screen_continue
         bne .poll
-.down   cpy #1
+.down
+!ifdef c64_source_ss_call {
+        cli
+}
+        cpy #1
         bne .poll
         iny
         bne .poll
@@ -130,6 +153,9 @@ loader_start_screen_wait
         bne .poll
 
 loader_start_screen_continue
+!ifdef c64_source_ss_call {
+        sei
+}
         lda .port
         sta $dc00
         lda .ddra

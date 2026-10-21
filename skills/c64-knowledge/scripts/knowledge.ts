@@ -175,6 +175,8 @@ const startScreen = (row: StartScreenRow) => ({
   ...(row.colour === undefined ? {} : { colour: row.colour }),
   border: row.border,
   background: row.background,
+  ...(row.stage === undefined ? {} : { stage: row.stage }),
+  ...(row.call === undefined ? {} : { call: formatC64Address(row.call) }),
   ...(row.comment === undefined ? {} : { comment: row.comment }),
   origin: row.origin,
   revision: row.revision,
@@ -935,7 +937,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "start-screen",
-      summary: "Records the start screen of the program: a loading, title or presentation screen of the program itself that is still in memory at the entry. The loader of the generated source shows it and waits for a key or a fire button before the entry.",
+      summary: "Records the start screen of the program: a loading, title or presentation screen of the program itself, in memory at the entry or in a captured stage of the loading. The loader of the generated source shows it and waits for a key or a fire button before the entry.",
       options: {
         mode: { kind: "choice", value: "<mode>", choices: START_SCREEN_MODES, help: `one of ${START_SCREEN_MODES.join(", ")}`, required: true },
         screen: { kind: "address", value: "<address>", help: "the screen: the 1000 characters of a text screen, or the 1000 colour bytes of a bitmap", required: true },
@@ -945,15 +947,19 @@ const WRITE_COMMANDS: CommandSpec[] = [
         colour: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "one colour for all of the colour RAM, in place of --colours" },
         border: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the border colour", required: true },
         background: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the background colour", required: true },
+        stage: { kind: "text", value: "<space>", help: "the space of a captured stage that holds the bytes of the screen, for example bank1. Without it, the bytes are in the program at the entry" },
+        call: { kind: "address", value: "<address>", help: "a routine of the stage that the start screen calls before it waits, for example the routine that starts the loading tune. It must return with RTS. Needs --stage" },
         comment: { kind: "text", value: "<text>", help: "what the screen is" },
       },
-      notes: "Record only a screen of the program itself, never a screen of a crack. text and multicolour need --colours or --colour; hires uses neither. A write replaces the start screen of the knowledge.",
+      notes: "Record only a screen of the program itself, never a screen of a crack. If a release changed the screen, for example with the text of a crack, stop and ask the user how to deal with it. text and multicolour need --colours or --colour; hires uses neither. With --stage, the addresses are in the program of that space. A write replaces the start screen of the knowledge.",
     },
     (call) => {
       const context = contextOf(call);
       const commentText = call.string("comment");
       const optional = (key: "bitmap" | "charset" | "colours") => ((value) => (value === undefined ? {} : { [key]: value }))(call.address(key));
       const colour = call.count("colour");
+      const stage = call.string("stage");
+      const routine = call.address("call");
       const request = {
         space: call.space,
         mode: call.string("mode") as StartScreenMode,
@@ -964,6 +970,8 @@ const WRITE_COMMANDS: CommandSpec[] = [
         ...(colour === undefined ? {} : { colour }),
         border: call.count("border")!,
         background: call.count("background")!,
+        ...(stage === undefined ? {} : { stage }),
+        ...(routine === undefined ? {} : { call: routine }),
         ...(commentText === undefined ? {} : { comment: commentText }),
       };
       return (db) => shown(setStartScreen(db, context, request), "startScreen", startScreen);

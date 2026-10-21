@@ -9,12 +9,15 @@
 // patch is written as !if SWITCH { code } else { original }, with the
 // condition of the state that the program does not have, and a macro use as
 // one +name args line. config.asm holds the value of each switch, and
-// switches.asm the values of each release.
+// switches.asm the values of each release. A range of leftovers (bytes that
+// nothing uses) is a file of its own, in the build only with LEFTOVERS = 1:
+// each release has it, the default build does not, and the loader never
+// loads it.
 
 import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
-import { type CommentPlacement, isAnalyzer, isGeneratedFile, RELEASE_DEFINE, START_SCREEN_SWITCH, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
+import { type CommentPlacement, isAnalyzer, isGeneratedFile, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
 import type { Area } from "#src/platform.ts";
 import { hasZeroPageForm, instructionWith, labelProblem, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type UseKind } from "#src/opcodes.ts";
 
@@ -59,6 +62,8 @@ export interface SourceInput {
   macros?: ReadonlyArray<{ name: string; params: readonly string[]; body: string; comment?: string }>;
   /** Macro uses of the knowledge: the instructions of a range, written as one use of a macro. */
   macroUses?: ReadonlyArray<{ start: number; end: number; macro: string; args: readonly string[] }>;
+  /** The leftovers: ranges inside the segments that nothing uses, in address order. Each one is a file that only LEFTOVERS = 1 builds. */
+  leftovers?: readonly AddressRange[];
 }
 
 /** A macro use that the source writes, with its args in the names of this source. */
@@ -213,6 +218,8 @@ export interface Piece {
   title: string;
   /** True when the piece starts a segment: the source sets the address there. */
   segmentStart: boolean;
+  /** True for a range of leftovers: only LEFTOVERS = 1 builds it, and the loader does not load it. */
+  leftover: boolean;
   items: Item[];
 }
 
@@ -254,6 +261,8 @@ export interface Layout {
   macrosAsInstructions: MacroAsInstructions[];
   /** The knowledge has a start screen: config.asm gets START_SCREEN. */
   startScreen: boolean;
+  /** The ranges of leftovers: config.asm gets LEFTOVERS. */
+  leftovers: AddressRange[];
 }
 
 /** ACME reads leading zeros as a 16-bit value, so a zero-page name gets two digits. */
@@ -305,19 +314,32 @@ export function layout(input: SourceInput): Layout {
   // A patch starts and ends at an item boundary, so a data run stops there.
   const patches = [...(input.patches ?? [])].sort((a, b) => a.start - b.start);
   const macroUses = [...(input.macroUses ?? [])].sort((a, b) => a.start - b.start);
-  const cuts = new Set([...patches, ...macroUses].flatMap((range) => [range.start, range.end + 1]));
+  const leftovers = (input.leftovers ?? []).filter((range) => input.segments.some((segment) => range.start >= segment.start && range.end <= segment.end));
+  const cuts = new Set([...patches, ...macroUses, ...leftovers].flatMap((range) => [range.start, range.end + 1]));
 
   const pieces: Piece[] = [];
+  const hex = (address: number) => address.toString(16).padStart(4, "0");
   for (const segment of input.segments) {
-    const starts = modules.filter((module) => module.start > segment.start && module.start <= segment.end).map((module) => module.start);
-    const bounds = [segment.start, ...starts, segment.end + 1];
+    const inside = (address: number) => address > segment.start && address <= segment.end;
+    // A range of leftovers is one file: a module that starts in it goes on after it.
+    const inLeftovers = (address: number) => leftovers.some((range) => address > range.start && address <= range.end);
+    const starts = [...modules.map((module) => module.start).filter((start) => !inLeftovers(start)), ...leftovers.flatMap((range) => [range.start, range.end + 1])].filter(inside);
+    const bounds = [...new Set([segment.start, ...starts, segment.end + 1])].sort((a, b) => a - b);
     for (let index = 0; index + 1 < bounds.length; index++) {
       const start = bounds[index]!;
       const end = bounds[index + 1]! - 1;
+      const segmentTitle = `Segment ${formatC64Address(segment.start)}-${formatC64Address(segment.end)}`;
+      if (leftovers.some((range) => range.start === start)) {
+        pieces.push({ start, end, file: `leftover_${hex(start)}.asm`, title: `Leftovers ${formatC64Address(start)}-${formatC64Address(end)}: ${end - start + 1} bytes that nothing uses. Only LEFTOVERS = 1 builds them.`, segmentStart: index === 0, leftover: true, items: [] });
+        continue;
+      }
+      // A module that leftovers cut goes on in a file of its own after them: <module>_xxxx.asm.
       const module = modules.find((row) => row.start === start);
-      const file = module?.file ?? `segment_${start.toString(16).padStart(4, "0")}.asm`;
-      const title = module?.title?.replace(/\s*\r?\n\s*/g, " ") ?? `Segment ${formatC64Address(segment.start)}-${formatC64Address(segment.end)}`;
-      pieces.push({ start, end, file, title, segmentStart: index === 0, items: [] });
+      const holder = module ?? modules.filter((row) => row.start >= segment.start && row.start < start).at(-1);
+      const title = (text: string | undefined) => text?.replace(/\s*\r?\n\s*/g, " ");
+      const file = module?.file ?? (holder === undefined ? `segment_${hex(start)}.asm` : `${holder.file.replace(/\.asm$/i, "")}_${hex(start)}.asm`);
+      const named = module === undefined && holder !== undefined ? `${title(holder.title) ?? holder.file}, from ${formatC64Address(start)}` : title(module?.title);
+      pieces.push({ start, end, file, title: named ?? segmentTitle, segmentStart: index === 0, leftover: false, items: [] });
     }
   }
   const files = new Map<string, number>();
@@ -658,6 +680,7 @@ export function layout(input: SourceInput): Layout {
     macroUses: usesWritten,
     macrosAsInstructions: macrosAsInstructions.sort((a, b) => a.start - b.start),
     startScreen: input.startScreen === true,
+    leftovers: [...leftovers],
   };
 }
 
@@ -901,11 +924,11 @@ const SWITCH_GROUPS: ReadonlyArray<{ kind: SwitchKind; title: string }> = [
   { kind: "change", title: "Other changes" },
 ];
 
-/** True when the source has switches.asm: the knowledge has switches or releases. */
-export const hasSwitchFile = (layout: Pick<Layout, "switches" | "releases">) => layout.switches.length > 0 || layout.releases.length > 0;
+/** True when the source has switches.asm: the knowledge has switches or releases, or the source has leftovers, which main.asm builds by LEFTOVERS. */
+export const hasSwitchFile = (layout: Pick<Layout, "switches" | "releases" | "leftovers">) => layout.switches.length > 0 || layout.releases.length > 0 || layout.leftovers.length > 0;
 
-/** True when the source has config.asm: the knowledge has switches or a start screen. */
-export const hasConfigFile = (layout: Pick<Layout, "switches" | "startScreen">) => layout.switches.length > 0 || layout.startScreen;
+/** True when the source has config.asm: the knowledge has switches or a start screen, or the source has leftovers. */
+export const hasConfigFile = (layout: Pick<Layout, "switches" | "startScreen" | "leftovers">) => layout.switches.length > 0 || layout.startScreen || layout.leftovers.length > 0;
 
 /** The file with the value of each switch. The user edits it, and generate keeps the values. */
 export const CONFIG_FILE = "config.asm";
@@ -928,7 +951,7 @@ export function configValues(text: string): Map<string, 0 | 1> {
  * kind. Without a value, a switch has its default. A comment tells the
  * releases that have the switch on, and its patches.
  */
-export function configText(layout: Pick<Layout, "switches" | "patches" | "startScreen">, values: ReadonlyMap<string, number> = new Map()): string {
+export function configText(layout: Pick<Layout, "switches" | "patches" | "startScreen" | "leftovers">, values: ReadonlyMap<string, number> = new Map()): string {
   const patches = switchesOf(layout);
   const out = [
     "; Generated by c64-source. Edit the values here: generate keeps them.",
@@ -956,6 +979,14 @@ export function configText(layout: Pick<Layout, "switches" | "patches" | "startS
   if (layout.startScreen) {
     out.push("", "; Start screen: on by default", `${START_SCREEN_SWITCH} = ${values.get(START_SCREEN_SWITCH) ?? 1} ; the loader shows the start screen and waits for a key or a fire button. 0 starts the program at once`);
   }
+  if (layout.leftovers.length > 0) {
+    const bytes = layout.leftovers.reduce((sum, range) => sum + range.end - range.start + 1, 0);
+    out.push(
+      "",
+      "; Leftovers: off by default",
+      `${LEFTOVERS_SWITCH} = ${values.get(LEFTOVERS_SWITCH) ?? 0} ; ${bytes} bytes in ${layout.leftovers.length} leftover_xxxx.asm ${layout.leftovers.length === 1 ? "file" : "files"} that nothing uses. 1 builds them, so main.asm gives the bytes of the program. Each release has them. The loader never loads them`,
+    );
+  }
   return `${out.join("\n")}\n`;
 }
 
@@ -974,6 +1005,7 @@ function switchesText(layout: Layout): string {
     out.push("", `; ${release.label}${release.base ? " (the program of the knowledge)" : ""}: ${release.file}${release.comment === undefined ? "" : `. ${release.comment.replace(/\s*\r?\n\s*/g, " ")}`}`);
     out.push(`!ifdef ${RELEASE_DEFINE}${release.label} {`);
     for (const row of layout.switches) out.push(`${INDENT}${row.name} = ${row.releases.includes(release.label) ? 1 : 0}`);
+    if (layout.leftovers.length > 0) out.push(`${INDENT}${LEFTOVERS_SWITCH} = 1`);
     out.push("}");
   }
   if (hasConfigFile(layout)) {
@@ -1310,7 +1342,8 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
   const main = [...header.map((line) => `; ${line}`), "", "!cpu 6510", ...(hasSwitchFile(layout) ? ['!source "switches.asm"'] : []), '!source "constants.asm"', ...(layout.macros.length > 0 ? ['!source "macros.asm"'] : [])];
   for (const piece of layout.pieces) {
     if (piece.segmentStart) main.push("", `* = ${formatC64Address(piece.start)}`);
-    main.push(`!source "${piece.file}"`);
+    // Without the leftovers, the build skips their bytes: the addresses after them stay.
+    main.push(piece.leftover ? `!if ${LEFTOVERS_SWITCH} { !source "${piece.file}" } else { !skip ${piece.end - piece.start + 1} }` : `!source "${piece.file}"`);
   }
   result.files.push({ name: "main.asm", text: `${main.join("\n")}\n` });
   if (coverage !== undefined) result.notExecuted = notExecuted;

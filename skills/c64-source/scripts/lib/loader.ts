@@ -10,6 +10,8 @@
 // copier, and the copier writes only pages $0002-$03ff. With a start
 // screen in the knowledge, the copier shows it after the copies and waits for
 // a key or a fire button: the code is start-screen.asm, the same for each program.
+// The loader loads the segments without the leftovers: the ranges of the
+// source that nothing uses are not in loader.prg.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -105,6 +107,8 @@ export interface PackedBlock {
 }
 
 export interface LoaderPlan {
+  /** The ranges that the loader puts in place: the segments without the leftovers. */
+  loaded: AddressRange[];
   blocks: PackedBlock[];
   copies: Copy[];
   /** The first of the two free pages where the copier runs. */
@@ -173,7 +177,7 @@ export function startScreenPlan(row: StartScreenRow): StartScreenPlan {
 }
 
 /** The lines of loader.asm that give the start screen code its values. */
-function startScreenValues(row: StartScreenRow, plan: StartScreenPlan): string[] {
+export function startScreenValues(row: StartScreenRow, plan: StartScreenPlan): string[] {
   const value = (name: string, number: number, comment?: string) => `c64_source_ss_${name} = ${formatC64Byte(number)}${comment === undefined ? "" : ` ; ${comment}`}`;
   const font = row.charset !== undefined && isRomFont(row.charset) ? " (the character ROM)" : "";
   const what = [`screen ${formatC64Address(row.screen)}`, ...(row.bitmap === undefined ? [] : [`bitmap ${formatC64Address(row.bitmap)}`]), ...(row.charset === undefined ? [] : [`charset ${formatC64Address(row.charset)}${font}`])];
@@ -223,7 +227,7 @@ const overlaps = (a: AddressRange, b: AddressRange) => a.start <= b.end && b.sta
 const show = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
 
 /** Parts of `range` that no range in `holes` covers. */
-function subtract(range: AddressRange, holes: AddressRange[]): AddressRange[] {
+export function subtract(range: AddressRange, holes: AddressRange[]): AddressRange[] {
   let pieces = [range];
   for (const hole of holes) {
     pieces = pieces.flatMap((piece) => {
@@ -445,7 +449,7 @@ export function ciaSection(state: EntryState): { ops: Op[]; plan: CiaPlan } | un
 }
 
 export interface LoaderInput {
-  /** The segments with the files that hold them, in address order. */
+  /** The ranges to load, each with the files that hold it, in address order: the segments without the leftovers. */
   segments: Array<AddressRange & { files: string[] }>;
   byteAt: (address: number) => number;
   state: EntryState;
@@ -549,7 +553,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   if (end > LOAD_LIMIT) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader would end ${end > 0xffff ? "past $ffff" : `at ${formatC64Address(end)}`}, after ${formatC64Address(LOAD_LIMIT)}: loading it would write the I/O area.`);
   // The CIA part and the start screen take room from the copy table in the copier's pages.
   const maxCopies = Math.max(0, Math.min(TABLE_COPIES, Math.floor((copierBytes - codeSize - 2) / COPY_ENTRY)));
-  if (plain.length > maxCopies) throw new WireFailure("invalid-input", `The loader needs ${plain.length} copies; it can do at most ${maxCopies}. Capture the program again with fewer segments, or write the loader by hand.`);
+  if (plain.length > maxCopies) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader needs ${plain.length} copies, and its copier can do at most ${maxCopies}.`);
 
   const order = copyOrder(plain);
   if (order === undefined) {
@@ -621,6 +625,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   lines.push("        !word 0", "}", "}");
 
   return {
+    loaded: input.segments.map(({ start, end }) => ({ start, end })),
     blocks: blocks.map((block, index) => ({ what: block.what, range: block.range, packedAt: packedAt[index]!, bytes: block.bytes })),
     copies,
     copier,
@@ -719,6 +724,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
   parts.sort((a, b) => a.range.start - b.range.start);
   for (const part of parts) lines.push("", ...part.text);
   return {
+    loaded: input.segments.map(({ start, end }) => ({ start, end })),
     blocks: pieces.map((piece) => ({ what: piece.what, range: piece.target, packedAt: piece.at, bytes: piece.bytes })),
     copies,
     copier,
@@ -735,7 +741,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
 const MAX_PACKED_COPIES = Math.floor((256 - 2) / COPY_ENTRY);
 
 /** A piece of pages 0-3 in the packed form: its target and where the copier reads it. */
-interface Piece {
+export interface Piece {
   what: string;
   target: AddressRange;
   at: number;
@@ -748,7 +754,7 @@ interface Piece {
  * A part that does not fit in one range is split, and each piece is a copy.
  * Undefined when the ranges are too small.
  */
-function placePieces(ranges: AddressRange[], low: ReadonlyArray<{ what: string; range: AddressRange; bytes: (address: number) => number }>, distance: (range: AddressRange) => number): Piece[] | undefined {
+export function placePieces(ranges: AddressRange[], low: ReadonlyArray<{ what: string; range: AddressRange; bytes: (address: number) => number }>, distance: (range: AddressRange) => number): Piece[] | undefined {
   const left = ranges.map((range) => ({ ...range }));
   const pieces: Piece[] = [];
   let rest = low.reduce((sum, block) => sum + block.range.end - block.range.start + 1, 0);
@@ -815,24 +821,43 @@ export interface PackedLoader {
 }
 
 /**
- * Packs the build of main.asm from $0400 and the build of loader.asm (the
- * copier wins where they overlap) with the entry at the copier and $01 = $34,
- * and checks the unpack in the emulator of Exomizer: every byte of the two
- * builds, and the jump to the copier. Refuses by name when it does not hold.
+ * Packs the loaded ranges of the build of main.asm from $0400 and the build of
+ * loader.asm (the copier wins where they overlap) with the entry at the copier
+ * and $01 = $34, and checks the unpack in the emulator of Exomizer: every byte
+ * of the two builds, and the jump to the copier. Refuses by name when it does
+ * not hold.
  */
 export async function packLoader(main: Uint8Array, copier: Uint8Array, plan: LoaderPlan, context: ToolContext): Promise<PackedLoader> {
-  // The unpacker uses pages 0-3; the copier writes them.
+  return packParts(packedParts(main, copier, plan), plan.copier, 0x34, "main.asm and loader.asm", "the copier", context);
+}
+
+/** What Exomizer packs in the packed form: the loaded ranges of the build of main.asm from $0400, and the build of loader.asm. */
+export function packedParts(main: Uint8Array, copier: Uint8Array, plan: Pick<LoaderPlan, "loaded">): Array<{ start: number; body: Uint8Array }> {
+  // The unpacker uses pages 0-3; the copier writes them. The leftovers between the loaded ranges are not packed.
   const program = prgRange(main);
-  const skip = Math.max(0, 0x0400 - program.start);
-  const parts = [...(skip < program.body.length ? [{ start: program.start + skip, body: program.body.subarray(skip) }] : []), prgRange(copier)];
+  const ranges = plan.loaded.flatMap((range) => {
+    const start = Math.max(range.start, 0x0400, program.start);
+    const end = Math.min(range.end, program.start + program.body.length - 1);
+    return start <= end ? [{ start, body: program.body.subarray(start - program.start, end - program.start + 1) }] : [];
+  });
+  return [...ranges, prgRange(copier)];
+}
+
+/**
+ * Packs parts (a later one wins where they overlap) into one program that
+ * unpacks itself, starts at `entry` with $01 = `exitMemory`, and checks the
+ * unpack in the emulator of Exomizer: every byte of the parts, and the jump
+ * to the entry. Refuses by name when it does not hold.
+ */
+export async function packParts(parts: ReadonlyArray<{ start: number; body: Uint8Array }>, entry: number, exitMemory: number, what: string, entryName: string, context: ToolContext): Promise<PackedLoader> {
   const prg = (part: { start: number; body: Uint8Array }) => Buffer.concat([Buffer.from([part.start & 0xff, part.start >> 8]), part.body]);
-  const packed = await pack({ programs: parts.map(prg), entry: plan.copier, exitMemory: 0x34 }, context);
-  if (packed.entry !== plan.copier) throw new WireFailure("operation-failed", `The unpack in the emulator of Exomizer jumps to ${formatC64Address(packed.entry)}, not to the copier at ${formatC64Address(plan.copier)}.`);
+  const packed = await pack({ programs: parts.map(prg), entry, exitMemory }, context);
+  if (packed.entry !== entry) throw new WireFailure("operation-failed", `The unpack in the emulator of Exomizer jumps to ${formatC64Address(packed.entry)}, not to ${entryName} at ${formatC64Address(entry)}.`);
   const reference = mergedPrograms(parts);
   const wrong = compareBuild(packed.unpacked, reference).segments.find((segment) => segment.result !== "identical");
   if (wrong !== undefined) {
     const first = wrong.firstDifference === undefined ? "" : `: the first is ${wrong.firstDifference.address}, ${wrong.firstDifference.built} and not ${wrong.firstDifference.reference}`;
-    throw new WireFailure("operation-failed", `The unpack in the emulator of Exomizer does not give ${wrong.start}-${wrong.end} of main.asm and loader.asm (${wrong.result}${first}).`);
+    throw new WireFailure("operation-failed", `The unpack in the emulator of Exomizer does not give ${wrong.start}-${wrong.end} of ${what} (${wrong.result}${first}).`);
   }
   const unpackedBytes = reference.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
   return { program: packed.program, packedBytes: packed.program.length, unpackedBytes, ...(packed.cycles === undefined ? {} : { cycles: packed.cycles }) };

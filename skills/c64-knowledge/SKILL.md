@@ -53,6 +53,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Write the code of a switch for a range | `patch '$100e-$1010' PROTECTION --code-file no-check.asm` |
 | List the releases, switches and patches | `switches` |
 | Record the start screen of the program | `start-screen --mode multicolour --screen '$5c00' --bitmap '$6000' --colours '$8328' --border 0 --background 0` |
+| Record the start screen of a captured stage, and its tune | `start-screen --mode multicolour --screen '$cc00' --bitmap '$e000' --colours '$8328' --border 3 --background 1 --stage bank1 --call '$9000'` |
 | Remove the start screen | `unstart-screen` |
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` |
 | Write instructions as one use of a macro | `use '$1005-$100a' inc16 --args ptr` |
@@ -71,7 +72,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 - An analyzer name is a second name from DXA, Ghidra or an idiom search, for example `FUN_17e2`. Each analyzer keeps its own name at an address. Get them from `at`, `search` or `symbols --analyzer`.
 - The generated source uses only the symbols. To use an analyzer name in the source, give the address that name with `rename`.
 - A symbol name is a label for ACME: a letter or an underscore, then letters, digits or underscores. The knowledge refuses the name of a 6502 instruction, for example `lda`, in upper or lower case.
-- A space is `c64` (the default), `drive8` for code in the 1541 drive, or `bank0` to `bank255` for cartridge banks. Drive code and banks use the same addresses as the C64. Thus each space has its own knowledge. A name is unique in one space.
+- A space is `c64` (the default), `drive8` for code in the 1541 drive, or `bank0` to `bank255` for cartridge banks and for a captured stage of the loading. Drive code, banks and stages use the same addresses as the C64. Thus each space has its own knowledge. A name is unique in one space.
 - A revision id has the form `20261015T214501.123-k3f9qz`. It starts with the date and the time. Give the full id, or a start of the id that only one revision has. Get the ids from `revisions`, or from the `revision` field of a result. The revision `0` is the knowledge before the first revision.
 - A file of a capture is the `image.json` that the capture of a packed program wrote. Keep the other files of the capture next to it.
 
@@ -149,6 +150,8 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--colour <0-15>` | `start-screen` | One colour for all of the colour RAM, in place of `--colours`. |
 | `--border <0-15>` | `start-screen` | Necessary. The border colour. |
 | `--background <0-15>` | `start-screen` | Necessary. The background colour. |
+| `--stage <space>` | `start-screen` | The space of a captured stage that holds the bytes of the screen, for example `bank1`. Without it, the bytes are in the program at the entry. |
+| `--call <address>` | `start-screen` | A routine of the stage that the start screen calls before it waits, for example the start of the loading tune. It must return with RTS. It needs `--stage`. |
 
 ---
 
@@ -380,7 +383,9 @@ An operand expression tells the generated source how to write the operand of one
 
 ### `release <label>`
 
-A rebuild keeps all of the program: unused bytes, dead code, old copies and leftovers of the development. It keeps a copy protection, a trainer and a cheat in the source. A switch puts each of them in or out of the build. A start screen of the program stays too: record it with `start-screen`. Only a cracktro and the other screens of a crack are not in the rebuild.
+A rebuild keeps all of the program in the source: unused bytes, dead code, old copies and leftovers of the development. The default build and the loader do not have the leftovers. The build of a release has them. It keeps a copy protection, a trainer and a cheat in the source. A switch puts each of them in or out of the build. A start screen of the program stays too: record it with `start-screen`. Only a cracktro and the other screens of a crack are not in the rebuild.
+
+Do not write a file of the rebuild by hand, for example a boot file, a packed picture or a script that changes bytes. Record each change in the knowledge, and generate the source.
 
 - A release is a PRG or the `image.json` of a capture, in a folder that git keeps, for example `original/`. The script refuses a file in `.c64-re-tools/local/`.
 - A label is upper case, for example `ORIGINAL`, `FIRESTAR` or `V2`.
@@ -398,7 +403,17 @@ A rebuild keeps all of the program: unused bytes, dead code, old copies and left
 A start screen is a loading screen, a title screen or a presentation screen of the program itself. The loader of the generated source shows it before the program starts. Then the loader waits for a key, or for a fire button on joystick port 1 or 2.
 
 - Record only a screen of the program itself. Do not record a screen of a crack, for example a picture, an intro or a credit screen of a crack group.
-- The bytes of the screen must be in the program of the knowledge at the entry. Thus capture the program while the bytes of the screen are in memory.
+- If a release changed the screen of the program, stop and ask the user how to deal with it. An example is a picture with the text of a crack in it. Do not decide alone. Give the user these options:
+  1. Record patches under a switch that take out the change.
+  2. Use the screen as it is.
+  3. Do not record a start screen.
+- The bytes of the screen must be in the program of the knowledge at the entry, or in a captured stage. Thus capture the program while the bytes of the screen are in memory.
+- When the bytes are only in a stage of the loading, do these steps:
+  1. Capture the stage while it shows the screen. Do not exclude the memory of the screen.
+  2. Put the capture into the knowledge in a space of its own, for example `image stage/image.json --space bank1`.
+  3. If the stage plays a tune or does other work during the screen, find the routine that starts it. Run the stage with coverage while that routine runs. Put the map into the knowledge with `coverage <map> --space bank1`.
+  4. Record the start screen with `--stage bank1`, and with `--call` for the routine.
+- With `--stage`, the addresses are in the program of that space. Each part and the call must be in it.
 - Get the mode, the addresses and the colours from the VIC-II while the original program shows the screen.
 - The colour RAM is not in the capture. Find the 1000 colour bytes in the program: compare them with the colour RAM at $d800 while the original shows the screen. Give their address with `--colours`. If the program does not have them, give one colour with `--colour`.
 - `text` needs `--charset`. `hires` and `multicolour` need `--bitmap`. `text` and `multicolour` need `--colours` or `--colour`. `hires` uses neither.
@@ -406,7 +421,7 @@ A start screen is a loading screen, a title screen or a presentation screen of t
 - In VIC bank 0 and 2, the VIC-II reads the character ROM at $1000-$1fff of the bank. A screen or a bitmap cannot be there. A charset at $1000 or $1800 of the bank is the character ROM.
 - No part can be in $0000-$03ff. The colours cannot be in $d000-$dfff.
 - A space has one start screen, and only the space `c64` has one. A write replaces the start screen of the knowledge.
-- The generated source has the switch `START_SCREEN`. Thus no symbol and no switch can have that name.
+- The generated source has the switches `START_SCREEN` and `LEFTOVERS`. Thus no symbol and no switch can have these names.
 - `body.startScreen` gives the start screen after the write.
 
 ### `unstart-screen`

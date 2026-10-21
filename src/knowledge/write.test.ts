@@ -659,6 +659,8 @@ test("a start screen is one per space, of the VIC-II rules, and it reserves STAR
 
   assert.throws(() => renameSymbol(db, llm, { address: 0x2000, name: "START_SCREEN" }), /switch of the start screen/);
   assert.throws(() => setSwitch(db, { origin: "llm", image: sourceImage() }, { name: "START_SCREEN", kind: "fix" }), /switch of the start screen/);
+  assert.throws(() => renameSymbol(db, llm, { address: 0x2000, name: "LEFTOVERS" }), /switch of the leftovers/);
+  assert.throws(() => setSwitch(db, { origin: "llm", image: sourceImage() }, { name: "LEFTOVERS", kind: "fix" }), /switch of the leftovers/);
 
   removeStartScreen(db, llm, {});
   assert.equal(currentStartScreen(db), undefined);
@@ -666,6 +668,20 @@ test("a start screen is one per space, of the VIC-II rules, and it reserves STAR
   revert(db, llm, { revision: nth(db, 1) });
   assert.equal(currentStartScreen(db)?.bitmap, 0x6000, "a revert restores the start screen");
   assert.deepEqual(revisionChanges(db, nth(db, 2)).added.map((entry) => entry.entity), ["start-screen"]);
+});
+
+test("a start screen of a stage has its bytes and its call in the program of that space", () => {
+  const db = fresh();
+  const koala = { mode: "multicolour", screen: 0xcc00, bitmap: 0xe000, colours: 0x8328, border: 3, background: 1 } as const;
+  assert.throws(() => setStartScreen(db, llm, { ...koala, stage: "bank1" }), /no program in bank1\. Capture the stage/);
+  setImage(db, llm, { space: "bank1", segments: [{ start: 0x8328, end: 0x870f }, { start: 0x9000, end: 0x910f }, { start: 0xcc00, end: 0xcfe7 }, { start: 0xe000, end: 0xff3f }], byteAt: () => 0 });
+  const recorded = setStartScreen(db, llm, { ...koala, stage: "bank1", call: 0x9000 });
+  assert.deepEqual(recorded.current, { space: "c64", ...koala, stage: "bank1", call: 0x9000, origin: "llm", revision: nth(db, 2) });
+  assert.equal(currentStartScreen(db)?.stage, "bank1");
+  assert.throws(() => setStartScreen(db, llm, { ...koala, stage: "bank1", screen: 0xc800 }), /The screen at \$c800-\$cbe7 is not in the program in bank1/);
+  assert.throws(() => setStartScreen(db, llm, { ...koala, stage: "bank1", call: 0x9200 }), /The call \$9200 is not in the program in bank1/);
+  assert.throws(() => setStartScreen(db, llm, { ...koala, call: 0x9000 }), /give --stage too/);
+  assert.throws(() => setStartScreen(db, llm, { ...koala, stage: "c64" }), /another space than c64/);
 });
 
 test("a macro and its uses: the use is whole instructions, its args are known names, and a rename follows", () => {

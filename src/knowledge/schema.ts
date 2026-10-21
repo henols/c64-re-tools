@@ -81,6 +81,8 @@ export const START_SCREEN_MODES = ["text", "hires", "multicolour"] as const;
 export type StartScreenMode = (typeof START_SCREEN_MODES)[number];
 /** The switch of the start screen in the generated source: no symbol, switch or release can have this name. */
 export const START_SCREEN_SWITCH = "START_SCREEN";
+/** The switch of the leftovers in the generated source (bytes that nothing uses): no symbol, switch or release can have this name. */
+export const LEFTOVERS_SWITCH = "LEFTOVERS";
 /** A macro name and a macro parameter. The body names a parameter with a dot in front: .dst. */
 export const MACRO_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
 export const MACRO_PARAM = /^[a-z_][a-z0-9_]{0,31}$/;
@@ -98,9 +100,12 @@ export const MEMORY_ROW = 64;
 /** Files that c64-source writes itself: no module can have these names. */
 export const GENERATED_FILES = ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm", "start_screen.asm"] as const;
 
+/** The file of a range of leftovers in the generated source: leftover_xxxx.asm. */
+export const LEFTOVER_FILE = /^leftover_[0-9a-f]{4}\.asm$/;
+
 /** True for a generated file name in any letter case: the file systems of macOS and Windows ignore case. */
 export function isGeneratedFile(file: string): boolean {
-  return (GENERATED_FILES as readonly string[]).includes(file.toLowerCase());
+  return (GENERATED_FILES as readonly string[]).includes(file.toLowerCase()) || LEFTOVER_FILE.test(file.toLowerCase());
 }
 
 /**
@@ -314,10 +319,13 @@ function createSchema(db: DatabaseSync): void {
         colour              INTEGER CHECK (colour BETWEEN 0 AND 15),
         border              INTEGER NOT NULL CHECK (border BETWEEN 0 AND 15),
         background          INTEGER NOT NULL CHECK (background BETWEEN 0 AND 15),
+        stage               TEXT CHECK (stage IS NULL OR (stage <> 'c64' AND (${SPACE_CHECK.replaceAll("space", "stage")}))),
+        call_address        INTEGER CHECK (call_address BETWEEN 0 AND 65535),
         comment             TEXT CHECK (comment IS NULL OR length(comment) > 0),
         origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
         valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
         valid_to_revision   TEXT REFERENCES revisions (id),
+        CHECK (call_address IS NULL OR stage IS NOT NULL),
         CHECK ((mode = 'text') = (charset IS NOT NULL)),
         CHECK ((mode = 'text') = (bitmap IS NULL)),
         CHECK (colours IS NULL OR colour IS NULL),
@@ -389,7 +397,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 10;
+export const INDEX_VERSION = 11;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

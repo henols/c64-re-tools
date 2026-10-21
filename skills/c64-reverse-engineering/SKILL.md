@@ -37,7 +37,10 @@ These rules apply to each rebuild:
 
 - Do not keep a cracktro. A capture of a packed program starts at the last stage, so the code of a cracktro is not in the program. When the capture has data of a cracktro that the program does not read, capture again and exclude that range.
 - Keep the start screen of the program, for example the loading picture of the publisher. Keep its bytes in the capture, and record the start screen in the project knowledge. The loader of the rebuild then shows it and waits for a key or a fire button. Do not keep a screen of a crack, for example a picture, an intro or a credit screen of a crack group.
-- Keep all other bytes: unused bytes, dead code, old copies, texts and leftovers of the development. Record each one as a region with a comment. Do not remove them.
+- When the start screen is only in a stage of the loading, capture that stage while it shows the screen. Put the capture into the project knowledge in a space of its own. Then record the start screen of that stage. Keep its tune: record the routine that starts the tune as the call of the start screen.
+- A release can change the start screen, for example with the text of a crack. Then stop and ask the user how to deal with it. Do not decide alone.
+- Keep all other bytes: unused bytes, dead code, old copies, texts and leftovers of the development. Record each one as a region with a comment. Do not remove them. The source keeps them, and the build of each release has them. The default build and the loader do not have them.
+- Do not write a file of the rebuild by hand, for example a boot file, a packed picture or a script that changes bytes. Record each change in the project knowledge, and generate the source.
 - Keep a copy protection in the source, off by default. Record a `protection` switch and its patches.
 - Keep a trainer and a cheat in the source, off by default. Record a `trainer` or `cheat` switch and its patches.
 - When two or more releases have different corrections, record each release and one `fix` switch for each correction. The switch names the releases that have the correction. The default build has all corrections.
