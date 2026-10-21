@@ -152,7 +152,7 @@ Do these actions for the findings:
 #### The source files
 
 - `main.asm` sets the address of each segment. It includes the files in address order.
-- Each module in the knowledge is one file. A module starts at its address. It stops at the next module or at the end of its segment. Without modules, each segment is one file, `segment_xxxx.asm`.
+- Each module in the knowledge is one file. A module starts at its address. It stops at the next module or at the end of its segment. The file of a module can be in a folder, for example `music/driver.asm`. Without modules, each segment is one file, `segments/segment_xxxx.asm`.
 - `constants.asm` holds the names of addresses outside the program, for example `EXTCOL = $d020`. It also holds the register names in the program, for example `RASTER = $d012`. The names are in groups by memory area, in address order. Drive code and banks have one group only.
 - The side comment of a constant is the knowledge comment of the address. Without a comment, it is the platform meaning. When the knowledge name is not the platform name, the platform name comes first. For an I/O mirror without a meaning, the comment gives the register that the mirror repeats.
 - After the side comment, `Used:` counts how the source uses the name. The kinds are `read`, `written`, `modified`, `called`, `jumped to`, `jumped through`, `branched to`, `pointer`, `address`, `table` and `macro argument`. `address` is an immediate operand expression. `table` is an entry in a table of addresses.
@@ -161,7 +161,7 @@ Do these actions for the findings:
 - When the knowledge has a start screen, `config.asm` also has `START_SCREEN = 1`. Set it to 0 to start the program at once. Then assemble `loader.asm` again.
 - `start_screen.asm` is the code that shows the start screen and waits. It is the same for each program. `loader.asm` gives it the values of the start screen.
 - `switches.asm` holds each release of the knowledge. `main.asm` and `loader.asm` include it first. The script writes it only when the knowledge has switches or releases, or when the source has leftovers. For each release, a block `!ifdef RELEASE_<label>` gives each switch the value of that release.
-- `leftover_xxxx.asm` holds a range of leftovers. See "The leftovers".
+- `leftovers/leftover_xxxx.asm` holds a range of leftovers. See "The leftovers".
 - `macros.asm` holds the macros of the knowledge. `main.asm` and `loader.asm` include it.
 
 #### Names in the source
@@ -197,7 +197,7 @@ Do these actions for the findings:
 
 A leftover is a range of the program that nothing uses: unused code, old copies and old data. The script finds the leftovers from the coverage, as the export finds its free ranges (see "The free ranges"). The start screen, the patches, the macro uses and the addresses that the code of a patch names are never leftovers.
 
-- Each range of leftovers is a file `leftover_xxxx.asm`. When a range cuts a module, the module continues after the range in `<module>_xxxx.asm`. The module in the knowledge does not change.
+- Each range of leftovers is a file `leftovers/leftover_xxxx.asm`. When a range cuts a module, the module continues after the range in `<module>_xxxx.asm`, in the folder of the module. The module in the knowledge does not change.
 - `main.asm` builds a leftover file only when `LEFTOVERS` is 1. When it is 0, the build skips the bytes. Thus the addresses after the range do not change.
 - `config.asm` has `LEFTOVERS = 0`. Thus the default build is the clean program, without the leftovers.
 - Each release has `LEFTOVERS = 1`. Thus the build of a release gives the bytes of the release.
@@ -422,7 +422,7 @@ The entry is the entry of the knowledge. Without it, the entry is the address of
 
 ```text
 README.md                  the steps to build and test, the free ranges and the origin
-src/                       main.asm, constants.asm, macros.asm, the modules and loader.asm
+src/                       main.asm, constants.asm, macros.asm, the modules in their folders and loader.asm
 baseline/<name>.prg        the exported program, and baseline/<name>.json with its symbols
 tests/                     the tests of the project, changed for the new program
 .c64-re-tools/knowledge/   the knowledge of the new program

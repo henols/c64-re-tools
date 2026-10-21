@@ -34,8 +34,8 @@ export interface ReferenceFile {
   bytes: Buffer;
 }
 
-/** Files that the source map lists but that hold no code of the program. */
-const NOT_PIECES = new Set(["main.asm", "constants.asm", "macros.asm", "loader.asm"]);
+/** Files that the source map lists but that hold no code of the program: they get no module page. */
+const NOT_PIECES = new Set(["main.asm", "constants.asm", "macros.asm", "loader.asm", "config.asm", "switches.asm", "start_screen.asm", "start_screen_stage.asm"]);
 const TABLE_TYPES: readonly RegionType[] = [...POINTER_TABLE_TYPES, "jumps", "words"];
 const GRAPHICS_TYPES: readonly RegionType[] = ["sprite", "bitmap", "charset", "screen"];
 /** A list longer than this ends with the number of the rest. */

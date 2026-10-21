@@ -83,12 +83,12 @@ test("operands get names, forced sizes and labels inside instructions", () => {
   const instructions = new Map([[0x1000, 3], [0x1003, 3], [0x1006, 2], [0x1008, 3], [0x100b, 3]]);
   const laid = layout(input(bytes, 0x1000, { instructions, symbols: [{ address: 0xd020, name: "border" }, { address: 0x1000, name: "start" }] }));
   const rendered = render(laid, new Set(), ["header"]);
-  const text = textOf(rendered, "segment_1000.asm");
+  const text = textOf(rendered, "segments/segment_1000.asm");
   assert.match(text, /^start\n {8}lda\+2 \$0012$/m);
   assert.match(text, /sta l_1007\nl_1007 = \* \+ 1\n {8}lda #\$00/);
   assert.match(text, /lda border\n {8}jmp start/);
   assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}border = $d020 ; Used: read 1.\n`);
-  assert.match(textOf(rendered, "main.asm"), /^; header\n\n!cpu 6510\n!source "constants.asm"\n\n\* = \$1000\n!source "segment_1000.asm"\n$/);
+  assert.match(textOf(rendered, "main.asm"), /^; header\n\n!cpu 6510\n!source "constants.asm"\n\n\* = \$1000\n!source "segments\/segment_1000.asm"\n$/);
   assert.deepEqual([laid.namedLabels, laid.generatedLabels], [1, 1]);
 });
 
@@ -99,7 +99,7 @@ test("tables, strings and sprites are written by their region type", () => {
     { start: 0x1004, end: 0x1007, type: "rts-addresses-split" },
     { start: 0x1008, end: 0x100a, type: "petscii" },
   ];
-  const text = textOf(render(layout(input(bytes, 0x1000, { regions, instructions: new Map([[0x100b, 1]]) })), new Set(), []), "segment_1000.asm");
+  const text = textOf(render(layout(input(bytes, 0x1000, { regions, instructions: new Map([[0x100b, 1]]) })), new Set(), []), "segments/segment_1000.asm");
   assert.match(text, /!word l_100b,l_100b/);
   assert.match(text, /!byte <\(l_100b-1\),<\(l_100b-1\),>\(l_100b-1\),>\(l_100b-1\)/);
   assert.match(text, /!pet "hi"\n {8}!byte \$00\nl_100b\n {8}rts/);
@@ -108,7 +108,7 @@ test("tables, strings and sprites are written by their region type", () => {
 test("a charset is written one character of 8 bytes to a line, without !fill", () => {
   const bytes = Array.from({ length: 24 }, (_, index) => (index < 16 ? 0 : index));
   const regions: SourceInput["regions"] = [{ start: 0x2000, end: 0x2017, type: "charset" }];
-  const text = textOf(render(layout(input(bytes, 0x2000, { regions })), new Set(), []), "segment_2000.asm");
+  const text = textOf(render(layout(input(bytes, 0x2000, { regions })), new Set(), []), "segments/segment_2000.asm");
   const lines = text.split("\n").filter((line) => line.includes("!byte"));
   assert.deepEqual(
     lines.map((line) => line.trim()),
@@ -122,7 +122,7 @@ test("a comment at an operand byte (knowledge of an older version) shows with it
   const bytes = [0xad, 0x04, 0x01, 0x60];
   const instructions = new Map([[0x1bc9, 3], [0x1bcc, 1]]);
   const comments: SourceInput["comments"] = [{ address: 0x1bc9, placement: "side", text: "the mode" }, { address: 0x1bca, placement: "side", text: "mid-instruction comment" }];
-  const text = textOf(render(layout(input(bytes, 0x1bc9, { instructions, comments })), new Set(), []), "segment_1bc9.asm");
+  const text = textOf(render(layout(input(bytes, 0x1bc9, { instructions, comments })), new Set(), []), "segments/segment_1bc9.asm");
   assert.match(text, /lda \$0104 +; the mode \$1bca: mid-instruction comment\n/);
 });
 
@@ -164,7 +164,7 @@ test("modules split a segment into files, each to the next module or the end of 
   assert.deepEqual(
     laid.pieces.map((piece) => [piece.file, piece.start, piece.end, piece.segmentStart]),
     [
-      ["segment_1000.asm", 0x1000, 0x100f, true],
+      ["segments/segment_1000.asm", 0x1000, 0x100f, true],
       ["second.asm", 0x1010, 0x101f, false],
     ],
   );
@@ -321,7 +321,7 @@ test("with real ACME, the loader takes its copies and its jump from labels, so c
   const laid = layout(source);
   const rendered = render(laid, new Set(), []);
   const plan = planLoader({
-    segments: [{ start: 0x1000, end: 0x10ff, files: ["segment_1000.asm"] }, { start: 0xc000, end: 0xc0ff, files: ["segment_c000.asm"] }],
+    segments: [{ start: 0x1000, end: 0x10ff, files: ["segments/segment_1000.asm"] }, { start: 0xc000, end: 0xc0ff, files: ["segments/segment_c000.asm"] }],
     byteAt: source.byteAt,
     state: state({ pc: 0x1040 }),
     entry: 0x1040,
@@ -343,7 +343,7 @@ test("with real ACME, the loader takes its copies and its jump from labels, so c
   for (const segment of source.segments) for (let address = segment.start; address <= segment.end; address++) assert.equal(memory[address], source.byteAt(address), `$${address.toString(16)}`);
 
   // 16 fill bytes fewer: the code from the entry moves down by 16, the copies and the jump follow it.
-  const moved = files.map((file) => (file.name === "segment_1000.asm" ? { ...file, text: file.text.replace("!fill 64, $00", "!fill 48, $00") } : file));
+  const moved = files.map((file) => (file.name === "segments/segment_1000.asm" ? { ...file, text: file.text.replace("!fill 64, $00", "!fill 48, $00") } : file));
   assert.notDeepEqual(moved, files);
   const main = await build(moved, "main.asm");
   const relocated = await build(moved, "loader.asm");
@@ -364,7 +364,7 @@ test("with real ACME, the loader stub switches the BASIC ROM out before it moves
   const bytes = Array.from({ length: 0xa000 }, (_, offset) => offset & 0xff);
   const source = input(bytes, 0x1000, { regions: [{ start: 0x1000, end: 0xafff, type: "bytes" }] });
   const rendered = render(layout(source), new Set(), []);
-  const plan = planLoader({ segments: [{ start: 0x1000, end: 0xafff, files: ["segment_1000.asm"] }], byteAt: source.byteAt, state: state({ pc: 0x1000 }), entry: 0x1000, header: [] });
+  const plan = planLoader({ segments: [{ start: 0x1000, end: 0xafff, files: ["segments/segment_1000.asm"] }], byteAt: source.byteAt, state: state({ pc: 0x1000 }), entry: 0x1000, header: [] });
   const files = [...rendered.files, { name: "loader.asm", text: plan.text }];
   const contents = files.map((file) => Buffer.from(file.text));
   const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
@@ -491,7 +491,7 @@ test("with real ACME, a loader with a start screen assembles to its planned layo
     return { program: attachments![0]!, symbols: result.symbols! };
   };
   for (const row of [koala(), koala({ colours: undefined as never, colour: 3 }), koala({ mode: "hires", colours: undefined as never })]) {
-    const plan = planLoader({ segments: [{ start: 0x0800, end: 0x87ff, files: ["segment_0800.asm"] }], byteAt: source.byteAt, state: vicState({ pc: 0x0800 }), entry: 0x0800, header: [], config: true, startScreen: row });
+    const plan = planLoader({ segments: [{ start: 0x0800, end: 0x87ff, files: ["segments/segment_0800.asm"] }], byteAt: source.byteAt, state: vicState({ pc: 0x0800 }), entry: 0x0800, header: [], config: true, startScreen: row });
     const { program, symbols } = await build(plan.text);
     assert.equal(program.length - 2, plan.end - 0x0801 + 1, `the plan has the size of the code, ${row.mode}`);
     const wait = symbols.find((symbol) => symbol.name === "loader_start_screen_wait")!;
@@ -500,7 +500,7 @@ test("with real ACME, a loader with a start screen assembles to its planned layo
   }
   const packedSource: SourceInput = { ...input([], 0x0800, { startScreen: true }), segments: [{ start: 0x0800, end: 0xbfff }, { start: 0xd000, end: 0xdfff }], byteAt: (address) => address & 0xff };
   const packedRendered = render(layout(packedSource), new Set(), []);
-  const packed = planLoader({ segments: [{ start: 0x0800, end: 0xbfff, files: ["segment_0800.asm"] }, { start: 0xd000, end: 0xdfff, files: ["segment_d000.asm"] }], byteAt: packedSource.byteAt, state: vicState({ pc: 0x0800 }), entry: 0x0800, header: [], config: true, startScreen: koala() });
+  const packed = planLoader({ segments: [{ start: 0x0800, end: 0xbfff, files: ["segments/segment_0800.asm"] }, { start: 0xd000, end: 0xdfff, files: ["segments/segment_d000.asm"] }], byteAt: packedSource.byteAt, state: vicState({ pc: 0x0800 }), entry: 0x0800, header: [], config: true, startScreen: koala() });
   const files = [...packedRendered.files, { name: "loader.asm", text: packed.text }, { name: "start_screen.asm", text: START_SCREEN_CODE }];
   const contents = files.map((file) => Buffer.from(file.text));
   const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
@@ -546,7 +546,7 @@ test("with real ACME, zero-page names outside the image assemble to zero-page in
   const platform = [{ address: 0x03, end: 0x04, name: "ADRAY1" }, { address: 0x0318, end: 0x0319, name: "NMINV" }];
   const rendered = render(layout(input(bytes, 0x1000, { instructions, symbols, platform })), new Set(), []);
   assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}ADRAY1 = $03   ; Used: read 2.\nsmall  = $05   ; Used: read 1.\nptr    = $66   ; Used: read 2, pointer 1.\nNMINV  = $0318 ; Used: written 1.\n`);
-  assert.match(textOf(rendered, "segment_1000.asm"), /sta \(ptr\),y\n {8}lda ptr,x\n {8}lda\+2 small\n {8}sta NMINV\+1\n {8}lda ADRAY1\+1\n {8}lda\+2 ADRAY1\+1\n/);
+  assert.match(textOf(rendered, "segments/segment_1000.asm"), /sta \(ptr\),y\n {8}lda ptr,x\n {8}lda\+2 small\n {8}sta NMINV\+1\n {8}lda ADRAY1\+1\n {8}lda\+2 ADRAY1\+1\n/);
   const contents = rendered.files.map((file) => Buffer.from(file.text));
   const { result, attachments } = await assemble(
     { files: rendered.files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "main.asm", includeDirs: [], defines: {} },
@@ -588,9 +588,9 @@ const OPERANDS: SourceInput["operands"] = [
 test("operand expressions are written in place of numbers, with the names of the source", () => {
   const without = render(layout(operandInput()), new Set(), []);
   assert.deepEqual(render(layout(operandInput({ operands: [] })), new Set(), []).files, without.files, "no operand expressions, the same source");
-  assert.match(textOf(without, "segment_1000.asm"), /lda l_101f,x/, "without an expression the target gets a label");
+  assert.match(textOf(without, "segments/segment_1000.asm"), /lda l_101f,x/, "without an expression the target gets a label");
   const rendered = render(layout(operandInput({ operands: OPERANDS })), new Set(), []);
-  const text = textOf(rendered, "segment_1000.asm");
+  const text = textOf(rendered, "segments/segment_1000.asm");
   const lines = text.split("\n").map((line) => line.trim());
   const first = lines.indexOf("lda #<table");
   assert.deepEqual(lines.slice(first, first + 8), [
@@ -612,7 +612,7 @@ test("operand expressions are written in place of numbers, with the names of the
   assert.match(rendered.operandsAsNumbers[2]!.reason, /^nowhere is not a symbol of the knowledge or a platform name\. Name the address in the project knowledge, or record the operand expression again\.$/);
   assert.deepEqual(rendered.expressions.map((row) => [row.address, row.line]), [[0x1000, 4], [0x1002, 5], [0x1004, 6], [0x1007, 7], [0x1009, 8], [0x100c, 9]]);
   const demoted = render(layout(operandInput({ operands: OPERANDS })), new Set(), [], new Map([[0x1000, "a reason"]]));
-  assert.ok(textOf(demoted, "segment_1000.asm").includes("        lda #$20                        ; = <table\n"));
+  assert.ok(textOf(demoted, "segments/segment_1000.asm").includes("        lda #$20                        ; = <table\n"));
   assert.deepEqual(demoted.operandsAsNumbers[0], { address: 0x1000, expression: "<table", reason: "a reason" });
 });
 
@@ -664,20 +664,20 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
     { address: "$1007", instruction: "nop" },
     { address: "$100a", instruction: "anc #$0f" },
   ]);
-  assert.deepEqual((json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))), ["segment_1000.asm", "constants.asm", "main.asm"]);
+  assert.deepEqual((json.files.map((file) => file.out).filter((path) => path.startsWith("src/")).map((path) => path.slice(4))), ["segments/segment_1000.asm", "constants.asm", "main.asm"]);
   assert.ok(json.files.some((file) => file.out === `${REPORTS}/source-map.json`), "the source map is a written file too");
-  const text = readFileSync(join(project, "src", "segment_1000.asm"), "utf8");
+  const text = readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8");
   assert.match(text, /^; Generated by c64-source\. /);
   assert.match(text, /^start\n {8}ldx #\$00\n {8}lda\+2 \$0012$/m);
-  assert.deepEqual(readdirSync(join(project, "src")).sort(), ["constants.asm", "loader.asm", "main.asm", "notes.asm", "segment_1000.asm"], "the source folder holds only source files");
+  assert.deepEqual(readdirSync(join(project, "src")).sort(), ["constants.asm", "loader.asm", "main.asm", "notes.asm", "segments"], "the source folder holds only source files");
   assert.deepEqual(json.removed.sort(), [`${REPORTS}/not_executed.json`, "src/segment_9000.asm"], "the result lists each file that the run removed");
   // The kept loader.asm has no knowledge revision, and the knowledge has no entry state to write it again.
   assert.deepEqual((readEnvelope(stdout, status).json as { staleLoader: unknown }).staleLoader, { files: ["src/loader.asm", "build/clean_loader.prg"], noEntryState: true });
   // The source map counts the mark line, so each line is the line in the file.
   const map = JSON.parse(readFileSync(join(project, REPORTS, "source-map.json"), "utf8")) as { files: string[]; labels: Array<{ address: string; name: string; file: string; line: number }>; items: Array<{ start: string; file: string; line: number }> };
-  assert.deepEqual(map.files, (json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))));
+  assert.deepEqual(map.files, (json.files.map((file) => file.out).filter((path) => path.startsWith("src/")).map((path) => path.slice(4))));
   const startLabel = map.labels.find((label) => label.name === "start")!;
-  assert.deepEqual([startLabel.address, startLabel.file, text.split("\n")[startLabel.line - 1]], ["$1000", "segment_1000.asm", "start"]);
+  assert.deepEqual([startLabel.address, startLabel.file, text.split("\n")[startLabel.line - 1]], ["$1000", "segments/segment_1000.asm", "start"]);
   const first = map.items.find((item) => item.start === "$1000")!;
   assert.equal(text.split("\n")[first.line - 1], "        ldx #$00");
   assert.match(text, /l_1010 = \* \+ 1\n {8}lda #\$00/);
@@ -698,9 +698,9 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
   assert.equal(all.ranges.length, notExecuted.count);
   assert.equal(all.ranges[0]!.start, "$1005");
   // Each range names its file and the routine before it, so a report can group them.
-  assert.deepEqual([all.ranges[0]!.file, all.ranges[0]!.routine], ["segment_1000.asm", "start"]);
-  assert.deepEqual(all.files, { "segment_1000.asm": all.ranges.length });
-  const marks = readFileSync(join(project, "src", "segment_1000.asm"), "utf8").match(/^; not executed .*$/gm);
+  assert.deepEqual([all.ranges[0]!.file, all.ranges[0]!.routine], ["segments/segment_1000.asm", "start"]);
+  assert.deepEqual(all.files, { "segments/segment_1000.asm": all.ranges.length });
+  const marks = readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8").match(/^; not executed .*$/gm);
   assert.deepEqual(marks, all.ranges.map((range) => `; not executed ${range.start}-${range.end}`));
 
   const refused = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate"], { cwd: project, encoding: "utf8" });
@@ -731,7 +731,7 @@ test("with real Ghidra and ACME, generate tells which leftovers changed since th
     return (readEnvelope(run.stdout, run.status).json as { leftovers?: { bytes: number; changed?: unknown } }).leftovers;
   };
   // The first run has no earlier run to compare with.
-  assert.deepEqual(generate(), { bytes: 16, count: 1, listed: [{ start: "$080e", end: "$081d", bytes: 16, file: "leftover_080e.asm" }] });
+  assert.deepEqual(generate(), { bytes: 16, count: 1, listed: [{ start: "$080e", end: "$081d", bytes: 16, file: "leftovers/leftover_080e.asm" }] });
   // A charset stays: the leftovers of the next run lose its bytes.
   write("classify", "$0816-$081d", "charset");
   assert.deepEqual(generate()?.changed, { added: [], removed: [{ start: "$0816", end: "$081d" }] });
@@ -769,7 +769,7 @@ test("with real Ghidra and ACME, an operand expression that ACME assembles to ot
   assert.equal(json.check.identical, true);
   assert.equal(json.operandExpressions, 2);
   assert.deepEqual(json.operandsAsNumbers, { count: 1, listed: [{ address: "$1005", expression: ">handler+$100", reason: "ACME assembles it to $11, and the image has $10." }] });
-  const lines = readFileSync(join(project, "src", "segment_1000.asm"), "utf8").split("\n").map((line) => line.trim());
+  const lines = readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8").split("\n").map((line) => line.trim());
   const first = lines.indexOf("lda #<handler");
   assert.deepEqual(lines.slice(first, first + 4), ["lda #<handler", "sta CINV", "lda #$10                        ; = >handler+$100", "sta CINV+1"]);
 });
@@ -893,7 +893,7 @@ test("with coverage, each run of instructions that no run executed is marked and
   const regions: SourceInput["regions"] = [{ start: 0x1003, end: 0x1004, type: "bytes" }];
   const rendered = render(layout(input(bytes, 0x1000, { instructions, regions, coverage })), new Set(), []);
   assert.deepEqual(rendered.notExecuted, { instructions: 3, ranges: [{ start: 0x1001, end: 0x1002 }, { start: 0x1005, end: 0x1005 }] });
-  assert.match(textOf(rendered, "segment_1000.asm"), /^ {8}nop\n; not executed \$1001-\$1002\n {8}nop\n {8}nop\n {8}!byte \$00,\$00\n; not executed \$1005-\$1005\n {8}rts\n$/m);
+  assert.match(textOf(rendered, "segments/segment_1000.asm"), /^ {8}nop\n; not executed \$1001-\$1002\n {8}nop\n {8}nop\n {8}!byte \$00,\$00\n; not executed \$1005-\$1005\n {8}rts\n$/m);
   assert.equal(render(layout(input(bytes, 0x1000, { instructions, regions })), new Set(), []).notExecuted, undefined);
 });
 
@@ -904,7 +904,7 @@ test("an address without a knowledge name gets its platform name; a knowledge na
   const platform = [{ address: 0xd020, end: 0xd020, name: "EXTCOL" }, { address: 0xd021, end: 0xd021, name: "BGCOL0" }, { address: 0xffd2, end: 0xffd4, name: "CHROUT" }];
   const laid = layout(input(bytes, 0x1000, { instructions, platform, symbols: [{ address: 0xd021, name: "background" }, { address: 0x2000, name: "CHROUT" }] }));
   const rendered = render(laid, new Set(), []);
-  assert.match(textOf(rendered, "segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}jsr \$ffd2\n/);
+  assert.match(textOf(rendered, "segments/segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}jsr \$ffd2\n/);
   assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}EXTCOL     = $d020 ; Used: written 1.\nbackground = $d021 ; Used: written 1.\n`);
 });
 
@@ -920,7 +920,7 @@ test("an analyzer name gives way to the platform name, and a user or LLM name st
     { address: 0x3000, name: "l3000", origin: "dxa" },
   ];
   const rendered = render(layout(input(bytes, 0x1000, { instructions, platform, symbols })), new Set(), []);
-  assert.match(textOf(rendered, "segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}sta CINV\n/);
+  assert.match(textOf(rendered, "segments/segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}sta CINV\n/);
   assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}CINV       = $0314 ; Used: written 1.\nEXTCOL     = $d020 ; Used: written 1.\nbackground = $d021 ; Used: written 1.\n`);
 });
 
@@ -932,7 +932,7 @@ test("an address inside a platform entry gets NAME+n only when it has no name of
   // $0315 has a knowledge name; $0316 has a knowledge name too, so $0317 is that name +1; NMINV is taken by another address.
   const symbols = [{ address: 0x0315, name: "irqHigh" }, { address: 0x0316, name: "brkVector" }, { address: 0x2000, name: "NMINV" }];
   const rendered = render(layout(input(bytes, 0x1000, { instructions, platform, symbols })), new Set(), []);
-  assert.match(textOf(rendered, "segment_1000.asm"), / {8}sta \$0319\n {8}sta irqHigh\n {8}sta brkVector\+1\n/);
+  assert.match(textOf(rendered, "segments/segment_1000.asm"), / {8}sta \$0319\n {8}sta irqHigh\n {8}sta brkVector\+1\n/);
   assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}irqHigh   = $0315 ; Used: written 1.\nbrkVector = $0316 ; Used: written 1.\n`);
 });
 
@@ -1057,23 +1057,34 @@ async function assembleRendered(rendered: ReturnType<typeof render>, defines: Re
 test("a range of leftovers is a file of its own that only LEFTOVERS = 1 builds; the module that it cuts goes on in a file of its own", () => {
   const source = patchInput([], { modules: [{ start: 0x1000, file: "game.asm", title: "The game" }], leftovers: [{ start: 0x1008, end: 0x100b }], releases: [{ label: "ORIGINAL", base: true }] });
   const laid = layout(source);
-  assert.deepEqual(laid.pieces.map((piece) => [piece.file, piece.start, piece.end, piece.leftover]), [["game.asm", 0x1000, 0x1007, false], ["leftover_1008.asm", 0x1008, 0x100b, true], ["game_100c.asm", 0x100c, 0x1013, false]]);
+  assert.deepEqual(laid.pieces.map((piece) => [piece.file, piece.start, piece.end, piece.leftover]), [["game.asm", 0x1000, 0x1007, false], ["leftovers/leftover_1008.asm", 0x1008, 0x100b, true], ["game_100c.asm", 0x100c, 0x1013, false]]);
   assert.equal(laid.pieces[2]!.title, "The game, from $100c");
   const rendered = render(laid, new Set(), []);
-  assert.match(textOf(rendered, "main.asm"), /!source "game\.asm"\n!if LEFTOVERS \{ !source "leftover_1008\.asm" \} else \{ !skip 4 \}\n!source "game_100c\.asm"\n/);
+  assert.match(textOf(rendered, "main.asm"), /!source "game\.asm"\n!if LEFTOVERS \{ !source "leftovers\/leftover_1008\.asm" \} else \{ !skip 4 \}\n!source "game_100c\.asm"\n/);
   assert.match(textOf(rendered, "main.asm"), /!source "switches\.asm"/, "main.asm gets LEFTOVERS from switches.asm");
-  assert.match(textOf(rendered, "config.asm"), /\n; Leftovers: off by default\nLEFTOVERS = 0 ; 4 bytes in 1 leftover_xxxx\.asm file that nothing uses\./);
+  assert.match(textOf(rendered, "config.asm"), /\n; Leftovers: off by default\nLEFTOVERS = 0 ; 4 bytes in 1 file in leftovers\/ that nothing uses\./);
   assert.match(textOf(rendered, "switches.asm"), /!ifdef RELEASE_ORIGINAL \{\n {8}LEFTOVERS = 1\n\}/, "each release has the leftovers");
-  assert.match(textOf(rendered, "leftover_1008.asm"), /^; Leftovers \$1008-\$100b: 4 bytes that nothing uses\./);
+  assert.match(textOf(rendered, "leftovers/leftover_1008.asm"), /^; Leftovers \$1008-\$100b: 4 bytes that nothing uses\./);
   // A module that starts in the leftovers goes on after them.
   const inside = layout(patchInput([], { modules: [{ start: 0x1000, file: "game.asm" }, { start: 0x100a, file: "table.asm", title: "The table" }], leftovers: [{ start: 0x1008, end: 0x100b }] }));
-  assert.deepEqual(inside.pieces.map((piece) => [piece.file, piece.start, piece.end]), [["game.asm", 0x1000, 0x1007], ["leftover_1008.asm", 0x1008, 0x100b], ["table_100c.asm", 0x100c, 0x1013]]);
+  assert.deepEqual(inside.pieces.map((piece) => [piece.file, piece.start, piece.end]), [["game.asm", 0x1000, 0x1007], ["leftovers/leftover_1008.asm", 0x1008, 0x100b], ["table_100c.asm", 0x100c, 0x1013]]);
   assert.equal(inside.pieces[2]!.title, "The table, from $100c");
   // Without releases and switches, switches.asm only includes config.asm.
   const alone = render(layout(patchInput([], { leftovers: [{ start: 0x1008, end: 0x100b }] })), new Set(), []);
   assert.equal(textOf(alone, "switches.asm").trimEnd().split("\n").at(-1), '!source "config.asm"');
   assert.equal(render(layout(patchInput([])), new Set(), []).files.some((file) => file.name === "config.asm"), false, "no leftovers, no config.asm");
 });
+
+test("with real ACME, a module file in a folder keeps its folder, also for the part after leftovers, and the source assembles to the program", { skip: acmeSkip }, async () => {
+  const source = patchInput([], { modules: [{ start: 0x1000, file: "game/main_loop.asm", title: "The main loop" }], leftovers: [{ start: 0x1008, end: 0x100b }] });
+  const laid = layout(source);
+  assert.deepEqual(laid.pieces.map((piece) => piece.file), ["game/main_loop.asm", "leftovers/leftover_1008.asm", "game/main_loop_100c.asm"]);
+  const rendered = render(laid, new Set(), []);
+  assert.match(textOf(rendered, "main.asm"), /!source "game\/main_loop\.asm"\n/);
+  const withLeftovers = { ...rendered, files: rendered.files.map((file) => (file.name === "config.asm" ? { ...file, text: configText(laid, new Map([["LEFTOVERS", 1]])) } : file)) };
+  assert.deepEqual((await assembleRendered(withLeftovers)).bytes, Array.from({ length: 20 }, (_, offset) => source.byteAt(0x1000 + offset)));
+});
+
 
 test("with real ACME, the source with LEFTOVERS = 1 gives the program, and with 0 it leaves out the leftovers and keeps every address", { skip: acmeSkip }, async () => {
   const source = patchInput([], { leftovers: [{ start: 0x1008, end: 0x100b }] });
@@ -1162,7 +1173,7 @@ test("a patch is written as !if SWITCH { code, NOP } else { original }, with its
   assert.deepEqual(laid.patchesNotWritten, []);
   const rendered = render(laid, new Set(), []);
   assert.equal(rendered.patches, 2);
-  const text = textOf(rendered, "segment_1000.asm");
+  const text = textOf(rendered, "segments/segment_1000.asm");
   assert.match(
     text,
     /^l_1000\nstore = \* \+ 2\nl_1003 = \* \+ 3\n!zone patch_CRACK_1000 \{\n\.patch_start\n!if CRACK \{\n {8}; CRACK on: 5 bytes at \$1000-\$1004, NOP after the code\n {8}; A grey border\.\n {8}lda #1\n {8}sta \$d021\n {8}!if \* - \.patch_start > 5 \{ !error .*\} else \{ !fill 5 - \(\* - \.patch_start\), \$ea \}\n\} else \{\n {8}lda #\$00\n {8}sta \$d020\n\}\n\}\n {8}jmp l_1000\n/m,
@@ -1193,7 +1204,7 @@ test("a patch that cuts an instruction, leaves its file or has the name of a lab
       [0x1001, "The range cuts the instruction at $1000."],
       [0x1006, "The range cuts the instruction at $1005."],
       [0x1008, "The switch name store is also a name of the source."],
-      [0x100c, "The range runs past the end of the file segment_1000.asm at $100f: a patch is in one file."],
+      [0x100c, "The range runs past the end of the file segments/segment_1000.asm at $100f: a patch is in one file."],
       [0x1013, "The switch GONE is not a switch of the knowledge."],
     ],
   );
@@ -1299,7 +1310,7 @@ test("config.asm has the value of every switch by kind, switches.asm each releas
       "",
     ].join("\n"),
   );
-  const text = textOf(rendered, "segment_1000.asm");
+  const text = textOf(rendered, "segments/segment_1000.asm");
   assert.match(text, /^!zone patch_PROTECTION_1000 \{\n\.patch_start\n!if PROTECTION = 0 \{\n {8}; PROTECTION off: 5 bytes at \$1000-\$1004, NOP after the code\n {8}; No check\.\n {8}!if \* - \.patch_start > 5 .*\n\} else \{\n {8}lda #\$00\n {8}sta \$d020\n\}\n\}\n/m);
   assert.match(
     text,
@@ -1394,7 +1405,7 @@ test("a macro use is one +name args line, and macros.asm holds the macros", () =
   const laid = layout(macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["ptr+2"] }], { comments: [{ address: 0x1004, placement: "side", text: "high byte" }] }));
   assert.deepEqual(laid.macrosAsInstructions, []);
   const rendered = render(laid, new Set(), []);
-  assert.equal(textOf(rendered, "segment_1000.asm"), `; Segment $1000-$100c\n; $1000-$100c\n\nstart\n        +inc16 ptr                      ; high byte\n        +inc16 ptr+2\n        rts\n`);
+  assert.equal(textOf(rendered, "segments/segment_1000.asm"), `; Segment $1000-$100c\n; $1000-$100c\n\nstart\n        +inc16 ptr                      ; high byte\n        +inc16 ptr+2\n        rts\n`);
   assert.equal(textOf(rendered, "macros.asm"), "; Macros of the knowledge. The source writes a use as +name args.\n\n; Adds 1 to a 16-bit value.\n!macro inc16 .dst {\n        inc .dst\n        bne +\n        inc .dst+1\n+\n}\n");
   assert.deepEqual(rendered.macroLines, new Map([["inc16", { first: 4, last: 9 }]]));
   assert.match(textOf(rendered, "main.asm"), /!source "constants\.asm"\n!source "macros\.asm"\n/);
@@ -1439,7 +1450,7 @@ test("a macro use with a label inside it, in a patch, of a missing macro or not 
   );
   const cut = layout(macroInput([{ start: 0x1001, end: 0x1005, macro: "inc16", args: ["ptr"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["$fd"] }], { patches: [{ start: 0x1008, end: 0x1009, switch: "SKIP", code: "" }] }));
   assert.deepEqual(cut.macrosAsInstructions.map((row) => [row.start, row.reason]), [[0x1001, "The range is not a run of whole instructions of one file."], [0x1006, "The use lies in a patch."]]);
-  const text = textOf(render(laid, new Set(), []), "segment_1000.asm");
+  const text = textOf(render(laid, new Set(), []), "segments/segment_1000.asm");
   assert.match(text, /^ {8}inc ptr\n {8}bne l_1006\nhigh\n {8}inc \$fc\nl_1006\n/m, "a use written as instructions names its targets");
   const blamed = render(layout(macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }])), new Set(), [], new Map(), new Map([[0x1000, "ACME refuses it."]]));
   assert.deepEqual(blamed.uses, []);
@@ -1481,7 +1492,7 @@ test("with real Ghidra and ACME, a macro use that ACME refuses or assembles to o
   assert.deepEqual(json.macrosAsInstructions.listed.map((row) => [row.start, row.macro]), [["$1006", "short"], ["$100c", "broken"]]);
   assert.equal(json.macrosAsInstructions.listed[0]!.reason, "ACME assembles it to 2 bytes, and the range has 6.");
   assert.match(json.macrosAsInstructions.listed[1]!.reason, /^ACME refuses the macro broken: Value not defined \(no_such_name\)/);
-  assert.match(readFileSync(join(project, "src", "segment_1000.asm"), "utf8"), /^start\n {8}\+inc16 ptr\n {8}inc \$fd\n/m);
+  assert.match(readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8"), /^start\n {8}\+inc16 ptr\n {8}inc \$fd\n/m);
 });
 
 test("an operand inside a named table without its own name is the table's name plus the offset", () => {
@@ -1496,7 +1507,7 @@ test("an operand inside a named table without its own name is the table's name p
       referenceTargets: [0x1018, 0x1003],
     }),
   );
-  const text = textOf(render(laid, new Set(), []), "segment_1000.asm");
+  const text = textOf(render(laid, new Set(), []), "segments/segment_1000.asm");
   assert.match(text, / {8}lda room_colours\+5\nl_1003\n {8}lda room_colours\+8\n/);
   assert.doesNotMatch(text, /l_1015|l_1018/);
   // The table data has no label line at the offset: ACME refuses a label room_colours+5 (found on Bruce Lee).
@@ -1509,7 +1520,7 @@ test("an immediate stored to a register with a decoder gets the decoded value as
   const bytes = [0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0xa2, 0x15, 0x8e, 0x18, 0xd0, 0xa9, 0x00, 0x8d, 0x20, 0xd0];
   const instructions = new Map([[0x1000, 2], [0x1002, 3], [0x1005, 2], [0x1007, 3], [0x100a, 2], [0x100c, 3]]);
   const laid = layout(input(bytes, 0x1000, { instructions, decode, comments: [{ address: 0x1007, placement: "side", text: "Charset at $1000." }] }));
-  const text = textOf(render(laid, new Set(), []), "segment_1000.asm");
+  const text = textOf(render(laid, new Set(), []), "segments/segment_1000.asm");
   assert.match(text, /sta \$d011 +; \$d011: yScroll 3, rows 25, displayEnabled, rasterBit8 0\n/);
   assert.match(text, /stx \$d018 +; Charset at \$1000\.\n/);
   assert.match(text, /sta \$d020\n/);
@@ -1541,15 +1552,15 @@ function ioInput(overrides: Partial<SourceInput> = {}): SourceInput {
   };
 }
 
-/** The code lines of segment_1000.asm without their side comments. */
-const ioCode = (rendered: ReturnType<typeof render>) => textOf(rendered, "segment_1000.asm").split("\n").filter((line) => line.startsWith(" ")).map((line) => line.split(";")[0]!.trim());
+/** The code lines of segments/segment_1000.asm without their side comments. */
+const ioCode = (rendered: ReturnType<typeof render>) => textOf(rendered, "segments/segment_1000.asm").split("\n").filter((line) => line.startsWith(" ")).map((line) => line.split(";")[0]!.trim());
 
 test("a read or write in the I/O area names the register, also where the image holds RAM; the data label of the RAM stays", () => {
   const rendered = render(layout(ioInput()), new Set(), []);
   assert.deepEqual(ioCode(rendered), ["lda CI2CRA", "lda #$1b", "sta SCROLY", "sta RASTER", "sta $d800,x", "sta RASTER", "lda $d040", "jsr under_io", "rts"]);
   // The register gets its decoded value, as a register outside the image does.
-  assert.match(textOf(rendered, "segment_1000.asm"), /sta SCROLY +; \$d011: yScroll 3, rows 25, displayEnabled, rasterBit8 0\n/);
-  const data = textOf(rendered, "segment_d000.asm");
+  assert.match(textOf(rendered, "segments/segment_1000.asm"), /sta SCROLY +; \$d011: yScroll 3, rows 25, displayEnabled, rasterBit8 0\n/);
+  const data = textOf(rendered, "segments/segment_d000.asm");
   assert.match(data, /^fighter_extra_sprites\n {8}!byte /m);
   assert.doesNotMatch(data, /^(RASTER|SCROLY|CI2CRA|l_d|fighter_extra_sprites\+)/m, "a register gets no label line in the data");
   const constants = textOf(rendered, "constants.asm");
@@ -1567,7 +1578,7 @@ test("a platform name of a knowledge operand expression stays as written and is 
   const symbols = [...ioInput().symbols, { address: 0xd012, name: "sprite_row", origin: "llm" as const }];
   const rendered = render(layout(ioInput({ operands, symbols })), new Set(), []);
   assert.deepEqual(ioCode(rendered).slice(3, 6), ["sta sprite_row", "sta $d800,x", "sta RASTER"]);
-  assert.match(textOf(rendered, "segment_d000.asm"), /^sprite_row\n/m);
+  assert.match(textOf(rendered, "segments/segment_d000.asm"), /^sprite_row\n/m);
   assert.match(textOf(rendered, "constants.asm"), /^RASTER += \$d012 ; .* Used: written 1\.$/m);
   // Without the I/O area (drive code, a bank), the RAM of the image keeps its data label.
   const { io: _io, describe: _describe, ...plain } = ioInput({ platform: [] });

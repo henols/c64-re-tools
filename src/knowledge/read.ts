@@ -519,7 +519,7 @@ export function moduleAt(db: DatabaseSync | undefined, start: number, space: Spa
 }
 
 export function moduleWithFile(db: DatabaseSync | undefined, file: string, space: Space = DEFAULT_SPACE): ModuleRow | undefined {
-  const row = db?.prepare(`SELECT ${MODULE_COLUMNS} FROM current_modules WHERE space = ? AND file = ?`).get(space, file) as Raw | undefined;
+  const row = db?.prepare(`SELECT ${MODULE_COLUMNS} FROM current_modules WHERE space = ? AND file = ? COLLATE NOCASE`).get(space, file) as Raw | undefined;
   return row === undefined ? undefined : toModule(row);
 }
 

@@ -326,7 +326,7 @@ test("module records where a file of generated source starts, and modules lists 
   assert.equal(set.status, 0, JSON.stringify(set.json));
   assert.deepEqual(set.json, { revision: rev(root, 1), module: { start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", revision: rev(root, 1) } });
   assert.deepEqual(knowledge(root, "modules").json, { modules: { count: 1, listed: [{ start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", revision: rev(root, 1) }] } });
-  assert.equal(knowledge(root, "module", "$1000", "sub/x.asm").status, 2);
+  assert.equal(knowledge(root, "module", "$1000", "sub/more/x.asm").status, 2, "one folder at most");
   assert.equal(knowledge(root, "rename", "$1000", "x", "--title", "T").status, 2, "--title is for module only");
   assert.equal(knowledge(root, "unmodule", "$0801").json.revision, rev(root, 2));
   assert.deepEqual(items(knowledge(root, "history", "$0801").json.history), [{ entity: "module", start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", fromRevision: rev(root, 1), toRevision: rev(root, 2) }]);

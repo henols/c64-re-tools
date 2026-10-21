@@ -78,7 +78,7 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, GENERATED_FOLDERS, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName } from "./text.ts";
 
 /** What a change rests on: a coverage run, a test or another project file with its SHA-256, or a note. */
@@ -758,9 +758,11 @@ type ModuleRequest = InSpace & { start: number; file: string; title?: string };
 function checkModule(request: ModuleRequest): void {
   checkSpace(request);
   checkAddress(request.start, "start");
-  if (!MODULE_FILE.test(request.file)) throw new Refusal("invalid-input", "A module file is a name of letters, digits, underscores or hyphens (at most 60) that ends in .asm, without a directory.");
+  if (!MODULE_FILE.test(request.file)) {
+    throw new Refusal("invalid-input", "A module file is a name of letters, digits, underscores or hyphens (at most 60) that ends in .asm. It can have one folder of lower-case letters, digits, underscores or hyphens (at most 30), for example music/driver.asm.");
+  }
   if (isGeneratedFile(request.file)) {
-    throw new Refusal("invalid-input", `A module cannot have the file ${request.file}, because the generated source writes ${GENERATED_FILES.join(", ")} itself, in any letter case. Give the module another file.`);
+    throw new Refusal("invalid-input", `A module cannot have the file ${request.file}, because the generated source writes ${GENERATED_FILES.join(", ")} and the folders ${GENERATED_FOLDERS.map((folder) => `${folder}/`).join(", ")} itself, in any letter case. Give the module another file.`);
   }
   if (request.title !== undefined && (request.title.trim().length === 0 || request.title.length > MAX_COMMENT)) throw new Refusal("invalid-input", `A module title has 1 to ${MAX_COMMENT} characters.`);
 }

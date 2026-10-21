@@ -351,10 +351,10 @@ test("a module starts a file of generated source: one per address and per file, 
   assert.equal(setModule(db, llm, { start: 0x0801, file: "boot.asm", title: "BASIC start and setup" }).revision, null);
   setModule(db, { origin: "user" }, { start: 0x2000, file: "player.asm" });
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
-  for (const file of ["../x.asm", "sub/x.asm", "x.a", ".asm", "x y.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
+  for (const file of ["../x.asm", "a/b/x.asm", "Music/x.asm", "/x.asm", "x.a", ".asm", "x y.asm", "leftovers/x.asm", "Segments/x.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
   // c64-source writes these files itself; macOS and Windows ignore the letter case.
   for (const file of ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm", "start_screen.asm", "Main.asm", "CONSTANTS.asm", "Switches.asm"]) {
-    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /writes main\.asm, loader\.asm, switches\.asm, config\.asm, constants\.asm, macros\.asm, start_screen\.asm itself/.test(error.message), file);
+    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /writes main\.asm, loader\.asm, switches\.asm, config\.asm, constants\.asm, macros\.asm, start_screen\.asm and the folders leftovers\/, segments\/ itself/.test(error.message), file);
   }
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
   assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: nth(db, 3) }, "a write without a title keeps it");
@@ -367,6 +367,9 @@ test("a module starts a file of generated source: one per address and per file, 
   assert.deepEqual(listModules(db).map((row) => [row.start, row.file]), [[0x0801, "boot.asm"], [0x2000, "player.asm"]]);
   applyBatch(db, llm, [{ op: "unmodule", start: 0x2000 }, { op: "module", start: 0x2100, file: "player.asm", title: "Player" }]);
   assert.deepEqual(listModules(db).map((row) => [row.start, row.file]), [[0x0801, "boot.asm"], [0x2100, "player.asm"]]);
+  // A module file can be in one folder of the source; the letter case of a file does not make another file.
+  setModule(db, llm, { start: 0x3000, file: "music/player.asm" });
+  assert.throws(() => setModule(db, llm, { start: 0x3001, file: "music/Player.asm" }), failsWith("conflict"));
 });
 
 test("each space has its own rows and names", () => {

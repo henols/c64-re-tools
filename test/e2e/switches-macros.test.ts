@@ -98,7 +98,7 @@ test("switches and macros: the original stays identical, each switch fits, and t
   assert.deepEqual(generated.releases.map((item: { label: string; result: string }) => [item.label, item.result]), [["ORIGINAL", "identical"]]);
   assert.equal(generated.macroUses, 1);
   assert.deepEqual(generated.macrosAsInstructions.listed, [{ start: "$1011", end: "$1016", macro: "inc16", reason: "The source has a label at $1013, inside the use." }]);
-  const text = readFileSync(join(project, "src", "segment_1000.asm"), "utf8");
+  const text = readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8");
   assert.match(text, /^loop\n {8}\+inc16 ptr\n/m);
   assert.match(text, /^!zone patch_TRAINER_100b \{\n\.patch_start\n!if TRAINER \{\n/m);
   assert.match(text, /^!zone patch_PROTECTION_100e \{\n\.patch_start\n!if PROTECTION = 0 \{\n {8}; PROTECTION off: /m);
@@ -133,5 +133,5 @@ test("switches and macros: the original stays identical, each switch fits, and t
   const again = ok("c64-source", "source.ts", ["generate", "--out", "src"]);
   assert.equal(again.check.identical, true);
   assert.equal(again.macroUses, 2);
-  assert.match(readFileSync(join(project, "src", "segment_1000.asm"), "utf8"), /^ {8}\+set16 ptr, start$/m);
+  assert.match(readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8"), /^ {8}\+set16 ptr, start$/m);
 });

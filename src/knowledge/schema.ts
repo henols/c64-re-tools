@@ -56,8 +56,12 @@ export { OPERAND_SELECTS, type OperandSelect } from "./expression.ts";
 export const SUPPRESSION_ENTITIES = ["symbol", "region", "reference"] as const;
 export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 
-/** A module file of the generated source: a plain name that ends in .asm, no directory. */
-export const MODULE_FILE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}\.asm$/;
+/**
+ * A module file of the generated source: a name that ends in .asm, in the
+ * source folder or in one folder of it, for example music/driver.asm. A folder
+ * name is lower case, so two modules cannot differ only in its letter case.
+ */
+export const MODULE_FILE = /^(?:[a-z0-9_][a-z0-9_-]{0,29}\/)?[A-Za-z0-9_][A-Za-z0-9_-]{0,59}\.asm$/;
 /** A switch of the generated source: upper case, so it reads as a build option and not as a label. */
 export const SWITCH_NAME = /^[A-Z][A-Z0-9_]{1,31}$/;
 /** A release label: the switch-name form. The build of a release defines RELEASE_<label>. */
@@ -100,12 +104,17 @@ export const MEMORY_ROW = 64;
 /** Files that c64-source writes itself: no module can have these names. */
 export const GENERATED_FILES = ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm", "start_screen.asm"] as const;
 
-/** The file of a range of leftovers in the generated source: leftover_xxxx.asm. */
-export const LEFTOVER_FILE = /^leftover_[0-9a-f]{4}\.asm$/;
+/** The folder of the leftovers in the generated source: leftovers/leftover_xxxx.asm. */
+export const LEFTOVER_FOLDER = "leftovers";
+/** The folder of the parts of segments that no module holds: segments/segment_xxxx.asm. */
+export const SEGMENT_FOLDER = "segments";
+/** The folders that c64-source writes itself: no module file is in them. */
+export const GENERATED_FOLDERS = [LEFTOVER_FOLDER, SEGMENT_FOLDER] as const;
 
 /** True for a generated file name in any letter case: the file systems of macOS and Windows ignore case. */
 export function isGeneratedFile(file: string): boolean {
-  return (GENERATED_FILES as readonly string[]).includes(file.toLowerCase()) || LEFTOVER_FILE.test(file.toLowerCase());
+  const lower = file.toLowerCase();
+  return (GENERATED_FILES as readonly string[]).includes(lower) || GENERATED_FOLDERS.some((folder) => lower.startsWith(`${folder}/`));
 }
 
 /**

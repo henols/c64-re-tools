@@ -46,7 +46,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Write a comment | `comment '$2100' line Reads joystick 2.` |
 | Add a reference | `reference '$2000' '$2100' call` |
 | Find the places that a removal blocks | `suppressions --range '$2000-$2fff'` |
-| Start a file of the generated source | `module '$2000' player.asm --title 'Player movement'` |
+| Start a file of the generated source | `module '$2000' game/player.asm --title 'Player movement'` |
 | Write the operand of an instruction as an expression | `operand '$8079' --lo irq_handler` |
 | Record a release of the program | `release ORIGINAL --file original/game.prg --base` |
 | Write a switch | `switch PROTECTION --kind protection --releases ORIGINAL` |
@@ -353,8 +353,10 @@ Errors of this group:
 
 - A module tells where a file of the generated source starts. The file runs to the next module or to the end of its segment.
 - Each address has one module, and each file name has one module.
-- A file name has letters, digits, underscores or hyphens, and ends in `.asm`. It has no folder.
-- The generated source has the files `main.asm`, `loader.asm`, `switches.asm`, `config.asm`, `constants.asm` and `macros.asm` already. Thus a module cannot have one of these names, in upper or lower case.
+- A file name has letters, digits, underscores or hyphens, and ends in `.asm`. It can have one folder, for example `music/driver.asm`. A folder name has lower-case letters, digits, underscores or hyphens.
+- Put the modules of one part of the program in one folder, for example `music/`, `irq/` or `graphics/`.
+- The generated source has the files `main.asm`, `loader.asm`, `switches.asm`, `config.asm`, `constants.asm`, `macros.asm` and `start_screen.asm` already. It also has the folders `leftovers/` and `segments/`. Thus a module cannot have one of these files or folders, in upper or lower case.
+- Two modules cannot have file names that are different only in upper or lower case.
 - The title becomes the first line of the file.
 - `body.module` gives the module after the write.
 

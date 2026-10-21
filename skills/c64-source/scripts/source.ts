@@ -26,7 +26,7 @@ import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
 import { analyzedBytes, memoryRows, programCoverage, releaseImage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
 import { ANALYZER_NAME_ORDER, baseValue, currentRevision, currentStartScreen, startScreenRanges, type StartScreenRow, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listReleases, listSpaces, listSwitches, listSymbols, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { subtract, write } from "#src/knowledge/write.ts";
 import { assemble, symbolsFileText } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
@@ -739,13 +739,15 @@ const LEFTOVER_RANGE = /^; Leftovers (\$[0-9a-f]{4})-(\$[0-9a-f]{4}):/m;
 
 /**
  * The leftovers of the earlier run: the ranges of its generated leftover
- * files in `out`. Undefined when `out` has no generated main.asm, so there
- * was no earlier run to compare with.
+ * files in the leftovers folder of `out`. Undefined when `out` has no
+ * generated main.asm, so there was no earlier run to compare with.
  */
 function earlierLeftovers(out: string): AddressRange[] | undefined {
-  const directory = resolveProjectPath(out);
-  const main = join(directory, "main.asm");
+  const root = resolveProjectPath(out);
+  const main = join(root, "main.asm");
   if (!existsSync(main) || !readFileSync(main, "utf8").startsWith(GENERATED_MARK)) return undefined;
+  const directory = join(root, LEFTOVER_FOLDER);
+  if (!existsSync(directory)) return [];
   return readdirSync(directory)
     .filter((name) => /^leftover_[0-9a-f]{4}\.asm$/.test(name))
     .flatMap((name) => {
@@ -763,8 +765,9 @@ function outside(ranges: readonly AddressRange[], others: readonly AddressRange[
  * Removes the generated .asm files of an earlier run that this run does not
  * write, and the reports of the earlier run (its source map and
  * not_executed.json). An earlier loader.asm stays unless this run has
- * --loader: a source of the user can include loader.asm. Other files stay.
- * Gives the paths it removed.
+ * --loader: a source of the user can include loader.asm. The files of a
+ * module are in `out` or in one folder of it: a folder that the run leaves
+ * empty goes too. Other files stay. Gives the paths it removed.
  */
 function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boolean): string[] {
   const removed: string[] = [];
@@ -775,17 +778,30 @@ function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boole
     rmSync(path, { force: true });
     removed.push(`${reports}/${name}`);
   }
-  const directory = resolveProjectPath(out);
-  if (!existsSync(directory)) return removed;
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    const name = entry.name;
-    const path = join(directory, name);
-    if (LOADER_FILES.has(name) && !loaderRun) continue;
-    if (!name.endsWith(".asm") || keep.has(name) || !readFileSync(path, "utf8").startsWith(GENERATED_MARK)) continue;
-    rmSync(path, { force: true });
-    removed.push(`${out}/${name}`);
-  }
+  const root = resolveProjectPath(out);
+  if (!existsSync(root)) return removed;
+  /** Removes the old generated files of a folder ("" for `out` itself), and gives how many. */
+  const clean = (folder: string): number => {
+    const directory = folder === "" ? root : join(root, folder);
+    let count = 0;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const name = folder === "" ? entry.name : `${folder}/${entry.name}`;
+      if (entry.isDirectory() && folder === "") {
+        // A folder of the user that held no generated file stays, also when it is empty.
+        if (clean(name) > 0 && readdirSync(join(root, name)).length === 0) rmSync(join(root, name), { recursive: true, force: true });
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const path = join(directory, entry.name);
+      if (LOADER_FILES.has(name) && !loaderRun) continue;
+      if (!name.endsWith(".asm") || keep.has(name) || !readFileSync(path, "utf8").startsWith(GENERATED_MARK)) continue;
+      rmSync(path, { force: true });
+      removed.push(`${out}/${name}`);
+      count++;
+    }
+    return count;
+  };
+  clean("");
   return removed;
 }
 
@@ -1201,7 +1217,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
         : changed === undefined
           ? {}
           : { leftovers: { bytes: 0, changed } }
-      : { leftovers: { bytes: laid.leftovers.reduce((sum, range) => sum + range.end - range.start + 1, 0), ...listed(laid.leftovers, max, (range) => ({ ...showRange(range), bytes: range.end - range.start + 1, file: `leftover_${range.start.toString(16).padStart(4, "0")}.asm` })), ...(changed === undefined ? {} : { changed }) } }),
+      : { leftovers: { bytes: laid.leftovers.reduce((sum, range) => sum + range.end - range.start + 1, 0), ...listed(laid.leftovers, max, (range) => ({ ...showRange(range), bytes: range.end - range.start + 1, file: `${LEFTOVER_FOLDER}/leftover_${range.start.toString(16).padStart(4, "0")}.asm` })), ...(changed === undefined ? {} : { changed }) } }),
     ...(rendered.expressions.length === 0 && rendered.operandsAsNumbers.length === 0 ? {} : { operandExpressions: rendered.expressions.length }),
     ...(rendered.operandsAsNumbers.length === 0
       ? {}

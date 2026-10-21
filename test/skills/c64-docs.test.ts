@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { readPng } from "../../src/graphics.testkit.ts";
@@ -48,6 +48,7 @@ function writeSource(root: string, revision: string, files: Record<string, Array
         items.push({ start: hex(line.start), end: hex(line.end), file, line: text.length });
       }
     }
+    mkdirSync(dirname(join(root, "src", file)), { recursive: true });
     writeFileSync(join(root, "src", file), `${text.join("\n")}\n`);
   }
   mkdirSync(join(root, MAP_DIRECTORY), { recursive: true });
@@ -73,7 +74,7 @@ function project(root = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-"))): { ro
     join(root, "batch.json"),
     JSON.stringify([
       { op: "module", start: "$1000", file: "main_code.asm", title: "Main code" },
-      { op: "module", start: "$2000", file: "tables.asm", title: "Tables" },
+      { op: "module", start: "$2000", file: "data/tables.asm", title: "Tables" },
       { op: "rename", address: "$1000", name: "main", kind: "routine" },
       { op: "rename", address: "$1010", name: "draw", kind: "routine" },
       { op: "rename", address: "$1020", name: "handler_a", kind: "label" },
@@ -115,7 +116,7 @@ function project(root = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-"))): { ro
       { label: "handler_b", address: 0x1028 },
       { item: "rts", start: 0x1028, end: 0x1028 },
     ],
-    "tables.asm": [
+    "data/tables.asm": [
       "; Tables",
       "; $2000-$208f",
       "",
@@ -155,12 +156,12 @@ test("docs.ts generate writes the reference: module pages with anchors and links
   assert.match(main, /n1010 ==> n1020\n {2}n1010 ==> n1028/);
   assert.match(main, /- \*\*Entry of:\*\* \[`handlers`\]\(\.\.\/tables\.md#handlers\)/);
   const tables = read("tables.md");
-  assert.match(tables, /\| 0 \| \[`\$2000`\]\(\.\.\/\.\.\/src\/tables\.asm#L6\) \| `\$101F` \| \[`handler_a` `\$1020`\]\(\.\.\/\.\.\/src\/main_code\.asm#L13\) \|/);
+  assert.match(tables, /\| 0 \| \[`\$2000`\]\(\.\.\/\.\.\/src\/data\/tables\.asm#L6\) \| `\$101F` \| \[`handler_a` `\$1020`\]\(\.\.\/\.\.\/src\/main_code\.asm#L13\) \|/);
   assert.match(tables, /- \*\*Read by:\*\* \[`draw`\]\(modules\/main_code\.md#draw\) \[`\$1012`\]/);
   // The variables outside the program are rows of the memory map; there is no page of all names.
   const memory = read("memory-map.md");
   assert.match(memory, /## Variables outside the program\n\n\| Address \| Name \| Comment \| Read by \| Written by \|\n\|---\|---\|---\|---\|---\|\n\| `\$0002` \| <a id="counter"><\/a>\[`counter`\]\(\.\.\/\.\.\/src\/constants\.asm#L2\) \| {2}\| {2}\| \[`draw`\]\(modules\/main_code\.md#draw\) \|/);
-  assert.match(memory, /\| \[`\$2040`\]\(\.\.\/\.\.\/src\/tables\.asm#L8\)-`\$207F` \| 64 \| sprite \| \[`ship` `\$2040`\]\(\.\.\/\.\.\/src\/tables\.asm#L7\) \|/);
+  assert.match(memory, /\| \[`\$2040`\]\(\.\.\/\.\.\/src\/data\/tables\.asm#L8\)-`\$207F` \| 64 \| sprite \| \[`ship` `\$2040`\]\(\.\.\/\.\.\/src\/data\/tables\.asm#L7\) \|/);
   assert.equal(existsSync(join(root, "docs/reference/symbols.md")), false);
   assert.equal(existsSync(join(root, "docs/reference/variables.md")), false);
   // Every link of the reference reaches its file, anchor and line.
@@ -181,6 +182,9 @@ test("docs.ts generate writes the reference: module pages with anchors and links
   assert.deepEqual([font.pixels[0], font.pixels[33], font.pixels[2], font.pixels[15 * 32 + 31], font.pixels[15 * 32 + 29]], [1, 1, 0, 1, 0]);
   assert.match(read("index.md").split("\n")[0]!, /Do not edit: change the knowledge, generate the source again, then run docs\.ts generate\. -->$/);
   assert.match(read("index.md"), /\| \[main_code\.asm\]\(modules\/main_code\.md\) \| `\$1000-\$1028` \| Main code \| 4 \| 4 \|/);
+  // A module file in a folder of the source gets its page in the same folder of modules/.
+  assert.match(read("index.md"), /\| \[data\/tables\.asm\]\(modules\/data\/tables\.md\) \|/);
+  assert.match(read("modules/data/tables.md"), /### \[`handlers`\]\(\.\.\/\.\.\/\.\.\/\.\.\/src\/data\/tables\.asm#L5\) `\$2000-\$2003`\n\n\*data\*\n\n- \*\*Referred to by:\*\* \[`draw`\]\(\.\.\/main_code\.md#draw\)/);
 });
 
 test("docs.ts generate refuses a page of a person in the output directory and a source of another revision", () => {
@@ -259,7 +263,7 @@ test("docs.ts link makes one link of a name and its address, once in a section a
     text[2],
     "[`main` `$1000`](../src/main_code.asm#L5) calls [`draw` `$1010`](../src/main_code.asm#L9), which writes `counter` at [`draw` `$1015`](../src/main_code.asm#L12).",
   );
-  assert.equal(text[3], "The table [`handlers+1` `$2001`](../src/tables.asm#L6) holds the high bytes; `counter` = `$10` at start.");
+  assert.equal(text[3], "The table [`handlers+1` `$2001`](../src/data/tables.asm#L6) holds the high bytes; `counter` = `$10` at start.");
   assert.equal(text[4], "`nothing` `$1234` and `main` `$1020` are wrong; `rts` is no name.", "a mention with a problem gets no link");
   assert.equal(text[5], "`main` `$1000` has a link in this section already.", "a second link of a name in a section stays as text");
   assert.equal(text[9], "| `draw` `$1010` | a link in a table |", "a table gets no link");

@@ -18,7 +18,7 @@ import { CONFIG_FILE, configValues } from "#src/build-name.ts";
 import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
-import { type CommentPlacement, isAnalyzer, isGeneratedFile, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
+import { type CommentPlacement, isAnalyzer, isGeneratedFile, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, SEGMENT_FOLDER, RELEASE_DEFINE, START_SCREEN_SWITCH, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
 import type { Area } from "#src/platform.ts";
 import { hasZeroPageForm, instructionWith, labelProblem, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type UseKind } from "#src/opcodes.ts";
 
@@ -330,23 +330,24 @@ export function layout(input: SourceInput): Layout {
       const end = bounds[index + 1]! - 1;
       const segmentTitle = `Segment ${formatC64Address(segment.start)}-${formatC64Address(segment.end)}`;
       if (leftovers.some((range) => range.start === start)) {
-        pieces.push({ start, end, file: `leftover_${hex(start)}.asm`, title: `Leftovers ${formatC64Address(start)}-${formatC64Address(end)}: ${end - start + 1} bytes that nothing uses. Only LEFTOVERS = 1 builds them.`, segmentStart: index === 0, leftover: true, items: [] });
+        pieces.push({ start, end, file: `${LEFTOVER_FOLDER}/leftover_${hex(start)}.asm`, title: `Leftovers ${formatC64Address(start)}-${formatC64Address(end)}: ${end - start + 1} bytes that nothing uses. Only LEFTOVERS = 1 builds them.`, segmentStart: index === 0, leftover: true, items: [] });
         continue;
       }
-      // A module that leftovers cut goes on in a file of its own after them: <module>_xxxx.asm.
+      // A module that leftovers cut goes on in a file of its own after them, in its folder: <module>_xxxx.asm.
       const module = modules.find((row) => row.start === start);
       const holder = module ?? modules.filter((row) => row.start >= segment.start && row.start < start).at(-1);
       const title = (text: string | undefined) => text?.replace(/\s*\r?\n\s*/g, " ");
-      const file = module?.file ?? (holder === undefined ? `segment_${hex(start)}.asm` : `${holder.file.replace(/\.asm$/i, "")}_${hex(start)}.asm`);
+      const file = module?.file ?? (holder === undefined ? `${SEGMENT_FOLDER}/segment_${hex(start)}.asm` : `${holder.file.replace(/\.asm$/i, "")}_${hex(start)}.asm`);
       const named = module === undefined && holder !== undefined ? `${title(holder.title) ?? holder.file}, from ${formatC64Address(start)}` : title(module?.title);
       pieces.push({ start, end, file, title: named ?? segmentTitle, segmentStart: index === 0, leftover: false, items: [] });
     }
   }
+  // In any letter case: the file systems of macOS and Windows ignore it.
   const files = new Map<string, number>();
   for (const piece of pieces) {
-    const other = files.get(piece.file);
+    const other = files.get(piece.file.toLowerCase());
     if (other !== undefined) throw new WireFailure("invalid-input", `The file ${piece.file} is used at ${formatC64Address(other)} and at ${formatC64Address(piece.start)}. Give the module another file.`);
-    files.set(piece.file, piece.start);
+    files.set(piece.file.toLowerCase(), piece.start);
   }
 
   for (const piece of pieces) {
@@ -970,7 +971,7 @@ export function configText(layout: Pick<Layout, "switches" | "patches" | "startS
     out.push(
       "",
       "; Leftovers: off by default",
-      `${LEFTOVERS_SWITCH} = ${values.get(LEFTOVERS_SWITCH) ?? 0} ; ${bytes} bytes in ${layout.leftovers.length} leftover_xxxx.asm ${layout.leftovers.length === 1 ? "file" : "files"} that nothing uses. 1 builds them, so main.asm gives the bytes of the program. Each release has them. The loader never loads them`,
+      `${LEFTOVERS_SWITCH} = ${values.get(LEFTOVERS_SWITCH) ?? 0} ; ${bytes} bytes in ${layout.leftovers.length} ${layout.leftovers.length === 1 ? "file" : "files"} in ${LEFTOVER_FOLDER}/ that nothing uses. 1 builds them, so main.asm gives the bytes of the program. Each release has them. The loader never loads them`,
     );
   }
   return `${out.join("\n")}\n`;
