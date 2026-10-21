@@ -37,7 +37,7 @@ test("status names the version of the installed skills, warns on another version
     `  Warning: the claude skills are c64-re-tools 2.0.0-rc.1 and this is ${PACKAGE.version}. Run npx -y ${PACKAGE.name}@${PACKAGE.tag} update to install this version.`,
     "  claude MCP server: npx -y --package=@henols/c64-re-tools@next c64-re-tools-mcp",
   ]);
-  assert.equal(lines.at(-1), "  The MCP server gives its own version in the result of c64_status.");
+  assert.equal(lines.at(-1), "  claude MCP server: npx -y --package=@henols/c64-re-tools@next c64-re-tools-mcp", "no line claims a version that c64_status does not give");
   write(".claude/skills/c64-knowledge/package.json", { name: PACKAGE.name, version: PACKAGE.version });
   const again = installedLines(project);
   const section = again.slice(again.indexOf(`Installed in this project (${project}):`) + 1, again.indexOf("Installed globally:") > 0 ? again.indexOf("Installed globally:") : undefined);

@@ -91,7 +91,6 @@ export function installedLines(cwd = process.cwd()): string[] {
     }
   }
   if (lines.length === 0) return ["Installed: nothing in this project or globally."];
-  lines.push("  The MCP server gives its own version in the result of c64_status.");
   return lines;
 }
 

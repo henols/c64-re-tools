@@ -169,6 +169,13 @@ test("an install removes the skill files of the earlier version that it no longe
     write(".ap-sdk/install-manifest.json");
     writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: after } } }));
 
+    // An install that failed before it wrote its manifest: the manifest still has every earlier item.
+    const manifest = readFileSync(join(root, ".ap-sdk", "install-manifest.json"), "utf8");
+    writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: before } } }));
+    assert.deepEqual(removeDroppedItems(before, "project", root), [], "an unchanged manifest drops nothing");
+    assert.equal(readdirSync(join(root, ".claude", "skills", "c64-emulator")).includes("SKILL.md"), true);
+    writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), manifest);
+
     assert.deepEqual(removeDroppedItems(before, "project", root), ["c64-emulator"]);
     const exists = (path: string) => readdirSync(dirname(join(root, path))).includes(path.split("/").at(-1)!);
     assert.equal(exists(".claude/skills/c64-emulator/SKILL.md"), false);

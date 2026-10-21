@@ -58,7 +58,8 @@ To get the command list, run the script with no arguments.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
 - The script refuses an `--out` path in `.c64-re-tools/knowledge/` and the index of the knowledge. Change the project knowledge only with the commands that change it.
 - The script refuses a folder where the command writes a file. It refuses a file where the command writes a folder.
-- When a file is the evidence for a finding in the project knowledge, move it out of `.c64-re-tools/local/` first. The project knowledge refuses evidence in that folder.
+- When a test or another file is the evidence for a finding in the project knowledge, move it out of `.c64-re-tools/local/` first. The project knowledge refuses that evidence in that folder.
+- A coverage map can stay in `.c64-re-tools/local/`. The project knowledge keeps its ranges and its SHA-256.
 - Do not move a coverage map after you put it into the project knowledge. The knowledge refers to the map by its path at that time.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and its snapshot files. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
@@ -74,7 +75,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--out <dir>` | `generate` | The folder for the source files. It is necessary. The script writes over the files of an earlier run. It removes a generated `.asm` file that this run does not write. A run without `--loader` keeps `loader.asm`, `loader.prg` and `start_screen.asm` of an earlier run. `staleLoader` tells when they are of another knowledge revision. |
 | `--entry <address>` | `generate` | An address where code starts. Give the flag again for more addresses. There is no default. |
 | `--space <space>` | `generate` | The knowledge space: `c64`, `drive8`, or `bank0` to `bank255`. The default is `c64`. The coverage, `--loader` and the platform names apply only to `c64`. |
-| `--loader` | `generate` | Also write `loader.asm` and `loader.prg`, and `start_screen.asm` when the knowledge has a start screen. It needs a capture in the knowledge. The default is no loader. |
+| `--loader` | `generate` | Also write `loader.asm` and `loader.prg`, and `start_screen.asm` when the knowledge has a start screen. The script writes `loader.prg` only after the check of the new loader ran. Else the `loader.prg` of an earlier run stays. It needs a capture in the knowledge. The default is no loader. |
 | `--analyzer-names` | `generate` | Name an address without a name of the user or the LLM, and without a platform name, with its analyzer name, for example `FUN_17e2`. Without the flag, the source makes its own name, for example `l_17e2`. |
 | `--to <folder>` | `export` | The folder of the new project. It is necessary. The script also writes `<folder>.zip` beside the folder. |
 | `--name <name>` | `export` | The name of `baseline/<name>.prg` and `build/<name>.prg`. The default is the name of the folder. |
@@ -259,7 +260,8 @@ The start screen:
 - `limits`: each CIA value that the loader cannot set as it was at the entry. An old capture has no CIA values. Then capture the program again at its entry point.
 - `startScreen`: with a start screen, `shown: true` when the VIC-II had the values of the start screen, and `waits: true` when the start screen waited without a key. `wait` and `continue` are the addresses of the wait and of the code after it. The check sets the PC to `continue`, and then runs the loader to its jump.
 - `packed`: `packedBytes` and `unpackedBytes` of the packed form.
-- When the check of `loader.prg` cannot run, the script removes `loader.prg`. `loader.asm` stays. `reason` tells why the check did not run.
+- When the check of `loader.prg` cannot run, the script does not write `loader.prg`. The `loader.prg` of an earlier run stays as it was. `loader.asm` is new. `reason` tells why the check did not run.
+- `kept`: when the result has no new `loader.prg`, the path of the `loader.prg` of an earlier run. That file is not of this source.
 
 Do these actions when `verified` is `false`:
 

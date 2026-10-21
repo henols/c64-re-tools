@@ -1517,28 +1517,30 @@ test("with real ACME, a stale loader of a knowledge without an entry state gets 
   assert.doesNotMatch(envelope.nextAction ?? "", /--loader/);
 });
 
-test("with real Ghidra and ACME, a --loader run whose check cannot run removes loader.prg and says why", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+test("with real Ghidra and ACME, a --loader run whose check cannot run keeps the loader.prg of an earlier run and says why", { skip: ghidraSkip, timeout: 600_000 }, async () => {
   const { project, knowledge, generate } = capturedProject("$1000");
   mkdirSync(join(project, "src"));
   writeFileSync(join(project, "src", "loader.prg"), Uint8Array.from([0x01, 0x08]));
   // C64RT_HOST names a port where no host runs.
   const run = generate("--loader");
   assert.equal(run.status, 0, run.stdout + run.stderr);
-  const json = readEnvelope(run.stdout, run.status).json as { result: string; check: { identical: boolean }; files: Array<{ out: string }>; removed: string[]; loader: { verified: boolean; reason: string } };
+  const json = readEnvelope(run.stdout, run.status).json as { result: string; check: { identical: boolean }; files: Array<{ out: string }>; removed: string[]; loader: { verified: boolean; reason: string; kept?: string } };
   assert.equal(json.result, "FAIL");
   assert.equal(json.check.identical, true);
   assert.equal(json.loader.verified, false);
-  assert.match(json.loader.reason, /^The check of loader\.prg did not run, so the script removed loader\.prg\. The c64-re-tools host runtime is not running or cannot be reached\./);
+  assert.match(json.loader.reason, /^The check of loader\.prg did not run, so the script kept the loader\.prg of an earlier run\. The c64-re-tools host runtime is not running or cannot be reached\./);
+  assert.equal(json.loader.kept, "src/loader.prg");
   assert.ok(json.files.some((file) => file.out === "src/loader.asm"), "loader.asm is written");
   assert.ok(!json.files.some((file) => file.out === "src/loader.prg"), "loader.prg is not in the written files");
-  assert.deepEqual(json.removed, ["src/loader.prg"], "the loader.prg of the earlier run is removed");
-  assert.ok(!readdirSync(join(project, "src")).includes("loader.prg"));
+  assert.equal(json.removed, undefined, "a host problem does not remove a committed loader.prg");
+  assert.deepEqual([...readFileSync(join(project, "src", "loader.prg"))], [0x01, 0x08], "the loader.prg of the earlier run keeps its bytes");
+  assert.ok(!readdirSync(join(project, ".c64-re-tools", "local")).includes("loader-check"), "the scratch file of the check goes");
   // A run without --loader keeps loader.asm: it is of this revision until the knowledge changes.
   const same = generate();
   assert.equal((readEnvelope(same.stdout, same.status).json as { staleLoader?: unknown }).staleLoader, undefined);
   assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "rename", "$1000", "start", "--kind", "routine"], { cwd: project }).status, 0);
   const changed = generate();
   const { envelope, json: body } = readEnvelope(changed.stdout, changed.status) as { envelope: { nextAction?: string }; json: { staleLoader: { files: string[]; revision: string } } };
-  assert.deepEqual(body.staleLoader.files, ["src/loader.asm"]);
+  assert.deepEqual(body.staleLoader.files, ["src/loader.asm", "src/loader.prg"]);
   assert.match(envelope.nextAction!, /^node \/.*source\.ts generate --out src --loader --project /);
 });

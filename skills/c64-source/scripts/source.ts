@@ -10,7 +10,7 @@
 // FAIL.
 
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 
 import { isRefusal, Refusal } from "#src/errors.ts";
@@ -663,6 +663,9 @@ function sourceMapText(rendered: Rendered, space: string, revision: string | nul
   return `${head},\n"labels": [\n${labels.join(",\n")}\n],\n"items": [\n${items.join(",\n")}\n]}\n`;
 }
 
+/** The folder in .c64-re-tools/local/ where the check of the loader runs the new loader.prg. */
+const LOADER_CHECK_DIRECTORY = "loader-check";
+
 /** The files of the loader. Only a run with --loader writes them, so only such a run removes them. */
 const LOADER_FILES: ReadonlySet<string> = new Set(["loader.asm", "loader.prg", START_SCREEN_FILE]);
 
@@ -690,8 +693,9 @@ function staleLoader(out: string, revision: string): { files: string[]; revision
 /**
  * Removes the generated .asm files of an earlier run that this run does not
  * write, and an earlier not_executed.json and source-map.json. An earlier
- * loader.asm and loader.prg stay unless this run has --loader: a source of the
- * user can include loader.asm. Other files stay. Gives the names it removed.
+ * loader.asm stays unless this run has --loader: a source of the user can
+ * include loader.asm. An earlier loader.prg always stays: only a new loader.prg
+ * whose check ran replaces it. Other files stay. Gives the names it removed.
  */
 function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boolean): string[] {
   const directory = resolveProjectPath(out);
@@ -702,7 +706,7 @@ function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boole
     const name = entry.name;
     const path = join(directory, name);
     if (LOADER_FILES.has(name) && !loaderRun) continue;
-    const old = name === "loader.prg" || name === NOT_EXECUTED_FILE || name === SOURCE_MAP_FILE || (name.endsWith(".asm") && !keep.has(name) && readFileSync(path, "utf8").startsWith(GENERATED_MARK));
+    const old = name === NOT_EXECUTED_FILE || name === SOURCE_MAP_FILE || (name.endsWith(".asm") && !keep.has(name) && readFileSync(path, "utf8").startsWith(GENERATED_MARK));
     if (!old) continue;
     rmSync(path, { force: true });
     removed.push(name);
@@ -966,8 +970,12 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
           patchesNotWritten: listed(laid.patchesNotWritten, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), switch: item.switch, reason: item.reason })),
         }),
   };
+  // A loader.prg of an earlier run stays when this run checks no new one: it can be a committed file.
+  const loaderPath = `${out}/loader.prg`;
+  const keptLoader = () => (existsSync(resolveProjectPath(loaderPath)) ? { kept: loaderPath } : {});
+  const notVerified = (fields: Record<string, unknown>) => ({ verified: false, ...fields, ...keptLoader() });
   // The loader includes the source, so it is built only from a source that is identical to the image.
-  const notBuilt = (reason: string) => (state === undefined ? {} : { loader: { verified: false, reason: loaderRefused ?? reason } });
+  const notBuilt = (reason: string) => (state === undefined ? {} : { loader: notVerified({ reason: loaderRefused ?? reason }) });
   if (built.program === undefined) {
     return { output: { ...output, check: { identical: false, diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS) }, ...notBuilt("The source does not assemble, and the loader includes it.") }, removed, failed: true };
   }
@@ -998,40 +1006,46 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   if (releases.length > 0) output.releases = releases;
   const releasesFailed = releases.some((item) => item.result !== "identical" && (item.base || item.result !== "layout differs"));
   const sourceFailed = laid.patchesNotWritten.length > 0 || switches.some((item) => item.result !== "fits") || defaultFailed || releasesFailed;
-  if (loaderRefused !== undefined) return { output: { ...output, loader: { verified: false, reason: loaderRefused } }, removed, failed: true };
+  if (loaderRefused !== undefined) return { output: { ...output, loader: notVerified({ reason: loaderRefused }) }, removed, failed: true };
   if (loader === undefined || state === undefined) return { output, removed, failed: missingEntry !== undefined || sourceFailed };
 
   // The entry state is the state of the base release: the loader is built and checked with it.
   const loaderBuilt = await buildLoader(files, laid, loader, image, state, baseValues);
-  if ("diagnostics" in loaderBuilt) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics } }, removed, failed: true };
+  if ("diagnostics" in loaderBuilt) return { output: { ...output, loader: notVerified({ reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics }) }, removed, failed: true };
   const { jump, copierSource, expected, startScreen } = loaderBuilt;
   const copierBuild = loaderBuilt.program;
   const fileByte = (address: number) => copierBuild[2 + address - (loader.packed?.start ?? 0x0801)]!;
-  // The packed form: Exomizer packs the build of main.asm with the copier. Without Exomizer, or when its check fails, there is no loader.prg.
+  // The packed form: Exomizer packs the build of main.asm with the copier. Without Exomizer, or when its check fails, there is no new loader.prg.
   let packed: PackedLoader | undefined;
   if (loader.packed !== undefined) {
     try {
       packed = await packLoader(built.program, copierBuild, loader, localToolContext());
     } catch (error) {
       if (!isRefusal(error)) throw error;
-      return { output: { ...output, loader: { verified: false, reason: `loader.asm has the packed form, and the pack with Exomizer failed. ${error.message}` } }, removed, failed: true };
+      return { output: { ...output, loader: notVerified({ reason: `loader.asm has the packed form, and the pack with Exomizer failed. ${error.message}` }) }, removed, failed: true };
     }
   }
   const program = packed?.program ?? copierBuild;
-  const loaderPath = `${out}/loader.prg`;
-  written.push(writeReported(loaderPath, program, { what: "--out" }));
+  // The check runs the new loader from a scratch file. Only a loader whose check ran goes to --out, so a check
+  // that cannot run (no host, or a host of another release) keeps the loader.prg of an earlier run.
+  ensureLocal(projectRoot());
+  const scratch = `${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/${LOADER_CHECK_DIRECTORY}`;
+  mkdirSync(resolveProjectPath(scratch), { recursive: true });
+  const checkPath = `${scratch}/loader.prg`;
+  writeFileSync(resolveProjectPath(checkPath), program);
   // The unpack runs before the copier.
   const copierFrames = packed === undefined ? RUN_LIMIT_FRAMES : packed.cycles === undefined ? LOADER_FRAMES : RUN_LIMIT_FRAMES + Math.ceil(packed.cycles / PAL_FRAME_CYCLES);
   let ran: LoaderRun;
   try {
-    ran = await runLoader(loaderPath, program, loader, image, state, { jump, copierSource, fileByte, copierFrames, ...(startScreen === undefined ? {} : { startScreen }) }, expected);
+    ran = await runLoader(checkPath, program, loader, image, state, { jump, copierSource, fileByte, copierFrames, ...(startScreen === undefined ? {} : { startScreen }) }, expected);
   } catch (error) {
-    // A loader.prg without its check does not stay: it looks like a checked loader.
-    rmSync(resolveProjectPath(loaderPath), { force: true });
-    written.splice(written.findIndex((file) => file.out === loaderPath), 1);
     if (!isRefusal(error)) throw error;
-    return { output: { ...output, loader: { verified: false, reason: `The check of loader.prg did not run, so the script removed loader.prg. ${error.message}` } }, removed, failed: true };
+    const what = existsSync(resolveProjectPath(loaderPath)) ? "kept the loader.prg of an earlier run" : "wrote no loader.prg";
+    return { output: { ...output, loader: notVerified({ reason: `The check of loader.prg did not run, so the script ${what}. ${error.message}` }) }, removed, failed: true };
+  } finally {
+    rmSync(resolveProjectPath(scratch), { recursive: true, force: true });
   }
+  written.push(writeReported(loaderPath, program, { what: "--out" }));
   output.loader = {
     program: loaderPath,
     ...(packed === undefined ? {} : { packed: { packedBytes: packed.packedBytes, unpackedBytes: packed.unpackedBytes } }),

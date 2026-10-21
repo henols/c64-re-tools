@@ -92,8 +92,10 @@ async function main(argv: string[]): Promise<number> {
       const note = scope === "project" && (targets === undefined || targets.includes("windsurf")) ? undoWindsurfProjectMcp(before) : undefined;
       process.stdout.write(note === undefined ? output : withoutWindsurfMcp(output));
       if (note !== undefined) console.log(`  ${note}\n`);
-      // A skill that this version renamed or dropped must not stay next to the new ones.
-      const removed = code === 0 ? removeDroppedItems(earlier, scope) : [];
+      // A skill that this version renamed or dropped must not stay next to the new ones. AP SDK can write its
+      // new manifest and still exit with an error: then the next install no longer knows the dropped items, so
+      // the cleanup runs after each install. An install that wrote no manifest drops nothing.
+      const removed = removeDroppedItems(earlier, scope);
       if (removed.length > 0) console.log(`  Removed, because this version no longer has them: ${removed.join(", ")}\n`);
       return code;
     }

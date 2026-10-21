@@ -48,7 +48,7 @@ Use this layout. No script makes it.
 
 ```
 src/           the source, with src/main.a as the entry
-build/         the built programs and their symbol files
+build/         the built programs and their symbol files. Do not commit them: each build writes them again.
 tests/         run files with expect steps
 docs/          the documentation, when the user asks for it
 ```

@@ -131,7 +131,7 @@ If the project has no layout, use this one. No script checks it. Each script tak
 ```
 original/      the disk image or the program as you got it
 src/           the generated source
-build/         the built programs
+build/         the built programs. Do not commit them: each build writes them again.
 tests/         the test scenarios, and the recordings in tests/recordings/
 runs/          the runs that the knowledge gives as evidence
 docs/          the documentation, with the reference in docs/reference/
@@ -139,7 +139,7 @@ tools/         scripts for the formats of this program only
 README.md      the entry page of the documentation
 ```
 
-Commit each folder of the layout and `.c64-re-tools/knowledge/`. The knowledge holds the program, the entry state and the coverage, so the project needs no other folder for them. Put all other files that you make in `.c64-re-tools/local/`, also the captures and the coverage maps after you put them into the knowledge. Do not let git ignore a folder of the layout. Do not change the `.gitignore` files of the project.
+Commit each folder of the layout other than `build/`, and `.c64-re-tools/knowledge/`. The knowledge holds the program, the entry state and the coverage, so the project needs no other folder for them. Put all other files that you make in `.c64-re-tools/local/`, also the captures and the coverage maps after you put them into the knowledge. Do not let git ignore a folder of the layout other than `build/`. Do not change the `.gitignore` files of the project.
 
 If the project has a layout, use that layout.
 
