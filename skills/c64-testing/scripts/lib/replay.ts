@@ -93,7 +93,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     const replayed = await side(rebuild, { compare: compare!, stop: expected.length, pins });
     const difference = firstDifference(expected, replayed.samples, compare!.state);
     // A read that the recording has no value for gets the idle value: it is in the result, never silent.
-    const base = { checkpoints: expected.length, movedSites, ...(replayed.unknown > 0 ? { idleReads: replayed.unknown } : {}) };
+    const base = { checkpoints: expected.length, movedSites, ...(replayed.startScreenSkipped === true ? { startScreen: "skipped" } : {}), ...(replayed.unknown > 0 ? { idleReads: replayed.unknown } : {}) };
     if (difference === undefined && replayed.samples.length >= expected.length) return result("PASS", "rebuild", { ...base, compared: expected.length });
     const reason =
       difference !== undefined

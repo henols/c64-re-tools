@@ -6,6 +6,10 @@
 import { Refusal } from "../errors.ts";
 import type { StartScreenMode } from "./schema.ts";
 
+/** The labels of the start screen in a generated loader: its wait for a key or a fire button, and the code after the wait. */
+export const START_SCREEN_WAIT = "loader_start_screen_wait";
+export const START_SCREEN_CONTINUE = "loader_start_screen_continue";
+
 /** The fields of a start screen that the capture of a stage gives. */
 export interface StageScreen {
   mode: StartScreenMode;

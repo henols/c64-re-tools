@@ -74,13 +74,15 @@ An `observe` step has a checkpoint name. A scenario can have each name only one 
 
 | Key | What the script compares |
 |---|---|
-| `memory` | A list of names, `$` addresses, or objects. An object has `address`, `size` (1 to 65536, default 1), `view` (`cpu` or `ram`, default `cpu`), `tolerance` (0 to 255, default 0) and `exclude`. The view `ram` reads the RAM under the ROMs and the I/O area. |
+| `memory` | A list of names, `$` addresses, or objects. An object has `address`, `size` (1 to 65536, default 1), `view` (`cpu` or `ram`, default `cpu`), `tolerance` (0 to 255, default 0), `mask` and `exclude`. The view `ram` reads the RAM under the ROMs and the I/O area. |
 | `registers` | A list of register names: `pc`, `a`, `x`, `y`, `sp`, `flags`. |
 | `screen` | The screen of the rebuild against the screen of the original. `maxMismatchRatio` (default 0) is the largest permitted part of different pixels. `mask` is a list of rectangles (`x`, `y`, `width`, `height`) that the comparison does not include. |
 | `vicii` | The VIC-II state: mode, screen address, scroll and colors. |
 | `sprites` | A list of sprite numbers from 0 to 7. The script compares their position, color and flags. |
 
-A `tolerance` is the largest permitted difference for each byte. A `mask` has at most 64 rectangles. A `mask` must not cover all of the screen: PAL is 384×272 pixels and NTSC is 384×247 pixels. A scenario can observe the screen at most at 64 checkpoints.
+A `tolerance` is the largest permitted difference for each byte. A screen `mask` has at most 64 rectangles. A `mask` must not cover all of the screen: PAL is 384×272 pixels and NTSC is 384×247 pixels. A scenario can observe the screen at most at 64 checkpoints.
+
+The `mask` of a memory object gives the bits that the comparison uses, as hex. It is one byte for all bytes of the range, for example `0f`, or one byte for each byte of the range. The comparison applies the mask first and then the `tolerance`. The colour RAM at $d800 has only 4 bits, and its other 4 bits are not stable. Thus observe the colour RAM with the mask `0f`.
 
 `exclude` is a list of bytes in the observed range that the comparison does not include. Each has `address` and a `reason`, for example `{ "address": "$d01e", "reason": "latched sprite collision, not writable" }`. The result lists each excluded byte with its `address` and `reason`.
 

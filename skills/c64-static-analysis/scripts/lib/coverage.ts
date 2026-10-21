@@ -4,14 +4,11 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { COVERAGE, coverageEntries, coverageSeedKinds, executedStarts } from "#src/c64.ts";
+import { COVERAGE, coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges } from "#src/c64.ts";
 
-export { coverageEntries, coverageSeedKinds, executedStarts };
-import { FULL_COVERAGE } from "#src/host-client/coverage.ts";
+export { coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges };
 import { listRegions, type RegionRow } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, isAnalyzer, isSemantic, type Space } from "#src/knowledge/schema.ts";
-
-const FULL_MAP = FULL_COVERAGE;
 
 /** The byte at an address of the analyzed image, or undefined outside it. */
 export type ImageByte = (address: number) => number | undefined;
@@ -20,26 +17,6 @@ export function imageReader(bytes: Uint8Array, kind: "prg" | "flat64k"): ImageBy
   if (kind === "flat64k") return (address) => bytes[address];
   const load = bytes[0]! | (bytes[1]! << 8);
   return (address) => (address >= load && address - load + 2 < bytes.length ? bytes[address - load + 2] : undefined);
-}
-
-const ROM_ACCESS = COVERAGE.romRead | COVERAGE.romExecute;
-const RAM_USE = COVERAGE.ramRead | COVERAGE.ramExecute;
-
-/**
- * The image bytes under ROM that the runs never used: the CPU read or ran the
- * ROM there, and never read or ran the RAM. A JSR $FFE4 or an IRQ
- * vector at $FFFE then leads into ROM, not into the leftover RAM bytes of a
- * flat image, so the ranges are data for the analysis run.
- */
-export function romOnlyRanges(map: Uint8Array, image: ImageByte): Array<{ start: number; end: number }> {
-  const ranges: Array<{ start: number; end: number }> = [];
-  for (let address = 0; address < FULL_MAP; address++) {
-    if ((map[address]! & ROM_ACCESS) === 0 || (map[address]! & RAM_USE) !== 0 || image(address) === undefined) continue;
-    const last = ranges.at(-1);
-    if (last !== undefined && last.end === address - 1) last.end = address;
-    else ranges.push({ start: address, end: address });
-  }
-  return ranges;
 }
 
 /** Entry points from semantic knowledge beyond routines: the start of each code region, and each entry of a JMP table with its target. */

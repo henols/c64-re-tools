@@ -233,6 +233,8 @@ The script first replays the recording on the original. The original must end th
 `--checkpoint` and `--state` go together. `--pin` needs both of them. `--symbols` needs `--rebuild`. Give at most 16 `--state` and `--pin` items. Without `--checkpoint`, the script uses the comparison of the record file.
 A `$` address is an address of the original. On the rebuild, it moves with the name before it.
 
+A rebuild can be a loader with a start screen that RUN starts. If the symbols of the rebuild have `loader_start_screen_wait` and `loader_start_screen_continue`, the script runs the rebuild to the wait. Then it sets the PC to `loader_start_screen_continue`. The cycles before the wait do not count.
+
 `body` holds `result`, `side`, `firstDifference`, `reason` and `files`. The section "Replay" of `references/recording-format.md` gives each field.
 
 Do this for each result:

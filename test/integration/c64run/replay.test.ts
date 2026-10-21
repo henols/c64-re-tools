@@ -144,3 +144,24 @@ test("a relocated rebuild replays the same, and a changed one fails at the first
   assert.deepEqual((right.result.files as Array<{ out: string }>).map((file: { out: string }) => file.out.split("/").at(-1)), [`original-${difference.checkpoint}.bin`, `rebuild-${difference.checkpoint}.bin`]);
   assert.equal(readFileSync(join(project, "out", `rebuild-${difference.checkpoint}.bin`)).length, 65536);
 });
+
+// A program that RUN starts: 10 SYS2061, and the counter at $080d.
+const SYS_2061 = [0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00];
+writeFileSync(join(project, "run.prg"), Uint8Array.from([0x01, 0x08, ...SYS_2061, ...counterAt(0x080d).subarray(2)]));
+writeFileSync(join(project, "run.json"), JSON.stringify(symbols(0x080d)));
+// The rebuild as a loader with a start screen: $080d waits for fire on port 1 for ever (LDA $dc01; AND #$10; BNE), $0815 JMP $0820, and the counter at $0820.
+const wait = [0xad, 0x01, 0xdc, 0x29, 0x10, 0xd0, 0xf9, 0x00, 0x4c, 0x20, 0x08, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea];
+writeFileSync(join(project, "screen.prg"), Uint8Array.from([0x01, 0x08, ...SYS_2061, ...wait, ...counterAt(0x0820).subarray(2)]));
+writeFileSync(join(project, "screen.json"), JSON.stringify({ ...symbols(0x0820), loader_start_screen_wait: "$080d", loader_start_screen_continue: "$0815" }));
+writeFileSync(join(project, "no-labels.json"), JSON.stringify(symbols(0x0820)));
+writeFileSync(join(project, "run-walk.json"), JSON.stringify({ ...walk, name: "left for 30 frames after RUN", program: "run.prg", symbols: "run.json", load: false, steps: walk.steps.slice(1) }));
+
+test("a rebuild with a start screen replays: the replay goes on after the wait, which the recording does not have", { skip, timeout: 120_000 }, () => {
+  const recorded = script("record", ["run-walk.json", "--out", "tests/recordings/run-walk"]);
+  assert.equal(recorded.status, 0, JSON.stringify(recorded.result));
+  const skipped = script("replay", ["tests/recordings/run-walk", ...compare, "--rebuild", "screen.prg", "--symbols", "screen.json"]);
+  assert.deepEqual([skipped.status, skipped.result.result, skipped.result.startScreen, skipped.result.idleReads], [0, "PASS", "skipped", undefined], JSON.stringify(skipped.result));
+  // Without the labels of the start screen, the rebuild waits for fire to the end of the session.
+  const waits = script("replay", ["tests/recordings/run-walk", ...compare, "--rebuild", "screen.prg", "--symbols", "no-labels.json"]);
+  assert.deepEqual([waits.status, waits.result.result, waits.result.startScreen], [0, "FAIL", undefined], JSON.stringify(waits.result));
+});

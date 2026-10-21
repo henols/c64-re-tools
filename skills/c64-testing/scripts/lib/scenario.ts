@@ -33,6 +33,8 @@ export interface MemoryObservation {
   view?: "cpu" | "ram";
   /** The largest allowed difference per byte; 0 when not given. */
   tolerance?: number;
+  /** Hex bits that the comparison uses: one byte for each byte, or one byte per byte of the range; all bits when not given. */
+  mask?: string;
   /** Bytes in the range that the comparison leaves out, each with the reason. */
   exclude?: Array<{ address: Location; reason: string }>;
 }
@@ -207,7 +209,7 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
         checkLocation(item, `${at}: memory`, fail);
         continue;
       }
-      const itemFields = ["address", "size", "view", "tolerance", "exclude"];
+      const itemFields = ["address", "size", "view", "tolerance", "mask", "exclude"];
       if (!isObject(item)) return fail(`${at}: memory must be a list of names, $ addresses or objects with address`);
       for (const key of Object.keys(item)) if (!itemFields.includes(key)) fail(`${at}: a memory object has the field ${key}. ${renamedField(key, itemFields) ?? `It has ${itemFields.join(", ")}, and nothing else`}`);
       if (item.view !== undefined && item.view !== "cpu" && item.view !== "ram") fail(`${at}: memory.view must be cpu or ram`);
@@ -223,6 +225,12 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
       checkLocation(item.address, `${at}: memory.address`, fail);
       if (item.size !== undefined && !isInteger(item.size, 1, 0x10000)) fail(`${at}: memory.size must be a number from 1 to 65536`);
       if (item.tolerance !== undefined && !isInteger(item.tolerance, 0, 0xff)) fail(`${at}: memory.tolerance must be a number from 0 to 255`);
+      if (item.mask !== undefined) {
+        const size = isInteger(item.size, 1, 0x10000) ? item.size : 1;
+        if (typeof item.mask !== "string" || !/^(?:[0-9a-fA-F]{2})+$/.test(item.mask) || (item.mask.length !== 2 && item.mask.length !== size * 2)) {
+          fail(`${at}: memory.mask must be hex bits, one byte for each byte (for example 0f) or one byte per byte of size`);
+        }
+      }
     }
   }
   if (step.registers !== undefined) {
@@ -354,7 +362,7 @@ export function resolve(location: Location, symbols: Map<string, number>, side: 
 }
 
 interface Observation {
-  memory: Array<{ label: string; address: number; bytes: number[]; tolerance: number; excluded: Array<{ offset: number; address: Location; reason: string }> }>;
+  memory: Array<{ label: string; address: number; bytes: number[]; tolerance: number; mask?: number[]; excluded: Array<{ offset: number; address: Location; reason: string }> }>;
   registers: Partial<Record<ObservedRegister, unknown>>;
   screen?: { match: boolean; mismatchingPixels: number; comparedPixels: number; mismatchRatio: number; bounds?: unknown };
   vicii?: unknown;
@@ -444,7 +452,7 @@ async function runStep(client: ViceSessionClient, scenario: Scenario, side: Side
         if (offset < 0 || offset >= size) throw new Refusal("invalid-input", `the exclude ${exclude.address} lies outside the observed ${spec.address} (${size} bytes)`);
         return { offset, address: exclude.address, reason: exclude.reason };
       });
-      observation.memory.push({ label: size > 1 ? `${spec.address} (${size} bytes)` : spec.address, address, bytes: [...Buffer.from(read.data, "hex")], tolerance: spec.tolerance ?? 0, excluded });
+      observation.memory.push({ label: size > 1 ? `${spec.address} (${size} bytes)` : spec.address, address, bytes: [...Buffer.from(read.data, "hex")], tolerance: spec.tolerance ?? 0, ...(spec.mask === undefined ? {} : { mask: [...Buffer.from(spec.mask, "hex")] }), excluded });
     }
     if (step.registers !== undefined) {
       const registers = await client.registersGet("c64");
@@ -495,11 +503,12 @@ async function runStep(client: ViceSessionClient, scenario: Scenario, side: Side
 
 type MemoryItem = Observation["memory"][number];
 
-/** The bytes of a memory item that differ by more than its tolerance, without the excluded bytes. */
+/** The bytes of a memory item whose bits of the mask differ by more than its tolerance, without the excluded bytes. */
 function differingBytes(item: MemoryItem, other: MemoryItem): DifferingByte[] {
   const hex = (byte: number) => byte.toString(16).padStart(2, "0");
   const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
-  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs(byte - other.bytes[offset]!) > item.tolerance ? [{ address: formatC64Address(item.address + offset), original: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
+  const bits = (offset: number) => (item.mask === undefined ? 0xff : item.mask.length === 1 ? item.mask[0]! : item.mask[offset]!);
+  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs((byte & bits(offset)) - (other.bytes[offset]! & bits(offset))) > item.tolerance ? [{ address: formatC64Address(item.address + offset), original: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
 }
 
 /** The most differing bytes of one memory item that a result lists when no --max-listed is given. */

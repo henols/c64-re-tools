@@ -28,8 +28,19 @@ const CODE_TYPES: readonly RegionType[] = ["code", "jumps", "dual-use"];
 /** The hardware vectors $fffa-$ffff: they stay when the image holds them. */
 const VECTORS: AddressRange = { start: 0xfffa, end: 0xffff };
 
-/** Two immediate operands at most this many immediates apart can be the low and high byte of one address. */
-const PAIR_WINDOW = 4;
+/** The I/O area: two immediates stored there are chip values, such as a timer latch, not an address. */
+const IO_AREA: AddressRange = { start: 0xd000, end: 0xdfff };
+
+/** The registers that each instruction changes, other than by a load of an immediate or a transfer. */
+const WRITES_A = new Set(["lda", "adc", "sbc", "and", "ora", "eor", "pla", "lax", "anc", "asr", "arr", "ane", "lxa", "las", "slo", "rla", "sre", "rra", "isc"]);
+const WRITES_X = new Set(["ldx", "inx", "dex", "tsx", "lax", "sbx", "lxa", "las"]);
+const WRITES_Y = new Set(["ldy", "iny", "dey"]);
+/** The registers that a JSR gets an address in, low byte first, as the KERNAL and BASIC routines get a pointer. */
+const CALL_PAIRS = [
+  ["x", "y"],
+  ["a", "y"],
+  ["a", "x"],
+] as const;
 
 export interface DropInput {
   segments: readonly AddressRange[];
@@ -41,8 +52,12 @@ export interface DropInput {
   coverage?: Uint8Array;
   regions: ReadonlyArray<{ start: number; end: number; type: RegionType }>;
   references: ReadonlyArray<{ from: number; to: number; kind: string }>;
-  /** The addresses that the operand expression of an instruction names, by the address of the instruction. */
+  /** The addresses that the operand expression of an instruction names, by the address of each instruction with an operand expression; none for a constant. */
   operandTargets: ReadonlyMap<number, readonly number[]>;
+  /** The ranges where the CPU sees ROM and not the RAM of the image: code does not go there, and no address points there. */
+  rom?: readonly AddressRange[];
+  /** The BASIC line that starts the program: RUN reads it, which no coverage from the entry shows. */
+  basic?: AddressRange;
   /** The patch ranges whose bytes the export changed. */
   changed: readonly AddressRange[];
   keep: readonly AddressRange[];
@@ -115,33 +130,62 @@ function flowsOf(input: DropInput, inImage: (address: number) => boolean, indexe
   const reads: DataReference[] = [];
   const { memory } = input;
   const word = (at: number) => memory[at]! | (memory[(at + 1) & 0xffff]! << 8);
-  const immediates: Array<{ at: number; value: number }> = [];
-  let previousEnd = -2;
-  const pairs = () => {
-    // A low byte and a high byte near each other in one block: the address of a vector, a table or an RTS target.
-    immediates.forEach((low, index) => {
-      for (let other = Math.max(0, index - PAIR_WINDOW); other <= Math.min(immediates.length - 1, index + PAIR_WINDOW); other++) {
-        if (other === index) continue;
-        const target = low.value | (immediates[other]!.value << 8);
-        if (!inImage(target)) continue;
-        flows.push({ from: low.at, to: target }, { from: low.at, to: (target + 1) & 0xffff });
-        reads.push({ from: low.at, start: target, end: target });
-      }
-    });
-    immediates.length = 0;
+  const rom = (address: number) => inside(address, input.rom ?? []);
+  // The address of a vector, a table or an RTS target in two immediates of one block: the low byte and the high byte
+  // go into a pointer (two stores to N and N+1), into the registers of a JSR, or onto the stack (PHA high, PHA low).
+  type Immediate = { at: number; value: number } | undefined;
+  const registers: { a: Immediate; x: Immediate; y: Immediate } = { a: undefined, x: undefined, y: undefined };
+  const stores = new Map<number, NonNullable<Immediate>>();
+  const pushes: Immediate[] = [];
+  const pair = (low: Immediate, high: Immediate) => {
+    if (low === undefined || high === undefined) return;
+    const target = low.value | (high.value << 8);
+    if (!inImage(target) || rom(target)) return;
+    flows.push({ from: low.at, to: target }, { from: low.at, to: (target + 1) & 0xffff });
+    reads.push({ from: low.at, start: target, end: target });
   };
+  const endBlock = () => {
+    registers.a = registers.x = registers.y = undefined;
+    stores.clear();
+    pushes.length = 0;
+  };
+  let previousEnd = -2;
   for (const at of [...input.instructions.keys()].sort((a, b) => a - b)) {
     const opcode = memory[at]!;
-    const { mode } = OPCODES[opcode]!;
-    if (at > previousEnd + 1) pairs();
+    const { mnemonic, mode } = OPCODES[opcode]!;
+    if (at > previousEnd + 1) endBlock();
     previousEnd = at + input.instructions.get(at)! - 1;
     const operand = input.instructions.get(at) === 3 ? word(at + 1) : memory[at + 1]!;
+    // The registers: a load of an immediate that no operand expression explains, a transfer, a store, a push, a call.
+    const loaded = mode === "imm" && !input.operandTargets.has(at) ? { at, value: operand } : undefined;
+    if (WRITES_A.has(mnemonic) || (mode === "imp" && ["asl", "lsr", "rol", "ror"].includes(mnemonic))) registers.a = mnemonic === "lda" ? loaded : undefined;
+    if (WRITES_X.has(mnemonic)) registers.x = mnemonic === "ldx" ? loaded : undefined;
+    if (WRITES_Y.has(mnemonic)) registers.y = mnemonic === "ldy" ? loaded : undefined;
+    if (mnemonic === "tax") registers.x = registers.a;
+    if (mnemonic === "tay") registers.y = registers.a;
+    if (mnemonic === "txa") registers.a = registers.x;
+    if (mnemonic === "tya") registers.a = registers.y;
+    const stored = { sta: registers.a, stx: registers.x, sty: registers.y }[mnemonic];
+    if ((mode === "zp" || mode === "abs") && ["sta", "stx", "sty"].includes(mnemonic) && !inside(operand, [IO_AREA])) {
+      stores.delete(operand);
+      if (stored !== undefined) {
+        stores.set(operand, stored);
+        pair(stored, stores.get((operand + 1) & 0xffff));
+        pair(stores.get((operand - 1) & 0xffff), stored);
+      }
+    }
+    if (mnemonic === "pha") {
+      pushes.push(registers.a);
+      if (pushes.length >= 2) pair(pushes.at(-1), pushes.at(-2));
+    }
+    if (mnemonic === "pla") pushes.pop();
+    if (mnemonic === "jsr") {
+      for (const [low, high] of CALL_PAIRS) pair(registers[low], registers[high]);
+      registers.a = registers.x = registers.y = undefined;
+    }
     switch (mode) {
       case "rel":
         flows.push({ from: at, to: (at + 2 + (operand < 0x80 ? operand : operand - 0x100)) & 0xffff });
-        break;
-      case "imm":
-        immediates.push({ at, value: operand });
         break;
       case "ind":
         reads.push({ from: at, start: operand, end: (operand + 1) & 0xffff });
@@ -149,8 +193,9 @@ function flowsOf(input: DropInput, inImage: (address: number) => boolean, indexe
         break;
       case "abs":
       case "zp":
-        if (opcode === 0x20 || opcode === 0x4c) flows.push({ from: at, to: operand });
-        else reads.push({ from: at, start: operand, end: operand });
+        if (opcode === 0x20 || opcode === 0x4c) {
+          if (!rom(operand)) flows.push({ from: at, to: operand });
+        } else reads.push({ from: at, start: operand, end: operand });
         break;
       case "abx":
       case "aby":
@@ -165,9 +210,8 @@ function flowsOf(input: DropInput, inImage: (address: number) => boolean, indexe
       default:
         break;
     }
-    if (NO_FALL_THROUGH.has(opcode)) pairs();
+    if (NO_FALL_THROUGH.has(opcode)) endBlock();
   }
-  pairs();
   for (const reference of input.references) {
     if (inside(reference.from, input.changed)) continue;
     if (reference.kind === "call" || reference.kind === "jump" || reference.kind === "pointer") flows.push({ from: reference.from, to: reference.to });
@@ -275,11 +319,10 @@ export function planDrops(input: DropInput): DropPlan {
 
   // Data: a region of a droppable type that no run touched and that nothing that stays names.
   const gone = [...input.drop, ...droppedCode];
-  const imageStart = Math.min(...input.segments.map((segment) => segment.start));
   const units = automatic
     ? regions.filter((region) => {
         if (!DROPPABLE_DATA.includes(region.type) || gone.some((range) => overlaps(range, region))) return false;
-        if ([...input.keep, ...input.changed, VECTORS].some((range) => overlaps(range, region)) || (region.start <= imageStart && imageStart <= region.end)) return false;
+        if ([...input.keep, ...input.changed, VECTORS, ...(input.basic === undefined ? [] : [input.basic])].some((range) => overlaps(range, region))) return false;
         for (let address = region.start; address <= region.end; address++) if (touched(address)) return false;
         return true;
       })

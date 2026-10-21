@@ -99,8 +99,8 @@ export interface WriteContext {
   expectedRevision?: string;
   /** Kept with the revision when the write changes something. */
   evidence?: Evidence[];
-  /** The image that an operand, patch or macro use write is checked against. */
-  image?: OperandImage;
+  /** The image of a space that an operand, patch or macro use write in that space is checked against. */
+  image?: (space: Space) => OperandImage;
 }
 
 /** The bytes of the image and the platform names (C64 space only) that operand expressions, patches and macro uses are checked against. */
@@ -713,13 +713,13 @@ function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, 
   return identifiers(text).map((name) => resolve(name)!);
 }
 
-function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: OperandImage }, request: OperandRequest): Step<OperandRow, OperandRow> {
+function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: OperandRequest): Step<OperandRow, OperandRow> {
   const space = spaceOf(request);
   if (context.image === undefined) throw new Refusal("invalid-input", "An operand expression is checked against the image, and no image was given.");
   const wanted: Omit<OperandRow, "space" | "address" | "origin" | "revision"> = { select: request.select, offset: request.offset ?? 0 };
   if (request.symbol !== undefined) wanted.symbol = request.symbol;
   if (request.expression !== undefined) wanted.expression = request.expression.trim();
-  const targets = new Set(checkOperandValue(db, space, context.image, request, operandText(wanted)));
+  const targets = new Set(checkOperandValue(db, space, context.image(space), request, operandText(wanted)));
   const existing = operandAt(db, request.address, space);
   const origin = context.origin as OperandRow["origin"];
   if (existing !== undefined && existing.select === wanted.select && existing.symbol === wanted.symbol && existing.offset === wanted.offset && existing.expression === wanted.expression && !confirms(existing.origin, origin)) {
@@ -874,11 +874,12 @@ export function leastPatchBytes(code: string): number | undefined {
   return bytes;
 }
 
-function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: OperandImage }, request: PatchRequest): Step<PatchRow, PatchRow> {
+function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: PatchRequest): Step<PatchRow, PatchRow> {
   const space = spaceOf(request);
   const range = `${formatC64Address(request.start)}-${formatC64Address(request.end)}`;
   if (context.image === undefined) throw new Refusal("invalid-input", "A patch is checked against the image, and no image was given.");
-  checkInImage(context.image, request.start, request.end, "a patch");
+  const image = context.image(space);
+  checkInImage(image, request.start, request.end, "a patch");
   const least = leastPatchBytes(request.code);
   const length = request.end - request.start + 1;
   if (least !== undefined && least > length) {
@@ -979,7 +980,7 @@ function defaultOf(request: SwitchRequest, existing: SwitchRow | undefined): 0 |
   throw new Refusal("invalid-input", `A ${request.kind} switch needs a default: give --default 0 or --default 1.`);
 }
 
-function switchStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: OperandImage }, request: SwitchRequest): Step<SwitchRow, SwitchRow> {
+function switchStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: SwitchRequest): Step<SwitchRow, SwitchRow> {
   const space = spaceOf(request);
   const base = baseLabel(db, space);
   if (base === undefined) throw new Refusal("not-found", "The knowledge has no base release. Record the release whose bytes are the program first (release <label> --file <file> --base).");
@@ -992,7 +993,7 @@ function switchStep(db: DatabaseSync, change: Change, context: ChangeContext & {
   if (existing !== undefined && existing.kind === request.kind && existing.default === value && listText(existing.releases) === listText(releases) && existing.comment === comment && !confirms(existing.origin, origin)) return { current: existing };
   const symbol = symbolNamed(db, request.name, space);
   if (symbol !== undefined) throw new Refusal("conflict", `The switch name ${request.name} is the name of the symbol at ${formatC64Address(symbol.address)}. Give the switch another name.`);
-  if (space === DEFAULT_SPACE && context.image?.platform.has(request.name)) throw new Refusal("conflict", `The switch name ${request.name} is a C64 platform name. Give the switch another name.`);
+  if (space === DEFAULT_SPACE && context.image?.(space).platform.has(request.name)) throw new Refusal("conflict", `The switch name ${request.name} is a C64 platform name. Give the switch another name.`);
   // The patches hold the code of the value that the base release does not have: that value cannot change under them.
   if (existing !== undefined && baseValue(existing, base) !== baseValue({ releases }, base)) {
     const patches = listPatches(db, undefined, request.name, undefined, space);
@@ -1264,11 +1265,11 @@ function renameInUses(db: DatabaseSync, change: Change, space: Space, from: stri
   }
 }
 
-function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: OperandImage }, request: MacroUseRequest): Step<MacroUseRow, MacroUseRow> {
+function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: MacroUseRequest): Step<MacroUseRow, MacroUseRow> {
   const space = spaceOf(request);
-  const image = context.image;
   const range = `${formatC64Address(request.start)}-${formatC64Address(request.end)}`;
-  if (image === undefined) throw new Refusal("invalid-input", "A macro use is checked against the image, and no image was given.");
+  if (context.image === undefined) throw new Refusal("invalid-input", "A macro use is checked against the image, and no image was given.");
+  const image = context.image(space);
   const macro = macroNamed(db, request.macro, space);
   if (macro === undefined) throw new Refusal("not-found", `There is no macro ${request.macro}. Write it first (macro).`);
   const args = (request.args ?? []).map((arg) => arg.trim());

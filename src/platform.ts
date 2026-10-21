@@ -3,7 +3,7 @@
 // Names follow "Mapping the Commodore 64". Only platform facts live here:
 // an address without one belongs to the application.
 
-import { COVERAGE, d018Offsets, formatC64Address, vicBankBase } from "./c64.ts";
+import { type AddressRange, COVERAGE, d018Offsets, formatC64Address, romOnlyRanges, vicBankBase } from "./c64.ts";
 import { Refusal } from "./errors.ts";
 
 export interface Entry {
@@ -431,6 +431,35 @@ export function romUseOfProgram(coverage: Uint8Array | undefined, state: Record<
   const port = (state?.cpuPort as Record<string, unknown> | undefined)?.$01;
   if (typeof port === "number") return { ...romUseOfPort(port), from: "entry state" };
   return { basic: true, kernal: true, from: "none" };
+}
+
+/** The ROMs as the CPU sees them. */
+const BASIC_ROM: AddressRange = { start: 0xa000, end: 0xbfff };
+const KERNAL_ROM: AddressRange = { start: 0xe000, end: 0xffff };
+
+/**
+ * The ranges of an image where the CPU sees ROM and not the RAM of the
+ * image, so a JSR there runs the ROM: with coverage, the image bytes that the
+ * runs used only as ROM; without coverage, the ROMs that $01 of the entry
+ * state switches in. A range with known code (`known`) in it is left out:
+ * that code stays code.
+ */
+export function romRanges(coverage: Uint8Array | undefined, state: Record<string, unknown> | undefined, image: (address: number) => number | undefined, known: readonly number[]): AddressRange[] {
+  let ranges: AddressRange[] = [];
+  if (coverage !== undefined) ranges = romOnlyRanges(coverage, image);
+  else {
+    const port = (state?.cpuPort as Record<string, unknown> | undefined)?.$01;
+    const use = typeof port === "number" ? romUseOfPort(port) : { basic: false, kernal: false };
+    for (const rom of [...(use.basic ? [BASIC_ROM] : []), ...(use.kernal ? [KERNAL_ROM] : [])]) {
+      for (let address = rom.start; address <= rom.end; address++) {
+        if (image(address) === undefined) continue;
+        const last = ranges.at(-1);
+        if (last !== undefined && last.end === address - 1) last.end = address;
+        else ranges.push({ start: address, end: address });
+      }
+    }
+  }
+  return ranges.filter((range) => !known.some((address) => address >= range.start && address <= range.end));
 }
 
 export type Decoded = Record<string, unknown>;

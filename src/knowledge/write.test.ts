@@ -448,7 +448,7 @@ function operands(): { db: DatabaseSync; context: WriteContext } {
   renameSymbol(db, llm, { address: 0x8a98, name: "bar_colours" });
   renameSymbol(db, llm, { address: 0x2000, name: "charset" });
   classifyCode(db);
-  return { db, context: { origin: "llm", image: operandImage() } };
+  return { db, context: { origin: "llm", image: () => operandImage() } };
 }
 
 test("an operand expression is checked against the image and writes pointer references", () => {
@@ -515,7 +515,7 @@ test("a rename of a symbol follows into operand expressions, and a removal is re
 test("a batch writes symbols and the operands that use them, and a revert restores operands", () => {
   const db = fresh();
   classifyCode(db);
-  const context: WriteContext = { origin: "llm", image: operandImage() };
+  const context: WriteContext = { origin: "llm", image: () => operandImage() };
   const applied = applyBatch(db, context, [
     { op: "rename", address: 0x80c0, name: "irq_handler" },
     { op: "operand", address: 0x8079, select: "lo", symbol: "irq_handler" },
@@ -529,6 +529,19 @@ test("a batch writes symbols and the operands that use them, and a revert restor
   assert.equal(operandAt(db, 0x807e)?.select, "hi");
   assert.deepEqual(referencesFrom(db, 0x807e).map((row) => row.kind), ["pointer"]);
   assert.throws(() => applyBatch(db, llm, [{ op: "operand", address: 0x8079, select: "hi", symbol: "irq_handler" }]), /Write 1: An operand expression is checked against the image/);
+});
+
+test("a write of a batch is checked against the image of its own space", () => {
+  const db = fresh();
+  const asked: string[] = [];
+  const context: WriteContext = { origin: "llm", image: (space) => (asked.push(space), operandImage()) };
+  applyBatch(db, context, [
+    { op: "classify", start: 0x8079, end: 0x807f, type: "code", space: "bank1" },
+    { op: "rename", address: 0x80c0, name: "irq_handler", space: "bank1" },
+    { op: "operand", address: 0x8079, select: "lo", symbol: "irq_handler", space: "bank1" },
+  ]);
+  assert.deepEqual(asked, ["bank1"]);
+  assert.equal(operandAt(db, 0x8079, "bank1")?.symbol, "irq_handler");
 });
 
 /**
@@ -545,14 +558,14 @@ function sourceImage(): OperandImage {
 }
 
 /** The base release ORIGINAL, and a change switch for each name, off by default and off in ORIGINAL. */
-function withSwitches(db: DatabaseSync, image: OperandImage, ...names: string[]): void {
+function withSwitches(db: DatabaseSync, image: (space: string) => OperandImage, ...names: string[]): void {
   setRelease(db, { origin: "user" }, { label: "ORIGINAL", file: "original/game.prg", sha256: "a".repeat(64), base: true });
   for (const name of names) setSwitch(db, { origin: "user", image }, { name, kind: "change", default: 0 });
 }
 
 test("a patch puts code in a range of the image under a switch", () => {
   const db = fresh();
-  const context: WriteContext = { origin: "llm", image: sourceImage() };
+  const context: WriteContext = { origin: "llm", image: () => sourceImage() };
   withSwitches(db, context.image!, "CRACK", "TRAINER");
   assert.throws(() => setPatch(db, context, { start: 0x8079, end: 0x807d, switch: "CHEAT", code: "" }), /There is no switch CHEAT\. Write it first/);
   const first = setPatch(db, context, { start: 0x8079, end: 0x807d, switch: "CRACK", code: "  lda #0\n  rts  \n", comment: "Skips the check." });
@@ -589,7 +602,7 @@ test("a patch puts code in a range of the image under a switch", () => {
 test("a switch has a kind, a default and the releases that have it on; the base release decides the state of the program", () => {
   const db = fresh();
   const image = sourceImage();
-  const context: WriteContext = { origin: "llm", image };
+  const context: WriteContext = { origin: "llm", image: () => image };
   assert.throws(() => setSwitch(db, context, { name: "PROTECTION", kind: "protection" }), /no base release/);
   setRelease(db, llm, { label: "ORIGINAL", file: "original/game.prg", sha256: "a".repeat(64), base: true, comment: "Uncracked." });
   setRelease(db, llm, { label: "V2", file: "original/game-v2.prg", sha256: "b".repeat(64) });
@@ -658,9 +671,9 @@ test("a start screen is one per space, of the VIC-II rules, and it reserves STAR
   for (const [what, request, message] of refused) assert.throws(() => setStartScreen(db, llm, request), message, what);
 
   assert.throws(() => renameSymbol(db, llm, { address: 0x2000, name: "START_SCREEN" }), /switch of the start screen/);
-  assert.throws(() => setSwitch(db, { origin: "llm", image: sourceImage() }, { name: "START_SCREEN", kind: "fix" }), /switch of the start screen/);
+  assert.throws(() => setSwitch(db, { origin: "llm", image: () => sourceImage() }, { name: "START_SCREEN", kind: "fix" }), /switch of the start screen/);
   assert.throws(() => renameSymbol(db, llm, { address: 0x2000, name: "LEFTOVERS" }), /switch of the leftovers/);
-  assert.throws(() => setSwitch(db, { origin: "llm", image: sourceImage() }, { name: "LEFTOVERS", kind: "fix" }), /switch of the leftovers/);
+  assert.throws(() => setSwitch(db, { origin: "llm", image: () => sourceImage() }, { name: "LEFTOVERS", kind: "fix" }), /switch of the leftovers/);
 
   removeStartScreen(db, llm, {});
   assert.equal(currentStartScreen(db), undefined);
@@ -693,7 +706,7 @@ test("a start screen of a stage has its bytes and its call in the program of tha
 
 test("a macro and its uses: the use is whole instructions, its args are known names, and a rename follows", () => {
   const db = fresh();
-  const context: WriteContext = { origin: "llm", image: sourceImage() };
+  const context: WriteContext = { origin: "llm", image: () => sourceImage() };
   renameSymbol(db, llm, { address: 0x00fb, name: "ptr" });
   const macro = setMacro(db, llm, { name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+\n", comment: "Adds 1 to a 16-bit value." });
   assert.deepEqual(macro.current, { space: "c64", name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+", comment: "Adds 1 to a 16-bit value.", origin: "llm", revision: nth(db, 2) });
@@ -735,7 +748,7 @@ test("a macro and its uses: the use is whole instructions, its args are known na
 
 test("a batch writes a macro and its uses in one revision, and a revert restores them", () => {
   const db = fresh();
-  const context: WriteContext = { origin: "llm", image: sourceImage() };
+  const context: WriteContext = { origin: "llm", image: () => sourceImage() };
   withSwitches(db, context.image!, "DEBUG");
   const applied = applyBatch(db, context, [
     { op: "macro", name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+" },
@@ -819,7 +832,7 @@ test("a module and a comment start at an instruction: an operand byte of a code 
 
 test("patches of two switches can have the same range as alternatives; any other overlap is a conflict", () => {
   const db = fresh();
-  const context: WriteContext = { origin: "llm", image: sourceImage() };
+  const context: WriteContext = { origin: "llm", image: () => sourceImage() };
   setRelease(db, llm, { label: "V1", file: "original/v1.prg", sha256: "a".repeat(64), base: true });
   setRelease(db, llm, { label: "V2", file: "original/v2.prg", sha256: "b".repeat(64) });
   setRelease(db, llm, { label: "V3", file: "original/v3.prg", sha256: "c".repeat(64) });

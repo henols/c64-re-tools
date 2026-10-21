@@ -24,6 +24,7 @@ import { isRomFont, startScreenRanges, type StartScreenRow } from "#src/knowledg
 import { WireFailure } from "#src/host-client/tools.ts";
 import { pack } from "#src/native/exomizer.ts";
 import type { ToolContext } from "#src/native/run.ts";
+import type { AssembledSymbol } from "#src/native/types.ts";
 
 export interface EntryState {
   pc: number;
@@ -138,9 +139,7 @@ export function loaderLimits(plan: { cia?: CiaPlan }): string[] {
 
 /** The label of the loader's jump to the entry, in ACME's symbol list. */
 export const LOADER_JUMP = "c64_source_loader_jump";
-/** The labels of the start screen: its wait for a key or a fire button, and the code after the wait. */
-export const START_SCREEN_WAIT = "loader_start_screen_wait";
-export const START_SCREEN_CONTINUE = "loader_start_screen_continue";
+export { START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
 /** The file of the start screen in the generated source. */
 export const START_SCREEN_FILE = "start_screen.asm";
 /** The code of the start screen: the same for each program. loader.asm sets its values. */
@@ -991,4 +990,24 @@ function vicLines(state: EntryState, earlier: number): string[] {
     `        cmp #${formatC64Byte((line >> 1) & 0x80)}`,
     "        bne .raster",
   ];
+}
+
+/**
+ * The symbols of loader.prg: the labels of the build of loader.asm, which
+ * includes main.asm, and of start_screen_stage.asm when the loader has a show
+ * stage. A test takes one symbols file. Refuses a name with two values.
+ */
+export function loaderSymbols(...builds: ReadonlyArray<readonly AssembledSymbol[]>): AssembledSymbol[] {
+  const valueOf = (symbol: AssembledSymbol) => (symbol.kind === "address" ? symbol.address : symbol.value);
+  const byName = new Map<string, AssembledSymbol>();
+  for (const symbol of builds.flat()) {
+    const known = byName.get(symbol.name);
+    if (known !== undefined && valueOf(known) !== valueOf(symbol)) {
+      throw new WireFailure("operation-failed", `The builds of loader.prg give ${symbol.name} two values, ${valueOf(known)} and ${valueOf(symbol)}. This is a defect of the script.`);
+    }
+    // An address in one build can be outside the load range of the other build, where it is a constant.
+    const kept = known === undefined || (known.kind === "constant" && symbol.kind === "address") ? symbol : known;
+    byName.set(symbol.name, { ...kept, used: symbol.used || (known?.used ?? false) });
+  }
+  return [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }

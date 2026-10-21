@@ -267,6 +267,7 @@ The start screen:
 - The start screen is part of the clean build only. `loader.prg` always shows it. A release build has no start screen, and `LEFTOVERS = 1` also turns it off.
 - To start the program at once, set `START_SCREEN = 0` in `config.asm`, and assemble `loader.asm`. Do not define `START_SCREEN` on the command line of the build: `config.asm` sets it.
 - A test that runs `loader.prg` stops at the start screen, because the emulator cannot press a key of the keyboard matrix. Run until `loader_start_screen_wait`. Then set the PC to `loader_start_screen_continue`.
+- `loader.json` is the symbol file of `loader.prg`. It holds the labels of `loader.asm`, `main.asm` and `start_screen_stage.asm`. Give it to a test of `loader.prg` as its symbols.
 
 `loader` holds these fields:
 
@@ -287,7 +288,7 @@ Do these actions when `verified` is `false`:
 | `reason` about the packed form | If a tool is missing, stop the task and give the message to the user. If the free ranges are too small, write the loader by hand. If the check of the unpack fails, give the reason to the user. |
 | `reason` that the source does not assemble | Correct the source first. The loader includes the source. |
 | `reason` about the start screen | Correct the start screen in the project knowledge, or capture the program again with the start screen in memory. If the start screen is not necessary, remove it from the project knowledge. |
-| `reason` about the show stage | If the reason names the coverage of the stage, run the stage with coverage. Put the map into the project knowledge in the space of the stage. If the memory is too small, capture the stage again with less memory. If a tool is missing, stop the task and give the message to the user. |
+| `reason` about the show stage | If the reason names the coverage of the stage, run the stage with coverage. Put the map into the project knowledge in the space of the stage. If the memory is too small, capture the stage again with less memory. If a tool is missing, stop the task and give the message to the user. If `start_screen_stage.asm` does not assemble, stop the task and give the reason to the user. The reason names the file in `.c64-re-tools/local/` with the source that failed. |
 | `reason` that the check of `loader.prg` did not run | Stop the task and give the reason to the user. When the user tells you that the emulator is available, run the same command again. |
 | `differences` | The loader ran. The list gives the bytes and the registers that are not equal. |
 | `stop` | The loader did not get to its copier or its jump. `stop` gives the address and `port`, the value of $01. `history` gives the last 16 instructions. `cause` gives the first byte of the copier or of a copy that is not correct. |
@@ -387,6 +388,16 @@ A block of code stops after RTS, RTI, JMP, BRK or a JAM, and before a gap. A blo
 - No run of the coverage executed it.
 - No path gets to it from the entry, the hardware vectors or the code that stays. A path is a call, a jump, a branch, a reference of the knowledge or an operand expression. An entry of a table, and two immediate operands that give its address, are paths too.
 
+Two immediate operands give an address only in these cases:
+
+- The code stores the low byte and the high byte to two adjacent addresses outside $d000-$dfff.
+- The code calls a routine with the low byte and the high byte in two registers.
+- The code pushes the high byte and then the low byte onto the stack.
+
+An operand expression of the knowledge at an immediate operand replaces these cases for that operand. Thus an operand expression with a constant stops a wrong address.
+
+A call or a jump to ROM is not a path. The coverage shows where the CPU sees ROM. Without coverage, $01 of the entry state shows it. Known code of the knowledge is never ROM.
+
 Code that a run executed always stays. `unreachableExecuted` lists the executed code that the entry and the vectors do not get to. An example is a copy check whose call the export removed. Give its `drop` value to `export` to make it free.
 
 Data becomes free only when all of these are true:
@@ -394,7 +405,7 @@ Data becomes free only when all of these are true:
 - Its region type is `bytes`, `words`, a table of addresses, `petscii`, `workspace` or `unused`.
 - No run read, wrote or executed a byte of it.
 - No code that stays reads it or names it. No table that stays has an entry in it.
-- It is not at the first address of the program, and not at $fffa-$ffff.
+- It is not in the BASIC line that starts the program, and not at $fffa-$ffff.
 
 The coverage does not show the reads of the VIC-II. Thus `charset`, `sprite`, `bitmap` and `screen` data stay, unless `--drop` names them. The bytes of the start screen always stay. Bytes without a region also stay.
 

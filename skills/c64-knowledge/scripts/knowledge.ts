@@ -362,14 +362,22 @@ function imageRequest(path: string, space: string): ImageRequest {
 }
 
 /**
- * The program in the knowledge that operand, patch and macro use writes
- * are checked against, with the platform names. A byte outside
- * the segments of the program is not in it.
+ * The program of each space in the knowledge that operand, patch and macro
+ * use writes in that space are checked against, with the platform names. A
+ * byte outside the segments of the program is not in it. Each program is
+ * read once, when a write in its space needs it.
  */
-function operandImage(db: DatabaseSync, space: string): OperandImage {
-  const image = requireProgram(db, space);
-  const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
-  return { byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined), platform: new Map(platformNames().map((entry) => [entry.name, entry.address])) };
+function operandImages(db: DatabaseSync): (space: string) => OperandImage {
+  const images = new Map<string, OperandImage>();
+  return (space) => {
+    const known = images.get(space);
+    if (known !== undefined) return known;
+    const image = requireProgram(db, space);
+    const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
+    const made: OperandImage = { byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined), platform: new Map(platformNames().map((entry) => [entry.name, entry.address])) };
+    images.set(space, made);
+    return made;
+  };
 }
 
 /** An offset: a whole number in decimal or $ hex, with an optional minus sign. */
@@ -812,7 +820,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
         request.symbol = call.string(select)!;
         if (offset !== undefined) request.offset = offsetOf(offset, "--offset");
       }
-      return (db) => shown(setOperand(db, { ...context, image: operandImage(db, call.space) }, request), "operand", operand);
+      return (db) => shown(setOperand(db, { ...context, image: operandImages(db) }, request), "operand", operand);
     },
   ),
   writeCommand({ name: "unoperand", summary: "Removes the operand expression at an address.", subjects: [ADDRESS] }, (call) => {
@@ -839,7 +847,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       if ((code === undefined) === !call.flag("nop")) throw new UsageError("patch needs exactly one of --code, --code-file or --nop.");
       const commentText = call.string("comment");
       const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>"), switch: call.subject(1), code: code ?? "", ...(commentText === undefined ? {} : { comment: commentText }) };
-      return (db) => shown(setPatch(db, { ...context, image: operandImage(db, call.space) }, request), "patch", patch);
+      return (db) => shown(setPatch(db, { ...context, image: operandImages(db) }, request), "patch", patch);
     },
   ),
   writeCommand(
@@ -883,7 +891,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
         ...(commentText === undefined ? {} : { comment: commentText }),
       };
       return (db) => {
-        const result = setSwitch(db, { ...context, image: operandImage(db, call.space) }, request);
+        const result = setSwitch(db, { ...context, image: operandImages(db) }, request);
         const base = listReleases(db, undefined, call.space).find((row) => row.base)?.label;
         return shown(result, "switch", (row: SwitchRow) => switchRow(row, base));
       };
@@ -1042,7 +1050,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       const context = contextOf(call);
       const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>"), macro: call.subject(1), args: commaList(call.string("args") ?? "") };
       return (db) => {
-        const result = setMacroUse(db, { ...context, image: operandImage(db, call.space) }, request);
+        const result = setMacroUse(db, { ...context, image: operandImages(db) }, request);
         return { revision: result.revision, use: macroUse(result.current), ...(result.previous === undefined ? {} : { previous: macroUse(result.previous) }) };
       };
     },
@@ -1126,9 +1134,8 @@ const WRITE_COMMANDS: CommandSpec[] = [
       }
       if (!Array.isArray(parsed)) throw new Refusal("invalid-input", `The batch ${path} is not a JSON list of writes. Give a list such as [{"op": "rename", "address": "$2100", "name": "update_player"}].`);
       const operations = parsed.map((item, index) => batchOperation(call, item, `write ${index + 1}`));
-      const checked = operations.some((operation) => operation.op === "operand" || operation.op === "patch" || operation.op === "use");
       return (db) => {
-        const applied = applyBatch(db, checked ? { ...context, image: operandImage(db, call.space) } : context, operations);
+        const applied = applyBatch(db, { ...context, image: operandImages(db) }, operations);
         // replaced: each write that replaced a row of another origin, with that row as previous gives it for one write.
         const replaced = applied.steps.flatMap((step, index) => (step.previous === undefined ? [] : [{ write: index + 1, op: operations[index]!.op, previous: shownPrevious(step.previous) }]));
         return { revision: applied.revision, writes: applied.steps.length, replaced };

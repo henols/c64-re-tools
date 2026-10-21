@@ -478,6 +478,26 @@ export function coverageEntries(map: Uint8Array, image: (address: number) => num
   return entries;
 }
 
+const ROM_ACCESS = COVERAGE.romRead | COVERAGE.romExecute;
+const RAM_USE = COVERAGE.ramRead | COVERAGE.ramExecute;
+
+/**
+ * The image bytes under ROM that the runs never used: the CPU read or ran the
+ * ROM there, and never read or ran the RAM. A JSR $FFE4 or an IRQ
+ * vector at $FFFE then leads into ROM, not into the leftover RAM bytes of a
+ * flat image, so the ranges are data for an analysis run.
+ */
+export function romOnlyRanges(map: Uint8Array, image: (address: number) => number | undefined): AddressRange[] {
+  const ranges: AddressRange[] = [];
+  for (let address = 0; address < 0x10000; address++) {
+    if ((map[address]! & ROM_ACCESS) === 0 || (map[address]! & RAM_USE) !== 0 || image(address) === undefined) continue;
+    const last = ranges.at(-1);
+    if (last !== undefined && last.end === address - 1) last.end = address;
+    else ranges.push({ start: address, end: address });
+  }
+  return ranges;
+}
+
 /** Every executed instruction start in RAM inside the image: VICE marks the opcode byte of an instruction as executed, not its operand. */
 export function executedStarts(map: Uint8Array, image: (address: number) => number | undefined): number[] {
   const starts: number[] = [];

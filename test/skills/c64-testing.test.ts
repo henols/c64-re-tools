@@ -88,6 +88,13 @@ test("only differences outside the explicit tolerance count", () => {
   );
 });
 
+test("a memory mask compares only its bits: the colour RAM has 4 bits, and the upper bits are open bus", () => {
+  const observation = (bytes: number[], mask?: number[]) => ({ memory: [{ label: "$d800 (2 bytes)", address: 0xd800, bytes, tolerance: 0, ...(mask === undefined ? {} : { mask }), excluded: [] }], registers: {} });
+  assert.deepEqual(compare(new Map([["c", observation([0x01, 0x0e], [0x0f])]]), new Map([["c", observation([0x31, 0xfe], [0x0f])]])), [], "only the upper bits differ");
+  assert.equal(compare(new Map([["c", observation([0x01, 0x0e], [0x0f])]]), new Map([["c", observation([0x02, 0x0e], [0x0f])]])).length, 1, "a low bit differs");
+  assert.equal(compare(new Map([["c", observation([0x01, 0x0e], [0xff, 0x0f])]]), new Map([["c", observation([0x31, 0xfe], [0xff, 0x0f])]])).length, 1, "a mask per byte keeps all bits of the first byte");
+});
+
 test("an excluded byte does not count, and steps for one side and the new step kinds check", () => {
   const observation = (bytes: number[]) => ({ memory: [{ label: "$d01e (2 bytes)", address: 0xd01e, bytes, tolerance: 0, excluded: [{ offset: 0, address: "$d01e", reason: "latched collision, not writable" }] }], registers: {} });
   assert.deepEqual(compare(new Map([["c", observation([1, 5])]]), new Map([["c", observation([0, 5])]])), [], "the excluded first byte differs");
@@ -133,7 +140,7 @@ test("each step is checked before the scenario runs", () => {
       { type: { mode: "text", text: "RUN\n" } },
       { frames: 10 },
       { runUntil: { target: { kind: "memory", address: "game_state", operator: "eq", value: 2 }, timeoutFrames: 600 } },
-      { observe: "all", memory: ["player_x", { address: "$0400", size: 40, tolerance: 1 }], registers: ["pc", "flags"], screen: { maxMismatchRatio: 0.01, mask: [{ x: 0, y: 0, width: 320, height: 8 }] }, vicii: true, sprites: [0, 7] },
+      { observe: "all", memory: ["player_x", { address: "$0400", size: 40, tolerance: 1 }, { address: "$d800", size: 2, mask: "0f" }, { address: "$d800", size: 2, mask: "0fff" }], registers: ["pc", "flags"], screen: { maxMismatchRatio: 0.01, mask: [{ x: 0, y: 0, width: 320, height: 8 }] }, vicii: true, sprites: [0, 7] },
     ],
   };
   assert.equal(readScenario(scenarioFile("accepted.json", accepted)).steps.length, 9);
@@ -163,6 +170,8 @@ test("each step is checked before the scenario runs", () => {
     observeRegister: { observe: "x", registers: ["q"] },
     observeMemorySize: { observe: "x", memory: [{ address: "$0400", size: 0 }] },
     observeTolerance: { observe: "x", memory: [{ address: "$0400", tolerance: -1 }] },
+    observeMemoryMask: { observe: "x", memory: [{ address: "$d800", size: 4, mask: "0f0f" }] },
+    observeMemoryMaskHex: { observe: "x", memory: [{ address: "$d800", mask: "0x0f" }] },
     observeMask: { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 0, height: 8 }] } },
     observeFullMask: { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 384, height: 272 }] } },
     observeHalvesMask: { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 384, height: 136 }, { x: 0, y: 136, width: 400, height: 200 }] } },

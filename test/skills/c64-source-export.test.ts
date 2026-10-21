@@ -154,20 +154,53 @@ test("a run that read data, a knowledge reference and an immediate pair keep it"
   ran[0x100d]! |= READ;
   assert.deepEqual(planDrops(input(TABLE, { coverage: ran, regions: REGIONS })).free, []);
   assert.deepEqual(planDrops(input(TABLE, { coverage: covered([0x1000, 0x1002, 0x1005]), regions: REGIONS, references: [{ from: 0x1002, to: 0x100c, kind: "read" }] })).free, []);
-  // LDA #<$100c; LDX #>$100c; RTS: the address of the bytes in two immediates.
-  const pair = program([
-    [0x1000, [0xa9, 0x0c]],
-    [0x1002, [0xa2, 0x10]],
-    [0x1004, [0x60]],
-  ], [[0x100c, [1, 2, 3, 4]]]);
-  assert.deepEqual(planDrops(input(pair, { coverage: covered([0x1000, 0x1002, 0x1004]), regions: [{ start: 0x100c, end: 0x100f, type: "bytes" }] })).free, []);
 });
 
-test("the start of the image and the hardware vectors stay", () => {
+/** The free ranges of code at $1000 that ran in full, with four unused bytes at $100c-$100f that only an address in its immediates names. */
+function freeWith(code: Array<[number, number[]]>, more: Partial<DropInput> = {}) {
+  const base = program(code, [[0x100c, [1, 2, 3, 4]]]);
+  return planDrops(input(base, { coverage: covered(code.map(([address]) => address)), regions: [{ start: 0x100c, end: 0x100f, type: "bytes" }], ...more })).free;
+}
+const BYTES_FREE = [{ start: 0x100c, end: 0x100f, what: "data" }];
+
+test("two immediates are an address when they go into a pointer, into the registers of a JSR or onto the stack", () => {
+  // LDA #<$100c; STA $fb; LDA #>$100c; STA $fc; RTS
+  assert.deepEqual(freeWith([[0x1000, [0xa9, 0x0c]], [0x1002, [0x85, 0xfb]], [0x1004, [0xa9, 0x10]], [0x1006, [0x85, 0xfc]], [0x1008, [0x60]]]), []);
+  // LDX #<$100c; LDY #>$100c; JSR $1009; RTS ($1009: RTS), as for a KERNAL call.
+  assert.deepEqual(freeWith([[0x1000, [0xa2, 0x0c]], [0x1002, [0xa0, 0x10]], [0x1004, [0x20, 0x08, 0x10]], [0x1007, [0x60]], [0x1008, [0x60]]]), []);
+  // LDA #>$100c; PHA; LDA #<$100c; PHA; RTS: the RTS trick.
+  assert.deepEqual(freeWith([[0x1000, [0xa9, 0x10]], [0x1002, [0x48]], [0x1003, [0xa9, 0x0c]], [0x1005, [0x48]], [0x1006, [0x60]]]), []);
+  // LDA #<$100c; TAX; LDA #>$100c; STX $fb; STA $fc; RTS: a transfer keeps the immediate.
+  assert.deepEqual(freeWith([[0x1000, [0xa9, 0x0c]], [0x1002, [0xaa]], [0x1003, [0xa9, 0x10]], [0x1005, [0x86, 0xfb]], [0x1007, [0x85, 0xfc]], [0x1009, [0x60]]]), []);
+});
+
+test("immediates that set chips, compare or only sit in registers are no address, and an operand row decides an immediate", () => {
+  // LDA #$0c; STA $dc04; LDA #$10; STA $dc05; RTS: a CIA timer latch.
+  assert.deepEqual(freeWith([[0x1000, [0xa9, 0x0c]], [0x1002, [0x8d, 0x04, 0xdc]], [0x1004, [0xa9, 0x10]], [0x1006, [0x8d, 0x05, 0xdc]], [0x1009, [0x60]]]), BYTES_FREE);
+  // LDA #$0c; STA $dc0d; LDA #$10; STA $dc0d; RTS: one register two times.
+  assert.deepEqual(freeWith([[0x1000, [0xa9, 0x0c]], [0x1002, [0x8d, 0x0d, 0xdc]], [0x1004, [0xa9, 0x10]], [0x1006, [0x8d, 0x0d, 0xdc]], [0x1009, [0x60]]]), BYTES_FREE);
+  // LDA #$0c; LDX #$10; RTS, and CMP #$0c; CPX #$10; RTS: no store, no call.
+  assert.deepEqual(freeWith([[0x1000, [0xa9, 0x0c]], [0x1002, [0xa2, 0x10]], [0x1004, [0x60]]]), BYTES_FREE);
+  assert.deepEqual(freeWith([[0x1000, [0xc9, 0x0c]], [0x1002, [0xe0, 0x10]], [0x1004, [0x60]]]), BYTES_FREE);
+  // LDA #$0c; STA $fb; LDA #$10; STA $fc; RTS with an operand row on the first LDA that names no address: a constant.
+  const pointer: Array<[number, number[]]> = [[0x1000, [0xa9, 0x0c]], [0x1002, [0x85, 0xfb]], [0x1004, [0xa9, 0x10]], [0x1006, [0x85, 0xfc]], [0x1008, [0x60]]];
+  assert.deepEqual(freeWith(pointer, { operandTargets: new Map([[0x1000, []]]) }), BYTES_FREE);
+});
+
+test("a JSR into ROM goes to no RAM code, and an immediate pair into ROM names nothing", () => {
+  // $1000 JSR $1008; RTS. $1008: LDA $100c; RTS, as RAM under the KERNAL that a JSR to the ROM would decode.
+  const base = program([[0x1000, [0x20, 0x08, 0x10]], [0x1003, [0x60]], [0x1008, [0xad, 0x0c, 0x10]], [0x100b, [0x60]]], [[0x100c, [1, 2, 3, 4]]]);
+  const regions: Array<{ start: number; end: number; type: RegionType }> = [{ start: 0x100c, end: 0x100f, type: "bytes" }];
+  assert.deepEqual(planDrops(input(base, { coverage: covered([0x1000, 0x1003]), regions })).free, [], "the RAM code at $1008 reads the bytes");
+  assert.deepEqual(planDrops(input(base, { coverage: covered([0x1000, 0x1003]), regions, rom: [{ start: 0x1008, end: 0x100b }] })).free, [{ start: 0x1008, end: 0x100f, what: "code and data" }]);
+});
+
+test("the BASIC line that starts the program and the hardware vectors stay; other data at the first address becomes free", () => {
   const vectors = program([[0x1000, [0x60]]], [[0x0ffc, [9, 9, 9, 9]], [0xfffa, [0, 0x10, 0, 0x10, 0, 0x10]]]);
   vectors.segments = [{ start: 0x0ffc, end: 0x1000 }, { start: 0xfffa, end: 0xffff }];
-  const plan = planDrops(input(vectors, { coverage: covered([0x1000]), regions: [{ start: 0x0ffc, end: 0x0fff, type: "bytes" }, { start: 0xfffa, end: 0xffff, type: "words" }] }));
-  assert.deepEqual(plan.free, []);
+  const regions: Array<{ start: number; end: number; type: RegionType }> = [{ start: 0x0ffc, end: 0x0fff, type: "bytes" }, { start: 0xfffa, end: 0xffff, type: "words" }];
+  assert.deepEqual(planDrops(input(vectors, { coverage: covered([0x1000]), regions })).free, [{ start: 0x0ffc, end: 0x0fff, what: "data" }]);
+  assert.deepEqual(planDrops(input(vectors, { coverage: covered([0x1000]), regions, basic: { start: 0x0ffc, end: 0x0ffe } })).free, []);
 });
 
 const SYMBOLS = new Map([["start", 0x1000], ["loop", 0x1003]]);

@@ -43,7 +43,7 @@ export interface StagePlan {
   code: number;
   /** The parts of the loader under the bytes of the stage: where the show code copies them back from. */
   stash: Array<{ target: AddressRange; at: number }>;
-  /** start_screen_stage.asm: the show code at `code`, then each part of the stage, packed after it. */
+  /** start_screen_stage.asm: the show code at `code`, and each part of the stage at its own address. */
   text: string;
 }
 
@@ -54,7 +54,7 @@ export const STAGE_START = "c64_source_stage";
 export const STAGE_CODE_END = "c64_source_stage_code_end";
 /** The label of the colour RAM of the capture in the show code. */
 export const STAGE_COLOURS = "c64_source_stage_colours";
-/** The label of a part of the stage: its first byte and the byte after it in the build of start_screen_stage.asm. */
+/** The label of a part of the stage: its first byte and the byte after it. */
 export const stageLabel = (start: number, part: "from" | "end") => `stage_${part}_${start.toString(16).padStart(4, "0")}`;
 
 /** One copy of the stash: the length, where it is read and where it is written. */
@@ -251,8 +251,9 @@ export function stageText(input: StageInput, code: number, stash: StagePlan["sta
     ...(input.colourRam === undefined ? [] : [`; The colour RAM of the capture of ${row.stage}.`, STAGE_COLOURS, ...byteLines({ start: 0, body: input.colourRam })]),
     STAGE_CODE_END,
   ];
+  // Each part at its own address: the code is in a free range, so no part overlaps it, and the build never runs past $ffff.
   for (const part of input.stage) {
-    lines.push("", `; ${row.stage} ${show(rangeOf(part))}`, stageLabel(part.start, "from"), `!pseudopc ${formatC64Address(part.start)} {`, ...byteLines(part), "}", stageLabel(part.start, "end"));
+    lines.push("", `; ${row.stage} ${show(rangeOf(part))}`, `* = ${formatC64Address(part.start)}`, stageLabel(part.start, "from"), ...byteLines(part), stageLabel(part.start, "end"));
   }
   return `${lines.join("\n")}\n`;
 }

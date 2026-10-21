@@ -126,5 +126,6 @@ The body of the envelope of `replay` has these fields:
 - `firstDifference`: on a FAIL, the checkpoint (1 is the first), the cycle on each side, and each state item that is different. An item has `address`, and the `original` and `rebuild` values as hex.
 - `reason`: why the result is FAIL or INCONCLUSIVE.
 - `movedSites`: the number of sites at a different address in the rebuild.
+- `startScreen`: `skipped` when the rebuild went past the wait of its start screen.
 - `idleReads`: the input reads of the rebuild that the recording had no value for. Such a read is at a site that the recording does not have, or after its end. Each got the fixed value `$FF` (joystick, keyboard, paddles) or `$00`. An input site that the site map did not find shows here.
 - `files`: with `--out`, the RAM of each side at the first different checkpoint, `original-<n>.bin` and `rebuild-<n>.bin`.

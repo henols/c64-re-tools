@@ -16,6 +16,7 @@ import { c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, renamedField, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
+import { START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
 import { namesOf, type Outcome } from "./scenario.ts";
@@ -387,10 +388,10 @@ function busiestSite(answer: string): { site: number; addr: number; count: numbe
  * Runs to the point of an event. `map` moves a site to the rebuild. "halted"
  * when a sample stop came first, "not-reached" when the point did not come before `until`.
  */
-async function runToKey(core: C64RunSession, key: RecordedEvent["key"], until: number, map: Map<number, number>): Promise<"reached" | "not-reached" | "halted"> {
+async function runToKey(core: C64RunSession, key: RecordedEvent["key"], until: number, map: Map<number, number>, skipped: number): Promise<"reached" | "not-reached" | "halted"> {
   if ("previous" in key) return (await core.status("status")).word === "halted" ? "halted" : "reached";
   if ("tick" in key) {
-    const status = await core.status(`run ${key.tick}`);
+    const status = await core.status(`run ${key.tick + skipped}`);
     return status.word === "halted" ? "halted" : "reached";
   }
   const site = parseC64Address(key.site);
@@ -509,7 +510,7 @@ export async function record(
       : busiest === undefined
         ? { tick: tick + 1 }
         : { site: formatC64Address(busiest.site), addr: formatC64Address(busiest.addr), count: busiest.count + 1 };
-    if ((await runToKey(core, key, tick + 600 * PAL_FRAME_CYCLES, new Map())) !== "reached") return "the program did not read its input again within 600 frames";
+    if ((await runToKey(core, key, tick + 600 * PAL_FRAME_CYCLES, new Map(), 0)) !== "reached") return "the program did not read its input again within 600 frames";
     events.push({ ...(step === undefined ? {} : { step }), action, key });
     return doAction(core, action, at);
   };
@@ -590,6 +591,8 @@ export interface SideRun {
   end: CoreStatus;
   /** Why the side stopped before its last checkpoint, if it did. */
   problem?: string;
+  /** True when the rebuild went on after the wait of its start screen. */
+  startScreenSkipped?: boolean;
   /**
    * Input reads that the recording has no value for, which got the fixed idle value:
    * at sites that it does not have, and after its end at a site.
@@ -620,7 +623,8 @@ export async function replaySide(
   const move = original
     ? { code: same, data: same }
     : { code: mover(namesOf(names, "code"), namesOf(subject.symbols, "code")), data: mover(namesOf(names), namesOf(subject.symbols)) };
-  const at = sideAddresses(namesOf(subject.symbols), subject.side, move);
+  const own = namesOf(subject.symbols);
+  const at = sideAddresses(own, subject.side, move);
   const moved = original ? [] : siteMap(recording.sites, namesOf(names, "code"), namesOf(subject.symbols, "code"));
   const map = new Map(moved);
   const reads = workspace.path(`${subject.side}-${RECORDING_FILES.reads}`);
@@ -645,11 +649,24 @@ export async function replaySide(
     await core.command(`sample ${hex(at.code(options.compare.checkpoint))} ${samples} ${rangesArgument([...options.compare.state, ...pinned], at)}${stop > 0 ? ` ${stop}` : ""}`);
   }
   await startProgram(core, prg, recording.load);
-  const limit = original ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
+  let limit = original ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
   let problem: string | undefined;
-  for (const event of recording.events) {
+  // A loader with a start screen that RUN starts waits for a key or a fire button that the recording does not have:
+  // the rebuild goes on after the wait, as the check of the loader does. The cycles to the wait do not count.
+  const wait = own.get(START_SCREEN_WAIT);
+  const resume = own.get(START_SCREEN_CONTINUE);
+  let skipped = 0;
+  if (!original && !recording.load && wait !== undefined && resume !== undefined) {
+    const reached = await core.status(`run-pc ${hex(wait)} ${limit}`);
+    if (reached.word === "reached") {
+      skipped = reached.tick;
+      limit += skipped;
+      await core.status(`goto ${hex(resume)}`);
+    } else problem = `the rebuild did not come to the wait of its start screen at ${formatC64Address(wait)}`;
+  }
+  for (const event of problem === undefined ? recording.events : []) {
     const what = event.step === undefined ? "the RESTORE of the play" : "step " + event.step;
-    const point = await runToKey(core, event.key, limit, map);
+    const point = await runToKey(core, event.key, limit, map, skipped);
     if (point === "halted") break;
     if (point === "not-reached") {
       problem = "the program did not come to the point of " + what;
@@ -672,7 +689,7 @@ export async function replaySide(
     await core.command("sample off");
     lines = readFileSync(samples, "utf8").split("\n").filter((line) => line !== "");
   }
-  return { samples: lines, end, unknown, misses, ...(problem === undefined ? {} : { problem }), ...(ram === undefined ? {} : { ram }) };
+  return { samples: lines, end, unknown, misses, ...(problem === undefined ? {} : { problem }), ...(skipped > 0 ? { startScreenSkipped: true } : {}), ...(ram === undefined ? {} : { ram }) };
 }
 
 export interface CheckpointDifference {

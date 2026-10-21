@@ -117,7 +117,7 @@ test("overlapping regions are a conflict, and merge keeps the newer region and t
 });
 
 test("comments, references, operands, modules and region suppressions have their conflicts too", () => {
-  const image: OperandImage = { byteAt: (address) => new Map([[0x8079, 0xa9], [0x807a, 0xc0]]).get(address), platform: new Map() };
+  const image = (): OperandImage => ({ byteAt: (address) => new Map([[0x8079, 0xa9], [0x807a, 0xc0]]).get(address), platform: new Map() });
   const root = computers(
     (base) =>
       withWrite((db) => {
@@ -194,7 +194,7 @@ test("a write that would leave two current rows is refused before it commits", (
 
 test("patches, switches, macros and macro uses have their conflicts, and merge keeps the newest", () => {
   const bytes = new Map([[0x8100, 0xe6], [0x8101, 0xfb], [0x8102, 0xd0], [0x8103, 0x02], [0x8104, 0xe6], [0x8105, 0xfc], [0x8106, 0xea]]);
-  const image: OperandImage = { byteAt: (address) => bytes.get(address), platform: new Map() };
+  const image = (): OperandImage => ({ byteAt: (address) => bytes.get(address), platform: new Map() });
   const root = computers(
     (base) =>
       withWrite((db) => {

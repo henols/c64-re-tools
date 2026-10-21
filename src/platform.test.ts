@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { COVERAGE } from "./c64.ts";
-import { platformNames, platformNamesFor, romUseOf, romUseOfPort } from "./platform.ts";
+import { platformNames, platformNamesFor, romRanges, romUseOf, romUseOfPort } from "./platform.ts";
 
 test("a program without the KERNAL and BASIC gets no system or ROM names, only the processor port and I/O", () => {
   // The Bruce Lee run: the source named the game's zero page CHRGET, PNTR and ADRAY2.
@@ -27,4 +27,17 @@ test("the ROMs in use come from ROM accesses in the coverage, or from $01", () =
   assert.deepEqual(romUseOfPort(0x37), { basic: true, kernal: true });
   assert.deepEqual(romUseOfPort(0x36), { basic: false, kernal: true });
   assert.deepEqual(romUseOfPort(0x35), { basic: false, kernal: false });
+});
+
+test("the ROM ranges of an image come from the coverage, else from $01 of the entry state, and known code stays out", () => {
+  // The image: $c000-$ffff.
+  const image = (address: number) => (address >= 0xc000 ? 0 : undefined);
+  const map = new Uint8Array(0x10000);
+  map[0xe716] = COVERAGE.romExecute;
+  map[0xe717] = COVERAGE.romExecute | COVERAGE.ramRead;
+  assert.deepEqual(romRanges(map, { cpuPort: { $01: 0x35 } }, image, []), [{ start: 0xe716, end: 0xe716 }], "the coverage wins, and RAM that a run read is not ROM");
+  assert.deepEqual(romRanges(undefined, { cpuPort: { $01: 0x37 } }, image, []), [{ start: 0xe000, end: 0xffff }], "BASIC is outside the image");
+  assert.deepEqual(romRanges(undefined, { cpuPort: { $01: 0x35 } }, image, []), []);
+  assert.deepEqual(romRanges(undefined, undefined, image, []), [], "no state, no ROM");
+  assert.deepEqual(romRanges(undefined, { cpuPort: { $01: 0x37 } }, image, [0xe000]), [], "code of the knowledge there");
 });

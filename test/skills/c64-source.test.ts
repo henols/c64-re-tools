@@ -16,11 +16,11 @@ import { assemble } from "../../src/native/acme.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ciaSection, copyOrder, loaderLimits, packLoader, planLoader, loaderState, simulate, START_SCREEN_CODE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { ciaSection, copyOrder, loaderLimits, packLoader, planLoader, loaderState, loaderSymbols, simulate, START_SCREEN_CODE, START_SCREEN_FILE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
 import { configText, configValues, entriesInData, entryOutsideImage, layout, render, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
-import { planStage, type StageInput } from "../../skills/c64-source/scripts/lib/stage.ts";
+import { planStage, STAGE_CODE_END, STAGE_FILE, stageParts, type StageInput } from "../../skills/c64-source/scripts/lib/stage.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 import type { StartScreenRow } from "../../src/knowledge/read.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
@@ -1074,6 +1074,40 @@ test("the show stage runs where the KERNAL can be in, and puts the loader bytes 
   assert.match(withColours.text, /\nc64_source_stage_colours\n {8}!byte \$00,\$01,\$02,/);
   assert.equal((withColours.text.split("\nc64_source_stage_colours\n")[1]!.split("c64_source_stage_code_end")[0]!.match(/\$[0-9a-f]{2}/g) ?? []).length, 1000);
   assert.throws(() => planStage(stageInput([{ start: 0x0400, body: new Uint8Array(0xcc00) }], [{ start: 0xe000, body: new Uint8Array(8000) }])), /The show stage needs 308 free bytes for its code in \$0400-\$9fff or \$c000-\$cfff.* The largest free ranges outside the loader and the bytes of the stage: \$d000-\$dfff \(4096 bytes\)/);
+});
+
+test("with real ACME, the show stage builds when its code is high and the parts of the stage are large: each part is at its own address", { skip: acmeSkip }, async () => {
+  const row: StartScreenRow = { space: "c64", mode: "multicolour", screen: 0x0400, bitmap: 0x2000, colours: 0x5800, border: 0, background: 6, stage: "loading", origin: "llm", revision: "r" };
+  // The loader and the stage fill $0400-$bfff, so the code goes to $c000, and 17 KB of the stage is below it.
+  const stage = [
+    { start: 0x0400, body: Uint8Array.from({ length: 1000 }, (_, index) => index & 0xff) },
+    { start: 0x2000, body: Uint8Array.from({ length: 0x4000 }, (_, index) => (index * 7) & 0xff) },
+  ];
+  const input: StageInput = { inner: [{ start: 0x0801, body: new Uint8Array(0x17ff).fill(0xea) }, { start: 0x6000, body: new Uint8Array(0x6000).fill(0xea) }], innerStart: 0x080d, innerPort: 0x37, stage, row, plan: startScreenPlan(row), settings: [], header: [], codeSize: 600 };
+  const plan = planStage(input);
+  assert.ok(plan.code >= 0xc000, "the code is high");
+  assert.doesNotMatch(plan.text, /!pseudopc/);
+  const files = [
+    { name: START_SCREEN_FILE, text: START_SCREEN_CODE },
+    { name: STAGE_FILE, text: plan.text },
+  ];
+  const contents = files.map((file) => Buffer.from(file.text));
+  const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: STAGE_FILE, includeDirs: [], defines: {} }, contents, localToolContext());
+  assert.equal(result.assembled, true, result.diagnostics.map((diagnostic) => diagnostic.message).join("; "));
+  const labels = new Map((result.symbols ?? []).map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+  const parts = stageParts(input, plan, attachments![0]!, (name) => labels.get(name)!);
+  for (const part of stage) assert.deepEqual([...parts.find((item) => item.start === part.start)!.body], [...part.body], `the part at ${part.start.toString(16)}`);
+  assert.equal(parts.at(-1)!.start, plan.code);
+  assert.equal(parts.at(-1)!.body.length, labels.get(STAGE_CODE_END)! - plan.code);
+});
+
+test("the symbols of loader.prg hold the labels of both builds, and refuse a name with two values", () => {
+  const merged = loaderSymbols(
+    [{ name: "main", kind: "address", address: 0x0810, used: true }, { name: "START_SCREEN", kind: "constant", value: 1, used: false }, { name: "game_start", kind: "constant", value: 0xc000, used: false }],
+    [{ name: "loader_start_screen_wait", kind: "address", address: 0xc123, used: true }, { name: "START_SCREEN", kind: "constant", value: 1, used: true }, { name: "game_start", kind: "address", address: 0xc000, used: false }],
+  );
+  assert.deepEqual(merged.map((symbol) => [symbol.name, symbol.kind, symbol.used]), [["START_SCREEN", "constant", true], ["game_start", "address", false], ["loader_start_screen_wait", "address", true], ["main", "address", true]]);
+  assert.throws(() => loaderSymbols([{ name: "main", kind: "address", address: 0x0810, used: true }], [{ name: "main", kind: "address", address: 0x0820, used: true }]), /give main two values, 2064 and 2080/);
 });
 
 /** A switch that no release has on: off in the program and, by default, off in the build. */
