@@ -1487,7 +1487,7 @@ test("with real Ghidra and ACME, a macro use that ACME refuses or assembles to o
   assert.equal(run.status, 0, run.stdout);
   const json = readEnvelope(run.stdout, run.status).json as { check: { identical: boolean }; files: Array<{ out: string }>; macroUses: number; macrosAsInstructions: { listed: Array<{ start: string; macro: string; reason: string }> } };
   assert.equal(json.check.identical, true);
-  assert.deepEqual(json.files.map((file) => file.out), ["src/segment_1000.asm", "src/constants.asm", "src/macros.asm", "src/main.asm", `${REPORTS}/source-map.json`]);
+  assert.deepEqual(json.files.map((file) => file.out), ["src/segments/segment_1000.asm", "src/constants.asm", "src/macros.asm", "src/main.asm", `${REPORTS}/source-map.json`]);
   assert.equal(json.macroUses, 1);
   assert.deepEqual(json.macrosAsInstructions.listed.map((row) => [row.start, row.macro]), [["$1006", "short"], ["$100c", "broken"]]);
   assert.equal(json.macrosAsInstructions.listed[0]!.reason, "ACME assembles it to 2 bytes, and the range has 6.");

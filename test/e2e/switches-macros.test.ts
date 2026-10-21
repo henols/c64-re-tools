@@ -92,7 +92,7 @@ test("switches and macros: the original stays identical, each switch fits, and t
 
   const generated = ok("c64-source", "source.ts", ["generate", "--out", "src"]);
   assert.equal(generated.check.identical, true);
-  assert.deepEqual(generated.files.map((file: { out: string }) => file.out).filter((path: string) => path.endsWith(".asm")), ["src/segment_1000.asm", "src/switches.asm", "src/config.asm", "src/constants.asm", "src/macros.asm", "src/main.asm"]);
+  assert.deepEqual(generated.files.map((file: { out: string }) => file.out).filter((path: string) => path.endsWith(".asm")), ["src/segments/segment_1000.asm", "src/switches.asm", "src/config.asm", "src/constants.asm", "src/macros.asm", "src/main.asm"]);
   assert.deepEqual(generated.switches.map((item: { name: string; result: string; changedBytes: number }) => [item.name, item.result, item.changedBytes]), [["PROTECTION", "fits", 8], ["TRAINER", "fits", 3]]);
   assert.deepEqual(generated.default, { in: ["PROTECTION"], result: "fits", changedBytes: 8 });
   assert.deepEqual(generated.releases.map((item: { label: string; result: string }) => [item.label, item.result]), [["ORIGINAL", "identical"]]);

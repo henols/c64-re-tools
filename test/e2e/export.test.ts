@@ -114,7 +114,7 @@ test("export: switches fixed, dead code and unused data free, a slim knowledge, 
   assert.deepEqual(generated.leftovers, { bytes: 14, count: 1, listed: [{ start: "$0826", end: "$0833", bytes: 14, file: "leftovers/leftover_0826.asm" }] });
   assert.deepEqual(generated.releases.map((release: { label: string; result: string }) => [release.label, release.result]), [["ORIGINAL", "identical"]]);
   assert.equal(generated.default.result, "fits");
-  assert.match(readFileSync(join(project, "src", "main.asm"), "utf8"), /!if LEFTOVERS \{ !source "leftover_0826\.asm" \} else \{ !skip 14 \}/);
+  assert.match(readFileSync(join(project, "src", "main.asm"), "utf8"), /!if LEFTOVERS \{ !source "leftovers\/leftover_0826\.asm" \} else \{ !skip 14 \}/);
   assert.match(readFileSync(join(project, "src", "config.asm"), "utf8"), /\nLEFTOVERS = 0 ; /);
 
   // A folder inside the project, a --drop over a changed patch and a --drop of code that kept code goes to are refused before anything is written.

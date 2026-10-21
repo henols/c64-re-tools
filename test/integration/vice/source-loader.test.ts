@@ -243,7 +243,7 @@ test("the loader does not load the leftovers: a range that nothing uses is not i
   const loader = readFileSync(join(project, "build", "clean_loader.prg"));
   const table = Buffer.from(memory.subarray(0x0880, 0x0900));
   assert.equal(loader.indexOf(table), -1, "the bytes of the leftovers are not in the loader program");
-  assert.match(readFileSync(join(project, "src", "main.asm"), "utf8"), /!if LEFTOVERS \{ !source "leftover_0813\.asm" \} else \{ !skip 237 \}/);
+  assert.match(readFileSync(join(project, "src", "main.asm"), "utf8"), /!if LEFTOVERS \{ !source "leftovers\/leftover_0813\.asm" \} else \{ !skip 237 \}/);
 });
 
 test("a start screen of a captured stage shows before the loader: the stage calls its routine, waits, gives back the loader bytes under it, and the loader gets to the entry", { skip: packedSkip, timeout: 900_000 }, async () => {
@@ -287,7 +287,7 @@ test("a start screen of a captured stage shows before the loader: the stage call
   // The check compared the screen in memory with the bytes of the stage with the patch in.
   assert.match(readFileSync(join(project, "src", "start_screen_stage.asm"), "utf8"), /^\* = \$cc00\nstage_from_cc00\n {8}!byte \$11,\$22,\$33,\$44,/m);
   // One symbol file holds the labels of the loader build and of the show stage.
-  const names = (JSON.parse(readFileSync(join(project, "src", "symbols", "clean_loader.json"), "utf8")) as { symbols: Array<{ name: string }> }).symbols.map((symbol) => symbol.name);
+  const names = (JSON.parse(readFileSync(join(project, "build", "symbols", "clean_loader.json"), "utf8")) as { symbols: Array<{ name: string }> }).symbols.map((symbol) => symbol.name);
   for (const name of ["c64_source_loader_jump", "c64_source_stage", "loader_start_screen_wait", "loader_start_screen_continue"]) assert.ok(names.includes(name), name);
   const loader = readFileSync(join(project, "build", "clean_loader.prg"));
   assert.equal(loader.readUInt16LE(0), 0x0801);
