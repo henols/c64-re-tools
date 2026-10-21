@@ -287,8 +287,6 @@ function createSchema(db: DatabaseSync): void {
         id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         label               TEXT NOT NULL CHECK (length(label) > 0),
-        file                TEXT NOT NULL CHECK (length(file) > 0),
-        sha256              TEXT NOT NULL CHECK (length(sha256) = 64),
         base                INTEGER NOT NULL CHECK (base IN (0, 1)),
         comment             TEXT CHECK (comment IS NULL OR length(comment) > 0),
         origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
@@ -356,6 +354,17 @@ function createSchema(db: DatabaseSync): void {
         valid_to_revision   TEXT REFERENCES revisions (id)
       );
       CREATE INDEX memory_current ON memory (space, address) WHERE valid_to_revision IS NULL;
+      CREATE TABLE release_memory (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        label               TEXT NOT NULL CHECK (length(label) > 0),
+        address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
+        bytes               TEXT NOT NULL CHECK (length(bytes) BETWEEN 2 AND ${MEMORY_ROW * 2} AND length(bytes) % 2 = 0 AND address + length(bytes) / 2 <= 65536),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
+      CREATE INDEX release_memory_current ON release_memory (space, label, address) WHERE valid_to_revision IS NULL;
       CREATE TABLE entries (
         id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
@@ -379,6 +388,7 @@ function createSchema(db: DatabaseSync): void {
       );
       CREATE INDEX coverage_current ON coverage (space, kind) WHERE valid_to_revision IS NULL;
       CREATE VIEW current_memory AS SELECT * FROM memory WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_release_memory AS SELECT * FROM release_memory WHERE valid_to_revision IS NULL;
       CREATE VIEW current_entries AS SELECT * FROM entries WHERE valid_to_revision IS NULL;
       CREATE VIEW current_coverage AS SELECT * FROM coverage WHERE valid_to_revision IS NULL;
       CREATE VIEW current_symbols AS SELECT * FROM symbols WHERE valid_to_revision IS NULL;
@@ -399,7 +409,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 13;
+export const INDEX_VERSION = 14;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

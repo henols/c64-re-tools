@@ -17,7 +17,7 @@ import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { addCoverage, operandImages as programImages, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
+import { addCoverage, memoryRows, operandImages as programImages, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
 import { startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
   analyzerNamesAt,
@@ -159,8 +159,6 @@ const switchRow = (row: SwitchRow, base?: string, patches?: readonly PatchRow[])
 const release = (row: ReleaseRow) => ({
   ...spaceOf(row),
   label: row.label,
-  file: row.file,
-  sha256: row.sha256,
   base: row.base,
   define: `--define ${RELEASE_DEFINE}${row.label}=1`,
   ...(row.comment === undefined ? {} : { comment: row.comment }),
@@ -891,27 +889,23 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "release",
-      summary: "Records a release of the program: its PRG or the image.json of its capture in the project. The base release is the one whose bytes are the program of the knowledge.",
+      summary: "Records a release of the program from its PRG or the image.json of its capture: the knowledge keeps the bytes of the release. The base release is the one whose bytes are the program of the knowledge.",
       subjects: [{ name: "<label>", help: "the release label, for example ORIGINAL or FIRESTAR" }],
       options: {
-        file: { kind: "path", value: "<file>", help: "the PRG or image.json of the release, in a folder that git keeps", required: true },
+        file: { kind: "path", value: "<file>", help: "the PRG or image.json of the release. After the write, the knowledge does not need the file", required: true },
         base: { kind: "flag", help: "this release is the program of the knowledge: its segments and bytes must be the same" },
         comment: { kind: "text", value: "<text>", help: "what the release is, for example the group and the date" },
       },
-      notes: "The build of a release defines RELEASE_<label>=1: each switch then has the value of that release. The check of the generated source builds each release and compares it with the bytes of its file.",
+      notes: "The build of a release defines RELEASE_<label>=1: each switch then has the value of that release. The check of the generated source builds each release and compares it with the bytes of the release in the knowledge.",
     },
     (call) => {
       const context = contextOf(call);
       const file = knowledgePath(call.string("file")!, "--file");
-      const root = projectRoot();
-      if (isInside(join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY), resolveProjectPath(file, root))) {
-        throw new UsageError(`--file ${file} is in ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/, which git ignores. Move the release to a folder that git keeps, for example original/.`);
-      }
       const image = readImage(file);
-      const sha256 = createHash("sha256").update(readProjectFile(file).bytes).digest("hex");
       const commentText = call.string("comment");
       const base = call.flag("base");
-      const request = { space: call.space, label: call.subject(0), file, sha256, ...(base ? { base } : {}), ...(commentText === undefined ? {} : { comment: commentText }) };
+      // The base release has no bytes of its own: its bytes are the program.
+      const request = { space: call.space, label: call.subject(0), ...(base ? { base } : { rows: memoryRows(image.segments, image.byteAt) }), ...(commentText === undefined ? {} : { comment: commentText }) };
       return (db) => {
         if (base) {
           const program = requireProgram(db, call.space);
@@ -921,7 +915,8 @@ const WRITE_COMMANDS: CommandSpec[] = [
           });
           if (!same) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge. Give --base only to the release whose file image put into the knowledge.`);
         }
-        return shown(setRelease(db, context, request), "release", release);
+        const bytes = image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
+        return { ...shown(setRelease(db, context, request), "release", release), bytes };
       };
     },
   ),

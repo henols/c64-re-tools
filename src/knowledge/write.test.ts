@@ -8,7 +8,7 @@ import { after, test } from "node:test";
 import { formatC64Address } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { openForWrite, transaction } from "./database.ts";
-import { setImage } from "./program.ts";
+import { memoryRows, releaseImage, setImage } from "./program.ts";
 import { at, commentsAt, currentRevision, currentStartScreen, listMacroUses, listModules, listPatches, listSwitches, switchNamed, listSuppressions, listSymbols, macroNamed, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
 import { historyAt, historyOfMacro, historyOfSwitch, revision as revisionChanges } from "./history.ts";
 import {
@@ -559,7 +559,7 @@ function sourceImage(): OperandImage {
 
 /** The base release ORIGINAL, and a change switch for each name, off by default and off in ORIGINAL. */
 function withSwitches(db: DatabaseSync, image: (space: string) => OperandImage, ...names: string[]): void {
-  setRelease(db, { origin: "user" }, { label: "ORIGINAL", file: "original/game.prg", sha256: "a".repeat(64), base: true });
+  setRelease(db, { origin: "user" }, { label: "ORIGINAL", base: true });
   for (const name of names) setSwitch(db, { origin: "user", image }, { name, kind: "change", default: 0 });
 }
 
@@ -604,10 +604,10 @@ test("a switch has a kind, a default and the releases that have it on; the base 
   const image = sourceImage();
   const context: WriteContext = { origin: "llm", image: () => image };
   assert.throws(() => setSwitch(db, context, { name: "PROTECTION", kind: "protection" }), /no base release/);
-  setRelease(db, llm, { label: "ORIGINAL", file: "original/game.prg", sha256: "a".repeat(64), base: true, comment: "Uncracked." });
-  setRelease(db, llm, { label: "V2", file: "original/game-v2.prg", sha256: "b".repeat(64) });
-  assert.throws(() => setRelease(db, llm, { label: "V2", file: "original/game-v2.prg", sha256: "b".repeat(64), base: true }), /The release ORIGINAL is the base release/);
-  for (const label of ["v2", "V", "2V"]) assert.throws(() => setRelease(db, llm, { label, file: "x.prg", sha256: "b".repeat(64) }), failsWith("invalid-input"), label);
+  setRelease(db, llm, { label: "ORIGINAL", base: true, comment: "Uncracked." });
+  setRelease(db, llm, { label: "V2", rows: new Map([[0x1000, "a9"]]) });
+  assert.throws(() => setRelease(db, llm, { label: "V2", base: true }), /The release ORIGINAL is the base release/);
+  for (const label of ["v2", "V", "2V"]) assert.throws(() => setRelease(db, llm, { label, rows: new Map([[0x1000, "a9"]]) }), failsWith("invalid-input"), label);
 
   // The kinds give the default: the default build is the clean program with every fix.
   const protection = setSwitch(db, context, { name: "PROTECTION", kind: "protection", releases: ["ORIGINAL"], comment: "The disk check." });
@@ -631,7 +631,7 @@ test("a switch has a kind, a default and the releases that have it on; the base 
   assert.throws(() => removeSwitch(db, llm, { name: "PROTECTION" }), /has patches at \$8079/);
   assert.throws(() => removeRelease(db, llm, { label: "V2" }), /is named by the switches FIX_LIVES, PROTECTION/);
   assert.throws(() => removeRelease(db, llm, { label: "ORIGINAL" }), /decides the state of the program for the switches/);
-  assert.throws(() => setRelease(db, llm, { label: "ORIGINAL", file: "original/game.prg", sha256: "a".repeat(64), base: false }), /Remove them first \(unswitch\) to change the base release/);
+  assert.throws(() => setRelease(db, llm, { label: "ORIGINAL", rows: new Map([[0x1000, "a9"]]), base: false }), /Remove them first \(unswitch\) to change the base release/);
   assert.equal(switchNamed(db, "PROTECTION")?.comment, "The disk check.", "a write without a comment keeps it");
   assert.deepEqual(historyOfSwitch(db, "PROTECTION").map((entry) => entry.entity), ["switch", "patch", "switch"]);
 
@@ -830,12 +830,37 @@ test("a module and a comment start at an instruction: an operand byte of a code 
   assert.notEqual(setModule(db, llm, { start: 0x1bca, file: "table.asm" }).revision, null);
 });
 
+test("the knowledge keeps the bytes of each release other than the base release; a revert and an unrelease follow them", () => {
+  const db = fresh();
+  setImage(db, llm, { segments: [{ start: 0x1000, end: 0x1003 }], byteAt: () => 0xea });
+  const bytes = (values: number[]) => memoryRows([{ start: 0x1000, end: 0x1000 + values.length - 1 }], (address) => values[address - 0x1000]!);
+  // The base release has no bytes of its own: its bytes are the program.
+  setRelease(db, llm, { label: "ORIGINAL", base: true });
+  assert.deepEqual(releaseImage(db, "ORIGINAL")?.segments, [{ start: 0x1000, end: 0x1003 }]);
+  assert.throws(() => setRelease(db, llm, { label: "V2" }), /The release V2 has no bytes/);
+  const first = setRelease(db, llm, { label: "V2", rows: bytes([0xa9, 0x00, 0x60]) });
+  const v2 = releaseImage(db, "V2")!;
+  assert.deepEqual([v2.segments, v2.byteAt(0x1001)], [[{ start: 0x1000, end: 0x1002 }], 0x00]);
+  assert.equal(setRelease(db, llm, { label: "V2", rows: bytes([0xa9, 0x00, 0x60]) }).revision, null, "the same bytes write nothing");
+  assert.equal(setRelease(db, llm, { label: "V2", comment: "The second release." }).current.comment, "The second release.", "a write without bytes keeps them");
+  assert.equal(releaseImage(db, "V2")!.byteAt(0x1002), 0x60);
+  setRelease(db, llm, { label: "V2", rows: bytes([0xa9, 0x01, 0x60]) });
+  assert.equal(releaseImage(db, "V2")!.byteAt(0x1001), 0x01);
+  revert(db, llm, { revision: first.revision! });
+  assert.equal(releaseImage(db, "V2")!.byteAt(0x1001), 0x00, "a revert restores the bytes");
+  removeRelease(db, llm, { label: "V2" });
+  assert.equal(releaseImage(db, "V2"), undefined);
+  assert.equal((db.prepare("SELECT count(*) AS n FROM current_release_memory").get() as { n: number }).n, 0, "an unrelease closes the bytes");
+  assert.throws(() => setRelease(db, llm, { label: "V3", rows: new Map([[0x1000, "a9z0"]]) }), failsWith("invalid-input"));
+});
+
+
 test("patches of two switches can have the same range as alternatives; any other overlap is a conflict", () => {
   const db = fresh();
   const context: WriteContext = { origin: "llm", image: () => sourceImage() };
-  setRelease(db, llm, { label: "V1", file: "original/v1.prg", sha256: "a".repeat(64), base: true });
-  setRelease(db, llm, { label: "V2", file: "original/v2.prg", sha256: "b".repeat(64) });
-  setRelease(db, llm, { label: "V3", file: "original/v3.prg", sha256: "c".repeat(64) });
+  setRelease(db, llm, { label: "V1", base: true });
+  setRelease(db, llm, { label: "V2", rows: new Map([[0x1000, "a9"]]) });
+  setRelease(db, llm, { label: "V3", rows: new Map([[0x1000, "a9"]]) });
   setSwitch(db, context, { name: "FIX_V2", kind: "fix", releases: ["V2"] });
   setSwitch(db, context, { name: "FIX_V3", kind: "fix", default: 0, releases: ["V3"] });
   setPatch(db, context, { start: 0x8079, end: 0x807b, switch: "FIX_V2", code: "", comment: "Check 2." });

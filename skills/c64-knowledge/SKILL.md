@@ -75,7 +75,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 - A symbol name is a label for ACME: a letter or an underscore, then letters, digits or underscores. The knowledge refuses the name of a 6502 instruction, for example `lda`, in upper or lower case.
 - A space is `c64` (the default), `drive8` for code in the 1541 drive, `loading` or `bank0` to `bank255`. `loading` is the captured stage of the loading that shows the start screen. `bank0` to `bank255` are cartridge banks. Drive code, the stage and banks use the same addresses as the C64. Thus each space has its own knowledge. A name is unique in one space.
 - A revision id has the form `20261015T214501.123-k3f9qz`. It starts with the date and the time. Give the full id, or a start of the id that only one revision has. Get the ids from `revisions`, or from the `revision` field of a result. The revision `0` is the knowledge before the first revision.
-- A file of a capture is the `image.json` that the capture of a packed program wrote. Keep the other files of the capture next to it.
+- A file of a capture is the `image.json` that the capture of a packed program wrote. The other files of the capture must be next to it.
 
 ### Paths and the project folder
 
@@ -224,7 +224,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 
 ### `releases`
 
-- `body.releases` lists the releases, the base release first. Each item has `label`, `file`, `sha256`, `base` and `define`.
+- `body.releases` lists the releases, the base release first. Each item has `label`, `base` and `define`.
 - `define` is the assembler define that builds the release.
 
 ### `macros`
@@ -393,12 +393,13 @@ A rebuild keeps all of the program in the source: unused bytes, dead code, old c
 
 Do not write a file of the rebuild by hand, for example a boot file, a packed picture or a script that changes bytes. Record each change in the knowledge, and generate the source.
 
-- A release is a PRG or the `image.json` of a capture, in a folder that git keeps, for example `original/`. The script refuses a file in `.c64-re-tools/local/`.
+- `--file` is a PRG or the `image.json` of a capture. The project knowledge keeps the bytes of the release. After the write, the project does not need the file. A capture can stay in `.c64-re-tools/local/`.
 - A label is upper case, for example `ORIGINAL`, `FIRESTAR` or `V2`.
 - The base release is the release whose bytes are the program of the knowledge. Record it with `--base`. The script refuses `--base` when the segments or the bytes of the file are not the program.
 - A space has one base release. Record the base release before the first switch.
-- The build of a release gives each switch the value of that release. The check of the generated source compares that build with the bytes of the file.
-- `body.release` gives the release, with its `sha256` and its `define`.
+- The build of a release gives each switch the value of that release. The check of the generated source compares that build with the bytes of the release in the project knowledge.
+- To change the bytes of a release, record the release again with its new file.
+- `body.release` gives the release, with its `define`. `body.bytes` gives the number of bytes of the file.
 
 ### `unrelease <label>`
 

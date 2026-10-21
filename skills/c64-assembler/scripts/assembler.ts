@@ -4,11 +4,10 @@
 import { BUILD_DIRECTORY, type BuildKind, buildName, CONFIG_FILE, configValues, symbolsPath } from "#src/build-name.ts";
 import { formatC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
-import { readImage } from "#src/host-client/image.ts";
 import { readSourceTree, writeReported } from "#src/host-client/transfer.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { requireProgram } from "#src/knowledge/program.ts";
+import { releaseImage, requireProgram } from "#src/knowledge/program.ts";
 import { listSwitches, releaseLabeled } from "#src/knowledge/read.ts";
 import { LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { assemble, showSymbol, symbolsFileText } from "#src/native/acme.ts";
@@ -77,7 +76,7 @@ await runScript({
               const release = releaseLabeled(db, label, call.space);
               if (release === undefined) throw new Refusal("not-found", `There is no release ${label} in the knowledge. Record the release in the project knowledge first, or give the label of a recorded release.`);
               releaseDefine = { [`${RELEASE_DEFINE}${label}`]: 1 };
-              if (call.flag("compare")) program = release.base ? requireProgram(db, call.space) : readImage(release.file);
+              if (call.flag("compare")) program = releaseImage(db, label, call.space);
             }
           } finally {
             db?.close();

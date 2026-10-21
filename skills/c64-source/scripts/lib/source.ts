@@ -96,7 +96,6 @@ export interface SourceSwitch {
 /** A release: the build with RELEASE_<label> gives each switch the value of this release. */
 export interface SourceRelease {
   label: string;
-  file: string;
   base: boolean;
   comment?: string;
 }
@@ -989,7 +988,7 @@ function switchesText(layout: Layout): string {
     "; then each switch has the value of that release, and the build does not read config.asm.",
   ];
   for (const release of layout.releases) {
-    out.push("", `; ${release.label}${release.base ? " (the program of the knowledge)" : ""}: ${release.file}${release.comment === undefined ? "" : `. ${release.comment.replace(/\s*\r?\n\s*/g, " ")}`}`);
+    out.push("", `; ${release.label}${release.base ? " (the program of the knowledge)" : ""}${release.comment === undefined ? "" : `: ${release.comment.replace(/\s*\r?\n\s*/g, " ")}`}`);
     out.push(`!ifdef ${RELEASE_DEFINE}${release.label} {`);
     for (const row of layout.switches) out.push(`${INDENT}${row.name} = ${row.releases.includes(release.label) ? 1 : 0}`);
     if (layout.leftovers.length > 0) out.push(`${INDENT}${LEFTOVERS_SWITCH} = 1`);

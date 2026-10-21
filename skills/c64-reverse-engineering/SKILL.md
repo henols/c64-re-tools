@@ -92,7 +92,7 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 5. Run | First, record. Ask the user to play each part that the scope names, in a recording session. Tell the user which parts. Record a part yourself only when the sessions of the user do not have it. Put the recordings in `tests/recordings/`. Then run the parts that a recording cannot have, in the emulator or as test runs. Write a coverage map for each part into `.c64-re-tools/local/`. Add the maps and the `coverage.bin` of each recording to the project knowledge. | The program in the project knowledge has a coverage map for each part that the scope names. |
 | 6. Analyze | Analyze the program statically. The analysis reads the program and the coverage from the project knowledge. | No coverage conflict is open. |
 | 7. Name | If the workspace has a routine library, match the program against it. Write the names of the matches to the project knowledge. Then name each routine in the scope and give it a comment. Find the platform addresses in the memory map of the C64. Record the modules. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
-| 8. Releases and switches | For a capture, copy its folder to `original/<label>/` first, because git ignores `.c64-re-tools/local/`. Record the original file as the base release in the project knowledge. Record each other release. Compare the releases. Find the leftovers. Record a switch for each copy protection, trainer, cheat, crack change and correction. Record a patch for each range of a switch. Record each leftover as a region with a comment. | The project knowledge lists each switch. Each difference between the releases is in a patch, or the answer gives it as an exception. |
+| 8. Releases and switches | Record the original file, or the capture of it, as the base release in the project knowledge. The project knowledge keeps the bytes of each release. Record each other release. Compare the releases. Find the leftovers. Record a switch for each copy protection, trainer, cheat, crack change and correction. Record a patch for each range of a switch. Record each leftover as a region with a comment. | The project knowledge lists each switch. Each difference between the releases is in a patch, or the answer gives it as an exception. |
 | 9. Generate | Generate the source from the project knowledge into `src`. For an unpacked program, also generate the loader. | The result of the generation is PASS. Each release with the result `layout differs` is a version with a project of its own, or an exception in the answer. See "Versions of one program". |
 | 10. Build and test | Build the base release into `build/`, and compare it with the original. Build the default build. Run the test scenarios in `tests/`. Replay each recording on the rebuild. For each replay, give the checkpoint routine, the state and the random state with the names of stage 7. | The criteria of stage 1 are true. |
 | 11. Document | When the criteria ask for documentation, generate it into `README.md` and `docs/`. For versions in a group folder, also write the shared pages of the group folder. Then link the pages. | The link check of the documentation gives PASS. |
@@ -105,7 +105,7 @@ After stage 7, save each routine that other programs can have to the routine lib
 ### Deliverables of a full rebuild
 
 - `.c64-re-tools/knowledge/` with the program, its entry state, the coverage, the names, the regions, the comments, the modules, the releases, the switches and the patches
-- the file of each release in `original/`
+- the files of the program in `original/`, as the user gave them
 - the generated source
 - the built program and the loader
 - the test scenarios
@@ -142,7 +142,7 @@ tools/         scripts for the formats of this program only
 README.md      the entry page of the documentation
 ```
 
-Commit each folder of the layout other than `build/`, and `.c64-re-tools/knowledge/`. The knowledge holds the program, the entry state and the coverage, so the project needs no other folder for them. Put all other files that you make in `.c64-re-tools/local/`, also the captures and the coverage maps after you put them into the knowledge. Do not let git ignore a folder of the layout other than `build/`. Do not change the `.gitignore` files of the project.
+Commit each folder of the layout other than `build/`, and `.c64-re-tools/knowledge/`. The knowledge holds the program, the entry state, the bytes of each release and the coverage, so the project needs no other folder for them. Put all other files that you make in `.c64-re-tools/local/`, also the captures and the coverage maps after you put them into the knowledge. Do not let git ignore a folder of the layout other than `build/`. Do not change the `.gitignore` files of the project.
 
 If the project has a layout, use that layout.
 

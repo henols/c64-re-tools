@@ -56,7 +56,8 @@ function fullProject(): { folder: string; db: DatabaseSync } {
     { op: "reference", from: 0x8000, to: 0x80c0, kind: "call" },
     { op: "module", start: 0x8000, file: "main_loop.asm", title: "Main loop" },
   ]);
-  setRelease(db, { origin: "user" }, { label: "ORIGINAL", file: "original/game.prg", sha256: "b".repeat(64), base: true, comment: "The first release." });
+  setRelease(db, { origin: "user" }, { label: "ORIGINAL", base: true, comment: "The first release." });
+  setRelease(db, { origin: "user" }, { label: "CRACKED", rows: new Map([[0x8079, "a900"]]) });
   setSwitch(db, { origin: "user", image }, { name: "CRACK", kind: "crack", comment: "The crack skips the check." });
   applyBatch(db, { origin: "user", image }, [
     { op: "operand", address: 0x8079, select: "lo", symbol: "irq_handler" },

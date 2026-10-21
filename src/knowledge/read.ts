@@ -114,12 +114,10 @@ export interface SwitchRow {
   revision: string;
 }
 
-/** A release of the program: its project file with the SHA-256, and whether its bytes are the program of the knowledge. */
+/** A release of the program, and whether its bytes are the program of the knowledge. The bytes of another release are in release_memory. */
 export interface ReleaseRow {
   space: Space;
   label: string;
-  file: string;
-  sha256: string;
   base: boolean;
   comment?: string;
   origin: Extract<Origin, "user" | "llm">;
@@ -201,7 +199,7 @@ export const MODULE_COLUMNS = "space, start_address, file, title, origin, valid_
 export const OPERAND_COLUMNS = "space, address, selector, symbol, offset, expression, origin, valid_from_revision";
 export const PATCH_COLUMNS = "space, start_address, end_address, switch_name, code, comment, origin, valid_from_revision";
 export const SWITCH_COLUMNS = "space, name, kind, default_value, releases, comment, origin, valid_from_revision";
-export const RELEASE_COLUMNS = "space, label, file, sha256, base, comment, origin, valid_from_revision";
+export const RELEASE_COLUMNS = "space, label, base, comment, origin, valid_from_revision";
 export const MACRO_COLUMNS = "space, name, params, body, comment, origin, valid_from_revision";
 export const MACRO_USE_COLUMNS = "space, start_address, end_address, macro, args, origin, valid_from_revision";
 export const START_SCREEN_COLUMNS = "space, mode, screen, bitmap, charset, colours, colour, border, background, stage, call_address, colour_ram, comment, origin, valid_from_revision";
@@ -304,8 +302,6 @@ export function toRelease(row: Raw): ReleaseRow {
   const release: ReleaseRow = {
     space: row.space as Space,
     label: row.label as string,
-    file: row.file as string,
-    sha256: row.sha256 as string,
     base: row.base === 1,
     origin: row.origin as ReleaseRow["origin"],
     revision: row.valid_from_revision as string,

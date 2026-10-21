@@ -18,15 +18,13 @@ import { BUILD_DIRECTORY, buildName, symbolsPath } from "#src/build-name.ts";
 import { type AddressRange, coverageSeedKinds, findHandoffs, formatC64Address, parseC64Address, parseTokenized, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
-import { readImage, type Image } from "#src/host-client/image.ts";
-import { readProjectFile } from "#src/host-client/transfer.ts";
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
 import { writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
-import { analyzedBytes, memoryRows, programCoverage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
+import { analyzedBytes, memoryRows, programCoverage, releaseImage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
 import { ANALYZER_NAME_ORDER, baseValue, currentRevision, currentStartScreen, startScreenRanges, type StartScreenRow, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listReleases, listSpaces, listSwitches, listSymbols, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { subtract, write } from "#src/knowledge/write.ts";
@@ -109,7 +107,8 @@ function readKnowledge(space: Space, analyzerNames = false) {
       operands: listOperands(db, undefined, undefined, space),
       patches: listPatches(db, undefined, undefined, undefined, space),
       switches: listSwitches(db, undefined, space).map((row): SourceSwitch => ({ name: row.name, kind: row.kind, default: row.default, base: baseValue(row, base), releases: row.releases, ...(row.comment === undefined ? {} : { comment: row.comment }) })),
-      releases,
+      // Each release with its bytes: the check builds it and compares the build with them.
+      releases: releases.map((release) => ({ ...release, image: releaseImage(db, release.label, space)! })),
       macros: listMacros(db, undefined, space),
       macroUses: listMacroUses(db, undefined, undefined, undefined, space),
       // The start screen is of the C64 program: the loader shows it.
@@ -480,36 +479,25 @@ async function checkSwitch(row: SourceSwitch, patches: PatchBlock[], files: Arra
   };
 }
 
-/** What the build of a release gives against the bytes of its file. */
+/** What the build of a release gives against the bytes of the release in the knowledge. */
 interface ReleaseCheck {
   label: string;
   base: boolean;
-  file: string;
   define: string;
-  result: "identical" | "different" | "layout differs" | "file changed" | "does not assemble";
+  result: "identical" | "different" | "layout differs" | "does not assemble";
   reason?: string;
   segments?: SegmentCheck[];
   diagnostics?: Diagnostic[];
 }
 
 /**
- * Builds a release with RELEASE_<label> and compares it with its file. A
+ * Builds a release with RELEASE_<label> and compares it with its bytes. A
  * release whose segments are not the segments of the program has moved code,
  * which patches cannot give: it is shown and does not fail the run.
  */
-async function checkRelease(release: ReleaseRow, files: Array<{ name: string; text: string }>, program: ProgramImage): Promise<ReleaseCheck> {
-  const shown = { label: release.label, base: release.base, file: release.file, define: `--define ${RELEASE_DEFINE}${release.label}=1` };
-  let image: Image;
-  try {
-    const bytes = readProjectFile(release.file).bytes;
-    if (createHash("sha256").update(bytes).digest("hex") !== release.sha256) {
-      return { ...shown, result: "file changed", reason: `The SHA-256 of ${release.file} is not the one that the knowledge has. Put back the file, or record the release again in the project knowledge.` };
-    }
-    image = readImage(release.file);
-  } catch (error) {
-    if (!(error instanceof Refusal || error instanceof WireFailure)) throw error;
-    return { ...shown, result: "file changed", reason: error.message };
-  }
+async function checkRelease(release: ReleaseRow & { image: Pick<ProgramImage, "segments" | "byteAt"> }, files: Array<{ name: string; text: string }>, program: ProgramImage): Promise<ReleaseCheck> {
+  const shown = { label: release.label, base: release.base, define: `--define ${RELEASE_DEFINE}${release.label}=1` };
+  const { image } = release;
   if (JSON.stringify(image.segments) !== JSON.stringify(program.segments)) {
     const segments = (list: readonly AddressRange[]) => list.map((segment) => `${formatC64Address(segment.start)}-${formatC64Address(segment.end)}`).join(", ");
     return { ...shown, result: "layout differs", reason: `The release has the segments ${segments(image.segments)}, and the program has ${segments(program.segments)}. Patches change bytes in place; they cannot move code.` };
@@ -856,7 +844,7 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
     operands: knowledge.operands,
     patches: knowledge.patches,
     switches: knowledge.switches,
-    releases: knowledge.releases.map((release) => ({ label: release.label, file: release.file, base: release.base, ...(release.comment === undefined ? {} : { comment: release.comment }) })),
+    releases: knowledge.releases.map((release) => ({ label: release.label, base: release.base, ...(release.comment === undefined ? {} : { comment: release.comment }) })),
     macros: knowledge.macros,
     macroUses: knowledge.macroUses,
     startScreen: knowledge.startScreen !== undefined && options.exported !== true,

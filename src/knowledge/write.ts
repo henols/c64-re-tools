@@ -78,7 +78,7 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName } from "./text.ts";
 
 /** What a change rests on: a coverage run, a test or another project file with its SHA-256, or a note. */
@@ -281,8 +281,15 @@ export class Change {
 
   insertRelease(row: Omit<ReleaseRow, "revision">): void {
     this.#db
-      .prepare("INSERT INTO releases (id, space, label, file, sha256, base, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.label, row.file, row.sha256, row.base ? 1 : 0, row.comment ?? null, row.origin, this.id());
+      .prepare("INSERT INTO releases (id, space, label, base, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.label, row.base ? 1 : 0, row.comment ?? null, row.origin, this.id());
+  }
+
+  /** Bytes of a release other than the base release, as a memory row of the program holds them. */
+  insertReleaseMemory(row: { space: Space; label: string; address: number; bytes: string; origin: Origin }): void {
+    this.#db
+      .prepare("INSERT INTO release_memory (id, space, label, address, bytes, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.label, row.address, row.bytes, row.origin, this.id());
   }
 
   insertStartScreen(row: Omit<StartScreenRow, "revision">): void {
@@ -1020,16 +1027,23 @@ function unswitchStep(db: DatabaseSync, change: Change, _origin: Origin, request
   return { current: null };
 }
 
-/** A release: `file` is a project path and `sha256` the hash of its bytes, both from the caller. */
-type ReleaseRequest = InSpace & { label: string; file: string; sha256: string; base?: boolean; comment?: string };
+/**
+ * A release. `rows` are the bytes of a release other than the base release,
+ * as memoryRows gives them: the address of each row and its bytes as hex. The
+ * base release has no bytes of its own: its bytes are the program.
+ */
+type ReleaseRequest = InSpace & { label: string; base?: boolean; comment?: string; rows?: ReadonlyMap<number, string> };
 
 function checkRelease(request: ReleaseRequest): void {
   checkSpace(request);
   if (typeof request.label !== "string" || !RELEASE_LABEL.test(request.label)) {
     throw new Refusal("invalid-input", "A release label is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example ORIGINAL or FIRESTAR.");
   }
-  if (typeof request.file !== "string" || request.file.trim().length === 0 || request.file.length > MAX_EVIDENCE_REF) throw new Refusal("invalid-input", `The file of a release has 1 to ${MAX_EVIDENCE_REF} characters.`);
-  if (!/^[0-9a-f]{64}$/.test(request.sha256)) throw new Refusal("invalid-input", "The sha256 of a release is 64 lowercase hex digits.");
+  for (const [address, bytes] of request.rows ?? []) {
+    if (!Number.isInteger(address) || address < 0 || address > 0xffff || !/^(?:[0-9a-f]{2})+$/.test(bytes) || bytes.length > MEMORY_ROW * 2 || address + bytes.length / 2 > 0x10000) {
+      throw new Refusal("invalid-input", `The bytes of a release at ${formatC64Address(address & 0xffff)} are not a memory row.`);
+    }
+  }
   checkCommentText(request.comment, "A release comment");
 }
 
@@ -1038,7 +1052,12 @@ function releaseStep(db: DatabaseSync, change: Change, origin: Origin, request: 
   const existing = releaseLabeled(db, request.label, space);
   const base = request.base ?? existing?.base ?? false;
   const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
-  if (existing !== undefined && existing.file === request.file && existing.sha256 === request.sha256 && existing.base === base && existing.comment === comment && !confirms(existing.origin, origin)) return { current: existing };
+  const held = db.prepare("SELECT id, address, bytes FROM current_release_memory WHERE space = ? AND label = ?").all(space, request.label) as Array<{ id: string; address: number; bytes: string }>;
+  // A release without new bytes keeps its bytes. The base release has none: its bytes are the program.
+  const wanted = base ? new Map<number, string>() : (request.rows ?? new Map(held.map((row) => [row.address, row.bytes])));
+  if (!base && wanted.size === 0) throw new Refusal("invalid-input", `The release ${request.label} has no bytes. Give the file of the release.`);
+  const sameBytes = held.length === wanted.size && held.every((row) => wanted.get(row.address) === row.bytes);
+  if (existing !== undefined && existing.base === base && existing.comment === comment && sameBytes && !confirms(existing.origin, origin)) return { current: existing };
   const other = baseLabel(db, space);
   if (base && other !== undefined && other !== request.label) throw new Refusal("conflict", `The release ${other} is the base release. A space has one base release.`);
   // Every switch takes its base value from the base release: it cannot change under them.
@@ -1048,8 +1067,17 @@ function releaseStep(db: DatabaseSync, change: Change, origin: Origin, request: 
   }
   const symbol = symbolNamed(db, `${RELEASE_DEFINE}${request.label}`, space);
   if (symbol !== undefined) throw new Refusal("conflict", `The build of the release defines ${RELEASE_DEFINE}${request.label}, and that is the name of the symbol at ${formatC64Address(symbol.address)}. Give the release another label.`);
-  if (existing !== undefined) change.close("releases", "space = ? AND label = ?", space, request.label);
-  change.insertRelease({ space, label: request.label, file: request.file, sha256: request.sha256, base, ...(comment === undefined ? {} : { comment }), origin: origin as ReleaseRow["origin"] });
+  if (existing === undefined || existing.base !== base || existing.comment !== comment || confirms(existing.origin, origin)) {
+    if (existing !== undefined) change.close("releases", "space = ? AND label = ?", space, request.label);
+    change.insertRelease({ space, label: request.label, base, ...(comment === undefined ? {} : { comment }), origin: origin as ReleaseRow["origin"] });
+  }
+  // Only the rows that changed: a changed byte changes one short line of the text.
+  const kept = new Set<number>();
+  for (const row of held) {
+    if (wanted.get(row.address) === row.bytes) kept.add(row.address);
+    else change.close("release_memory", "id = ?", row.id);
+  }
+  for (const [address, bytes] of [...wanted].sort(([a], [b]) => a - b)) if (!kept.has(address)) change.insertReleaseMemory({ space, label: request.label, address, bytes, origin });
   const current = releaseLabeled(db, request.label, space)!;
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
@@ -1064,6 +1092,7 @@ function unreleaseStep(db: DatabaseSync, change: Change, _origin: Origin, reques
     throw new Refusal("conflict", `The release ${request.label} ${why} the switches ${switches.map((row) => row.name).join(", ")}. Change or remove them first (switch, unswitch).`);
   }
   change.close("releases", "space = ? AND label = ?", space, request.label);
+  change.close("release_memory", "space = ? AND label = ?", space, request.label);
   return { current: null };
 }
 
@@ -1415,7 +1444,7 @@ export function removeSwitch(db: DatabaseSync, context: WriteContext, request: I
   return result(write(db, context, "remove-switch", (change) => unswitchStep(db, change, context.origin, request)));
 }
 
-/** Writes a release of the program: its project file and the SHA-256 of it. The caller checks the file. */
+/** Writes a release of the program and its bytes. The caller reads the bytes from the file of the release, and checks the file of the base release. */
 export function setRelease(db: DatabaseSync, context: WriteContext, request: ReleaseRequest): WriteResult<ReleaseRow, ReleaseRow> {
   checkRelease(request);
   return result(write(db, context, "set-release", (change) => releaseStep(db, change, context.origin, request)));
@@ -1606,6 +1635,7 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
 /** The tables of the program and the columns that make a row. */
 const PROGRAM_TABLES = [
   ["memory", "space, address, bytes, origin"],
+  ["release_memory", "space, label, address, bytes, origin"],
   ["entries", "space, address, state, stages, origin"],
   ["coverage", "space, kind, start_address, end_address, origin"],
 ] as const;
@@ -1635,7 +1665,7 @@ const KEYS = {
   releases: {
     columns: RELEASE_COLUMNS,
     map: toRelease,
-    key: (row: ReleaseRow) => `${row.space}|${row.label}|${row.file}|${row.sha256}|${row.base}|${row.comment ?? ""}|${row.origin}`,
+    key: (row: ReleaseRow) => `${row.space}|${row.label}|${row.base}|${row.comment ?? ""}|${row.origin}`,
   },
   start_screens: {
     columns: START_SCREEN_COLUMNS,
@@ -1736,6 +1766,7 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         if (nowKeys.has(key(row))) continue;
         const values = row as never;
         if (table === "memory") change.insertMemory(values);
+        else if (table === "release_memory") change.insertReleaseMemory(values);
         else if (table === "entries") change.insertEntry(values);
         else change.insertCoverage({ ...(values as { space: Space; kind: string; origin: Origin }), start: row.start_address as number, end: row.end_address as number });
       }

@@ -127,7 +127,7 @@ To make the source better, change the project knowledge. Then generate again.
 - The entry is in no segment of the program.
 - A patch is in `patchesNotWritten`.
 - A switch or the default build does not fit.
-- A release does not give its file. A release with `layout differs` does not give `FAIL`. But the base release must be `identical`.
+- A release does not give its bytes. A release with `layout differs` does not give `FAIL`. But the base release must be `identical`.
 - The loader is not verified.
 
 `hint` gives the action for each finding. When a change of the project knowledge corrects a finding, `nextAction` is the same `generate` command. Run it after the change. A `PASS` without findings gives a `hint` and no `nextAction`.
@@ -200,7 +200,7 @@ A leftover is a range of the program that nothing uses: unused code, old copies 
 - Each range of leftovers is a file `leftover_xxxx.asm`. When a range cuts a module, the module continues after the range in `<module>_xxxx.asm`. The module in the knowledge does not change.
 - `main.asm` builds a leftover file only when `LEFTOVERS` is 1. When it is 0, the build skips the bytes. Thus the addresses after the range do not change.
 - `config.asm` has `LEFTOVERS = 0`. Thus the default build is the clean program, without the leftovers.
-- Each release has `LEFTOVERS = 1`. Thus the build of a release gives the bytes of its file.
+- Each release has `LEFTOVERS = 1`. Thus the build of a release gives the bytes of the release.
 - The loader program never has the leftovers. The loader does not copy them, and the memory there keeps the bytes that were in it before.
 - Without coverage, no range is a leftover. Put the coverage of the runs into the project knowledge. Then generate again.
 - When `leftovers.changed` has ranges, the default build and the loader program now leave out other bytes. A test that observes the `added` bytes on the loader program gets other values there. Fill the `added` ranges in the test of the leftovers. In a test that compares them, exclude them with the reason that they are leftovers.
@@ -215,7 +215,7 @@ The command does these checks. They use the defaults and the values of the knowl
 1. `check`: the build of the base release must give the program byte by byte. In this build, each switch has its base value, and `LEFTOVERS` is 1.
 2. `switches`: each switch alone at its other value. The build must have the same length as the base release. It can change bytes only in the patches of the switch.
 3. `default`: the default build. It must have the same length. It can change bytes only in the patches of the switches in `default.in` and in the leftovers.
-4. `releases`: each release, built with `RELEASE_<label>=1`, against the file of the release.
+4. `releases`: each release, built with `RELEASE_<label>=1`, against the bytes of the release in the project knowledge.
 
 Each item of `switches` has `name`, `kind`, `default`, `base`, `define` and the patches.
 
@@ -227,12 +227,11 @@ Each item of `switches` has `name`, `kind`, `default`, `base`, `define` and the 
 
 `default` has `in`, `result` and `changedBytes`, as in `switches`. When `default` has `overflow` and the message `turn on one of them`, two alternatives are in the default build. Give one of the switches the default of the base release.
 
-Each item of `releases` has `label`, `base`, `file`, `define` and `result`:
+Each item of `releases` has `label`, `base`, `define` and `result`:
 
-- `identical`: the build gives the bytes of the file.
+- `identical`: the build gives the bytes of the release.
 - `different`: the release has bytes that no patch gives. Compare the release with the program. Then record a switch and a patch for each difference.
 - `layout differs`: the release has other segments than the program. Patches cannot move code. This result does not fail the run.
-- `file changed`: the file is not the file that the knowledge recorded. Put back the file, or record the release again in the project knowledge.
 - `does not assemble`: read the ACME diagnostics.
 
 The script writes a patch only when its range is complete items of one file. A patch cannot cut an instruction. Its switch name cannot be a name of the source.

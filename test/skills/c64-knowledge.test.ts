@@ -424,16 +424,17 @@ test("release, switch, patch, macro and use write the source knowledge, and rele
   assert.equal(knowledge(root, "image", "game.prg").json.revision, rev(root, 1));
   assert.match(String((knowledge(root, "switch", "CRACK", "--kind", "crack").json.error as { message: string }).message), /no base release/);
   mkdirSync(join(root, ".c64-re-tools", "local"), { recursive: true });
-  writeFileSync(join(root, ".c64-re-tools", "local", "game.prg"), readFileSync(join(root, "game.prg")));
-  assert.match(String((knowledge(root, "release", "ORIGINAL", "--file", ".c64-re-tools/local/game.prg").json.error as { message: string }).message), /which git ignores/);
   writeFileSync(join(root, "other.prg"), Buffer.from([0x00, 0x81, 0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xa9, 0x01, 0x8d, 0x20, 0xd0]));
   assert.match(String((knowledge(root, "release", "OTHER", "--file", "other.prg", "--base").json.error as { message: string }).message), /The bytes of other\.prg are not the program of the knowledge/);
-  const sha = createHash("sha256").update(readFileSync(join(root, "game.prg"))).digest("hex");
   assert.deepEqual(knowledge(root, "release", "ORIGINAL", "--file", "game.prg", "--base", "--comment", "The first release.").json, {
     revision: rev(root, 2),
-    release: { label: "ORIGINAL", file: "game.prg", sha256: sha, base: true, define: "--define RELEASE_ORIGINAL=1", comment: "The first release.", origin: "llm", revision: rev(root, 2) },
+    release: { label: "ORIGINAL", base: true, define: "--define RELEASE_ORIGINAL=1", comment: "The first release.", origin: "llm", revision: rev(root, 2) },
+    bytes: 11,
   });
-  assert.equal(knowledge(root, "release", "V2", "--file", "other.prg").status, 0);
+  // The knowledge keeps the bytes of the release: its file can be a scratch file that git ignores.
+  writeFileSync(join(root, ".c64-re-tools", "local", "other.prg"), readFileSync(join(root, "other.prg")));
+  assert.equal(knowledge(root, "release", "V2", "--file", ".c64-re-tools/local/other.prg").status, 0);
+  assert.match(readFileSync(join(root, ".c64-re-tools", "knowledge", "release_memory.jsonl"), "utf8"), /"label":"V2","at":"\$8100","bytes":"e6fbd002e6fca9018d20d0"/);
   assert.deepEqual(items<{ label: string }>(knowledge(root, "releases").json.releases).map((row) => row.label), ["ORIGINAL", "V2"], "the base release first");
   assert.equal(knowledge(root, "switch", "CRACK", "--kind", "crack", "--default", "1").status, 2, "a crack switch is off by default");
   assert.equal(knowledge(root, "switch", "CRACK", "--kind", "crack", "--comment", "A white border.").status, 0);

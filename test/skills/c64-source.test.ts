@@ -456,7 +456,7 @@ test("config.asm has START_SCREEN with the default 1 when the knowledge has a st
   const rendered = render(layout(input([0xea], 0x1000, { startScreen: true })), new Set(), []);
   assert.match(textOf(rendered, "config.asm"), /\n; Start screen: on by default\nSTART_SCREEN = 1 ; the loader shows the start screen/);
   // A release is the bytes of its file: its build has no start screen.
-  const release = render(layout(input([0xea], 0x1000, { startScreen: true, releases: [{ label: "ORIGINAL", file: "original.prg", base: true }] })), new Set(), []);
+  const release = render(layout(input([0xea], 0x1000, { startScreen: true, releases: [{ label: "ORIGINAL", base: true }] })), new Set(), []);
   assert.match(textOf(release, "switches.asm"), /!ifdef RELEASE_ORIGINAL \{\n {8}START_SCREEN = 0\n\}/);
   assert.equal(rendered.files.some((file) => file.name === "switches.asm"), false, "without releases there is no switches.asm");
   assert.deepEqual([...configValues(configText({ switches: [], patches: new Map(), startScreen: true, leftovers: [] }, new Map([["START_SCREEN", 0]])))], [["START_SCREEN", 0]]);
@@ -1055,7 +1055,7 @@ async function assembleRendered(rendered: ReturnType<typeof render>, defines: Re
 }
 
 test("a range of leftovers is a file of its own that only LEFTOVERS = 1 builds; the module that it cuts goes on in a file of its own", () => {
-  const source = patchInput([], { modules: [{ start: 0x1000, file: "game.asm", title: "The game" }], leftovers: [{ start: 0x1008, end: 0x100b }], releases: [{ label: "ORIGINAL", file: "original.prg", base: true }] });
+  const source = patchInput([], { modules: [{ start: 0x1000, file: "game.asm", title: "The game" }], leftovers: [{ start: 0x1008, end: 0x100b }], releases: [{ label: "ORIGINAL", base: true }] });
   const laid = layout(source);
   assert.deepEqual(laid.pieces.map((piece) => [piece.file, piece.start, piece.end, piece.leftover]), [["game.asm", 0x1000, 0x1007, false], ["leftover_1008.asm", 0x1008, 0x100b, true], ["game_100c.asm", 0x100c, 0x1013, false]]);
   assert.equal(laid.pieces[2]!.title, "The game, from $100c");
@@ -1237,9 +1237,9 @@ function releaseInput(): SourceInput {
         { name: "PROTECTION", kind: "protection", default: 0, base: 1, releases: ["ORIGINAL", "V2"], comment: "The check." },
       ],
       releases: [
-        { label: "V3", file: "original/v3.prg", base: false },
-        { label: "ORIGINAL", file: "original/game.prg", base: true, comment: "The first release." },
-        { label: "V2", file: "original/v2.prg", base: false },
+        { label: "V3", base: false },
+        { label: "ORIGINAL", base: true, comment: "The first release." },
+        { label: "V2", base: false },
       ],
     },
   );
@@ -1274,21 +1274,21 @@ test("config.asm has the value of every switch by kind, switches.asm each releas
       "; Build a release with -DRELEASE_<label>=1 (the build option --release <label>):",
       "; then each switch has the value of that release, and the build does not read config.asm.",
       "",
-      "; ORIGINAL (the program of the knowledge): original/game.prg. The first release.",
+      "; ORIGINAL (the program of the knowledge): The first release.",
       "!ifdef RELEASE_ORIGINAL {",
       "        FIX_A = 0",
       "        FIX_B = 0",
       "        PROTECTION = 1",
       "}",
       "",
-      "; V2: original/v2.prg",
+      "; V2",
       "!ifdef RELEASE_V2 {",
       "        FIX_A = 1",
       "        FIX_B = 0",
       "        PROTECTION = 1",
       "}",
       "",
-      "; V3: original/v3.prg",
+      "; V3",
       "!ifdef RELEASE_V3 {",
       "        FIX_A = 0",
       "        FIX_B = 1",
@@ -1342,6 +1342,8 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
   writeFileSync(join(project, "v2.prg"), Uint8Array.from([0x00, 0x10, 0xa9, 0x01, 0x8d, 0x21, 0xd0, 0x4c, 0x00, 0x10]));
   assert.equal(knowledge("release", "ORIGINAL", "--file", "test.prg", "--base").status, 0);
   assert.equal(knowledge("release", "V2", "--file", "v2.prg").status, 0);
+  // The knowledge keeps the bytes of V2: the check does not read its file.
+  rmSync(join(project, "v2.prg"));
   assert.equal(knowledge("switch", "CRACK", "--kind", "crack", "--releases", "V2").status, 0);
   assert.equal(knowledge("switch", "BIG", "--kind", "change", "--default", "0").status, 0);
   assert.equal(knowledge("patch", "$1000-$1004", "CRACK", "--code", "        lda #1\n        sta $d021").status, 0);
@@ -1363,7 +1365,7 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
   assert.equal(json.check.identical, true, "the build of the base release gives the image");
   assert.deepEqual(json.switches.map((item) => [item.name, item.result]), [["BIG", "overflow"], ["CRACK", "fits"]]);
   assert.deepEqual(json.default, { in: [], result: "fits", changedBytes: 0 });
-  assert.deepEqual(json.releases.map((item) => [item.label, item.result]), [["ORIGINAL", "identical"], ["V2", "identical"]], "each release builds to its file");
+  assert.deepEqual(json.releases.map((item) => [item.label, item.result]), [["ORIGINAL", "identical"], ["V2", "identical"]], "each release builds to its bytes");
   assert.deepEqual(json.switches[0]!.overflow, [{ start: "$1005", message: "The patch BIG at $1005 has 4 (0x4) bytes; the range has 3." }]);
   assert.equal(json.switches[1]!.changedBytes, 2);
   assert.equal(knowledge("unpatch", "$1005").status, 0);

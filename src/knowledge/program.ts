@@ -297,3 +297,27 @@ export function operandImages(db: DatabaseSync, platform: ReadonlyMap<string, nu
     return made;
   };
 }
+
+/**
+ * The bytes of a release: the program for the base release, else the bytes
+ * that the knowledge keeps for the release. Undefined when the space has no
+ * release with this label.
+ */
+export function releaseImage(db: DatabaseSync | undefined, label: string, space: Space = DEFAULT_SPACE): Pick<ProgramImage, "segments" | "byteAt"> | undefined {
+  if (db === undefined) return undefined;
+  const release = db.prepare("SELECT base FROM current_releases WHERE space = ? AND label = ?").get(space, label) as { base: number } | undefined;
+  if (release === undefined) return undefined;
+  if (release.base === 1) return programImage(db, space);
+  const rows = db.prepare("SELECT address, bytes FROM current_release_memory WHERE space = ? AND label = ? ORDER BY address").all(space, label) as Array<{ address: number; bytes: string }>;
+  const memory = new Uint8Array(SIZE);
+  const segments: AddressRange[] = [];
+  for (const row of rows) {
+    const bytes = Buffer.from(row.bytes, "hex");
+    memory.set(bytes, row.address);
+    const end = row.address + bytes.length - 1;
+    const last = segments.at(-1);
+    if (last !== undefined && last.end + 1 === row.address) last.end = end;
+    else segments.push({ start: row.address, end });
+  }
+  return { segments, byteAt: (address) => memory[address]! };
+}

@@ -166,12 +166,12 @@ export const TABLES: readonly TableSpec[] = [
       origin,
     ],
   },
-  // The releases of the program: the file of each, and the one whose bytes are the program.
+  // The releases of the program, and the one whose bytes are the program. The bytes of the other releases are in release_memory.jsonl.
   {
     table: "releases",
     file: "releases.jsonl",
     sort: "label",
-    fields: [space, field("label", "label", "text"), field("file", "file", "text"), field("sha256", "sha256", "text"), field("base", "base", "integer"), field("comment", "comment", "text", true), origin],
+    fields: [space, field("label", "label", "text"), field("base", "base", "integer"), field("comment", "comment", "text", true), origin],
   },
   {
     table: "macros",
@@ -209,6 +209,8 @@ export const TABLES: readonly TableSpec[] = [
   },
   // The program itself: its bytes, at most 64 to a row, so a changed byte changes one line.
   { table: "memory", file: "memory.jsonl", sort: "address", fields: [space, field("at", "address", "address"), field("bytes", "bytes", "hex"), origin] },
+  // The bytes of each release other than the base release, as the bytes of the program.
+  { table: "release_memory", file: "release_memory.jsonl", sort: "address", fields: [space, field("label", "label", "text"), field("at", "address", "address"), field("bytes", "bytes", "hex"), origin] },
   // Where the program starts, the machine state there, and the stages of its unpacker.
   {
     table: "entries",

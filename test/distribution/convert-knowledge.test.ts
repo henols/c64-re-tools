@@ -69,7 +69,7 @@ test("a schema 7 knowledge.db becomes knowledge text with the same history", () 
   const root = oldProject();
   const run = convert(root);
   assert.equal(run.status, 0, run.stderr);
-  assert.deepEqual((JSON.parse(run.stdout) as { counts: unknown }).counts, { revisions: 4, symbols: 4, analyzer_names: 0, regions: 1, comments: 1, references: 2, suppressions: 1, modules: 1, operands: 1, patches: 0, switches: 0, releases: 0, macros: 0, macro_uses: 0, start_screens: 0, memory: 0, entries: 0, coverage: 0 });
+  assert.deepEqual((JSON.parse(run.stdout) as { counts: unknown }).counts, { revisions: 4, symbols: 4, analyzer_names: 0, regions: 1, comments: 1, references: 2, suppressions: 1, modules: 1, operands: 1, patches: 0, switches: 0, releases: 0, macros: 0, macro_uses: 0, start_screens: 0, memory: 0, release_memory: 0, entries: 0, coverage: 0 });
   assert.deepEqual(readdirSync(textPath(root)).sort(), [".gitattributes", "comments.jsonl", "modules.jsonl", "operands.jsonl", "references.jsonl", "regions.jsonl", "revisions.jsonl", "suppressions.jsonl", "symbols.jsonl"]);
 
   const db = openForRead(root)!;

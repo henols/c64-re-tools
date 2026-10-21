@@ -30,7 +30,7 @@ To get the command list, run the script with no arguments.
 | Build a generated source with the values of `config.asm` | `build src main.asm` |
 | Build the loader of a generated source | `build src loader.asm` |
 | Check that the rebuild is identical to the program in the project knowledge | `build src main.asm --compare` |
-| Build a release and check it against the file of that release | `build src main.asm --release ORIGINAL --compare` |
+| Build a release and check it against the bytes of that release | `build src main.asm --release ORIGINAL --compare` |
 | Check the rebuild of a program in another space, for example the drive | `build src main.asm --out build/drive.prg --compare --space drive8` |
 | List all symbols, also the constants that the source does not use | `build src main.a --out build/game.prg --all-symbols --max-listed 500` |
 | Write only the bytes of the program, without the load address | `build src main.a --out build/game.bin --plain` |
@@ -100,7 +100,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--include <folder>` | `build` | An include folder: a path relative to the source root, inside the project folder. Give the flag again for each folder. The default is no include folder. |
 | `--define NAME=VALUE` | `build` | An assembler symbol: an integer, also `$` and hex digits, or `true` or `false`. Give the flag again for each symbol. Do not use it for a switch. |
 | `--set-pc <address>` | `build` | The start address when the source does not set one, for example `'$0801'`. |
-| `--release <label>` | `build` | Build a release of the project knowledge. Each switch gets the value of that release. With `--compare`, the reference is the file of the release. |
+| `--release <label>` | `build` | Build a release of the project knowledge. Each switch gets the value of that release. With `--compare`, the reference is the bytes of the release in the project knowledge. |
 | `--compare` | `build` | Compare the program byte by byte with the program in the project knowledge, or with the file of `--release`, segment by segment. Off by default. |
 | `--space <space>` | `build` | The space of the program in the project knowledge: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. The default is `c64`. Give it only with `--compare` or `--release`. |
 | `--plain` | `build` | Write only the bytes of the program, without the 2-byte load address. Off by default. |
