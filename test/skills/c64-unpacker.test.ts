@@ -104,7 +104,7 @@ test("inspect, trace, stages and capture take a PRG: a disk image and a file pas
   writeFileSync(join(project, "raster.json"), JSON.stringify([{ frames: 10 }, { runUntil: { target: { kind: "raster", line: 100 }, timeoutFrames: 10 } }]));
   assert.equal(refused("stages", "packed.prg", "--steps", "raster.json"), "--steps raster.json: step 2: stages takes a runUntil step only with an address target without a condition. Use frames steps, or use capture.");
   writeFileSync(join(project, "parts.json"), JSON.stringify([{ wait: 10 }, { capture: "a" }]));
-  assert.equal(refused("loads", "game.d64", "--steps", "parts.json", "--out", "parts"), "--steps parts.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil, capture");
+  assert.equal(refused("loads", "game.d64", "--steps", "parts.json", "--out", "parts"), "--steps parts.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil, capture, save");
   writeFileSync(join(project, "part.json"), JSON.stringify([{ capture: "a" }]));
   assert.equal(refused("loads", "game.d64", "--steps", "part.json", "--out", "parts", "--exclude", "$a9ff-$a000"), "--exclude ends at $a000, before its start $a9ff");
 });

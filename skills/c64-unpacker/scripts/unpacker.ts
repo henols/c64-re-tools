@@ -642,7 +642,9 @@ function loaded(call: Call, { output, failed }: { output: Record<string, unknown
   if (failed) return result;
   const out = call.string("out")!;
   const drive = call.flag("drive") ? ` Put the drive RAM ${out}/<name>/drive8.prg into the project knowledge in the space drive8.` : "";
-  return reply(result, { hint: `Put the capture ${out}/<name>/image.json of the part that you work on into the project knowledge.${drive}` });
+  const captures = (output.captures as unknown[]).length === 0 ? "" : `Put the capture ${out}/<name>/image.json of the part that you work on into the project knowledge.${drive}`;
+  const saved = output.saved === undefined ? "" : `A run of the program can start from a snapshot file ${out}/<name>.vsf.`;
+  return reply(result, { hint: [captures, saved].filter((text) => text !== "").join(" ") });
 }
 
 const COMMANDS: CommandSpec[] = [
@@ -702,10 +704,10 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "loads",
-    summary: "Runs a multi-load program with the steps file. Each capture step {\"capture\": \"<name>\"} writes <dir>/<name>/ with image.bin, image.json, entry_state.json and a PRG for each block that the C64 side changed since the previous capture.",
+    summary: "Runs a multi-load program with the steps file. Each capture step {\"capture\": \"<name>\"} writes <dir>/<name>/ with image.bin, image.json, entry_state.json and a PRG for each block that the C64 side changed since the previous capture. Each save step {\"save\": \"<name>\"} writes the machine state to <dir>/<name>.vsf.",
     subjects: [{ name: "<program>", help: "a PRG, or a disk, tape or cartridge image, relative to the project folder" }],
     options: {
-      steps: { ...STEPS, required: true, help: "action steps and capture steps (JSON)" },
+      steps: { ...STEPS, required: true, help: "action steps, capture steps and save steps (JSON)" },
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the captures, relative to the project folder" },
       drive: { kind: "flag", help: "also write the 2 KiB drive RAM as drive8.prg, for knowledge space drive8" },
       "min-block": { kind: "count", value: "<bytes>", min: 1, max: 0x10000, default: 64, help: "write a changed block of at least this many bytes (default 64)" },

@@ -25,7 +25,11 @@ const steps = (value: unknown) => {
 
 test("a steps file of loads has action steps and capture steps with new names", () => {
   assert.equal(steps([{ runUntil: { target: { kind: "address", address: "$c000" }, timeoutFrames: 100 } }, { capture: "level1" }, { type: { mode: "text", text: " " } }, { capture: "level2" }])().length, 4);
-  assert.throws(steps([{ frames: 10 }]), /no capture step/);
+  assert.throws(steps([{ frames: 10 }]), /no capture step and no save step/);
+  assert.equal(steps([{ frames: 10 }, { save: "at-call" }])().length, 2, "a save step alone is enough");
+  assert.throws(steps([{ save: "a" }, { save: "a" }]), /the save name a is used before/);
+  assert.throws(steps([{ save: "a", frames: 1 }]), /only save/);
+  assert.throws(steps([{ save: "../a" }]), /save needs a name/);
   assert.throws(steps([{ capture: "a" }, { capture: "a" }]), /used before/);
   assert.throws(steps([{ capture: "a/b" }]), /capture needs a name/);
   assert.throws(steps([{ capture: "a", frames: 1 }]), /only capture/);

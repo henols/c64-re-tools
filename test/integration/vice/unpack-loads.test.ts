@@ -39,7 +39,7 @@ const main = Uint8Array.from([
 /** At $c000: LDA #$2A; STA $C100; JMP to itself at $C005. */
 const part = Uint8Array.from([0x00, 0xc0, 0xa9, 0x2a, 0x8d, 0x00, 0xc1, 0x4c, 0x05, 0xc0]);
 
-test("each capture step writes what the C64 changed since the capture before, and the drive RAM", { skip: liveSkip, timeout: 300_000 }, async () => {
+test("each capture step writes what the C64 changed since the capture before, and the drive RAM; a save step writes a snapshot file", { skip: liveSkip, timeout: 300_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
   server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
@@ -50,6 +50,7 @@ test("each capture step writes what the C64 changed since the capture before, an
       { runUntil: { target: { kind: "address", address: "$080d" }, timeoutFrames: 6000 } },
       { capture: "main" },
       { runUntil: { target: { kind: "address", address: "$c005" }, timeoutFrames: 6000 } },
+      { save: "at-part" },
       { capture: "part" },
     ]),
   );
@@ -80,6 +81,9 @@ test("each capture step writes what the C64 changed since the capture before, an
   assert.equal(drive.length, 2 + 0x800);
   assert.equal(drive.readUInt16LE(0), 0x0000);
   assert.ok(existsSync(join(project, "parts", "part", "entry_state.json")));
+  // The save step: a snapshot file at the part, which a run can start from.
+  assert.deepEqual((json as unknown as { saved: Array<{ save: string; pc: string }> }).saved.map((item) => [item.save, item.pc]), [["at-part", "$c005"]]);
+  assert.equal(readFileSync(join(project, "parts", "at-part.vsf")).subarray(0, 18).toString("latin1"), "VICE Snapshot File");
 });
 
 test("loads that capture no segment give loaded false, and a capture at READY. tells the key wait", { skip: liveSkip, timeout: 300_000 }, async () => {

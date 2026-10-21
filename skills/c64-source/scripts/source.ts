@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { basename, dirname, join, relative, sep } from "node:path";
 
 import { isRefusal, Refusal } from "#src/errors.ts";
-import { type AddressRange, coverageSeedKinds, findHandoffs, formatC64Address, parseTokenized, textToPetscii } from "#src/c64.ts";
+import { type AddressRange, coverageSeedKinds, findHandoffs, formatC64Address, parseC64Address, parseTokenized, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
 import { readImage, type Image } from "#src/host-client/image.ts";
@@ -735,6 +735,31 @@ function staleLoader(out: string, revision: string): { files: string[]; revision
   return { files, ...(old === undefined ? {} : { revision: old }) };
 }
 
+/** The line of a leftover file that gives its range. */
+const LEFTOVER_RANGE = /^; Leftovers (\$[0-9a-f]{4})-(\$[0-9a-f]{4}):/m;
+
+/**
+ * The leftovers of the earlier run: the ranges of its generated leftover
+ * files in `out`. Undefined when `out` has no generated main.asm, so there
+ * was no earlier run to compare with.
+ */
+function earlierLeftovers(out: string): AddressRange[] | undefined {
+  const directory = resolveProjectPath(out);
+  const main = join(directory, "main.asm");
+  if (!existsSync(main) || !readFileSync(main, "utf8").startsWith(GENERATED_MARK)) return undefined;
+  return readdirSync(directory)
+    .filter((name) => /^leftover_[0-9a-f]{4}\.asm$/.test(name))
+    .flatMap((name) => {
+      const found = LEFTOVER_RANGE.exec(readFileSync(join(directory, name), "utf8"));
+      return found === null ? [] : [{ start: parseC64Address(found[1]!), end: parseC64Address(found[2]!) }];
+    });
+}
+
+/** The bytes of `ranges` that are not in `others`, as ranges in address order. */
+function outside(ranges: readonly AddressRange[], others: readonly AddressRange[]): AddressRange[] {
+  return [...ranges].sort((a, b) => a.start - b.start).flatMap((range) => subtract(range, [...others]));
+}
+
 /**
  * Removes the generated .asm files of an earlier run that this run does not
  * write, and an earlier not_executed.json and source-map.json. An earlier
@@ -1104,6 +1129,8 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const configured = [...laid.switches, ...(laid.startScreen ? [{ name: START_SCREEN_SWITCH, default: 1 }] : []), ...(laid.leftovers.length > 0 ? [{ name: LEFTOVERS_SWITCH, default: 0 }] : [])];
   const kept = new Map(configured.flatMap((row) => (given.has(row.name) ? [[row.name, given.get(row.name)!] as const] : [])));
   const notDefault = configured.flatMap((row) => (kept.has(row.name) && kept.get(row.name) !== row.default ? [{ name: row.name, value: kept.get(row.name)!, default: row.default }] : []));
+  // Read before the old files go: the leftovers of the earlier run, to tell what changed.
+  const earlier = earlierLeftovers(out);
   const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), loaderWanted).map((name) => `${out}/${name}`);
   const stale = loaderWanted || space !== DEFAULT_SPACE ? undefined : staleLoader(out, knowledge.revision);
   const written: Written[] = withValues(files, laid, kept).map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
@@ -1123,6 +1150,10 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     const all = { revision: knowledge.revision, instructions: rendered.notExecuted.instructions, files, ranges: placed };
     written.push(writeReported(`${out}/${NOT_EXECUTED_FILE}`, `${JSON.stringify(all, null, 2)}\n`, { what: "--out" }));
   }
+  // The leftovers that changed since the earlier run: the default build and the loader now leave out other bytes.
+  const added = earlier === undefined ? [] : outside(laid.leftovers, earlier);
+  const dropped = earlier === undefined ? [] : outside(earlier, laid.leftovers);
+  const changed = added.length + dropped.length === 0 ? undefined : { added: added.map(showRange), removed: dropped.map(showRange) };
 
   const output: Record<string, unknown> = {
     out,
@@ -1158,8 +1189,10 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     ...(laid.leftovers.length === 0
       ? knowledge.coverage === undefined && space === DEFAULT_SPACE
         ? { leftovers: { bytes: 0, noCoverage: "The knowledge has no coverage, so no range is a leftover, and the default build and the loader have every byte of the program." } }
-        : {}
-      : { leftovers: { bytes: laid.leftovers.reduce((sum, range) => sum + range.end - range.start + 1, 0), ...listed(laid.leftovers, max, (range) => ({ ...showRange(range), bytes: range.end - range.start + 1, file: `leftover_${range.start.toString(16).padStart(4, "0")}.asm` })) } }),
+        : changed === undefined
+          ? {}
+          : { leftovers: { bytes: 0, changed } }
+      : { leftovers: { bytes: laid.leftovers.reduce((sum, range) => sum + range.end - range.start + 1, 0), ...listed(laid.leftovers, max, (range) => ({ ...showRange(range), bytes: range.end - range.start + 1, file: `leftover_${range.start.toString(16).padStart(4, "0")}.asm` })), ...(changed === undefined ? {} : { changed }) } }),
     ...(rendered.expressions.length === 0 && rendered.operandsAsNumbers.length === 0 ? {} : { operandExpressions: rendered.expressions.length }),
     ...(rendered.operandsAsNumbers.length === 0
       ? {}

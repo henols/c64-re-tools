@@ -1,8 +1,10 @@
 // The loads command of c64-unpacker: one capture for each part of a
-// multi-load program. The steps file has action steps and capture steps; a
-// capture writes what the C64 side changed since the previous capture as an
-// image with its entry state, and with --drive the drive RAM as a PRG for
-// knowledge space drive8. No tool guesses where a load ends: the steps decide.
+// multi-load program. The steps file has action steps, capture steps and save
+// steps; a capture writes what the C64 side changed since the previous
+// capture as an image with its entry state, and with --drive the drive RAM as
+// a PRG for knowledge space drive8. A save writes the machine state as a
+// snapshot file, which a run can start from. No tool guesses where a load
+// ends: the steps decide.
 
 import { type AddressRange, COVERAGE, formatC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
@@ -17,9 +19,9 @@ import { entryStateFile, json, machineState, readRam, readyState, removeStaleFil
 import { FIRST_SEGMENT_ADDRESS } from "./stages.ts";
 
 
-export type LoadStep = ActionStep | { capture: string };
+export type LoadStep = ActionStep | { capture: string } | { save: string };
 
-/** A capture name: letters, digits, dots, underscores or hyphens. */
+/** A capture or save name: letters, digits, dots, underscores or hyphens. */
 const NAME = /^[A-Za-z0-9._-]{1,64}$/;
 /** The drive RAM of a 1541. */
 const DRIVE_RAM = 0x0800;
@@ -28,7 +30,7 @@ const KERNAL_LOAD = 0xffd5;
 /** The KERNAL loop that waits for a key at READY. or at an INPUT statement. */
 const KERNAL_KEY_WAIT = { start: 0xe5cd, end: 0xe5d5 };
 
-/** Reads and checks the steps file of loads: action steps with $ addresses, and capture steps with new names. */
+/** Reads and checks the steps file of loads: action steps with $ addresses, and capture and save steps with new names. */
 export function readLoadSteps(path: string): LoadStep[] {
   let value: unknown;
   try {
@@ -42,9 +44,17 @@ export function readLoadSteps(path: string): LoadStep[] {
   };
   if (!Array.isArray(value) || value.length === 0) return fail("the steps are a JSON list with at least one step");
   const names = new Set<string>();
+  const saves = new Set<string>();
   value.forEach((step: unknown, index) => {
     const at = `step ${index + 1}`;
     if (!isObject(step)) return fail(`${at} must be an object`);
+    if ("save" in step) {
+      if (Object.keys(step).length !== 1) fail(`${at}: a save step has only save`);
+      if (typeof step.save !== "string" || !NAME.test(step.save)) fail(`${at}: save needs a name of 1 to 64 letters, digits, dots, underscores or hyphens`);
+      if (saves.has(step.save as string)) fail(`${at}: the save name ${step.save as string} is used before`);
+      saves.add(step.save as string);
+      return;
+    }
     if ("capture" in step) {
       if (Object.keys(step).length !== 1) fail(`${at}: a capture step has only capture`);
       if (typeof step.capture !== "string" || !NAME.test(step.capture)) fail(`${at}: capture needs a name of 1 to 64 letters, digits, dots, underscores or hyphens`);
@@ -54,14 +64,14 @@ export function readLoadSteps(path: string): LoadStep[] {
     }
     const kinds = Object.keys(step).filter((key) => (ACTION_STEP_KINDS as readonly string[]).includes(key));
     if (kinds.length > 1) return fail(`${at} has ${kinds.length} step kinds: ${kinds.join(", ")}. Give each one its own step`);
-    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...VICE_STEP_KINDS, "capture"].join(", ")}`);
+    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...VICE_STEP_KINDS, "capture", "save"].join(", ")}`);
     // The step with its defaults filled in, as the shared schema of the action steps gives it.
     const checked = checkActionStep(kinds[0] as ActionStepKind, step, at, fail);
     // Its names resolve now: an unknown name stops the call before the emulator starts.
     checkStepNames([checked], knowledgeAt(), `--steps ${path}`, index + 1);
     (value as unknown[])[index] = checked;
   });
-  if (names.size === 0) fail("the steps have no capture step");
+  if (names.size === 0 && saves.size === 0) fail("the steps have no capture step and no save step");
   return value as LoadStep[];
 }
 
@@ -149,12 +159,23 @@ export async function loads(program: string, options: { out: string; steps: Load
     }
 
     const captures: Array<Record<string, unknown>> = [];
+    const saved: Array<Record<string, unknown>> = [];
     for (const [index, step] of options.steps.entries()) {
+      if ("save" in step) {
+        // The machine state as a snapshot file: a run starts from it, for example at the call of a loading stage.
+        if ((await client.status()).state === "running") await client.execution({ action: "pause", space: "c64" });
+        await client.snapshot({ action: "save", name: "loads-save" });
+        const path = `${options.out}/${step.save}.vsf`;
+        const file = writeReported(path, await client.snapshotExport("loads-save"), { what: "--out" });
+        await client.snapshot({ action: "remove", name: "loads-save" });
+        saved.push({ save: step.save, file, pc: formatC64Address((await client.registersGet("c64")).pc) });
+        continue;
+      }
       if (!("capture" in step)) {
         const notReached = await runActionStep(client, step, knowledgeAt());
         if (notReached !== undefined && "runUntil" in step) {
           const reason = `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.`;
-          return { output: { loaded: false, reason, captures }, failed: true };
+          return { output: { loaded: false, reason, captures, ...(saved.length === 0 ? {} : { saved }) }, failed: true };
         }
         continue;
       }
@@ -226,9 +247,9 @@ export async function loads(program: string, options: { out: string; steps: Load
     if (captures.length > 0 && captures.every((capture) => (capture.segments as unknown[]).length === 0)) {
       const waits = captures.some((capture) => capture.keyWait === true) ? " The C64 waited for a key at READY. or at an INPUT statement, so the load ended or did not start." : "";
       const reason = `No capture has a segment: the program changed no block of RAM from ${formatC64Address(FIRST_SEGMENT_ADDRESS)} on.${waits}`;
-      return { output: { loaded: false, reason, captures }, failed: true };
+      return { output: { loaded: false, reason, captures, ...(saved.length === 0 ? {} : { saved }) }, failed: true };
     }
-    return { output: { loaded: true, captures }, failed: false };
+    return { output: { loaded: true, captures, ...(saved.length === 0 ? {} : { saved }) }, failed: false };
   } finally {
     await client.close();
   }

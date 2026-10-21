@@ -705,6 +705,36 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
   assert.equal(named.status, 2, "the program comes from the knowledge, not from a path");
 });
 
+test("with real Ghidra and ACME, generate tells which leftovers changed since the earlier run", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
+  projects.push(project);
+  // 10 SYS2061, $080d RTS, then 16 bytes that nothing uses. The BASIC line gives the entry, and it stays.
+  const basic = [0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00];
+  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x01, 0x08, ...basic, 0x60, ...Array.from({ length: 16 }, (_, index) => index + 1)]));
+  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
+  const write = (...args: string[]) => assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, ...args], { cwd: project, encoding: "utf8" }).status, 0, args.join(" "));
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x080d] = COVERAGE.ramExecute;
+  writeFileSync(join(project, "run.bin"), coverage);
+  write("image", "test.prg");
+  write("rename", "$080d", "start", "--kind", "routine");
+  write("classify", "$0801-$080c", "bytes");
+  write("classify", "$080e-$081d", "bytes");
+  write("coverage", "run.bin");
+  const generate = () => {
+    const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, encoding: "utf8" });
+    assert.equal(run.status, 0, run.stdout);
+    return (readEnvelope(run.stdout, run.status).json as { leftovers?: { bytes: number; changed?: unknown } }).leftovers;
+  };
+  // The first run has no earlier run to compare with.
+  assert.deepEqual(generate(), { bytes: 16, count: 1, listed: [{ start: "$080e", end: "$081d", bytes: 16, file: "leftover_080e.asm" }] });
+  // A charset stays: the leftovers of the next run lose its bytes.
+  write("classify", "$0816-$081d", "charset");
+  assert.deepEqual(generate()?.changed, { added: [], removed: [{ start: "$0816", end: "$081d" }] });
+  // The same knowledge again: nothing changed.
+  assert.equal(generate()?.changed, undefined);
+});
+
 test("with real Ghidra and ACME, an operand expression that ACME assembles to other bytes is written as its number", { skip: ghidraSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);

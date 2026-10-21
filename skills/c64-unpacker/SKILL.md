@@ -61,6 +61,7 @@ Each step has one of these kinds:
 - `{ "frames": 50 }` runs 1 to 30000 frames.
 - `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 300 } }` runs until the target. The target kinds are `address`, `memory` and `raster`. `timeoutFrames` is 1 to 30000. The default is 3000.
 - `{ "capture": "level1" }` captures a part. Only `loads` takes this step. Give each capture step a different name of 1 to 64 letters, digits, dots, underscores or hyphens.
+- `{ "save": "at-call" }` writes the machine state to `<out>/at-call.vsf`. Only `loads` takes this step. A run of the program can start from this snapshot file, for example at the call of a routine of a loading stage. Give each save step a different name.
 
 An address in a step can be a name. The script refuses an unknown name before the program runs. The message gives the file and the step.
 
@@ -231,6 +232,7 @@ A segment is a block of RAM from `$0400` that the program changed after the capt
 
 - `loaded`: true when a capture has a segment.
 - `captures`: one item for each capture step, with `capture`, `out`, `files`, `removed`, `pc`, `segments`, `excluded`, `differsFromReset`, `smallChanges` and `drive`.
+- `saved`: one item for each save step, with `save`, `file` and `pc`.
   - `smallChanges`: the count of changed bytes in blocks that are smaller than `--min-block`.
   - `keyWait: true`: the CPU was in the KERNAL wait for a key, at READY or at an INPUT statement.
   - `drive`: the name of the drive file, with `--drive`.

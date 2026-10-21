@@ -1402,7 +1402,12 @@ export class ViceSession implements ViceSessionHandle {
         () => true,
         () => false,
       );
-      if (!kept) throw new WireFailure("machine-state-lost", "The emulator did not restore this snapshot file, and the machine state from before the restore is lost. Load the program again.");
+      if (!kept) {
+        throw new WireFailure(
+          "machine-state-lost",
+          "The emulator did not restore this snapshot file, and the machine state from before the restore is lost. A snapshot file restores only in the emulator version and with the machine settings that saved it. Make the snapshot again in this emulator version, and load the program again.",
+        );
+      }
       if (error instanceof WireFailure) throw error;
       throw new WireFailure(
         "invalid-input",

@@ -110,7 +110,7 @@ To make the source better, change the project knowledge. Then generate again.
 - `asBytes`: the instructions that the source has as bytes.
 - `notExecuted`: with coverage, the count of instructions that no run executed, and their ranges. `rest` names `not_executed.json`, which has all the ranges. Each range there has its source `file` and the `routine` before it.
 - `unusedModules`: modules whose start is in no segment of the program. Often the program does not hold the code that the knowledge describes.
-- `leftovers`: the bytes that nothing uses, with `bytes` and each range with its `file`. See "The leftovers". `noCoverage` tells that the knowledge has no coverage, so no range is a leftover.
+- `leftovers`: the bytes that nothing uses, with `bytes` and each range with its `file`. See "The leftovers". `noCoverage` tells that the knowledge has no coverage, so no range is a leftover. `changed` gives the ranges that are `added` to the leftovers and `removed` from them since the earlier run in `--out`.
 - `operandExpressions`: the count of instructions with an operand expression.
 - `operandsAsNumbers`: each operand expression that the source has as a number, with its `address`, `expression` and `reason`.
 - `macroUses`: the count of macro uses in the source.
@@ -202,6 +202,7 @@ A leftover is a range of the program that nothing uses: unused code, old copies 
 - Each release has `LEFTOVERS = 1`. Thus the build of a release gives the bytes of its file.
 - `loader.prg` never has the leftovers. The loader does not copy them, and the memory there keeps the bytes that were in it before.
 - Without coverage, no range is a leftover. Put the coverage of the runs into the project knowledge. Then generate again.
+- When `leftovers.changed` has ranges, the default build and `loader.prg` now leave out other bytes. A test that observes the `added` bytes on `loader.prg` gets other values there. Fill the `added` ranges in the test of the leftovers. In a test that compares them, exclude them with the reason that they are leftovers.
 - A leftover can be wrong when the coverage does not show a use. For example, the VIC-II reads a range, or the program reads a range before it writes it. Then a test of `loader.prg` fails. Record the region in the project knowledge, or put the coverage of more runs into it. Do not change the source.
 
 #### Switches and releases
