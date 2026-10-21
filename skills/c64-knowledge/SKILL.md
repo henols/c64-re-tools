@@ -355,7 +355,7 @@ Errors of this group:
 - Each address has one module, and each file name has one module.
 - A file name has letters, digits, underscores or hyphens, and ends in `.asm`. It can have one folder, for example `music/driver.asm`. A folder name has lower-case letters, digits, underscores or hyphens.
 - Put the modules of one part of the program in one folder, for example `music/`, `irq/` or `graphics/`.
-- The generated source has the files `main.asm`, `loader.asm`, `switches.asm`, `config.asm`, `constants.asm`, `macros.asm` and `start_screen.asm` already. It also has the folders `leftovers/` and `segments/`. Thus a module cannot have one of these files or folders, in upper or lower case.
+- The generated source has the files `main.asm`, `loader.asm`, `switches.asm`, `config.asm`, `constants.asm`, `macros.asm` and `start_screen.asm` already. It also has the folders `leftovers/` and `segments/`. Thus a module cannot have one of these files, also in a folder, or one of these folders, in upper or lower case.
 - Two modules cannot have file names that are different only in upper or lower case.
 - The title becomes the first line of the file.
 - `body.module` gives the module after the write.
@@ -548,7 +548,7 @@ A macro writes a run of instructions as one line of the source, for example `+in
 ### `apply <file>`
 
 - `<file>` is a JSON list of writes. Give `-` to read the list from standard input.
-- `body` holds `revision`, `writes` and `replaced`. Each item of `replaced` has the number of the `write`, its `op` and its `previous`.
+- `body` holds `revision`, `writes` and `replaced`. `replaced` lists each write that replaced a row of a different origin, for example an `llm` write over a `user` row. Each item has the number of the `write`, its `op` and its `previous`. A write over a row of the same origin is not in `replaced`.
 - All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the `error` names the write.
 - Each write has `op` and the fields of the command with the same name. Each write can also have `space`. For example:
 

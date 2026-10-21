@@ -111,10 +111,15 @@ export const SEGMENT_FOLDER = "segments";
 /** The folders that c64-source writes itself: no module file is in them. */
 export const GENERATED_FOLDERS = [LEFTOVER_FOLDER, SEGMENT_FOLDER] as const;
 
-/** True for a generated file name in any letter case: the file systems of macOS and Windows ignore case. */
+/**
+ * True for a generated file name in any letter case (the file systems of macOS
+ * and Windows ignore case), also in a folder: a folder with a generated
+ * main.asm is the source of another space, not a folder of modules.
+ */
 export function isGeneratedFile(file: string): boolean {
   const lower = file.toLowerCase();
-  return (GENERATED_FILES as readonly string[]).includes(lower) || GENERATED_FOLDERS.some((folder) => lower.startsWith(`${folder}/`));
+  const name = lower.slice(lower.lastIndexOf("/") + 1);
+  return (GENERATED_FILES as readonly string[]).includes(name) || GENERATED_FOLDERS.some((folder) => lower.startsWith(`${folder}/`));
 }
 
 /**

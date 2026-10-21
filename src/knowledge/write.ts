@@ -762,7 +762,7 @@ function checkModule(request: ModuleRequest): void {
     throw new Refusal("invalid-input", "A module file is a name of letters, digits, underscores or hyphens (at most 60) that ends in .asm. It can have one folder of lower-case letters, digits, underscores or hyphens (at most 30), for example music/driver.asm.");
   }
   if (isGeneratedFile(request.file)) {
-    throw new Refusal("invalid-input", `A module cannot have the file ${request.file}, because the generated source writes ${GENERATED_FILES.join(", ")} and the folders ${GENERATED_FOLDERS.map((folder) => `${folder}/`).join(", ")} itself, in any letter case. Give the module another file.`);
+    throw new Refusal("invalid-input", `A module cannot have the file ${request.file}, because the generated source writes ${GENERATED_FILES.join(", ")} in any folder, and the folders ${GENERATED_FOLDERS.map((folder) => `${folder}/`).join(", ")} itself, in any letter case. Give the module another file.`);
   }
   if (request.title !== undefined && (request.title.trim().length === 0 || request.title.length > MAX_COMMENT)) throw new Refusal("invalid-input", `A module title has 1 to ${MAX_COMMENT} characters.`);
 }

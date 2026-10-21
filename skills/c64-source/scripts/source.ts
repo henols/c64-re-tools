@@ -767,7 +767,8 @@ function outside(ranges: readonly AddressRange[], others: readonly AddressRange[
  * not_executed.json). An earlier loader.asm stays unless this run has
  * --loader: a source of the user can include loader.asm. The files of a
  * module are in `out` or in one folder of it: a folder that the run leaves
- * empty goes too. Other files stay. Gives the paths it removed.
+ * empty goes too. A folder with a generated main.asm is the source of another
+ * space, and it stays. Other files stay. Gives the paths it removed.
  */
 function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boolean): string[] {
   const removed: string[] = [];
@@ -787,6 +788,8 @@ function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boole
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const name = folder === "" ? entry.name : `${folder}/${entry.name}`;
       if (entry.isDirectory() && folder === "") {
+        const main = join(root, name, "main.asm");
+        if (existsSync(main) && readFileSync(main, "utf8").startsWith(GENERATED_MARK)) continue;
         // A folder of the user that held no generated file stays, also when it is empty.
         if (clean(name) > 0 && readdirSync(join(root, name)).length === 0) rmSync(join(root, name), { recursive: true, force: true });
         continue;
