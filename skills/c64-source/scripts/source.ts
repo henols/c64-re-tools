@@ -43,7 +43,6 @@ import {
   COPIER_SOURCE,
   LOADER_JUMP,
   loaderLimits,
-  packedParts,
   packLoader,
   packParts,
   planLoader,
@@ -853,8 +852,9 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
           config: hasConfigFile(laid),
           macros: laid.macros.length > 0,
           header: options.loaderHeader ?? [],
-          // A start screen of a stage shows before the loader, in the show stage: the copier has none.
+          // A start screen of a stage shows before the loader, in the show stage, while the program is still packed: the copier has none.
           ...(knowledge.startScreen === undefined || knowledge.startScreen.stage !== undefined ? {} : { startScreen: knowledge.startScreen }),
+          ...(knowledge.startScreen?.stage === undefined ? {} : { packed: true }),
         });
       } catch (error) {
         if (!isRefusal(error)) throw error;
@@ -989,14 +989,15 @@ interface BuiltStage {
  * assembles start_screen_stage.asm and packs it with the loader as the loader
  * is in memory before it starts. Refuses by name.
  */
-async function buildStage(files: Array<{ name: string; text: string }>, laid: Layout, loader: LoaderPlan, main: { program: Buffer; start: number }, copierBuild: Buffer, row: StartScreenRow, values: ReadonlyMap<string, number>, header: string[], mark: string): Promise<BuiltStage> {
+async function buildStage(files: Array<{ name: string; text: string }>, laid: Layout, program: PackedLoader, row: StartScreenRow, values: ReadonlyMap<string, number>, header: string[], mark: string): Promise<BuiltStage> {
   const stage = await stageBytes(row);
-  const inner: StagePart[] = loader.packed === undefined ? [{ start: 0x0801, body: copierBuild.subarray(2) }] : packedParts(main.program, copierBuild, loader).map((part) => ({ start: part.start, body: part.body }));
+  // The packed program, as RUN would start it: its unpacker unpacks it over the start screen after the wait.
+  const inner: StagePart[] = [{ start: 0x0801, body: program.program.subarray(2) }];
   const screen = startScreenPlan(row);
   const input: StageInput = {
     inner,
-    innerStart: loader.packed === undefined ? 0x080d : loader.copier,
-    innerPort: loader.packed === undefined ? 0x37 : 0x34,
+    innerStart: 0x080d,
+    innerPort: 0x37,
     stage,
     row,
     plan: screen,
@@ -1191,11 +1192,11 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const { jump, copierSource, expected, startScreen } = loaderBuilt;
   const copierBuild = loaderBuilt.program;
   const fileByte = (address: number) => copierBuild[2 + address - (loader.packed?.start ?? 0x0801)]!;
-  // A start screen of a captured stage: the show stage packs the loader with it, so the packed form is not packed alone.
+  // A start screen of a captured stage: the show stage holds the packed program, as a cracktro holds the game.
   const stageRow = knowledge.startScreen?.stage === undefined ? undefined : knowledge.startScreen;
   // The packed form: Exomizer packs the build of main.asm with the copier. Without Exomizer, or when its check fails, there is no new loader.prg.
   let packed: PackedLoader | undefined;
-  if (loader.packed !== undefined && stageRow === undefined) {
+  if (loader.packed !== undefined) {
     try {
       packed = await packLoader(loaderMain.program, copierBuild, loader, localToolContext());
     } catch (error) {
@@ -1206,7 +1207,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   let stage: BuiltStage | undefined;
   if (stageRow !== undefined) {
     try {
-      stage = await buildStage(files, laid, loader, loaderMain, copierBuild, stageRow, loaderValues, loaderHeader, GENERATED_LINE);
+      stage = await buildStage(files, laid, packed!, stageRow, loaderValues, loaderHeader, GENERATED_LINE);
     } catch (error) {
       if (!isRefusal(error)) throw error;
       return { output: { ...output, loader: notVerified({ reason: `The show stage of the start screen from ${stageRow.stage} cannot be built. ${error.message}` }) }, removed, failed: true };
@@ -1222,7 +1223,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   writeFileSync(resolveProjectPath(checkPath), program);
   // The unpack runs before the copier, or before the show stage, which then starts the loader.
   const unpackFrames = (cycles: number | undefined) => (cycles === undefined ? LOADER_FRAMES : RUN_LIMIT_FRAMES + Math.ceil(cycles / PAL_FRAME_CYCLES));
-  const copierFrames = stage !== undefined || packed === undefined ? RUN_LIMIT_FRAMES : unpackFrames(packed.cycles);
+  const copierFrames = packed === undefined ? RUN_LIMIT_FRAMES : unpackFrames(packed.cycles);
   // The check compares the bytes of the screen of the stage: a routine of the stage can change its other bytes.
   const stageByte = (address: number) => {
     const part = stage!.parts.find((item) => address >= item.start && address < item.start + item.body.length)!;

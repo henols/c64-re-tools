@@ -465,6 +465,8 @@ export interface LoaderInput {
   config?: boolean;
   /** The start screen of the knowledge: the copier shows it after the copies. */
   startScreen?: StartScreenRow;
+  /** Always the packed form: the show stage of a start screen from a captured stage holds the packed program while it shows the screen. */
+  packed?: boolean;
 }
 
 /** The checks of a start screen against the program and the entry state. Refuses by name. */
@@ -549,6 +551,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   const codeSize = COPIER_CODE_SIZE + (state.vic === undefined ? 0 : VIC_SIZE) + ciaSize + (screen === undefined ? 0 : START_SCREEN_SIZES[screen.colourMode]);
   const copierImage = at;
   const end = copierImage + codeSize + COPY_ENTRY * plain.length + 2 - 1;
+  if (input.packed === true) return planPacked(input, blocks, cia, codeSize, screen, "The start screen of a captured stage shows while the program is still packed.");
   // The end can be past $ffff, which is no address.
   if (end > LOAD_LIMIT) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader would end ${end > 0xffff ? "past $ffff" : `at ${formatC64Address(end)}`}, after ${formatC64Address(LOAD_LIMIT)}: loading it would write the I/O area.`);
   // The CIA part and the start screen take room from the copy table in the copier's pages.
@@ -832,7 +835,7 @@ export async function packLoader(main: Uint8Array, copier: Uint8Array, plan: Loa
 }
 
 /** What Exomizer packs in the packed form: the loaded ranges of the build of main.asm from $0400, and the build of loader.asm. */
-export function packedParts(main: Uint8Array, copier: Uint8Array, plan: Pick<LoaderPlan, "loaded">): Array<{ start: number; body: Uint8Array }> {
+function packedParts(main: Uint8Array, copier: Uint8Array, plan: Pick<LoaderPlan, "loaded">): Array<{ start: number; body: Uint8Array }> {
   // The unpacker uses pages 0-3; the copier writes them. The leftovers between the loaded ranges are not packed.
   const program = prgRange(main);
   const ranges = plan.loaded.flatMap((range) => {

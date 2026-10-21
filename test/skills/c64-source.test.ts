@@ -374,6 +374,12 @@ test("with real ACME, the loader stub switches the BASIC ROM out before it moves
   assert.ok(copierSource.kind === "address" && copierSource.address >= 0xa000, "the copier lies under the BASIC ROM");
 });
 
+test("a loader for a start screen of a captured stage is always the packed form, also for a small program", () => {
+  const segments = [{ start: 0x1000, end: 0x10ff, files: [] }];
+  assert.equal(planLoader({ segments, byteAt: () => 0xea, state: state(), entry: 0x1000, header: [] }).packed, undefined);
+  assert.notEqual(planLoader({ segments, byteAt: () => 0xea, state: state(), entry: 0x1000, header: [], packed: true }).packed, undefined);
+});
+
 test("a plain loader with more copies than its copier can do gets the packed form, for example for many leftovers", () => {
   // 40 parts of 4 bytes, as the leftovers between them give.
   const segments = Array.from({ length: 40 }, (_, index) => ({ start: 0x1000 + index * 16, end: 0x1003 + index * 16, files: [] }));

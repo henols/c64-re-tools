@@ -273,7 +273,7 @@ The start screen:
 - `verified: true`: the check ran `loader.prg` to its jump to the entry. There, the memory, $00/$01, the registers and the VIC-II are equal to the entry state. The raster line and the CIA values are also equal. An interrupt can run right at the entry, as in the original program.
 - `limits`: each CIA value that the loader cannot set as it was at the entry. An old capture has no CIA values. Then capture the program again at its entry point.
 - `startScreen`: with a start screen, `shown: true` when the VIC-II had the values of the start screen, and `waits: true` when the start screen waited without a key. `wait` and `continue` are the addresses of the wait and of the code after it. The check sets the PC to `continue`, and then runs the loader to its jump.
-- `packed`: `packedBytes` and `unpackedBytes` of the packed form.
+- `packed`: `packedBytes` and `unpackedBytes` of the packed form. With a start screen of a captured stage, this is the packed program in `loader.prg`.
 - `stage`: the show stage of a start screen of a captured stage. It has the `space` of the stage and the address of the show `code`. It also has the `bytes` of the stage in `loader.prg`, the `stash` copies, `packedBytes` and `unpackedBytes`. `startScreen.stage` names the space.
 - When the check of `loader.prg` cannot run, the script does not write `loader.prg`. The `loader.prg` of an earlier run stays as it was. `loader.asm` is new. `reason` tells why the check did not run.
 - `kept`: when the result has no new `loader.prg`, the path of the `loader.prg` of an earlier run. That file is not of this source.
@@ -295,13 +295,17 @@ Do these actions when `verified` is `false`:
 
 Often the loading stage of a program shows a picture that is not in memory at the entry. Then the knowledge has the picture in a captured stage: a space such as `bank1`. `--stage` of the start screen names that space. `--call` names a routine of the stage, for example the routine that starts the loading tune.
 
-`loader.prg` then starts with a show stage, before the loader:
+The loader then always has the packed form, and the start screen is a program of its own in front of it:
 
-1. Exomizer unpacks the loader, the bytes of the stage and the show code. The bytes of the loader under the stage go to a stash in free memory.
-2. The show code shows the start screen with `start_screen.asm`. With a call, it sets $01 to $37, starts the interrupts and calls the routine.
-3. It waits for a key or a fire button, as the start screen in the program does.
-4. It stops the interrupts and the sound, and it stops the screen. It sets the CIA timers as RUN leaves them.
-5. It copies the stash back to the loader. Then it starts the loader.
+1. Exomizer packs the program with the copier. This is the packed loader.
+2. Exomizer packs the packed loader, the bytes of the stage and the show code into `loader.prg`.
+3. When `loader.prg` starts, Exomizer unpacks these parts. The program stays packed. The bytes of the packed loader under the stage go to a stash in free memory.
+4. The show code shows the start screen with `start_screen.asm`. With a call, it sets $01 to $37, starts the interrupts and calls the routine.
+5. It waits for a key or a fire button, as the start screen in the program does.
+6. It stops the interrupts and the sound, and it stops the screen. It sets the CIA timers as RUN leaves them.
+7. It copies the stash back to the packed loader. Then it starts the packed loader, which unpacks the program over the start screen.
+
+The program is packed while the screen shows. Thus the picture and the tune have more free memory.
 
 - `loader.prg` has only the bytes of the stage that the start screen uses. These are the screen, the bitmap, the charset and the colours. With a call, they are also each byte of the stage that is not free from the call, as in "The free ranges". A call thus needs the coverage of the stage.
 - The patches of the stage are in at the defaults of their switches. Thus a patch under a switch can remove the text of a crack from the picture.
