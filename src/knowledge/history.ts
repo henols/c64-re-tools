@@ -26,6 +26,8 @@ import {
   toPatch,
   toReference,
   toRelease,
+  toStartScreen,
+  START_SCREEN_COLUMNS,
   toSwitch,
   toRegion,
   toSuppression,
@@ -38,6 +40,7 @@ import {
   type PatchRow,
   type ReferenceRow,
   type ReleaseRow,
+  type StartScreenRow,
   type SwitchRow,
   type RegionRow,
   type SuppressionRow,
@@ -109,6 +112,7 @@ export type HistoryEntry =
   | { entity: "patch"; row: PatchRow; from: string; to?: string }
   | { entity: "switch"; row: SwitchRow; from: string; to?: string }
   | { entity: "release"; row: ReleaseRow; from: string; to?: string }
+  | { entity: "start-screen"; row: StartScreenRow; from: string; to?: string }
   | { entity: "macro"; row: MacroRow; from: string; to?: string }
   | { entity: "macro-use"; row: MacroUseRow; from: string; to?: string };
 
@@ -265,6 +269,7 @@ export function revision(db: DatabaseSync | undefined, text: string): RevisionCh
     ["patch", "patches", PATCH_COLUMNS, toPatch],
     ["switch", "switches", SWITCH_COLUMNS, toSwitch],
     ["release", "releases", RELEASE_COLUMNS, toRelease],
+    ["start-screen", "start_screens", START_SCREEN_COLUMNS, toStartScreen],
     ["macro", "macros", MACRO_COLUMNS, toMacro],
     ["macro-use", "macro_uses", MACRO_USE_COLUMNS, toMacroUse],
   ] as const;

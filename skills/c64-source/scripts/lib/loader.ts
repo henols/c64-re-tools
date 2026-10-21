@@ -7,12 +7,18 @@
 // overwrites the packed bytes of a copy that has not run yet. The plan is
 // simulated here before the emulator runs it. An image too large for one
 // loader file gets the packed form: Exomizer unpacks the program and the
-// copier, and the copier writes only pages $0002-$03ff.
+// copier, and the copier writes only pages $0002-$03ff. With a start
+// screen in the knowledge, the copier shows it after the copies and waits for
+// a key or a fire button: the code is start-screen.asm, the same for each program.
+
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { type AddressRange, formatC64Address, formatC64Byte, prgRange } from "#src/c64.ts";
 import { compareBuild, mergedPrograms } from "#src/compare.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState } from "#src/host-client/entry-state.ts";
+import { isRomFont, startScreenRanges, type StartScreenRow } from "#src/knowledge/read.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { pack } from "#src/native/exomizer.ts";
 import type { ToolContext } from "#src/native/run.ts";
@@ -111,6 +117,8 @@ export interface LoaderPlan {
   cia?: CiaPlan;
   /** The packed form: loader.asm holds only the copier and pages 0-3 from `start` to `end`, and Exomizer packs it with the build of main.asm. */
   packed?: { start: number };
+  /** The VIC-II values that the start screen sets, when the knowledge has one. */
+  startScreen?: StartScreenPlan;
 }
 
 /**
@@ -126,6 +134,65 @@ export function loaderLimits(plan: { cia?: CiaPlan }): string[] {
 
 /** The label of the loader's jump to the entry, in ACME's symbol list. */
 export const LOADER_JUMP = "c64_source_loader_jump";
+/** The labels of the start screen: its wait for a key or a fire button, and the code after the wait. */
+export const START_SCREEN_WAIT = "loader_start_screen_wait";
+export const START_SCREEN_CONTINUE = "loader_start_screen_continue";
+/** The file of the start screen in the generated source. */
+export const START_SCREEN_FILE = "start_screen.asm";
+/** The code of the start screen: the same for each program. loader.asm sets its values. */
+export const START_SCREEN_CODE = readFileSync(fileURLToPath(new URL("./start-screen.asm", import.meta.url)), "utf8");
+/** The bytes of the start screen code for each colour mode: none, one colour, a copy of 1000 bytes. */
+export const START_SCREEN_SIZES = [197, 216, 226] as const;
+
+/** The VIC-II values of a start screen, as the start screen code sets them. */
+export interface StartScreenPlan {
+  d011: number;
+  d016: number;
+  d018: number;
+  /** The VIC bank: 0 for $0000-$3fff to 3 for $c000-$ffff. */
+  bank: number;
+  border: number;
+  background: number;
+  /** 0: no colour RAM (hires), 1: one colour, 2: a copy of 1000 bytes. */
+  colourMode: 0 | 1 | 2;
+}
+
+/** The VIC-II values that show a start screen of the knowledge. */
+export function startScreenPlan(row: StartScreenRow): StartScreenPlan {
+  const bank = row.screen >> 14;
+  const base = (row.bitmap === undefined ? ((row.charset! & 0x3fff) >> 11) << 1 : ((row.bitmap & 0x3fff) >> 13) << 3) | 0x01;
+  return {
+    d011: row.mode === "text" ? 0x1b : 0x3b,
+    d016: row.mode === "multicolour" ? 0x18 : 0x08,
+    d018: (((row.screen & 0x3fff) >> 10) << 4) | base,
+    bank,
+    border: row.border,
+    background: row.background,
+    colourMode: row.colours !== undefined ? 2 : row.colour !== undefined ? 1 : 0,
+  };
+}
+
+/** The lines of loader.asm that give the start screen code its values. */
+function startScreenValues(row: StartScreenRow, plan: StartScreenPlan): string[] {
+  const value = (name: string, number: number, comment?: string) => `c64_source_ss_${name} = ${formatC64Byte(number)}${comment === undefined ? "" : ` ; ${comment}`}`;
+  const font = row.charset !== undefined && isRomFont(row.charset) ? " (the character ROM)" : "";
+  const what = [`screen ${formatC64Address(row.screen)}`, ...(row.bitmap === undefined ? [] : [`bitmap ${formatC64Address(row.bitmap)}`]), ...(row.charset === undefined ? [] : [`charset ${formatC64Address(row.charset)}${font}`])];
+  return [
+    `; The start screen: ${row.mode}, ${what.join(", ")}.${row.comment === undefined ? "" : ` ${row.comment.replace(/\s*\r?\n\s*/g, " ")}`}`,
+    value("d011", plan.d011),
+    value("d016", plan.d016),
+    value("d018", plan.d018),
+    value("bank", 3 - plan.bank, `VIC bank ${formatC64Address(plan.bank << 14)}-${formatC64Address((plan.bank << 14) + 0x3fff)}`),
+    value("border", plan.border),
+    value("background", plan.background),
+    value("colour_mode", plan.colourMode),
+    value("colour", row.colour ?? 0),
+    `c64_source_ss_colours = ${formatC64Address(row.colours ?? 0)}`,
+  ];
+}
+
+/** The copier lines that include the start screen code, in a zone of its own. */
+const START_SCREEN_LINES = ["!zone c64_source_start_screen {", `!source "${START_SCREEN_FILE}"`, "}"];
 
 const LOAD = 0x0801;
 const STUB = 0x080d;
@@ -136,14 +203,21 @@ const COPIER_CODE_SIZE = 167;
 /** The VIC-II code of the copier, without its two tables of one byte per register. */
 const VIC_CODE_SIZE = 44;
 const VIC_SIZE = VIC_CODE_SIZE + 2 * VIC_DISPLAY_REGISTERS.length;
-/** The copier and the stub's move of it: two pages. */
+/** The copier and the stub's move of it: two pages, or three with a start screen. */
 const COPIER_LIMIT = 0x200;
+/** The bytes that the stub adds for each more page of the copier: lda and sta. */
+const STUB_PAGE_SIZE = 6;
 const COPY_ENTRY = 7;
-/** X indexes the table, so the table fits in 256 bytes, and the copier with the VIC-II code fits in two pages. */
-export const MAX_COPIES = Math.min(Math.floor((256 - 2) / COPY_ENTRY), Math.floor((COPIER_LIMIT - COPIER_CODE_SIZE - VIC_SIZE - 2) / COPY_ENTRY));
+/** X indexes the table, so the table holds at most this many copies in 256 bytes. */
+const TABLE_COPIES = Math.floor((256 - 2) / COPY_ENTRY);
 /** A loader that loads into $d000 or higher would write the I/O area. */
 const LOAD_LIMIT = 0xcfff;
 const COPIER_PAGES = [...Array.from({ length: 15 }, (_, index) => 0xc000 + index * 0x100), ...Array.from({ length: 0x9b }, (_, index) => 0x9e00 - index * 0x100)];
+/** The areas where the copier can run: RAM that no ROM and no I/O hides when $01 is $34 or $35, above the screen at $0400. */
+const COPIER_AREAS: readonly AddressRange[] = [
+  { start: 0x0400, end: 0x9fff },
+  { start: 0xc000, end: 0xcfff },
+];
 
 const overlaps = (a: AddressRange, b: AddressRange) => a.start <= b.end && b.start <= a.end;
 const show = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
@@ -383,6 +457,30 @@ export interface LoaderInput {
   switches?: boolean;
   /** The source has macros.asm: the loader includes it after the constants. */
   macros?: boolean;
+  /** The source has config.asm but no switches.asm: the loader includes config.asm for START_SCREEN. */
+  config?: boolean;
+  /** The start screen of the knowledge: the copier shows it after the copies. */
+  startScreen?: StartScreenRow;
+}
+
+/** The checks of a start screen against the program and the entry state. Refuses by name. */
+function checkStartScreen(input: LoaderInput): StartScreenPlan | undefined {
+  const row = input.startScreen;
+  if (row === undefined) return undefined;
+  if (input.state.vic === undefined) {
+    throw new WireFailure("invalid-input", "The entry state has no VIC-II values, so the loader cannot set the display of the program after the start screen. Capture the program again at its entry point, or remove the start screen (unstart-screen).");
+  }
+  for (const { what, range } of startScreenRanges(row)) {
+    const inside = input.segments.some((segment) => range.start >= segment.start && range.end <= segment.end);
+    if (!inside) throw new WireFailure("invalid-input", `The start screen part ${what} (${show(range)}) is not in one segment of the program. The start screen must be in memory at the entry: capture it with the program, or correct the start screen in the knowledge.`);
+  }
+  return startScreenPlan(row);
+}
+
+/** The settings that loader.asm includes: switches.asm, else config.asm for a start screen, else none. */
+function settingsLines(input: LoaderInput): string[] {
+  if (input.switches === true) return ['!source "switches.asm"'];
+  return input.config === true ? ['!source "config.asm"'] : [];
 }
 
 /** The label of a block: its first byte and the byte after it in the loader file, and its first address where it runs. */
@@ -416,6 +514,9 @@ function byteLines(range: AddressRange, bytes: (address: number) => number): str
  */
 export function planLoader(input: LoaderInput): LoaderPlan {
   const { state } = input;
+  const screen = checkStartScreen(input);
+  const copierBytes = screen === undefined ? COPIER_LIMIT : COPIER_LIMIT + 0x100;
+  const copierPages = copierBytes >> 8;
   // What the copies write: each segment without $00/$01, which the loader sets last, and pages $0002-$03ff where no segment is.
   const blocks: Block[] = [];
   for (const segment of input.segments) blocks.push({ what: `segment ${show(segment)}`, range: segment, files: segment.files, pseudo: segment.start, bytes: input.byteAt });
@@ -424,7 +525,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   }
   blocks.sort((a, b) => a.range.start - b.range.start);
 
-  let at = STUB + STUB_SIZE;
+  let at = STUB + STUB_SIZE + (copierPages - 2) * STUB_PAGE_SIZE;
   const plain: Array<Omit<Copy, "backward">> = [];
   const packedAt: number[] = [];
   /** The block start of each copy in `plain`, which names its labels. */
@@ -441,13 +542,13 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   }
   const cia = ciaSection(state);
   const ciaSize = cia === undefined ? 0 : cia.ops.reduce((sum, op) => sum + op.bytes, 0);
-  const codeSize = COPIER_CODE_SIZE + (state.vic === undefined ? 0 : VIC_SIZE) + ciaSize;
+  const codeSize = COPIER_CODE_SIZE + (state.vic === undefined ? 0 : VIC_SIZE) + ciaSize + (screen === undefined ? 0 : START_SCREEN_SIZES[screen.colourMode]);
   const copierImage = at;
   const end = copierImage + codeSize + COPY_ENTRY * plain.length + 2 - 1;
   // The end can be past $ffff, which is no address.
-  if (end > LOAD_LIMIT) return planPacked(input, blocks, cia, codeSize, `The plain loader would end ${end > 0xffff ? "past $ffff" : `at ${formatC64Address(end)}`}, after ${formatC64Address(LOAD_LIMIT)}: loading it would write the I/O area.`);
-  // The CIA part takes room from the copy table in the copier's two pages.
-  const maxCopies = Math.min(MAX_COPIES, Math.floor((COPIER_LIMIT - codeSize - 2) / COPY_ENTRY));
+  if (end > LOAD_LIMIT) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader would end ${end > 0xffff ? "past $ffff" : `at ${formatC64Address(end)}`}, after ${formatC64Address(LOAD_LIMIT)}: loading it would write the I/O area.`);
+  // The CIA part and the start screen take room from the copy table in the copier's pages.
+  const maxCopies = Math.max(0, Math.min(TABLE_COPIES, Math.floor((copierBytes - codeSize - 2) / COPY_ENTRY)));
   if (plain.length > maxCopies) throw new WireFailure("invalid-input", `The loader needs ${plain.length} copies; it can do at most ${maxCopies}. Capture the program again with fewer segments, or write the loader by hand.`);
 
   const order = copyOrder(plain);
@@ -457,10 +558,13 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   }
   const loaded = { start: LOAD, end };
   const copier = COPIER_PAGES.find((page) => {
-    const pages = { start: page, end: page + 0x1ff };
-    return !overlaps(pages, loaded) && plain.every((copy) => !overlaps(pages, copy.target));
+    const pages = { start: page, end: page + copierBytes - 1 };
+    return COPIER_AREAS.some((area) => pages.start >= area.start && pages.end <= area.end) && !overlaps(pages, loaded) && plain.every((copy) => !overlaps(pages, copy.target));
   });
-  if (copier === undefined) throw new WireFailure("invalid-input", `No two free pages exist for the copier in $0400-$9fff or $c000-$cfff outside the loader (${show(loaded)}) and the targets: ${plain.map((copy) => show(copy.target)).join(", ")}.`);
+  if (copier === undefined) {
+    const count = copierPages === 2 ? "two" : "three";
+    throw new WireFailure("invalid-input", `No ${count} free pages exist for the copier in $0400-$9fff or $c000-$cfff outside the loader (${show(loaded)}) and the targets: ${plain.map((copy) => show(copy.target)).join(", ")}.`);
+  }
   const copies: Copy[] = order.map((index) => {
     const copy = plain[index]!;
     return { ...copy, backward: copy.target.start > copy.source.start && overlaps(copy.target, copy.source) };
@@ -468,7 +572,17 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   const copyBlocks = order.map((index) => blockOf[index]!);
 
   const stackByte = 0x0100 + state.sp;
-  const lines: string[] = [...input.header.map((line) => `; ${line}`), "", "!cpu 6510", ...(input.switches === true ? ['!source "switches.asm"'] : []), '!source "constants.asm"', ...(input.macros ? ['!source "macros.asm"'] : []), "", `* = ${formatC64Address(LOAD)}`];
+  const lines: string[] = [
+    ...input.header.map((line) => `; ${line}`),
+    "",
+    "!cpu 6510",
+    ...settingsLines(input),
+    '!source "constants.asm"',
+    ...(input.macros ? ['!source "macros.asm"'] : []),
+    ...(screen === undefined ? [] : ["", ...startScreenValues(input.startScreen!, screen)]),
+    "",
+    `* = ${formatC64Address(LOAD)}`,
+  ];
   lines.push(`        !byte $0b,$08,$0a,$00,$9e,${[...String(STUB)].map((digit) => formatC64Byte(digit.charCodeAt(0))).join(",")},$00,$00,$00 ; 10 SYS ${STUB}`);
   lines.push(
     "!zone loader_stub {",
@@ -479,8 +593,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     "        ldx #0",
     `-       lda ${COPIER_SOURCE},x`,
     `        sta ${formatC64Address(copier)},x`,
-    `        lda ${COPIER_SOURCE}+$100,x`,
-    `        sta ${formatC64Address(copier + 0x100)},x`,
+    ...Array.from({ length: copierPages - 1 }, (_, index) => [`        lda ${COPIER_SOURCE}+$${((index + 1) * 0x100).toString(16)},x`, `        sta ${formatC64Address(copier + (index + 1) * 0x100)},x`]).flat(),
     "        inx",
     "        bne -",
     `        jmp ${formatC64Address(copier)}`,
@@ -494,7 +607,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     lines.push("}", blockLabel(block.range.start, "end"));
   }
   lines.push("", `; The copier runs at ${formatC64Address(copier)}. The flags pass through ${formatC64Address(stackByte)}, the free stack byte below the stack pointer.`, COPIER_SOURCE, `!pseudopc ${formatC64Address(copier)} {`);
-  lines.push(...copierLines(state, cia, stackByte, input.entryName ?? formatC64Address(input.entry)));
+  lines.push(...copierLines(state, cia, stackByte, input.entryName ?? formatC64Address(input.entry), screen !== undefined));
   copies.forEach((copy, index) => {
     // A block that starts at $0000 skips $00/$01, which the loader sets last.
     const start = copyBlocks[index]!;
@@ -515,6 +628,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     end,
     text: `${lines.join("\n")}\n`,
     ...(cia === undefined ? {} : { cia: cia.plan }),
+    ...(screen === undefined ? {} : { startScreen: screen }),
   };
 }
 
@@ -536,7 +650,7 @@ const SHOWN_FREE = 8;
  * writes them after the unpack. Between its ranges, loader.asm holds the
  * bytes of the image, so its build does not change a segment.
  */
-function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof ciaSection>, codeSize: number, tooLarge: string): LoaderPlan {
+function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof ciaSection>, codeSize: number, screen: StartScreenPlan | undefined, tooLarge: string): LoaderPlan {
   const { state } = input;
   // The parts below $0400 without $00/$01, which the loader sets last.
   const low = blocks.flatMap((block) => {
@@ -554,7 +668,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     const why =
       placed.refusal === "copies"
         ? `A packed loader needs more than ${MAX_PACKED_COPIES} copies for the ${lowBytes} bytes of pages 0-3 in the free ranges.`
-        : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier, and ${lowBytes} more free bytes for pages 0-3, in $0400-$9fff or $c000-$cfff outside the segments.`;
+        : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier, and ${lowBytes} more free bytes for pages 0-3, in $0400-$9fff or $c000-$cfff outside the segments.${screen === undefined ? "" : ` The start screen takes ${START_SCREEN_SIZES[screen.colourMode]} bytes of the copier: without it (unstart-screen), the copier is smaller.`}`;
     throw new WireFailure("invalid-input", `${tooLarge} ${why} The largest free ranges there: ${ranges}. Write the loader by hand.`);
   }
   const { copier, pieces } = placed;
@@ -571,6 +685,8 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     "; The unpacker of Exomizer uses the zero page and $0334-$03ff, so the copier writes pages $0002-$03ff after the unpack.",
     "",
     "!cpu 6510",
+    ...settingsLines(input),
+    ...(screen === undefined ? [] : ["", ...startScreenValues(input.startScreen!, screen)]),
   ];
   // The parts in address order: the copier, the pieces of pages 0-3, and the bytes of the image between them.
   const parts: Array<{ range: AddressRange; text: string[] }> = [];
@@ -579,7 +695,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     `* = ${formatC64Address(copier)}`,
     COPIER_SOURCE,
     // The entry by its address: main.asm, which has its label, is not in this build.
-    ...copierLines(state, cia, stackByte, `${formatC64Address(input.entry)}${input.entryName === undefined ? "" : ` ; ${input.entryName} in main.asm`}`),
+    ...copierLines(state, cia, stackByte, `${formatC64Address(input.entry)}${input.entryName === undefined ? "" : ` ; ${input.entryName} in main.asm`}`, screen !== undefined),
   ];
   for (const copy of copies) {
     const [from, to] = [blockLabel(copy.target.start, "from"), blockLabel(copy.target.start, "end")];
@@ -610,6 +726,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     end,
     text: `${lines.join("\n")}\n`,
     ...(cia === undefined ? {} : { cia: cia.plan }),
+    ...(screen === undefined ? {} : { startScreen: screen }),
     packed: { start },
   };
 }
@@ -725,8 +842,10 @@ export async function packLoader(main: Uint8Array, copier: Uint8Array, plan: Loa
  * The copier: its copies by the table, the VIC-II and CIA parts, then $00/$01,
  * the stack pointer, the flags and A/X/Y, and the jump to the entry. It ends
  * with the label of the table; the caller writes the table and closes the zone.
+ * A start screen comes after the copies, which put its bytes in place, and
+ * before the VIC-II part, which sets the display of the entry again.
  */
-function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stackByte: number, jumpTarget: string): string[] {
+function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stackByte: number, jumpTarget: string, startScreen: boolean): string[] {
   const [port0, port1] = state.port;
   return [
     "!zone loader_copier {",
@@ -783,6 +902,7 @@ function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stac
     "        tax",
     "        jmp .next",
     ".done",
+    ...(startScreen ? START_SCREEN_LINES : []),
     // The CIA part runs after the raster wait: the wait ends its whole lines earlier, so the entry comes in its line.
     ...vicLines(state, Math.floor((cia?.ops.reduce((sum, op) => sum + op.cycles, 0) ?? 0) / LINE_CYCLES)),
     ...(cia === undefined ? [] : cia.ops.map((op) => `        ${op.text}`)),

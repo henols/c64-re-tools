@@ -257,7 +257,8 @@ Traps:
    - Disassemble the code at the address. Make sure that it is the start of the program. The start of a program often sets the stack pointer, the interrupts and the vectors.
 4. Run `capture` with that address in `--until` and a folder in `--out`. Give the same `--steps` as before.
 5. Make sure that the result is the program. The code at the entry must not be the unpacker again. A segment can be data that a loader or a cracktro left, for example intro graphics. Keep it until other evidence shows that the program does not use it. Then capture again with `--exclude` for that range.
-   - Exclude each range of a cracktro that the program does not read. A rebuild has no cracktro.
+   - Exclude each range of a cracktro that the program does not read. A rebuild has no cracktro. Also exclude a picture, an intro or a credit screen of a crack.
+   - Do not exclude the start screen of the program, also when the program does not read it. An example is the loading picture of the publisher. Record it as the start screen in the project knowledge. The loader of the rebuild shows it.
    - Do not exclude other unused bytes, for example leftovers of the development or an old copy of a routine. A rebuild keeps them.
    - Keep a crack change that the program reads, for example a credit text in the game. Record it as a `crack` switch in the project knowledge.
 6. Put `<out>/image.json` into the project knowledge. The knowledge keeps the segments, the entry, the entry state and the stages. After that, you do not need the files in `<out>`.
@@ -279,7 +280,7 @@ Do not record the unpacker in the project knowledge, unless the user asks you to
    ]
    ```
 
-2. Run `loads` with the steps file and a folder in `--out`. Add `--drive` when the program has its own drive code, for example a fast loader. Add `--exclude` for each range of a loader, an intro or a loading picture that the program does not read.
+2. Run `loads` with the steps file and a folder in `--out`. Add `--drive` when the program has its own drive code, for example a fast loader. Add `--exclude` for each range of a loader or of a crack that the program does not read. Do not exclude the start screen of the program.
 3. Put `<out>/<name>/image.json` of the part that you work on into the project knowledge.
 4. With `--drive`, put `<out>/<name>/drive8.prg` into the project knowledge in the space `drive8`. Then analyze the drive code in the space `drive8`.
 

@@ -6,7 +6,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { AddressRange } from "../c64.ts";
 import { Refusal } from "../errors.ts";
-import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SuppressionEntity, type SwitchKind, type SymbolKind } from "./schema.ts";
+import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SuppressionEntity, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { NO_REVISION } from "./text.ts";
 
 export interface SymbolRow {
@@ -126,6 +126,37 @@ export interface ReleaseRow {
   revision: string;
 }
 
+/**
+ * The start screen of the program: a screen of the program itself, not of a
+ * crack, that the loader of the generated source shows before the entry.
+ * A text screen has a charset, a bitmap screen has a bitmap. The colour RAM
+ * comes from 1000 bytes at `colours` or is one `colour`; a hires bitmap has none.
+ */
+export interface StartScreenRow {
+  space: Space;
+  mode: StartScreenMode;
+  screen: number;
+  bitmap?: number;
+  charset?: number;
+  colours?: number;
+  colour?: number;
+  border: number;
+  background: number;
+  comment?: string;
+  origin: Extract<Origin, "user" | "llm">;
+  revision: string;
+}
+
+/** The memory that a start screen shows: each part with its range. A ROM charset is not RAM, so it has no range. */
+export function startScreenRanges(row: Pick<StartScreenRow, "screen" | "bitmap" | "charset" | "colours">): Array<{ what: string; range: AddressRange }> {
+  const part = (what: string, start: number | undefined, size: number) => (start === undefined ? [] : [{ what, range: { start, end: start + size - 1 } }]);
+  const romFont = row.charset !== undefined && isRomFont(row.charset);
+  return [...part("screen", row.screen, 1000), ...part("bitmap", row.bitmap, 8000), ...(romFont ? [] : part("charset", row.charset, 2048)), ...part("colours", row.colours, 1000)];
+}
+
+/** True for a charset address where the VIC-II reads the character ROM: $1000 or $1800 in VIC bank 0 or 2. */
+export const isRomFont = (address: number) => (address & 0x7fff) === 0x1000 || (address & 0x7fff) === 0x1800;
+
 /** An ACME macro of the generated source. The body names a parameter with a dot in front: .dst. */
 export interface MacroRow {
   space: Space;
@@ -166,6 +197,7 @@ export const SWITCH_COLUMNS = "space, name, kind, default_value, releases, comme
 export const RELEASE_COLUMNS = "space, label, file, sha256, base, comment, origin, valid_from_revision";
 export const MACRO_COLUMNS = "space, name, params, body, comment, origin, valid_from_revision";
 export const MACRO_USE_COLUMNS = "space, start_address, end_address, macro, args, origin, valid_from_revision";
+export const START_SCREEN_COLUMNS = "space, mode, screen, bitmap, charset, colours, colour, border, background, comment, origin, valid_from_revision";
 
 export function toSymbol(row: Raw): SymbolRow {
   return { space: row.space as Space, address: row.address as number, name: row.name as string, kind: row.kind as SymbolKind, origin: row.origin as Origin, revision: row.valid_from_revision as string };
@@ -273,6 +305,21 @@ export function toRelease(row: Raw): ReleaseRow {
   };
   if (row.comment !== null && row.comment !== undefined) release.comment = row.comment as string;
   return release;
+}
+
+export function toStartScreen(row: Raw): StartScreenRow {
+  const value: StartScreenRow = {
+    space: row.space as Space,
+    mode: row.mode as StartScreenMode,
+    screen: row.screen as number,
+    border: row.border as number,
+    background: row.background as number,
+    origin: row.origin as StartScreenRow["origin"],
+    revision: row.valid_from_revision as string,
+  };
+  for (const key of ["bitmap", "charset", "colours", "colour"] as const) if (row[key] !== null && row[key] !== undefined) value[key] = row[key] as number;
+  if (row.comment !== null && row.comment !== undefined) value.comment = row.comment as string;
+  return value;
 }
 
 export function toMacro(row: Raw): MacroRow {
@@ -523,6 +570,12 @@ export function listReleases(db: DatabaseSync | undefined, origins?: OriginFilte
     .filter(kept(origins));
 }
 
+/** The current start screen of a space, if the knowledge has one. */
+export function currentStartScreen(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): StartScreenRow | undefined {
+  const row = db?.prepare(`SELECT ${START_SCREEN_COLUMNS} FROM current_start_screens WHERE space = ?`).get(space) as Raw | undefined;
+  return row === undefined ? undefined : toStartScreen(row);
+}
+
 /**
  * The value of a switch in the program of the knowledge: 1 when the base
  * release has it on. A patch holds the code of the other value.
@@ -679,7 +732,7 @@ export function listSpaces(db: DatabaseSync | undefined): Space[] {
   if (db === undefined) return [];
   const rows = db
     .prepare(
-      `SELECT space FROM current_symbols UNION SELECT space FROM current_analyzer_names UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands UNION SELECT space FROM current_patches UNION SELECT space FROM current_switches UNION SELECT space FROM current_releases UNION SELECT space FROM current_macros UNION SELECT space FROM current_macro_uses UNION SELECT space FROM current_memory UNION SELECT space FROM current_entries UNION SELECT space FROM current_coverage`,
+      `SELECT space FROM current_symbols UNION SELECT space FROM current_analyzer_names UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands UNION SELECT space FROM current_patches UNION SELECT space FROM current_switches UNION SELECT space FROM current_releases UNION SELECT space FROM current_macros UNION SELECT space FROM current_macro_uses UNION SELECT space FROM current_start_screens UNION SELECT space FROM current_memory UNION SELECT space FROM current_entries UNION SELECT space FROM current_coverage`,
     )
     .all() as Array<{ space: Space }>;
   const order = (space: Space) => (space === "c64" ? -2 : space === "drive8" ? -1 : Number(space.slice(4)));

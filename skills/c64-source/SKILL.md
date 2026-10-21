@@ -71,10 +71,10 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 | Flag | Command | Effect |
 |---|---|---|
-| `--out <dir>` | `generate` | The folder for the source files. It is necessary. The script writes over the files of an earlier run. It removes a generated `.asm` file that this run does not write. A run without `--loader` keeps `loader.asm` and `loader.prg` of an earlier run. `staleLoader` tells when they are of another knowledge revision. |
+| `--out <dir>` | `generate` | The folder for the source files. It is necessary. The script writes over the files of an earlier run. It removes a generated `.asm` file that this run does not write. A run without `--loader` keeps `loader.asm`, `loader.prg` and `start_screen.asm` of an earlier run. `staleLoader` tells when they are of another knowledge revision. |
 | `--entry <address>` | `generate` | An address where code starts. Give the flag again for more addresses. There is no default. |
 | `--space <space>` | `generate` | The knowledge space: `c64`, `drive8`, or `bank0` to `bank255`. The default is `c64`. The coverage, `--loader` and the platform names apply only to `c64`. |
-| `--loader` | `generate` | Also write `loader.asm` and `loader.prg`. It needs a capture in the knowledge. The default is no loader. |
+| `--loader` | `generate` | Also write `loader.asm` and `loader.prg`, and `start_screen.asm` when the knowledge has a start screen. It needs a capture in the knowledge. The default is no loader. |
 | `--analyzer-names` | `generate` | Name an address without a name of the user or the LLM, and without a platform name, with its analyzer name, for example `FUN_17e2`. Without the flag, the source makes its own name, for example `l_17e2`. |
 | `--to <folder>` | `export` | The folder of the new project. It is necessary. The script also writes `<folder>.zip` beside the folder. |
 | `--name <name>` | `export` | The name of `baseline/<name>.prg` and `build/<name>.prg`. The default is the name of the folder. |
@@ -155,6 +155,8 @@ Do these actions for the findings:
 - After the side comment, `Used:` counts how the source uses the name. The kinds are `read`, `written`, `modified`, `called`, `jumped to`, `jumped through`, `branched to`, `pointer`, `address`, `table` and `macro argument`. `address` is an immediate operand expression. `table` is an entry in a table of addresses.
 - `config.asm` holds the value of each switch, for example `PROTECTION = 0`. The switches are in groups by kind. The side comment gives the releases that have the switch on, the ranges of its patches and the comment of the switch.
 - You can change a value in `config.asm` to 0 or 1. The next run keeps the values of the file. It adds a new switch with its default. It removes a switch that the knowledge does not have.
+- When the knowledge has a start screen, `config.asm` also has `START_SCREEN = 1`. Set it to 0 to start the program at once. Then assemble `loader.asm` again.
+- `start_screen.asm` is the code that shows the start screen and waits. It is the same for each program. `loader.asm` gives it the values of the start screen.
 - `switches.asm` holds each release of the knowledge. `main.asm` and `loader.asm` include it first. The script writes it only when the knowledge has switches or releases. For each release, a block `!ifdef RELEASE_<label>` gives each switch the value of that release.
 - `macros.asm` holds the macros of the knowledge. `main.asm` and `loader.asm` include it.
 
@@ -232,21 +234,30 @@ Build the program from the source in these ways:
 1. `10 SYS 2061` starts it.
 2. It stops the interrupts and makes all RAM visible. It moves its copier to two free pages.
 3. It copies each segment and the pages $0002-$03ff of the entry state into place. No copy writes over the packed bytes of a copy that has not run yet.
-4. It sets the screen registers of the VIC-II and the VIC bank from the entry state. Then it waits for the raster line of the entry.
-5. It sets the CIA timers, their latches and the interrupt masks from the entry state. A running timer gets the value that counts down to the timer value at the entry.
-6. It sets $00/$01, the stack pointer, A, X, Y and the flags. Then it jumps to the entry.
+4. When the knowledge has a start screen and `START_SCREEN` is 1, it shows the start screen. It waits until the user releases all keys and fire buttons. Then it waits for a key, or for a fire button on joystick port 1 or 2, and for its release. A move of a joystick is not a key.
+5. It sets the screen registers of the VIC-II and the VIC bank from the entry state. Then it waits for the raster line of the entry.
+6. It sets the CIA timers, their latches and the interrupt masks from the entry state. A running timer gets the value that counts down to the timer value at the entry.
+7. It sets $00/$01, the stack pointer, A, X, Y and the flags. Then it jumps to the entry.
 
 The copy table, the copier and the jump use labels, not numbers. `loader_from_xxxx` and `loader_end_xxxx` are around each packed segment. `loader_to_xxxx` is its first address in place. Thus a segment can change its length, and the loader still works.
 
-The loader changes the free stack byte below the stack pointer (`stackByte`). It does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. A program that reads SID voice 3 for random numbers can thus give a different result. When you compare the original and the rebuild, observe after the program sets its own random numbers.
+The loader changes the free stack byte below the stack pointer (`stackByte`). It does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. A program that reads SID voice 3 for random numbers can thus give a different result. A start screen writes the colour RAM, and the loader does not set it again. When you compare the original and the rebuild, observe after the program sets its own random numbers.
 
 The entry state is the state of the base release. Thus the script builds and checks `loader.prg` with the switch values of the base release. For a loader of the default build, build `loader.asm` with no option.
+
+The start screen:
+
+- The start screen needs the VIC-II values of the entry state. Its screen, bitmap, charset and colours must be in a segment of the program.
+- With a start screen, the copier uses three pages, not two.
+- `loader.prg` always shows the start screen. To start the program at once, set `START_SCREEN = 0` in `config.asm`, and assemble `loader.asm`. Do not define `START_SCREEN` on the command line of the build: `config.asm` sets it. The build of a release does not read `config.asm`, so it shows the start screen.
+- A test that runs `loader.prg` stops at the start screen, because the emulator cannot press a key of the keyboard matrix. Run until `loader_start_screen_wait`. Then set the PC to `loader_start_screen_continue`.
 
 `loader` holds these fields:
 
 - `program`, the `copies` in their order, `copier` and `stackByte`.
 - `verified: true`: the check ran `loader.prg` to its jump to the entry. There, the memory, $00/$01, the registers and the VIC-II are equal to the entry state. The raster line and the CIA values are also equal. An interrupt can run right at the entry, as in the original program.
 - `limits`: each CIA value that the loader cannot set as it was at the entry. An old capture has no CIA values. Then capture the program again at its entry point.
+- `startScreen`: with a start screen, `shown: true` when the VIC-II had the values of the start screen, and `waits: true` when the start screen waited without a key. `wait` and `continue` are the addresses of the wait and of the code after it. The check sets the PC to `continue`, and then runs the loader to its jump.
 - `packed`: `packedBytes` and `unpackedBytes` of the packed form.
 - When the check of `loader.prg` cannot run, the script removes `loader.prg`. `loader.asm` stays. `reason` tells why the check did not run.
 
@@ -257,6 +268,7 @@ Do these actions when `verified` is `false`:
 | `reason` about the copy order, the free pages or the count of copies | The reason gives the ranges. Capture the program again with fewer segments, or write the loader by hand. |
 | `reason` about the packed form | If a tool is missing, stop the task and give the message to the user. If the free ranges are too small, write the loader by hand. If the check of the unpack fails, give the reason to the user. |
 | `reason` that the source does not assemble | Correct the source first. The loader includes the source. |
+| `reason` about the start screen | Correct the start screen in the project knowledge, or capture the program again with the start screen in memory. If the start screen is not necessary, remove it from the project knowledge. |
 | `reason` that the check of `loader.prg` did not run | Stop the task and give the reason to the user. When the user tells you that the emulator is available, run the same command again. |
 | `differences` | The loader ran. The list gives the bytes and the registers that are not equal. |
 | `stop` | The loader did not get to its copier or its jump. `stop` gives the address and `port`, the value of $01. `history` gives the last 16 instructions. `cause` gives the first byte of the copier or of a copy that is not correct. |
@@ -340,7 +352,7 @@ Data becomes free only when all of these are true:
 - No code that stays reads it or names it. No table that stays has an entry in it.
 - It is not at the first address of the program, and not at $fffa-$ffff.
 
-The coverage does not show the reads of the VIC-II. Thus `charset`, `sprite`, `bitmap` and `screen` data stay, unless `--drop` names them. Bytes without a region also stay.
+The coverage does not show the reads of the VIC-II. Thus `charset`, `sprite`, `bitmap` and `screen` data stay, unless `--drop` names them. The bytes of the start screen always stay. Bytes without a region also stay.
 
 The entry is the entry of the knowledge. Without it, the entry is the address of the first SYS in the BASIC line of the program. Without coverage, nothing becomes free without `--drop`. Without an entry and without the hardware vectors in the program, no code is unreachable.
 
@@ -354,8 +366,8 @@ tests/                     the tests of the project, changed for the new program
 .c64-re-tools/knowledge/   the knowledge of the new program
 ```
 
-- The source has no mark line, no `switches.asm` or `config.asm`, no patch zones and no `; not executed` lines. It keeps the names, the comments, the operand expressions and the macros. A line comment at each changed patch gives the switch, its kind, its value and the comments.
-- The knowledge has one revision `export`. It holds the program, the entry and its state, the names, the comments, the regions and the modules. It has no history, analyzer names, references, operand expressions, macros, patches, switches, releases or coverage.
+- The source has no mark line, no `switches.asm` or `config.asm`, no patch zones and no `; not executed` lines. A start screen stays in the loader. Build with `-DSTART_SCREEN=0` to start the program at once. It keeps the names, the comments, the operand expressions and the macros. A line comment at each changed patch gives the switch, its kind, its value and the comments.
+- The knowledge has one revision `export`. It holds the program, the entry and its state, the names, the comments, the regions, the modules and the start screen. It has no history, analyzer names, references, operand expressions, macros, patches, switches, releases or coverage.
 - A scenario of `tests/` compares the build of the new project with the baseline. Both sides are the same program. Thus a step of the original side alone goes. A step of the rebuild side alone runs on both sides.
 - A run file of `tests/` runs the build of the new project. Scenarios and run files take the names from the symbol files.
 - The export leaves out a test that restores a snapshot. It also leaves out a test with a name that the new program does not have, or with an address in a free range.

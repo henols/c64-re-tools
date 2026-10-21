@@ -25,6 +25,7 @@ import {
   commentsAt,
   coverageRuns,
   currentRevision,
+  currentStartScreen,
   listAnalyzerNames,
   listComments,
   listMacros,
@@ -53,11 +54,12 @@ import {
   type ReferenceRow,
   type RegionRow,
   type ReleaseRow,
+  type StartScreenRow,
   type SuppressionRow,
   type SwitchRow,
   type SymbolRow,
 } from "#src/knowledge/read.ts";
-import { ANALYZERS, COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, isSemantic, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type OperandSelect, type SwitchKind } from "#src/knowledge/schema.ts";
+import { ANALYZERS, COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, isSemantic, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, START_SCREEN_MODES, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type OperandSelect, type StartScreenMode, type SwitchKind } from "#src/knowledge/schema.ts";
 import {
   addReference,
   applyBatch,
@@ -71,6 +73,7 @@ import {
   removePatch,
   removeReference,
   removeRelease,
+  removeStartScreen,
   removeSwitch,
   removeSymbol,
   renameSymbol,
@@ -78,6 +81,7 @@ import {
   setComment,
   setMacro,
   setMacroUse,
+  setStartScreen,
   setModule,
   setOperand,
   setPatch,
@@ -162,6 +166,19 @@ const release = (row: ReleaseRow) => ({
   origin: row.origin,
   revision: row.revision,
 });
+const startScreen = (row: StartScreenRow) => ({
+  mode: row.mode,
+  screen: formatC64Address(row.screen),
+  ...(row.bitmap === undefined ? {} : { bitmap: formatC64Address(row.bitmap) }),
+  ...(row.charset === undefined ? {} : { charset: formatC64Address(row.charset) }),
+  ...(row.colours === undefined ? {} : { colours: formatC64Address(row.colours) }),
+  ...(row.colour === undefined ? {} : { colour: row.colour }),
+  border: row.border,
+  background: row.background,
+  ...(row.comment === undefined ? {} : { comment: row.comment }),
+  origin: row.origin,
+  revision: row.revision,
+});
 const macro = (row: MacroRow) => ({ ...spaceOf(row), name: row.name, params: row.params, body: row.body, ...(row.comment === undefined ? {} : { comment: row.comment }), origin: row.origin, revision: row.revision });
 const macroUse = (row: MacroUseRow) => ({
   ...spaceOf(row),
@@ -213,6 +230,8 @@ function historyEntry(entry: HistoryEntry) {
                     ? switchRow(entry.row)
                     : entry.entity === "release"
                     ? release(entry.row)
+                    : entry.entity === "start-screen"
+                    ? startScreen(entry.row)
                   : entry.entity === "macro"
                     ? macro(entry.row)
                     : entry.entity === "macro-use"
@@ -594,6 +613,7 @@ const READ_COMMANDS: CommandSpec[] = [
               state: image.state !== undefined,
               stages: image.stages?.length ?? 0,
             },
+      ...((row) => (row === undefined ? {} : { startScreen: startScreen(row) }))(currentStartScreen(db, call.space)),
       coverage: { maps: [...new Set(coverageRuns(db).filter((run) => run.space === call.space).map((run) => run.name))], ranges: Object.fromEntries(ranges.map((row) => [row.kind, row.count])) },
     };
   }),
@@ -658,6 +678,7 @@ const READ_COMMANDS: CommandSpec[] = [
       releases: listReleases(db, origins, space).map(release),
       macros: listMacros(db, origins, space).map(macro),
       macroUses: listMacroUses(db, range, undefined, origins, space).map(macroUse),
+      ...((row) => (row === undefined ? {} : { startScreen: startScreen(row) }))(currentStartScreen(db, space)),
     };
     const counts = Object.fromEntries(Object.entries(exported).flatMap(([key, value]) => (Array.isArray(value) ? [[key, value.length]] : [])));
     return { counts, revision: exported.revision, ...writeReported(call.string("out")!, `${JSON.stringify(exported, null, 2)}\n`, { what: "--out" }) };
@@ -910,6 +931,48 @@ const WRITE_COMMANDS: CommandSpec[] = [
     const context = contextOf(call);
     const request = { space: call.space, label: call.subject(0) };
     return (db) => ({ revision: removeRelease(db, context, request).revision });
+  }),
+  writeCommand(
+    {
+      name: "start-screen",
+      summary: "Records the start screen of the program: a loading, title or presentation screen of the program itself that is still in memory at the entry. The loader of the generated source shows it and waits for a key or a fire button before the entry.",
+      options: {
+        mode: { kind: "choice", value: "<mode>", choices: START_SCREEN_MODES, help: `one of ${START_SCREEN_MODES.join(", ")}`, required: true },
+        screen: { kind: "address", value: "<address>", help: "the screen: the 1000 characters of a text screen, or the 1000 colour bytes of a bitmap", required: true },
+        bitmap: { kind: "address", value: "<address>", help: "the 8000 bytes of the bitmap. hires and multicolour need it" },
+        charset: { kind: "address", value: "<address>", help: "the 2048 bytes of the charset, or '$1000' or '$1800' for the character ROM in VIC bank 0. text needs it" },
+        colours: { kind: "address", value: "<address>", help: "the 1000 bytes that the loader copies to the colour RAM" },
+        colour: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "one colour for all of the colour RAM, in place of --colours" },
+        border: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the border colour", required: true },
+        background: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the background colour", required: true },
+        comment: { kind: "text", value: "<text>", help: "what the screen is" },
+      },
+      notes: "Record only a screen of the program itself, never a screen of a crack. text and multicolour need --colours or --colour; hires uses neither. A write replaces the start screen of the knowledge.",
+    },
+    (call) => {
+      const context = contextOf(call);
+      const commentText = call.string("comment");
+      const optional = (key: "bitmap" | "charset" | "colours") => ((value) => (value === undefined ? {} : { [key]: value }))(call.address(key));
+      const colour = call.count("colour");
+      const request = {
+        space: call.space,
+        mode: call.string("mode") as StartScreenMode,
+        screen: call.address("screen")!,
+        ...optional("bitmap"),
+        ...optional("charset"),
+        ...optional("colours"),
+        ...(colour === undefined ? {} : { colour }),
+        border: call.count("border")!,
+        background: call.count("background")!,
+        ...(commentText === undefined ? {} : { comment: commentText }),
+      };
+      return (db) => shown(setStartScreen(db, context, request), "startScreen", startScreen);
+    },
+  ),
+  writeCommand({ name: "unstart-screen", summary: "Removes the start screen. The loader of the generated source then starts the program at once." }, (call) => {
+    const context = contextOf(call);
+    const request = { space: call.space };
+    return (db) => ({ revision: removeStartScreen(db, context, request).revision });
   }),
   writeCommand(
     {

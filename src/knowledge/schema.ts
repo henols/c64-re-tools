@@ -73,6 +73,14 @@ export const SWITCH_KINDS = ["protection", "trainer", "cheat", "crack", "fix", "
 export type SwitchKind = (typeof SWITCH_KINDS)[number];
 /** The kinds that are always off by default: the default build is the clean program. */
 export const OFF_KINDS: readonly SwitchKind[] = ["protection", "trainer", "cheat", "crack"];
+/**
+ * The display mode of a start screen: a text screen, a hires bitmap or a
+ * multicolour bitmap. The loader of the generated source shows it.
+ */
+export const START_SCREEN_MODES = ["text", "hires", "multicolour"] as const;
+export type StartScreenMode = (typeof START_SCREEN_MODES)[number];
+/** The switch of the start screen in the generated source: no symbol, switch or release can have this name. */
+export const START_SCREEN_SWITCH = "START_SCREEN";
 /** A macro name and a macro parameter. The body names a parameter with a dot in front: .dst. */
 export const MACRO_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
 export const MACRO_PARAM = /^[a-z_][a-z0-9_]{0,31}$/;
@@ -88,7 +96,7 @@ export type CoverageKind = (typeof COVERAGE_KINDS)[number];
 export const MEMORY_ROW = 64;
 
 /** Files that c64-source writes itself: no module can have these names. */
-export const GENERATED_FILES = ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm"] as const;
+export const GENERATED_FILES = ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm", "start_screen.asm"] as const;
 
 /** True for a generated file name in any letter case: the file systems of macOS and Windows ignore case. */
 export function isGeneratedFile(file: string): boolean {
@@ -295,6 +303,27 @@ function createSchema(db: DatabaseSync): void {
         valid_to_revision   TEXT REFERENCES revisions (id)
       );
       CREATE INDEX macros_name ON macros (space, name);
+      CREATE TABLE start_screens (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (space = 'c64'),
+        mode                TEXT NOT NULL CHECK (mode IN (${list(START_SCREEN_MODES)})),
+        screen              INTEGER NOT NULL CHECK (screen BETWEEN 0 AND 65535),
+        bitmap              INTEGER CHECK (bitmap BETWEEN 0 AND 65535),
+        charset             INTEGER CHECK (charset BETWEEN 0 AND 65535),
+        colours             INTEGER CHECK (colours BETWEEN 0 AND 65535),
+        colour              INTEGER CHECK (colour BETWEEN 0 AND 15),
+        border              INTEGER NOT NULL CHECK (border BETWEEN 0 AND 15),
+        background          INTEGER NOT NULL CHECK (background BETWEEN 0 AND 15),
+        comment             TEXT CHECK (comment IS NULL OR length(comment) > 0),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id),
+        CHECK ((mode = 'text') = (charset IS NOT NULL)),
+        CHECK ((mode = 'text') = (bitmap IS NULL)),
+        CHECK (colours IS NULL OR colour IS NULL),
+        CHECK ((mode = 'hires') = (colours IS NULL AND colour IS NULL))
+      );
+      CREATE INDEX start_screens_space ON start_screens (space);
       CREATE TABLE macro_uses (
         id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
@@ -355,11 +384,12 @@ function createSchema(db: DatabaseSync): void {
       CREATE VIEW current_releases AS SELECT * FROM releases WHERE valid_to_revision IS NULL;
       CREATE VIEW current_macros AS SELECT * FROM macros WHERE valid_to_revision IS NULL;
       CREATE VIEW current_macro_uses AS SELECT * FROM macro_uses WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_start_screens AS SELECT * FROM start_screens WHERE valid_to_revision IS NULL;
     `);
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 9;
+export const INDEX_VERSION = 10;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

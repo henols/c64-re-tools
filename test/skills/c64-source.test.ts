@@ -16,11 +16,12 @@ import { assemble } from "../../src/native/acme.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ciaSection, copyOrder, loaderLimits, packLoader, planLoader, loaderState, simulate, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { ciaSection, copyOrder, loaderLimits, packLoader, planLoader, loaderState, simulate, START_SCREEN_CODE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
-import { configValues, entriesInData, entryOutsideImage, layout, render, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
+import { configText, configValues, entriesInData, entryOutsideImage, layout, render, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
+import type { StartScreenRow } from "../../src/knowledge/read.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
 
 let acmeSkip: string | false = false;
@@ -407,6 +408,84 @@ test("with real ACME and Exomizer, a 62 KiB image with RAM at $d000-$dfff packs 
   assert.equal(packed.program.readUInt16LE(0), 0x0801);
   assert.equal(packed.unpackedBytes, 0x10000 - 0x0801, "main.asm with its gap, which the copier covers");
   assert.ok(packed.packedBytes < packed.unpackedBytes, JSON.stringify({ packed: packed.packedBytes }));
+});
+
+/** A start screen of the knowledge: a Koala picture at $6000 in VIC bank 1. */
+const koala = (overrides: Partial<StartScreenRow> = {}): StartScreenRow => ({ space: "c64", mode: "multicolour", screen: 0x5c00, bitmap: 0x6000, colours: 0x7f40, border: 0, background: 6, origin: "llm", revision: "r", ...overrides });
+/** An entry state with the VIC-II, as a capture of this version has it. */
+const vicState = (overrides: Partial<EntryState> = {}) => state({ vic: { registers: new Uint8Array(0x2f), bank: 3 }, ...overrides });
+
+test("a start screen gives the VIC-II values from its addresses, and the loader refuses one that is not in the program or a state without the VIC-II", () => {
+  assert.deepEqual(startScreenPlan(koala()), { d011: 0x3b, d016: 0x18, d018: 0x79, bank: 1, border: 0, background: 6, colourMode: 2 });
+  assert.deepEqual(startScreenPlan(koala({ mode: "text", screen: 0x0400, bitmap: undefined as never, charset: 0x1000, colours: undefined as never, colour: 14 })), { d011: 0x1b, d016: 0x08, d018: 0x15, bank: 0, border: 0, background: 6, colourMode: 1 });
+  assert.equal(startScreenPlan(koala({ mode: "hires", screen: 0xcc00, bitmap: 0xe000, colours: undefined as never })).d018, 0x39);
+  const byteAt = () => 0;
+  const segments = [{ start: 0x4000, end: 0x8fff, files: ["a.asm"] }];
+  assert.throws(() => planLoader({ segments, byteAt, state: state(), entry: 0x4000, header: [], startScreen: koala() }), /no VIC-II values/);
+  assert.throws(() => planLoader({ segments: [{ start: 0x4000, end: 0x8000, files: ["a.asm"] }], byteAt, state: vicState(), entry: 0x4000, header: [], startScreen: koala() }), /The start screen part colours \(\$7f40-\$8327\) is not in one segment/);
+  const plan = planLoader({ segments, byteAt, state: vicState(), entry: 0x4000, header: [], config: true, startScreen: koala({ comment: "The loading picture." }) });
+  assert.match(plan.text, /^!source "config\.asm"\n!source "constants\.asm"\n\n; The start screen: multicolour, screen \$5c00, bitmap \$6000\. The loading picture\.\nc64_source_ss_d011 = \$3b\n/m);
+  assert.match(plan.text, /\nc64_source_ss_bank = \$02 ; VIC bank \$4000-\$7fff\n/);
+  assert.match(plan.text, /\n\.done\n!zone c64_source_start_screen \{\n!source "start_screen\.asm"\n\}\n {8}lda #\$35\n/, "after the copies, before the VIC-II part");
+  assert.match(plan.text, /lda loader_copier_src\+\$200,x\n {8}sta \$c200,x\n/, "the stub moves three pages");
+  assert.equal(plan.copier, 0xc000);
+  assert.deepEqual(plan.startScreen, startScreenPlan(koala()));
+  const packed = planLoader({ segments: [{ start: 0x0801, end: 0xbfff, files: ["a.asm"] }, { start: 0xd000, end: 0xdfff, files: ["b.asm"] }], byteAt, state: vicState(), entry: 0x0810, header: [], switches: true, startScreen: koala() });
+  assert.ok(packed.packed !== undefined);
+  assert.match(packed.text, /^!source "switches\.asm"\n\n; The start screen/m, "the packed form reads the switches too");
+});
+
+test("config.asm has START_SCREEN with the default 1 when the knowledge has a start screen, and keeps a 0", () => {
+  const rendered = render(layout(input([0xea], 0x1000, { startScreen: true })), new Set(), []);
+  assert.match(textOf(rendered, "config.asm"), /\n; Start screen: on by default\nSTART_SCREEN = 1 ; the loader shows the start screen/);
+  assert.equal(rendered.files.some((file) => file.name === "switches.asm"), false, "without releases there is no switches.asm");
+  assert.deepEqual([...configValues(configText({ switches: [], patches: new Map(), startScreen: true }, new Map([["START_SCREEN", 0]])))], [["START_SCREEN", 0]]);
+  assert.equal(render(layout(input([0xea], 0x1000)), new Set(), []).files.some((file) => file.name === "config.asm"), false);
+});
+
+test("with real ACME, the start screen code has its planned size in each colour mode, for START_SCREEN 0 and 1", { skip: acmeSkip }, async () => {
+  for (const [mode, size] of START_SCREEN_SIZES.entries()) {
+    for (const on of [0, 1]) {
+      const values = { d011: 0x3b, d016: 0x18, d018: 0x79, bank: 2, border: 0, background: 6, colour_mode: mode, colour: 1, colours: 0x7f40 };
+      const text = ["!cpu 6510", "* = $c000", ...Object.entries(values).map(([name, value]) => `c64_source_ss_${name} = ${value}`), `START_SCREEN = ${on}`, '!zone c64_source_start_screen {', '!source "start_screen.asm"', "}"].join("\n");
+      const files = [{ path: "test.asm", text }, { path: "start_screen.asm", text: START_SCREEN_CODE }];
+      const contents = files.map((file) => Buffer.from(file.text));
+      const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.path, size: contents[index]!.length })), entrySource: "test.asm", includeDirs: [], defines: {} }, contents, localToolContext());
+      assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+      assert.equal(attachments![0]!.length - 2, size, `colour mode ${mode}, START_SCREEN ${on}`);
+      const label = (name: string) => result.symbols!.some((symbol) => symbol.name === name);
+      assert.ok(label("loader_start_screen_wait") && label("loader_start_screen_continue"));
+    }
+  }
+});
+
+test("with real ACME, a loader with a start screen assembles to its planned layout in the plain and the packed form", { skip: acmeSkip }, async () => {
+  const bytes = Array.from({ length: 0x8000 }, (_, offset) => offset & 0xff);
+  const source = input(bytes, 0x0800, { regions: [{ start: 0x0800, end: 0x87ff, type: "bytes" }], startScreen: true });
+  const rendered = render(layout(source), new Set(), []);
+  const build = async (text: string) => {
+    const files = [...rendered.files, { name: "loader.asm", text }, { name: "start_screen.asm", text: START_SCREEN_CODE }];
+    const contents = files.map((file) => Buffer.from(file.text));
+    const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
+    assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+    return { program: attachments![0]!, symbols: result.symbols! };
+  };
+  for (const row of [koala(), koala({ colours: undefined as never, colour: 3 }), koala({ mode: "hires", colours: undefined as never })]) {
+    const plan = planLoader({ segments: [{ start: 0x0800, end: 0x87ff, files: ["segment_0800.asm"] }], byteAt: source.byteAt, state: vicState({ pc: 0x0800 }), entry: 0x0800, header: [], config: true, startScreen: row });
+    const { program, symbols } = await build(plan.text);
+    assert.equal(program.length - 2, plan.end - 0x0801 + 1, `the plan has the size of the code, ${row.mode}`);
+    const wait = symbols.find((symbol) => symbol.name === "loader_start_screen_wait")!;
+    const at = wait.kind === "address" ? wait.address : wait.value;
+    assert.ok(at > plan.copier && at < plan.copier + 0x300, "the start screen runs in the copier pages");
+  }
+  const packedSource: SourceInput = { ...input([], 0x0800, { startScreen: true }), segments: [{ start: 0x0800, end: 0xbfff }, { start: 0xd000, end: 0xdfff }], byteAt: (address) => address & 0xff };
+  const packedRendered = render(layout(packedSource), new Set(), []);
+  const packed = planLoader({ segments: [{ start: 0x0800, end: 0xbfff, files: ["segment_0800.asm"] }, { start: 0xd000, end: 0xdfff, files: ["segment_d000.asm"] }], byteAt: packedSource.byteAt, state: vicState({ pc: 0x0800 }), entry: 0x0800, header: [], config: true, startScreen: koala() });
+  const files = [...packedRendered.files, { name: "loader.asm", text: packed.text }, { name: "start_screen.asm", text: START_SCREEN_CODE }];
+  const contents = files.map((file) => Buffer.from(file.text));
+  const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
+  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+  assert.equal(attachments![0]!.length - 2, packed.end - packed.packed!.start + 1, "the packed form has its planned layout");
 });
 
 test("an entry state file is read with its flags as PLP reads them, and a wrong one is refused", () => {

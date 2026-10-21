@@ -39,6 +39,9 @@ import {
   RELEASE_COLUMNS,
   releaseLabeled,
   SWITCH_COLUMNS,
+  START_SCREEN_COLUMNS,
+  currentStartScreen,
+  startScreenRanges,
   switchNamed,
   coverageRuns,
   resolveRevision,
@@ -58,6 +61,7 @@ import {
   toRelease,
   toSuppression,
   toSwitch,
+  toStartScreen,
   toSymbol,
   type CommentRow,
   type CoverageRun,
@@ -70,10 +74,11 @@ import {
   type RegionRow,
   type ReleaseRow,
   type SuppressionRow,
+  type StartScreenRow,
   type SwitchRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SwitchKind, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName } from "./text.ts";
 
 /** What a change rests on: a coverage run, a test or another project file with its SHA-256, or a note. */
@@ -280,6 +285,12 @@ export class Change {
       .run(this.#rowId(), row.space, row.label, row.file, row.sha256, row.base ? 1 : 0, row.comment ?? null, row.origin, this.id());
   }
 
+  insertStartScreen(row: Omit<StartScreenRow, "revision">): void {
+    this.#db
+      .prepare("INSERT INTO start_screens (id, space, mode, screen, bitmap, charset, colours, colour, border, background, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.mode, row.screen, row.bitmap ?? null, row.charset ?? null, row.colours ?? null, row.colour ?? null, row.border, row.background, row.comment ?? null, row.origin, this.id());
+  }
+
   insertMacro(row: Omit<MacroRow, "revision">): void {
     this.#db
       .prepare("INSERT INTO macros (id, space, name, params, body, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
@@ -323,6 +334,7 @@ function describe(conflict: Conflict): string {
   const place = (entry: ConflictRow) => {
     if (entry.entity === "macro" || entry.entity === "switch") return entry.row.name;
     if (entry.entity === "release") return entry.row.label;
+    if (entry.entity === "start-screen") return formatC64Address(entry.row.screen);
     const row = entry.row as { address?: number; start?: number; end?: number; from?: number };
     if (row.address !== undefined) return formatC64Address(row.address);
     if (row.from !== undefined && entry.entity === "reference") return formatC64Address(row.from);
@@ -432,6 +444,7 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
     throw new Refusal("conflict", `The name ${request.name} already belongs to ${formatC64Address(owner.address)}. Rename or remove that symbol first.`);
   }
   if (switchNamed(db, request.name, space) !== undefined) throw new Refusal("conflict", `${request.name} is the name of a switch. Give the symbol another name.`);
+  if (request.name === START_SCREEN_SWITCH) throw new Refusal("conflict", `${START_SCREEN_SWITCH} is the switch of the start screen in the generated source. Give the symbol another name.`);
   const release = request.name.startsWith(RELEASE_DEFINE) ? releaseLabeled(db, request.name.slice(RELEASE_DEFINE.length), space) : undefined;
   if (release !== undefined) throw new Refusal("conflict", `${request.name} builds the release ${release.label}. Give the symbol another name.`);
   if (existing !== undefined) change.close("symbols", "space = ? AND address = ?", space, request.address);
@@ -945,6 +958,7 @@ function checkSwitch(request: SwitchRequest): void {
   checkSpace(request);
   checkSwitchName(request.name);
   if (request.name.startsWith(RELEASE_DEFINE)) throw new Refusal("invalid-input", `A switch name does not start with ${RELEASE_DEFINE}: the build of a release defines ${RELEASE_DEFINE}<label>.`);
+  if (request.name === START_SCREEN_SWITCH) throw new Refusal("invalid-input", `${START_SCREEN_SWITCH} is the switch of the start screen in the generated source. Give the switch another name.`);
   checkOneOf(SWITCH_KINDS, request.kind, "kind");
   if (request.default !== undefined && request.default !== 0 && request.default !== 1) throw new Refusal("invalid-input", "default must be 0 or 1.");
   if (OFF_KINDS.includes(request.kind) && request.default === 1) {
@@ -1047,6 +1061,92 @@ function unreleaseStep(db: DatabaseSync, change: Change, _origin: Origin, reques
     throw new Refusal("conflict", `The release ${request.label} ${why} the switches ${switches.map((row) => row.name).join(", ")}. Change or remove them first (switch, unswitch).`);
   }
   change.close("releases", "space = ? AND label = ?", space, request.label);
+  return { current: null };
+}
+
+type StartScreenRequest = InSpace & { mode: StartScreenMode; screen: number; bitmap?: number; charset?: number; colours?: number; colour?: number; border: number; background: number; comment?: string };
+
+/**
+ * The rules of the VIC-II for a start screen: the screen at a 1K step, the
+ * bitmap at an 8K step and the charset at a 2K step, all in one 16K VIC bank,
+ * and no part where the VIC-II reads the character ROM. The colours are RAM
+ * that the loader reads with the I/O area in, so not in $d000-$dfff. Nothing is
+ * in pages 0-3, because the loader writes the entry state there.
+ */
+function checkStartScreen(request: StartScreenRequest): void {
+  checkSpace(request);
+  if (spaceOf(request) !== DEFAULT_SPACE) throw new Refusal("invalid-input", "A start screen is only in the space c64.");
+  checkOneOf(START_SCREEN_MODES, request.mode, "mode");
+  checkAddress(request.screen, "screen");
+  for (const key of ["bitmap", "charset", "colours"] as const) if (request[key] !== undefined) checkAddress(request[key], key);
+  for (const key of ["border", "background", "colour"] as const) {
+    const value = request[key];
+    if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 15)) throw new Refusal("invalid-input", `${key} must be a colour from 0 to 15.`);
+  }
+  if (request.mode === "text") {
+    if (request.charset === undefined || request.bitmap !== undefined) throw new Refusal("invalid-input", "A text start screen has a charset and no bitmap. Give --charset, for example '$1000' for the character ROM in VIC bank 0.");
+  } else if (request.bitmap === undefined || request.charset !== undefined) {
+    throw new Refusal("invalid-input", `A ${request.mode} start screen has a bitmap and no charset. Give --bitmap.`);
+  }
+  if (request.colours !== undefined && request.colour !== undefined) throw new Refusal("invalid-input", "Give the colour RAM as --colours or as --colour, not both.");
+  const colourRam = request.colours !== undefined || request.colour !== undefined;
+  if (request.mode === "hires" && colourRam) throw new Refusal("invalid-input", "A hires bitmap does not use the colour RAM. Remove --colours and --colour.");
+  if (request.mode !== "hires" && !colourRam) throw new Refusal("invalid-input", `A ${request.mode} start screen uses the colour RAM. Give --colours with the address of its 1000 bytes, or --colour with one colour.`);
+  const step = (value: number, size: number, what: string) => {
+    if (value % size !== 0) throw new Refusal("invalid-input", `The VIC-II reads the ${what} only at a step of $${size.toString(16)}: ${formatC64Address(value)} is not at one.`);
+  };
+  step(request.screen, 0x400, "screen");
+  if (request.bitmap !== undefined) step(request.bitmap, 0x2000, "bitmap");
+  if (request.charset !== undefined) step(request.charset, 0x800, "charset");
+  const bank = request.screen >> 14;
+  for (const [what, value] of [["bitmap", request.bitmap], ["charset", request.charset]] as const) {
+    if (value !== undefined && value >> 14 !== bank) throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(value)} is not in the VIC bank of the screen (${formatC64Address(bank << 14)}-${formatC64Address((bank << 14) + 0x3fff)}).`);
+  }
+  for (const { what, range } of startScreenRanges(request)) {
+    if (range.end > 0xffff) throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(range.start)} goes past $ffff.`);
+    if (range.start < 0x0400) throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(range.start)} is in pages 0-3, where the loader writes the entry state.`);
+    if (what === "colours") {
+      if (range.start <= 0xdfff && range.end >= 0xd000) throw new Refusal("invalid-input", `The colours at ${formatC64Address(range.start)} are in $d000-$dfff, where the loader sees the I/O area. Give the RAM address of the 1000 colour bytes.`);
+      continue;
+    }
+    // In VIC banks 0 and 2 the VIC-II reads the character ROM at $1000-$1fff of the bank.
+    const relative = range.start & 0x3fff;
+    if ((bank & 1) === 0 && relative <= 0x1fff && relative + (range.end - range.start) >= 0x1000) {
+      throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(range.start)} is where the VIC-II reads the character ROM ($1000-$1fff of VIC bank ${bank}). Only a text charset at $1000 or $1800 of the bank uses the ROM font.`);
+    }
+  }
+  checkCommentText(request.comment, "A start screen comment");
+}
+
+function startScreenStep(db: DatabaseSync, change: Change, origin: Origin, request: StartScreenRequest): Step<StartScreenRow, StartScreenRow> {
+  const space = spaceOf(request);
+  const existing = currentStartScreen(db, space);
+  const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
+  const row: Omit<StartScreenRow, "revision"> = {
+    space,
+    mode: request.mode,
+    screen: request.screen,
+    ...(request.bitmap === undefined ? {} : { bitmap: request.bitmap }),
+    ...(request.charset === undefined ? {} : { charset: request.charset }),
+    ...(request.colours === undefined ? {} : { colours: request.colours }),
+    ...(request.colour === undefined ? {} : { colour: request.colour }),
+    border: request.border,
+    background: request.background,
+    ...(comment === undefined ? {} : { comment }),
+    origin: origin as StartScreenRow["origin"],
+  };
+  const same = existing !== undefined && KEYS.start_screens.key(existing) === KEYS.start_screens.key({ ...row, origin: existing.origin, revision: "" });
+  if (same && !confirms(existing.origin, origin)) return { current: existing };
+  if (existing !== undefined) change.close("start_screens", "space = ?", space);
+  change.insertStartScreen(row);
+  const current = currentStartScreen(db, space)!;
+  return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
+}
+
+function unstartScreenStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace): Step<null> {
+  const space = spaceOf(request);
+  if (currentStartScreen(db, space) === undefined) throw new Refusal("not-found", "The knowledge has no start screen.");
+  change.close("start_screens", "space = ?", space);
   return { current: null };
 }
 
@@ -1290,6 +1390,17 @@ export function removeRelease(db: DatabaseSync, context: WriteContext, request: 
   return result(write(db, context, "remove-release", (change) => unreleaseStep(db, change, context.origin, request)));
 }
 
+/** Writes the start screen of the program: the loader of the generated source shows it before the entry. */
+export function setStartScreen(db: DatabaseSync, context: WriteContext, request: StartScreenRequest): WriteResult<StartScreenRow, StartScreenRow> {
+  checkStartScreen(request);
+  return result(write(db, context, "set-start-screen", (change) => startScreenStep(db, change, context.origin, request)));
+}
+
+export function removeStartScreen(db: DatabaseSync, context: WriteContext, request: InSpace): WriteResult<null> {
+  checkSpace(request);
+  return result(write(db, context, "remove-start-screen", (change) => unstartScreenStep(db, change, context.origin, request)));
+}
+
 /** Writes a macro of the generated source. */
 export function setMacro(db: DatabaseSync, context: WriteContext, request: MacroRequest): WriteResult<MacroRow, MacroRow> {
   checkMacro(request);
@@ -1490,6 +1601,12 @@ const KEYS = {
     map: toRelease,
     key: (row: ReleaseRow) => `${row.space}|${row.label}|${row.file}|${row.sha256}|${row.base}|${row.comment ?? ""}|${row.origin}`,
   },
+  start_screens: {
+    columns: START_SCREEN_COLUMNS,
+    map: toStartScreen,
+    key: (row: StartScreenRow) =>
+      `${row.space}|${row.mode}|${row.screen}|${row.bitmap ?? ""}|${row.charset ?? ""}|${row.colours ?? ""}|${row.colour ?? ""}|${row.border}|${row.background}|${row.comment ?? ""}|${row.origin}`,
+  },
   macros: { columns: MACRO_COLUMNS, map: toMacro, key: (row: MacroRow) => `${row.space}|${row.name}|${listText(row.params)}|${row.body}|${row.comment ?? ""}|${row.origin}` },
   macro_uses: { columns: MACRO_USE_COLUMNS, map: toMacroUse, key: (row: MacroUseRow) => `${row.space}|${row.start}|${row.end}|${row.macro}|${listText(row.args)}|${row.origin}` },
   suppressions: {
@@ -1553,6 +1670,10 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         }
         if (table === "releases") {
           change.insertRelease(spec.map(row as never) as ReleaseRow);
+          continue;
+        }
+        if (table === "start_screens") {
+          change.insertStartScreen(spec.map(row as never) as StartScreenRow);
           continue;
         }
         if (table === "macro_uses") {

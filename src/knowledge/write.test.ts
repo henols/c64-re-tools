@@ -9,7 +9,7 @@ import { formatC64Address } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { openForWrite, transaction } from "./database.ts";
 import { setImage } from "./program.ts";
-import { at, commentsAt, currentRevision, listMacroUses, listModules, listPatches, listSwitches, switchNamed, listSuppressions, listSymbols, macroNamed, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
+import { at, commentsAt, currentRevision, currentStartScreen, listMacroUses, listModules, listPatches, listSwitches, switchNamed, listSuppressions, listSymbols, macroNamed, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
 import { historyAt, historyOfMacro, historyOfSwitch, revision as revisionChanges } from "./history.ts";
 import {
   addReference,
@@ -35,7 +35,9 @@ import {
   setOperand,
   setPatch,
   setRelease,
+  setStartScreen,
   setSwitch,
+  removeStartScreen,
   leastPatchBytes,
   unclassifyRegion,
   type OperandImage,
@@ -351,8 +353,8 @@ test("a module starts a file of generated source: one per address and per file, 
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
   for (const file of ["../x.asm", "sub/x.asm", "x.a", ".asm", "x y.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
   // c64-source writes these files itself; macOS and Windows ignore the letter case.
-  for (const file of ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm", "Main.asm", "CONSTANTS.asm", "Switches.asm"]) {
-    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /writes main\.asm, loader\.asm, switches\.asm, config\.asm, constants\.asm, macros\.asm itself/.test(error.message), file);
+  for (const file of ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm", "start_screen.asm", "Main.asm", "CONSTANTS.asm", "Switches.asm"]) {
+    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /writes main\.asm, loader\.asm, switches\.asm, config\.asm, constants\.asm, macros\.asm, start_screen\.asm itself/.test(error.message), file);
   }
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
   assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: nth(db, 3) }, "a write without a title keeps it");
@@ -626,6 +628,46 @@ test("a switch has a kind, a default and the releases that have it on; the base 
   revert(db, llm, { revision: nth(db, 3) });
   assert.deepEqual(listSwitches(db).map((row) => row.name), ["PROTECTION"], "a revert restores switches");
 });
+test("a start screen is one per space, of the VIC-II rules, and it reserves START_SCREEN", () => {
+  const db = fresh();
+  const koala = { mode: "multicolour", screen: 0x5c00, bitmap: 0x6000, colours: 0x7f40, border: 0, background: 6 } as const;
+  const first = setStartScreen(db, llm, { ...koala, comment: "The loading picture." });
+  assert.deepEqual(first.current, { space: "c64", ...koala, comment: "The loading picture.", origin: "llm", revision: nth(db, 1) });
+  assert.equal(setStartScreen(db, llm, koala).revision, null, "the same start screen writes nothing, and a write without a comment keeps it");
+  const text = setStartScreen(db, { origin: "user" }, { mode: "text", screen: 0x0400, charset: 0x1000, colour: 14, border: 14, background: 6 });
+  assert.equal(text.current.mode, "text", "a write replaces the start screen");
+  assert.equal(text.previous?.mode, "multicolour");
+  assert.equal(setStartScreen(db, { origin: "user" }, { mode: "hires", screen: 0xc000, bitmap: 0xe000, border: 0, background: 0 }).current.bitmap, 0xe000);
+
+  const refused: Array<[string, Parameters<typeof setStartScreen>[2], RegExp]> = [
+    ["a text screen needs a charset", { mode: "text", screen: 0x0400, colour: 1, border: 0, background: 0 }, /has a charset and no bitmap/],
+    ["a bitmap needs a bitmap", { mode: "hires", screen: 0x4400, border: 0, background: 0 }, /has a bitmap and no charset/],
+    ["hires has no colour RAM", { mode: "hires", screen: 0x4400, bitmap: 0x6000, colour: 1, border: 0, background: 0 }, /does not use the colour RAM/],
+    ["multicolour needs the colour RAM", { mode: "multicolour", screen: 0x5c00, bitmap: 0x6000, border: 0, background: 0 }, /uses the colour RAM/],
+    ["not both colour forms", { ...koala, colour: 1 }, /not both/],
+    ["the screen at a 1K step", { ...koala, screen: 0x5c01 }, /only at a step of \$400/],
+    ["the bitmap at an 8K step", { ...koala, bitmap: 0x5000 }, /only at a step of \$2000/],
+    ["one VIC bank", { ...koala, bitmap: 0xa000 }, /not in the VIC bank of the screen/],
+    ["a screen on the character ROM", { mode: "text", screen: 0x1400, charset: 0x1800, colour: 1, border: 0, background: 0 }, /reads the character ROM/],
+    ["a bitmap on the character ROM", { mode: "hires", screen: 0x8400, bitmap: 0x8000, border: 0, background: 0 }, /reads the character ROM/],
+    ["pages 0-3", { mode: "text", screen: 0x0000, charset: 0x1000, colour: 1, border: 0, background: 0 }, /in pages 0-3/],
+    ["the colours under the I/O area", { ...koala, colours: 0xd800 }, /\$d000-\$dfff/],
+    ["a colour from 0 to 15", { ...koala, border: 16 }, /from 0 to 15/],
+    ["only the space c64", { ...koala, space: "drive8" }, /only in the space c64/],
+  ];
+  for (const [what, request, message] of refused) assert.throws(() => setStartScreen(db, llm, request), message, what);
+
+  assert.throws(() => renameSymbol(db, llm, { address: 0x2000, name: "START_SCREEN" }), /switch of the start screen/);
+  assert.throws(() => setSwitch(db, { origin: "llm", image: sourceImage() }, { name: "START_SCREEN", kind: "fix" }), /switch of the start screen/);
+
+  removeStartScreen(db, llm, {});
+  assert.equal(currentStartScreen(db), undefined);
+  assert.throws(() => removeStartScreen(db, llm, {}), failsWith("not-found"));
+  revert(db, llm, { revision: nth(db, 1) });
+  assert.equal(currentStartScreen(db)?.bitmap, 0x6000, "a revert restores the start screen");
+  assert.deepEqual(revisionChanges(db, nth(db, 2)).added.map((entry) => entry.entity), ["start-screen"]);
+});
+
 test("a macro and its uses: the use is whole instructions, its args are known names, and a rename follows", () => {
   const db = fresh();
   const context: WriteContext = { origin: "llm", image: sourceImage() };

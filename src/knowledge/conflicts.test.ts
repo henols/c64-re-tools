@@ -14,8 +14,8 @@ import { conflicts, type Conflict } from "./conflicts.ts";
 import { openForRead, openForWrite, textPath, transaction, withWrite } from "./database.ts";
 import { importFindings } from "./import.ts";
 import { listRegions, operandAt, referencesFrom, symbolAt } from "./read.ts";
-import { listMacros, listMacroUses, listPatches, listSwitches } from "./read.ts";
-import { addReference, Change, classifyRegion, mergeConflicts, renameSymbol, setComment, setMacro, setMacroUse, setModule, setOperand, setPatch, setRelease, setSwitch, unclassifyRegion, type OperandImage, type WriteContext } from "./write.ts";
+import { currentStartScreen, listMacros, listMacroUses, listPatches, listSwitches } from "./read.ts";
+import { addReference, Change, classifyRegion, mergeConflicts, renameSymbol, setComment, setMacro, setMacroUse, setModule, setOperand, setPatch, setRelease, setStartScreen, setSwitch, unclassifyRegion, type OperandImage, type WriteContext } from "./write.ts";
 
 const roots: string[] = [];
 after(() => {
@@ -225,4 +225,13 @@ test("patches, switches, macros and macro uses have their conflicts, and merge k
   assert.deepEqual(read(root, (db) => listSwitches(db).map((row) => [row.name, row.default])), [["CRACK", 0], ["LEVELS", 1], ["TRAINER", 0]], "the newest LEVELS stays");
   assert.deepEqual(read(root, (db) => listMacros(db).map((row) => [row.name, row.body.split("\n").length])), [["inc16", 4], ["skip", 1]], "the newest inc16 stays");
   assert.deepEqual(read(root, (db) => listMacroUses(db).map((row) => row.macro)), ["skip"]);
+});
+
+test("two start screens are a conflict, and merge keeps the newest", () => {
+  const screen = (background: number) => (db: DatabaseSync) => setStartScreen(db, llm, { mode: "multicolour", screen: 0x5c00, bitmap: 0x6000, colours: 0x7f40, border: 0, background });
+  const root = computers(nothing, (a) => withWrite(screen(1), a), (b) => withWrite(screen(2), b));
+  assert.deepEqual(rules(read(root, conflicts)), ["start-screen"]);
+  withWrite((db) => mergeConflicts(db, llm, platform), root);
+  assert.deepEqual(read(root, conflicts), []);
+  assert.equal(read(root, (db) => currentStartScreen(db)?.background), 2);
 });

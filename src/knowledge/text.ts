@@ -185,6 +185,25 @@ export const TABLES: readonly TableSpec[] = [
     sort: "start_address",
     fields: [space, field("start", "start_address", "address"), field("end", "end_address", "address"), field("macro", "macro", "text"), field("args", "args", "text"), origin],
   },
+  // The start screen of the program: the loader of the generated source shows it before the entry.
+  {
+    table: "start_screens",
+    file: "start_screen.jsonl",
+    sort: "screen",
+    fields: [
+      space,
+      field("mode", "mode", "text"),
+      field("screen", "screen", "address"),
+      field("bitmap", "bitmap", "address", true),
+      field("charset", "charset", "address", true),
+      field("colours", "colours", "address", true),
+      field("colour", "colour", "integer", true),
+      field("border", "border", "integer"),
+      field("background", "background", "integer"),
+      field("comment", "comment", "text", true),
+      origin,
+    ],
+  },
   // The program itself: its bytes, at most 64 to a row, so a changed byte changes one line.
   { table: "memory", file: "memory.jsonl", sort: "address", fields: [space, field("at", "address", "address"), field("bytes", "bytes", "hex"), origin] },
   // Where the program starts, the machine state there, and the stages of its unpacker.

@@ -403,6 +403,8 @@ export interface ReadmeInput {
   free: readonly FreeRange[];
   switches: ReadonlyArray<{ name: string; kind: string; value: number }>;
   tests: { written: ReadonlyArray<{ file: string; kind: "scenario" | "run" }>; leftOut: ReadonlyArray<{ file: string; reason: string }> };
+  /** The loader shows the start screen of the program. */
+  startScreen?: boolean;
 }
 
 /** The README of the new project: the build and the tests first, then the free ranges, the files and where the program comes from. */
@@ -426,6 +428,7 @@ export function readmeText(input: ReadmeInput): string {
     "```",
     `acme -f cbm -o ../build/${name}.prg ${input.entryFile}`,
     "```",
+    ...(input.startScreen === true ? ["", "The loader shows the start screen of the program and waits for a key or a fire button. To start the program at once, add `-DSTART_SCREEN=0` to the command."] : []),
     "",
     "## Test",
     "",

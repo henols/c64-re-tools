@@ -52,6 +52,8 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Write a switch | `switch PROTECTION --kind protection --releases ORIGINAL` |
 | Write the code of a switch for a range | `patch '$100e-$1010' PROTECTION --code-file no-check.asm` |
 | List the releases, switches and patches | `switches` |
+| Record the start screen of the program | `start-screen --mode multicolour --screen '$5c00' --bitmap '$6000' --colours '$8328' --border 0 --background 0` |
+| Remove the start screen | `unstart-screen` |
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` |
 | Write instructions as one use of a macro | `use '$1005-$100a' inc16 --args ptr` |
 | Do many writes as one revision | `apply .c64-re-tools/local/batch.json` |
@@ -129,7 +131,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--code <text>` | `patch` | The ACME code of the patch. |
 | `--code-file <file>` | `patch` | A project file with the ACME code of the patch. |
 | `--nop` | `patch` | The patch is NOP only. |
-| `--comment <text>` | `patch`, `switch`, `release`, `macro` | A comment for the row. A `patch`, `switch` or `macro` write without `--comment` keeps the comment that the row has. |
+| `--comment <text>` | `patch`, `switch`, `release`, `macro`, `start-screen` | A comment for the row. A `patch`, `switch`, `macro` or `start-screen` write without `--comment` keeps the comment that the row has. |
 | `--default <0\|1>` | `switch` | The value in the default build. See the section of `switch`. |
 | `--releases <A,B>` | `switch` | The labels of the releases that have the switch on, as a comma list. A write without it keeps the releases that the switch has. |
 | `--file <file>` | `release` | Necessary. The PRG or `image.json` of the release, in a folder that git keeps. |
@@ -138,6 +140,14 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--body <text>` | `macro` | The body of the macro. |
 | `--body-file <file>` | `macro` | A project file with the body of the macro. |
 | `--args <x, y>` | `use` | One expression for each param of the macro, as a comma list. |
+| `--mode <mode>` | `start-screen` | Necessary. The mode of the VIC-II: `text`, `hires` or `multicolour`. |
+| `--screen <address>` | `start-screen` | Necessary. The address of the screen memory: 1000 bytes. |
+| `--bitmap <address>` | `start-screen` | The address of the bitmap: 8000 bytes. `hires` and `multicolour` need it. |
+| `--charset <address>` | `start-screen` | The address of the charset: 2048 bytes. `text` needs it. |
+| `--colours <address>` | `start-screen` | The address of the 1000 bytes that the loader copies to the colour RAM. |
+| `--colour <0-15>` | `start-screen` | One colour for all of the colour RAM, in place of `--colours`. |
+| `--border <0-15>` | `start-screen` | Necessary. The border colour. |
+| `--background <0-15>` | `start-screen` | Necessary. The background colour. |
 
 ---
 
@@ -223,6 +233,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 
 - `body.image` is `null` when the knowledge has no program in the space. Then put the program in with `image`.
 - Else `body.image` has `segments`, `bytes`, `entry`, `state` and `stages`. `state` is `true` when the knowledge has the entry state of a capture. `stages` is the number of unpacker stages.
+- `body.startScreen` gives the start screen of the space, when the knowledge has one.
 - `body.coverage.maps` lists the coverage maps of the space. `body.coverage.ranges` gives the number of ranges of each access kind.
 
 ### `listing <range>`
@@ -238,7 +249,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 ### `export`
 
 - `body` holds `counts`, `revision`, `out`, `bytes` and `sha256`. `counts` gives the number of rows of each kind in the file.
-- The file has all current knowledge of the space in the range, with the analyzer names and the source knowledge.
+- The file has all current knowledge of the space in the range, with the analyzer names and the source knowledge. `startScreen` is the start screen, when the knowledge has one.
 
 ---
 
@@ -368,7 +379,7 @@ An operand expression tells the generated source how to write the operand of one
 
 ### `release <label>`
 
-A rebuild keeps all of the program: unused bytes, dead code, old copies and leftovers of the development. It keeps a copy protection, a trainer and a cheat in the source. A switch puts each of them in or out of the build. Only a cracktro is not in the rebuild.
+A rebuild keeps all of the program: unused bytes, dead code, old copies and leftovers of the development. It keeps a copy protection, a trainer and a cheat in the source. A switch puts each of them in or out of the build. A start screen of the program stays too: record it with `start-screen`. Only a cracktro and the other screens of a crack are not in the rebuild.
 
 - A release is a PRG or the `image.json` of a capture, in a folder that git keeps, for example `original/`. The script refuses a file in `.c64-re-tools/local/`.
 - A label is upper case, for example `ORIGINAL`, `FIRESTAR` or `V2`.
@@ -380,6 +391,26 @@ A rebuild keeps all of the program: unused bytes, dead code, old copies and left
 ### `unrelease <label>`
 
 - The knowledge refuses a release that a switch names. It also refuses the base release while the knowledge has switches.
+
+### `start-screen`
+
+A start screen is a loading screen, a title screen or a presentation screen of the program itself. The loader of the generated source shows it before the program starts. Then the loader waits for a key, or for a fire button on joystick port 1 or 2.
+
+- Record only a screen of the program itself. Do not record a screen of a crack, for example a picture, an intro or a credit screen of a crack group.
+- The bytes of the screen must be in the program of the knowledge at the entry. Thus capture the program while the bytes of the screen are in memory.
+- Get the mode, the addresses and the colours from the VIC-II while the original program shows the screen.
+- The colour RAM is not in the capture. Find the 1000 colour bytes in the program: compare them with the colour RAM at $d800 while the original shows the screen. Give their address with `--colours`. If the program does not have them, give one colour with `--colour`.
+- `text` needs `--charset`. `hires` and `multicolour` need `--bitmap`. `text` and `multicolour` need `--colours` or `--colour`. `hires` uses neither.
+- The screen is at a step of $0400, the bitmap at a step of $2000 and the charset at a step of $0800. They must be in one VIC bank of 16 KB.
+- In VIC bank 0 and 2, the VIC-II reads the character ROM at $1000-$1fff of the bank. A screen or a bitmap cannot be there. A charset at $1000 or $1800 of the bank is the character ROM.
+- No part can be in $0000-$03ff. The colours cannot be in $d000-$dfff.
+- A space has one start screen, and only the space `c64` has one. A write replaces the start screen of the knowledge.
+- The generated source has the switch `START_SCREEN`. Thus no symbol and no switch can have that name.
+- `body.startScreen` gives the start screen after the write.
+
+### `unstart-screen`
+
+- Removes the start screen. The loader of the generated source then starts the program at once.
 
 ### `switch <name>`
 

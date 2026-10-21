@@ -16,6 +16,7 @@ import {
   PATCH_COLUMNS,
   REFERENCE_COLUMNS,
   RELEASE_COLUMNS,
+  START_SCREEN_COLUMNS,
   SWITCH_COLUMNS,
   REGION_COLUMNS,
   SUPPRESSION_COLUMNS,
@@ -28,6 +29,7 @@ import {
   toPatch,
   toReference,
   toRelease,
+  toStartScreen,
   toSwitch,
   toRegion,
   toSuppression,
@@ -56,6 +58,7 @@ export const CONFLICT_RULES = {
   switch: "two switches with one name",
   release: "two releases with one label",
   "release-base": "two base releases",
+  "start-screen": "two start screens",
   macro: "two macros with one name",
   "macro-use": "macro uses that overlap",
 } as const;
@@ -116,6 +119,7 @@ const RULES: readonly TableRule[] = [
   { rule: "switch", table: "switches", entity: "switch", columns: SWITCH_COLUMNS, map: toSwitch, key: ["name"] },
   { rule: "release", table: "releases", entity: "release", columns: RELEASE_COLUMNS, map: toRelease, key: ["label"] },
   { rule: "release-base", table: "releases", entity: "release", columns: RELEASE_COLUMNS, map: toRelease, key: ["base"], where: "base = 1" },
+  { rule: "start-screen", table: "start_screens", entity: "start-screen", columns: START_SCREEN_COLUMNS, map: toStartScreen, key: [] },
   { rule: "macro", table: "macros", entity: "macro", columns: MACRO_COLUMNS, map: toMacro, key: ["name"] },
   { rule: "macro-use", table: "macro_uses", entity: "macro-use", columns: MACRO_USE_COLUMNS, map: toMacroUse, key: "overlap" },
 ];

@@ -10,7 +10,7 @@ import { openForWrite, textPath } from "./database.ts";
 import { ensureSchema } from "./schema.ts";
 import { loadText, newRevisionId, REVISION_ID, REVISIONS_FILE, revisionsText, TABLES, tableText } from "./text.ts";
 import { importFindings } from "./import.ts";
-import { applyBatch, renameSymbol, setRelease, setSwitch, unclassifyRegion } from "./write.ts";
+import { applyBatch, renameSymbol, setRelease, setStartScreen, setSwitch, unclassifyRegion } from "./write.ts";
 import { addCoverage, setImage } from "./program.ts";
 import { COVERAGE } from "../c64.ts";
 
@@ -65,6 +65,7 @@ function fullProject(): { folder: string; db: DatabaseSync } {
     { op: "use", start: 0x8100, end: 0x8105, macro: "inc16", args: ["$fb"] },
   ]);
   unclassifyRegion(db, { origin: "user" }, { start: 0x9000, end: 0x900f });
+  setStartScreen(db, { origin: "user" }, { mode: "multicolour", screen: 0x5c00, bitmap: 0x6000, colours: 0x7f40, border: 0, background: 6, comment: "The loading picture." });
   renameSymbol(db, { origin: "user" }, { address: 0x80c0, name: "raster_irq" });
   setImage(db, { origin: "user" }, { segments: [{ start: 0x8000, end: 0x8105 }], byteAt: (address) => address & 0xff, entry: 0x8000, state: { registers: { pc: "$8000" } }, stages: [{ stage: 0 }] });
   const run = new Uint8Array(0x10000);

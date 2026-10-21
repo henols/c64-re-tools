@@ -26,8 +26,8 @@ import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
 import { analyzedBytes, memoryRows, programCoverage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
-import { ANALYZER_NAME_ORDER, baseValue, currentRevision, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listReleases, listSpaces, listSwitches, listSymbols, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, RELEASE_DEFINE, type Space } from "#src/knowledge/schema.ts";
+import { ANALYZER_NAME_ORDER, baseValue, currentRevision, currentStartScreen, startScreenRanges, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listReleases, listSpaces, listSwitches, listSymbols, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { subtract, write } from "#src/knowledge/write.ts";
 import { assemble, symbolsFileText } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
@@ -39,10 +39,28 @@ import { isoCet } from "#src/time.ts";
 import { zipFiles } from "#src/zip.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { COPIER_SOURCE, LOADER_JUMP, loaderLimits, packLoader, planLoader, rasterLine, loaderState, simulate, stopCause, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan, type PackedLoader } from "./lib/loader.ts";
+import {
+  COPIER_SOURCE,
+  LOADER_JUMP,
+  loaderLimits,
+  packLoader,
+  planLoader,
+  rasterLine,
+  loaderState,
+  simulate,
+  START_SCREEN_CODE,
+  START_SCREEN_CONTINUE,
+  START_SCREEN_FILE,
+  START_SCREEN_WAIT,
+  stopCause,
+  VIC_DISPLAY_REGISTERS,
+  type EntryState,
+  type LoaderPlan,
+  type PackedLoader,
+} from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
 import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
-import { CONFIG_FILE, configText, configValues, entriesInData, entryOutsideImage, hasSwitchFile, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
+import { CONFIG_FILE, configText, configValues, entriesInData, entryOutsideImage, hasConfigFile, hasSwitchFile, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
 
 /** At most this many diagnostics or differences of one check. */
 const MAX_DIAGNOSTICS = 20;
@@ -87,6 +105,8 @@ function readKnowledge(space: Space, analyzerNames = false) {
       releases,
       macros: listMacros(db, undefined, space),
       macroUses: listMacroUses(db, undefined, undefined, undefined, space),
+      // The start screen is of the C64 program: the loader shows it.
+      startScreen: space === DEFAULT_SPACE ? currentStartScreen(db, space) : undefined,
     };
   } finally {
     db?.close();
@@ -409,7 +429,7 @@ function compareBuilds(built: Assembled, ranges: readonly AddressRange[], base: 
  * from config.asm: a define of a switch is an error, because config.asm also
  * gives it a value. A switch without a value has its default.
  */
-function withValues(files: Array<{ name: string; text: string }>, laid: Pick<Layout, "switches" | "patches">, values: ReadonlyMap<string, number>): Array<{ name: string; text: string }> {
+function withValues(files: Array<{ name: string; text: string }>, laid: Pick<Layout, "switches" | "patches" | "startScreen">, values: ReadonlyMap<string, number>): Array<{ name: string; text: string }> {
   return files.map((file) => (file.name === CONFIG_FILE ? { ...file, text: configText(laid, values) } : file));
 }
 
@@ -504,7 +524,12 @@ interface LoaderRun {
   verified: boolean;
   differences: string[];
   stop?: { pc: string; port: string; cause?: string; history: string[] };
+  /** The start screen: shown with its VIC-II values, and still waiting after START_SCREEN_FRAMES frames. */
+  startScreen?: { shown: boolean; waits: boolean; wait: string; continue: string };
 }
+
+/** The frames that the check of the loader lets the start screen wait without a key. */
+const START_SCREEN_FRAMES = 50;
 
 /** The history entries that a stop of the loader gives, so the agent sees the last instructions. */
 const STOP_HISTORY = 16;
@@ -512,6 +537,8 @@ const STOP_HISTORY = 16;
 /** How the check of the loader runs it: the copier's address in the loader file, the file byte there, and the frames to the copier. */
 interface LoaderRunPlan {
   jump: number;
+  /** The wait of the start screen and the code after it, when the loader has a start screen. */
+  startScreen?: { wait: number; continue: number };
   copierSource: number;
   fileByte: (address: number) => number;
   copierFrames: number;
@@ -535,6 +562,28 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
     };
     const copier = await client.runUntil({ target: { kind: "address", address: plan.copier, space: "c64" }, timeoutFrames: run.copierFrames });
     if (!copier.reached) return await stopped(copier.pc, false, `its copier at ${formatC64Address(plan.copier)}`);
+    // The start screen waits for a key or a fire button. The emulator cannot press a key of the keyboard matrix
+    // on each VICE, so the check lets it wait, then sets the PC to the code after the wait.
+    let screen: LoaderRun["startScreen"];
+    const screenDifferences: string[] = [];
+    if (run.startScreen !== undefined && plan.startScreen !== undefined) {
+      const labels = { wait: formatC64Address(run.startScreen.wait), continue: formatC64Address(run.startScreen.continue) };
+      const atWait = await client.runUntil({ target: { kind: "address", address: run.startScreen.wait, space: "c64" }, timeoutFrames: LOADER_FRAMES });
+      if (!atWait.reached) return await stopped(atWait.pc, true, `its start screen at ${labels.wait}`);
+      const held = await client.runUntil({ target: { kind: "address", address: run.startScreen.continue, space: "c64" }, timeoutFrames: START_SCREEN_FRAMES });
+      const vic = Buffer.from((await client.ioRead(0xd000, 0x2f)).data, "hex");
+      const bank = 3 - (Buffer.from((await client.ioRead(0xdd00, 1)).data, "hex")[0]! & 0x03);
+      const wanted = plan.startScreen;
+      const shown: Array<[number, number]> = [[0x11, wanted.d011], [0x15, 0], [0x16, wanted.d016], [0x18, wanted.d018], [0x20, wanted.border], [0x21, wanted.background]];
+      for (const [register, value] of shown) {
+        const mask = VIC_DISPLAY_REGISTERS.find((item) => item.register === register)!.mask;
+        if ((vic[register]! & mask) !== (value & mask)) screenDifferences.push(`the start screen has ${formatC64Address(0xd000 + register)} = $${(vic[register]! & mask).toString(16).padStart(2, "0")}, not $${(value & mask).toString(16).padStart(2, "0")}`);
+      }
+      if (bank !== wanted.bank) screenDifferences.push(`the start screen is in VIC bank ${bank}, not ${wanted.bank}`);
+      screen = { shown: screenDifferences.length === 0, waits: !held.reached, ...labels };
+      if (held.reached) screenDifferences.push(`the start screen did not wait: it got to ${labels.continue} without a key or a fire button`);
+      if (!held.reached) await client.registersSet("c64", { pc: run.startScreen.continue });
+    }
     const atJump = await client.runUntil({ target: { kind: "address", address: jump, space: "c64" }, timeoutFrames: LOADER_FRAMES });
     if (!atJump.reached) return await stopped(atJump.pc, true, `its jump to the entry at ${formatC64Address(jump)}`);
     const memory = await readRam(client, 0x0000, 0x10000);
@@ -582,7 +631,8 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
       }
       plan.cia.masks.forEach((mask, index) => differ(`CIA ${index + 1} interrupt mask`, chips[index]!.interruptMask, mask));
     }
-    return { verified: differences.length === 0, differences: differences.slice(0, MAX_DIAGNOSTICS) };
+    differences.unshift(...screenDifferences);
+    return { verified: differences.length === 0, differences: differences.slice(0, MAX_DIAGNOSTICS), ...(screen === undefined ? {} : { startScreen: screen }) };
   } finally {
     await client.close();
   }
@@ -614,7 +664,7 @@ function sourceMapText(rendered: Rendered, space: string, revision: string | nul
 }
 
 /** The files of the loader. Only a run with --loader writes them, so only such a run removes them. */
-const LOADER_FILES: ReadonlySet<string> = new Set(["loader.asm", "loader.prg"]);
+const LOADER_FILES: ReadonlySet<string> = new Set(["loader.asm", "loader.prg", START_SCREEN_FILE]);
 
 /** The start of the line of loader.asm that gives the knowledge revision of the loader. */
 const LOADER_REVISION = "Loader generated by c64-source from knowledge revision ";
@@ -680,6 +730,8 @@ interface SourceOptions {
   /** With an entry state, the loader is planned too. */
   state?: EntryState;
   loaderHeader?: string[];
+  /** The source of an export: no config.asm, so START_SCREEN has the default of start_screen.asm. */
+  exported?: boolean;
 }
 
 /**
@@ -711,6 +763,7 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
     releases: knowledge.releases.map((release) => ({ label: release.label, file: release.file, base: release.base, ...(release.comment === undefined ? {} : { comment: release.comment }) })),
     macros: knowledge.macros,
     macroUses: knowledge.macroUses,
+    startScreen: knowledge.startScreen !== undefined && options.exported !== true,
     ...(coverage === undefined || !options.notExecutedMarks ? {} : { coverage }),
     // The platform names are C64 names: drive code and banks get none. A ROM that the program does not use gives none.
     ...(space === DEFAULT_SPACE ? { platform, platformLeftOut: leftOutNames(platform), describe: describeAddress, decode: decodeRegister, io: IO_RAM } : {}),
@@ -727,7 +780,18 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
     const segments = image.segments.map((segment) => ({ ...segment, files: laid.pieces.filter((piece) => piece.start >= segment.start && piece.start <= segment.end).map((piece) => piece.file) }));
     try {
       const entryName = laid.names.get(image.entry!);
-      loader = planLoader({ segments, byteAt: image.byteAt, state, entry: image.entry!, ...(entryName === undefined ? {} : { entryName }), switches: hasSwitchFile(laid), macros: laid.macros.length > 0, header: options.loaderHeader ?? [] });
+      loader = planLoader({
+        segments,
+        byteAt: image.byteAt,
+        state,
+        entry: image.entry!,
+        ...(entryName === undefined ? {} : { entryName }),
+        switches: hasSwitchFile(laid),
+        config: hasConfigFile(laid),
+        macros: laid.macros.length > 0,
+        header: options.loaderHeader ?? [],
+        ...(knowledge.startScreen === undefined ? {} : { startScreen: knowledge.startScreen }),
+      });
     } catch (error) {
       if (!isRefusal(error)) throw error;
       loaderRefused = error.message;
@@ -737,7 +801,7 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
   const { mark } = options;
   const marked = (list: Array<{ name: string; text: string }>) => (mark === undefined ? list : list.map((file) => (file.name === CONFIG_FILE ? file : { ...file, text: `${mark}\n${file.text}` })));
   const markLines = mark === undefined ? 0 : 1;
-  const loaderFiles = loader === undefined ? [] : [{ name: "loader.asm", text: loader.text }];
+  const loaderFiles = loader === undefined ? [] : [{ name: "loader.asm", text: loader.text }, ...(loader.startScreen === undefined ? [] : [{ name: START_SCREEN_FILE, text: START_SCREEN_CODE }])];
   const numbers = new Map<number, string>();
   const asInstructions = new Map<number, string>();
   let rendered = render(laid, asBytes, header, numbers, asInstructions);
@@ -762,7 +826,14 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
  * loader as it loads, then every copy in its order, byte by byte. A layout
  * other than the plan is a defect of the script.
  */
-async function buildLoader(files: Array<{ name: string; text: string }>, laid: Layout, loader: LoaderPlan, image: ProgramImage, state: EntryState, values: ReadonlyMap<string, number>): Promise<{ program: Buffer; symbols: AssembledSymbol[]; jump: number; copierSource: number; expected: (address: number) => number } | { diagnostics: Diagnostic[] }> {
+async function buildLoader(
+  files: Array<{ name: string; text: string }>,
+  laid: Layout,
+  loader: LoaderPlan,
+  image: ProgramImage,
+  state: EntryState,
+  values: ReadonlyMap<string, number>,
+): Promise<{ program: Buffer; symbols: AssembledSymbol[]; jump: number; copierSource: number; expected: (address: number) => number; startScreen?: { wait: number; continue: number } } | { diagnostics: Diagnostic[] }> {
   const loaderBuilt = await assembleFiles(withValues(files, laid, values), "loader.asm");
   if (loaderBuilt.program === undefined) return { diagnostics: loaderBuilt.diagnostics.slice(0, MAX_DIAGNOSTICS) };
   const program = loaderBuilt.program;
@@ -784,7 +855,8 @@ async function buildLoader(files: Array<{ name: string; text: string }>, laid: L
   const jump = symbolValue(LOADER_JUMP);
   const wrong = simulate(memory, loader.copies, expected);
   if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatC64Address(wrong)}. This is a defect of the script.`);
-  return { program, symbols: loaderBuilt.symbols ?? [], jump, copierSource: symbolValue(COPIER_SOURCE), expected };
+  const startScreen = loader.startScreen === undefined ? undefined : { wait: symbolValue(START_SCREEN_WAIT), continue: symbolValue(START_SCREEN_CONTINUE) };
+  return { program, symbols: loaderBuilt.symbols ?? [], jump, copierSource: symbolValue(COPIER_SOURCE), expected, ...(startScreen === undefined ? {} : { startScreen }) };
 }
 
 /** The first line of each file that generate writes. */
@@ -820,8 +892,10 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   // config.asm keeps the value of each switch that it already has: the user sets the switches there.
   const configPath = resolveProjectPath(`${out}/${CONFIG_FILE}`);
   const given = existsSync(configPath) ? configValues(readFileSync(configPath, "utf8")) : new Map<string, 0 | 1>();
-  const kept = new Map(laid.switches.flatMap((row) => (given.has(row.name) ? [[row.name, given.get(row.name)!] as const] : [])));
-  const notDefault = laid.switches.flatMap((row) => (kept.has(row.name) && kept.get(row.name) !== row.default ? [{ name: row.name, value: kept.get(row.name)!, default: row.default }] : []));
+  // START_SCREEN is a switch of the start screen, with the default 1.
+  const configured = [...laid.switches, ...(laid.startScreen ? [{ name: START_SCREEN_SWITCH, default: 1 }] : [])];
+  const kept = new Map(configured.flatMap((row) => (given.has(row.name) ? [[row.name, given.get(row.name)!] as const] : [])));
+  const notDefault = configured.flatMap((row) => (kept.has(row.name) && kept.get(row.name) !== row.default ? [{ name: row.name, value: kept.get(row.name)!, default: row.default }] : []));
   const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), loaderWanted).map((name) => `${out}/${name}`);
   const stale = loaderWanted || space !== DEFAULT_SPACE ? undefined : staleLoader(out, knowledge.revision);
   const written: Written[] = withValues(files, laid, kept).map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
@@ -930,7 +1004,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   // The entry state is the state of the base release: the loader is built and checked with it.
   const loaderBuilt = await buildLoader(files, laid, loader, image, state, baseValues);
   if ("diagnostics" in loaderBuilt) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics } }, removed, failed: true };
-  const { jump, copierSource, expected } = loaderBuilt;
+  const { jump, copierSource, expected, startScreen } = loaderBuilt;
   const copierBuild = loaderBuilt.program;
   const fileByte = (address: number) => copierBuild[2 + address - (loader.packed?.start ?? 0x0801)]!;
   // The packed form: Exomizer packs the build of main.asm with the copier. Without Exomizer, or when its check fails, there is no loader.prg.
@@ -950,7 +1024,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const copierFrames = packed === undefined ? RUN_LIMIT_FRAMES : packed.cycles === undefined ? LOADER_FRAMES : RUN_LIMIT_FRAMES + Math.ceil(packed.cycles / PAL_FRAME_CYCLES);
   let ran: LoaderRun;
   try {
-    ran = await runLoader(loaderPath, program, loader, image, state, { jump, copierSource, fileByte, copierFrames }, expected);
+    ran = await runLoader(loaderPath, program, loader, image, state, { jump, copierSource, fileByte, copierFrames, ...(startScreen === undefined ? {} : { startScreen }) }, expected);
   } catch (error) {
     // A loader.prg without its check does not stay: it looks like a checked loader.
     rmSync(resolveProjectPath(loaderPath), { force: true });
@@ -1032,7 +1106,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   const { root: to, zip } = newProjectFolder(call.string("to")!, project);
   const name = call.string("name") ?? basename(to);
   if (!NAME_PATTERN.test(name)) throw new UsageError(`--name ${name}: a name has letters, digits, dots, underscores and hyphens, and starts with a letter or a digit. Give --name`);
-  const keep = call.ranges("keep");
+  const given = call.ranges("keep");
   const drop = call.ranges("drop");
   const max = call.count("max-listed")!;
   const shownRange = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
@@ -1048,6 +1122,9 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   })();
   const knowledge = readKnowledge(DEFAULT_SPACE);
   const image = knowledge.program;
+  // The VIC-II reads the start screen, and the coverage does not show those reads: it stays.
+  const screenParts = knowledge.startScreen === undefined ? [] : startScreenRanges(knowledge.startScreen).map((part) => part.range);
+  const keep = [...given, ...screenParts.filter((range) => image.segments.some((segment) => range.start >= segment.start && range.end <= segment.end))];
   const state = image.state === undefined || image.entry === undefined ? undefined : loaderState(image.state, "the entry state of the knowledge");
 
   // 1. The source of the knowledge must give the base release byte for byte, with every patch in it.
@@ -1161,6 +1238,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
     values: new Map(),
     decoded: { instructions, dataOnly: decoded.dataOnly },
     notExecutedMarks: false,
+    exported: true,
     ...(state === undefined ? {} : { state, loaderHeader: [`The loader of ${name}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] }),
   });
   if (exported.built.program === undefined) return { result: "FAIL", stage: "export", reason: "The source of the export does not assemble. This is a defect of the script.", diagnostics: exported.built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
@@ -1210,6 +1288,10 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
         for (const { revision: _revision, ...comment } of comments) change.insertComment(comment);
         for (const { revision: _revision, ...region } of exportRegions) change.insertRegion(region);
         for (const { revision: _revision, ...module } of knowledge.modules) change.insertModule(module);
+        if (knowledge.startScreen !== undefined) {
+          const { revision: _revision, ...screen } = knowledge.startScreen;
+          change.insertStartScreen({ ...screen, origin: "llm" });
+        }
       }),
     to,
   );
@@ -1218,7 +1300,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   files.push(
     put(
       "README.md",
-      readmeText({ name, project: basename(project), revision: knowledge.revision, date: isoCet().slice(0, 10), entryFile: baseline.entryFile, free, switches, tests: { written: tests.map(({ file, kind }) => ({ file, kind })), leftOut: testsLeftOut } }),
+      readmeText({ name, project: basename(project), revision: knowledge.revision, date: isoCet().slice(0, 10), entryFile: baseline.entryFile, free, switches, tests: { written: tests.map(({ file, kind }) => ({ file, kind })), leftOut: testsLeftOut }, startScreen: exported.loader?.startScreen !== undefined }),
     ),
   );
   for (const file of exported.files) files.push(put(`src/${file.name}`, file.text));
