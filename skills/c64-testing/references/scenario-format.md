@@ -8,7 +8,7 @@ A scenario is one JSON object in a project file.
 {
   "name": "player moves left",
   "original": { "program": "original/game.prg", "symbols": "knowledge" },
-  "rebuild": { "program": "build/game.prg", "symbols": "build/game.json" },
+  "rebuild": { "program": "build/clean.prg", "symbols": "build/symbols/clean.json" },
   "steps": [
     { "frames": 150 },
     { "load": true },

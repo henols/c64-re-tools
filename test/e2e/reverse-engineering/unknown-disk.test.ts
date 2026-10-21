@@ -100,7 +100,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
 
   // 7. Source reconstruction and the ACME build.
   cpSync(resolve(root, "test/fixtures/asm/reconstructed"), join(project, "rebuild"), { recursive: true });
-  const built = await run("c64-assembler", "assembler.ts", "build", "rebuild", "game.a", "--out", "build/game.prg", "--all-symbols", "--out-symbols", "build/game.json");
+  const built = await run("c64-assembler", "assembler.ts", "build", "rebuild", "game.a", "--out", "build/game.prg", "--all-symbols");
   assert.equal(built.status, 0, built.stdout);
   assert.equal(built.json.result, "PASS", built.stdout);
 
@@ -110,7 +110,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
     JSON.stringify({
       name: "counts to ten and turns the border green",
       original: { program: "extracted/game.prg", symbols: "knowledge" },
-      rebuild: { program: "build/game.prg", symbols: "build/game.json" },
+      rebuild: { program: "build/game.prg", symbols: "build/symbols/game.json" },
       steps: [
         { reset: "hard" },
         { frames: 150 },

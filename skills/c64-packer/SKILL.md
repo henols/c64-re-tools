@@ -25,7 +25,7 @@ To get the command list, run the script with no arguments.
 |---|---|
 | Pack a BASIC program at `$0801` that starts with `SYS` | `pack build/game.prg --out build/game-packed.prg` |
 | Pack a program that starts at a known address | `pack build/main.prg --entry '$0400' --out build/release.prg` |
-| Merge more PRG files into one packed program | `pack build/loader.prg build/main.prg --entry '$0400' --out build/release.prg` |
+| Merge more PRG files into one packed program | `pack build/clean_loader.prg build/clean.prg --entry '$0400' --out build/clean_packed.prg` |
 | Start the program with RAM in place of the BASIC and KERNAL ROMs | `pack build/game.prg --exit-memory '$35' --out build/game-packed.prg` |
 
 ---

@@ -27,7 +27,7 @@ after(() => rmSync(project, { recursive: true, force: true }));
 const valid = {
   name: "moves left",
   original: { program: "original.prg", symbols: "knowledge" },
-  rebuild: { program: "build/game.prg", symbols: "build/game.json" },
+  rebuild: { program: "build/clean.prg", symbols: "build/symbols/clean.json" },
   steps: [{ reset: "hard" }, { frames: 50 }, { observe: "moved", memory: ["player_x"], registers: ["a"] }],
 };
 

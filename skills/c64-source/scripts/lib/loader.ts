@@ -11,7 +11,7 @@
 // screen in the knowledge, the copier shows it after the copies and waits for
 // a key or a fire button: the code is start-screen.asm, the same for each program.
 // The loader loads the segments without the leftovers: the ranges of the
-// source that nothing uses are not in loader.prg.
+// source that nothing uses are not in the loader program.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -651,7 +651,7 @@ const SHOWN_FREE = 8;
 /**
  * The packed form of the loader, for an image too large for one loader file:
  * Exomizer packs the build of main.asm (from $0400) and the build of
- * loader.asm into loader.prg, which starts at the copier with all RAM
+ * loader.asm into the loader program, which starts at the copier with all RAM
  * visible ($01 = $34). loader.asm holds only the copier, in one free range,
  * and the bytes of pages $0002-$03ff, in pieces in the free ranges: the
  * unpacker of Exomizer uses the zero page and $0334-$03ff, so the copier
@@ -689,7 +689,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
   const lines: string[] = [
     ...input.header.map((line) => `; ${line}`),
     "; The image is too large for one loader file, so this is the packed form. Exomizer packs the",
-    `; build of main.asm and the build of this file into loader.prg, with --entry '${formatC64Address(copier)}' and --exit-memory '$34'.`,
+    `; build of main.asm and the build of this file into the loader program, with --entry '${formatC64Address(copier)}' and --exit-memory '$34'.`,
     "; The unpacker of Exomizer uses the zero page and $0334-$03ff, so the copier writes pages $0002-$03ff after the unpack.",
     "",
     "!cpu 6510",
@@ -815,7 +815,7 @@ function placePacked(free: AddressRange[], low: Parameters<typeof placePieces>[1
 
 /** What Exomizer makes of a packed loader. */
 export interface PackedLoader {
-  /** loader.prg: it loads at $0801 and starts with RUN. */
+  /** The loader program: it loads at $0801 and starts with RUN. */
   program: Buffer;
   packedBytes: number;
   unpackedBytes: number;
@@ -993,7 +993,7 @@ function vicLines(state: EntryState, earlier: number): string[] {
 }
 
 /**
- * The symbols of loader.prg: the labels of the build of loader.asm, which
+ * The symbols of the loader program: the labels of the build of loader.asm, which
  * includes main.asm, and of start_screen_stage.asm when the loader has a show
  * stage. A test takes one symbols file. Refuses a name with two values.
  */
@@ -1003,7 +1003,7 @@ export function loaderSymbols(...builds: ReadonlyArray<readonly AssembledSymbol[
   for (const symbol of builds.flat()) {
     const known = byName.get(symbol.name);
     if (known !== undefined && valueOf(known) !== valueOf(symbol)) {
-      throw new WireFailure("operation-failed", `The builds of loader.prg give ${symbol.name} two values, ${valueOf(known)} and ${valueOf(symbol)}. This is a defect of the script.`);
+      throw new WireFailure("operation-failed", `The builds of the loader program give ${symbol.name} two values, ${valueOf(known)} and ${valueOf(symbol)}. This is a defect of the script.`);
     }
     // An address in one build can be outside the load range of the other build, where it is a constant.
     const kept = known === undefined || (known.kind === "constant" && symbol.kind === "address") ? symbol : known;

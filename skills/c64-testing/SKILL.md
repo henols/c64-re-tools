@@ -30,7 +30,7 @@ To get the command list, run the script with no arguments.
 | Record a play session of a person on the original | `record tests/record/start.json --out tests/recordings/play1 --play --joystick 1` |
 | Record a session from steps only | `record tests/record/rooms.json --out tests/recordings/rooms` |
 | Make sure that a recording replays on the original | `replay tests/recordings/rooms` |
-| Compare the rebuild with a recording | `replay tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/game.prg --symbols build/game.json --out .c64-re-tools/local/results/rooms` |
+| Compare the rebuild with a recording | `replay tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/clean.prg --symbols build/symbols/clean.json --out .c64-re-tools/local/results/rooms` |
 | Find what changed between two snapshot files | `diff .c64-re-tools/local/runs/rooms/before.vsf .c64-re-tools/local/runs/rooms/after.vsf` |
 | Find what changed between two observations of runs | `diff .c64-re-tools/local/runs/rooms/results.json:room0 .c64-re-tools/local/runs/rooms/results.json:room3` |
 | Find what changed between two memory files of runs | `diff .c64-re-tools/local/runs/a/all.bin .c64-re-tools/local/runs/b/all.bin --gap 4` |

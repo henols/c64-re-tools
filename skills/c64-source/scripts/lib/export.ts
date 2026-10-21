@@ -10,6 +10,7 @@
 // tells what stays. Without coverage nothing becomes free by itself.
 
 import { type AddressRange, COVERAGE, formatC64Address, pointerTableEntries, POINTER_TABLE_TYPES, type PointerTableType } from "#src/c64.ts";
+import { symbolsPath } from "#src/build-name.ts";
 import { Refusal } from "#src/errors.ts";
 import { NO_FALL_THROUGH, type Root, separate } from "#src/knowledge/separate.ts";
 import type { RegionType } from "#src/knowledge/schema.ts";
@@ -420,7 +421,7 @@ export function rewriteTest(text: string, name: string, symbols: ReadonlyMap<str
       if (inside(address, free)) return { reason: `it names ${location}, which is in a free range` };
     } else if (!symbols.has(location)) return { reason: `it names ${location}, which the exported program does not have` };
   }
-  const side = (program: string) => ({ program: `${program}.prg`, symbols: `${program}.json` });
+  const side = (program: string) => ({ program: `${program}.prg`, symbols: symbolsPath(`${program}.prg`) });
   if (scenario) {
     // Both sides are the exported program now: a step of the original alone (for example a key for its intro) goes, and a step of the rebuild alone runs on both sides.
     const { original: _original, rebuild: _rebuild, steps, ...rest } = test;
@@ -432,7 +433,7 @@ export function rewriteTest(text: string, name: string, symbols: ReadonlyMap<str
     return { kind: "scenario", text: `${JSON.stringify({ ...rest, original: side(`baseline/${name}`), rebuild: side(`build/${name}`), steps: both }, null, 2)}\n` };
   }
   const start = test.start as Record<string, unknown>;
-  const symbolsFile = test.symbols === undefined || test.symbols === "none" ? {} : { symbols: `build/${name}.json` };
+  const symbolsFile = test.symbols === undefined || test.symbols === "none" ? {} : { symbols: symbolsPath(`build/${name}.prg`) };
   return { kind: "run", text: `${JSON.stringify({ ...test, start: { ...start, program: `build/${name}.prg` }, ...symbolsFile }, null, 2)}\n` };
 }
 
@@ -460,7 +461,7 @@ export function readmeText(input: ReadmeInput): string {
     "",
     "## Build",
     "",
-    `Assemble \`src/${input.entryFile}\` to \`build/${name}.prg\`, with its symbols in \`build/${name}.json\`.`,
+    `Assemble \`src/${input.entryFile}\` to \`build/${name}.prg\`, with its symbols in \`${symbolsPath(`build/${name}.prg`)}\`.`,
     input.entryFile === "main.asm"
       ? "Compare the build with the program in the project knowledge: the source must give that program."
       : "Assemble `src/main.asm` to `.c64-re-tools/local/program.prg`, and compare it with the program in the project knowledge: the source must give that program.",
@@ -492,7 +493,7 @@ export function readmeText(input: ReadmeInput): string {
     "## Files",
     "",
     `- \`src/\`: the source. You own it now: change it as you like.`,
-    `- \`baseline/${name}.prg\` and \`baseline/${name}.json\`: the exported program and its symbols, the reference of the scenarios.`,
+    `- \`baseline/${name}.prg\` and \`${symbolsPath(`baseline/${name}.prg`)}\`: the exported program and its symbols, the reference of the scenarios.`,
     "- `tests/`: the tests.",
     "- `.c64-re-tools/knowledge/`: the names, comments and memory map of the exported program. They do not follow your changes to the source.",
     "",

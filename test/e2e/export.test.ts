@@ -65,7 +65,7 @@ const EXECUTED = [0x080d, 0x080f, 0x0812, 0x0815, 0x0818, 0x081b, 0x081e, 0x0820
 const SCENARIO = {
   name: "to the check",
   original: { program: "game.prg", symbols: "knowledge" },
-  rebuild: { program: "build/game.prg", symbols: "build/game.json" },
+  rebuild: { program: "build/game.prg", symbols: "build/symbols/game.json" },
   steps: [{ frames: 150 }, { load: true }, { registers: { pc: "start" } }, { runUntil: { target: { kind: "address", address: "loop" }, timeoutFrames: 60 } }, { observe: "lives", memory: [{ address: "$0400", size: 1 }] }],
 };
 const RUN = { start: { program: "game.prg", load: true }, symbols: "knowledge", steps: [{ registers: { pc: "start" } }, { frames: 2 }, { expect: "lives", memory: [{ address: "$0400", data: "03" }] }] };
@@ -146,7 +146,7 @@ test("export: switches fixed, dead code and unused data free, a slim knowledge, 
   assert.match(text, /PROTECTION \(protection\) is 0 in the export\. The copy check reads the keyboard\. No copy check\./);
 
   // The new project builds to its baseline, and the build is the program of its knowledge.
-  const built = ok("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/game.prg", "--out-symbols", "build/game.json", "--compare"], to);
+  const built = ok("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/game.prg", "--compare"], to);
   assert.equal(built.compare.identical, true);
   const program = readFileSync(join(to, "build", "game.prg"));
   assert.deepEqual(program, readFileSync(join(to, "baseline", "game.prg")));
@@ -165,9 +165,9 @@ test("export: switches fixed, dead code and unused data free, a slim knowledge, 
 
   // The tests name the baseline and the build of the new project.
   const scenario = JSON.parse(readFileSync(join(to, "tests", "lives.json"), "utf8"));
-  assert.deepEqual([scenario.original, scenario.rebuild], [{ program: "baseline/game.prg", symbols: "baseline/game.json" }, { program: "build/game.prg", symbols: "build/game.json" }]);
+  assert.deepEqual([scenario.original, scenario.rebuild], [{ program: "baseline/game.prg", symbols: "baseline/symbols/game.json" }, { program: "build/game.prg", symbols: "build/symbols/game.json" }]);
   const run = JSON.parse(readFileSync(join(to, "tests", "run-lives.json"), "utf8"));
-  assert.deepEqual([run.start, run.symbols], [{ program: "build/game.prg", load: true }, "build/game.json"]);
+  assert.deepEqual([run.start, run.symbols], [{ program: "build/game.prg", load: true }, "build/symbols/game.json"]);
   assert.match(readFileSync(join(to, "README.md"), "utf8"), /acme -f cbm -o \.\.\/build\/game\.prg main\.asm/);
 
   // The zip holds every file of the folder except .c64-re-tools/local/.

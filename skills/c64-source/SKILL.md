@@ -72,10 +72,10 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 | Flag | Command | Effect |
 |---|---|---|
-| `--out <dir>` | `generate` | The folder for the source files. It is necessary. The script writes over the files of an earlier run. It removes a generated `.asm` file that this run does not write. A run without `--loader` keeps `loader.asm`, `loader.prg`, `start_screen.asm` and `start_screen_stage.asm` of an earlier run. `staleLoader` tells when they are of another knowledge revision. |
+| `--out <dir>` | `generate` | The folder for the source files. It is necessary. The script writes over the files of an earlier run. It removes a generated `.asm` file that this run does not write. A run without `--loader` keeps `loader.asm`, the loader program, `start_screen.asm` and `start_screen_stage.asm` of an earlier run. `staleLoader` tells when they are of another knowledge revision. |
 | `--entry <address>` | `generate` | An address where code starts. Give the flag again for more addresses. There is no default. |
 | `--space <space>` | `generate` | The knowledge space: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. The default is `c64`. `--loader` and the platform names apply only to `c64`. The coverage is the coverage of the space. |
-| `--loader` | `generate` | Also write `loader.asm` and `loader.prg`, and `start_screen.asm` when the knowledge has a start screen. A start screen of a captured stage also gives `start_screen_stage.asm`. The script writes `loader.prg` only after the check of the new loader ran. Else the `loader.prg` of an earlier run stays. It needs a capture in the knowledge. The default is no loader. |
+| `--loader` | `generate` | Also write `loader.asm` and the loader program, and `start_screen.asm` when the knowledge has a start screen. A start screen of a captured stage also gives `start_screen_stage.asm`. The script writes the loader program only after the check of the new loader ran. Else the loader program of an earlier run stays. It needs a capture in the knowledge. The default is no loader. |
 | `--analyzer-names` | `generate` | Name an address without a name of the user or the LLM, and without a platform name, with its analyzer name, for example `FUN_17e2`. Without the flag, the source makes its own name, for example `l_17e2`. |
 | `--to <folder>` | `export` | The folder of the new project. It is necessary. The script also writes `<folder>.zip` beside the folder. |
 | `--name <name>` | `export` | The name of `baseline/<name>.prg` and `build/<name>.prg`. The default is the name of the folder. |
@@ -118,7 +118,7 @@ To make the source better, change the project knowledge. Then generate again.
 - `patchesNotWritten`: each patch that the source does not have, with its range, `switch` and `reason`.
 - `switches`, `default`, `releases`: the checks of the switches. See "Switches and releases".
 - `loader`: the check of the loader. See "The loader".
-- `staleLoader`: a run without `--loader` kept `loader.asm` and `loader.prg` of another knowledge revision. `files` gives the files. `revision` gives the revision of `loader.asm`. Without `revision`, `loader.asm` does not give one. `noEntryState: true` tells that the knowledge has no entry state for a new loader.
+- `staleLoader`: a run without `--loader` kept `loader.asm` and the loader program of another knowledge revision. `files` gives the files. `revision` gives the revision of `loader.asm`. Without `revision`, `loader.asm` does not give one. `noEntryState: true` tells that the knowledge has no entry state for a new loader.
 
 `result` is `FAIL` for each of these:
 
@@ -200,10 +200,10 @@ A leftover is a range of the program that nothing uses: unused code, old copies 
 - `main.asm` builds a leftover file only when `LEFTOVERS` is 1. When it is 0, the build skips the bytes. Thus the addresses after the range do not change.
 - `config.asm` has `LEFTOVERS = 0`. Thus the default build is the clean program, without the leftovers.
 - Each release has `LEFTOVERS = 1`. Thus the build of a release gives the bytes of its file.
-- `loader.prg` never has the leftovers. The loader does not copy them, and the memory there keeps the bytes that were in it before.
+- The loader program never has the leftovers. The loader does not copy them, and the memory there keeps the bytes that were in it before.
 - Without coverage, no range is a leftover. Put the coverage of the runs into the project knowledge. Then generate again.
-- When `leftovers.changed` has ranges, the default build and `loader.prg` now leave out other bytes. A test that observes the `added` bytes on `loader.prg` gets other values there. Fill the `added` ranges in the test of the leftovers. In a test that compares them, exclude them with the reason that they are leftovers.
-- A leftover can be wrong when the coverage does not show a use. For example, the VIC-II reads a range, or the program reads a range before it writes it. Then a test of `loader.prg` fails. Record the region in the project knowledge, or put the coverage of more runs into it. Do not change the source.
+- When `leftovers.changed` has ranges, the default build and the loader program now leave out other bytes. A test that observes the `added` bytes on the loader program gets other values there. Fill the `added` ranges in the test of the leftovers. In a test that compares them, exclude them with the reason that they are leftovers.
+- A leftover can be wrong when the coverage does not show a use. For example, the VIC-II reads a range, or the program reads a range before it writes it. Then a test of the loader program fails. Record the region in the project knowledge, or put the coverage of more runs into it. Do not change the source.
 
 #### Switches and releases
 
@@ -245,7 +245,14 @@ Build the program from the source in these ways:
 
 #### The loader
 
-`--loader` writes `loader.asm` and assembles it to `loader.prg`. The loader does these steps:
+`--loader` writes `loader.asm` and assembles it to the loader program. The name of the loader program tells its build:
+
+- `clean_loader.prg`: each value of `config.asm` is its default. This is the clean program.
+- `custom_<switches>_loader.prg`: the names of the switches that are not at their default. A switch that is off has `no_` before its name, for example `custom_no_start_screen_loader.prg`.
+
+The symbols of the loader program are in `symbols/<name>.json`, for example `symbols/clean_loader.json`. They hold the labels of `loader.asm`, `main.asm` and `start_screen_stage.asm`. Give this file to a test of the loader program as its symbols. When the name changes, the script removes the loader program of the earlier run and its symbols.
+
+The loader does these steps:
 
 1. `10 SYS 2061` starts it.
 2. It stops the interrupts and makes all RAM visible. It moves its copier to two free pages.
@@ -259,27 +266,26 @@ The copy table, the copier and the jump use labels, not numbers. `loader_from_xx
 
 The loader changes the free stack byte below the stack pointer (`stackByte`). It does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. A program that reads SID voice 3 for random numbers can thus give a different result. A start screen writes the colour RAM, and the loader does not set it again. When you compare the original and the rebuild, observe after the program sets its own random numbers.
 
-The script builds and checks `loader.prg` with the values of `config.asm`. With the defaults, `loader.prg` is the clean program: no copy protection, all corrections and no leftovers. The entry state is the state of the base release. For a loader of a release, build `loader.asm` with the build option `--release <label>`. That loader also does not have the leftovers.
+The script builds and checks the loader program with the values of `config.asm`. With the defaults, the loader program is the clean program: no copy protection, all corrections and no leftovers. The entry state is the state of the base release. For a loader of a release, build `loader.asm` with the build option `--release <label>`. That loader also does not have the leftovers.
 
 The start screen:
 
 - The start screen needs the VIC-II values of the entry state. Its screen, bitmap, charset and colours must be in a segment of the program, or in a captured stage. See "The start screen of a captured stage".
 - With a start screen, the copier uses three pages, not two.
-- The start screen is part of the clean build only. `loader.prg` always shows it. A release build has no start screen, and `LEFTOVERS = 1` also turns it off.
+- The start screen is part of the clean build only. The loader program always shows it. A release build has no start screen, and `LEFTOVERS = 1` also turns it off.
 - To start the program at once, set `START_SCREEN = 0` in `config.asm`, and assemble `loader.asm`. Do not define `START_SCREEN` on the command line of the build: `config.asm` sets it.
-- A test that runs `loader.prg` stops at the start screen, because the emulator cannot press a key of the keyboard matrix. Run until `loader_start_screen_wait`. Then set the PC to `loader_start_screen_continue`.
-- `loader.json` is the symbol file of `loader.prg`. It holds the labels of `loader.asm`, `main.asm` and `start_screen_stage.asm`. Give it to a test of `loader.prg` as its symbols.
+- A test that runs the loader program stops at the start screen, because the emulator cannot press a key of the keyboard matrix. Run until `loader_start_screen_wait`. Then set the PC to `loader_start_screen_continue`.
 
 `loader` holds these fields:
 
 - `program`, the `copies` in their order, `copier` and `stackByte`.
-- `verified: true`: the check ran `loader.prg` to its jump to the entry. There, the memory, $00/$01, the registers and the VIC-II are equal to the entry state. The raster line and the CIA values are also equal. An interrupt can run right at the entry, as in the original program.
+- `verified: true`: the check ran the loader program to its jump to the entry. There, the memory, $00/$01, the registers and the VIC-II are equal to the entry state. The raster line and the CIA values are also equal. An interrupt can run right at the entry, as in the original program.
 - `limits`: each CIA value that the loader cannot set as it was at the entry. An old capture has no CIA values. Then capture the program again at its entry point.
 - `startScreen`: with a start screen, `shown: true` when the VIC-II had the values of the start screen, and `waits: true` when the start screen waited without a key. `wait` and `continue` are the addresses of the wait and of the code after it. The check sets the PC to `continue`, and then runs the loader to its jump.
-- `packed`: `packedBytes` and `unpackedBytes` of the packed form. With a start screen of a captured stage, this is the packed program in `loader.prg`.
-- `stage`: the show stage of a start screen of a captured stage. It has the `space` of the stage and the address of the show `code`. It also has the `bytes` of the stage in `loader.prg`, the `stash` copies, `packedBytes` and `unpackedBytes`. `startScreen.stage` names the space.
-- When the check of `loader.prg` cannot run, the script does not write `loader.prg`. The `loader.prg` of an earlier run stays as it was. `loader.asm` is new. `reason` tells why the check did not run.
-- `kept`: when the result has no new `loader.prg`, the path of the `loader.prg` of an earlier run. That file is not of this source.
+- `packed`: `packedBytes` and `unpackedBytes` of the packed form. With a start screen of a captured stage, this is the packed program in the loader program.
+- `stage`: the show stage of a start screen of a captured stage. It has the `space` of the stage and the address of the show `code`. It also has the `bytes` of the stage in the loader program, the `stash` copies, `packedBytes` and `unpackedBytes`. `startScreen.stage` names the space.
+- When the check of the loader program cannot run, the script does not write a loader program. The loader program of an earlier run stays as it was. `loader.asm` is new. `reason` tells why the check did not run.
+- `kept`: when the result has no new loader program, the paths of the loader programs of an earlier run. They are not of this source.
 
 Do these actions when `verified` is `false`:
 
@@ -290,7 +296,7 @@ Do these actions when `verified` is `false`:
 | `reason` that the source does not assemble | Correct the source first. The loader includes the source. |
 | `reason` about the start screen | Correct the start screen in the project knowledge, or capture the program again with the start screen in memory. If the start screen is not necessary, remove it from the project knowledge. |
 | `reason` about the show stage | If the reason names the coverage of the stage, run the stage with coverage. Put the map into the project knowledge in the space of the stage. If the memory is too small, capture the stage again with less memory. If a tool is missing, stop the task and give the message to the user. If `start_screen_stage.asm` does not assemble, stop the task and give the reason to the user. The reason names the file in `.c64-re-tools/local/` with the source that failed. |
-| `reason` that the check of `loader.prg` did not run | Stop the task and give the reason to the user. When the user tells you that the emulator is available, run the same command again. |
+| `reason` that the check of the loader program did not run | Stop the task and give the reason to the user. When the user tells you that the emulator is available, run the same command again. |
 | `differences` | The loader ran. The list gives the bytes and the registers that are not equal. |
 | `stop` | The loader did not get to its copier or its jump. `stop` gives the address and `port`, the value of $01. `history` gives the last 16 instructions. `cause` gives the first byte of the copier or of a copy that is not correct. |
 
@@ -301,8 +307,8 @@ Often the loading stage of a program shows a picture that is not in memory at th
 The loader then always has the packed form, and the start screen is a program of its own in front of it:
 
 1. Exomizer packs the program with the copier. This is the packed loader.
-2. Exomizer packs the packed loader, the bytes of the stage and the show code into `loader.prg`.
-3. When `loader.prg` starts, Exomizer unpacks these parts. The program stays packed. The bytes of the packed loader under the stage go to a stash in free memory.
+2. Exomizer packs the packed loader, the bytes of the stage and the show code into the loader program.
+3. When the loader program starts, Exomizer unpacks these parts. The program stays packed. The bytes of the packed loader under the stage go to a stash in free memory.
 4. The show code shows the start screen with `start_screen.asm`. With a call, it sets $01 to $37, starts the interrupts and calls the routine.
 5. It waits for a key or a fire button, as the start screen in the program does.
 6. It stops the interrupts and the sound, and it stops the screen. It sets the CIA timers as RUN leaves them.
@@ -311,26 +317,26 @@ The loader then always has the packed form, and the start screen is a program of
 The program is packed while the screen shows. Thus the picture and the tune have more free memory.
 
 - The script puts everything in memory. It does not matter where the stage keeps its bytes, if the memory has enough room.
-- `loader.prg` has only the bytes of the stage that the start screen uses. These are the screen, the bitmap and the charset. With a call, they are also each byte of the stage that is not free from the call, as in "The free ranges". A call thus needs the coverage of the stage.
+- The loader program has only the bytes of the stage that the start screen uses. These are the screen, the bitmap and the charset. With a call, they are also each byte of the stage that is not free from the call, as in "The free ranges". A call thus needs the coverage of the stage.
 - With colours from the colour RAM of the capture, the show code holds the 1000 colours. It copies them to the colour RAM.
 - The patches of the stage are in at the defaults of their switches. Thus a patch under a switch can remove the text of a crack from the picture.
-- `start_screen_stage.asm` holds the show code and the bytes of the stage. Do not edit it. To make `loader.prg` again, run `generate --loader`.
+- `start_screen_stage.asm` holds the show code and the bytes of the stage. Do not edit it. To make the loader program again, run `generate --loader`.
 - The show stage needs Exomizer. The show code needs free memory in $0400-$9fff or $c000-$cfff. When the memory is too small, the reason gives the largest free ranges.
-- The check runs `loader.prg` to `loader_start_screen_wait` of the show stage. There, it compares the VIC-II with the start screen, the screen bytes in memory with the stage, and the colour RAM with the capture. Then it sets the PC to `loader_start_screen_continue`, and it checks the loader as usual.
+- The check runs the loader program to `loader_start_screen_wait` of the show stage. There, it compares the VIC-II with the start screen, the screen bytes in memory with the stage, and the colour RAM with the capture. Then it sets the PC to `loader_start_screen_continue`, and it checks the loader as usual.
 
 #### The packed loader
 
 A loader file that loads into $d000 or higher writes the I/O area. When the program is too large for one loader file, `loader.asm` has the packed form:
 
 - `loader.asm` holds only the copier and the bytes below $0400. The segments at $0400 and higher are not in `loader.asm`. Between its free ranges, `loader.asm` holds the bytes of the program.
-- `loader.prg` is the build of `main.asm` from $0400 and the build of `loader.asm`, packed into one file. Where the two builds overlap, `loader.prg` has the bytes of `loader.asm`.
+- The loader program is the build of `main.asm` from $0400 and the build of `loader.asm`, packed into one file. Where the two builds overlap, the loader program has the bytes of `loader.asm`.
 - The jump to the entry uses the address of the entry, not its label.
 
 To make the packed loader for other switch values, do these steps:
 
-1. Assemble `main.asm` to `build/main.prg`. The leftovers are $00 in this build.
-2. Assemble `loader.asm` to `build/copier.prg`.
-3. Pack the two files into `build/loader.prg`. The start address is the copier address in the comment at the start of `loader.asm`. The memory configuration at the exit is `$34`.
+1. Assemble `main.asm` without an output path. The build name of the program tells the switch values, for example `build/custom_trainer.prg`. The leftovers are $00 in this build.
+2. Assemble `loader.asm` without an output path, for example to `build/custom_trainer_loader.prg`. This is the copier.
+3. Pack the two files into `build/custom_trainer_packed.prg`. The start address is the copier address in the comment at the start of `loader.asm`. The memory configuration at the exit is `$34`.
 
 These steps do not work when a segment starts below $0400. They also do not work when a patch is between the free ranges of `loader.asm`. In these cases, use `generate --loader` for the base release.
 
@@ -441,7 +447,7 @@ tests/                     the tests of the project, changed for the new program
 5. Record names, comments, regions and modules in the project knowledge.
 6. Run `generate` again. Do steps 4 to 6 again until the source is clear.
 7. Assemble `main.asm` to a program. This is the default build. For a release, give the build option `--release <label>`.
-8. For an unpacked program, run `generate` with `--loader` at the end. Compare `loader.prg` with the original program in a test.
+8. For an unpacked program, run `generate` with `--loader` at the end. Compare the loader program with the original program in a test.
 9. To start a new program from the rebuild, run `export`.
 
 ---

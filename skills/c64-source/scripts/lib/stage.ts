@@ -3,7 +3,7 @@
 // the loader as it is in memory before it starts (the plain loader file, or
 // the parts of the packed form), the bytes of the stage that the start screen
 // uses at their own addresses, the bytes of the loader that those cover in a
-// stash, and the show code into one loader.prg. The show code shows the
+// stash, and the show code into one loader program. The show code shows the
 // screen with start-screen.asm, calls the routine of the stage, waits for a
 // key or a fire button, stops the interrupts of the stage, sets the CIAs as
 // RUN leaves them, copies the stash back and starts the loader.
@@ -143,7 +143,7 @@ export function stageText(input: StageInput, code: number, stash: StagePlan["sta
   const { row } = input;
   const lines = [
     ...input.header.map((line) => `; ${line}`),
-    `; The show stage of the start screen from ${row.stage}: Exomizer packs it with the loader into loader.prg, with --entry '${formatC64Address(code)}'.`,
+    `; The show stage of the start screen from ${row.stage}: Exomizer packs it with the loader into the loader program, with --entry '${formatC64Address(code)}'.`,
     "; It shows the start screen, waits for a key or a fire button, copies back the bytes of the loader that the stage covers, and starts the loader.",
     "",
     "!cpu 6510",

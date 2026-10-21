@@ -27,10 +27,11 @@ To get the command list, run the script with no arguments.
 | Build a source that includes files from a folder | `build src main.a --out build/game.prg --include lib` |
 | Build a source that includes a file that you generated into a folder next to the source root | `build src boot.asm --out build/boot.prg --include ../build` |
 | Build a source that sets no start address | `build src main.a --out build/game.prg --set-pc '$0801'` |
-| Check that the rebuild is identical to the program in the project knowledge | `build src main.asm --out build/game.prg --compare` |
-| Build a release and check it against the file of that release | `build src main.asm --out build/original.prg --release ORIGINAL --compare` |
+| Build a generated source with the values of `config.asm` | `build src main.asm` |
+| Build the loader of a generated source | `build src loader.asm` |
+| Check that the rebuild is identical to the program in the project knowledge | `build src main.asm --compare` |
+| Build a release and check it against the file of that release | `build src main.asm --release ORIGINAL --compare` |
 | Check the rebuild of a program in another space, for example the drive | `build src main.asm --out build/drive.prg --compare --space drive8` |
-| Write the symbols of the rebuild to a file for a test run | `build src main.asm --out build/game.prg --out-symbols build/game.json` |
 | List all symbols, also the constants that the source does not use | `build src main.a --out build/game.prg --all-symbols --max-listed 500` |
 | Write only the bytes of the program, without the load address | `build src main.a --out build/game.bin --plain` |
 
@@ -42,7 +43,8 @@ To get the command list, run the script with no arguments.
 - An include folder is a path relative to the source root, inside the project folder. It can be outside the source root, for example `--include ../build`.
 - `<entry>` is the main source file, relative to the source root. It normally sets its start address, for example `* = $0801`. If it does not, give `--set-pc`.
 - For a source that you generated from the project knowledge, the source root is the folder of that source. The entry is `main.asm`.
-- `--out` is the path of the program, relative to the project folder.
+- `--out` is the path of the program, relative to the project folder. Without `--out`, the script writes `build/<name>.prg`. See "Build names".
+- The script writes the symbols of the program to `symbols/<name>.json` in the folder of the program, for example `build/symbols/clean.json`. Give this file to a test run as the symbols of the rebuild.
 - Get the label of a release from the releases in the project knowledge. Record a release in the project knowledge before you build it.
 - Before you use `--compare`, put the program bytes into the project knowledge.
 - The target CPU is the 6510. The program is a C64 PRG, or the bytes only with `--plain`.
@@ -54,6 +56,19 @@ A source that you generated from the project knowledge has switches in `config.a
 - Without `--release`, the build uses the values in `config.asm`. With the default values, the program is the clean program: no copy protection, no trainers, no cheats, no crack changes, and all corrections. This program can be different from the base release. Thus `--compare` can give `FAIL`.
 - To turn a switch on, change its value in `config.asm`, for example `TRAINER = 1`. Do not use `--define` for a switch. ACME then stops with `Symbol already defined`.
 - With `--release <label>`, each switch has the value of that release. A release build does not read `config.asm`.
+
+### Build names
+
+Without `--out`, the name of the program tells what the build is:
+
+| Build | Name |
+|---|---|
+| `--release <label>` | `release_<label>.prg`, for example `release_ORIGINAL.prg` |
+| Each value of `config.asm` is its default | `clean.prg` |
+| A value of `config.asm` is not its default | `custom_<switches>.prg`, for example `custom_trainer.prg`. A switch that is off has `no_` before its name, for example `custom_no_start_screen.prg`. |
+| A source without `config.asm` | the name of the entry, for example `main.prg` |
+
+An entry other than `main.asm` adds its name, for example `clean_loader.prg` for `loader.asm`. With `--plain`, the extension is `.bin`. Do not give `--out` for a build of a generated source. Then the name always tells the build.
 
 ### Paths and the project folder
 
@@ -81,8 +96,8 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 | Flag | Command | Effect |
 |---|---|---|
-| `--out <file.prg>` | `build` | Required. The path of the program, relative to the project folder. |
-| `--include <dir>` | `build` | An include folder: a path relative to the source root, inside the project folder. Give the flag again for each folder. The default is no include folder. |
+| `--out <file.prg>` | `build` | The path of the program, relative to the project folder. The default is `build/<name>.prg`. See "Build names". |
+| `--include <folder>` | `build` | An include folder: a path relative to the source root, inside the project folder. Give the flag again for each folder. The default is no include folder. |
 | `--define NAME=VALUE` | `build` | An assembler symbol: an integer, also `$` and hex digits, or `true` or `false`. Give the flag again for each symbol. Do not use it for a switch. |
 | `--set-pc <address>` | `build` | The start address when the source does not set one, for example `'$0801'`. |
 | `--release <label>` | `build` | Build a release of the project knowledge. Each switch gets the value of that release. With `--compare`, the reference is the file of the release. |
@@ -91,7 +106,6 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--plain` | `build` | Write only the bytes of the program, without the 2-byte load address. Off by default. |
 | `--all-symbols` | `build` | List also the constants that the source does not use. Off by default. |
 | `--max-listed <n>` | `build` | List at most `n` symbols. The default is 50. `symbols.count` always gives the count of all symbols. |
-| `--out-symbols <file.json>` | `build` | Write the listed symbols to this file as `{"symbols": [...]}`. Without `--all-symbols`, the file does not have the constants that the source does not use. |
 
 ---
 
@@ -99,7 +113,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 ### `build <source-root> <entry>`
 
-Assembles the source and writes the program to `--out`.
+Assembles the source and writes the program to `--out`, or to `build/<name>.prg`. It also writes the symbols to `symbols/<name>.json` in the folder of the program. Without `--all-symbols`, that file does not have the constants that the source does not use.
 
 `body` holds:
 
@@ -112,7 +126,7 @@ Assembles the source and writes the program to `--out`.
   - Kind `address` has a value in `loadRange`. It gives `address`.
   - Kind `constant` has a value outside `loadRange`. It gives `value` as `$` and four or more hex digits. A label in a `!pseudopc` block can be a constant, because its value is the run address, not the load address.
   - `used` is `false` when the source does not use the symbol.
-- `symbolsFile`: the file of `--out-symbols`, with `out`, `bytes` and `sha256`.
+- `symbolsFile`: the symbols file, with `out`, `bytes` and `sha256`.
 - `unusedConstants`: the count of the constants that the list does not include. It is not in the body with `--all-symbols`.
 - `diagnostics`: each item has `severity` (`error`, `warning` or `note`), `file`, `line` and `message`. `file` is relative to the source root. A file in an include folder outside the source root starts with `../`. `file` and `line` are not in an item without a location in the source.
 - `compare`: only with `--compare`. `identical` is `true` when each segment is identical. `segments` has one item for each segment of the reference program, with `start`, `end` and `result`:
@@ -125,7 +139,7 @@ Do as the result tells:
 - `result` is `PASS`: the program is at `out`. To run or debug the program, load the file at `out` into the emulator.
 - `result` is `FAIL` and `assembled` is `false`: the source has errors, and the script wrote no program. `hint` tells you to correct the source. Correct the source at the file and the line of each diagnostic. Then run `build` again.
 - `result` is `FAIL` and `assembled` is `true`: the program is not identical to the reference. The script wrote the program. Read the first difference of each segment in `compare.segments`. Without `--release`, read the section "Switches" first.
-- `hint` tells that `symbols` is cut: give a larger `--max-listed`, or `--out-symbols <file.json>` for the full list.
+- `hint` tells that `symbols` is cut: give a larger `--max-listed`, or read the symbols file for the full list.
 - Error `not-found` names the entry: give the main source file relative to the source root.
 - Error `not-found` names an include folder: give `--include` a folder with files, relative to the source root.
 - Error `invalid-input` names an include folder: the folder is outside the project folder. Give `--include` a folder inside the project folder.
@@ -135,7 +149,7 @@ Do as the result tells:
 
 The script does not keep the diagnostics or the program in the project knowledge.
 
-To compare runs of the rebuild with runs of the original, give the file of `--out-symbols` to the test run as the symbols of the rebuild. A symbol of the rebuild gives the address of a routine in the rebuild.
+To compare runs of the rebuild with runs of the original, give the symbols file to the test run as the symbols of the rebuild. A symbol of the rebuild gives the address of a routine in the rebuild.
 
 ---
 

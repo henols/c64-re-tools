@@ -19,7 +19,7 @@ export function showSymbol(symbol: AssembledSymbol) {
     : { name: symbol.name, kind: "constant", value: `$${symbol.value.toString(16).padStart(4, "0")}`, used: symbol.used };
 }
 
-/** The text of a symbols file (--out-symbols): the symbols of a build, which c64-testing reads for the names of a program. */
+/** The text of a symbols file (symbols/<build>.json next to the program): the symbols of a build, which c64-testing reads for the names of a program. */
 export const symbolsFileText = (symbols: readonly AssembledSymbol[]) => `${JSON.stringify({ symbols: symbols.map(showSymbol) }, null, 1)}\n`;
 
 const PROGRAM = "program.prg";

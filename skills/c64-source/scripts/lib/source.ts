@@ -14,6 +14,7 @@
 // each release has it, the default build does not, and the loader never
 // loads it.
 
+import { CONFIG_FILE, configValues } from "#src/build-name.ts";
 import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
@@ -930,21 +931,7 @@ export const hasSwitchFile = (layout: Pick<Layout, "switches" | "releases" | "le
 /** True when the source has config.asm: the knowledge has switches or a start screen, or the source has leftovers. */
 export const hasConfigFile = (layout: Pick<Layout, "switches" | "startScreen" | "leftovers">) => layout.switches.length > 0 || layout.startScreen || layout.leftovers.length > 0;
 
-/** The file with the value of each switch. The user edits it, and generate keeps the values. */
-export const CONFIG_FILE = "config.asm";
-
-/** A value line of config.asm: NAME = 0 or NAME = 1. */
-const CONFIG_VALUE = /^\s*([A-Z][A-Z0-9_]*)\s*=\s*([01])\s*(?:;.*)?$/;
-
-/** The values of the switches in a config.asm text, by name. Lines that are not a value line are not read. */
-export function configValues(text: string): Map<string, 0 | 1> {
-  const values = new Map<string, 0 | 1>();
-  for (const line of text.split(/\r?\n/)) {
-    const match = CONFIG_VALUE.exec(line);
-    if (match !== null) values.set(match[1]!, match[2] === "1" ? 1 : 0);
-  }
-  return values;
-}
+export { CONFIG_FILE, configValues };
 
 /**
  * config.asm: the value of each switch as a plain assignment, grouped by

@@ -55,21 +55,41 @@ test("the script writes the program into the project and reports symbols", { ski
   assert.equal(json.unusedConstants, 1);
 });
 
-test("--max-listed limits the symbols in the result, and --out-symbols writes the whole list, without the unused constants", { skip: acmeSkip }, async () => {
-  const { status, json, envelope } = await assembleScript("build", "src", "main.a", "--include", "lib", "--out", "build/counter.prg", "--max-listed", "1", "--out-symbols", "build/counter.json");
+test("--max-listed limits the symbols in the result, and the symbols file in symbols/ has the whole list, without the unused constants", { skip: acmeSkip }, async () => {
+  const { status, json, envelope } = await assembleScript("build", "src", "main.a", "--include", "lib", "--out", "build/counter.prg", "--max-listed", "1");
   assert.equal(status, 0, JSON.stringify(json));
   const symbols = json.symbols as { count: number; listed: unknown[]; rest: string };
   assert.equal(symbols.listed.length, 1);
   assert.ok(symbols.count > 1);
-  assert.equal(symbols.rest, "a larger --max-listed, or --out-symbols <file.json> for the whole list");
-  const file = JSON.parse(readFileSync(join(project, "build", "counter.json"), "utf8")) as { symbols: Array<{ name: string }> };
+  assert.equal(symbols.rest, "a larger --max-listed, or read build/symbols/counter.json");
+  const file = JSON.parse(readFileSync(join(project, "build", "symbols", "counter.json"), "utf8")) as { symbols: Array<{ name: string }> };
   assert.equal(file.symbols.length, symbols.count);
   assert.equal(file.symbols.find((symbol) => symbol.name === "UNUSED_CONSTANT"), undefined, "the file has no unused constant without --all-symbols");
-  assert.match(String(envelope.hint), /symbols is cut\. To get all symbols, give a larger --max-listed, or --out-symbols <file\.json> for the whole list\./);
-  const help = await assembleScript("build", "--help");
-  const option = (help.json.options as Array<{ flag: string; help: string }>).find((item) => item.flag === "--out-symbols <file.json>");
-  assert.match(String(option?.help), /^write the listed symbols .* Without --all-symbols, the file does not have the constants that the source does not use/);
-  assert.equal((json.symbolsFile as { out: string }).out, "build/counter.json");
+  assert.match(String(envelope.hint), /symbols is cut\. To get all symbols, give a larger --max-listed, or read build\/symbols\/counter\.json\./);
+  assert.equal((json.symbolsFile as { out: string }).out, "build/symbols/counter.json");
+  assert.ok(!existsSync(join(project, "build", "counter.json")), "no symbols file beside the program");
+});
+
+test("without --out, the name of the build tells what it is: the switch values of config.asm, and the entry", { skip: acmeSkip }, async () => {
+  const source = join(project, "named");
+  mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, "main.asm"), "* = $0801\n        rts\n");
+  writeFileSync(join(source, "loader.asm"), "* = $0801\n        nop\n        rts\n");
+  const out = async (...args: string[]) => {
+    const { status, json } = await assembleScript("build", "named", ...args);
+    assert.equal(status, 0, JSON.stringify(json));
+    return [json.out, (json.symbolsFile as { out: string }).out];
+  };
+  // No config.asm: the name of the entry.
+  assert.deepEqual(await out("main.asm"), ["build/main.prg", "build/symbols/main.json"]);
+  // Each switch at its default: the clean program. The start screen is on by default, the leftovers are off.
+  writeFileSync(join(source, "config.asm"), "START_SCREEN = 1\nLEFTOVERS = 0 ; off\n");
+  assert.deepEqual(await out("main.asm"), ["build/clean.prg", "build/symbols/clean.json"]);
+  assert.deepEqual(await out("loader.asm"), ["build/clean_loader.prg", "build/symbols/clean_loader.json"]);
+  // A switch that is not its default names the build.
+  writeFileSync(join(source, "config.asm"), "START_SCREEN = 0\nLEFTOVERS = 1\nTRAINER = 1\n");
+  assert.deepEqual(await out("loader.asm"), ["build/custom_no_start_screen_leftovers_trainer_loader.prg", "build/symbols/custom_no_start_screen_leftovers_trainer_loader.json"]);
+  assert.deepEqual(await out("main.asm", "--plain"), ["build/custom_no_start_screen_leftovers_trainer.bin", "build/symbols/custom_no_start_screen_leftovers_trainer.json"]);
 });
 
 test("--all-symbols lists the unused constants, and --plain writes the bytes without the load address", { skip: acmeSkip }, async () => {
@@ -97,7 +117,6 @@ test("source errors are a FAIL with the diagnostics and write no program", { ski
 
 test("bad options are refused before anything is sent", { skip: acmeSkip }, async () => {
   for (const args of [
-    ["build", "src", "main.a"],
     ["build", "src", "main.a", "--out", "../escape.prg"],
     ["build", "src", "main.a", "--out", "x.prg", "--define", "X=abc"],
     ["build", "src", "main.a", "--out", "x.prg", "--set-pc", "2049"],

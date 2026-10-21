@@ -92,9 +92,9 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
     );
     return run("c64-testing", "testing.ts", "test", name);
   };
-  const withTimers = await scenario("timers.json", "src/loader.prg");
+  const withTimers = await scenario("timers.json", "src/clean_loader.prg");
   assert.equal(withTimers.json.result, "PASS", withTimers.stdout);
-  const without = await scenario("no-timers.json", "src-old/loader.prg");
+  const without = await scenario("no-timers.json", "src-old/clean_loader.prg");
   assert.equal(without.status, 0, without.stdout);
   assert.equal(without.json.result, "FAIL", without.stdout);
 });
