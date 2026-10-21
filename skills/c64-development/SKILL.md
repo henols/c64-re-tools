@@ -29,7 +29,7 @@ First select the path:
 
 - The project has no program yet: path A.
 - The program has source that a person wrote: path B. A project that an export of a rebuilt program made also takes path B.
-- The source comes from a generation from the project knowledge: path C. Such a source has `main.asm` and `source-map.json`. Do not edit this source. The next generation of the source writes over it.
+- The source comes from a generation from the project knowledge: path C. Such a source has `main.asm`, and the first line of each generated file tells that it is generated. Do not edit this source. The next generation of the source writes over it.
 
 ### Acceptance checks
 

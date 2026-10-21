@@ -9,6 +9,9 @@
 
 import { basename, dirname, extname, join } from "node:path";
 
+/** The folder of the builds, relative to the project folder. Git does not keep it. */
+export const BUILD_DIRECTORY = "build";
+
 /** The file with the value of each switch. The user edits it, and generate keeps the values. */
 export const CONFIG_FILE = "config.asm";
 

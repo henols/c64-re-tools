@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { basename, dirname, join, relative, sep } from "node:path";
 
 import { isRefusal, Refusal } from "#src/errors.ts";
-import { buildName, symbolsPath } from "#src/build-name.ts";
+import { BUILD_DIRECTORY, buildName, symbolsPath } from "#src/build-name.ts";
 import { type AddressRange, coverageSeedKinds, findHandoffs, formatC64Address, parseC64Address, parseTokenized, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
@@ -35,7 +35,7 @@ import { analyze } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, romRanges, romUseOfProgram } from "#src/platform.ts";
-import { ensureLocal, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRoot, resolveProjectPath } from "#src/project.ts";
+import { ensureLocal, generatedDirectory, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { isoCet } from "#src/time.ts";
 import { zipFiles } from "#src/zip.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
@@ -715,13 +715,13 @@ const LOADER_FILES: ReadonlySet<string> = new Set(["loader.asm", START_SCREEN_FI
 /** A loader program that generate wrote: its build name, as buildName gives it for loader.asm. */
 const LOADER_PROGRAM = /^(clean|custom_[a-z0-9_]+|release_[A-Za-z0-9_]+)_loader\.prg$/;
 
-/** The loader programs of earlier runs in `out`, with their symbols files. */
-function loaderPrograms(out: string): string[] {
-  const directory = resolveProjectPath(out);
+/** The loader programs of earlier runs in the build folder, with their symbols files. */
+function loaderPrograms(): string[] {
+  const directory = resolveProjectPath(BUILD_DIRECTORY);
   if (!existsSync(directory)) return [];
   return readdirSync(directory)
     .filter((name) => LOADER_PROGRAM.test(name))
-    .flatMap((name) => [`${out}/${name}`, symbolsPath(`${out}/${name}`)])
+    .flatMap((name) => [`${BUILD_DIRECTORY}/${name}`, symbolsPath(`${BUILD_DIRECTORY}/${name}`)])
     .filter((path) => existsSync(resolveProjectPath(path)));
 }
 
@@ -742,7 +742,7 @@ function staleLoader(out: string, revision: string): { files: string[]; revision
   const line = text.split(/\r?\n/).find((row) => row.startsWith(`; ${LOADER_REVISION}`));
   const old = line?.slice(`; ${LOADER_REVISION}`.length).replace(/\.$/, "");
   if (old === revision) return undefined;
-  const files = [...[...LOADER_FILES].filter((name) => existsSync(resolveProjectPath(`${out}/${name}`))).map((name) => `${out}/${name}`), ...loaderPrograms(out)];
+  const files = [...[...LOADER_FILES].filter((name) => existsSync(resolveProjectPath(`${out}/${name}`))).map((name) => `${out}/${name}`), ...loaderPrograms()];
   return { files, ...(old === undefined ? {} : { revision: old }) };
 }
 
@@ -773,25 +773,30 @@ function outside(ranges: readonly AddressRange[], others: readonly AddressRange[
 
 /**
  * Removes the generated .asm files of an earlier run that this run does not
- * write, and an earlier not_executed.json and source-map.json. An earlier
- * loader.asm stays unless this run has --loader: a source of the user can
- * include loader.asm. An earlier loader program always stays: only a new
- * loader program whose check ran replaces it. Other files stay. Gives the
- * names it removed.
+ * write, and the reports of the earlier run (its source map and
+ * not_executed.json). An earlier loader.asm stays unless this run has
+ * --loader: a source of the user can include loader.asm. Other files stay.
+ * Gives the paths it removed.
  */
 function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boolean): string[] {
-  const directory = resolveProjectPath(out);
-  if (!existsSync(directory)) return [];
   const removed: string[] = [];
+  const reports = generatedDirectory(projectRelative(out));
+  for (const name of [SOURCE_MAP_FILE, NOT_EXECUTED_FILE]) {
+    const path = resolveProjectPath(`${reports}/${name}`);
+    if (!existsSync(path)) continue;
+    rmSync(path, { force: true });
+    removed.push(`${reports}/${name}`);
+  }
+  const directory = resolveProjectPath(out);
+  if (!existsSync(directory)) return removed;
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const name = entry.name;
     const path = join(directory, name);
     if (LOADER_FILES.has(name) && !loaderRun) continue;
-    const old = name === NOT_EXECUTED_FILE || name === SOURCE_MAP_FILE || (name.endsWith(".asm") && !keep.has(name) && readFileSync(path, "utf8").startsWith(GENERATED_MARK));
-    if (!old) continue;
+    if (!name.endsWith(".asm") || keep.has(name) || !readFileSync(path, "utf8").startsWith(GENERATED_MARK)) continue;
     rmSync(path, { force: true });
-    removed.push(name);
+    removed.push(`${out}/${name}`);
   }
   return removed;
 }
@@ -1145,10 +1150,12 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const loaderName = buildName("loader.asm", { values: kept, defaults: new Map(configured.map((row) => [row.name, row.default])) });
   // Read before the old files go: the leftovers of the earlier run, to tell what changed.
   const earlier = earlierLeftovers(out);
-  const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), loaderWanted).map((name) => `${out}/${name}`);
+  const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), loaderWanted);
   const stale = loaderWanted || space !== DEFAULT_SPACE ? undefined : staleLoader(out, knowledge.revision);
   const written: Written[] = withValues(files, laid, kept).map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
-  written.push(writeReported(`${out}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.revision, files), { what: "--out" }));
+  // The reports go to the local folder: the source folder holds only source files.
+  const reports = generatedDirectory(projectRelative(out));
+  written.push(writeReported(`${reports}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.revision, files)));
   const showRange = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
   if (rendered.notExecuted !== undefined) {
@@ -1162,7 +1169,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     const files: Record<string, number> = {};
     for (const range of placed) if (range.file !== undefined) files[range.file] = (files[range.file] ?? 0) + 1;
     const all = { revision: knowledge.revision, instructions: rendered.notExecuted.instructions, files, ranges: placed };
-    written.push(writeReported(`${out}/${NOT_EXECUTED_FILE}`, `${JSON.stringify(all, null, 2)}\n`, { what: "--out" }));
+    written.push(writeReported(`${reports}/${NOT_EXECUTED_FILE}`, `${JSON.stringify(all, null, 2)}\n`));
   }
   // The leftovers that changed since the earlier run: the default build and the loader now leave out other bytes.
   const added = earlier === undefined ? [] : outside(laid.leftovers, earlier);
@@ -1172,7 +1179,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const output: Record<string, unknown> = {
     out,
     files: written,
-    sourceMap: `${out}/${SOURCE_MAP_FILE}`,
+    sourceMap: `${reports}/${SOURCE_MAP_FILE}`,
     // The values that config.asm keeps and that are not the default: a build of the source is not the default build.
     ...(notDefault.length === 0 ? {} : { config: { file: `${out}/${CONFIG_FILE}`, notDefault } }),
     revision: knowledge.revision,
@@ -1196,7 +1203,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     ...(rendered.notExecuted === undefined
       ? {}
       : {
-          notExecuted: { instructions: rendered.notExecuted.instructions, ...listed(rendered.notExecuted.ranges, max, showRange, `${out}/${NOT_EXECUTED_FILE}`) },
+          notExecuted: { instructions: rendered.notExecuted.instructions, ...listed(rendered.notExecuted.ranges, max, showRange, `${reports}/${NOT_EXECUTED_FILE}`) },
         }),
     ...(laid.unusedModules.length === 0 ? {} : { unusedModules: laid.unusedModules.map((module) => ({ start: formatC64Address(module.start), file: module.file })) }),
     // The bytes that nothing uses: in leftover files, which the default build and the loader leave out.
@@ -1227,10 +1234,10 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
           patchesNotWritten: listed(laid.patchesNotWritten, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), switch: item.switch, reason: item.reason })),
         }),
   };
-  // A loader program of an earlier run stays when this run checks no new one: it can be a committed file.
-  const loaderPath = `${out}/${loaderName}.prg`;
+  // The loader program is a build: it goes to the build folder. A loader program of an earlier run stays when this run checks no new one.
+  const loaderPath = `${BUILD_DIRECTORY}/${loaderName}.prg`;
   const keptLoader = () => {
-    const earlier = loaderPrograms(out).filter((path) => path.endsWith(".prg"));
+    const earlier = loaderPrograms().filter((path) => path.endsWith(".prg"));
     return earlier.length === 0 ? {} : { kept: earlier };
   };
   const notVerified = (fields: Record<string, unknown>) => ({ verified: false, ...fields, ...keptLoader() });
@@ -1298,7 +1305,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     }
   }
   const program = stage?.program ?? packed?.program ?? copierBuild;
-  // The check runs the new loader from a scratch file. Only a loader whose check ran goes to --out, so a check
+  // The check runs the new loader from a scratch file. Only a loader whose check ran goes to the build folder, so a check
   // that cannot run (no host, or a host of another release) keeps the loader program of an earlier run.
   ensureLocal(projectRoot());
   const scratch = `${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/${LOADER_CHECK_DIRECTORY}`;
@@ -1320,17 +1327,17 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     ran = await runLoader(checkPath, program, loader, state, { jump, copierSource, fileByte, copierFrames, ...(startScreen === undefined ? {} : { startScreen }), ...stageRun }, expected);
   } catch (error) {
     if (!isRefusal(error)) throw error;
-    const what = loaderPrograms(out).length > 0 ? "kept the loader program of an earlier run" : "wrote no loader program";
+    const what = loaderPrograms().length > 0 ? "kept the loader program of an earlier run" : "wrote no loader program";
     return { output: { ...output, loader: notVerified({ reason: `The check of ${loaderName}.prg did not run, so the script ${what}. ${error.message}` }) }, removed, failed: true };
   } finally {
     rmSync(resolveProjectPath(scratch), { recursive: true, force: true });
   }
   // A loader program of an earlier run with another build name goes: config.asm has other values now.
-  for (const path of loaderPrograms(out).filter((item) => item !== loaderPath && item !== symbolsPath(loaderPath))) {
+  for (const path of loaderPrograms().filter((item) => item !== loaderPath && item !== symbolsPath(loaderPath))) {
     rmSync(resolveProjectPath(path), { force: true });
     removed.push(path);
   }
-  written.push(writeReported(loaderPath, program, { what: "--out" }), writeReported(symbolsPath(loaderPath), symbolsFileText(loaderSymbols(loaderMain.symbols, loaderBuilt.symbols, stage?.symbols ?? [])), { what: "--out" }));
+  written.push(writeReported(loaderPath, program), writeReported(symbolsPath(loaderPath), symbolsFileText(loaderSymbols(loaderMain.symbols, loaderBuilt.symbols, stage?.symbols ?? []))));
   if (stage !== undefined) written.push(writeReported(`${out}/${STAGE_FILE}`, stage.text, { what: "--out" }), writeReported(`${out}/${START_SCREEN_FILE}`, `${GENERATED_LINE}\n${START_SCREEN_CODE}`, { what: "--out" }));
   output.loader = {
     program: loaderPath,
@@ -1795,16 +1802,16 @@ await runScript({
   commands: [
     {
       name: "generate",
-      summary: "Writes the source files, source-map.json and not_executed.json, and checks them. result is PASS when every check passes, else FAIL.",
+      summary: "Writes the source files to --out and checks them. The source map and not_executed.json go to .c64-re-tools/local/generated/<dir>/. result is PASS when every check passes, else FAIL.",
       options: {
         out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "the folder for the source files, relative to the project folder", required: true },
         entry: { ...OPTIONS.entry, multiple: true, help: "an address where code starts. The entry of the program, the routines and the code regions of the knowledge are entry points too" },
         space: { ...OPTIONS.space, help: "the knowledge space of the program: c64 (the default), drive8, loading, or bank0 to bank255. --loader is for c64 only" },
-        loader: { kind: "flag", help: "also write loader.asm and the loader program <build>_loader.prg, clean_loader.prg with the defaults of config.asm, with its symbols in symbols/: the loader copies the segments into place, sets the entry state of the knowledge, and jumps to the entry. It is checked in the emulator. The loader leaves out the leftovers. When the check cannot run, the script keeps the loader program of an earlier run" },
+        loader: { kind: "flag", help: "also write loader.asm, and write the loader program to build/<build>_loader.prg (build/clean_loader.prg with the defaults of config.asm), with its symbols in build/symbols/: the loader copies the segments into place, sets the entry state of the knowledge, and jumps to the entry. It is checked in the emulator. The loader leaves out the leftovers. When the check cannot run, the script keeps the loader program of an earlier run" },
         "analyzer-names": { kind: "flag", help: "name an address that has no name of the user or the LLM, and no platform name, with its analyzer name" },
         "max-listed": OPTIONS["max-listed"],
       },
-      notes: "The program, its entry state and the coverage come from the knowledge: put them into the project knowledge first. Code that no imported run executed is marked and listed, and <dir>/not_executed.json has all of its ranges. Without --analyzer-names, an address without a name gets a name of the source, for example l_17e2.",
+      notes: "The program, its entry state and the coverage come from the knowledge: put them into the project knowledge first. Code that no imported run executed is marked and listed, and .c64-re-tools/local/generated/<dir>/not_executed.json has all of its ranges. Without --analyzer-names, an address without a name gets a name of the source, for example l_17e2.",
       run: async (call) => {
         const { output, failed, removed } = await generate(call);
         // A file of an earlier run that this run removed and did not write again.

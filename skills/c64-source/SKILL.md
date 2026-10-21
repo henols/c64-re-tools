@@ -89,7 +89,8 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 ### `generate --out <dir>`
 
-The command writes the source files, `source-map.json` and `not_executed.json` in `--out`. Then it checks them.
+The command writes the source files in `--out`. Then it checks them.
+The folder `--out` gets only source files. The command writes `source-map.json` and `not_executed.json` in `.c64-re-tools/local/generated/<dir>/`. Git ignores this folder.
 The same knowledge always gives the same source.
 Do not edit the generated files. The next run writes over them. The values in `config.asm` are the one exception.
 To make the source better, change the project knowledge. Then generate again.
@@ -97,7 +98,7 @@ To make the source better, change the project knowledge. Then generate again.
 `body` holds these fields:
 
 - `result`: `PASS` when every check passes, else `FAIL`.
-- `files`: the files in `--out`, each with `out`, `bytes` and `sha256`. `sourceMap` names `source-map.json`.
+- `files`: the files that the command wrote, each with `out`, `bytes` and `sha256`. `sourceMap` names `source-map.json`.
 - `removed`: the files of an earlier run that the script removed.
 - `instructions`, `dataBytes` and `undecodedBytes`.
 - `labels`: `named` labels from the knowledge, and `generated` labels `l_xxxx`.
@@ -245,12 +246,12 @@ Build the program from the source in these ways:
 
 #### The loader
 
-`--loader` writes `loader.asm` and assembles it to the loader program. The name of the loader program tells its build:
+`--loader` writes `loader.asm` in `--out`. It assembles `loader.asm` to the loader program in `build/`. Git ignores `build/`. The name of the loader program tells its build:
 
 - `clean_loader.prg`: each value of `config.asm` is its default. This is the clean program.
 - `custom_<switches>_loader.prg`: the names of the switches that are not at their default. A switch that is off has `no_` before its name, for example `custom_no_start_screen_loader.prg`.
 
-The symbols of the loader program are in `symbols/<name>.json`, for example `symbols/clean_loader.json`. They hold the labels of `loader.asm`, `main.asm` and `start_screen_stage.asm`. Give this file to a test of the loader program as its symbols. When the name changes, the script removes the loader program of the earlier run and its symbols.
+The symbols of the loader program are in `build/symbols/<name>.json`, for example `build/symbols/clean_loader.json`. They hold the labels of `loader.asm`, `main.asm` and `start_screen_stage.asm`. Give this file to a test of the loader program as its symbols. When the name changes, the script removes the loader program of the earlier run and its symbols.
 
 The loader does these steps:
 

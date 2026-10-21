@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -72,6 +72,8 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
   const generated = await run("c64-source", "source.ts", "generate", "--out", "src", "--loader");
   assert.equal(generated.status, 0, generated.stdout);
   assert.equal(generated.json.loader.verified, true, generated.stdout);
+  // The next run writes the loader program of the build again: keep this one.
+  copyFileSync(join(project, "build", "clean_loader.prg"), join(project, "build", "with_timers.prg"));
 
   // The control: the same entry state without the CIA part gives a loader that leaves the timers as the KERNAL ran them.
   delete state.cia;
@@ -92,9 +94,9 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
     );
     return run("c64-testing", "testing.ts", "test", name);
   };
-  const withTimers = await scenario("timers.json", "src/clean_loader.prg");
+  const withTimers = await scenario("timers.json", "build/with_timers.prg");
   assert.equal(withTimers.json.result, "PASS", withTimers.stdout);
-  const without = await scenario("no-timers.json", "src-old/clean_loader.prg");
+  const without = await scenario("no-timers.json", "build/clean_loader.prg");
   assert.equal(without.status, 0, without.stdout);
   assert.equal(without.json.result, "FAIL", without.stdout);
 });

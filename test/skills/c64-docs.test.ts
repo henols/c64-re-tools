@@ -14,6 +14,8 @@ import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 
 const SCRIPTS = resolve(import.meta.dirname, "../../skills");
 const projects: string[] = [];
+/** The folder of the source map of the source in src/. */
+const MAP_DIRECTORY = ".c64-re-tools/local/generated/src";
 after(() => {
   for (const project of projects) rmSync(project, { recursive: true, force: true });
 });
@@ -48,7 +50,8 @@ function writeSource(root: string, revision: string, files: Record<string, Array
     }
     writeFileSync(join(root, "src", file), `${text.join("\n")}\n`);
   }
-  writeFileSync(join(root, "src", "source-map.json"), JSON.stringify({ space: "c64", revision, files: Object.keys(files), labels, items }));
+  mkdirSync(join(root, MAP_DIRECTORY), { recursive: true });
+  writeFileSync(join(root, MAP_DIRECTORY, "source-map.json"), JSON.stringify({ space: "c64", revision, files: Object.keys(files), labels, items }));
 }
 
 /**
@@ -127,9 +130,9 @@ function project(root = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-"))): { ro
     "constants.asm": [{ label: "counter = $02", address: 0x0002 }],
   });
   // The label of a constant is its line "name = value": the map names it by the name only.
-  const map = JSON.parse(readFileSync(join(root, "src", "source-map.json"), "utf8")) as { labels: Array<{ name: string }> };
+  const map = JSON.parse(readFileSync(join(root, MAP_DIRECTORY, "source-map.json"), "utf8")) as { labels: Array<{ name: string }> };
   for (const label of map.labels) label.name = label.name.replace(/ =.*/, "");
-  writeFileSync(join(root, "src", "source-map.json"), JSON.stringify(map));
+  writeFileSync(join(root, MAP_DIRECTORY, "source-map.json"), JSON.stringify(map));
   return { root, revision };
 }
 
@@ -296,9 +299,9 @@ test("docs.ts link makes one link of a name and its address, once in a section a
   assert.equal(link(root, "docs", "--source", "src", "--check").json.result, "PASS");
 
   // A line that moves: docs.ts link writes the link to the new line.
-  const map = JSON.parse(readFileSync(join(root, "src/source-map.json"), "utf8")) as { labels: Array<{ name: string; line: number }> };
+  const map = JSON.parse(readFileSync(join(root, MAP_DIRECTORY, "source-map.json"), "utf8")) as { labels: Array<{ name: string; line: number }> };
   map.labels.find((label) => label.name === "main")!.line = 4;
-  writeFileSync(join(root, "src/source-map.json"), JSON.stringify(map));
+  writeFileSync(join(root, MAP_DIRECTORY, "source-map.json"), JSON.stringify(map));
   const moved = link(root, "docs", "--source", "src");
   assert.deepEqual(moved.json.linked, { links: 1, pages: ["docs/notes.md"] });
   assert.equal(readFileSync(join(root, "docs/notes.md"), "utf8"), "[`main` `$1000`](../src/main_code.asm#L4)\n");
@@ -431,9 +434,9 @@ test("docs.ts link in a group folder: a label names the project of a name, the p
   assert.deepEqual(own.json.group, { folder: "..", projects: ["v1", "v2"] });
 
   // A line that moves in v2 makes the link of the v1 page not up to date.
-  const map = JSON.parse(readFileSync(join(group, "v2/src/source-map.json"), "utf8")) as { labels: Array<{ name: string; line: number }> };
+  const map = JSON.parse(readFileSync(join(group, "v2", MAP_DIRECTORY, "source-map.json"), "utf8")) as { labels: Array<{ name: string; line: number }> };
   map.labels.find((label) => label.name === "draw")!.line = 8;
-  writeFileSync(join(group, "v2/src/source-map.json"), JSON.stringify(map));
+  writeFileSync(join(group, "v2", MAP_DIRECTORY, "source-map.json"), JSON.stringify(map));
   const moved = link(v1, "README.md", "docs", "--source", "src", "--check");
   assert.equal(moved.json.result, "FAIL");
   assert.deepEqual(moved.json.notUpToDate, { links: 1, pages: ["README.md"] });

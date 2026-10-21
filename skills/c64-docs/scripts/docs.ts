@@ -67,7 +67,7 @@ function generate(call: Call): Reply {
     const revision = currentRevision(db);
     // A source of another revision has other lines: the links would point to the wrong code.
     if (map.revision !== revision) {
-      throw new WireFailure("invalid-input", `${map.pathOf("source-map.json")} is from knowledge revision ${map.revision}, and the knowledge is at revision ${revision}. Nothing was written. Generate the source again from the knowledge. Then run generate again.`);
+      throw new WireFailure("invalid-input", `${map.mapPath} is from knowledge revision ${map.revision}, and the knowledge is at revision ${revision}. Nothing was written. Generate the source again from the knowledge. Then run generate again.`);
     }
     knowledge = {
       revision,
@@ -272,7 +272,7 @@ function link(call: Call): Reply {
       db?.close();
     }
     if (map.revision !== revision) {
-      problems.push({ page: inProject(map.pathOf("source-map.json")), line: 1, kind: "stale-reference", message: `The source${of} is from knowledge revision ${map.revision}, and the knowledge is at ${revision}. Generate the source and the reference again, then run docs.ts link.` });
+      problems.push({ page: inProject(map.mapPath), line: 1, kind: "stale-reference", message: `The source${of} is from knowledge revision ${map.revision}, and the knowledge is at ${revision}. Generate the source and the reference again, then run docs.ts link.` });
     }
     const addresses = new Map<string, number>();
     for (const label of map.labels) addresses.set(label.name, label.address);
@@ -411,7 +411,7 @@ function link(call: Call): Reply {
   return reply({ result: problems.length > 0 || (check && links > 0) ? "FAIL" : "PASS", ...output }, { ...(hints.length === 0 ? {} : { hint: hints.join(" ") }), nextAction });
 }
 
-const SOURCE = { kind: "path", value: "<dir>", help: "the folder of the source that was generated from the knowledge, with its source-map.json, relative to the project folder" } as const;
+const SOURCE = { kind: "path", value: "<dir>", help: "the folder of the source that was generated from the knowledge, relative to the project folder" } as const;
 
 await runScript({
   name: "docs",

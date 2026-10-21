@@ -41,7 +41,7 @@ The documentation is Markdown in the project. It has two parts:
 
 Get the values for the commands from these places:
 
-- `<source-dir>` and `--source`: the folder of the source that you generated from the project knowledge, for example `src`. It must hold `source-map.json`. The source must be from the current revision of the project knowledge.
+- `<source-dir>` and `--source`: the folder of the source that you generated from the project knowledge, for example `src`. The source must be from the current revision of the project knowledge.
 - `--out`: a folder that holds only the reference, for example `docs/reference`. Keep the pages that you write outside it.
 - `<page>`: the entry page `README.md` and the folder of the other pages, for example `docs`.
 - The program bytes: put them into the project knowledge before `generate`. Then the reference decodes the tables and shows the graphics.
@@ -84,7 +84,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | Flag | Command | Effect |
 |---|---|---|
 | `--out <dir>` | `generate` | Required. The folder of the reference, relative to the project folder. `generate` writes only there. It refuses to start when the folder holds a page that it did not write. |
-| `--source <dir>` | `link` | Required. The folder of the generated source, with its `source-map.json`, relative to the project folder. In a group folder, each project has its source in this folder. |
+| `--source <dir>` | `link` | Required. The folder of the generated source, relative to the project folder. In a group folder, each project has its source in this folder. |
 | `--reference <dir>` | `link` | The folder of the reference, relative to the project folder. In a group folder, each project has its reference in this folder. The default is the first `reference` folder in a given folder or beside a given page, for example `docs/reference`. |
 | `--check` | `link` | Write nothing. `result` is `FAIL` when a link is not up to date or a page has a problem. Off by default. |
 | `--max-listed <n>` | `generate`, `link` | List at most `n` items in each list. The default is 50. The count is always in the body. |
@@ -121,7 +121,7 @@ In a call graph, a solid arrow is a call, a thick arrow is a table entry, and a 
 
 Errors and their actions:
 
-- `not-found` for `source-map.json` or for the source folder: generate the source from the project knowledge. Then run `generate` again.
+- `not-found` for the source map or for the source folder: generate the source from the project knowledge. Then run `generate` again.
 - `invalid-input` that names an old revision: the project knowledge changed after you generated the source. Generate the source again, then run `generate` again.
 - `invalid-input` that names a page in `--out`: `generate` did not write that page. Move the page out of the folder.
 - `conflict`: the project knowledge has conflicts from a git merge. Resolve the merge conflicts of the project knowledge. Then generate the source again, and run `generate` again.
@@ -208,7 +208,7 @@ Errors:
 ## Workflow
 
 1. Read the project knowledge. The documentation can only be as good as the knowledge. Each routine needs a name and a comment. Each table needs a region and a name. Each file of the source needs a module with a title. Record what is missing in the project knowledge.
-2. Generate the source from the project knowledge. Make sure that the check of the source gives identical bytes. This also writes `source-map.json`.
+2. Generate the source from the project knowledge. Make sure that the check of the source gives identical bytes. This also writes the source map.
 3. Run `generate`. Read `index.md` of the reference. A module with no routines, or a routine with no comment, shows what the knowledge does not have yet.
 4. Make the plan of the pages. Start from the modules and the call graphs. Find the main loop, the interrupt chain, the dispatch tables, the state machines and the data formats. Each subsystem gets one page in `docs/`. The entry page `README.md` lists the pages. Use the page types in `<skill>/references/page-types.md`.
 5. Collect the facts about the development and the copy protection. These facts are the most interesting parts for a reader, so look for them carefully.

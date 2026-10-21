@@ -121,7 +121,7 @@ All other files that you made are not deliverables. Keep them in `.c64-re-tools/
 Give the user a short answer at the end. Do not write a report file. Write a report file only when the user asks for it. The knowledge, `docs/` and the scenarios keep the durable results. The answer has:
 
 1. Each criterion of stage 1 and its result, and each exception that the user accepted.
-2. The count of the code ranges that no run executed. The ranges are in `not_executed.json` in the folder of the generated source.
+2. The count of the code ranges that no run executed. The ranges are in `.c64-re-tools/local/generated/src/not_executed.json` for the source in `src/`.
 3. The switches: the name, the kind and the default of each, and the releases that have it on. Also a copy protection that a crack removed and that no release has.
 4. Open questions: what the evidence does not explain.
 

@@ -7,13 +7,25 @@
 import { Refusal } from "./errors.ts";
 import { accessSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 
 /** The folder that marks a project and holds its knowledge. */
 export const PROJECT_DIRECTORY = ".c64-re-tools";
 
 /** The folder for machine-local scratch: saved results, batches and step files. */
 export const LOCAL_DIRECTORY = "local";
+
+/** The folder in LOCAL_DIRECTORY for the reports of a generated source: its source map and the code that no run executed. */
+export const GENERATED_DIRECTORY = "generated";
+
+/**
+ * The folder of the reports of the source that was generated into `out`, relative
+ * to the project folder: .c64-re-tools/local/generated/<out>. The source folder
+ * then holds only source files.
+ */
+export function generatedDirectory(out: string): string {
+  return posix.join(PROJECT_DIRECTORY, LOCAL_DIRECTORY, GENERATED_DIRECTORY, posix.normalize(out.split("\\").join("/")).replace(/\/+$/, ""));
+}
 
 /** The .gitignore of LOCAL_DIRECTORY: git ignores everything in it, the .gitignore too. */
 const LOCAL_GITIGNORE = "# Machine-local scratch of c64-re-tools (saved results, batches, step files). Never committed.\n*\n";

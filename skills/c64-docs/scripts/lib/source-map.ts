@@ -1,5 +1,6 @@
-// The source map that c64-source writes next to the source: the line of
-// each name and of each address. The documentation links to these lines.
+// The source map of a generated source: the line of each name and of each
+// address. The generation writes it to the local folder of the project, not
+// next to the source. The documentation links to these lines.
 
 import { posix } from "node:path";
 
@@ -7,6 +8,7 @@ import { parseC64Address } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import type { Space } from "#src/knowledge/schema.ts";
+import { generatedDirectory } from "#src/project.ts";
 
 export const SOURCE_MAP_FILE = "source-map.json";
 
@@ -18,6 +20,8 @@ export interface SourceLine {
 export interface SourceMap {
   /** The source directory, relative to the project folder. */
   directory: string;
+  /** The source map file, relative to the project folder. */
+  mapPath: string;
   space: Space;
   revision: string;
   files: string[];
@@ -30,9 +34,9 @@ export interface SourceMap {
   pathOf: (file: string) => string;
 }
 
-/** Reads <directory>/source-map.json of the project `root`. A missing map is a refusal with the remedy. */
+/** Reads the source map of the source in `directory` of the project `root`. A missing map is a refusal with the remedy. */
 export function readSourceMap(directory: string, root?: string): SourceMap {
-  const path = posix.join(directory, SOURCE_MAP_FILE);
+  const path = posix.join(generatedDirectory(directory), SOURCE_MAP_FILE);
   let text: string;
   try {
     text = readProjectFile(path, root === undefined ? {} : { root }).bytes.toString("utf8");
@@ -59,6 +63,7 @@ export function readSourceMap(directory: string, root?: string): SourceMap {
   const byName = new Map(labels.map((label) => [label.name, label]));
   return {
     directory,
+    mapPath: path,
     space: String(raw.space ?? "c64") as Space,
     revision: String(raw.revision),
     files: (raw.files as unknown[]).map(String),

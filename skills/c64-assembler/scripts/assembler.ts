@@ -1,7 +1,7 @@
 // The c64-assembler script: assembles project source with ACME, which it runs
 // itself, and writes the program into the project.
 
-import { type BuildKind, buildName, CONFIG_FILE, configValues, symbolsPath } from "#src/build-name.ts";
+import { BUILD_DIRECTORY, type BuildKind, buildName, CONFIG_FILE, configValues, symbolsPath } from "#src/build-name.ts";
 import { formatC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { readImage } from "#src/host-client/image.ts";
@@ -90,7 +90,7 @@ await runScript({
         const config = tree.files.findIndex((file) => file.path === (tree.sourceDir === "" ? CONFIG_FILE : `${tree.sourceDir}/${CONFIG_FILE}`));
         const kind: BuildKind | undefined = label !== undefined ? { release: label } : config < 0 ? undefined : { values: configValues(contents[config]!.toString("utf8")), defaults: switchDefaults(call.space) };
         const plain = call.flag("plain");
-        const out = call.string("out") ?? `build/${buildName(entry, kind)}.${plain ? "bin" : "prg"}`;
+        const out = call.string("out") ?? `${BUILD_DIRECTORY}/${buildName(entry, kind)}.${plain ? "bin" : "prg"}`;
         const params: AcmeParams = { ...tree, entrySource: entry, defines: { ...releaseDefine, ...Object.fromEntries(call.strings("define").map(parseDefine)) }, ...(setPc === undefined ? {} : { setPc }) };
 
         const { result, attachments } = await assemble(params, contents, localToolContext());

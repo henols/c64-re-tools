@@ -194,7 +194,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
   }
   const titleOf = (file: string) => input.modules.find((module) => module.file === file)?.title;
 
-  const header = `${GENERATED_MARK} from knowledge revision ${input.revision} and ${map.pathOf("source-map.json")}. Do not edit: change the knowledge, generate the source again, then run docs.ts generate. -->`;
+  const header = `${GENERATED_MARK} from knowledge revision ${input.revision} and ${map.mapPath}. Do not edit: change the knowledge, generate the source again, then run docs.ts generate. -->`;
   const files: ReferenceFile[] = [];
   const write = (path: string, lines: string[]) => files.push({ path, bytes: Buffer.from(`${[header, ...lines].join("\n").replace(/\n{3,}/g, "\n\n")}\n`, "utf8") });
 
