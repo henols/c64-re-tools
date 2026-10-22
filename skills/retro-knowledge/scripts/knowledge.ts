@@ -20,13 +20,11 @@ import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { addCoverage, memoryRows, operandImages as programImages, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
+import { addCoverage, memoryRows, programImage, requireProgram, setImage, setSnapshot, type ImageRequest } from "#src/knowledge/program.ts";
 import { startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
-  analyzerNamesAt,
   at,
   baseValue,
-  commentsAt,
   coverageRuns,
   currentRevision,
   currentStartScreen,
@@ -44,11 +42,7 @@ import {
   listSwitches,
   listSuppressions,
   listSymbols,
-  operandAt,
-  referencesFrom,
-  referencesTo,
   search,
-  symbolAt,
   type CommentRow,
   type MacroRow,
   type MacroUseRow,
@@ -63,7 +57,7 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "#src/knowledge/read.ts";
-import { ANALYZERS, COMMENT_PLACEMENTS, EVIDENCE_KINDS, isSemantic, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, START_SCREEN_MODES, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type OperandSelect, type StartScreenMode, type SwitchKind } from "#src/knowledge/schema.ts";
+import { ANALYZERS, COMMENT_PLACEMENTS, EVIDENCE_KINDS, OPERAND_SELECTS, ORIGINS, REFERENCE_KINDS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, START_SCREEN_MODES, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type OperandSelect, type StartScreenMode, type SwitchKind } from "#src/knowledge/schema.ts";
 import {
   addReference,
   applyBatch,
@@ -98,13 +92,13 @@ import {
   type BatchStep,
   type Evidence,
   type MergeChoice,
-  type OperandImage,
   type WriteContext,
 } from "#src/knowledge/write.ts";
 import { platformNamesOfSpace } from "#src/platform.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
-import { listing, listingText, type ListingSource } from "./lib/listing.ts";
+import { listing, listingText } from "./lib/listing.ts";
+import { listingSource, operandImages } from "./lib/lookups.ts";
 
 function oneOf<T extends string>(values: readonly T[], value: string | undefined, what: string): T {
   if (value === undefined || !(values as readonly string[]).includes(value)) throw new UsageError(`${what} must be one of: ${values.join(", ")}.`);
@@ -272,40 +266,6 @@ function reasonsOf(db: DatabaseSync | undefined, rows: SuppressionRow[]): Map<st
   return reasons;
 }
 
-/** The lookups of a listing: the program and the coverage in the knowledge, the knowledge of the space and the platform names of its machine. */
-function listingSource(db: DatabaseSync | undefined, space: string): ListingSource {
-  const image = requireProgram(db, space);
-  const coverage = programCoverage(db, space)?.map;
-  const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
-  const names = platformNamesOfSpace(space);
-  const platform = new Map(names.map((entry) => [entry.address, entry.name]));
-  const entries = names.filter((entry) => entry.end > entry.address);
-  return {
-    cpu: machineOf(db).cpu,
-    byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined),
-    entryStart: (at) => (inside(at) ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),
-    // A user or LLM name, else the platform name; an analyzer name in symbols (knowledge from an older version) gives way to it.
-    nameOf: (at) => {
-      const own = symbolAt(db, at, space);
-      return own !== undefined && isSemantic(own.origin) ? own.name : (platform.get(at) ?? own?.name);
-    },
-    knownNameOf: (at) => symbolAt(db, at, space)?.name,
-    secondNames: (at) => analyzerNamesAt(db, at, space).map((row) => row.name),
-    regions: listRegions(db, undefined, undefined, undefined, space),
-    comments: (at) => {
-      const rows = commentsAt(db, at, space);
-      const side = rows.find((row) => row.placement === "side")?.text;
-      return { line: rows.filter((row) => row.placement === "line").flatMap((row) => row.text.split(/\r?\n/)), ...(side === undefined ? {} : { side }) };
-    },
-    operand: (at) => {
-      const row = operandAt(db, at, space);
-      return row === undefined ? undefined : operandText(row);
-    },
-    references: (at) => ({ in: referencesTo(db, at, space).length, out: referencesFrom(db, at, space).length }),
-    ...(coverage === undefined ? {} : { coverage }),
-  };
-}
-
 /** Every value of --origin, for the message of a wrong one. */
 const ORIGIN_VALUES = `one of ${ORIGINS.join(", ")}, semantic or analyzer, or a comma list of them. semantic is ${SEMANTIC_ORIGINS.join(" and ")}. analyzer is ${ANALYZERS.slice(0, -1).join(", ")} and ${ANALYZERS.at(-1)}`;
 
@@ -368,11 +328,6 @@ function imageRequest(image: Image, space: string): ImageRequest {
   if (image.stages !== undefined) request.stages = image.stages;
   if (image.state !== undefined) request.state = image.state.raw;
   return request;
-}
-
-/** The programs that operand, patch and macro use writes are checked against, with the platform names of the project machine. */
-function operandImages(db: DatabaseSync): (space: string) => OperandImage {
-  return programImages(db, new Map(platformNamesOfSpace(mainSpaceOf(db)).map((entry) => [entry.name, entry.address])));
 }
 
 /** An offset: a whole number in decimal or $ hex, with an optional minus sign. */
@@ -1090,20 +1045,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       if ("snapshot" in read) {
         if (call.string("space") !== undefined) throw new UsageError("A snapshot gives its own spaces: the CPU view and the RAM banks. Remove --space");
         const snapshot = read.snapshot;
-        return (db) => {
-          const machine = machineOf(db).id === snapshot.machine ? undefined : writeMachine(db, context, { machine: snapshot.machine, state: snapshot.main.state });
-          const main = MACHINES[snapshot.machine].spaces.main;
-          const written = [
-            { ...setImage(db, context, { space: main, segments: snapshot.main.segments, byteAt: snapshot.main.byteAt, entry: snapshot.main.entry, state: snapshot.main.state }), space: main },
-            ...snapshot.banks.map((bank) => ({ ...setImage(db, context, { space: `ram${bank.bank}`, segments: [{ start: 0xc000, end: 0xffff }], byteAt: bank.byteAt }), space: `ram${bank.bank}` })),
-          ];
-          return {
-            revision: [machine?.revision ?? null, ...written.map((item) => item.revision)].filter((revision) => revision !== null).at(-1) ?? null,
-            machine: snapshot.machine,
-            machineChanged: machine !== undefined,
-            spaces: written.map(({ space, current }) => ({ space, bytes: current.bytes, rowsAdded: current.rowsAdded, rowsClosed: current.rowsClosed, entryChanged: current.entry })),
-          };
-        };
+        return (db) => setSnapshot(db, context, snapshot);
       }
       const request = imageRequest(read.image, call.space);
       return (db) => {

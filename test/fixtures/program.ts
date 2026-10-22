@@ -3,7 +3,9 @@
 
 import { prgRange } from "../../src/c64.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
-import { addCoverage, setImage, type ImageRequest } from "../../src/knowledge/program.ts";
+import { snapshotImage } from "../../src/host-client/image.ts";
+import { addCoverage, setImage, setSnapshot, type ImageRequest } from "../../src/knowledge/program.ts";
+import { readZ80 } from "../../src/spectrum.ts";
 
 /** A PRG as the program of a space; the write is one revision. */
 export function importPrg(root: string, prg: Uint8Array, space = "c64"): void {
@@ -19,4 +21,9 @@ export function importImage(root: string, memory: Uint8Array, request: Omit<Imag
 /** Coverage maps of 64 KiB, each named as its evidence. */
 export function importCoverage(root: string, maps: Record<string, Uint8Array>): void {
   withWrite((db) => addCoverage(db, { origin: "user" }, { maps: Object.entries(maps).map(([name, bytes]) => ({ name, bytes })) }), root);
+}
+
+/** A .z80 snapshot as the program: it sets the machine of the project to the model of the snapshot. */
+export function importSnapshot(root: string, z80: Uint8Array): void {
+  withWrite((db) => setSnapshot(db, { origin: "user" }, snapshotImage(readZ80(z80))), root);
 }

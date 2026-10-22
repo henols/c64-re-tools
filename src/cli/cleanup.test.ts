@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
-import { parseTargets, removeDroppedItems, removeEmptyDirectories, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp } from "./cleanup.ts";
+import { installMachines, parseTargets, removeDroppedItems, removeEmptyDirectories, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp } from "./cleanup.ts";
 
 const ESC = String.fromCharCode(27);
 
@@ -29,6 +29,11 @@ test("the AP SDK report loses only its Windsurf MCP line and that line's detail,
 test("--target splits into harnesses; no value means all", () => {
   assert.equal(parseTargets(undefined), undefined);
   assert.deepEqual(parseTargets("claude, gemini,,"), ["claude", "gemini"]);
+});
+
+test("--machines names the families to install, and an unknown family is refused with the families", () => {
+  assert.deepEqual(installMachines("spectrum, c64", "project"), ["spectrum", "c64"]);
+  assert.match(String(installMachines("c128", "project")), /^--machines takes c64, spectrum/);
 });
 
 test("empty directories go up to the stop directory; a directory with a file stays", () => {

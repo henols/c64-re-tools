@@ -41,9 +41,6 @@ test("install --machines declares one MCP server per family, and an update witho
     assert.deepEqual(servers(), { spectrum: mcpServerFor(process.platform, "spectrum"), c64: mcpServerFor(process.platform, "c64") });
     assert.equal(at("update", "--target", "claude").status, 0);
     assert.deepEqual(Object.keys(servers()).sort(), ["c64", "spectrum"], "an update keeps the installed families");
-    const refused = at("install", "--target", "claude", "--machines", "c128");
-    assert.equal(refused.status, 2);
-    assert.match(refused.stderr, /--machines takes c64, spectrum/);
   } finally {
     rmSync(fresh, { recursive: true, force: true });
   }

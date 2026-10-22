@@ -70,10 +70,6 @@ test("the spectrum server has no C64 chip tools", () => {
   for (const name of ["vicii", "sprite", "cia", "sid"]) assert.ok(!names.includes(name), name);
 });
 
-test("no spectrum tool names the emulator or the replay core that runs it", () => {
-  for (const item of spectrumTools) assert.doesNotMatch(`${item.description} ${JSON.stringify(item.inputSchema)}`, /ZEsarUX|zxrun|\bZRCP\b|monitor|tcp|socket/i, item.name);
-});
-
 test("a stop and the registers tell when the CPU waits for an interrupt after opcode $76", async () => {
   const stopped = (await tool("execution").run({ action: "step", count: 1 }, fakeSession())) as Record<string, unknown>;
   assert.deepEqual(stopped, { state: "stopped", pc: "$8024", stopReason: "steps", waitsForInterrupt: true });

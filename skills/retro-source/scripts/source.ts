@@ -13,7 +13,6 @@ import { projectMainSpace } from "#src/knowledge/names.ts";
 import { C64 } from "#src/machine.ts";
 import { machineOf, mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import type { Machine } from "#src/machine.ts";
-import { assemble as assembleZ80 } from "#src/native/sjasmplus.ts";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
@@ -22,7 +21,7 @@ import { isRefusal, Refusal } from "#src/errors.ts";
 import { PACKAGE } from "#src/package.ts";
 import { BUILD_DIRECTORY, buildName, symbolsPath } from "#src/build-name.ts";
 import { findHandoffs, parseTokenized, textToPetscii } from "#src/c64.ts";
-import { type AddressRange, formatAddress, formatByte, parseAddress } from "#src/address.ts";
+import { type AddressRange, formatAddress, parseAddress } from "#src/address.ts";
 import { coverageSeedKinds } from "#src/cpu/coverage.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
@@ -41,7 +40,7 @@ import { analyze } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, platformNamesOfSpace, romRanges, romUseOfProgram } from "#src/platform.ts";
-import { renderZ80, z80Encoded, z80Instructions, z80ProbeSource, type Z80Rendered } from "./lib/z80-source.ts";
+import { refuseC64Work, z80Instructions, z80Source } from "./lib/z80-source.ts";
 import { ensureLocal, generatedDirectory, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { isoCet } from "#src/time.ts";
 import { zipFiles } from "#src/zip.ts";
@@ -1130,13 +1129,6 @@ async function buildStage(files: Array<{ name: string; text: string }>, laid: La
 /** The first line of each file that generate writes. */
 const GENERATED_LINE = `${GENERATED_MARK}. Do not edit: change the knowledge and generate again.`;
 
-/** The memory that one sjasmplus build of source files given as text gives, or its diagnostics. */
-async function buildZ80(files: ReadonlyArray<{ name: string; text: string }>, entry: string, model: "48k" | "128k"): Promise<{ memory: Buffer; segments: AddressRange[] } | { diagnostics: Diagnostic[] }> {
-  const contents = files.map((file) => Buffer.from(file.text, "utf8"));
-  const { result, attachments } = await assembleZ80({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: entry, includeDirs: [], defines: {}, model }, contents, localToolContext());
-  return result.assembled ? { memory: attachments![0]!, segments: result.segments! } : { diagnostics: result.diagnostics };
-}
-
 /**
  * not_executed.json: each range of instructions that no run executed, with the
  * file of the source that holds it and the routine before it, as a report groups them.
@@ -1165,11 +1157,9 @@ function notExecutedReport(notExecuted: { instructions: number; ranges: readonly
 async function generateZ80(call: Call, machine: Machine): Promise<{ output: Record<string, unknown>; failed: boolean; removed: string[] }> {
   const out = call.string("out")!;
   const space = call.space;
-  if (call.flag("loader")) throw new UsageError(`--loader works only for the C64. The ${machine.name} program starts from its snapshot`);
   const entries = call.addresses("entry");
   const knowledge = readKnowledge(space, call.flag("analyzer-names"));
-  const acmeOnly = [...(knowledge.patches.length === 0 ? [] : ["patches"]), ...(knowledge.switches.length === 0 ? [] : ["switches"]), ...(knowledge.macroUses.length === 0 ? [] : ["macro uses"])];
-  if (acmeOnly.length > 0) throw new Refusal("invalid-input", `The knowledge has ${acmeOnly.join(", ")}, which the source of a Z80 program does not write. Remove them from the project knowledge, then generate again.`);
+  refuseC64Work(machine, call.flag("loader"), knowledge);
   const image = knowledge.program;
   const model = machine.id === "spectrum128" ? "128k" : "48k";
   const max = call.count("max-listed")!;
@@ -1192,38 +1182,7 @@ async function generateZ80(call: Call, machine: Machine): Promise<{ output: Reco
     ],
   };
   const instructions = z80Instructions(input);
-  // The probe gives the instructions that sjasmplus encodes as the program has them.
-  let encoded = new Set<number>();
-  if (instructions.length > 0) {
-    const probe = await buildZ80([{ name: "probe.asm", text: z80ProbeSource(instructions) }], "probe.asm", model);
-    if ("diagnostics" in probe) throw new WireFailure("operation-failed", `sjasmplus refused the decoded instructions: ${probe.diagnostics.map((item) => item.message).join("; ")}`);
-    encoded = z80Encoded(instructions, probe.memory, image.byteAt);
-  }
-  // Each file starts with the mark: the source map counts the lines after it.
-  const marked = (rendered: Z80Rendered) => rendered.files.map((file) => ({ name: file.name, text: `${GENERATED_LINE}\n${file.text}` }));
-  const numbers = new Map<number, string>();
-  let rendered = renderZ80(input, instructions, encoded, numbers);
-  let files = marked(rendered);
-  let built = await buildZ80(files, "main.asm", model);
-  // An operand expression that sjasmplus refuses, or that gives other bytes, is written as its number.
-  for (let round = 0; round < ROUNDS && rendered.expressions.length > 0; round++) {
-    const blamed = new Map<number, string>();
-    for (const expression of rendered.expressions) {
-      if ("diagnostics" in built) {
-        const refused = built.diagnostics.find((item) => item.severity === "error" && item.file === expression.file && item.line === expression.line + 1);
-        if (refused !== undefined) blamed.set(expression.address, `sjasmplus refuses the expression: ${refused.message}`);
-        continue;
-      }
-      const memory = built.memory;
-      const first = Array.from({ length: expression.length }, (_, offset) => expression.address + offset).find((address) => memory[address] !== image.byteAt(address));
-      if (first !== undefined) blamed.set(expression.address, `The expression gives other bytes than the program: ${formatByte(memory[first]!)} at ${formatAddress(first)}, not ${formatByte(image.byteAt(first))}.`);
-    }
-    if (blamed.size === 0) break;
-    for (const [address, reason] of blamed) numbers.set(address, reason);
-    rendered = renderZ80(input, instructions, encoded, numbers);
-    files = marked(rendered);
-    built = await buildZ80(files, "main.asm", model);
-  }
+  const { rendered, files, built } = await z80Source(input, instructions, model, { mark: GENERATED_LINE, rounds: ROUNDS });
   const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), false);
   const written = files.map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
   // The reports go to the local folder: the source folder holds only source files.

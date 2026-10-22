@@ -8,22 +8,14 @@ import { Refusal } from "#src/errors.ts";
 import { encodePng, SPECTRUM_PALETTE, spectrumScreenFrame } from "#src/graphics.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
-import { pagedBank, readSna, readTap, readTzx, readZ80, type SpectrumSnapshot, type TapeBlock } from "#src/spectrum.ts";
-
-const SCREEN_BYTES = 6912;
+import { pagedBank, readTap, readTzx, type TapeBlock } from "#src/spectrum.ts";
+import { screenOf, snapshotOf } from "./lib/screen.ts";
 
 function tapeBlocks(path: string): TapeBlock[] {
   const file = readProjectFile(path, { what: "<tape>" });
   if (file.type === "tap") return readTap(file.bytes);
   if (file.type === "tzx") return readTzx(file.bytes);
   throw new Refusal("invalid-input", `${path} is no tape: give a .tap or a .tzx file.`);
-}
-
-function snapshotOf(path: string, what: string): SpectrumSnapshot {
-  const file = readProjectFile(path, { what });
-  if (file.type === "z80") return readZ80(file.bytes);
-  if (file.type === "sna") return readSna(file.bytes);
-  throw new Refusal("invalid-input", `${path} is no snapshot: give a .z80 or a .sna file.`);
 }
 
 const showBlock = (block: TapeBlock, index: number) => ({
@@ -128,20 +120,7 @@ await runScript({
         border: { kind: "number", value: "<colour>", help: "the border colour 0-7 for a .scr file. Default 7 (white)", max: 7 },
       },
       run: (call) => {
-        const path = call.subject(0);
-        const file = readProjectFile(path, { what: "<file>" });
-        let screen: Uint8Array;
-        let border: number;
-        if (file.type === "z80" || file.type === "sna") {
-          if (call.count("border") !== undefined) throw new UsageError("--border works only with a .scr file: a snapshot gives its own border. Remove --border");
-          const snapshot = snapshotOf(path, "<file>");
-          screen = snapshot.banks[snapshot.port7ffd & 0x08 ? 7 : 5]!.subarray(0, SCREEN_BYTES);
-          border = snapshot.border;
-        } else {
-          if (file.bytes.length !== SCREEN_BYTES) throw new Refusal("invalid-input", `${path} has ${file.bytes.length} bytes: a .scr screen has ${SCREEN_BYTES} (the bitmap and the attributes).`);
-          screen = file.bytes;
-          border = call.count("border") ?? 7;
-        }
+        const { screen, border } = screenOf(call.subject(0), call.count("border"));
         const frame = spectrumScreenFrame(screen, border);
         return { width: frame.width, height: frame.height, ...writeReported(call.string("out")!, encodePng(frame, SPECTRUM_PALETTE), { what: "--out" }) };
       },

@@ -1,7 +1,7 @@
 // Knowledge seeds for an analyzer, and the mapping of a Ghidra result to the
 // common normalized findings.
 
-import type { AddressRange } from "#src/address.ts";
+import { type AddressRange, formatAddress } from "#src/address.ts";
 import type { Cpu } from "#src/cpu.ts";
 import { subtract } from "#src/knowledge/write.ts";
 import { mainSpaceOf } from "#src/knowledge/project-machine.ts";
@@ -11,6 +11,8 @@ import type { NormalizedFindings } from "#src/knowledge/import.ts";
 import { listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, isSemantic, type Space } from "#src/knowledge/schema.ts";
 import type { DxaResult, GhidraParams, GhidraResult } from "#src/native/types.ts";
+import type { Machine } from "#src/machine.ts";
+import { UsageError } from "#src/script.ts";
 
 export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
 
@@ -100,6 +102,23 @@ export function ghidraFindings(result: GhidraResult, cpu: Cpu["id"] = "6502"): N
     regions: result.regions.map((region) => ({ start: region.start, end: region.end, type: region.classification === "code" ? ("code" as const) : ("bytes" as const) })),
     references: result.references.filter((reference) => !guessed(reference)).map((reference) => ({ from: reference.from, to: reference.to, kind: reference.type })),
   };
+}
+
+/**
+ * The refusals of an analysis by the machine of the project: DXA and
+ * --apply-macros where the machine has no 6502 or no macros, and an --entry in
+ * the ROM. Gives the ROM of the space: the analysis seeds it as data, and the
+ * findings in it do not go into the knowledge.
+ */
+export function machineRom(machine: Machine, request: { analyzer: string; applyMacros: boolean; entries: readonly number[]; space: string }): AddressRange[] {
+  if (machine.cpu.id === "z80" && request.analyzer === "dxa") throw new UsageError(`--analyzer dxa reads only 6502 code, and the ${machine.name} has a Z80. Use --analyzer ghidra`);
+  if (request.applyMacros && !machine.macros) throw new UsageError(`--apply-macros writes macros, and the generated source of the ${machine.name} has no macros. Remove --apply-macros`);
+  const rom = request.space === machine.spaces.main ? [...machine.rom] : [];
+  for (const entry of request.entries) {
+    const range = rom.find((item) => entry >= item.start && entry <= item.end);
+    if (range !== undefined) throw new UsageError(`--entry ${formatAddress(entry)} is in the ROM of the ${machine.name} (${formatAddress(range.start)}-${formatAddress(range.end)}). The knowledge holds the program, not the ROM: give an entry point of the program`);
+  }
+  return rom;
 }
 
 /**

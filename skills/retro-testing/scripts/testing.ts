@@ -16,7 +16,7 @@ import { C64RunSession, PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { ZX_FRAME_CYCLES, ZxRunSession } from "#src/native/zxrun.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { machineOf } from "#src/knowledge/project-machine.ts";
-import { readZxRebuild, readZxRecordFile, readZxRecording, ZX_RECORDING_FILES, zxProgramProblem, zxRamDifferences, zxRamParts, zxRecord, zxReplay, zxVerdict, type ZxReplaySide } from "./lib/zx-recording.ts";
+import { checkZxReplayOptions, readZxRebuild, readZxRecordFile, refuseOtherMachine, readZxRecording, ZX_RECORDING_FILES, zxProgramProblem, zxRamDifferences, zxRamParts, zxRecord, zxReplay, zxVerdict, type ZxReplaySide } from "./lib/zx-recording.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
@@ -46,7 +46,7 @@ const ALWAYS = [
 const INCONCLUSIVE_HINT = "reason tells why the script could not compare. This is not a failure of the program. Correct the cause, then run the command again.";
 
 async function test(call: Call): Promise<ScenarioResult | Reply> {
-  refuseOtherMachine("test");
+  refuseOtherMachine("test", projectMachine());
   const scenario = readScenario(call.subject(0));
   const out = call.string("out");
   // Every file of the scenario is checked before the emulator starts.
@@ -79,15 +79,6 @@ function projectMachine(): Machine {
 }
 
 const spectrumProject = () => projectMachine().family === "spectrum";
-
-/** test and run start a C64 in VICE: in a project of another machine they refuse before they read a file. */
-function refuseOtherMachine(command: string): void {
-  const machine = projectMachine();
-  if (machine.family === "c64") return;
-  throw new UsageError(`${command} is for a C64 program, and this project is a ${machine.name} project.`, {
-    hint: "Record a session of the snapshot of the program with record. Then replay the recording on the original and on the rebuild with replay.",
-  });
-}
 
 /** record for a ZX Spectrum program: the steps on its snapshot in zxrun. */
 async function zxRecordCommand(call: Call): Promise<Record<string, unknown>> {
@@ -131,14 +122,10 @@ const ZX_LISTED_RANGES = 16;
  * the RAM of both sides as files.
  */
 async function zxReplayCommand(call: Call): Promise<Reply | Record<string, unknown>> {
-  for (const option of ["checkpoint", "state", "pin", "symbols"]) {
-    if (call.strings(option).length > 0) throw new UsageError(`--${option} is for a C64 program. A ZX Spectrum replay compares the tick and the RAM at the end`);
-  }
   const rebuildPath = call.string("rebuild");
   const at = call.address("rebuild-at");
   const out = call.string("out");
-  if ((rebuildPath === undefined) !== (at === undefined)) throw new UsageError("give --rebuild and --rebuild-at together: the bytes of the rebuild and the address of their first byte");
-  if (out !== undefined && rebuildPath === undefined) throw new UsageError("--out writes the RAM of the original and the rebuild, and --rebuild is missing. Give --rebuild and --rebuild-at too, or leave out --out.");
+  checkZxReplayOptions({ c64Options: ["checkpoint", "state", "pin", "symbols"].filter((option) => call.strings(option).length > 0), rebuild: rebuildPath, at, out });
   const folder = recordingFolder(call.subject(0));
   const recording = readZxRecording(folder);
   // The rebuild is checked before the replay core starts.
@@ -306,7 +293,7 @@ const COMMANDS: CommandSpec[] = [
     options: { out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the files of the steps and results.json" } },
     notes: 'A run file is one JSON object. It must have name, start and steps. name is a non-empty string. start is { "program": "<file.prg>" }, { "program": "<file.prg>", "load": true } or { "snapshot": "<file.vsf>" }. steps is a list with at least one step. Optional: symbols ("knowledge", "none" (default) or a JSON file) and videoStandard ("pal" (default) or "ntsc"). The script refuses other keys.',
     run: async (call) => {
-      refuseOtherMachine("run");
+      refuseOtherMachine("run", projectMachine());
       const { output, failed } = await runFile(call.subject(0), call.string("out")!);
       if (!failed) return { result: "PASS", ...output };
       const hint = output.reason !== undefined ? "reason tells why a step did not run. Correct the step or the start, then run again." : "failedExpectations names the expect steps that failed. expectations in results.json gives the expected and the actual values.";

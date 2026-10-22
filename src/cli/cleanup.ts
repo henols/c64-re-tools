@@ -7,7 +7,7 @@
 //   directories, and leaves each MCP configuration file with an empty server
 //   list. Only empty directories and files with nothing else in them go.
 
-import { FAMILIES } from "../machine.ts";
+import { FAMILIES, type Family } from "../machine.ts";
 import { existsSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -51,6 +51,22 @@ function readManifest(path: string): Manifest | undefined {
 export function installedItems(scope: Scope, targets: readonly string[] | undefined, cwd = process.cwd()): InstallItem[] {
   const items = readManifest(manifestPath(scope, cwd))?.plugins[PLUGIN_ID]?.items ?? [];
   return targets === undefined ? items : items.filter((item) => targets.includes(item.harness));
+}
+
+/**
+ * The machine families to install an MCP server for: --machines, else the
+ * families installed in the scope now, else the C64. A message when
+ * --machines names an unknown family.
+ */
+export function installMachines(given: string | undefined, scope: Scope): Family[] | string {
+  if (given === undefined) {
+    const installed = [...new Set(installedItems(scope, undefined).filter((item) => item.kind === "mcp").map((item) => item.name))].filter((name): name is Family => (FAMILIES as readonly string[]).includes(name));
+    return installed.length > 0 ? installed : ["c64"];
+  }
+  const families = given.split(",").map((family) => family.trim());
+  const unknown = families.filter((family) => !(FAMILIES as readonly string[]).includes(family));
+  if (unknown.length > 0 || families.length === 0) return `--machines takes ${FAMILIES.join(", ")}, comma-separated, not ${JSON.stringify(given)}.`;
+  return families as Family[];
 }
 
 /** The harnesses of a --target value; undefined means all of them. */

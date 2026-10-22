@@ -8,7 +8,8 @@ import { Refusal } from "../errors.ts";
 import { COVERAGE } from "../cpu/coverage.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
 import { coverageRuns, listSpaces } from "./read.ts";
-import { addCoverage, analyzedBytes, programCoverage, programImage, setImage, type ImageRequest } from "./program.ts";
+import { addCoverage, analyzedBytes, programCoverage, programImage, setImage, setSnapshot, type ImageRequest, type SnapshotProgram } from "./program.ts";
+import { machineOf } from "./project-machine.ts";
 import { revision as revisionChanges } from "./history.ts";
 import { revert } from "./write.ts";
 
@@ -100,6 +101,41 @@ test("an image is refused when its segments overlap or a state has no entry", ()
   const refused = (code: string) => (error: unknown) => error instanceof Refusal && error.code === code;
   assert.throws(() => withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x1010 }, { start: 0x1010, end: 0x1020 }])), root), refused("invalid-input"));
   assert.throws(() => withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x1010 }], 0, { state: {} })), root), refused("invalid-input"));
+});
+
+test("a snapshot sets the machine to its model, its CPU view goes into the main space with the Z80 state, and each RAM bank into its own space", () => {
+  const root = project();
+  const state = { registers: { pc: "$8000", sp: "$8ff0", af: "$0000", im: 1 }, border: 0, port7ffd: "$13" };
+  const snapshot: SnapshotProgram = {
+    machine: "spectrum128",
+    main: { segments: [{ start: 0x4000, end: 0xffff }], byteAt: (address) => address & 0xff, entry: 0x8000, state },
+    banks: [{ bank: 1, byteAt: () => 0xc9 }],
+  };
+  const imported = withWrite((db) => setSnapshot(db, { origin: "user" }, snapshot), root);
+  assert.deepEqual({ ...imported, revision: undefined }, {
+    revision: undefined,
+    machine: "spectrum128",
+    machineChanged: true,
+    spaces: [
+      { space: "spectrum", bytes: 0xc000, rowsAdded: 768, rowsClosed: 0, entryChanged: true },
+      { space: "ram1", bytes: 0x4000, rowsAdded: 256, rowsClosed: 0, entryChanged: false },
+    ],
+  });
+  assert.match(text(root, "entry.jsonl"), /"entry":"\$8000","state":\{"registers":\{"pc":"\$8000",.*"port7ffd":"\$13"\}/);
+  const db = openForRead(root)!;
+  try {
+    assert.equal(machineOf(db).id, "spectrum128");
+    assert.deepEqual([programImage(db, "spectrum")!.entry, programImage(db, "ram1")!.byteAt(0xc000)], [0x8000, 0xc9]);
+  } finally {
+    db.close();
+  }
+  const again = withWrite((db) => setSnapshot(db, { origin: "user" }, snapshot), root);
+  assert.deepEqual([again.revision, again.machineChanged], [null, false]);
+
+  // A C64 project keeps its machine: the knowledge has C64 rows.
+  const c64 = project();
+  withWrite((db) => setImage(db, llm, image([{ start: 0xc000, end: 0xc002 }])), c64);
+  assert.throws(() => withWrite((db) => setSnapshot(db, { origin: "user" }, snapshot), c64), (error: unknown) => error instanceof Refusal && error.code === "conflict" && /rows in c64, and the ZX Spectrum 128K has no such space/.test(error.message));
 });
 
 test("analyzed bytes are a PRG for one segment without a state, else the 64 KiB", () => {

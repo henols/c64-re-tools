@@ -24,6 +24,12 @@ import { labelProblem, type Cpu, type Instruction } from "#src/cpu.ts";
 import { COVERAGE } from "#src/cpu/coverage.ts";
 import { operandIsAddress } from "#src/cpu/z80.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
+import type { Machine } from "#src/machine.ts";
+import { localToolContext } from "#src/native/local.ts";
+import { assemble } from "#src/native/sjasmplus.ts";
+import type { Diagnostic } from "#src/native/types.ts";
+import { Refusal } from "#src/errors.ts";
+import { UsageError } from "#src/script.ts";
 import { identifiers, operandText, type OperandExpression } from "#src/knowledge/expression.ts";
 import { splitPieces, type OperandAsNumber, type PieceFile, type SourceItem, type SourceLabel } from "./source.ts";
 
@@ -456,4 +462,69 @@ export function renderZ80(input: Z80SourceInput, instructions: readonly Z80Instr
   if (coverage !== undefined) result.notExecuted = notExecuted;
   result.operandsAsNumbers.sort((a, b) => a.address - b.address);
   return result;
+}
+
+/**
+ * Refuses the C64 work of the source in a Z80 program: the loader, and the
+ * patches, switches and macro uses of the knowledge, which only the ACME
+ * source writes.
+ */
+export function refuseC64Work(machine: Machine, loader: boolean, knowledge: { patches: readonly unknown[]; switches: readonly unknown[]; macroUses: readonly unknown[] }): void {
+  if (loader) throw new UsageError(`--loader works only for the C64. The ${machine.name} program starts from its snapshot`);
+  const acmeOnly = [...(knowledge.patches.length === 0 ? [] : ["patches"]), ...(knowledge.switches.length === 0 ? [] : ["switches"]), ...(knowledge.macroUses.length === 0 ? [] : ["macro uses"])];
+  if (acmeOnly.length > 0) throw new Refusal("invalid-input", `The knowledge has ${acmeOnly.join(", ")}, which the source of a Z80 program does not write. Remove them from the project knowledge, then generate again.`);
+}
+
+/** The memory that one sjasmplus build of source files given as text gives, or its diagnostics. */
+export async function buildZ80(files: ReadonlyArray<{ name: string; text: string }>, entry: string, model: "48k" | "128k"): Promise<{ memory: Buffer; segments: AddressRange[] } | { diagnostics: Diagnostic[] }> {
+  const contents = files.map((file) => Buffer.from(file.text, "utf8"));
+  const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: entry, includeDirs: [], defines: {}, model }, contents, localToolContext());
+  return result.assembled ? { memory: attachments![0]!, segments: result.segments! } : { diagnostics: result.diagnostics };
+}
+
+/**
+ * The source of the instructions, built by sjasmplus. A probe gives the
+ * instructions that sjasmplus encodes as the program has them; the others are
+ * written as db. An operand expression that sjasmplus refuses, or that gives
+ * other bytes than the program, is written as its number with the reason; then
+ * the source builds again, at most `rounds` times. `mark` is the first line of
+ * each file.
+ */
+export async function z80Source(
+  input: Z80SourceInput,
+  instructions: readonly Z80Instruction[],
+  model: "48k" | "128k",
+  options: { mark: string; rounds: number },
+): Promise<{ rendered: Z80Rendered; files: Array<{ name: string; text: string }>; built: Awaited<ReturnType<typeof buildZ80>> }> {
+  let encoded = new Set<number>();
+  if (instructions.length > 0) {
+    const probe = await buildZ80([{ name: "probe.asm", text: z80ProbeSource(instructions) }], "probe.asm", model);
+    if ("diagnostics" in probe) throw new WireFailure("operation-failed", `sjasmplus refused the decoded instructions: ${probe.diagnostics.map((item) => item.message).join("; ")}`);
+    encoded = z80Encoded(instructions, probe.memory, input.byteAt);
+  }
+  // Each file starts with the mark: the source map counts the lines after it.
+  const marked = (rendered: Z80Rendered) => rendered.files.map((file) => ({ name: file.name, text: `${options.mark}\n${file.text}` }));
+  const numbers = new Map<number, string>();
+  let rendered = renderZ80(input, instructions, encoded, numbers);
+  let files = marked(rendered);
+  let built = await buildZ80(files, "main.asm", model);
+  for (let round = 0; round < options.rounds && rendered.expressions.length > 0; round++) {
+    const blamed = new Map<number, string>();
+    for (const expression of rendered.expressions) {
+      if ("diagnostics" in built) {
+        const refused = built.diagnostics.find((item) => item.severity === "error" && item.file === expression.file && item.line === expression.line + 1);
+        if (refused !== undefined) blamed.set(expression.address, `sjasmplus refuses the expression: ${refused.message}`);
+        continue;
+      }
+      const memory = built.memory;
+      const first = Array.from({ length: expression.length }, (_, offset) => expression.address + offset).find((address) => memory[address] !== input.byteAt(address));
+      if (first !== undefined) blamed.set(expression.address, `The expression gives other bytes than the program: ${formatByte(memory[first]!)} at ${formatAddress(first)}, not ${formatByte(input.byteAt(first))}.`);
+    }
+    if (blamed.size === 0) break;
+    for (const [address, reason] of blamed) numbers.set(address, reason);
+    rendered = renderZ80(input, instructions, encoded, numbers);
+    files = marked(rendered);
+    built = await buildZ80(files, "main.asm", model);
+  }
+  return { rendered, files, built };
 }

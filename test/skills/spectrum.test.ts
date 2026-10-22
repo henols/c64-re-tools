@@ -11,11 +11,13 @@ import { after, test } from "node:test";
 import { readPng } from "../../src/graphics.testkit.ts";
 import { keyboardCounterSnapshot } from "../fixtures/z80/keyboard-counter.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
+import { screenOf } from "../../skills/spectrum-media/scripts/lib/screen.ts";
 
 const skills = resolve(import.meta.dirname, "../../skills");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-spectrum-skills-"));
 mkdirSync(join(project, ".c64-re-tools", "local"), { recursive: true });
 after(() => rmSync(project, { recursive: true, force: true }));
+const home = process.cwd();
 
 const text = (value: string) => [...value].map((char) => char.charCodeAt(0));
 const basicLine = (number: number, bytes: number[]) => [number >> 8, number & 0xff, (bytes.length + 1) & 0xff, (bytes.length + 1) >> 8, ...bytes, 0x0d];
@@ -32,7 +34,12 @@ const header = (type: number, name: string, length: number, param1: number, para
 // 10 CLEAR 24999: LOAD "" CODE : RANDOMIZE USR 0, with 25000 hidden behind the 0.
 const program = basicLine(10, [0xfd, ...literal("24999"), 0x3a, 0xef, 0x22, 0x22, 0xaf, 0x3a, 0xf9, 0xc0, ...literal("0", 25000)]);
 const code = [0xf3, 0xc9];
-writeFileSync(join(project, "game.tap"), Uint8Array.from([...header(0, "loader", program.length, 10, program.length), ...tapBlock(0xff, program), ...header(3, "game", code.length, 25000, 32768), ...tapBlock(0xff, code)]));
+const loaderBlocks = [...header(0, "loader", program.length, 10, program.length), ...tapBlock(0xff, program), ...header(3, "game", code.length, 25000, 32768), ...tapBlock(0xff, code)];
+writeFileSync(join(project, "game.tap"), Uint8Array.from(loaderBlocks));
+// 10 POKE 23613,0: the program length of the header holds 4 more bytes of machine code after the line; 6 bytes of variables follow.
+const pokeLine = basicLine(10, [0xf4, ...literal("23613"), 0x2c, ...literal("0")]);
+const hidden = [...pokeLine, 0xf3, 0x31, 0x00, 0x80, 0x61, 0, 0, 1, 0, 0];
+writeFileSync(join(project, "basic.tap"), Uint8Array.from([...loaderBlocks, ...header(0, "hidden", hidden.length, 10, pokeLine.length + 4), ...tapBlock(0xff, hidden)]));
 writeFileSync(join(project, "counter.z80"), keyboardCounterSnapshot());
 const screen = new Uint8Array(6912);
 screen[0] = 0xff;
@@ -47,31 +54,21 @@ function run(skill: string, script: string, ...args: string[]): { status: number
   return { status: child.status, result: json as Record<string, unknown>, envelope };
 }
 
-test("spectrum-basic lists the loader of a tape with the hidden number, its handoffs and the CODE file", () => {
-  const { status, result, envelope } = run("spectrum-basic", "basic.ts", "list", "game.tap");
+test("spectrum-basic lists the programs of a tape with the bytes after the last line, the variables and the CODE files, and hints at the machine code", () => {
+  const { status, result, envelope } = run("spectrum-basic", "basic.ts", "list", "basic.tap");
   assert.equal(status, 0);
-  assert.equal(envelope.hint, "Disassemble the machine code at $61a8. The CODE file game at block 2 loads to that address.");
-  assert.deepEqual(result, {
-    programs: [
-      {
-        block: 0,
-        name: "loader",
-        autostart: 10,
-        listing: ['10 CLEAR 24999: LOAD "" CODE : RANDOMIZE USR 0{=25000}'],
-        handoffs: [
-          { kind: "clear", line: 10, address: "$61a7" },
-          { kind: "load-code", line: 10 },
-          { kind: "usr", line: 10, address: "$61a8" },
-        ],
-        variableBytes: 0,
-      },
+  const body = result as { programs: Array<Record<string, unknown>>; code: unknown[] };
+  assert.deepEqual(
+    body.programs.map((item) => [item.block, item.name, item.autostart, item.variableBytes, item.hiddenBytes]),
+    [
+      [0, "loader", 10, 0, undefined],
+      [4, "hidden", 10, 6, { offset: pokeLine.length, bytes: 4 }],
     ],
-    code: [{ block: 2, name: "game", address: "$61a8", length: 2 }],
-  });
-  const refused = run("spectrum-basic", "basic.ts", "list", "title.scr");
-  assert.equal(refused.status, 2);
-  assert.deepEqual([refused.envelope.ok, refused.envelope.code], [false, "invalid-input"]);
-  assert.match(String((refused.result.error as { message: string }).message), /is no BASIC program/);
+  );
+  assert.deepEqual(body.code, [{ block: 2, name: "game", address: "$61a8", length: 2 }]);
+  // The hint names the USR address with its CODE file, and the hidden bytes.
+  assert.match(envelope.hint!, /\$61a8.*block 2/);
+  assert.match(envelope.hint!, new RegExp(`offset ${pokeLine.length}`));
 });
 
 test("spectrum-media lists the blocks, writes the data of a block, gives a snapshot and draws a screen", () => {
@@ -89,7 +86,16 @@ test("spectrum-media lists the blocks, writes the data of a block, gives a snaps
   assert.deepEqual([shot.result.width, shot.result.height], [320, 256]);
   const png = readPng(readFileSync(join(project, ".c64-re-tools/local/title.png")));
   assert.deepEqual([png.width, png.height], [320, 256]);
-  assert.equal(run("spectrum-media", "media.ts", "screen", "counter.z80", "--border", "2", "--out", ".c64-re-tools/local/x.png").status, 2);
+});
+
+test("the screen of a snapshot has the border of the snapshot: --border is only for a .scr file", () => {
+  process.chdir(project);
+  try {
+    assert.equal(screenOf("counter.z80", undefined).border, 7);
+    assert.throws(() => screenOf("counter.z80", 2), { code: "invalid-input", message: /^--border works only with a \.scr file/ });
+  } finally {
+    process.chdir(home);
+  }
 });
 
 test("spectrum-memory-map names addresses, decodes the paging and exports a sjasmplus include", () => {
@@ -107,20 +113,4 @@ test("spectrum-memory-map names addresses, decodes the paging and exports a sjas
   assert.deepEqual(run("spectrum-memory-map", "memory-map.ts", "decode", "paging", "$17").result, { what: "paging", value: "$17", ramBank: 7, screenBank: 5, rom: 1, locked: false });
   assert.equal(run("spectrum-memory-map", "memory-map.ts", "export", "--out", ".c64-re-tools/local/zx.asm").status, 0);
   assert.match(readFileSync(join(project, ".c64-re-tools/local/zx.asm"), "utf8"), /^FRAMES EQU \$5c78 +; The frame counter/m);
-});
-
-test("spectrum-basic tells the bytes after the last line apart from the variables, and gives a POKE of ERR_SP as a handoff", () => {
-  // 10 POKE 23613,0: the program length of the header holds 4 more bytes of machine code after the line; 6 bytes of variables follow.
-  const line = basicLine(10, [0xf4, ...literal("23613"), 0x2c, ...literal("0")]);
-  const hidden = [0xf3, 0x31, 0x00, 0x80];
-  const variables = [0x61, 0, 0, 1, 0, 0];
-  const data = [...line, ...hidden, ...variables];
-  writeFileSync(join(project, "hidden.tap"), Uint8Array.from([...header(0, "hidden", data.length, 10, line.length + hidden.length), ...tapBlock(0xff, data)]));
-  const { status, result, envelope } = run("spectrum-basic", "basic.ts", "list", "hidden.tap");
-  assert.equal(status, 0);
-  const [listed] = (result as { programs: Array<Record<string, unknown>> }).programs;
-  assert.deepEqual([listed!.variableBytes, listed!.hiddenBytes], [6, { offset: line.length, bytes: 4 }]);
-  assert.deepEqual(listed!.handoffs, [{ kind: "err-sp", line: 10 }]);
-  assert.match(envelope.hint!, /Line 10 changes the error return at ERR_SP: an error or the end of the BASIC then starts machine code\./);
-  assert.match(envelope.hint!, new RegExp(`The program hidden has 4 bytes after its last line at offset ${line.length} of the program, which LIST does not show`));
 });

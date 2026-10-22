@@ -7,8 +7,9 @@ import { after, test } from "node:test";
 import { Refusal } from "../errors.ts";
 import { openForWrite, textPath } from "./database.ts";
 import { machineOf, mainSpaceOf } from "./project-machine.ts";
+import { requireProgram, setImage } from "./program.ts";
 import { listSymbols, symbolAt } from "./read.ts";
-import { applyBatch, classifyRegion, renameSymbol, revert, setOperand, writeMachine } from "./write.ts";
+import { applyBatch, classifyRegion, renameSymbol, revert, setMacro, setModule, setOperand, setStartScreen, writeMachine } from "./write.ts";
 
 const roots: string[] = [];
 after(() => {
@@ -84,5 +85,21 @@ test("a Spectrum project checks names and operands with the Z80: ld is no label,
   assert.throws(() => setOperand(db, { origin: "llm", image }, { address: 0x8003, select: "value", symbol: "counter" }), refused("invalid-input", /is a branch: its operand is a distance/));
   assert.throws(() => setOperand(db, { origin: "llm", image }, { address: 0x8001, select: "value", symbol: "counter" }), refused("invalid-input", /\$8001 is not the start of an instruction/));
   assert.throws(() => setOperand(db, { origin: "llm", image }, { address: 0x8005, select: "value", symbol: "counter" }), refused("invalid-input", /gives \$9000, but the operand in the image is \$05/));
+  db.close();
+});
+
+test("a Spectrum project refuses a space of the C64, a start screen before its checks, macros, classify in the ROM, and a model that its entry state does not name", () => {
+  const { db } = project();
+  writeMachine(db, { origin: "user" }, { machine: "spectrum48" });
+  assert.throws(() => requireProgram(db), refused("not-found", /Put the program into the project knowledge with image: a \.z80 or \.sna snapshot/));
+  setImage(db, { origin: "user" }, { segments: [{ start: 0x8000, end: 0x8003 }], byteAt: () => 0, entry: 0x8000, state: { registers: { pc: "$8000", af: "$0000" }, border: 7 } });
+  assert.throws(() => requireProgram(db, "c64"), refused("invalid-input", /c64 is no space of the ZX Spectrum 48K, the machine of the project: its spaces are spectrum/));
+  // An empty request: the machine refuses it before the checks of a start screen.
+  assert.throws(() => setStartScreen(db, { origin: "user" }, {} as Parameters<typeof setStartScreen>[2]), refused("invalid-input", /A start screen is for the C64 loader of the generated source, and the machine of the project is the ZX Spectrum 48K/));
+  assert.throws(() => setMacro(db, { origin: "llm" }, { name: "copy_block", body: "ldir" }), refused("invalid-input", /The generated source of the ZX Spectrum 48K writes no macros/));
+  assert.throws(() => applyBatch(db, { origin: "llm" }, [{ op: "use", start: 0x8000, end: 0x8001, macro: "copy_block", args: [] }]), refused("invalid-input", /writes no macros/));
+  assert.equal(setModule(db, { origin: "llm" }, { start: 0x8000, file: "input/count.asm" }).current.file, "input/count.asm");
+  assert.throws(() => classifyRegion(db, { origin: "llm" }, { start: 0x0010, end: 0x0020, type: "bytes" }), refused("invalid-input", /\$0010-\$0020 is in the ROM of the ZX Spectrum 48K \(\$0000-\$3fff\)/));
+  assert.throws(() => writeMachine(db, { origin: "user" }, { machine: "spectrum128" }), refused("conflict", /The entry state of the program in the knowledge is of a ZX Spectrum 48K snapshot, not of the ZX Spectrum 128K/));
   db.close();
 });

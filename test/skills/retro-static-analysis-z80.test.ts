@@ -1,29 +1,28 @@
 // The static analysis of a ZX Spectrum program: the Z80 idioms (the inline
-// bytes of RST $08 and RST $28), and Ghidra's Z80 language on a project with a
-// snapshot.
+// bytes of RST $08 and RST $28), the refusals and the ROM of the machine, and
+// Ghidra's Z80 language on a project with a snapshot.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
+import { machineRom, outsideRom } from "../../skills/retro-static-analysis/scripts/lib/findings.ts";
 import { findZ80Idioms } from "../../skills/retro-static-analysis/scripts/lib/z80-idioms.ts";
 import { COVERAGE } from "../../src/cpu/coverage.ts";
-import { keyboardCounterRam, keyboardCounterSnapshot, z80Snapshot } from "../fixtures/z80/keyboard-counter.ts";
-import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
+import { openForRead } from "../../src/knowledge/database.ts";
+import { listAnalyzerNames, listReferences, listRegions, listSymbols, referencesFrom } from "../../src/knowledge/read.ts";
+import { MACHINES } from "../../src/machine.ts";
+import { importCoverage, importSnapshot } from "../fixtures/program.ts";
+import { keyboardCounterRam, z80Snapshot } from "../fixtures/z80/keyboard-counter.ts";
+import { readEnvelope } from "../kit.ts";
 
 const skills = resolve(import.meta.dirname, "../../skills");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-z80-analysis-"));
 mkdirSync(join(project, ".c64-re-tools", "local"), { recursive: true });
 after(() => rmSync(project, { recursive: true, force: true }));
-
-function run(skill: string, script: string, ...args: string[]): { status: number | null; json: Record<string, unknown>; envelope: ScriptEnvelope } {
-  const child = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", script), ...args], { cwd: project, encoding: "utf8", timeout: 600_000 });
-  const { envelope, json } = readEnvelope(child.stdout, child.status);
-  return { status: child.status, json: json as Record<string, unknown>, envelope };
-}
 
 test("the code that the entry reaches gives the inline bytes of RST $08 and RST $28 as data, and the code after end-calc as a code start", () => {
   const memory = new Map<number, number>();
@@ -50,59 +49,61 @@ test("calculator literals without end-calc in reach are no idiom", () => {
   assert.deepEqual([found.dataRanges, found.codeStarts, found.counts.calculatorRestarts], [[], [], 0]);
 });
 
-test("a Spectrum project refuses DXA, and Ghidra's Z80 language finds the routines of the counter and its call", { timeout: 600_000 }, () => {
-  writeFileSync(join(project, "counter.z80"), keyboardCounterSnapshot());
-  assert.equal(run("retro-knowledge", "knowledge.ts", "image", "counter.z80").status, 0);
-  const dxa = run("retro-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa");
-  assert.equal(dxa.status, 2);
-  assert.match(dxa.envelope.error!, /--analyzer dxa reads only 6502 code, and the ZX Spectrum 48K has a Z80/);
-  const analyzed = run("retro-static-analysis", "static-analysis.ts", "analyze", "--out-instructions", ".c64-re-tools/local/instructions.json");
-  assert.equal(analyzed.status, 0, JSON.stringify(analyzed.json));
-  const functions = (analyzed.json.functions as { listed: Array<{ entry: string }> }).listed.map((fn) => fn.entry);
-  assert.ok(functions.includes("$8000") && functions.includes("$8030"), functions.join(", "));
-  assert.deepEqual(analyzed.json.idioms, { ...(analyzed.json.idioms as object), errorRestarts: 0, calculatorRestarts: 0 });
-  const references = run("retro-knowledge", "knowledge.ts", "references", "--range", "$8012-$8014").json;
-  assert.match(JSON.stringify(references), /"to":"\$8030"/);
+test("the analysis of a Spectrum program refuses DXA, macros and an entry in the ROM, and keeps the findings out of the ROM but not a call into it", () => {
+  const request = { analyzer: "ghidra", applyMacros: false, entries: [0x8000], space: "spectrum" };
+  assert.deepEqual(machineRom(MACHINES.spectrum48, request), [{ start: 0x0000, end: 0x3fff }]);
+  assert.deepEqual(machineRom(MACHINES.c64, { ...request, space: "c64", analyzer: "dxa", applyMacros: true }), []);
+  assert.throws(() => machineRom(MACHINES.spectrum48, { ...request, analyzer: "dxa" }), { code: "invalid-input", message: /^--analyzer dxa reads only 6502 code, and the ZX Spectrum 48K has a Z80/ });
+  assert.throws(() => machineRom(MACHINES.spectrum48, { ...request, applyMacros: true }), { code: "invalid-input", message: /the generated source of the ZX Spectrum 48K has no macros/ });
+  assert.throws(() => machineRom(MACHINES.spectrum48, { ...request, entries: [0x0010] }), { code: "invalid-input", message: /^--entry \$0010 is in the ROM of the ZX Spectrum 48K \(\$0000-\$3fff\)/ });
+
+  const kept = outsideRom(
+    {
+      analyzer: "ghidra",
+      coverage: [{ start: 0x0000, end: 0xffff }],
+      authoritative: { symbols: false, regions: false, references: false },
+      symbols: [{ address: 0x028e, name: "FUN_028e", kind: "routine" }, { address: 0x8027, name: "FUN_8027", kind: "routine" }],
+      regions: [{ start: 0x3ff0, end: 0x4010, type: "code" }],
+      references: [{ from: 0x8027, to: 0x028e, kind: "call" }, { from: 0x0300, to: 0x8000, kind: "jump" }],
+    },
+    [{ start: 0x0000, end: 0x3fff }],
+  );
+  assert.deepEqual([kept.symbols, kept.regions, kept.references], [
+    [{ address: 0x8027, name: "FUN_8027", kind: "routine" }],
+    [{ start: 0x4000, end: 0x4010, type: "code" }],
+    [{ from: 0x8027, to: 0x028e, kind: "call" }],
+  ]);
 });
 
-test("the analysis of a Spectrum program keeps out of the ROM: no entry there, no region or name of a call into it, no RAM under ROM", { timeout: 600_000 }, () => {
-  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-z80-rom-"));
+test("Ghidra's Z80 language finds the routines of the counter and its calls, and decodes nothing in the ROM that a run read and the program calls", { timeout: 600_000 }, () => {
+  // The counter, and at $8027 CALL KEY_SCAN ($028e) before COUNT.
+  const ram = keyboardCounterRam();
+  ram.set([0xcd, 0x8e, 0x02], 0x8027 - 0x4000);
+  ram.fill(0, 0x802a - 0x4000, 0x8030 - 0x4000);
+  importSnapshot(project, z80Snapshot(ram, { pc: 0x8000, sp: 0xff00, iy: 0x5c3a, im: 1, border: 7 }));
+  // A run executed the counter and read and executed the ROM.
+  const map = new Uint8Array(0x10000);
+  map.fill(COVERAGE.romRead | COVERAGE.romExecute, 0x0038, 0x0100);
+  map[0x8000] = COVERAGE.ramExecute;
+  importCoverage(project, { "run.bin": map });
+
+  const child = spawnSync(process.execPath, [...process.execArgv, join(skills, "retro-static-analysis", "scripts", "static-analysis.ts"), "analyze", "--entry", "$8027", "--out-instructions", ".c64-re-tools/local/instructions.json"], { cwd: project, encoding: "utf8", timeout: 600_000 });
+  const analyzed = readEnvelope(child.stdout, child.status).json as Record<string, unknown>;
+  assert.equal(child.status, 0, JSON.stringify(analyzed));
+  assert.ok(existsSync(join(project, ".c64-re-tools", "local", "instructions.json")));
+  const functions = (analyzed.functions as { listed: Array<{ entry: string }> }).listed.map((fn) => fn.entry);
+  for (const entry of ["$8000", "$8027", "$8030"]) assert.ok(functions.includes(entry), functions.join(", "));
+  assert.ok(!functions.includes("$028e"), functions.join(", "));
+  assert.deepEqual(Object.keys(analyzed.coverageSeeds as object), ["entryPoints", "used"]);
+  assert.deepEqual(analyzed.idioms, { ...(analyzed.idioms as object), errorRestarts: 0, calculatorRestarts: 0 });
+
+  const db = openForRead(project);
   try {
-    const go = (skill: string, script: string, ...args: string[]) => {
-      const child = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", script), ...args], { cwd: root, encoding: "utf8", timeout: 600_000 });
-      const { envelope, json } = readEnvelope(child.stdout, child.status);
-      return { status: child.status, json: json as Record<string, unknown>, envelope };
-    };
-    // The counter, and at $8027 CALL KEY_SCAN ($028e) before COUNT.
-    const ram = keyboardCounterRam();
-    ram.set([0xcd, 0x8e, 0x02], 0x8027 - 0x4000);
-    ram.fill(0, 0x802a - 0x4000, 0x8030 - 0x4000);
-    writeFileSync(join(root, "counter.z80"), z80Snapshot(ram, { pc: 0x8000, sp: 0xff00, iy: 0x5c3a, im: 1, border: 7 }));
-    assert.equal(go("retro-knowledge", "knowledge.ts", "image", "counter.z80").status, 0);
-    // A run executed the counter and read the ROM.
-    const map = new Uint8Array(0x10000);
-    map.fill(COVERAGE.romRead | COVERAGE.romExecute, 0x0038, 0x0100);
-    map[0x8000] = COVERAGE.ramExecute;
-    mkdirSync(join(root, ".c64-re-tools", "local"), { recursive: true });
-    writeFileSync(join(root, ".c64-re-tools", "local", "run.bin"), map);
-    assert.equal(go("retro-knowledge", "knowledge.ts", "coverage", ".c64-re-tools/local/run.bin").status, 0);
-
-    const rom = go("retro-static-analysis", "static-analysis.ts", "analyze", "--entry", "$0010");
-    assert.equal(rom.status, 2);
-    assert.match(`${rom.envelope.error} ${rom.envelope.hint}`, /--entry \$0010 is in the ROM of the ZX Spectrum 48K \(\$0000-\$3fff\)/);
-    const macros = go("retro-static-analysis", "static-analysis.ts", "analyze", "--apply-macros");
-    assert.equal(macros.status, 2);
-    assert.match(`${macros.envelope.error} ${macros.envelope.hint}`, /the generated source of the ZX Spectrum 48K has no macros/);
-
-    const analyzed = go("retro-static-analysis", "static-analysis.ts", "analyze", "--entry", "$8027");
-    assert.equal(analyzed.status, 0, JSON.stringify(analyzed.json));
-    assert.deepEqual(Object.keys(analyzed.json.coverageSeeds as object), ["entryPoints", "used"]);
-    const functions = (analyzed.json.functions as { listed: Array<{ entry: string }> }).listed.map((fn) => fn.entry);
-    assert.ok(functions.includes("$8027") && !functions.includes("$028e"), functions.join(", "));
-    const inRom = (command: string) => (go("retro-knowledge", "knowledge.ts", command, "--range", "$0000-$3fff").json[command === "symbols" ? "symbols" : command] as { count: number }).count;
-    assert.deepEqual([inRom("regions"), inRom("symbols"), (go("retro-knowledge", "knowledge.ts", "symbols", "--analyzer", "--range", "$0000-$3fff").json.analyzerNames as { count: number }).count], [0, 0, 0]);
-    assert.match(JSON.stringify(go("retro-knowledge", "knowledge.ts", "references", "--range", "$8027-$8027").json), /"to":"\$028e","kind":"call"/);
+    const rom = { start: 0x0000, end: 0x3fff };
+    assert.deepEqual([listRegions(db, rom).length, listSymbols(db, rom).length, listAnalyzerNames(db, rom).length], [0, 0, 0]);
+    assert.ok(listReferences(db, { start: 0x8012, end: 0x8014 }).some((reference) => reference.to === 0x8030));
+    assert.ok(referencesFrom(db, 0x8027).some((reference) => reference.to === 0x028e && reference.kind === "call"));
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    db?.close();
   }
 });

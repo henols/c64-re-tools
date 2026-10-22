@@ -8,7 +8,7 @@ import { C64 } from "#src/machine.ts";
 import { machineOf, mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import { prgRange } from "#src/c64.ts";
 import { COVERAGE } from "#src/cpu/coverage.ts";
-import { formatAddress } from "#src/address.ts";
+import { type AddressRange, formatAddress } from "#src/address.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
@@ -26,7 +26,7 @@ import { SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformNamesOfSpace, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
-import { dxaFindings, ghidraFindings, outsideRom, seedsFromKnowledge } from "./lib/findings.ts";
+import { dxaFindings, ghidraFindings, machineRom, outsideRom, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList, z80InstructionList } from "./lib/instructions.ts";
 import { findZ80Idioms } from "./lib/z80-idioms.ts";
@@ -196,23 +196,15 @@ async function analyze(call: Call): Promise<unknown> {
   const machine = machineOf(reader);
   // DXA, the 6502 idioms, macros, pointers and pitfalls read 6502 code: a Z80 program gets Ghidra and the Z80 idioms.
   const z80 = machine.cpu.id === "z80";
-  if (z80 && analyzer === "dxa") {
-    reader?.close();
-    throw new UsageError(`--analyzer dxa reads only 6502 code, and the ${machine.name} has a Z80. Use --analyzer ghidra`);
-  }
-  if (applyMacros && !machine.macros) {
-    reader?.close();
-    throw new UsageError(`--apply-macros writes macros, and the generated source of the ${machine.name} has no macros. Remove --apply-macros`);
-  }
   // The ROM of the machine is not the program: no entry point there, and the analyzer does not decode it.
-  const rom = space === machine.spaces.main ? machine.rom : [];
-  const romOf = (address: number) => rom.find((range) => address >= range.start && address <= range.end);
-  for (const entry of entries) {
-    const range = romOf(entry);
-    if (range === undefined) continue;
+  let rom: AddressRange[];
+  try {
+    rom = machineRom(machine, { analyzer, applyMacros, entries, space });
+  } catch (error) {
     reader?.close();
-    throw new UsageError(`--entry ${formatAddress(entry)} is in the ROM of the ${machine.name} (${formatAddress(range.start)}-${formatAddress(range.end)}). The knowledge holds the program, not the ROM: give an entry point of the program`);
+    throw error;
   }
+  const romOf = (address: number) => rom.find((range) => address >= range.start && address <= range.end);
   // A coverage map is of the C64 CPU: VICE keeps none for the drive.
   const covered = space === mainSpaceOf(reader) ? programCoverage(reader) : undefined;
   const coverage = covered?.map;

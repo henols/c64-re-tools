@@ -9,11 +9,12 @@ import type { DatabaseSync } from "node:sqlite";
 import { Refusal } from "../errors.ts";
 import { COVERAGE } from "../cpu/coverage.ts";
 import { type AddressRange, formatAddress } from "../address.ts";
+import { MACHINES } from "../machine.ts";
 
 import { COVERAGE_KINDS, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
 import { machineOf, mainSpaceOf } from "./project-machine.ts";
 import { coverageRuns } from "./read.ts";
-import { checkSpace, write, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
+import { checkSpace, write, writeMachine, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
 
 /** The 64 KiB of one space: offset n is address n. */
 const SIZE = 0x10000;
@@ -139,6 +140,34 @@ export function setImage(db: DatabaseSync, context: WriteContext, request: Image
     const bytes = request.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
     return { space, bytes, rowsAdded, rowsClosed, entry: entryChanged };
   });
+}
+
+/** A ZX Spectrum snapshot as the program: its model, the CPU view at its PC with the Z80 state, and the other RAM banks of a 128K that hold data. */
+export interface SnapshotProgram {
+  machine: "spectrum48" | "spectrum128";
+  main: { segments: AddressRange[]; byteAt: (address: number) => number; entry: number; state: Record<string, unknown> };
+  banks: ReadonlyArray<{ bank: number; byteAt: (address: number) => number }>;
+}
+
+/**
+ * Puts a snapshot into the knowledge: sets the machine of the project to the
+ * model of the snapshot (refused when the knowledge has rows of another
+ * machine), the CPU view into the main space and each other RAM bank into its
+ * ram<n> space at $c000-$ffff. The revision is the last one that the import wrote.
+ */
+export function setSnapshot(db: DatabaseSync, context: WriteContext, snapshot: SnapshotProgram) {
+  const machine = machineOf(db).id === snapshot.machine ? undefined : writeMachine(db, context, { machine: snapshot.machine, state: snapshot.main.state });
+  const main = MACHINES[snapshot.machine].spaces.main;
+  const written = [
+    { ...setImage(db, context, { space: main, segments: snapshot.main.segments, byteAt: snapshot.main.byteAt, entry: snapshot.main.entry, state: snapshot.main.state }), space: main },
+    ...snapshot.banks.map((bank) => ({ ...setImage(db, context, { space: `ram${bank.bank}`, segments: [{ start: 0xc000, end: 0xffff }], byteAt: bank.byteAt }), space: `ram${bank.bank}` })),
+  ];
+  return {
+    revision: [machine?.revision ?? null, ...written.map((item) => item.revision)].filter((revision) => revision !== null).at(-1) ?? null,
+    machine: snapshot.machine,
+    machineChanged: machine !== undefined,
+    spaces: written.map(({ space, current }) => ({ space, bytes: current.bytes, rowsAdded: current.rowsAdded, rowsClosed: current.rowsClosed, entryChanged: current.entry })),
+  };
 }
 
 /** The coverage of one space as ranges of each kind. */

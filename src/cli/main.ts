@@ -13,7 +13,7 @@ import { localToolContext } from "../native/local.ts";
 import { isRefusal } from "../errors.ts";
 import { startTrace } from "../trace.ts";
 import { runApSdk } from "./ap-sdk.ts";
-import { installedItems, parseTargets, removeDroppedItems, tidyAfterUninstall, type Scope, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp } from "./cleanup.ts";
+import { installedItems, installMachines, parseTargets, removeDroppedItems, tidyAfterUninstall, type Scope, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp } from "./cleanup.ts";
 
 const HELP = `c64-re-tools: Commodore 64 reverse engineering and development
 
@@ -37,23 +37,6 @@ through npx. The Host Runtime runs on the machine with VICE: start it there
 with npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host.
 It runs VICE and the tools that come with it (c1541, petcat). The skill
 scripts run ACME, DXA, Exomizer and c64run in the dev container.`;
-
-
-/**
- * The machine families to install an MCP server for: --machines, else the
- * families installed in the scope now, else the C64. A message when
- * --machines names an unknown family.
- */
-function installMachines(given: string | undefined, scope: Scope): Family[] | string {
-  if (given === undefined) {
-    const installed = [...new Set(installedItems(scope, undefined).filter((item) => item.kind === "mcp").map((item) => item.name))].filter((name): name is Family => (FAMILIES as readonly string[]).includes(name));
-    return installed.length > 0 ? installed : ["c64"];
-  }
-  const families = given.split(",").map((family) => family.trim());
-  const unknown = families.filter((family) => !(FAMILIES as readonly string[]).includes(family));
-  if (unknown.length > 0 || families.length === 0) return `--machines takes ${FAMILIES.join(", ")}, comma-separated, not ${JSON.stringify(given)}.`;
-  return families as Family[];
-}
 
 /** The machine families whose MCP server is installed in the project or globally; the C64 when none is. */
 function installedFamilies(): Family[] {

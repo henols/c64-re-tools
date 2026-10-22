@@ -1,7 +1,7 @@
 // One listing of the image with its knowledge: the lines of a range as
 // assembler text with names, operand expressions and comments (ACME for the
 // 6502, sjasmplus for the Z80), the access class of the bytes from coverage
-// files, and the references in and out. Nothing here reads files: knowledge.ts
+// files, and the references in and out. Nothing here reads files: lookups.ts
 // gives the lookups.
 
 import { COVERAGE } from "#src/cpu/coverage.ts";

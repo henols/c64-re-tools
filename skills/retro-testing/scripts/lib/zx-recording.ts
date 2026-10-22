@@ -13,6 +13,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
+import type { Machine } from "#src/machine.ts";
+import { UsageError } from "#src/script.ts";
 import { ZX_FRAME_CYCLES, type ZxModel, type ZxRunSession } from "#src/native/zxrun.ts";
 import type { Workspace } from "#src/native/staging.ts";
 import { readSna, readZ80, writeZ80 } from "#src/spectrum.ts";
@@ -45,6 +47,26 @@ const C64_KEYS = ["symbols", "load", "checkpoint", "state", "pin", "inputs", "co
 const C64_STEPS = ["type", "write", "registers", "runUntil"];
 
 const STEP_FORMS = '{ "frames": 50 }, { "press": ["space"], "frames": 5 } or { "joystick": { "right": true, "fire": true } }';
+
+/** test and run start a C64 in VICE: in a project of another machine they refuse before they read a file. */
+export function refuseOtherMachine(command: string, machine: Machine): void {
+  if (machine.family === "c64") return;
+  throw new UsageError(`${command} is for a C64 program, and this project is a ${machine.name} project.`, {
+    hint: "Record a session of the snapshot of the program with record. Then replay the recording on the original and on the rebuild with replay.",
+  });
+}
+
+/**
+ * Checks the options of a ZX Spectrum replay before the recording is read:
+ * `c64Options` names the C64 options that the call gives; --rebuild and
+ * --rebuild-at come together; --out needs --rebuild.
+ */
+export function checkZxReplayOptions(options: { c64Options: readonly string[]; rebuild: string | undefined; at: number | undefined; out: string | undefined }): void {
+  const [c64] = options.c64Options;
+  if (c64 !== undefined) throw new UsageError(`--${c64} is for a C64 program. A ZX Spectrum replay compares the tick and the RAM at the end`);
+  if ((options.rebuild === undefined) !== (options.at === undefined)) throw new UsageError("give --rebuild and --rebuild-at together: the bytes of the rebuild and the address of their first byte");
+  if (options.out !== undefined && options.rebuild === undefined) throw new UsageError("--out writes the RAM of the original and the rebuild, and --rebuild is missing. Give --rebuild and --rebuild-at too, or leave out --out.");
+}
 
 /** Reads and checks a record file of a ZX Spectrum program. A key or a step of the C64 form is refused by name. */
 export function readZxRecordFile(path: string): ZxRecordFile {
