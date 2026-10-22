@@ -157,7 +157,7 @@ export function namedProject(folder: string, cwd: string = process.cwd()): strin
 }
 
 /**
- * A group folder: a folder of a git repository, in no project, that holds
+ * A group folder: a folder of a git repository, in no project, that holds two or more
  * projects, for example one project for each version of a game. Its pages can
  * link into each project, and a page of a project into the other projects.
  */
@@ -175,7 +175,7 @@ function inRepository(folder: string): boolean {
 /**
  * The group at `folder`: its folders that are projects and are not a git
  * repository of their own. Undefined when `folder` is the home folder, is in a
- * project, is in no git repository, or holds no project.
+ * project, is in no git repository, or holds fewer than two projects.
  */
 export function groupAt(folder: string): ProjectGroup | undefined {
   const root = resolve(folder);
@@ -193,7 +193,8 @@ export function groupAt(folder: string): ProjectGroup | undefined {
     const path = join(root, entry.name);
     if (isProject(path) && !existsSync(join(path, ".git"))) projects.set(entry.name, path);
   }
-  return projects.size === 0 ? undefined : { root, projects };
+  // One project alone is no group: a group holds the versions of one program.
+  return projects.size < 2 ? undefined : { root, projects };
 }
 
 /** The group of the project `root`: the folder above it, when that is a group that holds the project. */

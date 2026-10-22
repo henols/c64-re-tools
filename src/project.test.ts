@@ -215,6 +215,10 @@ test("a group is a folder of a git repository, in no project, with projects in i
     assert.equal(groupAt(join(game, "v1")), undefined, "a project is no group");
     assert.equal(groupAt(join(game, "docs")), undefined, "no project in it");
     assert.equal(groupOf(game), undefined, "the repository holds no project");
+    // One project alone is no group: the repository with the game and one other project.
+    mkdirSync(join(repository, "bruce", ".c64-re-tools"), { recursive: true });
+    assert.equal(groupAt(repository), undefined, "one project in the folder");
+    assert.equal(groupOf(join(repository, "bruce")), undefined);
   });
 });
 
