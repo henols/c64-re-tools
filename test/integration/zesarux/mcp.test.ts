@@ -518,7 +518,7 @@ test("a HALT wait survives a write of its HALT byte and a snapshot, and cpu_hist
   }
 });
 
-test("the instruction after a $76 that is no HALT is an execution after an autostart, a pc write and a restore", { skip, timeout: 180_000 }, async () => {
+test("the instruction after a $76 that is no HALT is an execution after a pc write, a restore and an autostart, and an export of a HALT wait waits when it loads", { skip, timeout: 180_000 }, async () => {
   // LD A,$76 ; JR $9400 at $9400: $9401 is an operand. A .z80 file with its PC at $9402.
   const patched = keyboardCounterRam();
   patched.set([0x3e, 0x76, 0x18, 0xfc], 0x9400 - 0x4000);
@@ -570,6 +570,17 @@ test("the instruction after a $76 that is no HALT is an execution after an autos
     assert.equal((await call("execution", { action: "step", count: 4 })).waitsForInterrupt, true);
     assert.equal((await call("registers", { action: "write", values: { pc: "$9402" } })).waitsForInterrupt, false);
     assert.deepEqual(await stepAt(5), { ...after76, pcs: ["$9402", "$9401", "$9401", "$9401", "$9400"] });
+
+    // The export of a HALT wait has the PC of the HALT: a load executes the HALT again and waits with the same registers.
+    assert.equal((await call("execution", { action: "step", count: 2 })).waitsForInterrupt, true);
+    const waiting = await call("registers", { action: "read" });
+    await call("snapshot", { action: "export", out: "wait.z80" });
+    assert.equal(readZ80(readFileSync(join(project, "wait.z80"))).registers.pc, 0x9401);
+    assert.deepEqual(await call("registers", { action: "read" }), waiting);
+    // The interrupts are off: the loaded CPU waits in the HALT, and only R counts the wait cycles.
+    assert.equal((await call("autostart", { path: "wait.z80" })).state, "running");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepEqual([(await call("execution", { action: "pause" })).waitsForInterrupt, { ...(await call("registers", { action: "read" })), r: 0 }], [true, { ...waiting, r: 0 }]);
   } finally {
     await client.close();
     await host.stop();

@@ -394,7 +394,8 @@ const snapshot = defineTool<z.ZodObject, z.ZodObject, Session>({
   description:
     "Save, restore, remove or list named snapshots of the machine in this session. Each of these actions gives the names of the snapshots that the session keeps after the action. " +
     "A restore starts the frame from its first t-state. Thus the interrupts come at different times than after the save, and the same calls can stop at different places. To do the same run two times, restore the snapshot before each of the two runs. " +
-    "Action export writes the machine as a version 3 .z80 file to out. The name in out must end in .z80. The knowledge takes the file as the program, and other emulators load it. The CPU must be stopped.",
+    "Action export writes the machine as a version 3 .z80 file to out. The name in out must end in .z80. The knowledge takes the file as the program, and other emulators load it. " +
+    "A .z80 file does not keep the wait for an interrupt. When the CPU waits after opcode $76, the file gives the address of the $76 as PC, and R one less. Thus a load executes the $76 again, and the CPU then waits. The export does not change the machine in this session. The CPU must be stopped.",
   inputSchema: z.object({ action: z.enum(["save", "restore", "remove", "list", "export"]), name: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/).optional(), out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({ names: z.array(z.string()).optional(), ...WrittenOutput }),
   readOnly: false,

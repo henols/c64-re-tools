@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { WireFailure } from "../../protocol/messages.ts";
-import { writeZ80 } from "../../spectrum.ts";
+import { readZ80, writeZ80 } from "../../spectrum.ts";
 import type { ZesaruxProcess } from "./process.ts";
 import { Zrcp } from "./zrcp.ts";
 import { ayOfIoPorts, codeCoverageAddresses, firedStop, historyAddresses, historyOpcode, keysOf, modelOfMachineName, parseRegisters, pcRuns, SPECTRUM_KEYS, visualmemAddresses, ZesaruxSession } from "./session.ts";
@@ -690,6 +690,26 @@ test("a pc write that ends a HALT wait at the same address makes the next instru
     cpu.registers = at8002(0x0d);
     assert.deepEqual(((await session.handle("cpuHistory", { count: 9 })) as { pcs: number[] }).pcs, [0x8001, 0x8001, 0x8001, 0x8000, 0x8002, 0x8001, 0x8001, 0x8001, 0x8000]);
     assert.equal(marked((await session.handle("memmap", { action: "read" })) as MemmapRead, 0x8002), false);
+  } finally {
+    await session.close();
+  }
+});
+
+test("an export in a HALT wait gives the PC of the HALT and R one less, so a load executes the HALT again; the session stays in the wait", async () => {
+  const { zesarux, cpu } = await standInZesarux("ZX Spectrum 48k", { halted: true, memory: { 0x8001: 0x76 } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  const exported = async () => {
+    const reply: Buffer[] = [];
+    await session.handle("snapshotExport", {}, [], reply);
+    return readZ80(reply[0]!).registers;
+  };
+  try {
+    cpu.registers = at8002(0x80);
+    assert.deepEqual([(await exported()).pc, (await exported()).r], [0x8001, 0xff]);
+    assert.deepEqual(await session.handle("status", {}), { state: "stopped", pc: 0x8002, waitsForInterrupt: true, model: "48k" });
+    // Out of the wait, the file has the PC of now.
+    cpu.halted = false;
+    assert.deepEqual([(await exported()).pc, (await exported()).r], [0x8002, 0x80]);
   } finally {
     await session.close();
   }

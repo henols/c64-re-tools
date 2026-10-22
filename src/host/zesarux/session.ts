@@ -1653,10 +1653,19 @@ export class ZesaruxSession implements SessionHandle {
     }
   }
 
-  /** The machine state as a version 3 .z80: registers, border, paging, AY and every RAM bank. */
+  /**
+   * The machine state as a version 3 .z80: registers, border, paging, AY and
+   * every RAM bank. A .z80 has no HALT state: while the CPU waits in a HALT,
+   * the file has the PC of the HALT instruction and R one less, so a loader
+   * executes the HALT again and the CPU waits with the registers of now. When
+   * a write replaced the HALT opcode in the wait, the file has the PC of now.
+   */
   async #export(reply: Buffer[]): Promise<{ bytes: number }> {
     this.#requireStopped();
-    const registers = await this.#cpu();
+    const now = await this.#cpu();
+    const halt = (now.pc - 1) & 0xffff;
+    const waits = (await this.#halted()) && Buffer.from(await this.#read(halt, 1), "hex")[0] === HALT;
+    const registers = waits ? { ...now, pc: halt, r: (now.r & 0x80) | ((now.r - 1) & 0x7f) } : now;
     const ula = await this.#ula();
     const banks = await Promise.all(Array.from({ length: 8 }, async (_, bank) => (this.#model === "48k" && ![5, 2, 0].includes(bank) ? new Uint8Array(0x4000) : new Uint8Array(await this.#bank(bank, 0, 0x4000)))));
     const snapshot: SpectrumSnapshot = {
