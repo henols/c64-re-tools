@@ -26,9 +26,11 @@
 // history and in the code coverage as an execution of the byte after the HALT.
 // The session tells these cycles apart in the history: the history shows them
 // at the address of the HALT, and the coverage leaves out a mark that only
-// they made. When the history since the last drain of the coverage is too long
-// to read, the session cannot tell them apart: it keeps the mark, and memmap
-// gives its address in uncheckedAfterHalt.
+// they made. For each such mark the session reads the history back from the
+// newest entry until it finds one real execution of the address. When the
+// history (1000000 entries in ZEsarUX 13.0) ends before the start of the
+// coverage window and holds no real execution, the session cannot tell: it
+// keeps the mark, and memmap gives its address in uncheckedAfterHalt.
 //
 // The PC of a halted CPU is the address after the HALT, so a PC breakpoint
 // there is true in each wait cycle. ZEsarUX fires a breakpoint only when its
@@ -114,16 +116,10 @@ const ROM_END = 0x4000;
 const KEY_FRAMES = 3;
 /** The most copies of one CPU history entry that the session looks for after a stop. */
 const MAX_REPEATS = 100;
-/** The CPU history entries that one get-pc command gives when the session looks back for the start of a run of one address. */
+/** The CPU history entries that one get-pc command gives when the session looks back for the start of a run of one address. Each ZRCP command takes tens of ms, and 10000 entries take few more. */
 const HISTORY_CHUNK = 10_000;
 /** How far back the session looks for the instruction before a run of one address in the CPU history. */
 const HALT_LOOKBACK = 100_000;
-/**
- * The most CPU history entries that the session reads to find the coverage
- * marks of HALT cycles: about 10 frames. Each entry takes at least 4
- * t-states, and each stop of a run can add MAX_REPEATS copies.
- */
-const COVERAGE_HISTORY_MAX = 300_000;
 /** The ZRCP commands that do not run the CPU and do not change the partial t-state counter. */
 const KEEPS_TSTATES = ["evaluate ", "read-memory ", "write-memory ", "get-registers", "set-register ", "cpu-history ", "cpu-code-coverage ", "get-visualmem-written-dump", "set-breakpoint ", "set-membreakpoint ", "enable-breakpoints", "get-io-ports", "get-current-machine", "set-ui-io-ports ", "set-memory-zone ", "snapshot-save "];
 
@@ -139,6 +135,21 @@ export function pcRuns(pcs: readonly number[]): Array<{ pc: number; first: numbe
     else runs.push({ pc, first: index, last: index });
   });
   return runs;
+}
+
+/**
+ * The addresses of a cpu-history get-pc answer. Past the oldest entry
+ * ZEsarUX 13.0 goes on with error text ("ERROR: index can't be negative"),
+ * whose words can look like hex: the addresses end at the first other word.
+ */
+export function historyAddresses(text: string): number[] {
+  const addresses: number[] = [];
+  for (const item of text.split(/\s+/)) {
+    if (item === "") continue;
+    if (!/^[0-9a-f]{1,4}$/i.test(item)) break;
+    addresses.push(Number.parseInt(item, 16));
+  }
+  return addresses;
 }
 
 /** The opcode of a cpu-history get-extended entry: the first of the bytes at its PC, "(PC)=76fe0000". */
@@ -292,8 +303,8 @@ export class ZesaruxSession implements SessionHandle {
   readonly #startModel: Model;
   /** The runs that the session started: each stop of a run can add copies to the CPU history. */
   #runs = 0;
-  /** The session time and the runs at the start of the coverage that ZEsarUX keeps now. */
-  #coverageSince = { tstates: 0, runs: 0 };
+  /** The session time, the runs and the number of CPU history entries (when ZEsarUX tells it) at the start of the coverage that ZEsarUX keeps now. */
+  #coverageSince: { tstates: number; runs: number; historySize?: number } = { tstates: 0, runs: 0 };
   readonly #log: (line: string) => void;
   #queue: Promise<unknown> = Promise.resolve();
   #state: SpectrumRunState = "stopped";
@@ -975,11 +986,7 @@ export class ZesaruxSession implements SessionHandle {
 
   /** The addresses of up to `count` CPU history entries from entry `start` back; 0 is the most recent entry. */
   async #historyPcs(start: number, count: number): Promise<number[]> {
-    const text = await this.#zrcp(`cpu-history get-pc ${start} ${count}`);
-    return text
-      .split(/\s+/)
-      .filter((item) => /^[0-9a-f]{1,4}$/i.test(item))
-      .map((item) => Number.parseInt(item, 16));
+    return historyAddresses(await this.#zrcp(`cpu-history get-pc ${start} ${count}`));
   }
 
   /**
@@ -1086,44 +1093,114 @@ export class ZesaruxSession implements SessionHandle {
 
   /** Keeps where the coverage that ZEsarUX keeps now starts. */
   async #coverageStarts(): Promise<void> {
-    this.#coverageSince = { tstates: this.#elapsed + (await this.#partialTstates()), runs: this.#runs };
+    const historySize = Number(await this.#zrcp("cpu-history get-size"));
+    this.#coverageSince = { tstates: this.#elapsed + (await this.#partialTstates()), runs: this.#runs, ...(Number.isInteger(historySize) ? { historySize } : {}) };
   }
 
   /**
    * The executed addresses since the last drain that only HALT cycles marked
    * (only), and the addresses after a HALT opcode that the session could not
-   * check (unchecked). The session examines the addresses with no execute mark
-   * and the addresses that it could not check before. It finds the HALT
-   * cycles in the CPU history since the last drain. When that history is too
-   * long to read, or when the clock does not tell its length, the session
-   * checks none: then each mark stays, and each examined address after a HALT
-   * opcode in memory now is unchecked.
+   * check (unchecked). The session examines the addresses after a HALT opcode
+   * in memory now that have no execute mark, or that it could not check
+   * before. A mark is true when the CPU history since the last drain has one
+   * real execution of the address. When the history ends before the start of
+   * the drain window and has no real execution, or when the clock does not
+   * tell the length of the window, the address is unchecked.
    */
   async #haltCyclesOnly(executed: readonly number[]): Promise<{ only: Set<number>; unchecked: Set<number> }> {
     const only = new Set<number>();
     const unchecked = new Set<number>();
-    const fresh = new Set(executed.filter((address) => (this.#coverage[address]! & EXECUTE) === 0 || this.#uncheckedAfterHalt.has(address)));
-    if (fresh.size === 0) return { only, unchecked };
-    const tstates = this.#elapsed + (await this.#partialTstates()) - this.#coverageSince.tstates;
-    const entries = Math.floor(tstates / 4) + (this.#runs - this.#coverageSince.runs + 1) * MAX_REPEATS;
-    if (tstates < 0 || entries > COVERAGE_HISTORY_MAX) {
-      const byteAt = this.#byteReader();
-      for (const address of fresh) if ((await byteAt((address - 1) & 0xffff)) === HALT) unchecked.add(address);
-      return { only, unchecked };
+    const byteAt = this.#byteReader();
+    const open = new Set<number>();
+    for (const address of executed) {
+      if ((this.#coverage[address]! & EXECUTE) !== 0 && !this.#uncheckedAfterHalt.has(address)) continue;
+      if ((await byteAt((address - 1) & 0xffff)) === HALT) open.add(address);
     }
-    const pcs = await this.#historyPcs(0, entries);
-    // A run of an address after an entry at another address than the one just before it is an execution: that address keeps its mark.
-    const runs = pcRuns(pcs).filter((run) => fresh.has(run.pc));
-    const executes = new Set(runs.filter((run) => run.last + 1 < pcs.length && pcs[run.last + 1] !== ((run.pc - 1) & 0xffff)).map((run) => run.pc));
-    const open = new Set(runs.map((run) => run.pc).filter((address) => !executes.has(address)));
     if (open.size === 0) return { only, unchecked };
-    const cycles = await this.#haltCycles(pcs, (index) => index, open);
-    const asInstruction = new Set<number>();
-    pcs.forEach((pc, index) => {
-      if (open.has(pc) && !cycles[index]) asInstruction.add(pc);
-    });
-    for (const address of open) if (!asInstruction.has(address)) only.add(address);
+    const tstates = this.#elapsed + (await this.#partialTstates()) - this.#coverageSince.tstates;
+    if (tstates < 0) return { only, unchecked: open };
+    // Each entry takes at least 4 t-states, and each stop of a run can add MAX_REPEATS copies: the window has no more entries.
+    const window = Math.floor(tstates / 4) + (this.#runs - this.#coverageSince.runs + 1) * MAX_REPEATS;
+    const { executes, covered } = await this.#realExecutions(open, window, this.#coverageSince.historySize);
+    for (const address of open) {
+      if (executes.has(address)) continue;
+      if (covered) only.add(address);
+      else unchecked.add(address);
+    }
     return { only, unchecked };
+  }
+
+  /**
+   * The addresses in `open` (each after a HALT opcode) that the newest
+   * `entries` CPU history entries show as a real execution, and covered true
+   * when the history has all of these entries. While the history is not full,
+   * its growth since `sinceSize` entries gives the exact window. The session reads the history
+   * back from the newest entry, and stops when it found each address. A run
+   * of entries at an address is a real execution when the entry before it is
+   * not the HALT instruction just before that address. A run with no start in
+   * the history, or none in HALT_LOOKBACK entries after the window, is a long
+   * wait.
+   */
+  async #realExecutions(open: ReadonlySet<number>, entries: number, sinceSize: number | undefined): Promise<{ executes: Set<number>; covered: boolean }> {
+    const executes = new Set<number>();
+    const history = await this.#historyReader();
+    if (history === undefined) return { executes, covered: false };
+    const { peek, load, size, max } = history;
+    const window = size < max && sinceSize !== undefined && sinceSize <= size ? Math.min(entries, size - sinceSize) : entries;
+    let index = 0;
+    while (executes.size < open.size) {
+      if (index >= window) return { executes, covered: true };
+      // The end of the history: it has all entries of the window when it is not full.
+      if (index >= size) return { executes, covered: size < max };
+      const pc = peek(index) ?? (await load(index));
+      if (!open.has(pc) || executes.has(pc)) {
+        index++;
+        continue;
+      }
+      let last = index;
+      const end = Math.min(size, Math.max(window, index) + HALT_LOOKBACK);
+      while (last + 1 < end && (peek(last + 1) ?? (await load(last + 1))) === pc) last++;
+      if (last + 1 < end) {
+        const halt = (pc - 1) & 0xffff;
+        const before = peek(last + 1) ?? (await load(last + 1));
+        if (before !== halt || historyOpcode(await this.#zrcp(`cpu-history get-extended ${last + 1}`)) !== HALT) executes.add(pc);
+      }
+      index = last + 1;
+    }
+    return { executes, covered: true };
+  }
+
+  /**
+   * Reads the CPU history addresses by index, 0 the most recent entry, in
+   * chunks that it keeps: peek gives an address of a chunk that it has, load
+   * reads the chunk first. Each ZRCP command takes tens of ms, so the chunks
+   * grow: the first is small, and three chunks hold the full history. size is
+   * the number of entries, and max the most that the history keeps.
+   * Undefined when the history does not tell its size.
+   */
+  async #historyReader(): Promise<{ peek: (index: number) => number | undefined; load: (index: number) => Promise<number>; size: number; max: number } | undefined> {
+    const size = Number(await this.#zrcp("cpu-history get-size"));
+    const max = Number(await this.#zrcp("cpu-history get-max-size"));
+    if (!Number.isInteger(size) || !Number.isInteger(max) || size < 0 || max < 1) return undefined;
+    const chunks: Array<{ start: number; pcs: number[] }> = [];
+    const peek = (index: number) => {
+      for (const chunk of chunks) if (index >= chunk.start && index < chunk.start + chunk.pcs.length) return chunk.pcs[index - chunk.start];
+      return undefined;
+    };
+    const load = async (index: number) => {
+      while (peek(index) === undefined) {
+        const last = chunks.at(-1);
+        const start = last === undefined ? 0 : last.start + last.pcs.length;
+        if (start >= size || index < start) break;
+        const pcs = await this.#historyPcs(start, HISTORY_CHUNK * 10 ** chunks.length);
+        if (pcs.length === 0) break;
+        chunks.push({ start, pcs });
+      }
+      const pc = peek(index);
+      if (pc === undefined) throw new WireFailure("operation-failed", `ZEsarUX gave no CPU history entry ${index} of ${size}.`);
+      return pc;
+    };
+    return { peek, load, size, max };
   }
 
   /** Reads bytes of memory as the CPU sees them now, in blocks of 4096 bytes that it keeps. */

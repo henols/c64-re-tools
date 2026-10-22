@@ -199,10 +199,15 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     assert.deepEqual([ula.model, ula.frameTstates], ["48k", 69_888]);
 
     // A run of more than 500 frames (about 10 s of real time) ends after its frames, and the clock counts them.
+    await call("memmap", { action: "clear" });
     await call("timing", { action: "start" });
     assert.equal((await call("execution", { action: "advance-frames", count: 600 })).stopReason, "frames");
     const tstates = (await call("timing", { action: "read" })).tstates as number;
     assert.ok(Math.abs(tstates - 600 * 69_888) < 32, `${tstates} t-states in 600 frames`);
+    // The loop leaves its HALT at each interrupt: one read checks the mark after the HALT over all 600 frames.
+    const loop = await call("memmap", { action: "read" });
+    assert.equal(loop.uncheckedAfterHalt, undefined);
+    assert.equal(flagsAt(loop.ranges as Array<{ start: string; end: string; flags: number }>, HALT_AT + 1), 4);
 
     // A target with hex letters: run_until reaches it, a breakpoint there gives its id, and pause after a stop gives the stop again.
     const reached = await call("run_until", { address: "$801f", timeoutFrames: 5 });
@@ -318,18 +323,18 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     assert.equal(flags(0x9200), 0, "the write of the tool is not in the map");
     assert.ok(ranges.every((range) => (range.flags & (1 | 8)) === 0), "no reads");
 
-    // DI and HALT: the wait never ends. After 20 frames the map cannot check the mark after the HALT, and names it.
+    // DI and HALT: the wait never ends. After 100 frames the history has only the wait: the map cannot check the mark after the HALT, and names it.
     await call("memory_write", { address: "$9100", data: "f376" });
     await call("registers", { action: "write", values: { pc: "$9100" } });
     await call("memmap", { action: "clear" });
-    await call("execution", { action: "advance-frames", count: 20 });
+    await call("execution", { action: "advance-frames", count: 100 });
     const long = await call("memmap", { action: "read" });
     assert.deepEqual(long.uncheckedAfterHalt, ["$9102"]);
     assert.equal(flagsAt(long.ranges as Array<{ start: string; end: string; flags: number }>, 0x9102), 4);
-    // A read after each run of 10 frames checks the mark: the map has no mark after the HALT, and names no address.
+    // A read after each run of 50 frames checks the mark: the map has no mark after the HALT, and names no address.
     await call("memmap", { action: "clear" });
     for (let run = 0; run < 2; run++) {
-      await call("execution", { action: "advance-frames", count: 10 });
+      await call("execution", { action: "advance-frames", count: 50 });
       const short = await call("memmap", { action: "read" });
       assert.equal(short.uncheckedAfterHalt, undefined);
       assert.equal(flagsAt(short.ranges as Array<{ start: string; end: string; flags: number }>, 0x9102), 0, JSON.stringify(short.ranges));

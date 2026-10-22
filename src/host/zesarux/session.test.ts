@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { WireFailure } from "../../protocol/messages.ts";
 import type { ZesaruxProcess } from "./process.ts";
 import { Zrcp } from "./zrcp.ts";
-import { ayOfIoPorts, codeCoverageAddresses, firedStop, historyOpcode, keysOf, modelOfMachineName, parseRegisters, pcRuns, SPECTRUM_KEYS, visualmemAddresses, ZesaruxSession } from "./session.ts";
+import { ayOfIoPorts, codeCoverageAddresses, firedStop, historyAddresses, historyOpcode, keysOf, modelOfMachineName, parseRegisters, pcRuns, SPECTRUM_KEYS, visualmemAddresses, ZesaruxSession } from "./session.ts";
 
 // The get-registers answer of ZEsarUX 13.0 after set-register IX=04d2H.
 const REGISTERS = "PC=11dc SP=ffff AF=3fa7 BC=00ff HL=b33a DE=ffff IX=04d2 IY=ffff AF'=ffff BC'=ffff HL'=0000 DE'=ffff I=3f R=26  F=S-5--PNC F'=SZ5H3PNC MEMPTR=11dc IM0 IFF-- VPS: 0 MMU=00000000000000000000000000000000";
@@ -348,6 +348,13 @@ test("a tape runs on the model that the session started with, or on the model of
   }
 });
 
+test("the addresses of a get-pc answer end at the error text that ZEsarUX gives past the oldest entry", () => {
+  // "be" in the error text looks like an address.
+  assert.deepEqual(historyAddresses("11DC 11E0 ERROR: index can't be negative ERROR: index can't be negative "), [0x11dc, 0x11e0]);
+  assert.deepEqual(historyAddresses("9102 9102\n"), [0x9102, 0x9102]);
+  assert.deepEqual(historyAddresses(""), []);
+});
+
 test("the runs of one address in the CPU history, and the opcode of an extended entry", () => {
   assert.deepEqual(pcRuns([0x8002, 0x8002, 0x8001, 0x8002]), [
     { pc: 0x8002, first: 0, last: 1 },
@@ -410,27 +417,51 @@ test("the memmap joins adjacent addresses with the same flags into one range, al
   }
 });
 
-test("the memmap names each mark after a HALT that it could not check, until a check or a clear", async () => {
-  // 20 frames: the CPU history since the last read is too long to read. $9001 is after no HALT opcode.
-  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { ran: ["8002", "9001"], steps: ["PC=0038 R=05 (PC)=f5000000", "PC=8002 R=06 (PC)=18fc0000"], memory: { 0x8001: 0x76 } });
+const REAL = "PC=8002 R=0a (PC)=18fc0000";
+const RET = "PC=0052 R=09 (PC)=c9000000";
+const IRQ = "PC=0038 R=08 (PC)=f5000000";
+type MemmapRead = { ranges: Array<{ start: number; end: number; flags: number }>; uncheckedAfterHalt?: number[] };
+const marked = (read: MemmapRead, address: number) => read.ranges.some((range) => range.start <= address && range.end >= address && (range.flags & 4) !== 0);
+
+test("one read checks a mark after a HALT over a long window: a real execution of the byte keeps it, a wait with its start in the history removes it", async () => {
+  // 20 frames each: the newest entries first. $9001 is after no HALT opcode and keeps its mark.
+  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { ran: ["8002", "9001"], runs: [[REAL, RET, IRQ, cycle(7), cycle(6), HALT_ENTRY, EI], [cycle(3), cycle(2), HALT_ENTRY, EI]], memory: { 0x8001: 0x76 } });
   const session = await ZesaruxSession.open(zesarux, "spectrum48");
-  type Read = { ranges: Array<{ start: number; end: number; flags: number }>; uncheckedAfterHalt?: number[] };
   try {
     await session.handle("memmap", { action: "clear" });
     await session.handle("execution", { action: "advance-frames", count: 20 });
-    const long = (await session.handle("memmap", { action: "read" })) as Read;
-    assert.deepEqual(long.uncheckedAfterHalt, [0x8002]);
-    assert.ok(long.ranges.some((range) => range.start <= 0x8002 && range.end >= 0x8002 && range.flags === 4), JSON.stringify(long.ranges));
-    // A short window shows that the byte after the HALT ran as an instruction: the mark is checked.
+    const ran = (await session.handle("memmap", { action: "read" })) as MemmapRead;
+    assert.deepEqual([ran.uncheckedAfterHalt, marked(ran, 0x8002), marked(ran, 0x9001)], [undefined, true, true]);
+    // The second window has only the wait: the real execution of the first window is older than it.
+    await session.handle("memmap", { action: "clear" });
+    await session.handle("execution", { action: "advance-frames", count: 20 });
+    const waited = (await session.handle("memmap", { action: "read" })) as MemmapRead;
+    assert.deepEqual([waited.uncheckedAfterHalt, marked(waited, 0x8002), marked(waited, 0x9001)], [undefined, false, true]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("the memmap names a mark after a HALT when the full history has no real execution and no start of the wait, until a check or a clear", async () => {
+  // The history keeps 4 entries: a run of 20 frames fills it with wait cycles.
+  const wait = [cycle(4), cycle(3), cycle(2), cycle(1)];
+  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { ran: ["8002"], historyMax: 4, runs: [wait, wait, wait], steps: [IRQ, REAL], memory: { 0x8001: 0x76 } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    await session.handle("memmap", { action: "clear" });
+    await session.handle("execution", { action: "advance-frames", count: 20 });
+    const long = (await session.handle("memmap", { action: "read" })) as MemmapRead;
+    assert.deepEqual([long.uncheckedAfterHalt, marked(long, 0x8002)], [[0x8002], true]);
+    // The interrupt ends the wait, and the byte after the HALT runs: the mark is checked.
     await session.handle("execution", { action: "step", count: 2 });
-    assert.equal(((await session.handle("memmap", { action: "read" })) as Read).uncheckedAfterHalt, undefined);
+    assert.equal(((await session.handle("memmap", { action: "read" })) as MemmapRead).uncheckedAfterHalt, undefined);
     await session.handle("execution", { action: "advance-frames", count: 20 });
-    assert.deepEqual(((await session.handle("memmap", { action: "read" })) as Read).uncheckedAfterHalt, undefined, "a checked mark stays checked");
+    assert.equal(((await session.handle("memmap", { action: "read" })) as MemmapRead).uncheckedAfterHalt, undefined, "a checked mark stays checked");
     await session.handle("memmap", { action: "clear" });
     await session.handle("execution", { action: "advance-frames", count: 20 });
-    assert.deepEqual(((await session.handle("memmap", { action: "read" })) as Read).uncheckedAfterHalt, [0x8002]);
+    assert.deepEqual(((await session.handle("memmap", { action: "read" })) as MemmapRead).uncheckedAfterHalt, [0x8002]);
     await session.handle("memmap", { action: "clear" });
-    assert.equal(((await session.handle("memmap", { action: "read" })) as Read).uncheckedAfterHalt, undefined);
+    assert.equal(((await session.handle("memmap", { action: "read" })) as MemmapRead).uncheckedAfterHalt, undefined);
   } finally {
     await session.close();
   }

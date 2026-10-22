@@ -267,9 +267,10 @@ const memmap = defineTool<z.ZodObject, z.ZodObject, Session>({
     "With out, it writes the 65536-byte map, which the coverage of the project knowledge takes. Only the first byte of an instruction has the execute flag. " +
     "The map has no reads: this emulator does not tell a read of the CPU from a read of its debugger. Writes of the tools and of a load are not in the map. " +
     "The addresses are those of the CPU. On the 128K, a range at $c000-$ffff does not tell the RAM bank. " +
-    "While the CPU waits after opcode $76, the emulator marks the next byte as executed at each wait cycle. The map removes such a mark when the CPU did not execute that byte. " +
-    "The map can do this only when 10 frames or less ran since the last read or clear. Else the map keeps the mark, and uncheckedAfterHalt gives the address: its execute mark can be false. " +
-    "To get a map with no such address, clear the map, and then read the map after each run of 10 frames or less. The CPU must be stopped.",
+    "While the CPU waits after opcode $76, the emulator marks the next byte as executed at each wait cycle. The map removes such a mark when the CPU history since the last read or clear has no execution of that byte. " +
+    "The CPU history keeps the last 1000000 instructions, and each wait cycle is one of them. Thus the history keeps about 50 frames of a wait. " +
+    "When the history has no execution of the byte and does not go back to the last read or clear, the map keeps the mark. Then uncheckedAfterHalt gives the address: its execute mark can be false. " +
+    "To get a map with no such address, clear the map, and then read the map after each run of 50 frames or less. The CPU must be stopped.",
   inputSchema: z.object({ action: z.enum(["read", "clear"]), out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({ cleared: z.boolean().optional(), ranges: z.array(z.object({ start: AddressOutput, end: AddressOutput, flags: z.number().int() })).optional(), uncheckedAfterHalt: z.array(AddressOutput).optional(), ...WrittenOutput }),
   readOnly: false,
