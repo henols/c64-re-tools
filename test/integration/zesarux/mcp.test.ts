@@ -517,3 +517,61 @@ test("a HALT wait survives a write of its HALT byte and a snapshot, and cpu_hist
     await host.stop();
   }
 });
+
+test("the instruction after a $76 that is no HALT is an execution after an autostart, a pc write and a restore", { skip, timeout: 180_000 }, async () => {
+  // LD A,$76 ; JR $9400 at $9400: $9401 is an operand. A .z80 file with its PC at $9402.
+  const patched = keyboardCounterRam();
+  patched.set([0x3e, 0x76, 0x18, 0xfc], 0x9400 - 0x4000);
+  const snapshot = readZ80(keyboardCounterSnapshot());
+  writeFileSync(join(project, "after76.z80"), writeZ80({ ...snapshot, registers: { ...snapshot.registers, pc: 0x9402, iff1: false, iff2: false }, banks: snapshot.banks.map((bank, index) => (index === 5 ? patched.subarray(0, 0x4000) : index === 2 ? patched.subarray(0x4000, 0x8000) : index === 0 ? patched.subarray(0x8000) : bank)) }));
+  const host = await startHost({ ...process.env, C64RT_ZESARUX: zesarux! });
+  const { client } = await startMcp(host.address, { args: ["--machine", "spectrum"], cwd: project });
+  try {
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
+      assert.notEqual(result.isError, true, `${name}: ${(result.content[0] as { text: string }).text}`);
+      return json(result);
+    };
+    /** Steps once from pc, and gives the newest cpu_history entries and whether the memmap marks pc as executed. */
+    const stepAt = async (count: number) => {
+      await call("memmap", { action: "clear" });
+      await call("execution", { action: "step", count: 1 });
+      const map = await call("memmap", { action: "read" });
+      const ranges = map.ranges as Array<{ start: string; end: string; flags: number }>;
+      return { pcs: (await call("cpu_history", { count })).pcs, executed: (flagsAt(ranges, 0x9402) & 4) !== 0, unchecked: map.uncheckedAfterHalt };
+    };
+    const after76 = { pcs: ["$9402"], executed: true, unchecked: undefined };
+
+    // The autostart runs the JR at $9402 first, and stops at the breakpoint at $9400.
+    const point = (await call("breakpoint", { action: "add", address: "$9400" })).points as Array<{ id: number }>;
+    await call("memmap", { action: "clear" });
+    assert.equal((await call("autostart", { path: "after76.z80" })).state, "running");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const stopped = await call("execution", { action: "pause" });
+    assert.deepEqual([stopped.stopReason, stopped.pc], ["breakpoint", "$9400"]);
+    await call("breakpoint", { action: "remove", id: point[0]!.id });
+    const loaded = await call("memmap", { action: "read" });
+    assert.deepEqual([(await call("cpu_history", { count: 2 })).pcs, (flagsAt(loaded.ranges as Array<{ start: string; end: string; flags: number }>, 0x9402) & 4) !== 0, loaded.uncheckedAfterHalt], [["$9402"], true, undefined]);
+    await call("registers", { action: "write", values: { pc: "$9402", iff1: false, iff2: false } });
+    assert.deepEqual(await stepAt(1), after76);
+    await call("snapshot", { action: "save", name: "x" });
+    await call("snapshot", { action: "restore", name: "x" });
+    await call("registers", { action: "write", values: { pc: "$9402" } });
+    assert.deepEqual(await stepAt(2), after76);
+    // A normal JP to $9402.
+    await call("memory_write", { address: "$9410", data: "c30294" });
+    await call("registers", { action: "write", values: { pc: "$9410" } });
+    await call("execution", { action: "step", count: 1 });
+    assert.deepEqual(await stepAt(2), { ...after76, pcs: ["$9402", "$9410"] });
+
+    // DI ; HALT ; JR $9400: a pc write at the address of the wait ends it, and the JR runs.
+    await call("memory_write", { address: "$9400", data: "f37618fc" });
+    await call("registers", { action: "write", values: { pc: "$9400" } });
+    assert.equal((await call("execution", { action: "step", count: 4 })).waitsForInterrupt, true);
+    assert.equal((await call("registers", { action: "write", values: { pc: "$9402" } })).waitsForInterrupt, false);
+    assert.deepEqual(await stepAt(5), { ...after76, pcs: ["$9402", "$9401", "$9401", "$9401", "$9400"] });
+  } finally {
+    await client.close();
+    await host.stop();
+  }
+});

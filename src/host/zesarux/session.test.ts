@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { WireFailure } from "../../protocol/messages.ts";
+import { writeZ80 } from "../../spectrum.ts";
 import type { ZesaruxProcess } from "./process.ts";
 import { Zrcp } from "./zrcp.ts";
 import { ayOfIoPorts, codeCoverageAddresses, firedStop, historyAddresses, historyOpcode, keysOf, modelOfMachineName, parseRegisters, pcRuns, SPECTRUM_KEYS, visualmemAddresses, ZesaruxSession } from "./session.ts";
@@ -110,8 +111,9 @@ function tapeOf(text: string): Buffer {
  * the CPU history and its address to the code coverage; a run adds the
  * addresses of `ran` to the code coverage only, and the next entries of
  * `runs` to the CPU history. The history keeps at most `historyMax`
- * entries. `cpu` holds the get-registers answer and the HALT state: a
- * snapshot-load takes the HALT state of the file, a step after generate-nmi
+ * entries, and a load (smartload, snapshot-load) empties it. `cpu` holds
+ * the get-registers answer and the HALT state: a snapshot-load takes the
+ * HALT state of the file, a step after generate-nmi
  * ends the HALT at $0066, a step at $5b00 runs a two-byte instruction, and a snapshot-load of a file whose name has
  * "broken" in it fails. Each command is kept.
  */
@@ -141,6 +143,7 @@ async function standInZesarux(
     const [command = "", ...rest] = line.split(" ");
     const argument = rest.join(" ");
     if (command === "get-current-machine") return machine;
+    if (command === "smartload" || command === "snapshot-load") history.length = 0;
     if (command === "smartload" && argument.endsWith(".tap")) {
       const tape = readFileSync(argument);
       machine = tape.subarray(3, tape.length - 1).toString("latin1") || machine;
@@ -631,6 +634,62 @@ test("cpu_history counts the executions of a loop on one address by R, also past
   try {
     const pcs = ((await session.handle("cpuHistory", { count: 1000 })) as { pcs: number[] }).pcs;
     assert.deepEqual([pcs.length, pcs.filter((pc) => pc === 0xb000).length, pcs.filter((pc) => pc === 0xa000).length], [203, 3, 200]);
+  } finally {
+    await session.close();
+  }
+});
+
+/** The get-registers answer at pc with R r: the stand-in gives it to each get-registers. */
+const registersAt = (pc: number, r: number) => REGISTERS.replace("PC=11dc", "PC=" + pc.toString(16).padStart(4, "0")).replace("R=26", "R=" + r.toString(16).padStart(2, "0"));
+const at8002 = (r: number) => registersAt(0x8002, r);
+const JP = "PC=8010 R=12 (PC)=c3028000";
+
+test("an instruction after the operand $76 of LD A,$76 runs as an execution when a pc write or a load puts the CPU there, and after a JP", async () => {
+  // LD A,$76 at $8000: $8001 is its operand, and JR $8000 at $8002 is no HALT cycle.
+  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { history: [cycle(3), HALT_ENTRY], steps: ["PC=8002 R=10 (PC)=18fc0000", "PC=8000 R=11 (PC)=3e7618fc", JP, "PC=8002 R=13 (PC)=18fc0000", "PC=8002 R=20 (PC)=18fc0000"], memory: { 0x8000: 0x3e, 0x8001: 0x76, 0x8002: 0x18, 0x8003: 0xfc } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    // A restore empties the CPU history: its first entry is the first instruction after the restore, and the CPU did not wait there.
+    await session.handle("snapshot", { action: "save", name: "x" });
+    await session.handle("snapshot", { action: "restore", name: "x" });
+    await session.handle("registersSet", { values: { pc: 0x8002 } });
+    await session.handle("memmap", { action: "clear" });
+    await session.handle("execution", { action: "step", count: 1 });
+    assert.deepEqual(((await session.handle("cpuHistory", { count: 2 })) as { pcs: number[] }).pcs, [0x8002]);
+    const read = (await session.handle("memmap", { action: "read" })) as MemmapRead;
+    assert.deepEqual([marked(read, 0x8002), read.uncheckedAfterHalt], [true, undefined]);
+    await session.handle("execution", { action: "step", count: 3 });
+    assert.deepEqual(((await session.handle("cpuHistory", { count: 4 })) as { pcs: number[] }).pcs, [0x8002, 0x8010, 0x8000, 0x8002]);
+    // An autostart empties the history too: the PC of the .z80 file is after the $76.
+    await session.handle("autostart", { type: "z80", run: false }, [Buffer.from(writeZ80({ model: "48k", registers: { ...parseRegisters(at8002(0x20)), im: 1 }, border: 0, port7ffd: 0, banks: Array.from({ length: 8 }, () => new Uint8Array(0x4000)) }))]);
+    await session.handle("memmap", { action: "clear" });
+    await session.handle("execution", { action: "step", count: 1 });
+    assert.deepEqual(((await session.handle("cpuHistory", { count: 2 })) as { pcs: number[] }).pcs, [0x8002]);
+    assert.equal(marked((await session.handle("memmap", { action: "read" })) as MemmapRead, 0x8002), true);
+  } finally {
+    await session.close();
+  }
+});
+
+test("a pc write that ends a HALT wait at the same address makes the next instruction there an execution, and a later HALT wait there is HALT cycles again", async () => {
+  // EI, HALT at $8001, two cycles at $8002; the pc write ends the wait (R 6 to 8), and JR $8000 at $8002 runs.
+  const after = ["PC=8002 R=08 (PC)=18fc0000", EI.replace("R=00", "R=09"), HALT_ENTRY.replace("R=01", "R=0a"), cycle(0x0b), cycle(0x0c)];
+  const { zesarux, cpu } = await standInZesarux("ZX Spectrum 48k", { halted: true, history: [cycle(5), cycle(4), HALT_ENTRY, EI], steps: after, memory: { 0x8001: 0x76 } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    await session.handle("memmap", { action: "clear" });
+    cpu.registers = at8002(8);
+    assert.equal(((await session.handle("registersSet", { values: { pc: 0x8002 } })) as { waitsForInterrupt: boolean }).waitsForInterrupt, false);
+    await session.handle("execution", { action: "step", count: 1 });
+    cpu.registers = registersAt(0x8000, 9);
+    assert.deepEqual(((await session.handle("cpuHistory", { count: 5 })) as { pcs: number[] }).pcs, [0x8002, 0x8001, 0x8001, 0x8001, 0x8000]);
+    const read = (await session.handle("memmap", { action: "read" })) as MemmapRead;
+    assert.deepEqual([marked(read, 0x8002), read.uncheckedAfterHalt], [true, undefined]);
+    await session.handle("memmap", { action: "clear" });
+    await session.handle("execution", { action: "step", count: 4 });
+    cpu.registers = at8002(0x0d);
+    assert.deepEqual(((await session.handle("cpuHistory", { count: 9 })) as { pcs: number[] }).pcs, [0x8001, 0x8001, 0x8001, 0x8000, 0x8002, 0x8001, 0x8001, 0x8001, 0x8000]);
+    assert.equal(marked((await session.handle("memmap", { action: "read" })) as MemmapRead, 0x8002), false);
   } finally {
     await session.close();
   }

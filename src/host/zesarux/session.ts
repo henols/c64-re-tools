@@ -124,6 +124,8 @@ const PREFIXES = [0xcb, 0xdd, 0xed, 0xfd];
 const HISTORY_CHUNK = 10_000;
 /** How far back the session looks for the instruction before a run of one address in the CPU history. */
 const HALT_LOOKBACK = 100_000;
+/** How many pc writes that ended a HALT wait the session keeps for the CPU history. */
+const MAX_HALT_ENDS = 16;
 /** The ZRCP commands that do not run the CPU and do not change the partial t-state counter. */
 const KEEPS_TSTATES = ["evaluate ", "read-memory ", "write-memory ", "get-registers", "set-register ", "cpu-history ", "cpu-code-coverage ", "get-visualmem-written-dump", "set-breakpoint ", "set-membreakpoint ", "enable-breakpoints", "get-io-ports", "get-current-machine", "set-ui-io-ports ", "set-memory-zone ", "snapshot-save "];
 
@@ -263,6 +265,26 @@ interface RunEnd {
   pointId?: number;
 }
 
+/** A pc write that ended a HALT wait: the pc and R after it, and R of the newest CPU history entry before it (undefined when the history was empty). */
+interface HaltEnd {
+  pc: number;
+  r: number;
+  lastR?: number;
+}
+
+/** A run of CPU history entries at one address: the history indexes of its newest (first) and oldest (last) entry. */
+interface HistoryRun {
+  pc: number;
+  first: number;
+  last: number;
+}
+
+/** The entry before a run of CPU history entries: its index and address, "start" when the run goes back to the start of a history that holds all its entries since it was empty, or "unknown". */
+type EntryBefore = { index: number; pc: number } | "start" | "unknown";
+
+/** R and the opcode of a CPU history entry by its index. */
+type HistoryR = (index: number) => Promise<{ r: number; opcode?: number } | undefined>;
+
 interface Point extends SpectrumPoint {
   /** The ZRCP breakpoint slot of a breakpoint. */
   slot?: number;
@@ -326,6 +348,20 @@ export class ZesaruxSession implements SessionHandle {
   readonly #coverage = new Uint8Array(0x10000);
   /** The addresses after a HALT opcode whose execute mark the session could not check: HALT cycles alone can have made it. */
   readonly #uncheckedAfterHalt = new Set<number>();
+  /**
+   * Whether the CPU waited in a HALT when the CPU history was empty the last
+   * time: while the history holds all its entries since then, its oldest
+   * entry is the first instruction after that start. Undefined when the
+   * session does not know it.
+   */
+  #historyStart: { halted: boolean } | undefined;
+  /**
+   * The pc writes that ended a HALT wait since the history was empty, the
+   * newest last: the CPU left the wait with no CPU history entry. In the
+   * history, the first instruction after each one is an entry at pc with R r,
+   * and the entry before it (the last wait cycle) has R lastR.
+   */
+  #haltEnds: HaltEnd[] = [];
   /** The keys that are down, and the Kempston joystick: the nine values of set-ui-io-ports. */
   readonly #rows = new Array<number>(8).fill(0xff);
   #joystick = 0;
@@ -754,6 +790,11 @@ export class ZesaruxSession implements SessionHandle {
     await this.#zrcp("cpu-history started yes");
     await this.#zrcp("cpu-code-coverage enabled yes");
     for (const point of this.#points.values()) await this.#setPoint(point);
+    // A load turns the history off, and the history is empty when it is on again: its start is the state of now.
+    if (Number(await this.#zrcp("cpu-history get-size")) === 0) {
+      this.#historyStart = { halted: await this.#halted() };
+      this.#haltEnds = [];
+    }
   }
 
   /**
@@ -878,7 +919,9 @@ export class ZesaruxSession implements SessionHandle {
     this.#requireStopped();
     const { im, ...values } = params.values;
     const halted = await this.#halted();
-    if (halted && values.pc !== undefined) await this.#endHalt();
+    const ended = halted && values.pc !== undefined;
+    const lastR = ended ? (await this.#historyR()(0))?.r : undefined;
+    if (ended) await this.#endHalt();
     if (im !== undefined) {
       if (halted && values.pc === undefined) {
         throw new WireFailure("invalid-input", "The CPU waits in a HALT, so it cannot run the IM instruction that sets im. Write pc in the same call: a pc write ends the HALT. Or step or run until an interrupt ends the HALT, then write im again.");
@@ -890,7 +933,9 @@ export class ZesaruxSession implements SessionHandle {
       const text = z80WritableMax(register as keyof typeof values) === 1 ? String(value) : `${value!.toString(16)}H`;
       await this.#zrcp(`set-register ${NAMES[register] ?? register.toUpperCase()}=${text}`);
     }
-    return this.#registers();
+    const state = await this.#registers();
+    if (ended) this.#haltEnds = [...this.#haltEnds.slice(1 - MAX_HALT_ENDS), { pc: state.pc, r: state.r, ...(lastR === undefined ? {} : { lastR }) }];
+    return state;
   }
 
   /**
@@ -1037,12 +1082,18 @@ export class ZesaruxSession implements SessionHandle {
     for (let read = params.count + HISTORY_MARGIN; ; read *= 2) {
       const pcs = await this.#historyPcs(0, read);
       const all = pcs.length < read;
-      const runs = pcRuns(pcs);
-      const cycles = await this.#haltCycles(pcs, (index) => index);
+      const cycles = await this.#haltCycles(pcs, r);
+      // A run of one address splits where its HALT cycles start: the real executions after a pc write that ended the wait are newer than the cycles.
+      const parts: Array<HistoryRun & { cycle: boolean }> = [];
+      pcs.forEach((pc, index) => {
+        const part = parts.at(-1);
+        if (part !== undefined && part.pc === pc && part.cycle === cycles[index]) part.last = index;
+        else parts.push({ pc, first: index, last: index, cycle: cycles[index]! });
+      });
       const shown: number[] = [];
-      for (const [index, run] of runs.entries()) {
-        const executions = await this.#runExecutions(run, cycles[run.first]!, r, index === 0 ? now : undefined);
-        const pc = cycles[run.first] ? (run.pc - 1) & 0xffff : run.pc;
+      for (const [index, part] of parts.entries()) {
+        const executions = await this.#runExecutions(part, part.cycle, r, index === 0 ? now : undefined);
+        const pc = part.cycle ? (part.pc - 1) & 0xffff : part.pc;
         for (let copy = 0; copy < executions && shown.length < params.count; copy++) shown.push(pc);
         if (shown.length >= params.count) return { pcs: shown };
       }
@@ -1052,7 +1103,7 @@ export class ZesaruxSession implements SessionHandle {
   }
 
   /** R of each CPU history entry, by its index: one get-extended command for each, and each answer is kept. */
-  #historyR(): (index: number) => Promise<{ r: number; opcode?: number } | undefined> {
+  #historyR(): HistoryR {
     const known = new Map<number, { r: number; opcode?: number } | undefined>();
     return async (index) => {
       if (!known.has(index)) {
@@ -1074,7 +1125,7 @@ export class ZesaruxSession implements SessionHandle {
    * fetches apart. `now` is given for the newest run: entries with the PC and
    * R of now are not executed yet. With no R, each entry counts.
    */
-  async #runExecutions(run: { pc: number; first: number; last: number }, cycle: boolean, r: (index: number) => Promise<{ r: number; opcode?: number } | undefined>, now?: Z80RegisterValues): Promise<number> {
+  async #runExecutions(run: HistoryRun, cycle: boolean, r: HistoryR, now?: Z80RegisterValues): Promise<number> {
     const newest = run.last > run.first || now !== undefined ? await r(run.first) : undefined;
     let executions = 1;
     if (run.last > run.first) {
@@ -1101,51 +1152,111 @@ export class ZesaruxSession implements SessionHandle {
   }
 
   /**
-   * Which of the CPU history entries `pcs` (the most recent first) are HALT
-   * cycles. `entry` gives the history index of each. ZEsarUX records each
-   * cycle of a HALT wait as an entry at the address after the HALT, with only
-   * R changed. A HALT cycle comes after the HALT or after another HALT cycle,
-   * and an interrupt or a NMI comes after it, never the instruction after the
-   * HALT. Thus a run of entries at one address are HALT cycles when the entry
-   * before the run is the HALT instruction just before that address. Only the
-   * runs after a HALT opcode in memory now are examined, and with `addresses`
-   * only the runs at those addresses.
+   * Which of the CPU history entries `pcs` (the most recent first, from
+   * index 0) are HALT cycles, by #waitsFrom. Only the runs after a HALT
+   * opcode in memory now are examined.
    */
-  async #haltCycles(pcs: readonly number[], entry: (index: number) => number, addresses?: ReadonlySet<number>): Promise<boolean[]> {
+  async #haltCycles(pcs: readonly number[], r: HistoryR): Promise<boolean[]> {
     const cycles = new Array<boolean>(pcs.length).fill(false);
     const byteAt = this.#byteReader();
     for (const run of pcRuns(pcs)) {
-      if (addresses !== undefined && !addresses.has(run.pc)) continue;
       const halt = (run.pc - 1) & 0xffff;
       if (run.last + 1 < pcs.length && pcs[run.last + 1] !== halt) continue;
       if ((await byteAt(halt)) !== HALT) continue;
-      let before: { pc: number; entry: number } | undefined;
-      if (run.last + 1 < pcs.length) {
-        before = { pc: halt, entry: entry(run.last + 1) };
-      } else {
-        // The run goes to the end of the entries: look further back.
-        before = await this.#entryBefore(entry(run.last), run.pc);
-        // No start in the history: the byte before the run is a HALT opcode, so the run is a long wait.
-        if (before === undefined) {
-          cycles.fill(true, run.first, run.last + 1);
-          continue;
-        }
-        if (before.pc !== halt) continue;
-      }
-      if (historyOpcode(await this.#zrcp(`cpu-history get-extended ${before.entry}`)) === HALT) cycles.fill(true, run.first, run.last + 1);
+      // A run that goes to the end of the entries: look further back.
+      const before = run.last + 1 < pcs.length ? { index: run.last + 1, pc: halt } : await this.#entryBefore(run.last, run.pc);
+      const from = await this.#waitsFrom(run, before, r);
+      if (from !== undefined) cycles.fill(true, from, run.last + 1);
     }
     return cycles;
   }
 
-  /** The first CPU history entry back from `last` whose address is not `pc`. Undefined at the start of the history, or after HALT_LOOKBACK entries. */
-  async #entryBefore(last: number, pc: number): Promise<{ pc: number; entry: number } | undefined> {
+  /**
+   * The history index of the newest HALT cycle in a run of CPU history
+   * entries at an address after a HALT opcode in memory: the entries newer
+   * than it are real executions. Undefined when the run has no HALT cycle.
+   *
+   * ZEsarUX records each cycle of a HALT wait as an entry at the address
+   * after the HALT, with only R changed, and an interrupt that ends the wait
+   * has no entry. The byte before the address alone is no proof of a wait:
+   * the CPU also comes to the address from a pc write, a load, or the
+   * operand $76 of an instruction before it. So the run is HALT cycles only
+   * when the CPU was in that HALT: the entry before the run is the HALT
+   * instruction at the address before, or the run goes back to the start of
+   * the history and the CPU waited there (#historyStart). When the session
+   * cannot see the start of a long run, the run is a wait. A pc write that
+   * ended the wait (#haltEnds) leaves the CPU at the same address with no
+   * entry: the entries after it in the run are real executions.
+   */
+  async #waitsFrom(run: HistoryRun, before: EntryBefore, r: HistoryR): Promise<number | undefined> {
+    if (typeof before === "object") {
+      if (before.pc !== ((run.pc - 1) & 0xffff)) return undefined;
+      if (historyOpcode(await this.#zrcp("cpu-history get-extended " + before.index)) !== HALT) return undefined;
+    } else if (before === "start" && this.#historyStart?.halted === false) {
+      return undefined;
+    }
+    let from = run.first;
+    for (const end of this.#haltEnds) {
+      if (end.pc !== run.pc) continue;
+      const last = await this.#haltEndIn(run, end, r);
+      if (last !== undefined) from = Math.max(from, last + 1);
+    }
+    return from > run.last ? undefined : from;
+  }
+
+  /**
+   * The history index of the first instruction after a pc write that ended a
+   * HALT wait, in a run at the pc of the write: the entry with R end.r whose
+   * older entry has R end.lastR. Undefined when the run does not hold it.
+   * The instruction runs again from there with R up by its opcode fetches
+   * each time, so R of the newest entry of the run tells where to look
+   * first. Copies of an entry (with the same R) move the place to older
+   * entries: the session then searches for the oldest entry with R in the
+   * range of the executions.
+   */
+  async #haltEndIn(run: HistoryRun, end: HaltEnd, r: HistoryR): Promise<number | undefined> {
+    const low = async (index: number) => {
+      const entry = await r(index);
+      return entry === undefined ? undefined : entry.r & 0x7f;
+    };
+    const isStart = async (index: number) => (await low(index)) === (end.r & 0x7f) && (await low(index + 1)) === (end.lastR === undefined ? undefined : end.lastR & 0x7f);
+    const newest = await r(run.first);
+    if (newest === undefined) return undefined;
+    const fetches = newest.opcode !== undefined && PREFIXES.includes(newest.opcode) ? 2 : 1;
+    const span = (newest.r - end.r) & 0x7f;
+    const inSpan = async (index: number) => {
+      const value = await low(index);
+      return value !== undefined && ((newest.r - value) & 0x7f) <= span;
+    };
+    let first = run.first + Math.floor(span / fetches);
+    if (first > run.last) return undefined;
+    if (await isStart(first)) return first;
+    if (!(await inSpan(first))) return undefined;
+    let last = Math.min(run.last, first + 2 * MAX_REPEATS);
+    while (first < last) {
+      const middle = Math.ceil((first + last) / 2);
+      if (await inSpan(middle)) first = middle;
+      else last = middle - 1;
+    }
+    return (await isStart(first)) ? first : undefined;
+  }
+
+  /** The first CPU history entry back from `last` whose address is not `pc`: "start" at the start of a history that holds all its entries since it was empty, else "unknown" at its start or after HALT_LOOKBACK entries. */
+  async #entryBefore(last: number, pc: number): Promise<EntryBefore> {
     for (let start = last + 1; start <= last + HALT_LOOKBACK; start += HISTORY_CHUNK) {
       const pcs = await this.#historyPcs(start, HISTORY_CHUNK);
       const other = pcs.findIndex((item) => item !== pc);
-      if (other >= 0) return { pc: pcs[other]!, entry: start + other };
-      if (pcs.length < HISTORY_CHUNK) return undefined;
+      if (other >= 0) return { pc: pcs[other]!, index: start + other };
+      if (pcs.length < HISTORY_CHUNK) return (await this.#historyComplete()) ? "start" : "unknown";
     }
-    return undefined;
+    return "unknown";
+  }
+
+  /** True when the CPU history holds all its entries since it was empty: it is not full. */
+  async #historyComplete(): Promise<boolean> {
+    const size = Number(await this.#zrcp("cpu-history get-size"));
+    const max = Number(await this.#zrcp("cpu-history get-max-size"));
+    return Number.isInteger(size) && Number.isInteger(max) && size < max;
   }
 
   // ---- Coverage ----
@@ -1223,16 +1334,16 @@ export class ZesaruxSession implements SessionHandle {
    * when the history has all of these entries. While the history is not full,
    * its growth since `sinceSize` entries gives the exact window. The session reads the history
    * back from the newest entry, and stops when it found each address. A run
-   * of entries at an address is a real execution when the entry before it is
-   * not the HALT instruction just before that address. A run with no start in
-   * the history, or none in HALT_LOOKBACK entries after the window, is a long
-   * wait.
+   * of entries at an address has a real execution when #waitsFrom finds an
+   * entry newer than its HALT cycles. A run with no start in HALT_LOOKBACK
+   * entries after the window is a long wait.
    */
   async #realExecutions(open: ReadonlySet<number>, entries: number, sinceSize: number | undefined): Promise<{ executes: Set<number>; covered: boolean }> {
     const executes = new Set<number>();
     const history = await this.#historyReader();
     if (history === undefined) return { executes, covered: false };
     const { peek, load, size, max } = history;
+    const r = this.#historyR();
     const window = size < max && sinceSize !== undefined && sinceSize <= size ? Math.min(entries, size - sinceSize) : entries;
     let index = 0;
     while (executes.size < open.size) {
@@ -1247,11 +1358,11 @@ export class ZesaruxSession implements SessionHandle {
       let last = index;
       const end = Math.min(size, Math.max(window, index) + HALT_LOOKBACK);
       while (last + 1 < end && (peek(last + 1) ?? (await load(last + 1))) === pc) last++;
-      if (last + 1 < end) {
-        const halt = (pc - 1) & 0xffff;
-        const before = peek(last + 1) ?? (await load(last + 1));
-        if (before !== halt || historyOpcode(await this.#zrcp(`cpu-history get-extended ${last + 1}`)) !== HALT) executes.add(pc);
-      }
+      let before: EntryBefore = "unknown";
+      if (last + 1 < end) before = { index: last + 1, pc: peek(last + 1) ?? (await load(last + 1)) };
+      else if (last + 1 >= size && size < max) before = "start";
+      const from = await this.#waitsFrom({ pc, first: index, last }, before, r);
+      if (from === undefined || from > index) executes.add(pc);
       index = last + 1;
     }
     return { executes, covered: true };
