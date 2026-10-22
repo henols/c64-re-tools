@@ -69,6 +69,13 @@ export function runProvenance(image: Uint8Array, toolVersion: string | undefined
   return toolVersion === undefined ? { inputHash } : { inputHash, toolVersion };
 }
 
+/** The version of the analyzer in its last revision of these image bytes: undefined when it has none, or when that revision does not tell it. */
+export function lastToolVersion(db: DatabaseSync, analyzer: Analyzer, image: Uint8Array): string | undefined {
+  const { inputHash } = runProvenance(image, undefined);
+  const row = db.prepare("SELECT tool_version FROM revisions WHERE origin = ? AND input_hash = ? ORDER BY id DESC LIMIT 1").get(analyzer, inputHash!) as { tool_version: string | null } | undefined;
+  return row?.tool_version ?? undefined;
+}
+
 export type ImportConflict =
   | {
       category: "symbol";

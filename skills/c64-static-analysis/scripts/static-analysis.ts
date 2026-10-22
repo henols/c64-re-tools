@@ -15,7 +15,7 @@ import { GHIDRA_LIMITS } from "#src/native/types.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { analyzedBytes, operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
-import { importFindings, runProvenance, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
+import { importFindings, lastToolVersion, runProvenance, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
@@ -36,8 +36,11 @@ const ALL_NAMES = "a larger --max-listed. The project knowledge has all of them 
  * analyzer data over executed code to classify, and macro candidates to write.
  * The envelope adds the sentence for a cut list.
  */
-function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }) {
+function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }, version: { now: string | undefined; last: string | undefined; revision: string | null }) {
   const hints: string[] = [];
+  if (version.revision !== null && version.now !== undefined && version.last !== undefined && version.now !== version.last) {
+    hints.push(`The last analysis of this program used ${version.last}. Thus a change in revision ${version.revision} can come from the new analyzer version, and not from the program or the project knowledge.`);
+  }
   if (conflicts > 0) hints.push("The analysis and the project knowledge disagree at each place in conflicts. Find the correct answer in the emulator. Then correct the project knowledge.");
   if (coverageConflicts > 0) hints.push("The coverage shows executed code in each range of coverageConflicts. Classify each range as code, or as dual-use when its bytes are also data, in the project knowledge.");
   if (typeof macros.revision === "string") hints.push("The project knowledge has the macro candidates now. Generate the source again.");
@@ -222,6 +225,8 @@ async function analyze(call: Call): Promise<unknown> {
   const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry)).length;
   // Platform names are C64 names: drive code and banks get none.
   const platform = space === DEFAULT_SPACE ? platformNames() : [];
+  /** The analyzer version of the last analysis of these bytes: a new version can change the findings by itself. */
+  const lastVersion = reader === undefined ? undefined : lastToolVersion(reader, analyzer, bytes);
   reader?.close();
   /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
   const idiomsResult = () => {
@@ -298,6 +303,7 @@ async function analyze(call: Call): Promise<unknown> {
     const found = idiomsResult();
     const body = {
       analyzer: "dxa",
+      ...(result.toolVersion === undefined ? {} : { analyzerVersion: result.toolVersion }),
       ...(space === DEFAULT_SPACE ? {} : { space }),
       ...found,
       ...coverageResult(),
@@ -307,7 +313,7 @@ async function analyze(call: Call): Promise<unknown> {
       labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), ALL_NAMES),
       ...(written === undefined ? {} : { listing: written }),
     };
-    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision });
+    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision });
   }
 
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
@@ -328,6 +334,7 @@ async function analyze(call: Call): Promise<unknown> {
   }
   const body = {
     analyzer: "ghidra",
+    ...(result.toolVersion === undefined ? {} : { analyzerVersion: result.toolVersion }),
     ...(space === DEFAULT_SPACE ? {} : { space }),
     ...(instructions === undefined ? {} : { instructions }),
     ...found,
@@ -341,7 +348,7 @@ async function analyze(call: Call): Promise<unknown> {
       ? {}
       : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: item.reason })) }),
   };
-  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision });
+  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision });
 }
 
 await runScript({

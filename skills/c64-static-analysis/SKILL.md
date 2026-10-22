@@ -102,7 +102,7 @@ The script records only structure: code and data regions, analyzer names, and th
 
 `body` holds these fields for both analyzers:
 
-- `analyzer`: `dxa` or `ghidra`. `space` is in `body` only for a space that is not `c64`.
+- `analyzer`: `dxa` or `ghidra`. `analyzerVersion` gives the version of the analyzer when the analyzer tells it. `space` is in `body` only for a space that is not `c64`.
 - `revision`: the revision of the findings, or `null` when the knowledge did not change.
 - `coverage`: the ranges that the analyzer examined.
 - `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `references.inData` counts the references that the script did not record, because they start in a data region of the user, the LLM or a heuristic. The analyzer decoded these data bytes as code. `symbols.retired` counts the old symbols of the analyzer that became analyzer names.
@@ -130,6 +130,7 @@ The `hint` gives each of these cases:
 - `conflicts` is not empty. Find the correct answer in the emulator. Then correct the project knowledge.
 - `coverageConflicts` is not empty. Classify each range as code in the project knowledge, or as `dual-use` when its bytes are also data. For many ranges, write all classifications in one batch of changes.
 - `idioms.candidates.macros` has candidates, and the run had no `--apply-macros`. Examine the candidates. To write the correct candidates to the project knowledge, run the analysis again with `--apply-macros`. Give `--skip` with the start of each candidate that is not correct. Then generate the source again.
+- The last analysis of the same program bytes used another analyzer version. Thus a change in `revision` can come from the new analyzer, and not from the program or the project knowledge.
 - A list is cut. Give a larger `--max-listed`. The project knowledge has all `labels` and `functions` as analyzer names.
 
 There is no `nextAction`.

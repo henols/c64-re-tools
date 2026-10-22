@@ -8,7 +8,7 @@ import { after, test } from "node:test";
 import { Refusal } from "../errors.ts";
 import { openForWrite } from "./database.ts";
 import { revision as revisionChanges, revisions } from "./history.ts";
-import { importFindings, runProvenance, type NormalizedFindings } from "./import.ts";
+import { importFindings, lastToolVersion, runProvenance, type NormalizedFindings } from "./import.ts";
 import type { Analyzer } from "./schema.ts";
 import { analyzerNamesAt, currentRevision, listAnalyzerNames, listReferences, listSuppressions, listSymbols, regionsOverlapping, symbolAt } from "./read.ts";
 import { addReference, classifyRegion, removeReference, removeSymbol, renameSymbol, revert, unclassifyRegion } from "./write.ts";
@@ -313,6 +313,12 @@ test("an analyzer import records the image hash and the analyzer version in its 
       ["dxa", sha256, "dxa 0.1.5"],
     ],
   );
+  // The last version of each analyzer for these bytes: the next analysis compares its own version with it.
+  assert.equal(lastToolVersion(db, "dxa", image), "dxa 0.1.5");
+  assert.equal(lastToolVersion(db, "ghidra", image), undefined, "the revision does not tell the version");
+  assert.equal(lastToolVersion(db, "dxa", Buffer.from("abd")), undefined, "other bytes");
+  importFindings(db, findings("dxa", 0x0801, 0x08ff, { symbols: [] }), runProvenance(image, "dxa 0.2.0"));
+  assert.equal(lastToolVersion(db, "dxa", image), "dxa 0.2.0");
 });
 
 test("a re-run replaces all of the analyzer's own names in its coverage, also when its labels are not complete", () => {
