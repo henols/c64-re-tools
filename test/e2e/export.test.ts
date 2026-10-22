@@ -115,10 +115,9 @@ test("export: switches fixed, dead code and unused data free, a slim knowledge, 
   assert.match(readFileSync(join(project, "src", "main.asm"), "utf8"), /!if LEFTOVERS \{ !source "leftovers\/leftover_0826\.asm" \} else \{ !skip 14 \}/);
   assert.match(readFileSync(join(project, "src", "config.asm"), "utf8"), /\nLEFTOVERS = 0 ; /);
 
-  // A folder inside the project, a --drop over a changed patch and a --drop of code that kept code goes to are refused before anything is written.
+  // A folder inside the project and a --drop over a changed patch are refused before anything is written.
   assert.match(script("c64-source", "source.ts", ["export", "--to", "out"]).json.error.message, /inside the project/);
   assert.match(script("c64-source", "source.ts", ["export", "--to", "../refused", "--drop", "$080d-$081a"]).json.error.message, /overlaps the patch \$0815-\$0817, which the export changed/);
-  assert.match(script("c64-source", "source.ts", ["export", "--to", "../refused", "--drop", "$0823-$0825"]).json.error.message, /the code at \$0820 stays and goes to \$0823/);
   assert.equal(existsSync(join(sandbox, "refused")), false);
 
   const exported = ok("c64-source", "source.ts", ["export", "--to", "../new-game", "--name", "game"]);

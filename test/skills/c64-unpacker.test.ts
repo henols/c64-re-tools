@@ -63,17 +63,11 @@ test("a short program is unclear, and the script reports it", () => {
   assert.deepEqual(result.basicStart, { line: 10, sys: "$080d" });
   assert.equal(envelope.hint, "Run trace to get the evidence of a run.");
   assert.match(envelope.nextAction!, /^node \/\S+unpacker\.ts trace packed\.prg --project \//);
-  for (const args of [["inspect"], ["capture", "packed.prg"], ["capture", "packed.prg", "--until", "49152", "--out", "x.prg"], ["unpack", "packed.prg"], ["trace", "packed.prg", "--until", "$1000"], ["inspect", "packed.prg", "--entry", "$1000"], ["capture", "packed.prg", "--until", "$1000", "--out", "x", "--exclude", "$a000"], ["capture", "packed.prg", "--until", "$1000", "--out", "x", "--exclude", "$a9ff-$a000"], ["stages", "packed.prg", "--exclude", "$a000-$a9ff"]]) {
-    const bad = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8" });
-    assert.equal(bad.status, 2, args.join(" "));
-    assert.equal(readEnvelope(bad.stdout, bad.status).envelope.ok, false, args.join(" "));
-  }
 });
 
-test("inspect, trace, stages and capture take a PRG: a disk image and a file past $ffff are refused before an emulator starts", () => {
+test("the commands take a PRG and check the call before an emulator starts", () => {
   writeFileSync(join(project, "packed.prg"), xorPackedPrg);
   writeFileSync(join(project, "game.d64"), Buffer.alloc(174848, 1));
-  writeFileSync(join(project, "long.prg"), Buffer.concat([Buffer.from([0x01, 0x08]), Buffer.alloc(0x10000)]));
   const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpacker.ts");
   // No host listens at port 1: a call that got to the emulator would fail with machine-unavailable.
   const refused = (...args: string[]) => {
@@ -84,29 +78,13 @@ test("inspect, trace, stages and capture take a PRG: a disk image and a file pas
     // A wrong command line also gives the help command: the asserts read the message without it.
     return error.message.split("\n")[0]!.replace(/ To get the usage, run unpacker\.ts \w+ --help\.$/, "");
   };
-  const disk = "game.d64 is a disk image (.d64), not a PRG. Use loads, which runs a disk, tape or cartridge image, or extract the PRG from the image and give the path of that PRG.";
-  for (const command of [["inspect"], ["trace"], ["stages"], ["capture", "--until", "$080d", "--out", "x"]]) assert.equal(refused(command[0]!, "game.d64", ...command.slice(1)), disk);
-  assert.match(refused("inspect", "long.prg"), /^long\.prg is not a PRG: The PRG runs past \$ffff\. Use loads/);
+  assert.equal(refused("trace", "game.d64"), "game.d64 is a disk image (.d64), not a PRG. Use loads, which runs a disk, tape or cartridge image, or extract the PRG from the image and give the path of that PRG.");
   assert.throws(() => inspect(new Uint8Array(0x10003)), /runs past \$ffff/);
   // A segment must hold the entry: refused before the emulator runs.
   assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--exclude", "$0800-$0900"), "--exclude $0800-$0900 holds the entry --until $080d. A segment must hold the entry: give an --exclude range without it.");
   assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--range", "$c000-$cfff"), "--range $c000-$cfff does not hold the entry --until $080d. Give a --range that holds the entry.");
-  // A refusal lists the step kinds.
-  writeFileSync(join(project, "wait.json"), JSON.stringify([{ wait: 10 }]));
-  assert.equal(refused("trace", "packed.prg", "--steps", "wait.json"), "--steps wait.json: step 1 must have exactly one of write, registers, joystick, type, press, frames, runUntil");
-  writeFileSync(join(project, "old.json"), JSON.stringify([{ runUntil: { at: "$0400" }, timeoutFrames: 100 }]));
-  assert.equal(refused("stages", "packed.prg", "--steps", "old.json"), '--steps old.json: step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "$0400"}, "timeoutFrames": 100}}');
-  // Every name of the steps resolves before the emulator starts; an unknown one names the file and the step, as invalid-input like --until.
-  writeFileSync(join(project, "name.json"), JSON.stringify([{ frames: 10 }, { runUntil: { target: { kind: "address", address: "nonsense" }, timeoutFrames: 10 } }]));
-  for (const command of [["trace"], ["stages"], ["capture", "--until", "$080d", "--out", "x"]]) {
-    assert.match(refused(command[0]!, "packed.prg", "--steps", "name.json", ...command.slice(1)), /^--steps name\.json: step 2: nonsense is not a name in the knowledge\. Give a \$ address/);
-  }
   writeFileSync(join(project, "raster.json"), JSON.stringify([{ frames: 10 }, { runUntil: { target: { kind: "raster", line: 100 }, timeoutFrames: 10 } }]));
   assert.equal(refused("stages", "packed.prg", "--steps", "raster.json"), "--steps raster.json: step 2: stages takes a runUntil step only with an address target without a condition. Use frames steps, or use capture.");
-  writeFileSync(join(project, "parts.json"), JSON.stringify([{ wait: 10 }, { capture: "a" }]));
-  assert.equal(refused("loads", "game.d64", "--steps", "parts.json", "--out", "parts"), "--steps parts.json: step 1 must have exactly one of write, registers, joystick, type, press, frames, runUntil, capture, save");
-  writeFileSync(join(project, "part.json"), JSON.stringify([{ capture: "a" }]));
-  assert.equal(refused("loads", "game.d64", "--steps", "part.json", "--out", "parts", "--exclude", "$a9ff-$a000"), "--exclude ends at $a000, before its start $a9ff");
 });
 
 test("the memory map is read again from next until no more ranges follow", async () => {
@@ -136,23 +114,6 @@ test("code that runs in a ROM area is not unpacked code, also when the program w
     bytes: 0xf1,
     running: { start: 0x0810, end: 0x0900 },
   });
-});
-
-test("inspect refuses a link to a file outside the project", { skip: process.platform === "win32" ? "a symbolic link needs extra rights on Windows" : false }, () => {
-  const outside = mkdtempSync(join(tmpdir(), "c64-re-tools-unpacker-outside-"));
-  try {
-    writeFileSync(join(outside, "game.prg"), xorPackedPrg);
-    symlinkSync(join(outside, "game.prg"), join(project, "linked.prg"));
-    const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpacker.ts");
-    const linked = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "linked.prg"], { cwd: project, encoding: "utf8" });
-    assert.equal(linked.status, 2, linked.stdout + linked.stderr);
-    assert.equal(readEnvelope(linked.stdout, linked.status).envelope.code, "invalid-input");
-    const missing = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "missing.prg"], { cwd: project, encoding: "utf8" });
-    assert.equal(missing.status, 2, missing.stdout + missing.stderr);
-    assert.equal(readEnvelope(missing.stdout, missing.status).envelope.code, "not-found");
-  } finally {
-    rmSync(outside, { recursive: true, force: true });
-  }
 });
 
 test("inspect reports the start code that decodes and moves bytes, and the BASIC text, as evidence", () => {

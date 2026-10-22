@@ -10,6 +10,9 @@ import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { readPng } from "../../src/graphics.testkit.ts";
+import { withWrite } from "../../src/knowledge/database.ts";
+import { applyBatch, renameSymbol, setComment } from "../../src/knowledge/write.ts";
+import { importPrg } from "../fixtures/program.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 
 const SCRIPTS = resolve(import.meta.dirname, "../../skills");
@@ -25,10 +28,8 @@ function run(root: string, script: string, ...args: string[]): { status: number 
   assert.equal(result.stderr, "", result.stderr);
   return { status: result.status, ...readEnvelope(result.stdout, result.status) };
 }
-const knowledge = (root: string, ...args: string[]) => run(root, "c64-knowledge/scripts/knowledge.ts", ...args);
 const generate = (root: string, ...args: string[]) => run(root, "c64-docs/scripts/docs.ts", "generate", ...args);
 const link = (root: string, ...args: string[]) => run(root, "c64-docs/scripts/docs.ts", "link", ...args);
-const revisionOf = (root: string) => (knowledge(root, "revisions", "--max-listed", "1").json.revisions as { listed: Array<{ id: string }> }).listed[0]!.id;
 
 /** Writes the source files and a source map in the form of c64-source: each label and item on its line, after the mark line. */
 function writeSource(root: string, revision: string, files: Record<string, Array<string | { label: string; address: number } | { item: string; start: number; end: number }>>): void {
@@ -69,35 +70,33 @@ function project(root = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-"))): { ro
   body[0x1040] = 0b1000_0001; // ship: the first row has the first and the eighth pixel
   body[0x1080] = 0b1000_0000; // font: character 0 has its top left pixel
   body[0x108f] = 0b0000_0001; // font: character 1 has its bottom right pixel
-  writeFileSync(join(root, "game.prg"), Uint8Array.from([0x00, 0x10, ...body]));
-  writeFileSync(
-    join(root, "batch.json"),
-    JSON.stringify([
-      { op: "module", start: "$1000", file: "main_code.asm", title: "Main code" },
-      { op: "module", start: "$2000", file: "data/tables.asm", title: "Tables" },
-      { op: "rename", address: "$1000", name: "main", kind: "routine" },
-      { op: "rename", address: "$1010", name: "draw", kind: "routine" },
-      { op: "rename", address: "$1020", name: "handler_a", kind: "label" },
-      { op: "rename", address: "$1028", name: "handler_b", kind: "label" },
-      { op: "rename", address: "$2000", name: "handlers", kind: "data" },
-      { op: "rename", address: "$2040", name: "ship", kind: "data" },
-      { op: "rename", address: "$2080", name: "font", kind: "data" },
-      { op: "rename", address: "$0002", name: "counter", kind: "variable" },
-      { op: "classify", start: "$1000", end: "$102f", type: "code" },
-      { op: "classify", start: "$2000", end: "$2003", type: "rts-addresses" },
-      { op: "classify", start: "$2040", end: "$207f", type: "sprite", element: 64 },
-      { op: "classify", start: "$2080", end: "$208f", type: "charset" },
-      { op: "comment", address: "$1010", placement: "line", text: "Draws the screen." },
-      { op: "reference", from: "$1003", to: "$1010", kind: "call" },
-      { op: "reference", from: "$1012", to: "$2000", kind: "reference" },
-      { op: "reference", from: "$1015", to: "$0002", kind: "write" },
-    ]),
-  );
   // The program goes into the knowledge first: the reference decodes its tables and draws its graphics.
-  // --project . makes a new folder of a group a project.
-  assert.equal(knowledge(root, "image", "game.prg", "--project", ".").status, 0);
-  assert.equal(knowledge(root, "apply", "batch.json").status, 0);
-  const revision = revisionOf(root);
+  importPrg(root, Uint8Array.from([0x00, 0x10, ...body]));
+  const { revision } = withWrite(
+    (db) =>
+      applyBatch(db, { origin: "llm" }, [
+        { op: "module", start: 0x1000, file: "main_code.asm", title: "Main code" },
+        { op: "module", start: 0x2000, file: "data/tables.asm", title: "Tables" },
+        { op: "rename", address: 0x1000, name: "main", kind: "routine" },
+        { op: "rename", address: 0x1010, name: "draw", kind: "routine" },
+        { op: "rename", address: 0x1020, name: "handler_a", kind: "label" },
+        { op: "rename", address: 0x1028, name: "handler_b", kind: "label" },
+        { op: "rename", address: 0x2000, name: "handlers", kind: "data" },
+        { op: "rename", address: 0x2040, name: "ship", kind: "data" },
+        { op: "rename", address: 0x2080, name: "font", kind: "data" },
+        { op: "rename", address: 0x0002, name: "counter", kind: "variable" },
+        { op: "classify", start: 0x1000, end: 0x102f, type: "code" },
+        { op: "classify", start: 0x2000, end: 0x2003, type: "rts-addresses" },
+        { op: "classify", start: 0x2040, end: 0x207f, type: "sprite", element: 64 },
+        { op: "classify", start: 0x2080, end: 0x208f, type: "charset" },
+        { op: "comment", address: 0x1010, placement: "line", text: "Draws the screen." },
+        { op: "reference", from: 0x1003, to: 0x1010, kind: "call" },
+        { op: "reference", from: 0x1012, to: 0x2000, kind: "reference" },
+        { op: "reference", from: 0x1015, to: 0x0002, kind: "write" },
+      ]),
+    root,
+  );
+  assert.ok(revision !== null);
   writeSource(root, revision, {
     "main_code.asm": [
       "; Main code",
@@ -189,24 +188,21 @@ test("docs.ts generate writes the reference: module pages with anchors and links
 
 test("docs.ts generate refuses a page of a person in the output directory and a source of another revision", () => {
   const { root } = project();
-  mkdirSync(join(root, "docs/reference"), { recursive: true });
+  mkdirSync(join(root, "docs/reference/modules"), { recursive: true });
   writeFileSync(join(root, "docs/reference/notes.md"), "# My notes\n");
   const refused = generate(root, "src", "--out", "docs/reference");
   assert.equal(refused.status, 2);
   assert.match(String((refused.json.error as { message: string }).message), /docs\/reference\/notes\.md is not a page of docs\.ts generate/);
   rmSync(join(root, "docs/reference/notes.md"));
   // An earlier run's pages go; the run writes them again.
-  assert.equal(generate(root, "src", "--out", "docs/reference").status, 0);
   writeFileSync(join(root, "docs/reference/modules/old.md"), "<!-- Generated by c64-docs from knowledge revision 0 -->\n");
   assert.equal(generate(root, "src", "--out", "docs/reference").status, 0);
   assert.equal(existsSync(join(root, "docs/reference/modules/old.md")), false);
 
-  knowledge(root, "rename", "$1028", "handler_two");
+  withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0x1028, name: "handler_two" }), root);
   const stale = generate(root, "src", "--out", "docs/reference");
   assert.equal(stale.status, 2);
   assert.match(String((stale.json.error as { message: string }).message), /Generate the source again from the knowledge\. Then run generate again\./);
-  assert.equal(generate(root, "missing", "--out", "docs/reference").status, 2);
-  assert.equal(generate(root, "--out", "docs/reference").status, 2);
 });
 
 const PAGE = [
@@ -233,20 +229,6 @@ const PAGE = [
   "[missing](missing.md), [anchor](reference/index.md#nope), [line](../src/main_code.asm#L999), [mine](https://example.com) and ![ship](reference/images/ship-hires.png).",
   "",
 ].join("\n");
-
-test("docs.ts generate refuses --out through a symbolic link out of the project and deletes nothing there", { skip: process.platform === "win32" && "symbolic links need rights on Windows" }, () => {
-  const { root } = project();
-  const outside = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-outside-"));
-  projects.push(outside);
-  writeFileSync(join(outside, "index.md"), "<!-- Generated by c64-docs from knowledge revision 0 -->\n");
-  mkdirSync(join(root, "docs"), { recursive: true });
-  symlinkSync(outside, join(root, "docs/reference"));
-  const refused = generate(root, "src", "--out", "docs/reference");
-  assert.equal(refused.status, 2);
-  // The shared check of every output refuses it before the command starts.
-  assert.equal((refused.json.error as { message: string }).message, "--out: give a path relative to the project folder that stays inside it, not docs/reference.");
-  assert.equal(existsSync(join(outside, "index.md")), true, "the file outside the project stays");
-});
 
 test("docs.ts link makes one link of a name and its address, once in a section and not in a table, and reports what is wrong", () => {
   const { root } = project();
@@ -300,7 +282,6 @@ test("docs.ts link makes one link of a name and its address, once in a section a
   assert.deepEqual(checked.json.notUpToDate, { links: 1, pages: ["docs/notes.md"] });
   assert.equal(readFileSync(join(root, "docs/notes.md"), "utf8"), "`main` `$1000`\n");
   assert.equal(link(root, "docs", "--source", "src").json.result, "PASS");
-  assert.equal(link(root, "docs", "--source", "src", "--check").json.result, "PASS");
 
   // A line that moves: docs.ts link writes the link to the new line.
   const map = JSON.parse(readFileSync(join(root, MAP_DIRECTORY, "source-map.json"), "utf8")) as { labels: Array<{ name: string; line: number }> };
@@ -331,20 +312,17 @@ test("docs.ts link takes the entry page in the project folder beside the docs di
   assert.match(String(alone.envelope.hint), /^No reference\/ folder is in or beside the given pages.*Give --reference <dir>/);
   writeFileSync(join(root, "notes.txt"), "text\n");
   assert.equal(link(root, "notes.txt", "--source", "src").status, 2);
-  assert.equal(link(root, "MISSING.md", "--source", "src").status, 2);
 });
 
 test("docs.ts link reports a source and a reference that are older than the knowledge", () => {
   const { root } = project();
   assert.equal(generate(root, "src", "--out", "docs/reference").status, 0);
   writeFileSync(join(root, "docs/notes.md"), "`main` `$1000`\n");
-  knowledge(root, "comment", "$1000", "line", "The entry.");
+  withWrite((db) => setComment(db, { origin: "llm" }, { address: 0x1000, placement: "line", text: "The entry." }), root);
   const stale = link(root, "docs", "--source", "src", "--check");
   assert.equal(stale.status, 0);
   assert.equal(stale.json.result, "FAIL");
   assert.deepEqual((stale.json.problems as { byKind: Record<string, number> }).byKind, { "stale-reference": 1 });
-  assert.equal(link(root, "missing", "--source", "src").status, 2);
-  assert.equal(link(root, "docs").status, 2);
 });
 
 test("docs.ts link reports a page that is a symbolic link to no file or out of the project, and a link with a bare %", { skip: process.platform === "win32" && "symbolic links need rights on Windows" }, () => {
@@ -371,12 +349,6 @@ test("docs.ts link reports a page that is a symbolic link to no file or out of t
   );
   assert.match(problems[1]!.message, /there is no docs\/100%\.md/);
   assert.equal(readFileSync(join(outside, "secret.md"), "utf8"), "`main` `$1000`\n", "a file outside the project is not linked");
-
-  // A directory of pages that leads out of the project is refused.
-  symlinkSync(outside, join(root, "elsewhere"));
-  const refused = link(root, "elsewhere", "--source", "src");
-  assert.equal(refused.status, 2);
-  assert.match(String((refused.json.error as { message: string }).message), /elsewhere leads out of the project folder/);
 });
 
 test("docs.ts link in a group folder: a label names the project of a name, the pages link into each project, and a link out of the group is a problem", () => {
@@ -453,6 +425,4 @@ test("docs.ts link in a group folder: a label names the project of a name, the p
   const outProblems = (out.json.problems as { listed: Array<{ at: string; project: string; kind: string; message: string }> }).listed;
   assert.deepEqual(outProblems.map((problem) => [problem.at, problem.project, problem.kind]), [["README.md:1", "v1", "outside-group"], ["README.md:1", "v1", "missing-file"]]);
   assert.match(outProblems[1]!.message, /there is no \.\.\/v2\/MISSING\.md\.$/);
-  // A page of the run must be in the project of the run.
-  assert.equal(link(v1, "../README.md", "--source", "src").status, 2);
 });

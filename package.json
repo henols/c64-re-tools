@@ -34,7 +34,7 @@
   "scripts": {
     "host": "node src/host/main.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test \"src/**/*.test.ts\" \"test/**/*.test.ts\""
+    "test": "node test/run.ts"
   },
   "devDependencies": {
     "@types/node": "24.13.3",

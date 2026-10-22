@@ -1,4 +1,5 @@
-// The script contract, run in a child process so the exit status and the output are real.
+// The script contract. The envelope runs in a child process, so the exit
+// status and the output are real; the command line is parsed in this process.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -8,49 +9,18 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
-import { CONVENTIONS, listed, shellWord, takeProject, UsageError } from "./script.ts";
+import { isRefusal } from "./errors.ts";
+import { useProject } from "./project.ts";
+import { CONVENTIONS, listed, parseCall, shellWord, takeProject, UsageError } from "./script.ts";
+import { DEMO } from "./script.testkit.ts";
 
 const url = (file: string) => JSON.stringify(pathToFileURL(join(import.meta.dirname, file)).href);
 
-/** A script "demo" with the commands that the tests call. `names` knows main_loop at $0810 in c64 and $0300 in drive8. */
+/** The demo script as a child process runs it. */
 const FIXTURE = `
-import { runScript, OPTIONS, UsageError, reply, listed } from ${url("script.ts")};
-import { Refusal } from ${url("errors.ts")};
-import { WireFailure } from ${url("protocol/messages.ts")};
-import { projectRoot } from ${url("project.ts")};
-const names = (name, space) => {
-  if (name === "main_loop") return space === "drive8" ? 0x300 : 0x810;
-  throw new Refusal("not-found", name + " is not a name in the knowledge. Give a $ address, or a name that knowledge.ts symbols lists, with or without --analyzer.");
-};
-class Coded extends Error { code = "conflict"; }
-await runScript({
-  name: "demo",
-  summary: "A script for the tests.",
-  names,
-  commands: [
-    { name: "echo", summary: "Gives its subjects and options back.", subjects: [{ name: "<word>", help: "a word" }, { name: "<more>", help: "more words", optional: true, list: true }],
-      options: { out: { ...OPTIONS.out, output: "file" }, flag: { kind: "flag", help: "a flag" }, item: { kind: "text", value: "<text>", help: "an item", multiple: true }, "max-listed": OPTIONS["max-listed"] },
-      run: (call) => ({ subjects: call.subjects, out: call.string("out") ?? null, flag: call.flag("flag"), items: call.strings("item"), maxListed: call.count("max-listed") }) },
-    { name: "at", summary: "An address.", subjects: [{ name: "<address>", help: "an address" }], options: { space: OPTIONS.space, entry: OPTIONS.entry, range: OPTIONS.range },
-      run: (call) => ({ address: call.parseAddress(call.subject(0), "<address>"), entry: call.address("entry") ?? null, range: call.range("range") ?? null }) },
-    { name: "need", summary: "A required option.", options: { out: { ...OPTIONS.out, output: "folder", required: true }, frames: OPTIONS.frames }, run: (call) => ({ out: call.string("out"), frames: call.count("frames") ?? null }) },
-    { name: "bare", summary: "An --out without an output kind.", options: { out: OPTIONS.out }, run: () => ({}) },
-    { name: "check", summary: "A check.", subjects: [{ name: "<result>", help: "PASS, FAIL or INCONCLUSIVE" }], run: (call) => ({ result: call.subject(0) }) },
-    { name: "refuse", summary: "Refuses.", run: () => { throw new WireFailure("machine-unavailable", "The Host Runtime does not answer."); } },
-    { name: "missing", summary: "A missing tool.", run: () => { throw new Refusal("installation-incomplete", "ACME is not installed. Ask the user to install it."); } },
-    { name: "hinted", summary: "A refusal with its own hint.", run: () => { throw new Refusal("conflict", "Two writes disagree. This stays in the error.", { hint: "Merge them first." }); } },
-    { name: "next", summary: "A result with a next command.", run: (call) => reply({ done: true }, { hint: "Run where next.", nextAction: call.next("where", "$c000") }) },
-    { name: "cut", summary: "A cut list.", run: () => ({ items: listed([1, 2, 3], 1) }) },
-    { name: "coded", summary: "An error with a code from the list.", run: () => { throw new Coded("two writes disagree"); } },
-    { name: "usage", summary: "A usage error.", run: () => { throw new UsageError("give one file"); } },
-    { name: "crash", summary: "A fault.", run: () => { throw new RangeError("index out of range"); } },
-    { name: "later", summary: "A fault after the result.", run: () => { setTimeout(() => { throw new TypeError("late"); }, 10); return new Promise(() => {}); } },
-    { name: "reject", summary: "A rejection that nothing catches.", run: () => { Promise.reject(new Error("lost")); return new Promise(() => {}); } },
-    { name: "wrong", summary: "A shared option with another kind.", options: { out: { kind: "flag", help: "wrong" } }, run: () => ({}) },
-    { name: "where", summary: "The project.", run: () => ({ root: projectRoot() }) },
-    { name: "span", summary: "A range subject.", subjects: [{ name: "<range>", help: "a range" }, { name: "<type>", help: "a type", optional: true }], run: (call) => ({ range: call.parseRange(call.subject(0), "<range>") }) },
-  ],
-});
+import { runScript } from ${url("script.ts")};
+import { DEMO } from ${url("script.testkit.ts")};
+await runScript(DEMO);
 `;
 
 /** Runs the fixture with `args` as its command line; returns its exit status, its output, the envelope and its body as json. */
@@ -77,6 +47,25 @@ function refused(args: readonly string[], code: string, cwd?: string): { code: s
   return { ...result.envelope, message: [result.envelope.error, result.envelope.hint].filter(Boolean).join(" ") };
 }
 
+/** Parses a command line of the demo script in this process and runs the command; returns its body. */
+function parsed(args: readonly string[]): any {
+  const [name, ...rest] = args;
+  const command = DEMO.commands.find((item) => item.name === name);
+  assert.ok(command !== undefined, name);
+  return command.run(parseCall(DEMO, command, rest));
+}
+
+/** The message of the invalid-input refusal of a command line, parsed in this process. */
+function wrong(args: readonly string[]): string {
+  try {
+    parsed(args);
+  } catch (error) {
+    assert.ok(isRefusal(error) && error.code === "invalid-input", String(error));
+    return [error.message, (error as { hint?: string }).hint].filter(Boolean).join(" ");
+  }
+  assert.fail(`${args.join(" ")} is not refused`);
+}
+
 test("a result is one ok:true envelope line with exit status 0", () => {
   const result = run(["echo", "a", "b", "c", "--out", "x.json", "--flag", "--item", "one", "--item", "two", "--max-listed", "7"]);
   assert.equal(result.status, 0, result.stderr);
@@ -85,15 +74,7 @@ test("a result is one ok:true envelope line with exit status 0", () => {
 });
 
 test("an option that is not given gets its default", () => {
-  assert.deepEqual(run(["echo", "a"]).json, { subjects: ["a"], out: null, flag: false, items: [], maxListed: 50 });
-});
-
-test("a verdict is in the body: PASS, FAIL and INCONCLUSIVE all give ok:true and exit status 0", () => {
-  for (const verdict of ["PASS", "FAIL", "INCONCLUSIVE"]) {
-    const result = run(["check", verdict]);
-    assert.equal(result.status, 0, result.stdout);
-    assert.deepEqual(result.envelope, { ok: true, command: "check", body: { result: verdict } });
-  }
+  assert.deepEqual(parsed(["echo", "a"]), { subjects: ["a"], out: null, flag: false, items: [], maxListed: 50 });
 });
 
 test("no arguments and --help give the command list as a help envelope; <command> --help gives one command", () => {
@@ -163,61 +144,59 @@ test("a fault is operation-failed with no stack, also one that nothing caught", 
 test("a wrong command line is invalid-input with exit status 2", () => {
   assert.match(refused(["--flag"], "invalid-input").message, /^--flag comes before the command\. Give a command first: echo, at, need/);
   assert.match(refused(["nothing"], "invalid-input").message, /^nothing is not a command of demo\.ts\. The commands are echo, at/);
-  assert.match(refused(["echo"], "invalid-input").message, /^echo needs <word> <more>\.\.\./);
-  assert.match(refused(["at", "$c000", "$c001"], "invalid-input").message, /^at takes <address>\. "\$c001" is one too many/);
-  assert.match(refused(["echo", "a", "--bogus"], "invalid-input").message, /^echo has no option --bogus\. No command of demo\.ts takes --bogus\. Its options are --out, --flag, --item and --max-listed\./);
+  assert.match(wrong(["echo"]), /^echo needs <word> <more>\.\.\./);
+  assert.match(wrong(["at", "$c000", "$c001"]), /^at takes <address>\. "\$c001" is one too many/);
+  assert.match(wrong(["echo", "a", "--bogus"]), /^echo has no option --bogus\. No command of demo\.ts takes --bogus\. Its options are --out, --flag, --item and --max-listed\./);
   // A flag of another command: the hint names the commands that take it.
-  const other = refused(["echo", "a", "--entry", "$c000"], "invalid-input");
-  assert.equal(other.error, "echo has no option --entry.");
-  assert.match(other.hint!, /^--entry is an option of at\. Its options are --out/);
-  assert.match(refused(["echo", "a", "--frames", "3"], "invalid-input").hint!, /^--frames is an option of need\./);
-  assert.match(refused(["need"], "invalid-input").message, /^need needs --out <path>/);
-  assert.match(refused(["need", "--out", "x", "--frames", "0"], "invalid-input").message, /^--frames must be a whole number from 1 to 1000000, not "0"/);
-  assert.match(refused(["need", "--out", "x", "--frames", "$10"], "invalid-input").message, /^--frames must be a whole number/);
-  assert.match(refused(["echo", "a", "--out", "../x.json"], "invalid-input").message, /^--out: \.\.\/x\.json leads out of the project folder/);
-  assert.match(refused(["echo", "a", "--out", "/tmp/x.json"], "invalid-input").message, /^--out: \/tmp\/x\.json is not relative/);
+  assert.match(wrong(["echo", "a", "--entry", "$c000"]), /^echo has no option --entry\. --entry is an option of at\. Its options are --out/);
+  assert.match(wrong(["echo", "a", "--frames", "3"]), /^echo has no option --frames\. --frames is an option of need\./);
+  assert.match(wrong(["need"]), /^need needs --out <path>/);
+  assert.match(wrong(["need", "--out", "x", "--frames", "0"]), /^--frames must be a whole number from 1 to 1000000, not "0"/);
+  assert.match(wrong(["need", "--out", "x", "--frames", "$10"]), /^--frames must be a whole number/);
+  assert.match(wrong(["echo", "a", "--out", "../x.json"]), /^--out: \.\.\/x\.json leads out of the project folder/);
+  assert.match(wrong(["echo", "a", "--out", "/tmp/x.json"]), /^--out: \/tmp\/x\.json is not relative/);
 });
 
 test("an address is $ and 1 to 4 hex digits, or a name in the space of the command", () => {
-  assert.deepEqual(run(["at", "$fb"]).json, { address: 0xfb, entry: null, range: null });
-  assert.deepEqual(run(["at", "$C000", "--entry", "main_loop"]).json, { address: 0xc000, entry: 0x810, range: null });
-  assert.deepEqual(run(["at", "main_loop", "--space", "drive8"]).json, { address: 0x300, entry: null, range: null });
-  assert.match(refused(["at", "$12345"], "invalid-input").message, /^<address> must be \$ and 1 to 4 hex digits/);
-  assert.match(refused(["at", "c000"], "invalid-input").message, /^<address>: c000 is not a name in the knowledge\. Give a \$ address/);
-  assert.match(refused(["at", "$c000", "--entry", "12-3"], "invalid-input").message, /^--entry must be \$ and 1 to 4 hex digits/);
-  assert.match(refused(["at", "$c000", "--space", "drive9"], "invalid-input").message, /^--space must be c64, drive8, loading, or bank0 to bank255/);
+  assert.deepEqual(parsed(["at", "$fb"]), { address: 0xfb, entry: null, range: null });
+  assert.deepEqual(parsed(["at", "$C000", "--entry", "main_loop"]), { address: 0xc000, entry: 0x810, range: null });
+  assert.deepEqual(parsed(["at", "main_loop", "--space", "drive8"]), { address: 0x300, entry: null, range: null });
+  assert.match(wrong(["at", "$12345"]), /^<address> must be \$ and 1 to 4 hex digits/);
+  assert.match(wrong(["at", "c000"]), /^<address>: c000 is not a name in the knowledge\. Give a \$ address/);
+  assert.match(wrong(["at", "$c000", "--entry", "12-3"]), /^--entry must be \$ and 1 to 4 hex digits/);
+  assert.match(wrong(["at", "$c000", "--space", "drive9"]), /^--space must be c64, drive8, loading, or bank0 to bank255/);
 });
 
 test("a range is <start>-<end>, each an address, and does not end before its start", () => {
-  assert.deepEqual(run(["at", "$0", "--range", "$c000-$cfff"]).json.range, { start: 0xc000, end: 0xcfff });
-  assert.deepEqual(run(["at", "$0", "--range", "$0800-main_loop"]).json.range, { start: 0x800, end: 0x810 });
-  assert.match(refused(["at", "$0", "--range", "$c000"], "invalid-input").message, /^--range must be <start>-<end>/);
-  assert.match(refused(["at", "$0", "--range", "$cfff-$c000"], "invalid-input").message, /^--range ends at \$c000, before its start \$cfff/);
+  assert.deepEqual(parsed(["at", "$0", "--range", "$c000-$cfff"]).range, { start: 0xc000, end: 0xcfff });
+  assert.deepEqual(parsed(["at", "$0", "--range", "$0800-main_loop"]).range, { start: 0x800, end: 0x810 });
+  assert.match(wrong(["at", "$0", "--range", "$c000"]), /^--range must be <start>-<end>/);
+  assert.match(wrong(["at", "$0", "--range", "$cfff-$c000"]), /^--range ends at \$c000, before its start \$cfff/);
 });
 
 test("a range in two parts is refused with the range as one token", () => {
-  assert.deepEqual(run(["span", "$1bc2-$1bd0"]).json.range, { start: 0x1bc2, end: 0x1bd0 });
-  assert.match(refused(["span", "$1bc2", "$1bd0"], "invalid-input").message, /^<range> is one token <start>-<end>: give '\$1bc2-\$1bd0', not '\$1bc2' '\$1bd0'/);
-  assert.match(refused(["span", "$fb", "$fe", "workspace"], "invalid-input").message, /^<range> is one token <start>-<end>: give '\$fb-\$fe'/);
-  assert.match(refused(["span", "main_loop", "$0820"], "invalid-input").message, /give 'main_loop-\$0820'/);
-  assert.match(refused(["at", "$0", "--start", "$c000", "--end", "$cfff"], "invalid-input").message, /^at takes no --start or --end\. Give the range as one option: --range '\$c000-\$cfff'/);
-  assert.match(refused(["at", "$0", "--start=$c000"], "invalid-input").message, /--range '\$c000-<end>'/);
+  assert.deepEqual(parsed(["span", "$1bc2-$1bd0"]).range, { start: 0x1bc2, end: 0x1bd0 });
+  assert.match(wrong(["span", "$1bc2", "$1bd0"]), /^<range> is one token <start>-<end>: give '\$1bc2-\$1bd0', not '\$1bc2' '\$1bd0'/);
+  assert.match(wrong(["span", "$fb", "$fe", "workspace"]), /^<range> is one token <start>-<end>: give '\$fb-\$fe'/);
+  assert.match(wrong(["span", "main_loop", "$0820"]), /give 'main_loop-\$0820'/);
+  assert.match(wrong(["at", "$0", "--start", "$c000", "--end", "$cfff"]), /^at takes no --start or --end\. Give the range as one option: --range '\$c000-\$cfff'/);
+  assert.match(wrong(["at", "$0", "--start=$c000"]), /--range '\$c000-<end>'/);
   // A command without a range option keeps the message of an unknown option.
-  assert.match(refused(["echo", "a", "--start", "$c000"], "invalid-input").message, /^echo has no option --start\. No command of demo\.ts takes --start\. Its options are/);
+  assert.match(wrong(["echo", "a", "--start", "$c000"]), /^echo has no option --start\. No command of demo\.ts takes --start\. Its options are/);
   // A range option in two parts.
-  assert.match(refused(["at", "$0", "--range", "$1bc2", "$1c00"], "invalid-input").message, /^--range is one token <start>-<end>: give --range '\$1bc2-\$1c00', not '\$1bc2' '\$1c00'/);
-  assert.match(refused(["at", "$0", "--range=$1bc2", "$1c00"], "invalid-input").message, /^--range is one token <start>-<end>: give --range '\$1bc2-\$1c00'/);
+  assert.match(wrong(["at", "$0", "--range", "$1bc2", "$1c00"]), /^--range is one token <start>-<end>: give --range '\$1bc2-\$1c00', not '\$1bc2' '\$1c00'/);
+  assert.match(wrong(["at", "$0", "--range=$1bc2", "$1c00"]), /^--range is one token <start>-<end>: give --range '\$1bc2-\$1c00'/);
 });
 
 test("a wrong option word gets a message of the toolkit that names the option and what to give", () => {
   const messages = [
-    refused(["echo", "a", "--bogus"], "invalid-input").message,
-    refused(["echo", "a", "--max-listed", "-1"], "invalid-input").message,
-    refused(["echo", "a", "--item", "-x"], "invalid-input").message,
-    refused(["echo", "a", "--item"], "invalid-input").message,
-    refused(["echo", "a", "--flag=yes"], "invalid-input").message,
-    refused(["echo", "a", "-1"], "invalid-input").message,
-    refused(["check", "x", "--bogus"], "invalid-input").message,
+    wrong(["echo", "a", "--bogus"]),
+    wrong(["echo", "a", "--max-listed", "-1"]),
+    wrong(["echo", "a", "--item", "-x"]),
+    wrong(["echo", "a", "--item"]),
+    wrong(["echo", "a", "--flag=yes"]),
+    wrong(["echo", "a", "-1"]),
+    wrong(["check", "x", "--bogus"]),
   ];
   assert.match(messages[1]!, /^--max-listed must be a whole number from 0 to 100000, not "-1"/);
   assert.match(messages[2]!, /^--item needs a value: give --item <text>, not -x\. Give a value that starts with - as --item=-x/);
@@ -228,9 +207,9 @@ test("a wrong option word gets a message of the toolkit that names the option an
   // No text of Node parseArgs, and no unbalanced quote.
   for (const message of messages) assert.doesNotMatch(message, /Unknown option|positional argument|ambiguous|Did you forget|'-- "/);
   // A value with - is taken in the form --name=<value>, and a lone - is a subject.
-  assert.deepEqual(run(["echo", "a", "--item=-x", "-"]).json.items, ["-x"]);
-  assert.deepEqual(run(["echo", "a", "-"]).json.subjects, ["a", "-"]);
-  assert.deepEqual(run(["echo", "a", "--", "-1"]).json.subjects, ["a", "-1"]);
+  assert.deepEqual(parsed(["echo", "a", "--item=-x", "-"]).items, ["-x"]);
+  assert.deepEqual(parsed(["echo", "a", "-"]).subjects, ["a", "-"]);
+  assert.deepEqual(parsed(["echo", "a", "--", "-1"]).subjects, ["a", "-1"]);
 });
 
 test("takeProject takes --project in both forms out of the command line, up to --", () => {
@@ -273,12 +252,8 @@ test("an output path is refused before the command runs: in the knowledge, a fol
     mkdirSync(join(sandbox, "results"));
     writeFileSync(join(sandbox, ".c64-re-tools", "knowledge", "symbols.jsonl"), "keep\n");
     writeFileSync(join(sandbox, "README.md"), "x");
-    const error = (args: string[]) => {
-      const result = run(args, sandbox);
-      assert.equal(result.status, 2, result.stdout);
-      assert.equal(result.envelope.code, "invalid-input", result.stdout);
-      return [result.envelope.error, result.envelope.hint].filter((part) => part !== undefined && !/^To get the usage/.test(part)).join(" ").replace(/ To get the usage, run .*$/, "");
-    };
+    useProject(sandbox);
+    const error = wrong;
     assert.match(error(["echo", "a", "--out", ".c64-re-tools/knowledge/symbols.jsonl"]), /^--out: \.c64-re-tools\/knowledge\/symbols\.jsonl is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the commands that change the project knowledge write it/);
     assert.match(error(["echo", "a", "--out", "./.C64-RE-TOOLS/Knowledge/new.jsonl"]), /is in \.c64-re-tools\/knowledge\//);
     assert.equal(
@@ -295,8 +270,8 @@ test("an output path is refused before the command runs: in the knowledge, a fol
       assert.match(error(["echo", "a", "--out", "linked/symbols.jsonl"]), /is in \.c64-re-tools\/knowledge\//);
     }
     assert.equal(readFileSync(join(sandbox, ".c64-re-tools", "knowledge", "symbols.jsonl"), "utf8"), "keep\n");
-    assert.deepEqual(run(["echo", "a", "--out", ".c64-re-tools/local/scratch.json"], sandbox).json.out, ".c64-re-tools/local/scratch.json");
-    assert.deepEqual(run(["need", "--out", "results/new/deeper"], sandbox).json.out, "results/new/deeper");
+    assert.deepEqual(parsed(["echo", "a", "--out", ".c64-re-tools/local/scratch.json"]).out, ".c64-re-tools/local/scratch.json");
+    assert.deepEqual(parsed(["need", "--out", "results/new/deeper"]).out, "results/new/deeper");
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }

@@ -3,12 +3,13 @@
 // declaration. An installed skill runs without this repository.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { mcpServerFor } from "../../distribution/package.ts";
 import { channelOf, PACKAGE } from "../../src/package.ts";
@@ -87,7 +88,7 @@ test("a module named in single or double quotes is in the closure", () => {
   );
 });
 
-test("every installed script runs without the repository", () => {
+test("every installed script runs without the repository", async () => {
   const skills = join(scratch, "installed");
   for (const skill of plugin.skills!) {
     for (const resource of skill.resources ?? []) {
@@ -101,15 +102,17 @@ test("every installed script runs without the repository", () => {
   mkdirSync(project);
   // A project package.json that would make bare .ts files CommonJS; the skill's own package.json wins.
   writeFileSync(join(project, "package.json"), '{ "type": "commonjs" }\n');
-  for (const skill of plugin.skills!) {
-    for (const resource of (skill.resources ?? []).filter((resource) => resource.executable === true)) {
+  const scripts = plugin.skills!.flatMap((skill) => (skill.resources ?? []).filter((resource) => resource.executable === true).map((resource) => join(skills, skill.name, resource.path)));
+  await Promise.all(
+    scripts.map(async (script) => {
       // An unknown option loads every module of the script and stops at its refusal.
-      const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill.name, resource.path), "--no-such-option"], { cwd: project, encoding: "utf8" });
-      const output = run.stdout + run.stderr;
-      assert.doesNotMatch(output, /ERR_MODULE_NOT_FOUND|ERR_PACKAGE_IMPORT_NOT_DEFINED|SyntaxError|ERR_UNKNOWN_FILE_EXTENSION/, `${skill.name}/${resource.path}: ${output}`);
-      assert.notEqual(run.status, 0, `${skill.name}/${resource.path} refuses an unknown option`);
-    }
-  }
+      const run = await promisify(execFile)(process.execPath, [...process.execArgv, script, "--no-such-option"], { cwd: project, encoding: "utf8" }).then(
+        () => assert.fail(`${script} refuses an unknown option`),
+        (error: { stdout: string; stderr: string }) => error,
+      );
+      assert.doesNotMatch(run.stdout + run.stderr, /ERR_MODULE_NOT_FOUND|ERR_PACKAGE_IMPORT_NOT_DEFINED|SyntaxError|ERR_UNKNOWN_FILE_EXTENSION/, `${script}: ${run.stdout}${run.stderr}`);
+    }),
+  );
   const memmap = spawnSync(process.execPath, [...process.execArgv, join(skills, "c64-memory-map", "scripts", "memory-map.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
   assert.equal(memmap.status, 0, memmap.stderr);
   assert.equal((JSON.parse(memmap.stdout) as { body: { addresses: Array<{ name: string }> } }).body.addresses[0]?.name, "EXTCOL");

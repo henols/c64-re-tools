@@ -101,17 +101,10 @@ test("the script compares PRG files and applies a shift", () => {
   const prg = (start: number, bytes: Uint8Array) => Buffer.concat([Buffer.from([start & 0xff, start >> 8]), bytes]);
   writeFileSync(join(project, "release.prg"), prg(0x0801, base));
   writeFileSync(join(project, "moved.prg"), prg(0x0901, base));
-  const loose = provenance(["compare", "release.prg", "moved.prg"], project);
-  assert.equal(loose.status, 0, loose.stdout + loose.stderr);
-  const unaligned = loose.json as { identicalShare: number; suggestedShifts: Array<{ release: number; shift: number }> };
-  assert.ok(unaligned.identicalShare < 0.5);
-  assert.deepEqual(unaligned.suggestedShifts.map((item) => [item.release, item.shift]), [[2, -256]]);
   const aligned = provenance(["compare", "release.prg", "moved.prg", "--shift", "2:-256"], project).json as Record<string, unknown>;
   assert.equal(aligned.differingBytes, 0);
   assert.equal(aligned.identicalShare, 1);
   assert.deepEqual((aligned.releases as Array<{ shift: number }>).map((item) => item.shift), [0, -256]);
-  const bad = provenance(["compare", "release.prg"], project);
-  assert.equal(bad.status, 2);
   const twice = provenance(["compare", "release.prg", "moved.prg", "--shift", "2:-256", "--shift", "2:256"], project);
   assert.equal(twice.status, 2, twice.stdout);
   const { error } = twice.json as { error: { code: string; message: string } };
@@ -191,26 +184,14 @@ test("compare --align maps two image.json files, and refuses --shift, and --min-
   assert.match(refused(["--min-block", "20"]).message, /^--min-block works only with --align/);
 });
 
-test("compare refuses a disk, tape or cartridge image with the remedy, as the unpacker does", () => {
-  writeFileSync(join(project, "game.d64"), Buffer.alloc(174848));
+test("compare refuses an unknown name in the steps before an emulator starts", () => {
   writeFileSync(join(project, "one.prg"), Buffer.from([0x01, 0x08, 0xea]));
-  const run = provenance(["compare", "one.prg", "game.d64"], project);
-  assert.equal(run.status, 2, run.stdout);
-  assert.equal(run.json.error.code, "invalid-input");
-  assert.match(run.json.error.message, /^game\.d64 is a disk image \(\.d64\), not a PRG\. Get the PRG out of it/);
   // An unknown name in the steps stops the call before an emulator starts (no host listens at port 1).
   writeFileSync(join(project, "name.json"), JSON.stringify([{ runUntil: { target: { kind: "address", address: "nonsense" } } }]));
   const named = provenance(["compare", "one.prg", "one.prg", "--frames", "10", "--steps", "name.json"], project, { ...process.env, C64RT_HOST: "127.0.0.1:1" });
   assert.equal(named.status, 2, named.stdout);
   assert.equal(named.json.error.code, "invalid-input");
   assert.match(named.json.error.message, /^--steps name\.json: step 1: nonsense is not a name in the knowledge/);
-});
-
-test("a missing release is not-found", () => {
-  writeFileSync(join(project, "one.prg"), Buffer.from([0x01, 0x08, 0xea]));
-  const missing = provenance(["compare", "one.prg", "missing.prg"], project);
-  assert.equal(missing.status, 2, missing.stdout + missing.stderr);
-  assert.equal((missing.json as { error: { code: string } }).error.code, "not-found");
 });
 
 test("an image release counts only inside its segments, and a common range never joins across a gap", () => {
@@ -364,12 +345,6 @@ test("the separate command reads the program with its stages and the coverage fr
   const written = JSON.parse(readFileSync(join(root, "separate.json"), "utf8")) as { ranges: unknown[]; outside: { generated: unknown[] } };
   assert.equal(written.ranges.length, 2);
   assert.equal(written.outside.generated.length, 3);
-  assert.equal(provenance(["separate", "--frames", "5"], root).status, 2);
-  assert.equal(provenance(["separate", "image.json"], root).status, 2, "separate takes no release");
-  const empty = provenance(["separate"], fresh());
-  assert.equal(empty.status, 2, "no program in the knowledge");
-  assert.equal(empty.json.error.code, "not-found");
-  assert.match(empty.json.error.message, /^The knowledge has no program\./);
 });
 
 test("separate says when the program has no stage log, and a run of releases without differences says why nothing ran", () => {

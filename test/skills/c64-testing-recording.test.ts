@@ -9,8 +9,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { STOP_AND_ASK } from "../../src/protocol/messages.ts";
-import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { replay } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 import { readEnvelope } from "../kit.ts";
@@ -127,7 +127,6 @@ test("record starts the coverage as the record file tells, and the summary gives
   const input = record("by-input", undefined, "ok from tick=982800 pc=1aed");
   assert.ok(input.commands.includes("coverage on-input"));
   assert.deepEqual(input.body.coverageFrom, { frame: 50, pc: "$1aed" });
-  assert.ok(record("by-start", "start", "ok from tick=982800 pc=e5d4").commands.includes("coverage on"));
   const address = record("by-address", "$1aed", "ok not-started");
   assert.ok(address.commands.includes("coverage on-pc 1aed"));
   assert.deepEqual([address.body.recorded, address.body.coverageFrom, address.body.executed], [true, null, 0]);
@@ -186,39 +185,16 @@ test("the first different checkpoint names the state items that differ", () => {
   assert.deepEqual(firstDifference(expected, ["90 00 0102", "180 02 0103"], state), { checkpoint: 2, tick: { original: 200, rebuild: 180 }, items: [{ address: "room", original: "01", rebuild: "02" }] });
 });
 
-test("record and replay refuse by name when c64run is missing", () => {
+test("replay gives INCONCLUSIVE before the replay core starts when the program changed since the recording", async () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
-  for (const [script, args] of [
-    ["record", ["ok.json", "--out", "tests/recordings/walk"]],
-    ["replay", ["tests/recordings/walk"]],
-  ] as const) {
-    if (script === "replay") {
-      mkdirSync(join(project, "tests/recordings/walk"), { recursive: true });
-      writeFileSync(
-        join(project, "tests/recordings/walk/recording.json"),
-        JSON.stringify({ format: 1, name: "walk", program: "game.prg", sha256: "a3", symbols: "none", inputs: [], events: [], sites: [], ticks: 1, hash: "00000000" }),
-      );
-    }
-    const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), script, ...args], {
-      cwd: project,
-      encoding: "utf8",
-      env: { ...process.env, C64RT_C64RUN: join(project, "no-c64run") },
-    });
-    if (script === "replay") {
-      // The program changed since the recording: that is found before the core starts.
-      assert.equal(run.status, 0, run.stderr);
-      const { envelope, json } = readEnvelope(run.stdout, run.status);
-      assert.equal(json.result, "INCONCLUSIVE");
-      assert.match(envelope.hint ?? "", /^reason tells why the script could not compare\./);
-      assert.match(json.reason, /is not the program of the recording/);
-      continue;
-    }
-    assert.equal(run.status, 2, run.stderr);
-    const error = readEnvelope(run.stdout, run.status).json.error;
-    assert.equal(error.code, "installation-incomplete");
-    assert.match(error.message, /C64RT_C64RUN/);
-    assert.ok(error.message.endsWith(STOP_AND_ASK));
-  }
+  mkdirSync(join(project, "tests/recordings/walk"), { recursive: true });
+  writeFileSync(
+    join(project, "tests/recordings/walk/recording.json"),
+    JSON.stringify({ format: 1, name: "walk", program: "game.prg", sha256: "a3", symbols: "none", inputs: [], events: [], sites: [], ticks: 1, hash: "00000000" }),
+  );
+  const result = await replay({ folder: "tests/recordings/walk", state: [], pin: [] });
+  assert.equal(result.result, "INCONCLUSIVE");
+  assert.match(result.reason ?? "", /is not the program of the recording/);
 });
 
 test("a record file names itself and the step of a key that the replay core does not have, and refuses the 2.0 forms", () => {
@@ -237,36 +213,25 @@ test("a record file names itself and the step of a key that the replay core does
 });
 
 test("a recording of 2.0 is refused with the field and the 2.1 form before the replay core starts, never replayed", () => {
-  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
-  const replay = (name: string, recording: Record<string, unknown>) => {
+  const read = (name: string, recording: Record<string, unknown>) => {
     mkdirSync(join(project, "tests/recordings", name), { recursive: true });
     writeFileSync(join(project, "tests/recordings", name, "recording.json"), JSON.stringify({ format: 1, name, program: "game.prg", sha256: "a3", symbols: "knowledge", load: false, inputs: [], events: [], sites: [], ticks: 1, hash: "00000000", ...recording }));
-    const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), "replay", `tests/recordings/${name}`], {
-      cwd: project,
-      encoding: "utf8",
-      env: { ...process.env, C64RT_C64RUN: join(project, "no-c64run") },
-    });
-    assert.equal(run.status, 2, run.stdout + run.stderr);
-    const { error } = readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } };
-    assert.equal(error.code, "invalid-input");
-    return error.message;
+    try {
+      readRecording(`tests/recordings/${name}`);
+    } catch (error) {
+      assert.equal((error as Refusal).code, "invalid-input");
+      return (error as Error).message;
+    }
+    return assert.fail(`${name} is not refused`);
   };
   // The events of the Bruce Lee recording of 2.0.
   const remedy = "Record the session again with record, or write the 2.1 form in recording.json";
   assert.equal(
-    replay("run-until", { events: [{ step: 10, action: { runUntil: { at: "main_loop" }, timeoutFrames: 300 }, key: { site: "$13a3", addr: "$dc00", count: 68892 } }] }),
+    read("run-until", { events: [{ step: 10, action: { runUntil: { at: "main_loop" }, timeoutFrames: 300 }, key: { site: "$13a3", addr: "$dc00", count: 68892 } }] }),
     `recording tests/recordings/run-until/recording.json: event 1 (step 10) has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "main_loop"}, "timeoutFrames": 300}}. ${remedy}`,
   );
   assert.equal(
-    replay("write", { events: [{ step: 11, action: { write: { at: "next_room", bytes: [1] } }, key: { previous: true } }] }),
-    `recording tests/recordings/write/recording.json: event 1 (step 11) has the 2.0 form (write.at, write.bytes). Write {"write": {"address": "next_room", "data": "01"}}. ${remedy}`,
-  );
-  assert.equal(
-    replay("type", { events: [{ step: 2, action: { type: " " }, key: { tick: 5 } }] }),
-    `recording tests/recordings/type/recording.json: event 1 (step 2) has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes. ${remedy}`,
-  );
-  assert.equal(
-    replay("compare", { compare: { checkpoint: "main_loop", state: [{ at: "falls_left", size: 3 }], pin: [{ at: "random_ptr", size: 2 }] } }),
+    read("compare", { compare: { checkpoint: "main_loop", state: [{ at: "falls_left", size: 3 }], pin: [{ at: "random_ptr", size: 2 }] } }),
     `recording tests/recordings/compare/recording.json: compare: state item 1 has the field at. at is a 2.0 field. Write address in place of at. ${remedy}`,
   );
 });

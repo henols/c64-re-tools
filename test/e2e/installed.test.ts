@@ -7,8 +7,8 @@
 //   VICE → skill scripts, a local one and one that runs ACME, from their
 //   installed location.
 // Opt-in with C64RT_LIVE_VICE; needs npm registry access for the
-// dependencies, and ACME for the ACME test. A private npm cache keeps
-// ~/.npm untouched.
+// dependencies, and ACME for the ACME test. An npm cache of its own under
+// node_modules/.cache keeps ~/.npm untouched, and the next run downloads less.
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -41,6 +41,7 @@ const root = resolve(import.meta.dirname, "../..");
 // npm and npx are .cmd shims on Windows, which spawn runs only through a shell.
 const windows = process.platform === "win32";
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-installed-"));
+const npmCache = join(root, "node_modules", ".cache", "installed-test-npm");
 let host: ChildProcess | undefined;
 /** How long the Host Runtime gets to stop after the stop signal. */
 const HOST_STOP_MS = 30_000;
@@ -63,11 +64,13 @@ after(async () => {
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
+    // npx installs the tarball of each run into _npx again; only the downloads are worth keeping.
+    rmSync(join(npmCache, "_npx"), { recursive: true, force: true });
   }
 });
 
-// npx and npm with a cache of their own, in the scratch directory.
-const npmEnv = () => ({ ...process.env, npm_config_cache: join(scratch, "npm-cache"), npm_config_audit: "false", npm_config_fund: "false", npm_config_update_notifier: "false" });
+// npx and npm with a cache of their own.
+const npmEnv = () => ({ ...process.env, npm_config_cache: npmCache, npm_config_audit: "false", npm_config_fund: "false", npm_config_update_notifier: "false" });
 const sh = (command: string, args: string[], cwd: string) => {
   const run = spawnSync(command, args, { cwd, encoding: "utf8", env: npmEnv(), shell: windows && (command === "npm" || command === "npx") });
   assert.equal(run.status, 0, `${command} ${args.join(" ")}\n${run.stdout}\n${run.stderr}`);

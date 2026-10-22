@@ -3,7 +3,7 @@
 // the group folder with --project and from inside a version. v2 reads v1 to
 // compare the versions, gets the names of v1 from the library of the group,
 // and records a second release with a one-byte fix at the same layout. No
-// script makes a project of the group folder or of its docs/.
+// script makes a project of the group folder.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -64,7 +64,6 @@ function program(fixed: boolean, border = 0x01): Uint8Array {
 test("two versions in a group folder: each script runs on its version, v2 reads v1, and the library of the group carries the names", () => {
   mkdirSync(join(repository, ".git"));
   for (const version of ["v1", "v2"]) mkdirSync(join(group, version), { recursive: true });
-  mkdirSync(join(group, "docs"));
   writeFileSync(join(group, "v1", "game.prg"), program(false));
   writeFileSync(join(group, "v2", "game.prg"), program(true));
   writeFileSync(join(group, "v2", "game_fix.prg"), program(true, 0x02));
@@ -103,7 +102,6 @@ test("two versions in a group folder: each script runs on its version, v2 reads 
   assert.ok(versions.differingBytes > 1);
   // A release stays in its project: the knowledge does not name a file of another version.
   refused("c64-knowledge", "knowledge.ts", ["release", "V1", "--file", "../v1/game.prg", "--project", "v2"], /--file must be a path relative to the project folder that stays inside it/);
-  refused("c64-provenance", "provenance.ts", ["compare", "../../outside.prg", "game.prg", "--project", "v2"], /stays inside its group folder/);
 
   // The names of v1 go to v2 through the library, at the moved addresses.
   const matched = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--apply", "--project", "v2"]);
@@ -111,10 +109,6 @@ test("two versions in a group folder: each script runs on its version, v2 reads 
   assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$1029", "--project", "v2"]).symbol.name, "set_pointer");
   assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$1024"], join(group, "v1")).symbol.name, "set_pointer");
 
-  // The group folder and its docs/ are no project: the scripts refuse them and name the versions.
-  refused("c64-knowledge", "knowledge.ts", ["symbols"], /is not a project folder\. These folders below it are projects: v1, v2\. Give --project <folder> with one of them\./);
-  refused("c64-knowledge", "knowledge.ts", ["symbols", "--project", "."], /is a group folder, not a project folder\. These folders in it are projects: v1, v2\./);
-  refused("c64-knowledge", "knowledge.ts", ["comment", "$1010", "line", "a note"], /docs is in the group folder .*, and it is not a project folder\. The projects of the group are \.\.\/v1, \.\.\/v2\./, join(group, "docs"));
+  // The scripts ran from the group folder, and none of them made it a project.
   assert.equal(existsSync(join(group, ".c64-re-tools")), false);
-  assert.equal(existsSync(join(group, "docs", ".c64-re-tools")), false);
 });

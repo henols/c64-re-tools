@@ -33,7 +33,7 @@ Node ≥ 24 and pnpm (installed by hand; `packageManager` pins the version) are 
 ```
 pnpm install --frozen-lockfile
 pnpm typecheck   # tsc over src/, skills/, distribution/ and test/; nothing is emitted
-pnpm test        # node --test "src/**/*.test.ts" "test/**/*.test.ts"
+pnpm test        # node --test over src/ and test/ (or the files given), with a shared compile cache
 pnpm host        # the Host Runtime from this checkout, in the foreground
                  # --log-console / --log-dir <dir>: log each request and tool run (off by default)
 ```
@@ -48,9 +48,12 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
 
 - `node --test` exits 0 for a missing or typo'd file; `ls` it first.
 - Don't pipe `pnpm test` into `tail`/`head`: that reports the pipe's exit code.
-- Live suites: `C64RT_LIVE_VICE=/usr/bin/x64sc`; every VICE runs headless. The
-  c64_window tests open real windows and also need `C64RT_LIVE_WINDOW=1`.
-- Real VICE is `/usr/bin/x64sc`, by absolute path. `-default` must precede
+- Live suites: the full suite on VICE 3.10, `C64RT_LIVE_VICE=/usr/local/bin/x64sc pnpm test`.
+  VICE 3.9 runs only the tests of what a VICE flaw breaks:
+  `C64RT_LIVE_VICE=/usr/bin/x64sc pnpm test $(grep -rl viceFlaws test/integration)`.
+  Every VICE runs headless. The c64_window tests open real windows and also
+  need `C64RT_LIVE_WINDOW=1`.
+- Real VICE is given by absolute path. `-default` must precede
   `-binarymonitor`, and autostart needs `-autostartprgmode 1`.
 - `/tmp` is a RAM tmpfs here; tests that leak scratch dirs fill it.
 

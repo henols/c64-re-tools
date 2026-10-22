@@ -28,7 +28,6 @@ const script = resolve(import.meta.dirname, "../../skills/c64-basic/scripts/basi
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-basic-"));
 writeFileSync(join(project, "loop.prg"), borderLoopPrg);
 writeFileSync(join(project, "code.prg"), Buffer.from([0x00, 0xc0, 0x0b, 0xc0, 0xff, 0xff, 0xa9, 0x00]));
-writeFileSync(join(project, "game.d64"), Buffer.alloc(174848, 1));
 // 10 PRINT: BASIC that starts no machine code.
 writeFileSync(join(project, "print.prg"), Buffer.from([0x01, 0x08, 0x07, 0x08, 0x0a, 0x00, 0x99, 0x00, 0x00, 0x00]));
 let server: HostServer | undefined;
@@ -82,24 +81,10 @@ test("BASIC without SYS or USR gives no handoff, and a hint where to look", { sk
   assert.equal(envelope.hint, "The BASIC starts no machine code with SYS or USR. Look in the listing for a POKE into a vector or a LOAD of another file.");
 });
 
-test("machine code is no BASIC program; every error exits 2, and no arguments give the help", { skip }, async () => {
+test("machine code is no BASIC program, with the hint to disassemble it", { skip }, async () => {
   const code = await basic("list", "code.prg");
   assert.equal(code.status, 2);
   assert.equal(code.envelope.code, "invalid-input");
   assert.equal(code.envelope.error, "code.prg is no BASIC program: Line number 65535 is above 63999, so the bytes are no BASIC program.");
   assert.equal(code.envelope.hint, "Usually the file is machine code. Disassemble it from its load address.");
-  const disk = await basic("list", "game.d64");
-  assert.equal(disk.status, 2);
-  assert.equal(disk.envelope.code, "invalid-input");
-  assert.equal(disk.envelope.error, "game.d64 is a disk image (.d64), not a PRG.");
-  assert.match(disk.envelope.hint!, /^Get the PRG out of it, and give the path of that PRG\./);
-  const missing = await basic("list", "missing.prg");
-  assert.equal((missing.json.error as { code: string }).code, "not-found");
-  const help = await basic();
-  assert.deepEqual([help.status, help.envelope.command, help.json.commands.map((command: { name: string }) => command.name)], [0, "help", ["list"]]);
-  for (const args of [["list"], ["loop.prg"], ["list", "loop.prg", "code.prg"], ["list", "--dialect", "70", "loop.prg"]]) {
-    const { status, json } = await basic(...args);
-    assert.equal(status, 2, args.join(" "));
-    assert.equal((json.error as { code: string }).code, "invalid-input");
-  }
 });

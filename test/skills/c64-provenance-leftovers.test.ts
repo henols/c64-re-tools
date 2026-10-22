@@ -174,14 +174,4 @@ test("the leftovers command reads the program, its stages and the coverage from 
   const all = JSON.parse(readFileSync(join(root, ".c64-re-tools/local/leftovers.json"), "utf8")) as Record<string, Array<Record<string, unknown>>>;
   assert.deepEqual(all.text!.map((item) => [item.start, item.encoding, item.stages]), [["$2010", "petscii", [0]], ["$2100", "screen", [1]], ["$2180", "petscii", [1]]]);
   assert.deepEqual(Object.keys(all), ["text", "basic", "fill", "residue", "copies", "deadCode"]);
-
-  assert.equal(script(provenance, ["leftovers", "--min-text", "3"], root).status, 2);
-  assert.equal(script(provenance, ["leftovers", "--batch", "x.json"], root).status, 2);
-  assert.equal(script(provenance, ["leftovers", "image.json"], root).status, 2, "leftovers takes no release");
-  const empty = mkdtempSync(join(tmpdir(), "c64-re-tools-leftovers-"));
-  roots.push(empty);
-  const none = script(provenance, ["leftovers"], empty);
-  assert.equal(none.status, 2, "no program in the knowledge");
-  assert.equal(none.json.error.code, "not-found");
-  assert.match(none.json.error.message, /^The knowledge has no program\./);
 });

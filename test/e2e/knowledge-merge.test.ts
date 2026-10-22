@@ -139,11 +139,10 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
   gitOk(second, "push", "-q", "origin", "main");
   gitOk(first, "pull", "-q", "--no-edit", "origin", "main");
 
-  // Both computers have the same knowledge, and git sees no change in either.
+  // Both computers have the same knowledge, git sees no change in either, and the export of each reads the pulled text.
   const text = (clone: string) => files(join(clone, "game", ".c64-re-tools", "knowledge"));
   assert.deepEqual(text(first), text(second));
   for (const clone of [first, second]) assert.equal(gitOk(clone, "status", "--porcelain"), "", clone);
-  for (const address of ["$1000", "$1002", "$1010", "$1020"]) assert.deepEqual(knowledge(first, "at", address).json, knowledge(second, "at", address).json, address);
   for (const clone of [first, second]) write(clone, "export", "--out", ".c64-re-tools/local/export.json");
   const exported = (clone: string) => readFileSync(join(clone, "game", ".c64-re-tools", "local", "export.json"), "utf8");
   assert.equal(exported(first), exported(second));

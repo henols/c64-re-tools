@@ -30,6 +30,8 @@ jobs:
     name: test (ubuntu-latest)
     if: github.ref_type != 'tag'
     runs-on: ubuntu-latest
+    # The tests take a few minutes; a test that hangs fails the run here, not after six hours.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -129,7 +131,7 @@ jobs:
             echo "CI did not run on main for $GITHUB_SHA. Tag the commit that a push to main tested." >&2
             exit 1
           fi
-          if ! gh run watch "$run" --exit-status --interval 30 > /dev/null; then
+          if ! gh run watch "$run" --exit-status --interval 10 > /dev/null; then
             echo "CI run $run on main for $GITHUB_SHA did not pass. Fix main, then tag the new commit." >&2
             exit 1
           fi

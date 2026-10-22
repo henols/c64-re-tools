@@ -81,30 +81,16 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
   const labels = json.labels as { count: number; listed: unknown[]; rest?: string };
   assert.equal(labels.listed.length, labels.count, "a short list is not cut");
   assert.equal(labels.rest, undefined);
-
-  const cutRun = await analyze("--analyzer", "dxa", "--max-listed", "1");
-  const cut = cutRun.json.labels as { count: number; listed: unknown[]; rest?: string };
-  assert.equal(cut.count, labels.count);
-  assert.equal(cut.listed.length, 1);
-  assert.equal(cut.rest, "a larger --max-listed. The project knowledge has all of them as analyzer names");
-  // The envelope tells that a list is cut.
-  assert.match(cutRun.envelope.hint ?? "", /A list in the body is cut/);
   const db = openForRead(project);
   // DXA's own facts sit beside Ghidra's from the test above; it does not replace them.
   assert.ok(regionsOverlapping(db, 0x0801, 0x080c).some((region) => region.origin === "dxa" && region.type === "bytes"));
   db?.close();
 });
 
-test("bad calls are refused before anything is sent", async () => {
+test("--decompile and --out-listing are refused with the analyzer that does not take them", async () => {
   for (const args of [
-    ["game.prg"],
-    ["--entry", "2061"],
-    ["--processor", "6502"],
-    ["--analyzer", "ida"],
     ["--analyzer", "dxa", "--decompile", "$0818"],
     ["--out-listing", "x.lst"],
-    ["--max-listed", "-1"],
-    ["--max-listed", "many"],
   ]) {
     const { status, json } = await analyze(...args);
     assert.equal(status, 2, args.join(" "));

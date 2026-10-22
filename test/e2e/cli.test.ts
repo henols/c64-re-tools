@@ -9,7 +9,6 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { mcpServerFor } from "../../distribution/package.ts";
-import { readEnvelope } from "../kit.ts";
 
 const cli = resolve(import.meta.dirname, "../../src/cli/main.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-cli-"));
@@ -23,10 +22,6 @@ test("install puts the skills and the MCP declaration into the project; uninstal
   assert.ok(existsSync(join(project, ".claude", "skills", "emulator", "SKILL.md")));
   const disk = join(project, ".claude", "skills", "c64-disk");
   for (const file of ["scripts/disk.ts", "src/host-client/tools.ts", "package.json"]) assert.ok(existsSync(join(disk, file)), file);
-  // The installed TypeScript script runs from the project, outside this repository.
-  const memmap = spawnSync(process.execPath, [...process.execArgv, join(project, ".claude", "skills", "c64-memory-map", "scripts", "memory-map.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
-  assert.equal(memmap.status, 0, memmap.stderr);
-  assert.equal(readEnvelope(memmap.stdout, memmap.status).json.addresses[0]?.name, "EXTCOL");
   assert.deepEqual(JSON.parse(readFileSync(join(project, ".mcp.json"), "utf8")), { mcpServers: { "c64-re-tools": mcpServerFor(process.platform) } });
 
   assert.equal(run("update", "--target", "claude").status, 0, "an update installs again over the old files");

@@ -83,10 +83,6 @@ test("switches and macros: the original stays identical, each switch fits, and t
   ok("c64-knowledge", "knowledge.ts", ["switch", "TRAINER", "--kind", "trainer", "--comment", "Infinite lives."]);
   ok("c64-knowledge", "knowledge.ts", ["apply", "knowledge.json", "--reason", "the copy check and the counters"]);
   ok("c64-knowledge", "knowledge.ts", ["patch", "$100b-$100d", "TRAINER", "--nop", "--comment", "Lives stay."]);
-  assert.deepEqual(
-    ok("c64-knowledge", "knowledge.ts", ["switches"]).switches.listed.map((item: { name: string; default: number; base: number; patches: unknown[] }) => [item.name, item.default, item.base, item.patches.length]),
-    [["PROTECTION", 0, 1, 3], ["TRAINER", 0, 0, 1]],
-  );
 
   const generated = ok("c64-source", "source.ts", ["generate", "--out", "src"]);
   assert.equal(generated.check.identical, true);

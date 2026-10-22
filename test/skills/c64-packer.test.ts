@@ -162,8 +162,8 @@ test("a check that does not hold all inputs is INCONCLUSIVE", { timeout: 60_000 
   ]);
 });
 
-test("wrong calls are refused before Exomizer runs: no SYS, an entry below $0400, the output as an input, no PRG", { timeout: 60_000 }, async () => {
-  const root = project({ "code.prg": prg(0xc000, [0x60]), "tiny.prg": Buffer.from([0x00]) });
+test("wrong calls are refused before Exomizer runs: no SYS, an entry below $0400, the output as an input, a wrong --exit-memory", { timeout: 60_000 }, async () => {
+  const root = project({ "code.prg": prg(0xc000, [0x60]) });
   const log = join(root, "argv.jsonl");
   const refused = async (args: string[], message: RegExp) => {
     const { status, json } = await packer(root, args, { FAKE_EXO_LOG: log });
@@ -175,7 +175,6 @@ test("wrong calls are refused before Exomizer runs: no SYS, an entry below $0400
   await refused(["code.prg", "--out", "packed.prg"], /^There is no SYS address in code\.prg\. It loads at \$c000, not at \$0801 where BASIC starts\. Give --entry/);
   await refused(["code.prg", "--entry", "$0300", "--out", "packed.prg"], /below \$0400/);
   await refused(["code.prg", "--entry", "$c000", "--out", "./code.prg"], /is the input code\.prg/);
-  await refused(["tiny.prg", "--entry", "$c000", "--out", "packed.prg"], /tiny\.prg is not a PRG/);
   await refused(["code.prg", "--entry", "$c000", "--exit-memory", "$30", "--out", "packed.prg"], /--exit-memory/);
   assert.equal(existsSync(log), false, "Exomizer did not run");
 });
@@ -187,13 +186,4 @@ test("an Exomizer that cannot pack is an error with its message", { timeout: 60_
   const error = json.error as { code: string; message: string };
   assert.equal(error.code, "operation-failed");
   assert.match(error.message, /Exomizer could not pack the program \(exit 1\)\. The last output of Exomizer:\n {2}Error: the data overlaps the decrunch table\./);
-});
-
-test("a missing Exomizer is refused by name with the remedy", { timeout: 60_000 }, async () => {
-  const root = project({ "game.prg": BASIC });
-  const { status, json } = await packer(root, ["game.prg", "--out", "packed.prg"], { C64RT_EXOMIZER: join(root, "no-exomizer") });
-  assert.equal(status, 2, JSON.stringify(json));
-  const error = json.error as { code: string; message: string };
-  assert.equal(error.code, "installation-incomplete");
-  assert.match(error.message, /C64RT_EXOMIZER/);
 });

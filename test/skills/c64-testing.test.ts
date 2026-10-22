@@ -12,11 +12,14 @@ import { openForWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
 import type { ViceSessionClient } from "../../src/host-client/vice-session.ts";
 import { changedRanges, diffStates } from "../../skills/c64-testing/scripts/lib/diff.ts";
-import { Refusal } from "../../src/errors.ts";
-import { compare, namesOf, readScenario, resolve, runScenario } from "../../skills/c64-testing/scripts/lib/scenario.ts";
-import { snapshotCpuPort, snapshotRam } from "../../skills/c64-testing/scripts/lib/diff-files.ts";
+import { isRefusal, Refusal } from "../../src/errors.ts";
+import { compare, namesOf, readScenario, resolve, runScenario, scenarioNames } from "../../skills/c64-testing/scripts/lib/scenario.ts";
+import { diffFiles, snapshotCpuPort, snapshotRam } from "../../skills/c64-testing/scripts/lib/diff-files.ts";
+import { runFile } from "../../skills/c64-testing/scripts/lib/runs.ts";
 import { readEnvelope } from "../kit.ts";
 
+// No host listens at port 1: a run that got past its checks would fail to connect, not reach a real emulator.
+process.env.C64RT_HOST = "127.0.0.1:1";
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-testing-"));
 const home = process.cwd();
 // Scenario paths are relative to the working directory: each test runs in the project.
@@ -35,6 +38,20 @@ function scenarioFile(name: string, value: unknown): string {
   writeFileSync(join(project, name), JSON.stringify(value));
   return name;
 }
+
+/** The code and the message of a call that must be refused before an emulator starts. */
+async function refusal(call: () => unknown): Promise<{ code: string; message: string }> {
+  try {
+    await call();
+  } catch (error) {
+    if (isRefusal(error)) return { code: error.code, message: error.message };
+    throw error;
+  }
+  return assert.fail("not refused");
+}
+
+/** The refusal of a run file with this value, as the run command gives it. */
+const runRefusal = (name: string, value: unknown) => refusal(() => runFile(scenarioFile(name, value), "out"));
 
 test("a scenario needs a name, both subjects, known steps and at least one checkpoint", () => {
   assert.equal(readScenario(scenarioFile("ok.json", valid)).steps.length, 3);
@@ -228,48 +245,19 @@ test("each side starts from a hard reset, each checkpoint has its own baseline, 
   assert.equal(new Set(captured).size, 2, "two checkpoints, two baselines");
 });
 
-test("the checklist refuses a bad scenario and, with the usage text, no scenario as invalid input", () => {
-  const checklist = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
-  writeFileSync(join(project, "bad.json"), JSON.stringify({ name: "" }));
-  const call = (...args: string[]) => {
-    const run = spawnSync(process.execPath, [...process.execArgv, checklist, "checklist", ...args], { cwd: project, encoding: "utf8" });
-    assert.equal(run.status, 2, args.join(" "));
-    return (readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } }).error;
-  };
-  assert.deepEqual(call("bad.json"), { code: "invalid-input", message: 'scenario bad.json: name must be a non-empty string, for example "player moves left"' });
-  const none = call();
-  assert.equal(none.code, "invalid-input");
-  assert.match(none.message, /^checklist needs <scenario\.json>\.\.\.\.? To get the usage, run testing\.ts checklist --help\.$/);
-});
-
-test("a run refuses a bad call before it opens an emulator", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
-  const call = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, "run", ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  writeFileSync(join(project, "run.json"), JSON.stringify({ name: "r", start: { program: "game.prg" }, steps: [{ screen: "../escape" }] }));
-  writeFileSync(join(project, "two.json"), JSON.stringify({ name: "r", start: { program: "game.prg", snapshot: "s.vsf" }, steps: [{ frames: 1 }] }));
-  for (const args of [["run.json"], ["run.json", "--out", "../outside"], ["run.json", "--out", "out"], ["two.json", "--out", "out"]]) {
-    const run = call(...args);
-    assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
-  }
-});
-
-test("a run file and a scenario name a missing field with its form, and refuse a key that they do not have", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
-  const run = (value: unknown) => {
-    writeFileSync(join(project, "fields.json"), JSON.stringify(value));
-    const done = spawnSync(process.execPath, [...process.execArgv, script, "run", "fields.json", "--out", "out"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(done.status, 2, done.stdout);
-    return (readEnvelope(done.stdout, done.status).json as { error: { code: string; message: string } }).error.message;
-  };
+test("a run file and a scenario name a missing field with its form, and refuse a key that they do not have", async () => {
+  const run = async (value: unknown) => (await runRefusal("fields.json", value)).message;
   const good = { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }] };
   const fields = "A run file has name, start and steps, and optionally symbols and videoStandard";
   const forms = '{ "program": "<file.prg>" }, { "program": "<file.prg>", "load": true } or { "snapshot": "<file.vsf>" }';
-  assert.equal(run({ start: good.start, steps: good.steps }), 'run fields.json: name must be a non-empty string, for example "rooms"');
-  assert.equal(run({ ...good, start: {} }), `run fields.json: start must be ${forms}`);
-  assert.equal(run({ ...good, start: { snapshot: "s.vsf", load: true } }), `run fields.json: start has the key load. start must be ${forms}`);
-  assert.equal(run({ ...good, steps: [] }), "run fields.json: steps must be a list with at least one step");
-  assert.equal(run({ ...good, program: "game.prg" }), `run fields.json: has the key program. ${fields}`);
-  assert.equal(run([]), `run fields.json: is not a JSON object. ${fields}`);
+  assert.equal(await run({ start: good.start, steps: good.steps }), 'run fields.json: name must be a non-empty string, for example "rooms"');
+  assert.equal(await run({ ...good, start: {} }), `run fields.json: start must be ${forms}`);
+  assert.equal(await run({ ...good, start: { snapshot: "s.vsf", load: true } }), `run fields.json: start has the key load. start must be ${forms}`);
+  assert.equal(await run({ ...good, steps: [] }), "run fields.json: steps must be a list with at least one step");
+  assert.equal(await run({ ...good, program: "game.prg" }), `run fields.json: has the key program. ${fields}`);
+  assert.equal(await run([]), `run fields.json: is not a JSON object. ${fields}`);
+  assert.match(await run({ ...good, start: { program: "game.prg", snapshot: "s.vsf" } }), /^run fields\.json: start/);
+  assert.match(await run({ ...good, steps: [{ screen: "../escape" }] }), /^run fields\.json: step 1/);
   const message = (value: unknown) => {
     try {
       readScenario(scenarioFile("fields.json", value));
@@ -284,7 +272,7 @@ test("a run file and a scenario name a missing field with its form, and refuse a
   assert.equal(message({ ...valid, steps: [] }), "scenario fields.json: steps must be a list with at least one step");
 });
 
-test("diff gives the changed ranges of two memory files and the changed items of two observations of one run", () => {
+test("diff gives the changed ranges of two memory files and the changed items of two observations of one run", async () => {
   // The Bruce Lee run: the agent wrote the same diff script about six times.
   const ranges = changedRanges(Uint8Array.from([1, 2, 3, 4, 5, 6]), Uint8Array.from([1, 9, 3, 4, 8, 8]), 0xc000);
   assert.deepEqual(ranges, { changedBytes: 3, ranges: [{ start: 0xc001, end: 0xc001, a: "02", b: "09" }, { start: 0xc004, end: 0xc005, a: "0506", b: "0808" }] });
@@ -300,36 +288,30 @@ test("diff gives the changed ranges of two memory files and the changed items of
     join(project, "results.json"),
     JSON.stringify({ observations: { start: { memory: { room: "00", $0400: "2020" }, registers: { a: 1, pc: "$0400" } }, later: { memory: { room: "05", $0400: "2020" }, registers: { a: 1, pc: "$0410" } }, other: { memory: { $c000: "01" } } } }),
   );
-  const script = resolvePath(import.meta.dirname, "../../skills/c64-testing/scripts/testing.ts");
-  const differ = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, "diff", ...args], { cwd: project, encoding: "utf8" });
-  const memory = differ("before.bin", "after.bin");
-  assert.equal(memory.status, 0, memory.stdout + memory.stderr);
-  assert.deepEqual(readEnvelope(memory.stdout, memory.status).json.memory, { changedBytes: 2, count: 1, listed: [{ start: "$2fa1", end: "$2fa2", a: "0000", b: "0707" }] });
-  const observed = differ("results.json:start", "results.json:later");
-  assert.equal(observed.status, 0, observed.stdout + observed.stderr);
-  assert.deepEqual(readEnvelope(observed.stdout, observed.status).json, {
+  const differ = (a: string, b: string) => diffFiles(a, b, { gap: 0, max: 50, ntsc: false });
+  assert.deepEqual((await differ("before.bin", "after.bin")).memory, { changedBytes: 2, count: 1, listed: [{ start: "$2fa1", end: "$2fa2", a: "0000", b: "0707" }] });
+  assert.deepEqual(await differ("results.json:start", "results.json:later"), {
     a: "results.json:start",
     b: "results.json:later",
     registers: { compared: 2, count: 1, listed: [{ name: "cpu.pc", a: "$0400", b: "$0410" }] },
     observed: { compared: 2, count: 1, listed: [{ address: "room", a: "00", b: "05" }] },
   });
   // Nothing in common: the result says that nothing was compared, so a count of 0 does not read as equal.
-  const apart = differ("results.json:start", "results.json:other");
-  assert.equal(apart.status, 0, apart.stdout + apart.stderr);
-  assert.deepEqual(readEnvelope(apart.stdout, apart.status).json.observed, {
+  const apart = await differ("results.json:start", "results.json:other");
+  assert.deepEqual(apart.observed, {
     compared: 0,
     reason: "No memory item was compared: the observations have none in common. results.json:start has room, $0400; results.json:other has $c000.",
     count: 0,
     listed: [],
   });
-  assert.deepEqual(readEnvelope(apart.stdout, apart.status).json.registers, {
+  assert.deepEqual(apart.registers, {
     compared: 0,
     reason: "No register was compared: the observations have none in common. results.json:start has cpu.a, cpu.pc; results.json:other has none.",
     count: 0,
     listed: [],
   });
-  assert.equal(differ("before.bin", "results.json:later").status, 2, "two states of one kind");
-  assert.equal(differ("results.json:start", "results.json:nothing").status, 2);
+  assert.equal((await refusal(() => differ("before.bin", "results.json:later"))).code, "invalid-input", "two states of one kind");
+  await refusal(() => differ("results.json:start", "results.json:nothing"));
 });
 
 test("diff compares the CPU flags, shows the pc as $xxxx, and --out names the changed registers as the result does", () => {
@@ -366,105 +348,85 @@ test("a snapshot file gives its RAM from the C64MEM module, and a file without i
   assert.equal(snapshotRam(Buffer.from("not a snapshot")), undefined);
 });
 
-test("a run refuses two steps that write one file, across step kinds, and names both steps", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+test("a run refuses two steps that write one file, across step kinds, and names both steps", async () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
-  const refused = (steps: unknown[]) => {
-    writeFileSync(join(project, "collide.json"), JSON.stringify({ name: "collide", start: { program: "game.prg" }, steps }));
-    const run = spawnSync(process.execPath, [...process.execArgv, script, "run", "collide.json", "--out", "out"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(run.status, 2, run.stdout);
-    const { error } = readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } };
+  const refused = async (steps: unknown[]) => {
+    const error = await runRefusal("collide.json", { name: "collide", start: { program: "game.prg" }, steps });
     assert.equal(error.code, "invalid-input");
     return error.message.split("\n")[0];
   };
-  assert.equal(refused([{ frames: 5 }, { coverage: "x" }, { observe: "x", memory: "all" }]), "run collide.json: step 3 (observe) writes x.bin, and step 2 (coverage) writes that file too. Give one of them another name");
-  assert.equal(refused([{ save: "x" }, { frames: 5 }, { save: "x" }]), "run collide.json: step 3 (save) writes x.vsf, and step 1 (save) writes that file too. Give one of them another name");
-  assert.equal(refused([{ coverage: "big-c000" }, { observe: "big", memory: [{ address: "$c000", size: 5000 }] }]), "run collide.json: step 2 (observe) writes big-c000.bin, and step 1 (coverage) writes that file too. Give one of them another name");
-  assert.equal(refused([{ trace: "results", points: [{ kind: "exec", start: "$c000" }], frames: 5 }]), "run collide.json: step 1 (trace) writes results.json, and the run itself (results.json) writes that file too. Give one of them another name");
-  assert.equal(refused([{ screen: "Room" }, { screen: "room" }]), "run collide.json: step 2 (screen) writes room.png, and step 1 (screen) writes that file too. Give one of them another name");
+  assert.equal(await refused([{ frames: 5 }, { coverage: "x" }, { observe: "x", memory: "all" }]), "run collide.json: step 3 (observe) writes x.bin, and step 2 (coverage) writes that file too. Give one of them another name");
+  assert.equal(await refused([{ save: "x" }, { frames: 5 }, { save: "x" }]), "run collide.json: step 3 (save) writes x.vsf, and step 1 (save) writes that file too. Give one of them another name");
+  assert.equal(await refused([{ coverage: "big-c000" }, { observe: "big", memory: [{ address: "$c000", size: 5000 }] }]), "run collide.json: step 2 (observe) writes big-c000.bin, and step 1 (coverage) writes that file too. Give one of them another name");
+  assert.equal(await refused([{ trace: "results", points: [{ kind: "exec", start: "$c000" }], frames: 5 }]), "run collide.json: step 1 (trace) writes results.json, and the run itself (results.json) writes that file too. Give one of them another name");
+  assert.equal(await refused([{ screen: "Room" }, { screen: "room" }]), "run collide.json: step 2 (screen) writes room.png, and step 1 (screen) writes that file too. Give one of them another name");
 });
 
-test("a run refuses a wrong expect step before it opens an emulator, and names the step", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+test("a run refuses a wrong expect step before it opens an emulator, and names the step", async () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
-  const refused = (steps: unknown[]) => {
-    writeFileSync(join(project, "expect.json"), JSON.stringify({ name: "expect", start: { program: "game.prg" }, steps }));
-    const run = spawnSync(process.execPath, [...process.execArgv, script, "run", "expect.json", "--out", "out"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(run.status, 2, run.stdout);
-    const { error } = readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } };
+  const refused = async (steps: unknown[]) => {
+    const error = await runRefusal("expect.json", { name: "expect", start: { program: "game.prg" }, steps });
     assert.equal(error.code, "invalid-input");
     return error.message.split("\n")[0]!;
   };
-  assert.equal(refused([{ expect: "e" }]), "run expect.json: step 1: expect needs memory, registers or both");
-  assert.equal(refused([{ expect: "e", memory: [{ address: "$0400", data: "08", text: "H" }] }]), "run expect.json: step 1: an expected memory object needs data or text, not both");
-  assert.match(refused([{ expect: "e", memory: [{ address: "$0400", text: "hello" }] }]), /^run expect\.json: step 1: text has the characters of the upper-case set: .*Write letters in upper case$/);
-  assert.equal(refused([{ expect: "e", memory: [{ address: "$d020", data: "01", mask: "0f0f" }] }]), "run expect.json: step 1: mask needs data, and is hex bytes of the same length as data");
-  assert.equal(refused([{ expect: "e", memory: [{ address: "$0400", data: "01", size: 1 }] }]), "run expect.json: step 1: an expected memory object has the field size. It has address, data or text, mask and view, and nothing else");
-  assert.equal(refused([{ observe: "e", memory: ["$0400"] }, { expect: "e", memory: [{ address: "$0400", data: "01" }] }]), "run expect.json: step 2 needs a new name");
-  assert.match(refused([{ expect: "e", screen: {} }]), /^run expect\.json: step 1 has the key screen/);
-  assert.match(refused([{ expect: "e", registers: { a: 300 } }]), /^run expect\.json: step 1/);
-  assert.match(refused([{ expect: "e", memory: [{ address: "score", data: "00" }] }]), /^run expect\.json: step 1: score is a name, and the run file has no symbols/);
-  assert.match(refused([{ expect: "e", registers: { pc: "main_loop" } }]), /^run expect\.json: step 1: main_loop is a name, and the run file has no symbols/);
+  assert.equal(await refused([{ expect: "e" }]), "run expect.json: step 1: expect needs memory, registers or both");
+  assert.equal(await refused([{ expect: "e", memory: [{ address: "$0400", data: "08", text: "H" }] }]), "run expect.json: step 1: an expected memory object needs data or text, not both");
+  assert.match(await refused([{ expect: "e", memory: [{ address: "$0400", text: "hello" }] }]), /^run expect\.json: step 1: text has the characters of the upper-case set: .*Write letters in upper case$/);
+  assert.equal(await refused([{ expect: "e", memory: [{ address: "$d020", data: "01", mask: "0f0f" }] }]), "run expect.json: step 1: mask needs data, and is hex bytes of the same length as data");
+  assert.equal(await refused([{ expect: "e", memory: [{ address: "$0400", data: "01", size: 1 }] }]), "run expect.json: step 1: an expected memory object has the field size. It has address, data or text, mask and view, and nothing else");
+  assert.equal(await refused([{ observe: "e", memory: ["$0400"] }, { expect: "e", memory: [{ address: "$0400", data: "01" }] }]), "run expect.json: step 2 needs a new name");
+  assert.match(await refused([{ expect: "e", screen: {} }]), /^run expect\.json: step 1 has the key screen/);
+  assert.match(await refused([{ expect: "e", registers: { a: 300 } }]), /^run expect\.json: step 1/);
+  assert.match(await refused([{ expect: "e", memory: [{ address: "score", data: "00" }] }]), /^run expect\.json: step 1: score is a name, and the run file has no symbols/);
+  assert.match(await refused([{ expect: "e", registers: { pc: "main_loop" } }]), /^run expect\.json: step 1: main_loop is a name, and the run file has no symbols/);
 });
 
-test("a run and a scenario refuse the 2.0 step and memory forms with the field and the 2.1 form", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+test("a run and a scenario refuse the 2.0 step and memory forms with the field and the 2.1 form", async () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
-  const message = (command: string, file: string, value: unknown) => {
-    writeFileSync(join(project, file), JSON.stringify(value));
-    const run = spawnSync(process.execPath, [...process.execArgv, script, command, file, ...(command === "run" ? ["--out", "out"] : [])], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(run.status, 2, run.stdout);
-    return (readEnvelope(run.stdout, run.status).json as { error: { message: string } }).error.message.split("\n")[0]!;
+  const run = async (steps: unknown[]) => (await runRefusal("old-run.json", { name: "old", start: { program: "game.prg" }, steps })).message.split("\n")[0]!;
+  assert.equal(await run([{ observe: "x", memory: [{ at: "$0400", size: 2 }] }]), "run old-run.json: step 1: a memory object has the field at. at is a 2.0 field. Write address in place of at");
+  assert.equal(await run([{ trace: "t", points: [{ kind: "exec", at: "$c000" }], frames: 5 }]), "run old-run.json: step 1: a point has the field at. at is a 2.0 field. Write start in place of at");
+  assert.equal(await run([{ wait: 5 }]), "run old-run.json: step 1 must have exactly one of write, registers, joystick, type, press, frames, runUntil, snapshot, save, screen, coverage, observe, expect, trace");
+  const scenario = (steps: unknown[]) => {
+    try {
+      readScenario(scenarioFile("old-scenario.json", { ...valid, steps }));
+    } catch (error) {
+      return (error as Error).message.split("\n")[0]!;
+    }
+    return assert.fail("not refused");
   };
-  const run = (steps: unknown[]) => message("run", "old-run.json", { name: "old", start: { program: "game.prg" }, steps });
-  assert.equal(run([{ runUntil: { at: "cold_start" }, timeoutFrames: 900 }]), 'run old-run.json: step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "cold_start"}, "timeoutFrames": 900}}');
-  assert.equal(run([{ observe: "x", memory: [{ at: "$0400", size: 2 }] }]), "run old-run.json: step 1: a memory object has the field at. at is a 2.0 field. Write address in place of at");
-  assert.equal(run([{ trace: "t", points: [{ kind: "exec", at: "$c000" }], frames: 5 }]), "run old-run.json: step 1: a point has the field at. at is a 2.0 field. Write start in place of at");
-  assert.equal(run([{ press: " " }]).startsWith("run old-run.json: step 1: press must be an object with keys, frames"), true);
-  assert.equal(run([{ wait: 5 }]), "run old-run.json: step 1 must have exactly one of write, registers, joystick, type, press, frames, runUntil, snapshot, save, screen, coverage, observe, expect, trace");
-  const scenario = (steps: unknown[]) => message("checklist", "old-scenario.json", { ...valid, steps });
   assert.equal(scenario([{ type: " ", side: "original" }, valid.steps[2]]), 'scenario old-scenario.json: step 1 has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}, "side": "original"}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes');
-  assert.equal(scenario([{ runUntil: { at: "title_menu_loop" }, timeoutFrames: 600 }, valid.steps[2]]), 'scenario old-scenario.json: step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "title_menu_loop"}, "timeoutFrames": 600}}');
   assert.equal(scenario([{ observe: "x", memory: [{ at: "$0002", size: 254 }] }]), "scenario old-scenario.json: step 1: a memory object has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(scenario([{ observe: "x", memory: [{ address: "$d01e", exclude: [{ at: "$d01e", reason: "latched" }] }] }]), "scenario old-scenario.json: step 1: an exclude has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(scenario([{ frames: 5, type: { mode: "text", text: " " } }, valid.steps[2]]), "scenario old-scenario.json: step 1 has 2 step kinds: frames, type. Give each one its own step");
   assert.equal(scenario([{ sleep: 5 }, valid.steps[2]]), "scenario old-scenario.json: step 1 must have exactly one of reset, load, autostart, snapshot, normalize, write, registers, joystick, type, press, frames, runUntil, observe");
 });
 
-test("test and run check every file before the emulator: a missing file is not-found, a disk image is no PRG", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+test("test and run check every file before the emulator: a missing file is not-found, a disk image is no PRG", async () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   writeFileSync(join(project, "game.d64"), Buffer.alloc(174848));
-  // No host listens at port 1: a call that got to the emulator would be INCONCLUSIVE or an error about the host.
-  const call = (...args: string[]) => {
-    const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
-    return (readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } }).error;
+  // test reads the scenario and checks its files before it opens the emulator.
+  const test = (name: string, sides: Record<string, unknown>, steps: unknown[] = [{ autostart: true }, { observe: "x", memory: ["$0400"] }]) => {
+    scenarioFile(name, { name: "files", original: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, ...sides, steps });
+    return refusal(() => scenarioNames(readScenario(name), name));
   };
-  const scenario = (name: string, sides: Record<string, unknown>, steps: unknown[] = [{ autostart: true }, { observe: "x", memory: ["$0400"] }]) => {
-    writeFileSync(join(project, name), JSON.stringify({ name: "files", original: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, ...sides, steps }));
-    return name;
-  };
-  assert.deepEqual(call("test", scenario("no-rebuild.json", { rebuild: { program: "build/nope.prg", symbols: "none" } })), { code: "not-found", message: "scenario no-rebuild.json: rebuild.program: There is no file at build/nope.prg in the project folder." });
-  assert.deepEqual(call("test", scenario("no-symbols.json", { rebuild: { program: "game.prg", symbols: "build/nope.json" } })), { code: "not-found", message: "scenario no-symbols.json: rebuild.symbols: There is no file at build/nope.json in the project folder." });
-  const disk = call("test", scenario("disk.json", { original: { program: "game.d64", symbols: "none" } }));
-  assert.equal(disk.code, "invalid-input");
-  assert.equal(disk.message, "scenario disk.json: original.program: game.d64 is a disk image (.d64), not a PRG. A scenario program is a PRG. Extract the program file from the disk, tape or cartridge image, and give that PRG.");
-  assert.equal(call("test", scenario("no-snapshot.json", {}, [{ snapshot: "nope.vsf" }, { observe: "x", memory: ["$0400"] }])).code, "not-found");
-  const run = (name: string, value: unknown) => {
-    writeFileSync(join(project, name), JSON.stringify(value));
-    return call("run", name, "--out", "out");
-  };
-  assert.equal(run("run-missing.json", { name: "r", start: { program: "nope.prg" }, steps: [{ frames: 1 }] }).code, "not-found");
-  assert.match(run("run-disk.json", { name: "r", start: { program: "game.d64" }, steps: [{ frames: 1 }] }).message, /^run run-disk\.json: start\.program: game\.d64 is a disk image \(\.d64\), not a PRG\. A run starts a PRG/);
-  assert.deepEqual(run("run-snapshot.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { snapshot: "nope.vsf" }] }), { code: "not-found", message: "run run-snapshot.json: step 2: snapshot: There is no file at nope.vsf in the project folder." });
+  assert.deepEqual(await test("no-rebuild.json", { rebuild: { program: "build/nope.prg", symbols: "none" } }), { code: "not-found", message: "scenario no-rebuild.json: rebuild.program: There is no file at build/nope.prg in the project folder." });
+  assert.deepEqual(await test("no-symbols.json", { rebuild: { program: "game.prg", symbols: "build/nope.json" } }), { code: "not-found", message: "scenario no-symbols.json: rebuild.symbols: There is no file at build/nope.json in the project folder." });
+  assert.deepEqual(await test("disk.json", { original: { program: "game.d64", symbols: "none" } }), {
+    code: "invalid-input",
+    message: "scenario disk.json: original.program: game.d64 is a disk image (.d64), not a PRG. A scenario program is a PRG. Extract the program file from the disk, tape or cartridge image, and give that PRG.",
+  });
+  assert.equal((await test("no-snapshot.json", {}, [{ snapshot: "nope.vsf" }, { observe: "x", memory: ["$0400"] }])).code, "not-found");
+  assert.equal((await runRefusal("run-missing.json", { name: "r", start: { program: "nope.prg" }, steps: [{ frames: 1 }] })).code, "not-found");
+  assert.match((await runRefusal("run-disk.json", { name: "r", start: { program: "game.d64" }, steps: [{ frames: 1 }] })).message, /^run run-disk\.json: start\.program: game\.d64 is a disk image \(\.d64\), not a PRG\. A run starts a PRG/);
+  assert.deepEqual(await runRefusal("run-snapshot.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { snapshot: "nope.vsf" }] }), { code: "not-found", message: "run run-snapshot.json: step 2: snapshot: There is no file at nope.vsf in the project folder." });
   // A run observes all registers or none: a list of names is the form of a scenario.
   assert.match(
-    run("run-registers.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { observe: "x", registers: ["a"] }] }).message,
+    (await runRefusal("run-registers.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { observe: "x", registers: ["a"] }] })).message,
     /^run run-registers\.json: step 2: registers must be true or false in a run\. true gives all registers\. A list of register names is for a scenario$/,
   );
   writeFileSync(join(project, "map.json"), JSON.stringify({ player_x: "$c300" }));
-  assert.deepEqual(run("run-name.json", { name: "r", start: { program: "game.prg" }, symbols: "map.json", steps: [{ frames: 1 }, { runUntil: { target: { kind: "address", address: "nonsense" } } }] }), { code: "invalid-input", message: "run run-name.json: step 2: the symbols map.json have no nonsense" });
+  assert.deepEqual(await runRefusal("run-name.json", { name: "r", start: { program: "game.prg" }, symbols: "map.json", steps: [{ frames: 1 }, { runUntil: { target: { kind: "address", address: "nonsense" } } }] }), { code: "invalid-input", message: "run run-name.json: step 2: the symbols map.json have no nonsense" });
 });
 
 test("a memory difference lists the differing bytes, at most --max-listed, and memory.json in --out keeps all bytes", () => {
@@ -539,65 +501,34 @@ test("an unknown name in a scenario step gives INCONCLUSIVE with the step", asyn
   assert.equal(result.reason, "step 2 (runUntil): the original side has no symbol no_such_name");
 });
 
-test("test, run and diff refuse a snapshot file that is no VICE snapshot file before the emulator, with the file and the step", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+test("test, run and diff refuse a snapshot file that is no VICE snapshot file before the emulator, with the file and the step", async () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   writeFileSync(join(project, "notes.txt"), "not a snapshot\n");
   writeFileSync(join(project, "notes.vsf"), "not a snapshot\n");
-  const call = (...args: string[]) => {
-    const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
-    return (readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } }).error;
-  };
   const why = 'is not a VICE snapshot file (.vsf): it does not start with "VICE Snapshot File". Give a file that c64_snapshot save or a save step of a run wrote.';
-  writeFileSync(join(project, "snap-step.json"), JSON.stringify({ name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }] }));
-  assert.deepEqual(call("run", "snap-step.json", "--out", "out"), { code: "invalid-input", message: `run snap-step.json: step 2: snapshot: notes.txt ${why}` });
-  writeFileSync(join(project, "snap-start.json"), JSON.stringify({ name: "x", start: { snapshot: "notes.vsf" }, steps: [{ frames: 5 }] }));
-  assert.deepEqual(call("run", "snap-start.json", "--out", "out"), { code: "invalid-input", message: `run snap-start.json: start.snapshot: notes.vsf ${why}` });
-  writeFileSync(join(project, "snap-scenario.json"), JSON.stringify({ ...valid, original: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }, { observe: "x", memory: ["$0400"] }] }));
-  assert.deepEqual(call("test", "snap-scenario.json"), { code: "invalid-input", message: `scenario snap-scenario.json: step 2: snapshot: notes.txt ${why}` });
-  assert.deepEqual(call("diff", "notes.vsf", "notes.vsf"), { code: "invalid-input", message: `notes.vsf ${why}` });
+  assert.deepEqual(await runRefusal("snap-step.json", { name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }] }), { code: "invalid-input", message: `run snap-step.json: step 2: snapshot: notes.txt ${why}` });
+  assert.deepEqual(await runRefusal("snap-start.json", { name: "x", start: { snapshot: "notes.vsf" }, steps: [{ frames: 5 }] }), { code: "invalid-input", message: `run snap-start.json: start.snapshot: notes.vsf ${why}` });
+  scenarioFile("snap-scenario.json", { ...valid, original: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }, { observe: "x", memory: ["$0400"] }] });
+  assert.deepEqual(await refusal(() => scenarioNames(readScenario("snap-scenario.json"), "snap-scenario.json")), { code: "invalid-input", message: `scenario snap-scenario.json: step 2: snapshot: notes.txt ${why}` });
+  assert.deepEqual(await refusal(() => diffFiles("notes.vsf", "notes.vsf", { gap: 0, max: 50, ntsc: false })), { code: "invalid-input", message: `notes.vsf ${why}` });
 });
 
-test("a name in a run file without symbols says how to give symbols, and a name in an observe or trace step is checked before the run", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+test("a name in a run file without symbols says how to give symbols, and a name in an observe or trace step is checked before the run", async () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
-  const run = (value: unknown) => {
-    writeFileSync(join(project, "names.json"), JSON.stringify(value));
-    const done = spawnSync(process.execPath, [...process.execArgv, script, "run", "names.json", "--out", "out"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(done.status, 2, done.stdout);
-    return (readEnvelope(done.stdout, done.status).json as { error: { code: string; message: string } }).error.message.split("\n")[0];
-  };
+  const run = async (value: unknown) => (await runRefusal("names.json", value)).message.split("\n")[0];
   const noSymbols = 'cold_start is a name, and the run file has no symbols. A run file has no symbols unless it gives "symbols": "knowledge" for the names of the knowledge, or "symbols": "<file>" for a JSON file of names. Give one of them, or a $ address';
-  assert.equal(run({ name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { runUntil: { target: { kind: "address", address: "cold_start" }, timeoutFrames: 10 } }] }), `run names.json: step 2: ${noSymbols}`);
-  assert.equal(run({ name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { observe: "o", memory: ["cold_start"] }] }), `run names.json: step 2: ${noSymbols}`);
-  assert.equal(run({ name: "x", start: { program: "game.prg" }, steps: [{ trace: "t", points: [{ kind: "exec", start: "$c000", end: "cold_start" }], frames: 5 }] }), `run names.json: step 1: ${noSymbols}`);
+  assert.equal(await run({ name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { runUntil: { target: { kind: "address", address: "cold_start" }, timeoutFrames: 10 } }] }), `run names.json: step 2: ${noSymbols}`);
+  assert.equal(await run({ name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { observe: "o", memory: ["cold_start"] }] }), `run names.json: step 2: ${noSymbols}`);
+  assert.equal(await run({ name: "x", start: { program: "game.prg" }, steps: [{ trace: "t", points: [{ kind: "exec", start: "$c000", end: "cold_start" }], frames: 5 }] }), `run names.json: step 1: ${noSymbols}`);
 });
 
-test("diff refuses --address for snapshots and observations, and --ntsc for memory files and observations", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
+test("diff refuses --address for snapshots and observations, and --ntsc for memory files and observations", async () => {
   writeFileSync(join(project, "part1.bin"), Buffer.alloc(16));
   writeFileSync(join(project, "part2.bin"), Buffer.alloc(16, 1));
   writeFileSync(join(project, "obs.json"), JSON.stringify({ observations: { a: { memory: { $c000: "00" } }, b: { memory: { $c000: "01" } } } }));
-  const differ = (...args: string[]) => {
-    const run = spawnSync(process.execPath, [...process.execArgv, script, "diff", ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
-    const { message } = (readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } }).error;
-    const usage = " To get the usage, run testing.ts diff --help.";
-    assert.ok(message.endsWith(usage), message);
-    return message.slice(0, -usage.length);
-  };
-  assert.equal(differ("obs.json:a", "obs.json:b", "--address", "$0400"), "--address is only for two memory files (.bin). An observation gives the address of each item: leave out --address.");
-  assert.equal(differ("a.vsf", "b.vsf", "--address", "$0400"), "--address is only for two memory files (.bin). A snapshot file holds all 64 KiB: leave out --address.");
-  assert.equal(differ("part1.bin", "part2.bin", "--ntsc"), "--ntsc is only for two snapshot files (.vsf), which restore in an emulator. Memory files compare as they are: leave out --ntsc.");
-  assert.equal(differ("obs.json:a", "obs.json:b", "--ntsc"), "--ntsc is only for two snapshot files (.vsf), which restore in an emulator. Observations compare as they are: leave out --ntsc.");
-});
-
-test("a PRG of one or two bytes is too short, with no remedy for disk images", () => {
-  const script = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
-  writeFileSync(join(project, "one.prg"), Uint8Array.of(0x01));
-  writeFileSync(join(project, "short.json"), JSON.stringify({ name: "x", start: { program: "one.prg" }, steps: [{ frames: 5 }] }));
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "run", "short.json", "--out", "out"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  assert.equal(run.status, 2, run.stdout);
-  assert.deepEqual(readEnvelope(run.stdout, run.status).json.error, { code: "invalid-input", message: "run short.json: start.program: one.prg is too short for a PRG: it has 1 byte, and a PRG has a 2-byte load address and at least one byte. Give the complete PRG file." });
+  const differ = async (a: string, b: string, options: { at?: number; ntsc?: boolean }) => (await refusal(() => diffFiles(a, b, { gap: 0, max: 50, ntsc: false, ...options }))).message;
+  assert.equal(await differ("obs.json:a", "obs.json:b", { at: 0x0400 }), "--address is only for two memory files (.bin). An observation gives the address of each item: leave out --address.");
+  assert.equal(await differ("a.vsf", "b.vsf", { at: 0x0400 }), "--address is only for two memory files (.bin). A snapshot file holds all 64 KiB: leave out --address.");
+  assert.equal(await differ("part1.bin", "part2.bin", { ntsc: true }), "--ntsc is only for two snapshot files (.vsf), which restore in an emulator. Memory files compare as they are: leave out --ntsc.");
+  assert.equal(await differ("obs.json:a", "obs.json:b", { ntsc: true }), "--ntsc is only for two snapshot files (.vsf), which restore in an emulator. Observations compare as they are: leave out --ntsc.");
 });

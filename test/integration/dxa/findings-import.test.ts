@@ -1,22 +1,23 @@
 // Through the real skill scripts and real DXA, which the script runs itself:
 // a fixture PRG goes through DXA, normalized findings and the importer into
 // the knowledge; a second, seeded run changes the result and retires the
-// obsolete DXA facts, keeps the history and protects the semantic knowledge;
-// a malformed listing imports nothing.
+// obsolete DXA facts, keeps the history and protects the semantic knowledge.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { DXA, findTool } from "../../../src/native/discover.ts";
-import { openForRead } from "../../../src/knowledge/database.ts";
+import { openForRead, withWrite } from "../../../src/knowledge/database.ts";
 import { historyAt } from "../../../src/knowledge/history.ts";
-import { currentRevision, regionsOverlapping, symbolAt } from "../../../src/knowledge/read.ts";
+import { regionsOverlapping, symbolAt } from "../../../src/knowledge/read.ts";
+import { classifyRegion, renameSymbol } from "../../../src/knowledge/write.ts";
 import { analysisSubjectPrg } from "../../fixtures/prg/analysis-subject.ts";
+import { importPrg } from "../../fixtures/program.ts";
 import { nthIn } from "../../../src/knowledge/revisions.testkit.ts";
 import { readEnvelope } from "../../kit.ts";
 
@@ -27,14 +28,13 @@ try {
   skip = "dxa is not installed: install dxa or set C64RT_DXA to run this test";
 }
 
-const skills = resolve(import.meta.dirname, "../../../skills");
+const script = resolve(import.meta.dirname, "../../../skills/c64-static-analysis/scripts/static-analysis.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m7-"));
-writeFileSync(join(project, "game.prg"), analysisSubjectPrg);
 after(() => rmSync(project, { recursive: true, force: true }));
 
-async function skill(env: NodeJS.ProcessEnv, name: string, file: string, ...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
+async function analyzeDxa(): Promise<{ status: number | null; json: Record<string, unknown> }> {
   // No Host Runtime: the script would fail if it asked one for DXA.
-  const child = spawn(process.execPath, [...process.execArgv, join(skills, name, "scripts", file), ...args], { cwd: project, env: { ...env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "inherit"] });
+  const child = spawn(process.execPath, [...process.execArgv, script, "analyze", "--analyzer", "dxa"], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
@@ -48,12 +48,10 @@ const regions = () => {
   return list;
 };
 
-test("DXA findings reconcile through the importer, protect semantic knowledge and never import half a result", { skip, timeout: 300_000 }, async () => {
-  const env = process.env;
-
+test("DXA findings reconcile through the importer and protect semantic knowledge", { skip, timeout: 300_000 }, async () => {
   // 1. The program goes into the knowledge; the first DXA pass makes its regions and labels DXA knowledge.
-  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "image", "game.prg")).json.revision, nthIn(project, 1));
-  const first = await skill(env, "c64-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa");
+  importPrg(project, analysisSubjectPrg);
+  const first = await analyzeDxa();
   assert.equal(first.status, 0, JSON.stringify(first.json));
   assert.equal(first.json.revision, nthIn(project, 2));
   assert.deepEqual(regions(), [
@@ -65,16 +63,15 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   ]);
 
   // 2. Semantic work: the LLM names the routine, the user says what the table is.
-  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "rename", "$0818", "init_result", "--kind", "routine", "--expect-revision", nthIn(project, 2))).json.revision, nthIn(project, 3));
-  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "classify", "$0824-$0827", "sprite", "--by", "user", "--expect-revision", nthIn(project, 3))).json.revision, nthIn(project, 4));
+  withWrite((db) => renameSymbol(db, { origin: "llm", expectedRevision: nthIn(project, 2) }, { address: 0x0818, name: "init_result", kind: "routine" }), project);
+  withWrite((db) => classifyRegion(db, { origin: "user", expectedRevision: nthIn(project, 3) }, { start: 0x0824, end: 0x0827, type: "sprite" }), project);
 
   // 3. A changed program: NOPs instead of the JMP let the code run on into the routine, so the two
   //    unused bytes become reachable code. (A JMP to them is not enough: DXA keeps them as data.)
   const changed = Buffer.from(analysisSubjectPrg);
   changed.set([0xea, 0xea, 0xea, 0xea, 0xea], 0x0813 - 0x0801 + 2);
-  writeFileSync(join(project, "game-v2.prg"), changed);
-  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "image", "game-v2.prg")).json.revision, nthIn(project, 5));
-  const second = await skill(env, "c64-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa");
+  importPrg(project, changed);
+  const second = await analyzeDxa();
   assert.equal(second.status, 0, JSON.stringify(second.json));
   assert.equal(second.json.revision, nthIn(project, 6));
   assert.deepEqual(second.json.conflicts, [], "a finer data type from the user is no conflict");
@@ -96,20 +93,5 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
     ["analyzer-name", "l818", "dxa", null],
     ["symbol", "init_result", "llm", null],
   ], "the DXA label stays a second name next to the name of the LLM");
-  const before = currentRevision(db);
   db?.close();
-
-  // 4. A malformed listing (a dxa that stops early) imports nothing.
-  const fake = join(project, "fake-dxa.ts");
-  writeFileSync(fake, `#!/usr/bin/env node\nprocess.stdout.write("0801 0b 08 0a \\t.byt $0b,$08,$0a\\n0804 00 9e 32 \\t.byt $00,$9e,$32\\n");\n`);
-  chmodSync(fake, 0o755);
-  // Windows starts no script by its shebang: a .cmd file runs it through Node (the supervisor starts .cmd through cmd.exe).
-  const program = process.platform === "win32" ? join(project, "fake-dxa.cmd") : fake;
-  if (program !== fake) writeFileSync(program, `@"${process.execPath}" "${fake}" %*\r\n`);
-  const broken = await skill({ ...process.env, C64RT_DXA: program }, "c64-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa");
-  assert.equal(broken.status, 2);
-  assert.match((broken.json.error as { message: string }).message, /incomplete or inconsistent listing\. Nothing was imported/);
-  const after = openForRead(project);
-  assert.equal(currentRevision(after), before, "no revision for a malformed result");
-  after?.close();
 });

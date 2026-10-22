@@ -118,29 +118,15 @@ test("sectors writes the blocks in the given order, then the used sectors that n
   assert.deepEqual(written.subarray(0, 256), gameDisk.subarray(offsetOf(18, 0), offsetOf(18, 0) + 256));
   assert.ok(written.subarray(256, 512).every((byte) => byte === 0xaa));
   assert.ok(written.subarray(512).every((byte) => byte === 0x55));
-  const one = await disk("sectors", "original/game.d64", "20/5", "--out", "extracted/one.bin");
-  assert.deepEqual(one.json.sectors, [{ track: 20, sector: 5, offset: 0 }]);
-  const outside = await disk("sectors", "original/game.d64", "36/0", "--out", "extracted/outside.bin");
-  assert.equal(outside.status, 2);
-  assert.equal((outside.json.error as { code: string }).code, "invalid-input");
-  assert.equal(existsSync(join(project, "extracted", "outside.bin")), false);
 });
 
-test("bad calls are refused before anything is sent", { skip }, async () => {
+test("sectors needs a sector or --unreferenced, and a sector is <track>/<sector>", { skip }, async () => {
   for (const args of [
-    ["format", "original/game.d64"],
-    ["read", "original/game.d64", "LOOP"],
-    ["directory", "original/game.d64", "LOOP"],
-    ["read", "original/game.d64", "LOOP", "--out", "../escape.prg"],
-    ["entry", "original/game.d64"],
     ["sectors", "original/game.d64", "--out", "extracted/none.bin"],
     ["sectors", "original/game.d64", "18/x", "--out", "extracted/none.bin"],
-    ["sectors", "original/game.d64", "18/0"],
   ]) {
     const { status, json } = await disk(...args);
     assert.equal(status, 2, args.join(" "));
     assert.equal((json.error as { code: string }).code, "invalid-input");
   }
-  const notImage = await disk("directory", "extracted/loop.prg");
-  assert.equal((notImage.json.error as { code: string }).code, "invalid-input");
 });

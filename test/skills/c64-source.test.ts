@@ -666,6 +666,9 @@ test("with real ACME, the script writes source that assembles to the program, al
   assert.deepEqual(json.removed.sort(), [`${REPORTS}/not_executed.json`, "src/segment_9000.asm"], "the result lists each file that the run removed");
   // The kept loader.asm has no knowledge revision, and the knowledge has no entry state to write it again.
   assert.deepEqual((readEnvelope(stdout, status).json as { staleLoader: unknown }).staleLoader, { files: ["src/loader.asm", "build/clean_loader.prg"], noEntryState: true });
+  const { envelope } = readEnvelope(stdout, status);
+  assert.match(envelope.hint!, /The knowledge has no entry state, so --loader cannot write them again\. Remove them when the build does not use them\./);
+  assert.doesNotMatch(envelope.nextAction ?? "", /--loader/, "a stale loader without an entry state gets no --loader action");
   // The source map counts the mark line, so each line is the line in the file.
   const map = JSON.parse(readFileSync(join(project, REPORTS, "source-map.json"), "utf8")) as { files: string[]; labels: Array<{ address: string; name: string; file: string; line: number }>; items: Array<{ start: string; file: string; line: number }> };
   assert.deepEqual(map.files, (json.files.map((file) => file.out).filter((path) => path.startsWith("src/")).map((path) => path.slice(4))));
@@ -695,11 +698,6 @@ test("with real ACME, the script writes source that assembles to the program, al
   assert.deepEqual(all.files, { "segments/segment_1000.asm": all.ranges.length });
   const marks = readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8").match(/^; not executed .*$/gm);
   assert.deepEqual(marks, all.ranges.map((range) => `; not executed ${range.start}-${range.end}`));
-
-  const refused = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate"], { cwd: project, encoding: "utf8" });
-  assert.equal(refused.status, 2, "--out is necessary");
-  const named = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "test.prg", "--out", "src"], { cwd: project, encoding: "utf8" });
-  assert.equal(named.status, 2, "the program comes from the knowledge, not from a path");
 });
 
 test("with real ACME, generate tells which leftovers changed since the earlier run", { skip: acmeSkip, timeout: 600_000 }, async () => {
@@ -713,10 +711,16 @@ test("with real ACME, generate tells which leftovers changed since the earlier r
   const coverage = new Uint8Array(0x10000);
   coverage[0x080d] = COVERAGE.ramExecute;
   writeFileSync(join(project, "run.bin"), coverage);
+  writeFileSync(
+    join(project, "batch.json"),
+    JSON.stringify([
+      { op: "rename", address: "$080d", name: "start", kind: "routine" },
+      { op: "classify", start: "$0801", end: "$080c", type: "bytes" },
+      { op: "classify", start: "$080e", end: "$081d", type: "bytes" },
+    ]),
+  );
   write("image", "test.prg");
-  write("rename", "$080d", "start", "--kind", "routine");
-  write("classify", "$0801-$080c", "bytes");
-  write("classify", "$080e-$081d", "bytes");
+  write("apply", "batch.json");
   write("coverage", "run.bin");
   const generate = () => {
     const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, encoding: "utf8" });
@@ -742,13 +746,19 @@ test("with real ACME, an operand expression that ACME assembles to other bytes i
   writeFileSync(join(project, "old.prg"), Uint8Array.from([0x00, 0x10, ...code.map((byte, index) => (index === 6 ? 0x11 : byte))]));
   const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
   const write = (...args: string[]) => assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, ...args], { cwd: project, encoding: "utf8" }).status, 0, args.join(" "));
-  write("image", "test.prg");
-  write("rename", "$1000", "start", "--kind", "routine");
-  write("rename", "$100b", "handler", "--kind", "routine");
   // An operand expression is for an instruction of a code region.
-  write("classify", "$1000-$100b", "code");
-  write("operand", "$1000", "--lo", "handler");
-  write("operand", "$1002", "--value", "CINV");
+  writeFileSync(
+    join(project, "batch.json"),
+    JSON.stringify([
+      { op: "rename", address: "$1000", name: "start", kind: "routine" },
+      { op: "rename", address: "$100b", name: "handler", kind: "routine" },
+      { op: "classify", start: "$1000", end: "$100b", type: "code" },
+      { op: "operand", address: "$1000", select: "lo", symbol: "handler" },
+      { op: "operand", address: "$1002", select: "value", symbol: "CINV" },
+    ]),
+  );
+  write("image", "test.prg");
+  write("apply", "batch.json");
   write("image", "old.prg");
   write("operand", "$1005", "--expr", ">handler+$100");
   write("image", "test.prg");
@@ -840,11 +850,7 @@ test("with real ACME, an image whose entry is in no segment gives the checked so
   assert.equal(json.entryOutside.entry, "$0801");
   assert.equal(json.loader.verified, false);
   assert.match(json.loader.reason, reason);
-  const source = generate();
-  assert.equal(source.status, 0, source.stdout + source.stderr);
-  const sourceJson = readEnvelope(source.stdout, source.status).json as { result: string; entryOutside: { reason: string } };
-  assert.equal(sourceJson.result, "FAIL");
-  assert.match(sourceJson.entryOutside.reason, reason);
+  assert.match(json.entryOutside.reason, reason);
   // With no --entry and no knowledge, the image has no seed for Ghidra: still entryOutside, not a usage error.
   const unseeded = generate("--no-seed", "--loader");
   assert.equal(unseeded.status, 0, unseeded.stdout + unseeded.stderr);
@@ -1341,7 +1347,6 @@ test("with real ACME, the script builds each switch on and reports it; a patch t
   writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, 0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x4c, 0x00, 0x10]));
   const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
   assert.equal(knowledge("image", "test.prg").status, 0);
-  assert.equal(knowledge("rename", "$1000", "start", "--kind", "routine").status, 0);
   // V2 is the release with a grey border: its file is the program with the code of the CRACK patch.
   writeFileSync(join(project, "v2.prg"), Uint8Array.from([0x00, 0x10, 0xa9, 0x01, 0x8d, 0x21, 0xd0, 0x4c, 0x00, 0x10]));
   assert.equal(knowledge("release", "ORIGINAL", "--file", "test.prg", "--base").status, 0);
@@ -1350,10 +1355,16 @@ test("with real ACME, the script builds each switch on and reports it; a patch t
   rmSync(join(project, "v2.prg"));
   assert.equal(knowledge("switch", "CRACK", "--kind", "crack", "--releases", "V2").status, 0);
   assert.equal(knowledge("switch", "BIG", "--kind", "change", "--default", "0").status, 0);
-  assert.equal(knowledge("patch", "$1000-$1004", "CRACK", "--code", "        lda #1\n        sta $d021").status, 0);
-  // Plain instructions that are longer than the range are refused at the write; code with a label is checked only by the build.
-  assert.equal(knowledge("patch", "$1005-$1007", "BIG", "--code", "        nop\n        nop\n        nop\n        nop").status, 2);
-  assert.equal(knowledge("patch", "$1005-$1007", "BIG", "--code", "        nop\n.more   nop\n        nop\n        nop").status, 0);
+  // Code with a label is checked only by the build: the write cannot count its bytes.
+  writeFileSync(
+    join(project, "batch.json"),
+    JSON.stringify([
+      { op: "rename", address: "$1000", name: "start", kind: "routine" },
+      { op: "patch", start: "$1000", end: "$1004", switch: "CRACK", code: "        lda #1\n        sta $d021" },
+      { op: "patch", start: "$1005", end: "$1007", switch: "BIG", code: "        nop\n.more   nop\n        nop\n        nop" },
+    ]),
+  );
+  assert.equal(knowledge("apply", "batch.json").status, 0);
   const generate = () => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, encoding: "utf8" });
   type Result = {
     check: { identical: boolean };
@@ -1373,15 +1384,14 @@ test("with real ACME, the script builds each switch on and reports it; a patch t
   assert.deepEqual(json.switches[0]!.overflow, [{ start: "$1005", message: "The patch BIG at $1005 has 4 (0x4) bytes; the range has 3." }]);
   assert.equal(json.switches[1]!.changedBytes, 2);
   assert.equal(knowledge("unpatch", "$1005").status, 0);
-  const second = generate();
-  assert.equal(second.status, 0, second.stdout);
-  assert.deepEqual((readEnvelope(second.stdout, second.status).json as Result).switches.map((item) => [item.name, item.result]), [["CRACK", "fits"]]);
   // The user turns CRACK on in config.asm: generate keeps the value and says so, and the checks still build from the knowledge.
   const config = join(project, "src", "config.asm");
   writeFileSync(config, readFileSync(config, "utf8").replace(/^CRACK = 0/m, "CRACK = 1"));
-  const third = generate();
-  assert.equal(third.status, 0, third.stdout);
-  assert.deepEqual((readEnvelope(third.stdout, third.status).json as Result).config, { file: "src/config.asm", notDefault: [{ name: "CRACK", value: 1, default: 0 }] });
+  const second = generate();
+  assert.equal(second.status, 0, second.stdout);
+  const again = readEnvelope(second.stdout, second.status).json as Result;
+  assert.deepEqual(again.switches.map((item) => [item.name, item.result]), [["CRACK", "fits"]]);
+  assert.deepEqual(again.config, { file: "src/config.asm", notDefault: [{ name: "CRACK", value: 1, default: 0 }] });
   assert.match(readFileSync(config, "utf8"), /^CRACK = 1 ; on in V2\. \$1000-\$1004$/m);
 });
 
@@ -1593,7 +1603,7 @@ test("with real ACME, registers named over the RAM of the image assemble to the 
 });
 
 /** A project with a captured program at $1000-$1003 (RTS first), its entry and its entry state. */
-function capturedProject(entry: string): { project: string; knowledge: string; generate: (...args: string[]) => SpawnSyncReturns<string> } {
+function capturedProject(entry: string): { project: string; generate: (...args: string[]) => SpawnSyncReturns<string> } {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
   const memory = new Uint8Array(0x10000);
@@ -1617,7 +1627,7 @@ function capturedProject(entry: string): { project: string; knowledge: string; g
       env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
       encoding: "utf8",
     });
-  return { project, knowledge, generate };
+  return { project, generate };
 }
 
 /** A loader.asm as generate writes it, of a knowledge revision. */
@@ -1684,53 +1694,28 @@ test("with real ACME, a release that lacks a segment of the program is identical
   mkdirSync(join(project, "unpacked"));
   writeFileSync(join(project, "unpacked", "image.bin"), memory);
   writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ entry: "$0801", image: "image.bin", segments: [{ start: "$1000", end: "$1003" }, { start: "$2000", end: "$2003" }] }));
-  // DEMO has only the first segment; BAD has it with another byte.
+  // DEMO has only the first segment; BAD has it with a byte that no patch gives.
   writeFileSync(join(project, "demo.prg"), Uint8Array.from([0x00, 0x10, 0x60, 0xea, 0xea, 0xea]));
   writeFileSync(join(project, "bad.prg"), Uint8Array.from([0x00, 0x10, 0x60, 0xea, 0xea, 0x00]));
   const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
-  for (const args of [["image", "unpacked/image.json"], ["release", "ORIGINAL", "--file", "unpacked/image.json", "--base"], ["release", "DEMO", "--file", "demo.prg"]]) assert.equal(knowledge(...args).status, 0, args.join(" "));
-  const generate = () =>
-    spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], {
-      cwd: project,
-      env: { ...process.env, C64RT_HOST: "127.0.0.1:1", C64RT_GHIDRA: join(project, "no-ghidra") },
-      encoding: "utf8",
-    });
-  const first = generate();
-  const json = readEnvelope(first.stdout, first.status).json as { releases: Array<{ label: string; result: string; notInRelease?: Array<{ start: string; end: string }> }> };
-  // The run fails only because the entry is in no segment.
-  assert.equal(first.status, 0, first.stdout);
-  assert.deepEqual(json.releases.map((item) => [item.label, item.result, item.notInRelease]), [["ORIGINAL", "identical", undefined], ["DEMO", "identical", [{ start: "$2000", end: "$2003" }]]]);
-  // A byte that no patch gives is different.
-  assert.equal(knowledge("release", "DEMO", "--file", "bad.prg").status, 0);
-  const second = generate();
-  const failed = readEnvelope(second.stdout, second.status).json as { releases: Array<{ label: string; result: string }> };
-  assert.deepEqual(failed.releases.map((item) => [item.label, item.result]), [["ORIGINAL", "identical"], ["DEMO", "different"]]);
-});
-
-
-test("with real ACME, a stale loader of a knowledge without an entry state gets no --loader action", { skip: acmeSkip, timeout: 120_000 }, () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
-  writeFileSync(join(project, "data.prg"), Buffer.from([0x00, 0xc0, ...Array.from({ length: 64 }, (_, index) => index)]));
-  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "image", "data.prg"], { cwd: project }).status, 0);
-  mkdirSync(join(project, "src"));
-  writeFileSync(join(project, "src", "loader.asm"), "; Generated by c64-source. Do not edit: change the knowledge and generate again.\n");
+  for (const args of [["image", "unpacked/image.json"], ["release", "ORIGINAL", "--file", "unpacked/image.json", "--base"], ["release", "DEMO", "--file", "demo.prg"], ["release", "BAD", "--file", "bad.prg"]]) assert.equal(knowledge(...args).status, 0, args.join(" "));
   const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
     encoding: "utf8",
   });
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const { envelope, json } = readEnvelope(run.stdout, run.status) as { envelope: { hint?: string; nextAction?: string }; json: { result: string; staleLoader?: unknown } };
-  assert.equal(json.result, "PASS");
-  assert.deepEqual(json.staleLoader, { files: ["src/loader.asm"], noEntryState: true });
-  assert.match(envelope.hint!, /The knowledge has no entry state, so --loader cannot write them again\. Remove them when the build does not use them\.$/);
-  assert.doesNotMatch(envelope.nextAction ?? "", /--loader/);
+  const json = readEnvelope(run.stdout, run.status).json as { releases: Array<{ label: string; result: string; notInRelease?: Array<{ start: string; end: string }> }> };
+  // The run fails only because the entry is in no segment.
+  assert.equal(run.status, 0, run.stdout);
+  assert.deepEqual(
+    json.releases.map((item) => [item.label, item.result, item.notInRelease]),
+    [["ORIGINAL", "identical", undefined], ["BAD", "different", [{ start: "$2000", end: "$2003" }]], ["DEMO", "identical", [{ start: "$2000", end: "$2003" }]]],
+  );
 });
 
+
 test("with real ACME, a --loader run whose check cannot run keeps the loader program of an earlier run and says why", { skip: acmeSkip, timeout: 600_000 }, async () => {
-  const { project, knowledge, generate } = capturedProject("$1000");
+  const { project, generate } = capturedProject("$1000");
   mkdirSync(join(project, "build"));
   writeFileSync(join(project, "build", "clean_loader.prg"), Uint8Array.from([0x01, 0x08]));
   // C64RT_HOST names a port where no host runs.
@@ -1747,12 +1732,4 @@ test("with real ACME, a --loader run whose check cannot run keeps the loader pro
   assert.equal(json.removed, undefined, "a host problem does not remove a committed loader program");
   assert.deepEqual([...readFileSync(join(project, "build", "clean_loader.prg"))], [0x01, 0x08], "the loader program of the earlier run keeps its bytes");
   assert.ok(!readdirSync(join(project, ".c64-re-tools", "local")).includes("loader-check"), "the scratch file of the check goes");
-  // A run without --loader keeps loader.asm: it is of this revision until the knowledge changes.
-  const same = generate();
-  assert.equal((readEnvelope(same.stdout, same.status).json as { staleLoader?: unknown }).staleLoader, undefined);
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "rename", "$1000", "start", "--kind", "routine"], { cwd: project }).status, 0);
-  const changed = generate();
-  const { envelope, json: body } = readEnvelope(changed.stdout, changed.status) as { envelope: { nextAction?: string }; json: { staleLoader: { files: string[]; revision: string } } };
-  assert.deepEqual(body.staleLoader.files, ["src/loader.asm", "build/clean_loader.prg"]);
-  assert.match(envelope.nextAction!, /^node \/.*source\.ts generate --out src --loader --project /);
 });

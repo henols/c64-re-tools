@@ -40,6 +40,7 @@ test("a steps file of loads has action steps and capture steps with new names", 
   withWrite((db) => renameSymbol(db, { origin: "user" }, { address: 0xc000, name: "main" }), project);
   assert.equal(steps([{ runUntil: { target: { kind: "address", address: "main" }, timeoutFrames: 1 } }, { capture: "a" }])().length, 2, "a name is an address of the knowledge");
   assert.throws(steps([{ press: "A" }, { capture: "a" }]), /step 1: press must be an object with keys, frames$/);
+  assert.throws(steps([{ wait: 10 }, { capture: "a" }]), /--steps steps\.json: step 1 must have exactly one of write, registers, joystick, type, press, frames, runUntil, capture, save$/);
 });
 
 test("a capture block is RAM from $0400 that changed and that the CPU wrote, joined across small gaps", () => {

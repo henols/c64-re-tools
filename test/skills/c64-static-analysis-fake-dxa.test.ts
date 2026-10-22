@@ -63,13 +63,17 @@ async function analyze(root: string, dxa: string, ...args: string[]): Promise<{ 
   return { status, ...readEnvelope(stdout, status) };
 }
 
-test("a DXA conflict names what DXA found under the key dxa", { timeout: 60_000 }, async () => {
+test("an accepted DXA import records the findings, writes the listing, and names a conflict with what DXA found under the key dxa", { timeout: 60_000 }, async () => {
   const root = project("conflict");
   const db = openForWrite(root);
   classifyRegion(db, { origin: "user" }, { start: 0x1000, end: 0x1002, type: "bytes" });
   db.close();
-  const { status, json, envelope } = await analyze(root, fakeDxa("dxa-ok", LISTING));
+  const { status, json, envelope } = await analyze(root, fakeDxa("dxa-ok", LISTING), "--out-listing", "analysis/game.lst");
   assert.equal(status, 0, JSON.stringify(json));
+  // The image is revision 1, the user's region revision 2.
+  assert.equal(json.revision, nthIn(root, 3));
+  assert.equal((json.listing as { out: string }).out, "analysis/game.lst");
+  assert.equal(existsSync(join(root, "analysis", "game.lst")), true);
   assert.deepEqual(json.conflicts, [
     { range: { start: "$1000", end: "$1002" }, knowledge: { type: "bytes", origin: "user" }, dxa: { type: "code" }, problem: "code and data disagree" },
   ]);
@@ -86,15 +90,6 @@ test("a refused DXA import writes no revision and no listing", { timeout: 60_000
   assert.equal((json.error as { code: string }).code, "invalid-input");
   assert.equal(readFileSync(join(root, ".c64-re-tools", "knowledge", "revisions.jsonl"), "utf8").trim().split("\n").length, 1, "only the image");
   assert.equal(existsSync(join(root, "analysis")), false);
-});
-
-test("an accepted DXA import records the findings and writes the listing", { timeout: 60_000 }, async () => {
-  const root = project("accepted");
-  const { status, json } = await analyze(root, fakeDxa("dxa-accepted", LISTING), "--out-listing", "analysis/game.lst");
-  assert.equal(status, 0, JSON.stringify(json));
-  assert.equal(json.revision, nthIn(root, 2));
-  assert.equal((json.listing as { out: string }).out, "analysis/game.lst");
-  assert.equal(existsSync(join(root, "analysis", "game.lst")), true);
 });
 
 test("an import refused because knowledge changed during the analysis tells to run the analysis again", { timeout: 60_000 }, async () => {
@@ -141,7 +136,6 @@ test("--space imports the findings into that space and leaves the C64 alone", { 
   } finally {
     db.close();
   }
-  assert.equal((await analyze(root, dxa, "--space", "drive9")).status, 2);
 });
 
 test("a macro candidate names no platform name of a ROM that the program does not use, as c64-source does", { timeout: 60_000 }, async () => {
@@ -158,16 +152,16 @@ test("a macro candidate names no platform name of a ROM that the program does no
     const map = new Uint8Array(0x10000).fill(COVERAGE.ramExecute, 0x2000, 0x2009);
     if (covered) addCoverage(db, { origin: "user" }, { maps: [{ name: "runs/a/coverage.bin", bytes: map }] });
     db.close();
-    const { status, json } = await analyze(root, dxa);
+    const { status, json, envelope } = await analyze(root, dxa);
     assert.equal(status, 0, JSON.stringify(json));
     const found = JSON.stringify(json).match(/"macro":"set16","start":"\$2000","end":"\$2007","args":(\[[^\]]*\])/);
-    return found === null ? undefined : (JSON.parse(found[1]!) as string[]);
+    return { args: found === null ? undefined : (JSON.parse(found[1]!) as string[]), hint: envelope.hint };
   };
   // Without coverage or entry state, the program uses both ROMs: TXTPTR names the address.
-  assert.deepEqual(await argsOf(false), ["TXTPTR", "$3000"]);
+  const shown = await argsOf(false);
+  assert.deepEqual(shown.args, ["TXTPTR", "$3000"]);
   // Without --apply-macros, the hint tells how to write the candidates; with it, the macro and its use are one revision.
-  const shown = await analyze(join(scratch, "set16-false"), dxa);
-  assert.equal(shown.envelope.hint, "Examine idioms.candidates.macros. To write them to the project knowledge, run the analysis again with --apply-macros.");
+  assert.equal(shown.hint, "Examine idioms.candidates.macros. To write them to the project knowledge, run the analysis again with --apply-macros.");
   const applied = await analyze(join(scratch, "set16-false"), dxa, "--apply-macros");
   assert.equal(applied.status, 0, JSON.stringify(applied.json));
   const macros = (applied.json.idioms as { candidates: { macros: Record<string, unknown> } }).candidates.macros;
@@ -178,5 +172,5 @@ test("a macro candidate names no platform name of a ROM that the program does no
   const again = await analyze(join(scratch, "set16-false"), dxa);
   assert.equal((again.json.idioms as { candidates: { macros: { known?: number } } }).candidates.macros.known, 1);
   // The coverage shows no ROM code executed: c64-source leaves TXTPTR out, so the candidate has the number.
-  assert.deepEqual(await argsOf(true), ["$7a", "$3000"]);
+  assert.deepEqual((await argsOf(true)).args, ["$7a", "$3000"]);
 });

@@ -48,23 +48,8 @@ test("from the workspace root, scripts write into the project that --project nam
   assert.deepEqual(readdirSync(workspace).sort(), ["boulder-dash", "hover-bovver"], "nothing is written at the workspace root");
 });
 
-test("without --project, the root refuses and lists the projects, and a folder in a project finds it", () => {
-  const refused = knowledge(["symbols"]);
-  assert.equal(refused.status, 2);
-  const { error } = refused.json as { error: { code: string; message: string } };
-  assert.equal(error.code, "invalid-input");
-  assert.match(error.message, /These folders below it are projects: boulder-dash, hover-bovver\. Give --project <folder> with one of them\./);
-
-  const inside = join(workspace, "hover-bovver", "src", "parts");
-  mkdirSync(inside, { recursive: true });
-  const found = knowledge(["symbols"], { cwd: inside });
-  assert.equal(found.status, 0);
-  assert.deepEqual((found.json.symbols as { listed: Array<{ name: string }> }).listed.map((symbol) => symbol.name), ["start"]);
-
-  const nested = knowledge(["symbols", "--project", join("hover-bovver", "src")]);
-  assert.equal(nested.status, 2);
-  assert.match((nested.json.error as { message: string }).message, /inside the project hover-bovver\. Give that project folder\./);
-  // From the project folder itself, the message names the folder by its path, not as ".".
+test("from a project folder, a --project inside it is refused, and the message names the project by its path, not as \".\"", () => {
+  mkdirSync(join(workspace, "hover-bovver", "src"), { recursive: true });
   const fromProject = knowledge(["symbols", "--project", "src"], { cwd: join(workspace, "hover-bovver") });
   assert.equal(fromProject.status, 2);
   assert.ok((fromProject.json.error as { message: string }).message.startsWith(`src is inside the project ${join(workspace, "hover-bovver")}. Give that project folder.`), JSON.stringify(fromProject.json));

@@ -350,7 +350,7 @@ export class ProcessSupervisor {
       } catch {
         // The leader has ended already.
       }
-      await Promise.race([exited, sleep(this.#graceMs)]);
+      await Promise.race([exited, sleep(this.#graceMs, undefined, { ref: false })]);
       if (!hasExited(child)) throw new Refusal("operation-failed", `process ${pid} did not end${failure === undefined ? "" : `: ${failure}`}`);
       return;
     }
@@ -362,7 +362,7 @@ export class ProcessSupervisor {
       }
     }
     // A group of zombies counts as gone before Node reaps the leader and reports its exit;
-    // stopped means that Node has seen that exit.
-    await Promise.race([exited, sleep(KILL_WAIT_MS)]);
+    // stopped means that Node has seen that exit. The limit does not keep this process running.
+    await Promise.race([exited, sleep(KILL_WAIT_MS, undefined, { ref: false })]);
   }
 }
