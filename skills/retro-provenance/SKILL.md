@@ -118,7 +118,7 @@ Compares the releases byte by byte at the addresses where all releases have byte
 - `identicalShare`: the share of identical bytes, with 3 decimals. It is 1 only when no byte differs.
 - `differences`: each item has `start`, `end`, `values` and `groups`. `values` gives the bytes of each release, at most 32. `groups` gives the releases that have the same bytes there.
 - `moreDifferences: true`: `differences` holds only the first differences.
-- `suggestedShifts`: only when `identicalShare` is less than 0.5. Each item has `release`, `shift` and `matchingSequences`. Each release has at most 3 shifts, with the most `matchingSequences` first. `current: true` marks the shift of this run.
+- `suggestedShifts`: only when `identicalShare` is less than 0.5 and `common` is not empty. Each item has `release`, `shift` and `matchingSequences`. Each release has at most 3 shifts, with the most `matchingSequences` first. `current: true` marks the shift of this run.
 - `shiftsNotSuggested`: each item has a `reason`. The reason tells why a shift does not fit in `$0000-$ffff`.
 - `banks`: only for releases of the ZX Spectrum 128K. Each item compares one RAM bank outside the CPU view, at `$c000-$ffff`. The script compares a bank only when all releases hold it. A release holds a bank when the bank has a byte that is not 0. Each item has `space` (`ram0` to `ram7`), and `common`, `identicalBytes`, `differingBytes`, `identicalShare`, `differences` and `moreDifferences` as above. `--shift` does not move a bank. `--frames` does not watch a bank.
 

@@ -515,4 +515,10 @@ test("match in a ZX Spectrum project skips the routines of another CPU and write
   } finally {
     db?.close();
   }
+  // A library with no routine of another CPU gives otherCpu 0.
+  saveRoutine(libraryFolder("zx-only", { create: true, cwd: scratch }), routineFrom(z80Source()).routine, false);
+  const only = spawnSync(process.execPath, [...process.execArgv, provenance, "match", "--library", "../zx-only"], { cwd: project, encoding: "utf8" });
+  assert.equal(only.status, 0, only.stdout + only.stderr);
+  const onlyJson = readEnvelope(only.stdout, only.status).json;
+  assert.deepEqual([onlyJson.routines, onlyJson.otherCpu], [1, 0]);
 });

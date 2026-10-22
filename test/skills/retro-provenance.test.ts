@@ -551,6 +551,8 @@ test("compare with no common range tells to give a shift or another range, and a
   assert.deepEqual(empty.json.common, []);
   assert.equal(empty.envelope.hint, "common is empty: the releases do not have bytes at the same addresses. Give --shift, or a --range that all releases have.");
   assert.equal(empty.envelope.nextAction, undefined);
+  // No byte was compared: no shift is suggested.
+  assert.equal(empty.json.suggestedShifts, undefined);
   const missing = provenance(["compare", "knowledge", "nothere.z80"], root);
   assert.equal(missing.status, 2, missing.stdout);
   assert.equal(missing.envelope.code, "not-found");

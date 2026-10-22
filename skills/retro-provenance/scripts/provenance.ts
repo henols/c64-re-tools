@@ -240,9 +240,11 @@ async function compare(call: Call): Promise<unknown> {
   }
   // A poor match at the load addresses can mean that the releases are placed differently.
   // Each release gets its best shifts: data that stayed can outvote code that moved, so one is not enough.
+  // With no common range, no byte was compared: a shift from bytes outside the range tells nothing about it.
   const applied = loaded.map((item) => item.shift);
+  const empty = comparison.common.length === 0;
   const suggestions =
-    share < 0.5
+    share < 0.5 && !empty
       ? releases.slice(1).flatMap((release, index) =>
           suggestShifts(releases[0]!, release).map((found) => {
             const suggestion = shiftSuggestion(releases, applied, index + 1, found);
@@ -284,7 +286,6 @@ async function compare(call: Call): Promise<unknown> {
   const best = suggested.find((suggestion) => !("current" in suggestion));
   const hints: string[] = [];
   let nextAction: string | undefined;
-  const empty = comparison.common.length === 0;
   // No common range: --align maps nothing either. A shift or another range gives bytes to compare, and the script cannot tell which one.
   if (empty) hints.push("common is empty: the releases do not have bytes at the same addresses. Give --shift, or a --range that all releases have.");
   else if (best !== undefined && "shift" in best) {
@@ -598,7 +599,7 @@ function matchCommand(call: Call): unknown {
       })),
     )
     .sort((a, b) => a.start.localeCompare(b.start));
-  const result: Record<string, unknown> = { library, routines: routines.length, ...(otherCpu === 0 ? {} : { otherCpu }), matches: list(matches) };
+  const result: Record<string, unknown> = { library, routines: routines.length, otherCpu, matches: list(matches) };
   const noMatch = "No routine of the library is in the program. A packed program can hold a routine in a packed form. Unpack the program, put the unpacked program into the project knowledge, and run match again.";
   const withNote = (shown: unknown, hint: string) => [cutNote(shown, undefined), hint].filter((part) => part !== undefined).join(" ");
   if (matches.length === 0) return reply(result, { hint: noMatch });
