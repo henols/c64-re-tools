@@ -140,9 +140,11 @@ In a ZX Spectrum project, the record file is:
 - `program`: a `.z80` or `.sna` snapshot, relative to the project folder. The run starts at the PC of the snapshot.
 - `frames`: the CPU runs that number of frames.
 - `press`: the keys stay down for `frames` frames (default 3), then come up. A key is a-z, 0-9, `space`, `enter`, `caps` (CAPS SHIFT) or `symbol` (SYMBOL SHIFT). Give `caps` with a letter for a capital.
-- `joystick`: the Kempston joystick from now on: `up`, `down`, `left`, `right` and `fire`. `null` releases it.
+- `joystick`: the Kempston joystick from now on: `up`, `down`, `left`, `right` and `fire`, each `true` or `false`. `null` releases it. `port` and `direction` are the C64 form, and the script refuses them.
 
-The inputs are the keyboard (each port `$xxFE`) and the Kempston port (`$xx1F`). The recording folder holds `recording.json` (the machine, the steps, the end tick, the RAM hash and the input sites), `reads.txt`, `coverage.bin` and `program.z80`.
+The file has only `name`, `program` and `steps`. The script refuses each other key, for example `checkpoint`, `state` or `inputs`. It refuses each other step, for example `type`, `write` or `runUntil`. The steps must have at least one `frames` or `press` step.
+
+The inputs are the keyboard (each port `$xxFE`) and the Kempston port (`$xx1F`). The recording folder holds `recording.json` (the machine, the SHA-256 of `program.z80`, the steps, the end tick, the RAM hash and the input sites), `reads.txt`, `coverage.bin` and `program.z80`.
 
 ## Replay
 
@@ -152,7 +154,7 @@ A recording without names (`symbols` is `none`) takes the names of the project k
 
 For the rebuild, the script finds each name with the names of the rebuild (`--symbols`). A `$` address is an address of the original. It moves with the name before it in the original: the script finds the same name in the rebuild and adds the same offset. Code moves with a code label, and data with any name. A site in ROM does not move. Give a state item a name, or the state moves with the code before it.
 
-The body of the envelope of `replay` has these fields:
+For a C64 program, the body of the envelope of `replay` has these fields. The section "A ZX Spectrum program" of `SKILL.md` gives the body for a ZX Spectrum program.
 
 - `result`: PASS, FAIL or INCONCLUSIVE.
 - `side`: `original` for the check of the original only, `rebuild` with `--rebuild`.

@@ -13,7 +13,7 @@ import { C64RunSession } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { UsageError } from "#src/script.ts";
-import { firstDifference, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./recording.ts";
+import { firstDifference, parseStateItem, pinLines, readRecording, recordingFolder, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./recording.ts";
 import { namesOf } from "./scenario.ts";
 
 const MAX_STATE_ITEMS = 16;
@@ -34,7 +34,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
   if ((values.checkpoint === undefined) !== (values.state.length === 0)) throw new UsageError("--checkpoint and --state go together. Give both of them, or neither.");
   if (values.state.length + values.pin.length > MAX_STATE_ITEMS) throw new UsageError(`There are more than ${MAX_STATE_ITEMS} --state and --pin items. Give at most ${MAX_STATE_ITEMS} of them.`);
   if (values.pin.length > 0 && values.checkpoint === undefined) throw new UsageError("--pin needs --checkpoint and --state. Give them too, or leave out --pin.");
-  const folder = values.folder.replace(/\/+$/, "").replace(/\/recording\.json$/, "");
+  const folder = recordingFolder(values.folder);
   const recording = readRecording(folder);
   const given: Comparison | undefined =
     values.checkpoint === undefined ? undefined : { checkpoint: values.checkpoint, state: values.state.map((item) => parseStateItem(item, "--state")), ...(values.pin.length === 0 ? {} : { pin: values.pin.map((item) => parseStateItem(item, "--pin")) }) };

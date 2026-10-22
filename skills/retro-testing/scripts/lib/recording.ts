@@ -9,7 +9,7 @@
 // state can be chosen at replay time, with the names that the knowledge has then.
 
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { addressOf, formatAddress, parseAddress } from "#src/address.ts";
@@ -19,6 +19,7 @@ import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes,
 import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
 import { START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
+import { projectRoot, resolveReadFile } from "#src/project.ts";
 import type { Workspace } from "#src/native/staging.ts";
 import { namesOf, type Outcome } from "./scenario.ts";
 
@@ -244,6 +245,23 @@ function checkCoreStep(step: ActionStep, at: string, fail: (message: string) => 
     else if (target.space !== "c64") fail(`${at}: a recording has the C64 alone, not ${target.space}`);
     else if (target.kind === "address" && target.condition !== undefined) fail(`${at}: a recording has no condition at an address target`);
   }
+}
+
+/**
+ * The recording folder of a replay: the subject without a slash or recording.json
+ * at its end. A file there, for example the record file, is refused with the
+ * folder that record writes.
+ */
+export function recordingFolder(subject: string): string {
+  const folder = subject.replace(/\/+$/, "").replace(/\/recording\.json$/, "");
+  let file = false;
+  try {
+    file = statSync(resolveReadFile(folder, projectRoot())).isFile();
+  } catch {
+    // Nothing there, or a path that leaves the project: the read of recording.json refuses it.
+  }
+  if (file) throw new Refusal("invalid-input", `${subject} is a file, not a recording folder. Give the --out folder that record wrote, for example tests/recordings/<name>.`);
+  return folder;
 }
 
 /** Reads and checks recording.json of a recording folder. */

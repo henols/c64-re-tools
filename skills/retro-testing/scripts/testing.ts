@@ -10,22 +10,22 @@ import { formatAddress } from "#src/address.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
-import { writeReported } from "#src/host-client/transfer.ts";
+import { writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { C64RunSession, PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { ZX_FRAME_CYCLES, ZxRunSession } from "#src/native/zxrun.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { machineOf } from "#src/knowledge/project-machine.ts";
-import { readProjectFile } from "#src/host-client/transfer.ts";
-import { readZxRecordFile, readZxRecording, ZX_RECORDING_FILES, zxRecord, zxReplay, zxVerdict } from "./lib/zx-recording.ts";
+import { readZxRebuild, readZxRecordFile, readZxRecording, ZX_RECORDING_FILES, zxProgramProblem, zxRamDifferences, zxRamParts, zxRecord, zxReplay, zxVerdict, type ZxReplaySide } from "./lib/zx-recording.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative } from "#src/project.ts";
-import { OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type Reply } from "#src/script.ts";
+import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type Reply } from "#src/script.ts";
+import type { Machine } from "#src/machine.ts";
 import { diffFiles } from "./lib/diff-files.ts";
 import { CANCELLED, play } from "./lib/play.ts";
-import { readRecordFile, record, RECORDING_FILES } from "./lib/recording.ts";
+import { readRecordFile, record, RECORDING_FILES, recordingFolder } from "./lib/recording.ts";
 import { replay } from "./lib/replay.ts";
 import { runFile } from "./lib/runs.ts";
 import { namesOf, readScenario, runScenario, scenarioNames, type Scenario, type ScenarioResult } from "./lib/scenario.ts";
@@ -46,6 +46,7 @@ const ALWAYS = [
 const INCONCLUSIVE_HINT = "reason tells why the script could not compare. This is not a failure of the program. Correct the cause, then run the command again.";
 
 async function test(call: Call): Promise<ScenarioResult | Reply> {
+  refuseOtherMachine("test");
   const scenario = readScenario(call.subject(0));
   const out = call.string("out");
   // Every file of the scenario is checked before the emulator starts.
@@ -67,14 +68,25 @@ async function test(call: Call): Promise<ScenarioResult | Reply> {
   }
 }
 
-/** True when the project machine is a ZX Spectrum: record and replay then run in zxrun. */
-function spectrumProject(): boolean {
+/** The machine of the project: a ZX Spectrum records and replays in zxrun. */
+function projectMachine(): Machine {
   const db = openForRead();
   try {
-    return machineOf(db).family === "spectrum";
+    return machineOf(db);
   } finally {
     db?.close();
   }
+}
+
+const spectrumProject = () => projectMachine().family === "spectrum";
+
+/** test and run start a C64 in VICE: in a project of another machine they refuse before they read a file. */
+function refuseOtherMachine(command: string): void {
+  const machine = projectMachine();
+  if (machine.family === "c64") return;
+  throw new UsageError(`${command} is for a C64 program, and this project is a ${machine.name} project.`, {
+    hint: "Record a session of the snapshot of the program with record. Then replay the recording on the original and on the rebuild with replay.",
+  });
 }
 
 /** record for a ZX Spectrum program: the steps on its snapshot in zxrun. */
@@ -109,19 +121,35 @@ async function zxRecordCommand(call: Call): Promise<Record<string, unknown>> {
   }
 }
 
-/** replay for a ZX Spectrum program: the original, and the rebuild over the snapshot, must end with the recorded tick and RAM. */
-async function zxReplayCommand(call: Call): Promise<Record<string, unknown>> {
-  for (const option of ["checkpoint", "state", "pin", "symbols", "out"]) {
+/** The number of changed RAM ranges that the body of a ZX Spectrum replay lists. */
+const ZX_LISTED_RANGES = 16;
+
+/**
+ * replay for a ZX Spectrum program: the original, and the rebuild over the
+ * snapshot, must end with the recorded tick and RAM. A rebuild that does not
+ * gives the changed ranges of its RAM against the original's, and with --out
+ * the RAM of both sides as files.
+ */
+async function zxReplayCommand(call: Call): Promise<Reply | Record<string, unknown>> {
+  for (const option of ["checkpoint", "state", "pin", "symbols"]) {
     if (call.strings(option).length > 0) throw new UsageError(`--${option} is for a C64 program. A ZX Spectrum replay compares the tick and the RAM at the end`);
   }
   const rebuildPath = call.string("rebuild");
   const at = call.address("rebuild-at");
+  const out = call.string("out");
   if ((rebuildPath === undefined) !== (at === undefined)) throw new UsageError("give --rebuild and --rebuild-at together: the bytes of the rebuild and the address of their first byte");
-  const folder = call.subject(0).replace(/\/+$/, "");
+  if (out !== undefined && rebuildPath === undefined) throw new UsageError("--out writes the RAM of the original and the rebuild, and --rebuild is missing. Give --rebuild and --rebuild-at too, or leave out --out.");
+  const folder = recordingFolder(call.subject(0));
   const recording = readZxRecording(folder);
-  const rebuild = rebuildPath === undefined ? undefined : { bytes: readProjectFile(rebuildPath, { what: "--rebuild" }).bytes, at: at! };
+  // The rebuild is checked before the replay core starts.
+  const rebuild = rebuildPath === undefined ? undefined : readZxRebuild(rebuildPath, at!);
+  const changed = zxProgramProblem(folder, recording);
+  if (changed !== undefined) {
+    return reply({ result: "INCONCLUSIVE", recording: folder, reason: changed, sides: [] }, { hint: "The program file of the recording changed, so the recording is no reference. Record the session again." });
+  }
   const context = localToolContext();
   const sides: Array<{ side: "original" | "rebuild"; problem?: string; ticks: number; hash: string }> = [];
+  const ends: ZxReplaySide[] = [];
   for (const side of rebuild === undefined ? (["original"] as const) : (["original", "rebuild"] as const)) {
     const core = await ZxRunSession.open(context);
     const workspace = Workspace.create(context.supervisor, "c64-re-tools-replay-");
@@ -129,19 +157,63 @@ async function zxReplayCommand(call: Call): Promise<Record<string, unknown>> {
       const outcome = await zxReplay(core, folder, recording, workspace, side === "rebuild" ? rebuild : undefined);
       const problem = zxVerdict(recording, outcome);
       sides.push({ side, ticks: outcome.ticks, hash: outcome.hash, ...(problem === undefined ? {} : { problem }) });
+      ends.push(outcome);
     } finally {
       await core.close();
       workspace.remove();
     }
+    // An original that does not end as recorded makes the recording no reference: the rebuild does not run.
+    if (sides[0]!.problem !== undefined) {
+      return reply(
+        { result: "INCONCLUSIVE", recording: folder, reason: `the recording does not reproduce on the original: ${sides[0]!.problem}`, sides },
+        { hint: "The original does not end with the tick and the RAM of the recording, so the recording is no reference. Record the session again." },
+      );
+    }
   }
-  const original = sides[0]!;
-  // An original that does not end as recorded makes the recording no reference.
-  const result = original.problem !== undefined ? "INCONCLUSIVE" : sides.some((side) => side.problem !== undefined) ? "FAIL" : "PASS";
-  return { result, recording: folder, sides };
+  const rebuilt = sides[1];
+  if (rebuilt?.problem === undefined) return { result: "PASS", recording: folder, sides };
+  const parts = zxRamParts(ends[0]!.banks, ends[1]!.banks).filter((part) => !Buffer.from(part.original).equals(Buffer.from(part.rebuild)));
+  const differences = zxRamDifferences(parts);
+  const files: Written[] = [];
+  if (out !== undefined) {
+    for (const part of parts) {
+      const suffix = part.bank === undefined ? "" : `-ram${part.bank}`;
+      files.push(writeReported(`${out}/original${suffix}.bin`, part.original, { what: "--out" }), writeReported(`${out}/rebuild${suffix}.bin`, part.rebuild, { what: "--out" }));
+    }
+  }
+  const show = (range: (typeof differences.ranges)[number]) => ({
+    ...(range.bank === undefined ? {} : { bank: range.bank }),
+    start: formatAddress(range.start),
+    end: formatAddress(range.end),
+    ...(range.a === undefined ? {} : { original: range.a, rebuild: range.b }),
+  });
+  const rest = out === undefined ? "--out <dir>, then compare the RAM files with diff" : "the RAM files in files to diff";
+  const body = {
+    result: "FAIL",
+    recording: folder,
+    reason: `the rebuild does not end as the original: ${rebuilt.problem}`,
+    sides,
+    ...(parts.length === 0 ? {} : { memory: { changedBytes: differences.changedBytes, ...listed(differences.ranges, ZX_LISTED_RANGES, show, rest) } }),
+    ...(out === undefined ? {} : { files }),
+  };
+  const first = parts[0];
+  if (first === undefined) return reply(body, { hint: "The RAM at the end is the RAM of the original, but the input reads or the tick are different. reason tells which. Examine the rebuild in the emulator." });
+  if (out === undefined) return reply(body, { hint: "memory lists the changed ranges of the RAM at the end: original and rebuild give the bytes of a short range. Give --out to get the RAM of both sides as files." });
+  const suffix = first.bank === undefined ? "" : `-ram${first.bank}`;
+  return reply(body, {
+    hint: `files holds the RAM of each side at the end${first.bank === undefined ? "" : ", one file for each changed bank"}. Run nextAction to compare them${parts.length > 1 ? " for the first changed bank" : ""}. Then find the code that writes the first changed address.`,
+    nextAction: call.next("diff", `${out}/original${suffix}.bin`, `${out}/rebuild${suffix}.bin`, "--address", formatAddress(first.at)),
+  });
 }
 
 async function recordCommand(call: Call): Promise<Reply> {
-  if (spectrumProject()) return reply(await zxRecordCommand(call), { hint: "Run nextAction to replay the recording on the original. Give --rebuild and --rebuild-at to compare a rebuild.", nextAction: call.next("replay", call.string("out")!) });
+  if (spectrumProject()) {
+    const out = call.string("out")!;
+    return reply(await zxRecordCommand(call), {
+      hint: `Commit ${out} with the scenarios. Add ${out}/${ZX_RECORDING_FILES.coverage} to the project knowledge as coverage. To make sure that the recording replays, run nextAction. Give --rebuild and --rebuild-at to compare a rebuild.`,
+      nextAction: call.next("replay", out),
+    });
+  }
   const playing = call.flag("play");
   if (!playing && (call.count("joystick") !== undefined || call.count("http-port") !== undefined)) throw new UsageError("--joystick and --http-port need --play. Give --play, or leave out these flags.");
   const joystick = (call.count("joystick") ?? 2) as 1 | 2;
@@ -234,6 +306,7 @@ const COMMANDS: CommandSpec[] = [
     options: { out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the files of the steps and results.json" } },
     notes: 'A run file is one JSON object. It must have name, start and steps. name is a non-empty string. start is { "program": "<file.prg>" }, { "program": "<file.prg>", "load": true } or { "snapshot": "<file.vsf>" }. steps is a list with at least one step. Optional: symbols ("knowledge", "none" (default) or a JSON file) and videoStandard ("pal" (default) or "ntsc"). The script refuses other keys.',
     run: async (call) => {
+      refuseOtherMachine("run");
       const { output, failed } = await runFile(call.subject(0), call.string("out")!);
       if (!failed) return { result: "PASS", ...output };
       const hint = output.reason !== undefined ? "reason tells why a step did not run. Correct the step or the start, then run again." : "failedExpectations names the expect steps that failed. expectations in results.json gives the expected and the actual values.";
@@ -263,16 +336,11 @@ const COMMANDS: CommandSpec[] = [
       rebuild: { kind: "path", value: "<file>", help: "the rebuild to compare with the original: a PRG, or for a ZX Spectrum program the bytes of its build, with --rebuild-at" },
       "rebuild-at": { kind: "address", value: "<address>", help: "ZX Spectrum: the address of the first byte of --rebuild, as the range of its build gives it" },
       symbols: { ...OPTIONS.symbols, help: "the names of the rebuild: the symbol file of its build (default: the symbols of the recording)" },
-      out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder" },
+      out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder. ZX Spectrum: the RAM of both sides at the end" },
     },
     notes: "A recording without names takes the names of the knowledge for the original. A $ address is an address of the original: on the rebuild it moves with the name before it.",
     run: async (call) => {
-      if (spectrumProject()) {
-        const verdict = await zxReplayCommand(call);
-        if (verdict.result === "INCONCLUSIVE") return reply(verdict, { hint: "The original does not end with the tick and the RAM of the recording, so the recording is no reference. Record again." });
-        if (verdict.result === "FAIL") return reply(verdict, { hint: "The rebuild does not end with the tick and the RAM of the original. Compare the bytes of the rebuild with the program, then examine the rebuild in the emulator." });
-        return verdict;
-      }
+      if (spectrumProject()) return zxReplayCommand(call);
       if (call.address("rebuild-at") !== undefined) throw new UsageError("--rebuild-at is for a ZX Spectrum program: a PRG gives its load address");
       const [checkpoint, rebuild, symbols, out] = [call.string("checkpoint"), call.string("rebuild"), call.string("symbols"), call.string("out")];
       const result = await replay({ folder: call.subject(0), state: call.strings("state"), pin: call.strings("pin"), ...(checkpoint === undefined ? {} : { checkpoint }), ...(rebuild === undefined ? {} : { rebuild }), ...(symbols === undefined ? {} : { symbols }), ...(out === undefined ? {} : { out }) });
@@ -302,7 +370,8 @@ const COMMANDS: CommandSpec[] = [
     },
     run: (call) => {
       const [address, out] = [call.address("address"), call.string("out")];
-      return diffFiles(call.subject(0), call.subject(1), { gap: call.count("gap")!, max: call.count("max-listed")!, ntsc: call.flag("ntsc"), ...(address === undefined ? {} : { at: address }), ...(out === undefined ? {} : { out }) });
+      const machine = projectMachine();
+      return diffFiles(call.subject(0), call.subject(1), { gap: call.count("gap")!, max: call.count("max-listed")!, ntsc: call.flag("ntsc"), ...(address === undefined ? {} : { at: address }), ...(out === undefined ? {} : { out }), ...(machine.family === "c64" ? {} : { memoryOnly: machine.name }) });
     },
   },
   {

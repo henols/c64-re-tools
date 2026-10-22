@@ -86,7 +86,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--rebuild <file>` | `replay` | The rebuild to compare with the original: a PRG, or for a ZX Spectrum program the bytes of its build. Without it, the script replays only on the original. |
 | `--rebuild-at <address>` | `replay` | ZX Spectrum only: the address of the first byte of `--rebuild`. The build gives it in its range. |
 | `--symbols <file>` | `replay` | The symbol file of the rebuild. The default is the symbols of the recording. |
-| `--out <dir>` | `replay` | With a FAIL, write the RAM of each side at the first different checkpoint into this folder. |
+| `--out <dir>` | `replay` | With a FAIL, write the RAM of each side at the first different checkpoint into this folder. For a ZX Spectrum program, write the RAM of each side at the end. |
 | `--gap <n>` | `diff` | Join changed ranges across at most n equal bytes. The default is 0. |
 | `--max-listed <n>` | `diff` | List at most n items of each list. The default is 50. |
 | `--ntsc` | `diff` | The snapshot files are of an NTSC machine. The default is PAL. |
@@ -196,7 +196,7 @@ Control each source of random numbers:
 
 The script does the steps of the record file on the original program. Then it writes the recording folder into `--out`: `recording.json`, `reads.txt` and `coverage.bin`. The program must be a PRG file.
 
-`body` holds:
+For a C64 program, `body` holds:
 
 - `result`: `PASS` when the script recorded the session. `FAIL` when the session did not complete.
 - `recorded`: `true` or `false`.
@@ -237,7 +237,7 @@ A `$` address is an address of the original. On the rebuild, it moves with the n
 
 A rebuild can be a loader with a start screen that RUN starts. If the symbols of the rebuild have `loader_start_screen_wait` and `loader_start_screen_continue`, the script runs the rebuild to the wait. Then it sets the PC to `loader_start_screen_continue`. The cycles before the wait do not count.
 
-`body` holds `result`, `side`, `firstDifference`, `reason` and `files`. The section "Replay" of `references/recording-format.md` gives each field.
+For a C64 program, `body` holds `result`, `side`, `firstDifference`, `reason` and `files`. The section "Replay" of `references/recording-format.md` gives each field. The section "A ZX Spectrum program" gives the body for a ZX Spectrum program.
 
 Do this for each result:
 
@@ -257,14 +257,29 @@ Traps:
 
 ### A ZX Spectrum program
 
-In a ZX Spectrum project, `record` and `replay` run the snapshot of the program. `test`, `run` and `diff` are for a C64 program.
+In a ZX Spectrum project, `record` and `replay` run the snapshot of the program. `test` and `run` are for a C64 program, and they refuse in a ZX Spectrum project. `diff` compares only two memory files (`.bin`), for example two builds or the RAM files of a replay.
+
+Record:
 
 - The record file gives `program`: the `.z80` or `.sna` snapshot of the program, for example the snapshot in the project knowledge. The steps are `frames`, `press` and `joystick` (the Kempston joystick). See references/recording-format.md.
-- The recording keeps each read of the keyboard and of the Kempston port. The recording folder also holds `program.z80`.
+- The script refuses a key or a step of a C64 record file. It also refuses steps that run no frame.
+- The recording keeps each read of the keyboard and of the Kempston port. The recording folder also holds `program.z80`. `recording.json` keeps the SHA-256 of `program.z80`.
+- The coverage map starts at the PC of the snapshot.
+- The body of `record` holds `result`, `recorded`, `out`, `files`, `name`, `frames`, `inputSites` and `executed`. It has no `events` and no `coverageFrom`.
+- `PASS`: `hint` tells you to commit the folder and to add its `coverage.bin` to the project knowledge as coverage. `nextAction` replays the recording on the original.
+
+Replay:
+
 - `replay` replays the recording on the snapshot. The original must end at the tick and with the RAM of the recording.
-- For a rebuild, give the bytes of its build with `--rebuild`, and the address of their first byte with `--rebuild-at`. The script puts the bytes over the snapshot. The rebuild must end at the same tick and with the same RAM.
-- `body.sides` gives the end `ticks` and the RAM `hash` of each side, and `problem` for a side that does not end as recorded.
-- `--checkpoint`, `--state`, `--pin`, `--symbols`, `--out` and `--play` are for a C64 program.
+- For a rebuild, give the bytes of its build with `--rebuild`, and the address of their first byte with `--rebuild-at`. The script puts the bytes over the snapshot. The rebuild must end at the same tick and with the same RAM as the original.
+- The script refuses a tape, a snapshot or a program file as `--rebuild`. Give the binary file of the build.
+- The body of `replay` holds `result`, `recording`, `sides`, and `reason` with a FAIL or an INCONCLUSIVE. It has no `side` and no `firstDifference`.
+- `sides` gives the end `ticks` and the RAM `hash` of each side, and `problem` for a side that does not end as recorded.
+- A `FAIL` with a different RAM also gives `memory`. `memory.changedBytes` is the number of changed bytes of the RAM at the end. Each range in `memory.listed` has `start` and `end`. A range of 16 bytes or fewer also has the bytes `original` and `rebuild`. On a 128K, each range has its `bank`, and its addresses are in `$c000-$ffff`.
+- With `--out` and a FAIL, the script writes the RAM of each side at the end into the folder. These are `original.bin` and `rebuild.bin` from `$4000`. On a 128K, the script writes a pair of files for each changed bank. `nextAction` compares the first pair with `diff`.
+- `INCONCLUSIVE` with "does not reproduce": the original does not end as recorded. Record the session again.
+- `INCONCLUSIVE` with "is not the program of the recording": `program.z80` in the recording folder changed. Record the session again.
+- `--checkpoint`, `--state`, `--pin`, `--symbols` and `--play` are for a C64 program.
 
 ---
 
@@ -276,7 +291,7 @@ The script tells what changed between two states of one kind. Use it in place of
 
 `body` holds `a` and `b`, and the parts that apply to the kind of state:
 
-- `memory`: the changed ranges of the RAM. `changedBytes` is the number of changed bytes. Each range in `listed` has `start`, `end`, and the bytes `a` and `b`.
+- `memory`: the changed ranges of the RAM. `changedBytes` is the number of changed bytes. Each range in `listed` has `start` and `end`. A range of 16 bytes or fewer also has the bytes `a` and `b`.
 - `colorRam`: with two snapshot files, the changed ranges of the colour RAM.
 - `registers`: each changed register and chip value, with `name`, `a` and `b`. `cpu.pc` is a `$` address. Each CPU flag is `cpu.flags.<flag>`, for example `cpu.flags.c`, with `true` or `false`.
 - `observed`: with two observations, each changed memory item.

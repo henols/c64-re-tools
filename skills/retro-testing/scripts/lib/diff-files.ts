@@ -17,10 +17,14 @@ import { diffStates, type ChangedRange, type MachineState } from "./diff.ts";
 
 type Kind = "snapshot" | "memory" | "observation";
 
+/** What a project of a machine other than the C64 can compare: memory files. */
+const MEMORY_FILES = "Give two memory files (.bin) of one size, for example two builds or the RAM files of a replay, and --address with the address of their first byte.";
+
 function kindOf(path: string): Kind {
   if (/\.vsf$/i.test(path)) return "snapshot";
   if (/\.json:[^:]+$/.test(path)) return "observation";
   if (/\.bin$/i.test(path)) return "memory";
+  if (/\.(z80|sna|szx|zsf)$/i.test(path)) throw new UsageError(`${path} is a ZX Spectrum snapshot, and diff compares no ZX Spectrum snapshot.`, { hint: MEMORY_FILES });
   throw new UsageError(`${path} is no .vsf, .bin or results.json:<observation>`);
 }
 
@@ -131,9 +135,13 @@ export function comparedItems(what: string, a: readonly string[], b: readonly st
   return { compared, reason: `No ${what} was compared: the observations have none in common. ${first} has ${has(a)}; ${second} has ${has(b)}.` };
 }
 
-/** The differences of two states of one kind: snapshots, memory files or observations of runs. */
-export async function diffFiles(first: string, second: string, options: { gap: number; max: number; ntsc: boolean; at?: number; out?: string }): Promise<Record<string, unknown>> {
+/** The differences of two states of one kind: snapshots, memory files or observations of runs. memoryOnly names a machine that is not a C64: only memory files then. */
+export async function diffFiles(first: string, second: string, options: { gap: number; max: number; ntsc: boolean; at?: number; out?: string; memoryOnly?: string }): Promise<Record<string, unknown>> {
   const kind = kindOf(first);
+  // The snapshots and the observations are of a C64: another machine compares memory files only.
+  for (const path of [first, second]) {
+    if (options.memoryOnly !== undefined && kindOf(path) !== "memory") throw new UsageError(`${path} is not a memory file. In a ${options.memoryOnly} project, diff compares only memory files.`, { hint: MEMORY_FILES });
+  }
   if (kindOf(second) !== kind) throw new UsageError("The two states are not of one kind. Give two snapshot files, two memory files or two observations.");
   if (options.at !== undefined && kind !== "memory") throw new UsageError(`--address is only for two memory files (.bin). ${kind === "snapshot" ? "A snapshot file holds all 64 KiB" : "An observation gives the address of each item"}: leave out --address.`);
   if (options.ntsc && kind !== "snapshot") throw new UsageError(`--ntsc is only for two snapshot files (.vsf), which restore in an emulator. ${kind === "memory" ? "Memory files" : "Observations"} compare as they are: leave out --ntsc.`);
