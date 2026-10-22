@@ -9,6 +9,7 @@
 // program (D71).
 
 import { projectMachine, projectMainSpace } from "#src/knowledge/names.ts";
+import { machineOf } from "#src/knowledge/project-machine.ts";
 import { basename } from "node:path";
 
 import { type AddressRange, addressOf, formatAddress, parseAddress } from "#src/address.ts";
@@ -41,8 +42,8 @@ import {
   symbolSuppressed,
 } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
-import { C64, type Machine, type Space } from "#src/machine.ts";
-import { platformNames } from "#src/platform.ts";
+import type { Machine, Space } from "#src/machine.ts";
+import { platformNamesOfSpace } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
@@ -461,7 +462,8 @@ function leftoversCommand(call: Call): unknown {
   return withFile(body, out);
 }
 
-const platform = () => new Map(platformNames().map((entry) => [entry.name, entry.address]));
+/** The platform names of the main space of the machine, by name. */
+const platform = (machine: Machine) => new Map(platformNamesOfSpace(machine.spaces.main).map((entry) => [entry.name, entry.address]));
 
 /** routine: saves a module or a range of the program in the knowledge, with its knowledge, as a routine of the library (D71). */
 function routineCommand(call: Call): unknown {
@@ -469,6 +471,7 @@ function routineCommand(call: Call): unknown {
   const library = call.string("library")!;
   const db = openForRead();
   try {
+    const machine = machineOf(db);
     const image = requireProgram(db);
     const segmentOf = (at: number) => image.segments.find((segment) => at >= segment.start && at <= segment.end);
     let start: number;
@@ -492,6 +495,7 @@ function routineCommand(call: Call): unknown {
     if (name === undefined) throw new UsageError(`The knowledge has no user or LLM name at ${formatAddress(start)}.`, { hint: "Give --name <name>, or name the start of the routine in the project knowledge first." });
     const { routine, leftOut } = routineFrom({
       name,
+      cpu: machine.cpu,
       ...(title === undefined ? {} : { title }),
       program: basename(projectRoot()),
       image: `knowledge revision ${currentRevision(db)}`,
@@ -504,7 +508,7 @@ function routineCommand(call: Call): unknown {
       comments: listComments(db, range, SEMANTIC_ORIGINS),
       references: listReferences(db, range, undefined, SEMANTIC_ORIGINS),
       operands: listOperands(db, range, SEMANTIC_ORIGINS),
-      platform: platform(),
+      platform: platform(machine),
     });
     const written = saveRoutine(libraryFolder(library, { create: true, cwd: projectRoot() }), routine, call.flag("replace"), projectRoot());
     return {
@@ -534,15 +538,20 @@ function matchCommand(call: Call): unknown {
   const apply = call.flag("apply");
   const max = call.count("max-listed")!;
   const list = <T>(items: T[]) => listed(items, max);
-  const routines = readLibrary(libraryFolder(library, { create: false, cwd: projectRoot() }));
-  if (routines.length === 0) throw new Refusal("not-found", `The library ${library} has no routine files. Save a routine with routine first.`);
+  const all = readLibrary(libraryFolder(library, { create: false, cwd: projectRoot() }));
+  if (all.length === 0) throw new Refusal("not-found", `The library ${library} has no routine files. Save a routine with routine first.`);
   const programDb = openForRead();
   let image: ReturnType<typeof requireProgram>;
+  let machine: Machine;
   try {
+    machine = machineOf(programDb);
     image = requireProgram(programDb);
   } finally {
     programDb?.close();
   }
+  // A routine of another CPU cannot be in the program.
+  const routines = all.filter((routine) => routine.cpu === machine.cpu.id);
+  const otherCpu = all.length - routines.length;
   const found = routines.map((routine) => ({ routine, matches: findRoutine(routine, image) }));
   const show = (value: number, size: 1 | 2) => `$${value.toString(16).padStart(2 * size, "0")}`;
   const matches = found
@@ -556,7 +565,7 @@ function matchCommand(call: Call): unknown {
       })),
     )
     .sort((a, b) => a.start.localeCompare(b.start));
-  const result: Record<string, unknown> = { library, routines: routines.length, matches: list(matches) };
+  const result: Record<string, unknown> = { library, routines: routines.length, ...(otherCpu === 0 ? {} : { otherCpu }), matches: list(matches) };
   const noMatch = "No routine of the library is in the program. A packed program can hold a routine in a packed form. Unpack the program, put the unpacked program into the project knowledge, and run match again.";
   const withNote = (shown: unknown, hint: string) => [cutNote(shown, undefined), hint].filter((part) => part !== undefined).join(" ");
   if (matches.length === 0) return reply(result, { hint: noMatch });
@@ -577,7 +586,7 @@ function matchCommand(call: Call): unknown {
         referenceSuppressed: (reference) => referenceSuppressed(db, reference),
       },
       image,
-      platform(),
+      platform(machine),
     );
   } finally {
     db?.close();
@@ -590,15 +599,14 @@ function matchCommand(call: Call): unknown {
   if (!apply) {
     return reply(body, { hint: withNote(body, `Examine differing of each match, and changes.writes and changes.leftOut. Then nextAction writes the changes to the project knowledge.${review}`), nextAction: call.next("match", "--library", library, "--apply") });
   }
-  const platformNamed = new Map(platformNames().map((entry) => [entry.name, entry.address]));
-  const applied = withWrite((write) => applyBatch(write, { origin: "llm", description: `Names of the routines of the library ${library}`, image: operandImages(write, platformNamed) }, writes.map(toOperation)));
+  const applied = withWrite((write) => applyBatch(write, { origin: "llm", description: `Names of the routines of the library ${library}`, image: operandImages(write, platform(machine)) }, writes.map((item) => toOperation(item, machine.spaces.main))));
   changes.revision = applied.revision;
   return reply(body, { hint: withNote(body, `The project knowledge has the changes in revision ${applied.revision}.${review}`) });
 }
 
-/** A change of match as a write of the knowledge: its addresses as numbers, in the C64 space. */
-function toOperation(write: BatchWrite): BatchOperation {
-  const parsed: Record<string, unknown> = { ...write, space: C64.spaces.main };
+/** A change of match as a write of the knowledge: its addresses as numbers, in the main space of the machine. */
+function toOperation(write: BatchWrite, space: Space): BatchOperation {
+  const parsed: Record<string, unknown> = { ...write, space };
   for (const key of ["address", "start", "end", "from", "to"]) if (typeof write[key] === "string") parsed[key] = parseAddress(write[key]);
   return parsed as unknown as BatchOperation;
 }

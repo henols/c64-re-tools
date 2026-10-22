@@ -10,9 +10,12 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
 import { writeRefusal, type Written } from "#src/host-client/transfer.ts";
-import { instructionLength } from "#src/cpu/mos6502.ts";
+import type { Cpu } from "#src/cpu.ts";
+import { MOS6502 } from "#src/cpu/mos6502.ts";
+import { Z80 } from "#src/cpu/z80.ts";
 import { formatAddress } from "#src/address.ts";
-import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
+import { identifiers, operandText } from "#src/knowledge/expression.ts";
+import { checkOperandBytes } from "#src/knowledge/write.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
 import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, OPERAND_SELECTS, type OperandSelect, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
 import { checkOutputPath, isInside, knowledgePart, LOCAL_DIRECTORY, PROJECT_DIRECTORY } from "#src/project.ts";
@@ -37,10 +40,15 @@ export interface Relocation {
   value: number;
 }
 
+/** The CPUs of the routines: a routine matches only in a program of its CPU. */
+const CPUS: Record<Cpu["id"], Cpu> = { "6502": MOS6502, z80: Z80 };
+
 /** A routine of the library. Every position is an offset from its start. */
 export interface Routine {
   name: string;
   title?: string;
+  /** The CPU of its code. */
+  cpu: Cpu["id"];
   /** The program (its project folder name), the image, and the address it came from. */
   from: { program: string; image: string; start: number };
   bytes: Uint8Array;
@@ -63,17 +71,12 @@ const POINTER_TYPES: readonly RegionType[] = ["addresses", "addresses-split", "r
 /** The code region types: their bytes are instructions. */
 const CODE_TYPES: readonly RegionType[] = ["code", "jumps"];
 
-/** True for an opcode with an immediate operand, undocumented ones included. */
-function isImmediate(opcode: number): boolean {
-  return (opcode & 0x1d) === 0x09 || (opcode >= 0x80 && ((opcode & 0x1f) === 0x00 || (opcode & 0x1f) === 0x02));
-}
-
-const isBranch = (opcode: number) => (opcode & 0x1f) === 0x10;
-
 /** What the program knows about the range of a routine. Symbols, regions, comments, references and operands are user and LLM rows only. */
 export interface RoutineSource {
   name: string;
   title?: string;
+  /** The CPU of the program. */
+  cpu: Cpu;
   program: string;
   image: string;
   start: number;
@@ -86,7 +89,7 @@ export interface RoutineSource {
   comments: CommentRow[];
   references: ReferenceRow[];
   operands: OperandRow[];
-  /** The C64 platform names: an operand expression may use them in any program. */
+  /** The platform names of the machine: an operand expression may use them in any program of the machine. */
   platform: ReadonlyMap<string, number>;
 }
 
@@ -109,6 +112,7 @@ export function routineFrom(source: RoutineSource): { routine: Routine; leftOut:
   const inside = (address: number) => address >= start && address <= end;
   const bytes = Uint8Array.from({ length }, (_, index) => source.byteAt(start + index));
   const leftOut: LeftOut[] = [];
+  const decode = (address: number) => source.cpu.decode(source.byteAt, address)!;
 
   // The instructions: each code region decoded from its start, or from the routine start.
   const instructions: number[] = [];
@@ -117,24 +121,27 @@ export function routineFrom(source: RoutineSource): { routine: Routine; leftOut:
   let next = start;
   for (const region of codeRegions) {
     for (let at = Math.max(region.start, next); at <= Math.min(region.end, end); at = next) {
-      next = at + instructionLength(bytes[at - start]!);
+      next = at + decode(at).length;
       if (next - 1 > end) throw new Refusal("invalid-input", `The instruction at ${where(at)} runs past the end ${where(end)} of the routine. Give an end after it.`);
       instructions.push(at - start);
     }
   }
   if (instructions.length === 0) throw new Refusal("invalid-input", `The knowledge has no code region in ${where(start)}-${where(end)}. Analyze the program for its code regions first, or classify the code in the project knowledge.`);
 
-  // The operands: an address inside the routine moves with it; one outside may differ.
+  // The operands: a 2-byte operand inside the routine moves with it, also an immediate value (a pointer that LD HL,nn loads).
+  // An address outside may differ; an immediate value, a port, a displacement and a branch distance are fixed.
   const relocations = new Map<number, Relocation>();
   const variable = new Set<number>();
   for (const offset of instructions) {
-    const opcode = bytes[offset]!;
-    const size = instructionLength(opcode);
-    if (size === 3) {
-      const value = bytes[offset + 1]! | (bytes[offset + 2]! << 8);
-      if (inside(value)) relocations.set(offset + 1, { at: offset + 1, size: "word", value: value - start });
-      else variable.add(offset + 1).add(offset + 2);
-    } else if (size === 2 && !isBranch(opcode) && !isImmediate(opcode)) variable.add(offset + 1);
+    const field = decode(start + offset).operand;
+    if (field === undefined || field.relative === true) continue;
+    const at = offset + field.offset;
+    const address = source.cpu.operandIsAddress(source.byteAt, start + offset);
+    if (field.size === 2) {
+      const value = bytes[at]! | (bytes[at + 1]! << 8);
+      if (inside(value)) relocations.set(at, { at, size: "word", value: value - start });
+      else if (address) variable.add(at).add(at + 1);
+    } else if (address) variable.add(at);
   }
   for (const region of source.analyzed.filter((item) => POINTER_TYPES.includes(item.type))) {
     const split = region.type.endsWith("-split");
@@ -171,12 +178,13 @@ export function routineFrom(source: RoutineSource): { routine: Routine; leftOut:
       continue;
     }
     const offset = row.address - start;
-    const opcode = bytes[offset]!;
-    if (instructionLength(opcode) === 2 && isImmediate(opcode) && names.some((name) => named.has(name))) {
-      // An immediate that holds a byte of an address inside the routine moves with it.
+    const field = decode(row.address).operand;
+    if (field?.size === 1 && field.relative !== true && !source.cpu.operandIsAddress(source.byteAt, row.address) && names.some((name) => named.has(name))) {
+      // A 1-byte value that holds a byte of an address inside the routine moves with it.
+      const at = offset + field.offset;
       if (row.select === "lo" || row.select === "hi") {
-        relocations.set(offset + 1, { at: offset + 1, size: row.select, value: named.get(row.symbol!)! + row.offset - start });
-      } else variable.add(offset + 1);
+        relocations.set(at, { at, size: row.select, value: named.get(row.symbol!)! + row.offset - start });
+      } else variable.add(at);
     }
     operands.push({ at: offset, select: row.select, ...(row.symbol === undefined ? {} : { symbol: row.symbol }), ...(row.offset === 0 ? {} : { offset: row.offset }), ...(row.expression === undefined ? {} : { expression: row.expression }) });
   }
@@ -200,6 +208,7 @@ export function routineFrom(source: RoutineSource): { routine: Routine; leftOut:
   const routine: Routine = {
     name: source.name,
     ...(source.title === undefined ? {} : { title: source.title }),
+    cpu: source.cpu.id,
     from: { program: source.program, image: source.image, start },
     bytes,
     instructions,
@@ -221,6 +230,7 @@ export function routineText(routine: Routine): string {
   const list = (items: readonly unknown[]) => (items.length === 0 ? "[]" : `[\n${items.map((item) => `    ${JSON.stringify(item)}`).join(",\n")}\n  ]`);
   field("name", JSON.stringify(routine.name));
   if (routine.title !== undefined) field("title", JSON.stringify(routine.title));
+  field("cpu", JSON.stringify(routine.cpu));
   field("from", JSON.stringify({ program: routine.from.program, image: routine.from.image, start: formatAddress(routine.from.start) }));
   field("length", String(routine.bytes.length));
   const hex = Buffer.from(routine.bytes).toString("hex");
@@ -251,6 +261,8 @@ export function parseRoutine(text: string, file: string): Routine {
   if (typeof value.name !== "string" || !ROUTINE_NAME.test(value.name)) fail("name is not a routine name");
   if (`${value.name as string}.json` !== file.split(/[\\/]/).at(-1)) fail(`its name ${value.name as string} is not its file name`);
   if (value.title !== undefined && typeof value.title !== "string") fail("title is not text");
+  if (value.cpu === undefined) fail('it has no cpu. A routine file gives the CPU of its code: "cpu": "6502" or "cpu": "z80"');
+  if (typeof value.cpu !== "string" || !Object.hasOwn(CPUS, value.cpu)) fail(`cpu is not 6502 or z80`);
   const from = value.from as Record<string, unknown> | undefined;
   if (typeof from?.program !== "string" || typeof from.image !== "string" || typeof from.start !== "string" || !/^\$[0-9a-f]{4}$/i.test(from.start)) fail("from needs program, image and start");
   if (!Array.isArray(value.bytes) || !value.bytes.every((line) => typeof line === "string" && /^([0-9a-f]{2})+$/i.test(line))) fail("bytes is not a list of hex lines");
@@ -264,6 +276,7 @@ export function parseRoutine(text: string, file: string): Routine {
   return {
     name: value.name as string,
     ...(value.title === undefined ? {} : { title: value.title as string }),
+    cpu: value.cpu as Cpu["id"],
     from: { program: from!.program as string, image: from!.image as string, start: Number.parseInt((from!.start as string).slice(1), 16) },
     bytes,
     instructions: numbers("instructions"),
@@ -418,6 +431,7 @@ function relocated(relocation: Relocation, start: number, part: 0 | 1): number |
 export function findRoutine(routine: Routine, image: Searched, origin = routine.from.start): Match[] {
   const length = routine.bytes.length;
   if (length < MIN_ROUTINE) return [];
+  const cpu = CPUS[routine.cpu];
   // 0: fixed, 1: variable, 2: the first byte of a relocation, 3: the second byte of a word.
   const kind = new Uint8Array(length);
   for (const at of routine.variable) kind[at] = 1;
@@ -442,12 +456,13 @@ export function findRoutine(routine: Routine, image: Searched, origin = routine.
       if (!equal) continue;
       const differing: DifferingOperand[] = [];
       for (const offset of routine.instructions) {
-        const size = instructionLength(routine.bytes[offset]!) - 1;
-        if (size === 0 || kind[offset + 1] !== 1) continue;
-        const read = (at: (offset: number) => number) => (size === 2 ? at(offset + 1) | (at(offset + 2) << 8) : at(offset + 1));
+        const field = cpu.decode((at) => routine.bytes[at], offset)?.operand;
+        if (field === undefined || kind[offset + field.offset] !== 1) continue;
+        const first = offset + field.offset;
+        const read = (at: (offset: number) => number) => (field.size === 2 ? at(first) | (at(first + 1) << 8) : at(first));
         const library = read((at) => routine.bytes[at]!);
         const program = read((at) => image.byteAt(start + at));
-        if (library !== program) differing.push({ address: start + offset, library, program, size: size as 1 | 2 });
+        if (library !== program) differing.push({ address: start + offset, library, program, size: field.size });
       }
       matches.push({ routine: routine.name, start, shift: start - origin, differing });
     }
@@ -656,7 +671,7 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
         skip(address, "operand", `its name ${missing.join(", ")} was left out`);
         continue;
       }
-      const problem = operandProblem(address, text, image, (name) => placed.get(name) ?? program.symbolNamed(name)?.address ?? platform.get(name));
+      const problem = operandProblem(CPUS[routine.cpu], address, operand.select, text, image, (name) => placed.get(name) ?? program.symbolNamed(name)?.address ?? platform.get(name));
       if (problem !== undefined) {
         skip(address, "operand", problem);
         continue;
@@ -674,22 +689,13 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
   return { writes, known, leftOut, check };
 }
 
-/** Why the expression is not the operand of the instruction at `address` in the image, or undefined when it is. */
-function operandProblem(address: number, text: string, image: Searched, resolveName: (name: string) => number | undefined): string | undefined {
-  const opcode = image.byteAt(address);
-  const size = instructionLength(opcode);
-  if (size === 1 || isBranch(opcode)) return "the instruction has no value operand";
-  const operand = size === 3 ? image.byteAt(address + 1) | (image.byteAt(address + 2) << 8) : image.byteAt(address + 1);
-  let value: number;
+/** Why the expression is not the operand of the instruction at `address` in the image, or undefined when it is: the check of the knowledge. */
+function operandProblem(cpu: Cpu, address: number, select: OperandSelect, text: string, image: Searched, resolveName: (name: string) => number | undefined): string | undefined {
   try {
-    value = evaluate(text, resolveName);
+    checkOperandBytes(cpu, image.byteAt, address, select, text, resolveName);
   } catch (error) {
     if (error instanceof Refusal) return error.message;
     throw error;
-  }
-  const range = size === 2 ? 0x100 : 0x10000;
-  if (value < -range / 2 || value >= range || ((value % range) + range) % range !== operand) {
-    return `${text} gives ${value}, but the operand in the image is ${operand}`;
   }
   return undefined;
 }

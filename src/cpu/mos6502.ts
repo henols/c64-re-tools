@@ -2,7 +2,7 @@
 // opcode, and the text of src/opcodes.ts.
 
 import type { Cpu, Instruction } from "../cpu.ts";
-import { instructionText, MNEMONICS } from "../opcodes.ts";
+import { instructionText, MNEMONICS, OPCODES } from "../opcodes.ts";
 
 /**
  * The length in bytes of the NMOS 6502/6510 instruction with this opcode, for
@@ -43,6 +43,12 @@ export const MOS6502: Cpu = {
     { at: 0xfffc, from: "RESET vector $fffc" },
     { at: 0xfffe, from: "IRQ vector $fffe" },
   ],
+  // Every operand of the 6502 is an address, except an immediate value.
+  operandIsAddress(byteAt, address) {
+    const opcode = byteAt(address);
+    const mode = opcode === undefined ? "imp" : OPCODES[opcode]!.mode;
+    return mode !== "imp" && mode !== "imm";
+  },
   decode(byteAt, address) {
     const opcode = byteAt(address);
     if (opcode === undefined) return undefined;

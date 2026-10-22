@@ -78,6 +78,10 @@ export const Z80: Cpu = {
   reservedReason: "the name of a Z80 instruction, register or condition, which an assembler cannot read as a label",
   // The Z80's own entry points ($0000, $0038, $0066) are in the ROM of a Spectrum; an IM 2 table is found by the analysis.
   vectors: [],
+  operandIsAddress(byteAt: ByteAt, address: number): boolean {
+    const instruction = Z80.decode(byteAt, address);
+    return instruction?.operand !== undefined && operandIsAddress(instruction);
+  },
   decode(byteAt: ByteAt, address: number): Instruction | undefined {
     const first = byteAt(address);
     if (first === undefined) return undefined;

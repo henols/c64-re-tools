@@ -3,15 +3,24 @@
 // address, with the names there as an apply batch.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "../../src/knowledge/read.ts";
 import { Refusal } from "../../src/errors.ts";
+import { MOS6502 } from "../../src/cpu/mos6502.ts";
+import { Z80 } from "../../src/cpu/z80.ts";
+import { openForRead } from "../../src/knowledge/database.ts";
+import { symbolAt } from "../../src/knowledge/read.ts";
+import { importSnapshot } from "../fixtures/program.ts";
+import { z80Snapshot } from "../fixtures/z80/keyboard-counter.ts";
+import { readEnvelope } from "../kit.ts";
 import { findRoutine, libraryFolder, parseRoutine, readLibrary, routineFrom, routineText, saveRoutine, suggest, type ProgramKnowledge, type Routine, type RoutineSource } from "../../skills/retro-provenance/scripts/lib/library.ts";
 
+const provenance = resolve(import.meta.dirname, "../../skills/retro-provenance/scripts/provenance.ts");
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-library-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -53,6 +62,7 @@ function source(overrides: Partial<RoutineSource> = {}): RoutineSource {
   return {
     name: "play",
     title: "The sound routine",
+    cpu: MOS6502,
     program: "game-a",
     image: "a.prg",
     start: A,
@@ -112,7 +122,7 @@ test("the routine file has its keys in a fixed order and reads back the same", (
   const text = routineText(routine);
   assert.deepEqual(
     [...text.matchAll(/^ {2}"(\w+)":/gm)].map((match) => match[1]),
-    ["name", "title", "from", "length", "bytes", "instructions", "relocations", "variable", "symbols", "regions", "comments", "references", "operands"],
+    ["name", "title", "cpu", "from", "length", "bytes", "instructions", "relocations", "variable", "symbols", "regions", "comments", "references", "operands"],
   );
   assert.match(text, /^ {4}"a200bd2010[0-9a-f]{22}",$/m, "16 bytes on each line");
   assert.deepEqual(parseRoutine(text, "play.json"), routine);
@@ -276,6 +286,7 @@ test("the batch leaves out user and LLM rows, names used elsewhere, removals, an
 function uniqueRoutine(name: string, start: number, value: number): Routine {
   return {
     name,
+    cpu: "6502",
     from: { program: "v1", image: "v1.prg", start },
     bytes: Uint8Array.from({ length: 16 }, (_, index) => (index % 2 === 0 ? 0xa9 : value)),
     instructions: [0, 2, 4, 6, 8, 10, 12, 14],
@@ -395,4 +406,113 @@ test("routine refuses a library in the knowledge of the project, also through a 
   // A library beside the project and a folder of the project outside the knowledge stay possible.
   assert.equal(libraryFolder("../library", { create: true, cwd: project }), join(scratch, "library"));
   assert.equal(libraryFolder(".c64-re-tools/local/library", { create: true, cwd: project }), join(project, ".c64-re-tools", "local", "library"));
+});
+
+/**
+ * A Z80 routine at `base`: LD HL,table (inside), LD HL,$9000 (an immediate
+ * outside), LD HL,(`variableAt`) (an address outside), LD A,(IX+5), JR, CALL sub
+ * (inside), RET; sub: LD A,7, LD (`storeAt`),A, RET; then the table.
+ */
+function z80Bytes(base: number, variableAt = 0x9100, storeAt = 0x9200): number[] {
+  const lo = (value: number) => value & 0xff;
+  const hi = (value: number) => value >> 8;
+  return [
+    0x21, lo(base + 0x1a), hi(base + 0x1a), // LD HL,table
+    0x21, 0x00, 0x90, // LD HL,$9000
+    0x2a, lo(variableAt), hi(variableAt), // LD HL,(variable)
+    0xdd, 0x7e, 0x05, // LD A,(IX+5)
+    0x18, 0x02, // JR +2
+    0x00, 0x00, // NOP, NOP
+    0xcd, lo(base + 0x14), hi(base + 0x14), // CALL sub
+    0xc9, // RET
+    0x3e, 0x07, // sub: LD A,7
+    0x32, lo(storeAt), hi(storeAt), // LD (store),A
+    0xc9, // RET
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // table
+  ];
+}
+
+const ZX = 0x8000;
+const zxBytes = z80Bytes(ZX);
+
+/** The Z80 routine as the knowledge of a Spectrum program gives it. */
+function z80Source(): RoutineSource {
+  return {
+    name: "zx_play",
+    cpu: Z80,
+    program: "game-zx",
+    image: "game.z80",
+    start: ZX,
+    end: ZX + zxBytes.length - 1,
+    byteAt: (address) => zxBytes[address - ZX] ?? 0,
+    analyzed: [{ ...row, space: "spectrum", start: ZX, end: ZX + 0x19, type: "code", origin: "ghidra" }] as RegionRow[],
+    symbols: [
+      { ...row, space: "spectrum", address: ZX, name: "zx_play", kind: "routine" },
+      { ...row, space: "spectrum", address: ZX + 0x14, name: "zx_sub", kind: "routine" },
+    ] as SymbolRow[],
+    regions: [],
+    comments: [],
+    references: [],
+    operands: [],
+    platform: new Map(),
+  };
+}
+
+test("a Z80 routine moves its 2-byte operands into the routine, also LD HL,nn, and lets the addresses outside differ", () => {
+  const { routine } = routineFrom(z80Source());
+  assert.equal(routine.cpu, "z80");
+  assert.deepEqual(routine.instructions, [0x00, 0x03, 0x06, 0x09, 0x0c, 0x0e, 0x0f, 0x10, 0x13, 0x14, 0x16, 0x19]);
+  assert.deepEqual(routine.relocations, [
+    { at: 0x01, size: "word", value: 0x1a },
+    { at: 0x11, size: "word", value: 0x14 },
+  ]);
+  // LD HL,(nn) and LD (nn),A address memory outside; LD HL,$9000, the displacement, JR and LD A,7 are fixed.
+  assert.deepEqual(routine.variable, [0x07, 0x08, 0x17, 0x18]);
+  // At another address, with other variables, the routine matches; another immediate value is no match.
+  const memory = new Uint8Array(0x10000);
+  memory.set(z80Bytes(0xa000, 0x9300, 0x9400), 0xa000);
+  const image = { segments: [{ start: 0x4000, end: 0xffff }], byteAt: (address: number) => memory[address]! };
+  assert.deepEqual(findRoutine(routine, image), [
+    {
+      routine: "zx_play",
+      start: 0xa000,
+      shift: 0x2000,
+      differing: [
+        { address: 0xa006, library: 0x9100, program: 0x9300, size: 2 },
+        { address: 0xa016, library: 0x9200, program: 0x9400, size: 2 },
+      ],
+    },
+  ]);
+  memory[0xa004] = 0x91;
+  assert.deepEqual(findRoutine(routine, image), []);
+});
+
+test("a routine file without cpu is refused", () => {
+  const text = routineText(routineFrom(z80Source()).routine);
+  assert.match(text, /^ {2}"cpu": "z80",$/m);
+  assert.throws(() => parseRoutine(text.replace(/^ {2}"cpu": "z80",\n/m, ""), "zx_play.json"), /zx_play\.json is not a routine file of the library: it has no cpu/);
+});
+
+test("match in a ZX Spectrum project skips the routines of another CPU and writes the names in the space of the Spectrum", () => {
+  const project = join(scratch, "zx-project");
+  mkdirSync(project);
+  const ram = new Uint8Array(0xc000);
+  ram.set(z80Bytes(0xa000), 0xa000 - 0x4000);
+  importSnapshot(project, z80Snapshot(ram, { pc: 0xa000, sp: 0xff00, iy: 0x5c3a, im: 1, border: 7 }));
+  const folder = libraryFolder("zx-library", { create: true, cwd: scratch });
+  saveRoutine(folder, routineFrom(z80Source()).routine, false);
+  saveRoutine(folder, routineFrom(source()).routine, false);
+  const spawned = spawnSync(process.execPath, [...process.execArgv, provenance, "match", "--library", "../zx-library", "--apply"], { cwd: project, encoding: "utf8" });
+  const { json } = readEnvelope(spawned.stdout, spawned.status);
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  assert.equal(json.routines, 1);
+  assert.equal(json.otherCpu, 1);
+  assert.deepEqual(json.matches.listed.map((match: { routine: string; start: string }) => [match.routine, match.start]), [["zx_play", "$a000"]]);
+  assert.ok(json.changes.revision !== undefined, JSON.stringify(json.changes));
+  const db = openForRead(project);
+  try {
+    assert.deepEqual([symbolAt(db, 0xa000, "spectrum")?.name, symbolAt(db, 0xa014, "spectrum")?.name], ["zx_play", "zx_sub"]);
+  } finally {
+    db?.close();
+  }
 });

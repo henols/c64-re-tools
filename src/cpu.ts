@@ -38,6 +38,12 @@ export interface Cpu {
   maxInstructionLength: number;
   /** The instruction at `address`, or undefined when its first byte is not in the image. */
   decode(byteAt: ByteAt, address: number): Instruction | undefined;
+  /**
+   * True when the operand of the instruction at `address` is an address: a
+   * target of the flow, or a memory access. False for an immediate value, a
+   * port or a displacement, and for an instruction without an operand.
+   */
+  operandIsAddress(byteAt: ByteAt, address: number): boolean;
   /** The words that cannot be a label, in lower case: the mnemonics, and for the Z80 the register and condition names too. */
   reserved: ReadonlySet<string>;
   /** Why a reserved word cannot be a label, after "<name> is". */

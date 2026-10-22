@@ -5,7 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
 import { ANY_SPACE, C64, isMachineId, MACHINE_IDS, MACHINES, modelOfEntryState, type Machine, type MachineId } from "../machine.ts";
-import { labelProblem, SYMBOL_SYNTAX } from "../cpu.ts";
+import { labelProblem, SYMBOL_SYNTAX, type Cpu } from "../cpu.ts";
 import { type AddressRange, formatAddress, SYMBOL_NAME } from "../address.ts";
 import { isoCet } from "../time.ts";
 import { CONFLICT_RULES, conflicts, conflictTable, type Conflict, type ConflictRow } from "./conflicts.ts";
@@ -793,19 +793,30 @@ function checkInstructionStart(db: DatabaseSync, space: Space, byteAt: (address:
  */
 function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, request: OperandRequest, text: string): number[] {
   const where = formatAddress(request.address);
-  const opcode = image.byteAt(request.address);
-  if (opcode === undefined) throw new Refusal("invalid-input", `${where} is outside the image.`);
+  if (image.byteAt(request.address) === undefined) throw new Refusal("invalid-input", `${where} is outside the image.`);
   checkInstructionStart(db, space, (at) => image.byteAt(at), request.address, "operand");
-  const field = machineOf(db).cpu.decode((at) => image.byteAt(at), request.address)!.operand;
-  if (field === undefined) throw new Refusal("invalid-input", `The instruction at ${where} (opcode ${shown(opcode, 0x100)}) has no operand.`);
+  const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? image.platform.get(name);
+  checkOperandBytes(machineOf(db).cpu, (at) => image.byteAt(at), request.address, request.select, text, resolve);
+  return identifiers(text).map((name) => resolve(name)!);
+}
+
+/**
+ * Refuses an expression that is not the operand of the instruction at
+ * `address`: the instruction has no operand or a branch distance, lo or hi
+ * selects one byte of a 2-byte operand, the operand runs past the bytes, or
+ * the expression gives another value. `resolve` gives the address of a name.
+ */
+export function checkOperandBytes(cpu: Cpu, byteAt: (address: number) => number | undefined, address: number, select: OperandSelect, text: string, resolve: (name: string) => number | undefined): void {
+  const where = formatAddress(address);
+  const field = cpu.decode(byteAt, address)?.operand;
+  if (field === undefined) throw new Refusal("invalid-input", `The instruction at ${where} (opcode ${shown(byteAt(address) ?? 0, 0x100)}) has no operand.`);
   if (field.relative === true) throw new Refusal("invalid-input", `The instruction at ${where} is a branch: its operand is a distance, not a value.`);
-  if ((request.select === "lo" || request.select === "hi") && field.size === 2) {
+  if ((select === "lo" || select === "hi") && field.size === 2) {
     throw new Refusal("invalid-input", `lo and hi give one byte, but the instruction at ${where} has a 2-byte operand. Use value.`);
   }
-  const bytes = [image.byteAt(request.address + field.offset), field.size === 2 ? image.byteAt(request.address + field.offset + 1) : 0];
+  const bytes = [byteAt(address + field.offset), field.size === 2 ? byteAt(address + field.offset + 1) : 0];
   if (bytes.some((byte) => byte === undefined)) throw new Refusal("invalid-input", `The instruction at ${where} runs past the end of the image.`);
   const operand = bytes[0]! | (bytes[1]! << 8);
-  const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? image.platform.get(name);
   let value: number;
   try {
     value = evaluate(text, resolve);
@@ -817,7 +828,6 @@ function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, 
   if (value < -size / 2 || value >= size || ((value % size) + size) % size !== operand) {
     throw new Refusal("invalid-input", `At ${where}, ${text} gives ${shown(value, size)}, but the operand in the image is ${shown(operand, size)}.`);
   }
-  return identifiers(text).map((name) => resolve(name)!);
 }
 
 function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: OperandRequest): Step<OperandRow, OperandRow> {
