@@ -1,11 +1,11 @@
 ---
 name: retro-knowledge
-description: Reads and changes the durable knowledge of a C64 project in .c64-re-tools/knowledge/. The knowledge holds the program and the coverage of the runs. It holds the names, regions, comments and references, and the releases, switches, patches and macros of the source. It keeps the history of each change. Use it to find the knowledge at an address or a name. Use it to record a name, a region, a comment or a reference after you interpret the evidence. Use it to put a program or the coverage of runs into the project. Use it to record the releases, switches, patches and macros of the generated source. Use it to read the history, to revert to an earlier revision, or to decide the conflicts of a git merge. It does not run the program, analyze the machine code or generate the source.
+description: Reads and changes the durable knowledge of a C64 or ZX Spectrum project in .c64-re-tools/knowledge/. The knowledge holds the program and the coverage of the runs. It holds the names, regions, comments and references, and the releases, switches, patches and macros of the source. It keeps the history of each change. Use it to find the knowledge at an address or a name. Use it to record a name, a region, a comment or a reference after you interpret the evidence. Use it to put a program or the coverage of runs into the project. Use it to record the releases, switches, patches and macros of the generated source. Use it to read the history, to revert to an earlier revision, or to decide the conflicts of a git merge. It does not run the program, analyze the machine code or generate the source.
 ---
 
-# C64 knowledge
+# Project knowledge
 
-Use this script to read and change the knowledge of a C64 project.
+Use this script to read and change the knowledge of a C64 or ZX Spectrum project.
 Use only the commands of the script. Do not read or change the project knowledge in another way.
 
 ```bash
@@ -38,6 +38,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Set the machine of the project | `set-machine spectrum48` |
 | Put a captured program into the knowledge | `image .c64-re-tools/local/capture/image.json` |
 | Put a PRG into the knowledge | `image original/game.prg` |
+| Put a ZX Spectrum snapshot into the knowledge | `image .c64-re-tools/local/game_entry.z80` |
 | Put drive code into the knowledge | `image drive.prg --space drive8` |
 | Add the coverage of runs | `coverage .c64-re-tools/local/runs/rooms/room0.bin` |
 | Name the symbol at an address | `rename '$2100' update_player --kind routine --reason 'reads joystick 2'` |
@@ -74,8 +75,12 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 - A symbol is the name of an address from the user or the LLM. Get it from `at`, `search` or `symbols`.
 - An analyzer name is a second name from DXA, Ghidra or an idiom search, for example `FUN_17e2`. Each analyzer keeps its own name at an address. Get them from `at`, `search` or `symbols --analyzer`.
 - The generated source uses only the symbols. To use an analyzer name in the source, give the address that name with `rename`.
-- A symbol name is a label for ACME: a letter or an underscore, then letters, digits or underscores. The knowledge refuses the name of a 6502 instruction, for example `lda`, in upper or lower case.
-- A space is `c64` (the default), `drive8` for code in the 1541 drive, `loading` or `bank0` to `bank255`. `loading` is the captured stage of the loading that shows the start screen. `bank0` to `bank255` are cartridge banks, or other memory images of the program, for example a file that the program loads later. Drive code, the stage and banks use the same addresses as the C64. Thus each space has its own knowledge. A name is unique in one space.
+- A symbol name is a label for the assembler of the project machine: ACME on the C64, sjasmplus on the ZX Spectrum. It is a letter or an underscore, then letters, digits or underscores.
+- The knowledge refuses a name that the CPU of the project machine uses, in upper or lower case. On the C64, it refuses the name of a 6502 instruction, for example `lda`. On the ZX Spectrum, it refuses the name of a Z80 instruction, register or condition, for example `ld`, `halt` or `hl`.
+- The spaces of the C64 are `c64` (the default), `drive8` for code in the 1541 drive, `loading` and `bank0` to `bank255`. `loading` is the captured stage of the loading that shows the start screen. `bank0` to `bank255` are cartridge banks, or other memory images of the program, for example a file that the program loads later. Drive code, the stage and banks use the same addresses as the C64.
+- The spaces of the ZX Spectrum are `spectrum` (the default) and, on the 128K, `ram0` to `ram7`. `spectrum` is the memory as the CPU sees it. `ram0` to `ram7` are the RAM banks at `$c000`-`$ffff`.
+- `machine` gives the machine of the project and its spaces. The script refuses a space of another machine.
+- Each space has its own knowledge. A name is unique in one space.
 - A revision id has the form `20261015T214501.123-k3f9qz`. It starts with the date and the time. Give the full id, or a start of the id that only one revision has. Get the ids from `revisions`, or from the `revision` field of a result. The revision `0` is the knowledge before the first revision.
 - A file of a capture is the `image.json` that the capture of a packed program wrote. The other files of the capture must be next to it.
 
@@ -136,7 +141,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--lo <symbol>` | `operand` | The operand is the low byte of the symbol plus the offset. |
 | `--hi <symbol>` | `operand` | The operand is the high byte of the symbol plus the offset. |
 | `--value <symbol>` | `operand` | The operand is the symbol plus the offset. |
-| `--expr <text>` | `operand` | The operand is this ACME expression. |
+| `--expr <text>` | `operand` | The operand is this expression. |
 | `--offset <n>` | `operand` | With `--lo`, `--hi` or `--value`: a whole number to add, for example `1` or `'$1000'`. Write a negative offset as `--offset=-1`. The default is 0. |
 | `--code <text>` | `patch` | The ACME code of the patch. |
 | `--code-file <file>` | `patch` | A project file with the ACME code of the patch. |
@@ -144,7 +149,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--comment <text>` | `patch`, `switch`, `release`, `macro`, `start-screen` | A comment for the row. A `patch`, `switch`, `macro` or `start-screen` write without `--comment` keeps the comment that the row has. |
 | `--default <0\|1>` | `switch` | The value in the default build. See the section of `switch`. |
 | `--releases <A,B>` | `switch` | The labels of the releases that have the switch on, as a comma list. A write without it keeps the releases that the switch has. |
-| `--file <file>` | `release` | Necessary. The PRG or `image.json` of the release, in a folder that git keeps. |
+| `--file <file>` | `release` | Necessary. The PRG or `image.json` of the release, or on the ZX Spectrum its `.z80` or `.sna` snapshot, in a folder that git keeps. |
 | `--base` | `release` | This release is the program of the knowledge. |
 | `--params <a,b>` | `macro` | The params of the macro, as a comma list without a dot. The default is no params. |
 | `--body <text>` | `macro` | The body of the macro. |
@@ -158,7 +163,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--colour <0-15>` | `start-screen` | One colour for all of the colour RAM, in place of `--colours`. |
 | `--border <0-15>` | `start-screen` | The border colour. Necessary without `--stage`. |
 | `--background <0-15>` | `start-screen` | The background colour. Necessary without `--stage`. |
-| `--stage <space>` | `start-screen` | The space of the captured stage that shows the screen: `loading`. The script takes the mode, the addresses and the colours from the capture. Without it, the bytes are in the program at the entry. |
+| `--stage <space>` | `start-screen` | C64 only. The space of the captured stage that shows the screen: `loading`. The script takes the mode, the addresses and the colours from the capture. Without it, the bytes are in the program at the entry. |
 | `--call <address>` | `start-screen` | A routine of the stage that the start screen calls before it waits, for example the start of the loading tune. It must return with RTS. It needs `--stage`. |
 
 ---
@@ -259,9 +264,11 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 - For a ZX Spectrum program, `text` is Z80 code in the syntax of sjasmplus, and the other bytes are `db` lines.
 - Each line has `address`, `bytes`, `text`, `referencesIn` and `referencesOut`. It can also have `label`, `analyzerNames`, `lineComments` and `comment`. `lineComments` are the line comments before the line. `comment` is the side comment.
 - `text` is the instruction with the names of its target. An operand expression of the knowledge replaces the operand.
+- On the ZX Spectrum, a platform name names only an operand that is an address. That is the target of a jump or a call, or a memory access in brackets. An immediate value, for example `ld hl,$0000`, shows as a number or as a symbol of the knowledge. If the value is an address of the platform, write an operand expression with the platform name.
 - When the knowledge has coverage, `access` tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line, or `-` for none. An `r` on code can come from a read of the 6502 that the program does not do, for example the byte after an RTS or the opcode at the PC when an interrupt starts.
 - With `--out`, the body has `lines` as a number, and `out`, `bytes` and `sha256` of the text file.
 - If the knowledge has no program in the space, the script refuses. Put the program in with `image` first.
+- If the space is not a space of the project machine, the script refuses. Give a space of the machine, or remove `--space`.
 - Use `listing` in place of your own disassembler.
 
 ### `export`
@@ -313,6 +320,7 @@ Errors of this group:
 
 - Give `c64`, `spectrum48` or `spectrum128`. `body.machine` gives the row after the write.
 - The script refuses a machine that has no space for the current knowledge.
+- The script refuses a ZX Spectrum model that is not the model of the snapshot in the knowledge. To change the model, put a snapshot of the other model into the knowledge with `image`.
 
 ### `rename <address> <name>`
 
@@ -339,6 +347,9 @@ Errors of this group:
 | `workspace` | RAM that the program writes at run time. Its bytes in the image do not matter. |
 | `unused` | Bytes that nothing executes or reads. |
 | `dual-use` | Code at one time, and data or a vector at another time. No analyzer finding conflicts with it. |
+
+- `petscii` is text in the characters of the C64. On the ZX Spectrum, classify text as `bytes`, the pixels of a screen as `bitmap` and its colours as `bytes`.
+- The knowledge holds the program, not the ROM. On the ZX Spectrum, the script refuses a range in the ROM (`$0000`-`$3fff`).
 
 ### `unclassify <range>`
 
@@ -391,7 +402,7 @@ An operand expression tells the generated source how to write the operand of one
 - Give exactly one of `--lo`, `--hi`, `--value` and `--expr`.
 - The knowledge must have the program of the space. Else the script refuses. Put the program in with `image` first.
 - The address is the start of an instruction in a code region, as `listing` shows it. The script refuses an address in no code region. Classify the code first.
-- A name is a symbol of the knowledge or a platform name of the C64 memory map.
+- A name is a symbol of the knowledge or a platform name of the memory map of the project machine. Examples are `CHROUT` on the C64 and `KEY_SCAN` on the ZX Spectrum.
 - `--expr` takes `$`, `%` and decimal numbers, names, brackets, the operators `+ - * / % << >> >>> & | XOR`, and `<`, `>`, `-` and `!` before an operand.
 - The script compares the value of the expression with the operand in the program. If they are not equal, the script refuses the write. The `error` gives both values.
 - Each name in the expression gets a `pointer` reference from the instruction. Thus `at` on the named address shows the code that uses the address.
@@ -408,7 +419,7 @@ A rebuild keeps all of the program in the source: unused bytes, dead code, old c
 
 Do not write a file of the rebuild by hand, for example a boot file, a packed picture or a script that changes bytes. Record each change in the knowledge, and generate the source.
 
-- `--file` is a PRG or the `image.json` of a capture. The project knowledge keeps the bytes of the release. After the write, the project does not need the file. A capture can stay in `.c64-re-tools/local/`.
+- `--file` is a PRG or the `image.json` of a capture. On the ZX Spectrum, it is a `.z80` or `.sna` snapshot. The script refuses a tape. The project knowledge keeps the bytes of the release. After the write, the project does not need the file. A capture can stay in `.c64-re-tools/local/`.
 - A label is upper case, for example `ORIGINAL`, `FIRESTAR` or `V2`.
 - The base release is the release whose bytes are the program of the knowledge. Record it with `--base`. The script refuses `--base` when the segments or the bytes of the file are not the program.
 - A space has one base release. Record the base release before the first switch.
@@ -423,6 +434,8 @@ Do not write a file of the rebuild by hand, for example a boot file, a packed pi
 ### `start-screen`
 
 A start screen is a loading screen, a title screen or a presentation screen of the program itself. The loader of the generated source shows it before the program starts. Then the loader waits for a key, or for a fire button on joystick port 1 or 2.
+
+- Only the C64 loader shows a start screen. In a ZX Spectrum project, the script refuses `start-screen` before each other check. Do not record a start screen there.
 
 - Record only a screen of the program itself. Do not record a screen of a crack, for example a picture, an intro or a credit screen of a crack group.
 - If a release changed the screen of the program, stop and ask the user how to deal with it. An example is a picture with the text of a crack in it. Do not decide alone. Give the user these options:
@@ -522,6 +535,8 @@ Rules:
 
 A macro writes a run of instructions as one line of the source, for example `+inc16 ptr`. Use macros to make the source shorter and easier to read.
 
+- Only the generated source of the C64 writes macros. In a ZX Spectrum project, the script refuses `macro` and `use`.
+
 - Give `--body` or `--body-file`. The body uses each param with a dot, for example `.dst`.
 - The knowledge refuses a change of the number of params while the macro has uses.
 - `body.macro` gives the macro after the write.
@@ -545,11 +560,13 @@ A macro writes a run of instructions as one line of the source, for example `+in
 ### `image <file>`
 
 - `<file>` is the `image.json` of a capture, a PRG, or a ZX Spectrum snapshot (`.z80` or `.sna`). A PRG has the extension `.prg` or no extension. The script refuses a file with another extension.
+- In a ZX Spectrum project, `<file>` is a snapshot. The script refuses a tape (`.tzx` or `.tap`). Get a snapshot from the tape as the next item tells.
 - To get a snapshot, load the ZX Spectrum program in the emulator with its own loader. Stop at the entry of its machine code. Then write the machine state with `snapshot` action `export` into `.c64-re-tools/local/`.
 - A snapshot gives `$4000`-`$ffff` as the CPU sees it, and the PC as the entry. The entry state holds the registers, the interrupt state, the border and the paging. On the 128K, each other RAM bank with data goes into its space `ram0` to `ram7`, at `$c000`-`$ffff`. The snapshot gives the spaces, so `image` refuses `--space` with a snapshot.
 - A snapshot sets the machine of the project to `spectrum48` or `spectrum128`. `body.machineChanged` is `true` then. The script refuses this when the knowledge has rows of the C64.
 - For drive code or a cartridge bank, give `--space drive8` or `--space bank0`.
-- `body` holds `revision`, `bytes`, `rowsAdded`, `rowsClosed` and `entryChanged`.
+- For a PRG or an `image.json`, `body` holds `revision`, `bytes`, `rowsAdded`, `rowsClosed` and `entryChanged`.
+- For a snapshot, `body` holds `revision`, `machine`, `machineChanged` and `spaces`. `spaces` has one item for each space that the snapshot wrote. Each item has `space`, `bytes`, `rowsAdded`, `rowsClosed` and `entryChanged`.
 - `image` writes only the bytes that changed. The same image again writes nothing. A new image replaces the program of the space. The history keeps the old bytes.
 - After the import, you do not need the file of the capture. Keep it in `.c64-re-tools/local/`.
 
@@ -649,6 +666,7 @@ Put the program into the knowledge:
 
 1. For a packed program, capture the unpacked program into `.c64-re-tools/local/`. Then run `image` with its `image.json`.
 2. For a program without a packer, drive code or a cartridge bank, run `image` with the PRG.
+   For a ZX Spectrum program, run `image` with the snapshot at the entry of its machine code.
 3. Write the coverage map of each run into `.c64-re-tools/local/`. Then run `coverage` with the maps.
 4. Run `program` to see the segments, the entry and the coverage maps.
 

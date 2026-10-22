@@ -473,7 +473,7 @@ test("an operand expression that does not give the operand in the image is refus
   const { db, context } = operands();
   assert.throws(() => setOperand(db, context, { address: 0x8079, select: "hi", symbol: "irq_handler" }), /At \$8079, >irq_handler gives \$80, but the operand in the image is \$c0\./);
   assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "value", symbol: "bar_colours" }), /gives \$8a98, but the operand in the image is \$8a97/);
-  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo", symbol: "nowhere" }), /nowhere is not a symbol of the knowledge or a platform name. Give a number, a symbol of the project knowledge, or a platform name of the C64 memory map\./);
+  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo", symbol: "nowhere" }), /nowhere is not a symbol of the knowledge or a platform name. Give a number, a symbol of the project knowledge, or a platform name of the memory map of the machine\./);
   assert.throws(() => setOperand(db, context, { address: 0x8000, select: "expr", expression: "5" }), /is a branch/);
   assert.throws(() => setOperand(db, context, { address: 0x8005, select: "expr", expression: "5" }), /has no operand/);
   assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "lo", symbol: "bar_colours" }), /lo and hi give one byte/);
@@ -619,7 +619,7 @@ test("a switch has a kind, a default and the releases that have it on; the base 
   assert.throws(() => setSwitch(db, context, { name: "OTHER", kind: "change" }), /needs a default/);
   assert.throws(() => setSwitch(db, context, { name: "OTHER", kind: "fix", releases: ["V3"] }), /There is no release V3/);
   assert.throws(() => setSwitch(db, context, { name: "RELEASE_V2", kind: "fix" }), /does not start with RELEASE_/);
-  assert.throws(() => setSwitch(db, context, { name: "VICSCN", kind: "fix" }), /is a C64 platform name/);
+  assert.throws(() => setSwitch(db, context, { name: "VICSCN", kind: "fix" }), /is a platform name of the Commodore 64/);
   renameSymbol(db, llm, { address: 0x2000, name: "LIVES" });
   assert.throws(() => setSwitch(db, context, { name: "LIVES", kind: "fix" }), /is the name of the symbol at \$2000/);
   assert.throws(() => renameSymbol(db, llm, { address: 0x2001, name: "RELEASE_V2" }), /RELEASE_V2 builds the release V2/);

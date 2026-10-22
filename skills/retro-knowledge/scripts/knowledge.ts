@@ -2,7 +2,7 @@
 // project folder (--project, or the one found from the working directory).
 // Each command prints one JSON result.
 
-import { projectMainSpace } from "#src/knowledge/names.ts";
+import { projectMachine, projectMainSpace } from "#src/knowledge/names.ts";
 import { C64, MACHINES } from "#src/machine.ts";
 import { machineOf, mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import { createHash } from "node:crypto";
@@ -12,7 +12,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
-import { readImage, readSnapshotImage } from "#src/host-client/image.ts";
+import { readImage, readProgramFile, type Image } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
@@ -85,6 +85,7 @@ import {
   setComment,
   setMacro,
   setMacroUse,
+  noStartScreen,
   setStartScreen,
   setModule,
   setOperand,
@@ -100,7 +101,7 @@ import {
   type OperandImage,
   type WriteContext,
 } from "#src/knowledge/write.ts";
-import { platformNames, platformNamesOfSpace } from "#src/platform.ts";
+import { platformNamesOfSpace } from "#src/platform.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
@@ -288,6 +289,7 @@ function listingSource(db: DatabaseSync | undefined, space: string): ListingSour
       const own = symbolAt(db, at, space);
       return own !== undefined && isSemantic(own.origin) ? own.name : (platform.get(at) ?? own?.name);
     },
+    knownNameOf: (at) => symbolAt(db, at, space)?.name,
     secondNames: (at) => analyzerNamesAt(db, at, space).map((row) => row.name),
     regions: listRegions(db, undefined, undefined, undefined, space),
     comments: (at) => {
@@ -360,8 +362,7 @@ function evidenceOf(value: string, space: string): Evidence {
 }
 
 /** An image.json of a capture or a PRG as a write of the program, with the entry state of the capture. */
-function imageRequest(path: string, space: string): ImageRequest {
-  const image = readImage(path);
+function imageRequest(image: Image, space: string): ImageRequest {
   const request: ImageRequest = { space, segments: image.segments, byteAt: image.byteAt };
   if (image.entry !== undefined) request.entry = image.entry;
   if (image.stages !== undefined) request.stages = image.stages;
@@ -369,9 +370,9 @@ function imageRequest(path: string, space: string): ImageRequest {
   return request;
 }
 
-/** The programs that operand, patch and macro use writes are checked against, with the platform names. */
+/** The programs that operand, patch and macro use writes are checked against, with the platform names of each space. */
 function operandImages(db: DatabaseSync): (space: string) => OperandImage {
-  return programImages(db, new Map(platformNames().map((entry) => [entry.name, entry.address])));
+  return programImages(db);
 }
 
 /** An offset: a whole number in decimal or $ hex, with an optional minus sign. */
@@ -811,7 +812,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
         lo: { kind: "text", value: "<symbol>", help: "the low byte of symbol + offset" },
         hi: { kind: "text", value: "<symbol>", help: "the high byte of symbol + offset" },
         value: { kind: "text", value: "<symbol>", help: "the value symbol + offset" },
-        expr: { kind: "text", value: "<text>", help: "ACME expression text" },
+        expr: { kind: "text", value: "<text>", help: "the expression text" },
         offset: { kind: "text", value: "<n>", help: "with --lo, --hi or --value: a whole number such as 1, '$1000' or, as --offset=-1, a negative one" },
       },
       notes: "Give exactly one of --lo, --hi, --value and --expr. The write is refused when the expression does not give the operand in the program of the knowledge.",
@@ -915,10 +916,10 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "release",
-      summary: "Records a release of the program from its PRG or the image.json of its capture: the knowledge keeps the bytes of the release. The base release is the one whose bytes are the program of the knowledge.",
+      summary: "Records a release of the program from its PRG or the image.json of its capture, or on the ZX Spectrum from its .z80 or .sna snapshot: the knowledge keeps the bytes of the release. The base release is the one whose bytes are the program of the knowledge.",
       subjects: [{ name: "<label>", help: "the release label, for example ORIGINAL or FIRESTAR" }],
       options: {
-        file: { kind: "path", value: "<file>", help: "the PRG or image.json of the release. After the write, the knowledge does not need the file", required: true },
+        file: { kind: "path", value: "<file>", help: "the PRG or image.json of the release, or the .z80 or .sna snapshot of a ZX Spectrum release. After the write, the knowledge does not need the file", required: true },
         base: { kind: "flag", help: "this release is the program of the knowledge: its segments and bytes must be the same" },
         comment: { kind: "text", value: "<text>", help: "what the release is, for example the group and the date" },
       },
@@ -927,7 +928,11 @@ const WRITE_COMMANDS: CommandSpec[] = [
     (call) => {
       const context = contextOf(call);
       const file = knowledgePath(call.string("file")!, "--file");
-      const image = readImage(file);
+      const read = readProgramFile(file, projectMachine());
+      if ("snapshot" in read && call.space !== MACHINES[read.snapshot.machine].spaces.main) {
+        throw new UsageError(`A snapshot release is the program as the CPU sees it: record it in the space ${MACHINES[read.snapshot.machine].spaces.main}. Remove --space`);
+      }
+      const image = "snapshot" in read ? read.snapshot.main : read.image;
       const commentText = call.string("comment");
       const base = call.flag("base");
       // The base release has no bytes of its own: its bytes are the program.
@@ -971,6 +976,9 @@ const WRITE_COMMANDS: CommandSpec[] = [
       notes: "Record only a screen of the program itself, never a screen of a crack. If a release changed the screen, for example with the text of a crack, stop and ask the user how to deal with it. text and multicolour need --colours or --colour; hires uses neither. With --stage, the script takes the screen from the capture of the stage: give only --stage, and --call for a tune. A flag that you give too replaces the value of the capture. A write replaces the start screen of the knowledge.",
     },
     (call) => {
+      // A machine without the C64 loader has no start screen: that comes before each other check.
+      const machine = projectMachine();
+      if (!machine.startScreen) throw new Refusal("invalid-input", noStartScreen(machine));
       const context = contextOf(call);
       const commentText = call.string("comment");
       // The values that the call gives. With --stage, the capture of the stage gives the others.
@@ -1078,11 +1086,12 @@ const WRITE_COMMANDS: CommandSpec[] = [
     },
     (call) => {
       const context = contextOf(call);
-      if (/\.(z80|sna)$/i.test(call.subject(0))) {
+      const read = readProgramFile(call.subject(0), projectMachine());
+      if ("snapshot" in read) {
         if (call.string("space") !== undefined) throw new UsageError("A snapshot gives its own spaces: the CPU view and the RAM banks. Remove --space");
-        const snapshot = readSnapshotImage(call.subject(0));
+        const snapshot = read.snapshot;
         return (db) => {
-          const machine = machineOf(db).id === snapshot.machine ? undefined : writeMachine(db, context, { machine: snapshot.machine });
+          const machine = machineOf(db).id === snapshot.machine ? undefined : writeMachine(db, context, { machine: snapshot.machine, state: snapshot.main.state });
           const main = MACHINES[snapshot.machine].spaces.main;
           const written = [
             { ...setImage(db, context, { space: main, segments: snapshot.main.segments, byteAt: snapshot.main.byteAt, entry: snapshot.main.entry, state: snapshot.main.state }), space: main },
@@ -1096,7 +1105,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
           };
         };
       }
-      const request = imageRequest(call.subject(0), call.space);
+      const request = imageRequest(read.image, call.space);
       return (db) => {
         const { revision, current } = setImage(db, context, request);
         return { revision, ...spaceOf(current), bytes: current.bytes, rowsAdded: current.rowsAdded, rowsClosed: current.rowsClosed, entryChanged: current.entry };
@@ -1123,7 +1132,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       name: "revert",
       summary: "Makes the knowledge the same as at one revision: all spaces, or with --space only that space. The revert is a new revision: the history stays complete.",
       subjects: [REVISION],
-      options: { space: { kind: "space", value: "<space>", help: "revert only this space: c64, drive8, loading, or bank0 to bank255. The other spaces do not change. Without --space, every space reverts" } },
+      options: { space: { kind: "space", value: "<space>", help: "revert only this space, for example c64 or drive8 on the C64, spectrum or ram1 on the ZX Spectrum. The other spaces do not change. Without --space, every space reverts" } },
     },
     (call) => {
       const context = contextOf(call);
@@ -1137,7 +1146,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
   ),
   writeCommand({ name: "merge", summary: "Decides the conflicts that a git merge of two computers' work left: of the rows of one conflict, the newest stays. One revision for all." }, (call) => {
     const context = contextOf(call);
-    const platform = new Map(platformNames().map((entry) => [entry.name, entry.address]));
+    const platform = (space: string) => new Map(platformNamesOfSpace(space).map((entry) => [entry.name, entry.address]));
     return (db) => {
       const merged = mergeConflicts(db, context, platform);
       return { revision: merged.revision, choices: merged.current.map(showChoice) };
@@ -1304,7 +1313,7 @@ function batchFields(fields: Record<string, unknown>, at: string, address: (text
 
 await runScript({
   name: "knowledge",
-  summary: "Reads and writes the knowledge of the project: names, regions, comments, references, the program and its coverage, and the source knowledge. A read needs no knowledge folder. Every command takes --space: c64 (the default), drive8 for 1541 drive code, loading for a captured stage of the loading, or bank0 to bank255 for cartridge banks. revert without --space reverts all spaces.",
+  summary: "Reads and writes the knowledge of the project: names, regions, comments, references, the program and its coverage, and the source knowledge. A read needs no knowledge folder. Every command takes --space; the default is the space of the CPU of the project machine (c64 or spectrum). revert without --space reverts all spaces.",
   names: knowledgeNames,
   mainSpace: projectMainSpace,
   commands: [...READ_COMMANDS, ...WRITE_COMMANDS, JOIN],

@@ -6,7 +6,7 @@
 
 import { COVERAGE } from "#src/cpu/coverage.ts";
 import { formatAddress, formatByte } from "#src/address.ts";
-import type { Cpu } from "#src/cpu.ts";
+import type { Cpu, Instruction } from "#src/cpu.ts";
 import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
@@ -14,6 +14,8 @@ export interface ListingSource {
   byteAt: (address: number) => number | undefined;
   /** The name of an address: a symbol, else a platform name. */
   nameOf: (address: number) => string | undefined;
+  /** The name of an address in the knowledge only, without the platform names: the name of a number that is maybe no address. nameOf when absent. */
+  knownNameOf?: (address: number) => string | undefined;
   /** The start of the platform entry of more bytes that holds an address outside the image (NMINV for its high byte), or undefined. */
   entryStart?: (address: number) => number | undefined;
   /** The analyzer names of an address, for reference. */
@@ -82,9 +84,22 @@ function operandOf(mode: Mode, address: number, low: number, high: number, sourc
 }
 
 /**
+ * Is the 2-byte operand of a Z80 instruction used as an address: the target of
+ * a jump, a branch or a call, or a memory access in brackets, for example
+ * ld a,($5c08)? An immediate value, for example ld hl,$0000, can be a number
+ * or an address: only the code that uses it tells.
+ */
+export function z80OperandIsAddress(instruction: Instruction): boolean {
+  if (instruction.call || instruction.jump !== undefined || instruction.branch !== undefined || instruction.operand?.relative === true) return true;
+  return /\(\$[0-9a-f]{4}\)/i.test(instruction.text ?? "");
+}
+
+/**
  * A Z80 instruction as text: the text of the decoder with a name, or the
  * operand expression of the knowledge, in place of the address that its
- * operand gives. Undefined when the instruction runs past the image.
+ * operand gives. A platform name names only an operand that is an address
+ * (z80OperandIsAddress); an immediate value gets a name of the knowledge or
+ * stays a number. Undefined when the instruction runs past the image.
  */
 function z80Text(cpu: Cpu, source: ListingSource, address: number): { length: number; text: string } | undefined {
   const instruction = cpu.decode(source.byteAt, address);
@@ -93,7 +108,8 @@ function z80Text(cpu: Cpu, source: ListingSource, address: number): { length: nu
   let text = instruction.text;
   if (operand !== undefined && (operand.size === 2 || operand.relative)) {
     const target = operand.relative ? (instruction.branch ?? instruction.jump)! : source.byteAt(address + operand.offset)! | (source.byteAt(address + operand.offset + 1)! << 8);
-    const shown = source.operand(address) ?? source.nameOf(target);
+    const name = z80OperandIsAddress(instruction) ? source.nameOf : (source.knownNameOf ?? source.nameOf);
+    const shown = source.operand(address) ?? name(target);
     if (shown !== undefined) text = text.replace(formatAddress(target), shown);
   }
   return { length: instruction.length, text };

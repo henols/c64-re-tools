@@ -4,7 +4,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
-import { ANY_SPACE, C64, isMachineId, MACHINE_IDS, MACHINES, type MachineId } from "../machine.ts";
+import { ANY_SPACE, C64, isMachineId, MACHINE_IDS, MACHINES, modelOfEntryState, type Machine, type MachineId } from "../machine.ts";
 import { labelProblem, SYMBOL_SYNTAX } from "../cpu.ts";
 import { type AddressRange, formatAddress, SYMBOL_NAME } from "../address.ts";
 import { isoCet } from "../time.ts";
@@ -109,7 +109,7 @@ export interface WriteContext {
   image?: (space: Space) => OperandImage;
 }
 
-/** The bytes of the image and the platform names (C64 space only) that operand expressions, patches and macro uses are checked against. */
+/** The bytes of the image and the platform names of its space that operand expressions, patches and macro uses are checked against. */
 export interface OperandImage {
   byteAt(address: number): number | undefined;
   platform: ReadonlyMap<string, number>;
@@ -399,12 +399,17 @@ function outsideMachine(db: DatabaseSync, revision: string): string | undefined 
  * Sets the machine of the project. A project without a machine is a C64. A
  * machine that has no space for the current knowledge is refused.
  */
-export function writeMachine(db: DatabaseSync, context: WriteContext, request: { machine: string }): WriteResult<{ machine: MachineId; space: Space }> {
+export function writeMachine(db: DatabaseSync, context: WriteContext, request: { machine: string; state?: Record<string, unknown> }): WriteResult<{ machine: MachineId; space: Space }> {
   if (!isMachineId(request.machine)) throw new Refusal("invalid-input", `${JSON.stringify(request.machine)} is not a machine. A machine is ${MACHINE_IDS.join(", ")}.`);
   const machine = MACHINES[request.machine];
   const outside = listSpaces(db).filter((space) => !machine.spaces.pattern.test(space));
   if (outside.length > 0) {
     throw new Refusal("conflict", `The knowledge has rows in ${outside.join(", ")}, and the ${machine.name} has no such space. Remove them first, or keep the machine.`);
+  }
+  // The entry state of the program names the model that it ran on: a snapshot of the 48K has no paging of the 128K.
+  const model = modelOfEntryState(request.state ?? entryStateOf(db, machine.spaces.main));
+  if (model !== undefined && MACHINES[model].family === machine.family && model !== machine.id) {
+    throw new Refusal("conflict", `The entry state of the program in the knowledge is of a ${MACHINES[model].name} snapshot, not of the ${machine.name}. To change the model, put a snapshot of the ${machine.name} into the knowledge with image: that sets the machine.`);
   }
   const current = db.prepare("SELECT machine, origin FROM current_machine").get() as { machine: string; origin: Origin } | undefined;
   const now = { machine: machine.id, space: machine.spaces.main };
@@ -415,6 +420,12 @@ export function writeMachine(db: DatabaseSync, context: WriteContext, request: {
     return now;
   });
   return { revision: written.revision, current: written.current };
+}
+
+/** The entry state of the program of a space, or undefined. */
+function entryStateOf(db: DatabaseSync, space: Space): Record<string, unknown> | undefined {
+  const row = db.prepare("SELECT state FROM current_entries WHERE space = ?").get(space) as { state: string | null } | undefined;
+  return row?.state == null ? undefined : (JSON.parse(row.state) as Record<string, unknown>);
 }
 
 /** A conflict in words: its rule, its space and the addresses of its rows. */
@@ -607,6 +618,11 @@ export function clearRange(db: DatabaseSync, change: Change, start: number, end:
 
 function classifyStep(db: DatabaseSync, change: Change, origin: Origin, request: RegionRequest): Step<RegionRow[], RegionRow[]> {
   const space = spaceOf(db, request);
+  const machine = machineOf(db);
+  const rom = space === machine.spaces.main ? machine.rom.find((range) => request.start <= range.end && request.end >= range.start) : undefined;
+  if (rom !== undefined) {
+    throw new Refusal("invalid-input", `${formatAddress(request.start)}-${formatAddress(request.end)} is in the ROM of the ${machine.name} (${formatAddress(rom.start)}-${formatAddress(rom.end)}). The knowledge holds the program, not the ROM: classify only addresses of the program.`);
+  }
   const overlapping = regionsOverlapping(db, request.start, request.end, space);
   const [only] = overlapping;
   const same = overlapping.length === 1 && only!.start === request.start && only!.end === request.end && only!.type === request.type && only!.element === request.element;
@@ -773,7 +789,7 @@ function checkInstructionStart(db: DatabaseSync, space: Space, byteAt: (address:
 /**
  * Refuses an expression whose value is not the operand in the image, and
  * returns the addresses of its names. Symbols of the knowledge come first, then
- * the platform names of the C64 space.
+ * the platform names of the space.
  */
 function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, request: OperandRequest, text: string): number[] {
   const where = formatAddress(request.address);
@@ -789,7 +805,7 @@ function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, 
   const bytes = [image.byteAt(request.address + field.offset), field.size === 2 ? image.byteAt(request.address + field.offset + 1) : 0];
   if (bytes.some((byte) => byte === undefined)) throw new Refusal("invalid-input", `The instruction at ${where} runs past the end of the image.`);
   const operand = bytes[0]! | (bytes[1]! << 8);
-  const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? (space === C64.spaces.main ? image.platform.get(name) : undefined);
+  const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? image.platform.get(name);
   let value: number;
   try {
     value = evaluate(text, resolve);
@@ -1046,7 +1062,7 @@ function switchStep(db: DatabaseSync, change: Change, context: ChangeContext & {
   if (existing !== undefined && existing.kind === request.kind && existing.default === value && listText(existing.releases) === listText(releases) && existing.comment === comment && !confirms(existing.origin, origin)) return { current: existing };
   const symbol = symbolNamed(db, request.name, space);
   if (symbol !== undefined) throw new Refusal("conflict", `The switch name ${request.name} is the name of the symbol at ${formatAddress(symbol.address)}. Give the switch another name.`);
-  if (space === C64.spaces.main && context.image?.(space).platform.has(request.name)) throw new Refusal("conflict", `The switch name ${request.name} is a C64 platform name. Give the switch another name.`);
+  if (context.image?.(space).platform.has(request.name)) throw new Refusal("conflict", `The switch name ${request.name} is a platform name of the ${machineOf(db).name}. Give the switch another name.`);
   // The patches hold the code of the value that the base release does not have: that value cannot change under them.
   if (existing !== undefined && baseValue(existing, base) !== baseValue({ releases }, base)) {
     const patches = listPatches(db, undefined, request.name, undefined, space);
@@ -1208,6 +1224,11 @@ function checkStartScreen(request: StartScreenRequest): void {
   checkCommentText(request.comment, "A start screen comment");
 }
 
+/** The refusal of a start screen on a machine whose generated source has no loader that shows one. */
+export function noStartScreen(machine: Machine): string {
+  return `A start screen is for the C64 loader of the generated source, and the machine of the project is the ${machine.name}. Do not record a start screen.`;
+}
+
 /** The bytes of a start screen of a stage, and its call, must be in the program of that space. */
 function checkStage(db: DatabaseSync, request: StartScreenRequest): void {
   if (request.stage === undefined) return;
@@ -1227,7 +1248,7 @@ function checkStage(db: DatabaseSync, request: StartScreenRequest): void {
 
 function startScreenStep(db: DatabaseSync, change: Change, origin: Origin, request: StartScreenRequest): Step<StartScreenRow, StartScreenRow> {
   const machine = machineOf(db);
-  if (machine.id !== C64.id) throw new Refusal("invalid-input", `A start screen is a screen of the C64 loader, and the project machine is the ${machine.name}.`);
+  if (!machine.startScreen) throw new Refusal("invalid-input", noStartScreen(machine));
   const space = C64.spaces.main;
   checkStage(db, request);
   const existing = currentStartScreen(db, space);
@@ -1285,7 +1306,14 @@ function checkMacro(request: MacroRequest): void {
   checkCommentText(request.comment, "A macro comment");
 }
 
+/** Refuses a macro or a macro use in a project whose generated source writes no macros. */
+function checkMacrosOfMachine(db: DatabaseSync, what: string): void {
+  const machine = machineOf(db);
+  if (!machine.macros) throw new Refusal("invalid-input", `The generated source of the ${machine.name} writes no macros, so the knowledge takes no ${what}. Keep the instructions as they are.`);
+}
+
 function macroStep(db: DatabaseSync, change: Change, origin: Origin, request: MacroRequest): Step<MacroRow, MacroRow> {
+  checkMacrosOfMachine(db, "macro");
   const space = spaceOf(db, request);
   const existing = macroNamed(db, request.name, space);
   const params = request.params ?? [];
@@ -1343,6 +1371,7 @@ function renameInUses(db: DatabaseSync, change: Change, space: Space, from: stri
 }
 
 function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: MacroUseRequest): Step<MacroUseRow, MacroUseRow> {
+  checkMacrosOfMachine(db, "macro use");
   const space = spaceOf(db, request);
   const range = `${formatAddress(request.start)}-${formatAddress(request.end)}`;
   if (context.image === undefined) throw new Refusal("invalid-input", "A macro use is checked against the image, and no image was given.");
@@ -1353,7 +1382,7 @@ function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { im
   if (args.length !== macro.params.length) {
     throw new Refusal("invalid-input", `The macro ${macro.name} has ${macro.params.length} params (${listText(macro.params)}), and the use gives ${args.length} args.`);
   }
-  const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? (space === C64.spaces.main ? image.platform.get(name) : undefined);
+  const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? image.platform.get(name);
   for (const arg of args) {
     try {
       evaluate(arg, resolve);
@@ -1506,6 +1535,8 @@ export function removeRelease(db: DatabaseSync, context: WriteContext, request: 
 
 /** Writes the start screen of the program: the loader of the generated source shows it before the entry. */
 export function setStartScreen(db: DatabaseSync, context: WriteContext, request: StartScreenRequest): WriteResult<StartScreenRow, StartScreenRow> {
+  const machine = machineOf(db);
+  if (!machine.startScreen) throw new Refusal("invalid-input", noStartScreen(machine));
   checkStartScreen(request);
   return result(write(db, context, "set-start-screen", (change) => startScreenStep(db, change, context.origin, request)));
 }
@@ -1845,9 +1876,9 @@ const MAX_CHOICES = 100_000;
  * rows of one conflict, the row of the newest revision stays and the others
  * close; an older region keeps its parts outside the newer regions. Where an
  * operand expression closes, the pointer references of its address follow the
- * expression that stays. `platform` gives the C64 platform names.
+ * expression that stays. `platform` gives the platform names of a space.
  */
-export function mergeConflicts(db: DatabaseSync, context: WriteContext, platform: ReadonlyMap<string, number>): WriteResult<MergeChoice[]> {
+export function mergeConflicts(db: DatabaseSync, context: WriteContext, platform: (space: Space) => ReadonlyMap<string, number>): WriteResult<MergeChoice[]> {
   return write(db, context, "merge", (change) => {
     const choices: MergeChoice[] = [];
     for (let found = conflicts(db); found.length > 0; found = conflicts(db)) {
@@ -1881,8 +1912,8 @@ function keepOutside(change: Change, conflict: Conflict, regions: boolean): void
 }
 
 /** Makes the pointer references of an address the ones of the operand expression that stays there. */
-function followOperand(db: DatabaseSync, change: Change, kept: OperandRow, platform: ReadonlyMap<string, number>): void {
-  const resolve = (name: string) => symbolNamed(db, name, kept.space)?.address ?? (kept.space === C64.spaces.main ? platform.get(name) : undefined);
+function followOperand(db: DatabaseSync, change: Change, kept: OperandRow, platform: (space: Space) => ReadonlyMap<string, number>): void {
+  const resolve = (name: string) => symbolNamed(db, name, kept.space)?.address ?? platform(kept.space).get(name);
   const targets = new Set(identifiers(operandText(kept)).flatMap((name) => resolve(name) ?? []));
   const pointers = referencesFrom(db, kept.address, kept.space).filter((reference) => reference.kind === POINTER_KIND);
   for (const reference of pointers) {

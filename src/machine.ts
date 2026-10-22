@@ -39,6 +39,14 @@ export interface Machine {
   ghidraLanguage: string;
   /** The assembler of the generated source, whose syntax patch code and macro bodies use. */
   assembler: AssemblerDialect;
+  /** The ROM that the CPU always sees in its main space: no program code or data of the knowledge is there. Empty when the ROM can be switched out. */
+  rom: readonly AddressRange[];
+  /** The files that put a program into the knowledge, for a message: "Put the program into the project knowledge with image: <programFiles>." */
+  programFiles: string;
+  /** The generated source writes macros and their uses. */
+  macros: boolean;
+  /** The generated source has a loader that can show a start screen. */
+  startScreen: boolean;
 }
 
 const FULL: AddressRange = { start: 0, end: 0xffff };
@@ -61,12 +69,39 @@ const SPECTRUM128_SPACES: Spaces = {
   range: (space) => (space === "spectrum" ? FULL : { start: 0xc000, end: 0xffff }),
 };
 
-export const MACHINES: Record<MachineId, Machine> = {
-  c64: { id: "c64", family: "c64", name: "Commodore 64", cpu: MOS6502, spaces: C64_SPACES, ghidraLanguage: "C64RT_6510:LE:16:nmos", assembler: ACME },
-  // Ghidra's own Z80 language: nothing to install.
-  spectrum48: { id: "spectrum48", family: "spectrum", name: "ZX Spectrum 48K", cpu: Z80, spaces: SPECTRUM48_SPACES, ghidraLanguage: "z80:LE:16:default", assembler: SJASMPLUS },
-  spectrum128: { id: "spectrum128", family: "spectrum", name: "ZX Spectrum 128K", cpu: Z80, spaces: SPECTRUM128_SPACES, ghidraLanguage: "z80:LE:16:default", assembler: SJASMPLUS },
+/** The C64 banks its ROMs out: a program can use all of the RAM. */
+const C64_MACHINE = { rom: [], programFiles: "a PRG, or the image.json of a capture", macros: true, startScreen: true };
+
+/** The ZX Spectrum: the ROM is always at $0000-$3fff, and a program comes in as a snapshot at its entry. */
+const SPECTRUM_MACHINE = {
+  rom: [{ start: 0x0000, end: 0x3fff }],
+  programFiles: "a .z80 or .sna snapshot that the emulator exported at the entry of the program",
+  macros: false,
+  startScreen: false,
 };
+
+export const MACHINES: Record<MachineId, Machine> = {
+  c64: { id: "c64", family: "c64", name: "Commodore 64", cpu: MOS6502, spaces: C64_SPACES, ghidraLanguage: "C64RT_6510:LE:16:nmos", assembler: ACME, ...C64_MACHINE },
+  // Ghidra's own Z80 language: nothing to install.
+  spectrum48: { id: "spectrum48", family: "spectrum", name: "ZX Spectrum 48K", cpu: Z80, spaces: SPECTRUM48_SPACES, ghidraLanguage: "z80:LE:16:default", assembler: SJASMPLUS, ...SPECTRUM_MACHINE },
+  spectrum128: { id: "spectrum128", family: "spectrum", name: "ZX Spectrum 128K", cpu: Z80, spaces: SPECTRUM128_SPACES, ghidraLanguage: "z80:LE:16:default", assembler: SJASMPLUS, ...SPECTRUM_MACHINE },
+};
+
+/** The ROM of the machine that holds an address of its main space, or undefined. */
+export function romAt(machine: Machine, address: number): AddressRange | undefined {
+  return machine.rom.find((range) => address >= range.start && address <= range.end);
+}
+
+/**
+ * The model that the entry state of a program names: a ZX Spectrum snapshot
+ * gives Z80 registers, and port $7ffd only on the 128K. Undefined for an entry
+ * state of another machine.
+ */
+export function modelOfEntryState(state: Record<string, unknown> | undefined): MachineId | undefined {
+  const registers = state?.registers;
+  if (typeof registers !== "object" || registers === null || !("pc" in registers) || !("af" in registers)) return undefined;
+  return typeof state!.port7ffd === "string" ? "spectrum128" : "spectrum48";
+}
 
 export const C64 = MACHINES.c64;
 

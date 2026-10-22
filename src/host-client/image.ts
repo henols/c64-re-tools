@@ -3,6 +3,8 @@
 
 import { posix } from "node:path";
 
+import type { Machine } from "../machine.ts";
+
 import { isRefusal, Refusal } from "../errors.ts";
 import { prgRange } from "../c64.ts";
 import { formatAddress, formatByte } from "../address.ts";
@@ -145,6 +147,25 @@ export function z80EntryState(snapshot: SpectrumSnapshot): Record<string, unknow
     border: snapshot.border,
     ...(snapshot.model === "128k" ? { port7ffd: formatByte(snapshot.port7ffd) } : {}),
   };
+}
+
+/** The program in a file: a snapshot of the ZX Spectrum, or an image.json or a PRG of the C64. */
+export type ProgramFile = { snapshot: SnapshotImage } | { image: Image };
+
+/**
+ * Reads the program in a project file for the project machine: a .z80 or
+ * .sna snapshot, else an image.json or a PRG (readImage). A tape of the ZX
+ * Spectrum (a .tzx, or a .tap in a Spectrum project) is refused with the way
+ * to get a snapshot from it. A Spectrum project takes only a snapshot.
+ */
+export function readProgramFile(path: string, machine: Machine): ProgramFile {
+  const type = posix.extname(path).slice(1).toLowerCase();
+  if (type === "z80" || type === "sna") return { snapshot: readSnapshotImage(path) };
+  if (type === "tzx" || (type === "tap" && machine.family === "spectrum")) {
+    throw new Refusal("invalid-input", `${path} is a ZX Spectrum tape (.${type}), and the knowledge takes the program in memory, not a tape. Load the tape in the emulator with its own loader, stop at the entry of the machine code, and export the machine state as a .z80 snapshot. Then give that snapshot.`);
+  }
+  if (machine.family === "spectrum") throw new Refusal("invalid-input", `${path} is no snapshot. A program of the ${machine.name} comes into the knowledge as ${machine.programFiles}.`);
+  return { image: readImage(path) };
 }
 
 /** Reads a .z80 or .sna snapshot of the project as the program at its PC. */

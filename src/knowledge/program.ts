@@ -7,11 +7,12 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
+import { platformNamesOfSpace } from "../platform.ts";
 import { COVERAGE } from "../cpu/coverage.ts";
 import { type AddressRange, formatAddress } from "../address.ts";
 
 import { COVERAGE_KINDS, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
-import { mainSpaceOf } from "./project-machine.ts";
+import { machineOf, mainSpaceOf } from "./project-machine.ts";
 import { coverageRuns } from "./read.ts";
 import { checkSpace, write, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
 
@@ -221,8 +222,12 @@ export function programImage(db: DatabaseSync | undefined, space: Space = mainSp
 export function requireProgram(db: DatabaseSync | undefined, space: Space = mainSpaceOf(db)): ProgramImage {
   const image = programImage(db, space);
   if (image !== undefined) return image;
-  const where = space === mainSpaceOf(db) ? "" : ` in ${space}`;
-  throw new Refusal("not-found", `The knowledge has no program${where}. Put the program into the project knowledge${where}: a PRG, or the image.json of a capture.`);
+  const machine = machineOf(db);
+  if (!machine.spaces.pattern.test(space)) {
+    throw new Refusal("invalid-input", `${space} is no space of the ${machine.name}, the machine of the project: its spaces are ${machine.spaces.names}. Give one of them with --space, or leave out --space for ${machine.spaces.main}.`);
+  }
+  const where = space === machine.spaces.main ? "" : ` in ${space}`;
+  throw new Refusal("not-found", `The knowledge has no program${where}. Put the program into the project knowledge${where} with image: ${machine.programFiles}.`);
 }
 
 /** The pages of an entry state: $0000-$03ff as the capture wrote them, 256 bytes as hex for each page. */
@@ -283,18 +288,21 @@ export function programCoverage(db: DatabaseSync | undefined, space: Space = mai
 
 /**
  * The program of each space in the knowledge that operand, patch and macro
- * use writes in that space are checked against, with the platform names. A
- * byte outside the segments of the program is not in it. Each program is
- * read once, when a write in its space needs it.
+ * use writes in that space are checked against, with the platform names of
+ * that space. `platform` replaces the names of the main space of the project,
+ * for example with only the names of the ROMs that the program uses. A byte
+ * outside the segments of the program is not in it. Each program is read
+ * once, when a write in its space needs it.
  */
-export function operandImages(db: DatabaseSync, platform: ReadonlyMap<string, number>): (space: string) => OperandImage {
+export function operandImages(db: DatabaseSync, platform?: ReadonlyMap<string, number>): (space: string) => OperandImage {
   const images = new Map<string, OperandImage>();
   return (space) => {
     const known = images.get(space);
     if (known !== undefined) return known;
     const image = requireProgram(db, space);
     const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
-    const made: OperandImage = { byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined), platform };
+    const names = platform !== undefined && space === mainSpaceOf(db) ? platform : new Map(platformNamesOfSpace(space).map((entry) => [entry.name, entry.address]));
+    const made: OperandImage = { byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined), platform: names };
     images.set(space, made);
     return made;
   };

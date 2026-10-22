@@ -12,7 +12,7 @@ import { after, test } from "node:test";
 import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 import { writeZ80 } from "../../src/spectrum.ts";
-import { keyboardCounterSnapshot } from "../fixtures/z80/keyboard-counter.ts";
+import { keyboardCounterRam, keyboardCounterSnapshot, z80Snapshot } from "../fixtures/z80/keyboard-counter.ts";
 import { listing, type ListingSource } from "../../skills/retro-knowledge/scripts/lib/listing.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/retro-knowledge/scripts/knowledge.ts");
@@ -242,7 +242,7 @@ test("operand writes an expression after a check against the program in the know
   knowledge(root, "rename", "$80c0", "irq_handler");
   const without = knowledge(root, "operand", "$8079", "--lo", "irq_handler");
   assert.equal(without.status, 2, "operand needs the program in the knowledge");
-  assert.match((without.json.error as { message: string }).message, /^The knowledge has no program\. Put the program into the project knowledge: a PRG, or the image\.json of a capture\./);
+  assert.match((without.json.error as { message: string }).message, /^The knowledge has no program\. Put the program into the project knowledge with image: a PRG, or the image\.json of a capture\./);
   assert.equal(knowledge(root, "image", "game.prg").status, 0);
   assert.equal(knowledge(root, "classify", "$8079-$8080", "code").status, 0);
   assert.equal(knowledge(root, "operand", "$8079", "--lo", "irq_handler", "--hi", "irq_handler").status, 2, "one selector only");
@@ -514,4 +514,101 @@ test("the listing of a ZX Spectrum program is Z80 text in sjasmplus syntax with 
   assert.equal(knowledge(root, "rename", "$8030", "count").status, 0);
   const lines = (knowledge(root, "listing", "$8010-$8028").json.lines as { listed: Array<{ text: string }> }).listed.map((line) => line.text);
   assert.deepEqual(lines, ["jr c,$8015", "call count", "ld bc,$7ffe", "in a,(c)", "and $01", "call z,count", "ld hl,$9002", "inc (hl)", "halt", "jp $800b", "db $00,$00"]);
+});
+
+/** The error and the hint of a refusal, as one text. */
+const said = (envelope: ScriptEnvelope) => `${envelope.error ?? ""} ${envelope.hint ?? ""}`;
+
+/** The counter with three more instructions at $8027: CALL KEY_SCAN ; LD HL,0 ; LD DE,$0020, then COUNT. */
+function platformCallSnapshot(): Uint8Array {
+  const ram = keyboardCounterRam();
+  ram.set([0xcd, 0x8e, 0x02, 0x21, 0x00, 0x00, 0x11, 0x20, 0x00], 0x8027 - 0x4000);
+  return z80Snapshot(ram, { pc: 0x8000, sp: 0xff00, iy: 0x5c3a, im: 1, border: 7 });
+}
+
+/** A ZX Spectrum 48K project with the counter of platformCallSnapshot, its code classified. */
+function spectrumProject(): string {
+  const root = project();
+  writeFileSync(join(root, "counter.z80"), platformCallSnapshot());
+  assert.equal(knowledge(root, "image", "counter.z80").status, 0);
+  assert.equal(knowledge(root, "classify", "$8000-$8044", "code").status, 0);
+  return root;
+}
+
+test("a Spectrum listing names an address operand with a platform name, and an immediate value only with a name of the knowledge", () => {
+  const root = spectrumProject();
+  const text = () => (knowledge(root, "listing", "$8000-$802f").json.lines as { listed: Array<{ text: string }> }).listed.map((line) => line.text);
+  const lines = text();
+  assert.ok(lines.includes("call KEY_SCAN"), lines.join(" | "));
+  assert.ok(lines.includes("ld hl,$0000") && lines.includes("ld de,$0020") && lines.includes("ld iy,$5c3a"), lines.join(" | "));
+  // A symbol of the knowledge names an immediate value.
+  assert.equal(knowledge(root, "rename", "$9002", "frames_seen").status, 0);
+  assert.ok(text().includes("ld hl,frames_seen"));
+});
+
+test("a Spectrum operand expression takes the platform names of the Spectrum", () => {
+  const root = spectrumProject();
+  const called = knowledge(root, "operand", "$8027", "--value", "KEY_SCAN");
+  assert.equal(called.status, 0, JSON.stringify(called.json));
+  assert.equal(knowledge(root, "operand", "$8004", "--value", "ERR_NR").status, 0);
+  const refused = knowledge(root, "operand", "$8027", "--value", "CHROUT");
+  assert.equal(refused.status, 2);
+  assert.match(said(refused.envelope), /CHROUT is not a symbol of the knowledge or a platform name/);
+  const lines = (knowledge(root, "listing", "$8000-$8007").json.lines as { listed: Array<{ text: string }> }).listed.map((line) => line.text);
+  assert.ok(lines.includes("ld iy,ERR_NR"), lines.join(" | "));
+});
+
+test("a Spectrum project takes a snapshot as its image and its release, and refuses a tape with the way to a snapshot", () => {
+  const root = spectrumProject();
+  for (const tape of ["game.tzx", "game.tap"]) {
+    writeFileSync(join(root, tape), Uint8Array.of(1, 2, 3));
+    for (const args of [["image", tape], ["release", "ORIGINAL", "--file", tape]]) {
+      const refused = knowledge(root, ...args);
+      assert.equal(refused.status, 2);
+      assert.match(said(refused.envelope), /is a ZX Spectrum tape .* export the machine state as a \.z80 snapshot/);
+      assert.doesNotMatch(said(refused.envelope), /PRG/);
+    }
+  }
+  writeFileSync(join(root, "block1.bin"), Uint8Array.of(1, 2, 3));
+  assert.match(said(knowledge(root, "image", "block1.bin").envelope), /block1\.bin is no snapshot\. A program of the ZX Spectrum 48K comes into the knowledge as a \.z80 or \.sna snapshot/);
+  const release = knowledge(root, "release", "ORIGINAL", "--file", "counter.z80", "--base");
+  assert.equal(release.status, 0, JSON.stringify(release.json));
+  assert.equal(release.json.bytes, 0xc000);
+  // A .tzx is a Spectrum tape also in a project without a machine.
+  const fresh = project();
+  writeFileSync(join(fresh, "game.tzx"), Uint8Array.of(1));
+  assert.match(said(knowledge(fresh, "image", "game.tzx").envelope), /is a ZX Spectrum tape/);
+});
+
+test("a Spectrum project refuses a space of the C64 by its own spaces, a start screen first, macros, and classify in the ROM", () => {
+  const root = spectrumProject();
+  const space = knowledge(root, "listing", "$8000-$8010", "--space", "c64");
+  assert.equal(space.status, 2);
+  assert.match(said(space.envelope), /c64 is no space of the ZX Spectrum 48K, the machine of the project: its spaces are spectrum/);
+  for (const args of [["start-screen"], ["start-screen", "--stage", "loading"]]) {
+    assert.match(said(knowledge(root, ...args).envelope), /A start screen is for the C64 loader of the generated source, and the machine of the project is the ZX Spectrum 48K/);
+  }
+  const macro = knowledge(root, "macro", "copy_block", "--body", "ldir");
+  assert.equal(macro.status, 2);
+  assert.match(said(macro.envelope), /The generated source of the ZX Spectrum 48K writes no macros/);
+  writeFileSync(join(root, "batch.json"), JSON.stringify([{ op: "use", start: "$8030", end: "$8033", macro: "copy_block" }]));
+  assert.match(said(knowledge(root, "apply", "batch.json").envelope), /writes no macros/);
+  assert.equal(knowledge(root, "module", "$8030", "input/count.asm").status, 0, "a module stays a write of a Spectrum project");
+  const rom = knowledge(root, "classify", "$0010-$0020", "bytes");
+  assert.equal(rom.status, 2);
+  assert.match(said(rom.envelope), /\$0010-\$0020 is in the ROM of the ZX Spectrum 48K \(\$0000-\$3fff\)/);
+  // The model of the entry state decides the model of the project.
+  const model = knowledge(root, "set-machine", "spectrum128");
+  assert.equal(model.status, 2);
+  assert.match(said(model.envelope), /The entry state of the program in the knowledge is of a ZX Spectrum 48K snapshot, not of the ZX Spectrum 128K/);
+  assert.equal(knowledge(root, "set-machine", "spectrum48").json.revision, null);
+});
+
+test("a program that the knowledge does not have gives the files of the machine", () => {
+  const root = project();
+  const missing = knowledge(root, "listing", "$1000-$1010");
+  assert.equal(missing.status, 2);
+  assert.match(said(missing.envelope), /Put the program into the project knowledge with image: a PRG, or the image\.json of a capture\./);
+  const banked = spectrumProject();
+  assert.equal(knowledge(banked, "set-machine", "c64").status, 2);
 });

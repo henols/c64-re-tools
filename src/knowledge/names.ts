@@ -10,7 +10,8 @@ import { Refusal } from "../errors.ts";
 import { openForRead } from "./database.ts";
 import { analyzerNamed, listAnalyzerNames, listSymbols, symbolNamed } from "./read.ts";
 import { type Space, type SymbolKind } from "./schema.ts";
-import { mainSpaceOf } from "./project-machine.ts";
+import type { Machine } from "../machine.ts";
+import { machineOf, mainSpaceOf } from "./project-machine.ts";
 
 /** The address of a name in a space. Refuses a name that no symbol and no analyzer has, and an analyzer name at two addresses. */
 export function addressOfName(db: DatabaseSync | undefined, name: string, space: Space = mainSpaceOf(db)): number {
@@ -40,6 +41,16 @@ export function projectMainSpace(): Space {
   const db = openForRead();
   try {
     return mainSpaceOf(db);
+  } finally {
+    db?.close();
+  }
+}
+
+/** The machine of the project: the machine of its knowledge, else the C64. */
+export function projectMachine(): Machine {
+  const db = openForRead();
+  try {
+    return machineOf(db);
   } finally {
     db?.close();
   }
