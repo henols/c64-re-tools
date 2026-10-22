@@ -539,3 +539,21 @@ test("a ZX Spectrum run loads the release stopped at its entry, then sets the po
   assert.equal(calls.indexOf("execution pause"), -1);
   assert.deepEqual(pressedAt, [50]);
 });
+
+test("compare with no common range tells to give a shift or another range, and a missing release names its path", () => {
+  const root = fresh();
+  importSnapshot(root, keyboardCounterSnapshot());
+  writeFileSync(join(root, "counter.z80"), keyboardCounterSnapshot());
+  writeFileSync(join(root, "changed.z80"), changedCounter());
+  // The ROM is in no snapshot: shift 0 is the best shift, and --align has no bytes to map either.
+  const empty = provenance(["compare", "knowledge", "changed.z80", "--range", "$0000-$3fff"], root);
+  assert.equal(empty.status, 0, empty.stdout + empty.stderr);
+  assert.deepEqual(empty.json.common, []);
+  assert.equal(empty.envelope.hint, "common is empty: the releases do not have bytes at the same addresses. Give --shift, or a --range that all releases have.");
+  assert.equal(empty.envelope.nextAction, undefined);
+  const missing = provenance(["compare", "knowledge", "nothere.z80"], root);
+  assert.equal(missing.status, 2, missing.stdout);
+  assert.equal(missing.envelope.code, "not-found");
+  assert.equal(missing.envelope.error, "There is no file at nothere.z80 in the project folder.");
+  assert.equal(missing.envelope.hint, "Give the path of each release relative to the project folder, or knowledge for the program in the project knowledge.");
+});

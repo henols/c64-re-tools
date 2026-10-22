@@ -108,7 +108,7 @@ function readRelease(name: string, shift: number, machine: Machine): LoadedRelea
     }
     noState = "The knowledge has no entry state. Put a capture of the unpacked program, with its entry state, into the project knowledge.";
   } else {
-    const file = readProgramFile(name, machine);
+    const file = readReleaseFile(name, machine);
     if ("snapshot" in file) {
       if (machine.family !== "spectrum") {
         throw new UsageError(`${name} is a ZX Spectrum snapshot, and this project is a ${machine.name} project.`, { hint: "Compare the releases in a ZX Spectrum project: put the snapshot of the program into the project knowledge of a new project first." });
@@ -137,6 +137,21 @@ function readRelease(name: string, shift: number, machine: Machine): LoadedRelea
     ...(stages === undefined ? {} : { stages }),
     banks: bankSpaces(snapshot?.banks ?? []),
   };
+}
+
+/** The file of a release; a release path with no file gets a hint. */
+function readReleaseFile(name: string, machine: Machine): ReturnType<typeof readProgramFile> {
+  try {
+    return readProgramFile(name, machine);
+  } catch (error) {
+    // Only the release path itself: a file that an image.json names has its own message.
+    if (error instanceof Refusal && error.code === "not-found" && error.message.endsWith(`There is no file at ${name} in the project folder.`)) {
+      throw new Refusal("not-found", `There is no file at ${name} in the project folder.`, {
+        hint: "Give the path of each release relative to the project folder, or knowledge for the program in the project knowledge.",
+      });
+    }
+    throw error;
+  }
 }
 
 /** Most blocks and ranges that a list of --align shows. */
@@ -269,7 +284,10 @@ async function compare(call: Call): Promise<unknown> {
   const best = suggested.find((suggestion) => !("current" in suggestion));
   const hints: string[] = [];
   let nextAction: string | undefined;
-  if (best !== undefined && "shift" in best) {
+  const empty = comparison.common.length === 0;
+  // No common range: --align maps nothing either. A shift or another range gives bytes to compare, and the script cannot tell which one.
+  if (empty) hints.push("common is empty: the releases do not have bytes at the same addresses. Give --shift, or a --range that all releases have.");
+  else if (best !== undefined && "shift" in best) {
     const next = [...applied];
     next[best.release - 1] = best.shift;
     const shiftArgs = next.flatMap((shift, index) => (shift === 0 ? [] : ["--shift", `${index + 1}:${shift}`]));
