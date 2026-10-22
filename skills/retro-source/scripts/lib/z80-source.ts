@@ -22,6 +22,7 @@
 import { type AddressRange, formatAddress, formatByte } from "#src/address.ts";
 import { labelProblem, type Cpu, type Instruction } from "#src/cpu.ts";
 import { COVERAGE } from "#src/cpu/coverage.ts";
+import { operandIsAddress } from "#src/cpu/z80.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, type OperandExpression } from "#src/knowledge/expression.ts";
 import { splitPieces, type OperandAsNumber, type PieceFile, type SourceItem, type SourceLabel } from "./source.ts";
@@ -65,18 +66,6 @@ const CODE_TYPE = "code";
 /** The region types that a name+offset operand cannot name: code. */
 const NOT_TABLES: readonly string[] = [CODE_TYPE, "jumps", "dual-use"];
 
-/**
- * True when the word operand of an instruction is an address that the
- * instruction uses: the target of a jump, a branch or a call, or the address of
- * a memory access, which the Zilog syntax puts in brackets. The one rule of the
- * source for a platform name in an operand.
- */
-export function isAddressOperand(decoded: Instruction, target: number): boolean {
-  if (decoded.operand?.relative === true) return true;
-  if (decoded.jump === target || decoded.branch === target || decoded.callTarget === target) return true;
-  return decoded.text?.includes(`(${formatAddress(target)})`) === true;
-}
-
 /** The instructions of the code regions, decoded from the start of each region, and of the flow from each entry. Each one is inside its segment and outside the data regions. */
 export function z80Instructions(input: Pick<Z80SourceInput, "segments" | "byteAt" | "cpu" | "regions" | "entries">): Z80Instruction[] {
   const inSegment = (address: number) => input.segments.find((segment) => address >= segment.start && address <= segment.end);
@@ -95,7 +84,7 @@ export function z80Instructions(input: Pick<Z80SourceInput, "segments" | "byteAt
       address,
       length: decoded.length,
       text: decoded.text,
-      ...(target === undefined ? {} : { target, addressOperand: isAddressOperand(decoded, target) }),
+      ...(target === undefined ? {} : { target, addressOperand: operandIsAddress(decoded) }),
       ...(operand === undefined || operand.relative === true ? {} : { operand: { offset: operand.offset, size: operand.size } }),
     };
     return { instruction, decoded };

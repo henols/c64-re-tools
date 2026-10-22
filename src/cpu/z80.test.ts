@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { Z80 } from "./z80.ts";
+import { operandIsAddress, Z80 } from "./z80.ts";
 
 /** Decodes bytes placed at `at` (default $8000). */
 function decode(bytes: number[], at = 0x8000) {
@@ -125,4 +125,18 @@ test("the operand of an instruction is after its opcode, its DD or FD prefix and
 test("Z80 mnemonics, registers and conditions are no labels", () => {
   assert.ok(["ld", "jp", "hl", "ix", "a", "nz", "pe"].every((word) => Z80.reserved.has(word)));
   assert.ok(!Z80.reserved.has("main") && !Z80.reserved.has("lda"));
+});
+
+test("a 16-bit operand is an address for a jump, a branch, a call or a memory access, and an immediate value is not", () => {
+  const at = (bytes: number[]) => Z80.decode((address) => bytes[address - 0x8000], 0x8000)!;
+  // jp $028e ; call nz,$028e ; ld hl,($5c3d) ; ld ($5c3d),hl ; ld hl,$0000 ; ld de,$0020
+  const cases: Array<[number[], boolean]> = [
+    [[0xc3, 0x8e, 0x02], true],
+    [[0xc4, 0x8e, 0x02], true],
+    [[0x2a, 0x3d, 0x5c], true],
+    [[0x22, 0x3d, 0x5c], true],
+    [[0x21, 0x00, 0x00], false],
+    [[0x11, 0x20, 0x00], false],
+  ];
+  for (const [bytes, address] of cases) assert.equal(operandIsAddress(at(bytes)), address, at(bytes).text);
 });

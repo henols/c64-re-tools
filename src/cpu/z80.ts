@@ -61,6 +61,16 @@ const RESERVED = new Set([
   ...["nz", "z", "nc", "po", "pe", "p", "m"],
 ]);
 
+/**
+ * True when the 16-bit operand of a Z80 instruction is an address: a jump,
+ * branch or call target, or a memory access in brackets ((nn)). Else it is
+ * an immediate value, which a platform name does not name.
+ */
+export function operandIsAddress(instruction: Instruction): boolean {
+  if (instruction.call || instruction.jump !== undefined || instruction.branch !== undefined || instruction.operand?.relative === true) return true;
+  return /\(\$[0-9a-f]{4}\)/i.test(instruction.text ?? "");
+}
+
 export const Z80: Cpu = {
   id: "z80",
   maxInstructionLength: 4,
