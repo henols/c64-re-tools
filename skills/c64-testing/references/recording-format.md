@@ -54,6 +54,8 @@ A record file has no `raster` target and no `condition`. `write` and `runUntil` 
 
 Each character of `keys` is one tap. a to z press the same keys as A to Z. `\n` presses RETURN. A character with SHIFT, for example `!`, also presses the left SHIFT.
 
+The program runs while a `press` step taps its keys. An event in these frames is past when the next step starts. After a `press` step, run until an address that the program gets to later. For example, after F1 starts a game, run until the main loop of the game, not until the routine that starts the game.
+
 A key without a character has its name in braces, in upper or lower case. `{STOP}` is RUN/STOP, and `{CBM}` is the Commodore key. The names are:
 
 - `{F1}` to `{F8}`, `{RETURN}`, `{SPACE}`, `{DEL}`, `{INST}`, `{HOME}`, `{CLR}`

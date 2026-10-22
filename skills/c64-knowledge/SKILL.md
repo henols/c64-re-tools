@@ -248,8 +248,8 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 
 ### `listing <range>`
 
-- `body.lines` lists one line for each instruction of a code region, and one `!byte` line for other bytes.
-- Each line has `address`, `bytes`, `text`, `referencesIn` and `referencesOut`. It can also have `label`, `analyzerNames` and `comment`.
+- `body.lines` has `count` and `listed`. `listed` holds one line for each instruction of a code region, and one `!byte` line for other bytes.
+- Each line has `address`, `bytes`, `text`, `referencesIn` and `referencesOut`. It can also have `label`, `analyzerNames`, `lineComments` and `comment`. `lineComments` are the line comments before the line. `comment` is the side comment.
 - `text` is the instruction with the names of its target. An operand expression of the knowledge replaces the operand.
 - When the knowledge has coverage, `access` tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line, or `-` for none.
 - With `--out`, the body has `lines` as a number, and `out`, `bytes` and `sha256` of the text file.

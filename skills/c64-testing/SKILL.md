@@ -251,7 +251,7 @@ Do this for each result:
 
 Traps:
 
-- `idleReads` counts the input reads of the rebuild that the recording had no value for. On the original, such a read makes the result INCONCLUSIVE.
+- `idleReads` counts the input reads of the rebuild that the recording had no value for. On the original, such a read makes the result INCONCLUSIVE. The rebuild can read input where the original does not, for example in its loader before the start screen. Such reads do not change a PASS of the rebuild.
 - The script refuses a recording of version 2.0 with `invalid-input`. Record the session again.
 
 ---
