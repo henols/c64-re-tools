@@ -216,8 +216,8 @@ On the C64, each finding has `stages`: the unpack stages that wrote its bytes. A
 
 Text from another computer can show the tools of the developer:
 
-- On the C64, `ascii` is text in ASCII, with small letters. A cross assembler on another computer can leave it. On the ZX Spectrum, `ascii` is text in ASCII in capitals, in small letters, or in the two together. The ZX Spectrum keeps its text in ASCII.
-- `high-bit` is text with bit 7 set. The Apple II keeps text in this form, with `$8d` at the end of a line. Apple II assembler source, for example from Merlin, has `DFB` lines and `*` comments. A C64 text in shifted letters with `$a0` spaces is also `high-bit`.
+- On the C64, `ascii` is text in ASCII, with small letters. A cross assembler on another computer can leave it. On the ZX Spectrum, `ascii` is text in ASCII in capitals, in small letters, or in the two together. The ZX Spectrum keeps its text in ASCII. In the ZX Spectrum character set, `$60` is the pound sign and `$7f` is the copyright sign. `text` shows them as `£` and `©`.
+- `high-bit` is text with bit 7 set. The Apple II keeps text in this form, with `$8d` at the end of a line. Apple II assembler source, for example from Merlin, has `DFB` lines and `*` comments. A C64 text in shifted letters with `$a0` spaces is also `high-bit`. On the ZX Spectrum, the script gives no `high-bit` text in a code region that the program reaches. Z80 instructions, for example `POP BC`, `RET` and `CALL`, can look like this text.
 - The script does not find data of another computer, for example a table of Atari key codes. Examine `residue` and the data that no code reads. Use your knowledge of the other computers.
 
 Read the findings with care:

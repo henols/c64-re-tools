@@ -103,6 +103,8 @@ interface Character {
   letter?: "a" | "b";
   /** A line end. */
   end?: true;
+  /** A sign of the character set that text often has, for example the copyright sign: it is no odd sign, and it can start a text. */
+  sign?: true;
 }
 
 const LINE_END: Character = { plain: "\n", mixed: "\n", end: true };
@@ -147,6 +149,13 @@ function asciiCharacter(byte: number): Character | undefined {
   return { plain: character, mixed: character, ...(byte >= 0x61 && byte <= 0x7a ? { letter: "a" as const } : byte >= 0x41 && byte <= 0x5a ? { letter: "b" as const } : {}) };
 }
 
+/** The character set of the ZX Spectrum: ASCII, with the pound sign at $60 and the copyright sign at $7f. */
+function spectrumCharacter(byte: number): Character | undefined {
+  if (byte === 0x60) return { plain: "£", mixed: "£", sign: true };
+  if (byte === 0x7f) return { plain: "©", mixed: "©", sign: true };
+  return asciiCharacter(byte);
+}
+
 /** ASCII with bit 7 set: $8d ends a line, and $20 is a space too, as in the comments of Apple II assembler source. */
 function highAsciiCharacter(byte: number): Character | undefined {
   if (byte === 0x8d) return LINE_END;
@@ -173,7 +182,7 @@ function readsAsText(characters: Character[], min: number): boolean {
   if (characters.length < min) return false;
   const letters = characters.filter((character) => character.letter !== undefined);
   if (letters.length < 4) return false;
-  if (characters.filter((character) => character.letter === undefined && !COMMON_SIGNS.test(character.plain)).length > 1) return false;
+  if (characters.filter((character) => character.letter === undefined && character.sign !== true && !COMMON_SIGNS.test(character.plain)).length > 1) return false;
   if (new Set(characters.map((character) => character.plain)).size < 4) return false;
   if (letters.filter((character) => VOWELS.test(character.plain)).length < letters.length * 0.2) return false;
   const codes = characters.map((character) => character.plain.charCodeAt(0));
@@ -250,16 +259,18 @@ function ownEncoding(encoding: TextEncoding, bytes: number[], characters: Charac
 /** The runs of one encoding in a segment that read as text. `reversed` reads the bytes with bit 7 set, without that bit. */
 function textRuns(memory: Uint8Array, segment: AddressRange, encoding: TextEncoding, reversed: boolean, min: number, machine: Machine): TextFinding[] {
   const { cpu } = machine;
-  const decode = { petscii: petsciiOrLineEnd, screen: screenCharacter, ascii: asciiCharacter, "high-bit": highAsciiCharacter }[encoding];
+  const decode = { petscii: petsciiOrLineEnd, screen: screenCharacter, ascii: machine.family === "spectrum" ? spectrumCharacter : asciiCharacter, "high-bit": highAsciiCharacter }[encoding];
   const found: TextFinding[] = [];
   let run: Array<{ address: number; character: Character }> = [];
   const solid = (character: Character) => character.letter !== undefined || /[0-9]/.test(character.plain);
+  /** A sign such as the copyright sign comes before the words or digits that it marks: it can start a text, but it does not end one. */
+  const starts = (character: Character) => solid(character) || character.sign === true;
   /** Reports a piece of the run as text, from its first to its last solid character, when it reads as text. */
   const report = (piece: typeof run, asSource: boolean) => {
     let first = 0;
     let last = piece.length - 1;
     const edge = asSource ? (character: Character) => character.end !== true && character.plain.trim() !== "" : solid;
-    while (first <= last && !edge(piece[first]!.character)) first++;
+    while (first <= last && !(asSource ? edge : starts)(piece[first]!.character)) first++;
     while (last >= first && !edge(piece[last]!.character)) last--;
     const kept = piece.slice(first, last + 1);
     const characters = kept.map((item) => item.character);
@@ -468,7 +479,11 @@ export function findLeftovers(input: LeftoversInput): Leftovers {
   const placed = <T extends AddressRange>(items: T[]) => items.map((item) => ({ ...item, ...placement(item) }));
 
   const machine = input.machine ?? C64;
-  const text = findText(memory, segments, input.minText, machine);
+  // The Z80 opcodes $c0-$ff, for example POP BC, RET and CALL, read as capitals with bit 7 set: such a text in code that the program reaches is code.
+  const reached = new Uint8Array(0x10000);
+  for (const region of separation.codeRegions) if (region.reachable === true) reached.fill(1, region.start, region.end + 1);
+  const inReachedCode = (item: AddressRange) => reached.subarray(item.start, item.end + 1).every((byte) => byte === 1);
+  const text = findText(memory, segments, input.minText, machine).filter((item) => !(machine.cpu.id === "z80" && item.encoding === "high-bit" && inReachedCode(item)));
   const basic = machine.family === "spectrum" ? findSinclairBasic(memory, segments, machine.id === "spectrum128" ? "128k" : "48k") : findBasic(memory, segments, input.basicStart);
   const fill = findFills(memory, segments);
   // Untouched bytes that no other finding explains.

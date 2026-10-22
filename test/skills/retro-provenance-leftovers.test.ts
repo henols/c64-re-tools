@@ -220,6 +220,44 @@ test("on the ZX Spectrum, leftovers give the Sinclair BASIC program at PROG, ASC
   assert.ok(findText(random, [{ start: 0x4000, end: 0x7fff }], undefined, MACHINES.spectrum48).length <= 2, "16 KiB of random bytes read as text at most two times");
 });
 
+test("on the ZX Spectrum, $60 and $7f are the pound and copyright signs of a text, and Z80 code that the program reaches gives no text with bit 7 set", () => {
+  const memory = new Uint8Array(0x10000);
+  // POP BC, RET, CALL $d4a3, CALL $d4be and the first byte of the next instruction: capitals with bit 7 set.
+  const code = [0xc1, 0xc9, 0xcd, 0xa3, 0xd4, 0xcd, 0xbe, 0xd4, 0xed];
+  memory.set(code, 0x9000);
+  memory.set(code, 0xa000);
+  // Text with bit 7 set, as the C64 keeps its shifted letters.
+  memory.set(ascii("PRESS ANY KEY").map((byte) => byte | 0x80), 0x9020);
+  memory.set([...ascii("PRICE "), 0x60, ...ascii("2.99 - ALL RIGHTS"), 0x7f, ...ascii(" 1984 BRUCE LEE")], 0xb000);
+  memory.set([0x7f, ...ascii(" 1984 DATASOFT")], 0xb100);
+  // Graphics bytes that read as seven letters: the sign after them does not make a text of eight characters.
+  memory.set([...ascii("gfgggoo"), 0x7f], 0xb200);
+  const segments = [{ start: 0x4000, end: 0xffff }];
+  // The entry region holds the bytes at $9000; nothing reaches the bytes at $a000.
+  const codeRegions = [{ start: 0x8ff0, end: 0x9030, type: "code" }];
+  const zx = separate({ segments, memory, entry: 0x8ff0, codeRegions, references: [], cpu: Z80 });
+  assert.equal(zx.codeRegions[0]!.reachable, true);
+  assert.deepEqual(
+    findLeftovers({ segments, memory, separation: zx, machine: MACHINES.spectrum48 }).text.map((item) => [item.start, item.encoding, item.text]),
+    [
+      [0xa000, "high-bit", "AIM#TM>Tm"],
+      [0xb000, "ascii", "PRICE £2.99 - ALL RIGHTS© 1984 BRUCE LEE"],
+      [0xb100, "ascii", "© 1984 DATASOFT"],
+    ],
+  );
+  // The C64 keeps the text with bit 7 set in its code. $60 and $7f are no signs of a PETSCII text.
+  const c64 = separate({ segments, memory, entry: 0x8ff0, codeRegions, references: [] });
+  assert.deepEqual(
+    findLeftovers({ segments, memory, separation: c64 }).text.map((item) => [item.start, item.encoding, item.text]),
+    [
+      [0x9020, "high-bit", "PRESS ANY KEY"],
+      [0xb007, "petscii", "2.99 - ALL RIGHTS"],
+      [0xb01a, "petscii", "1984 BRUCE LEE"],
+      [0xb102, "petscii", "1984 DATASOFT"],
+    ],
+  );
+});
+
 test("separate in a ZX Spectrum project decodes with the Z80 and leaves the ROM out of the outside ranges", () => {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-leftovers-zx-"));
   roots.push(root);
