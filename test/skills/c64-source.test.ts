@@ -751,12 +751,12 @@ test("with real ACME, a macro use in code that nothing uses is in the leftover w
   coverage[0x080d] = COVERAGE.ramExecute;
   writeFileSync(join(project, "run.bin"), coverage);
   write("image", "test.prg");
-  write("rename", "$080d", "start", "--kind", "routine");
-  write("rename", "$080e", "dead_inc", "--kind", "routine");
-  write("classify", "$0801-$080c", "bytes");
-  write("classify", "$080d-$0814", "code");
   write("coverage", "run.bin");
   writeFileSync(join(project, "batch.json"), JSON.stringify([
+    { op: "rename", address: "$080d", name: "start", kind: "routine" },
+    { op: "rename", address: "$080e", name: "dead_inc", kind: "routine" },
+    { op: "classify", start: "$0801", end: "$080c", type: "bytes" },
+    { op: "classify", start: "$080d", end: "$0814", type: "code" },
     { op: "macro", name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+" },
     { op: "use", start: "$080e", end: "$0813", macro: "inc16", args: ["$fb"] },
   ]));

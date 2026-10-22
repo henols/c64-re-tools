@@ -186,20 +186,6 @@ test("docs.ts generate writes the reference: module pages with anchors and links
   assert.match(read("modules/data/tables.md"), /### \[`handlers`\]\(\.\.\/\.\.\/\.\.\/\.\.\/src\/data\/tables\.asm#L5\) `\$2000-\$2003`\n\n\*data\*\n\n- \*\*Referred to by:\*\* \[`draw`\]\(\.\.\/main_code\.md#draw\)/);
 });
 
-test("a change in another space keeps the source and the reference of space c64 current", () => {
-  const { root, revision } = project();
-  assert.equal(generate(root, "src", "--out", "docs/reference").status, 0);
-  assert.equal(knowledge(root, "rename", "$0500", "drive_loop", "--space", "drive8").status, 0);
-  const again = generate(root, "src", "--out", "docs/reference");
-  assert.equal(again.status, 0, JSON.stringify(again.json));
-  assert.equal(again.json.revision, revision, "the pages keep the revision of the source");
-  assert.equal(link(root, "docs", "--source", "src", "--check").json.result, "PASS");
-  // A change in space c64 makes the source old.
-  assert.equal(knowledge(root, "rename", "$1028", "handler_c", "--kind", "label").status, 0);
-  assert.equal((generate(root, "src", "--out", "docs/reference").json.error as { code: string }).code, "invalid-input");
-});
-
-
 test("docs.ts generate refuses a page of a person in the output directory and a source of another revision", () => {
   const { root } = project();
   mkdirSync(join(root, "docs/reference/modules"), { recursive: true });

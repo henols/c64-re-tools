@@ -7,8 +7,9 @@ import { after, before, test } from "node:test";
 
 import { openForRead, openForWrite } from "./database.ts";
 import { historyAt, historyNamed, revision, revisions } from "./history.ts";
-import { at, listComments, listReferences, listRegions, listSymbols, search } from "./read.ts";
-import { addReference, classifyRegion, renameSymbol, setComment } from "./write.ts";
+import { at, listComments, listReferences, listRegions, listSymbols, search, sourceRevision } from "./read.ts";
+import { setImage } from "./program.ts";
+import { addReference, classifyRegion, renameSymbol, setComment, setStartScreen } from "./write.ts";
 import { nth } from "./revisions.testkit.ts";
 
 let root: string;
@@ -108,4 +109,26 @@ test("revision 0 is the knowledge before every revision: it added and closed not
   const initial = revision(db, "0");
   assert.deepEqual([initial.revision.id, initial.revision.operation, initial.added, initial.closed], ["0", "none", [], []]);
   assert.equal(revision(undefined, "0").revision.id, "0", "also without a knowledge folder");
+});
+
+test("the source revision of a space is its newest revision and that of the stage of its start screen; a change in another space keeps it", () => {
+  const folder = mkdtempSync(join(tmpdir(), "c64-re-tools-read-"));
+  const own = openForWrite(folder);
+  try {
+    const llm = { origin: "llm" } as const;
+    renameSymbol(own, llm, { address: 0x1000, name: "start" });
+    const first = sourceRevision(own);
+    renameSymbol(own, llm, { space: "drive8", address: 0x0500, name: "drive_loop" });
+    assert.equal(sourceRevision(own), first, "a change in drive8");
+    assert.notEqual(sourceRevision(own, "drive8"), first);
+    // The stage of the start screen is part of the source of c64.
+    setImage(own, llm, { space: "bank1", segments: [{ start: 0x5c00, end: 0x83ff }], byteAt: () => 0 });
+    setStartScreen(own, llm, { mode: "multicolour", screen: 0x5c00, bitmap: 0x6000, colourRam: true, border: 0, background: 6, stage: "bank1" });
+    const staged = sourceRevision(own);
+    renameSymbol(own, llm, { space: "bank1", address: 0x6000, name: "picture" });
+    assert.notEqual(sourceRevision(own), staged, "a change in the stage");
+  } finally {
+    own.close();
+    rmSync(folder, { recursive: true, force: true });
+  }
 });
