@@ -1,6 +1,7 @@
 // The retro-provenance script: compares two or more releases byte by byte at
 // their addresses and reports where they differ and which releases agree. A
-// release is a PRG or an unpacker image.json. With --run, each release
+// release is a PRG or an unpacker image.json of the C64, or a .z80 or .sna
+// snapshot of the ZX Spectrum. With --frames, each release
 // runs in its own emulator, and each listed difference gets its first access
 // and whether the run changed it. The separate command gives evidence from
 // the program in the knowledge, and the leftovers command lists what its
@@ -626,8 +627,14 @@ const LIBRARY = { kind: "text", value: "<folder>", required: true, help: "the li
 const COMMANDS: CommandSpec[] = [
   {
     name: "compare",
-    summary: "Compares releases byte by byte, in their common ranges, and suggests shifts when they are placed differently. With --align, maps two releases with moved code in blocks of equal bytes, each with its own shift.",
-    subjects: [{ name: "<release>", help: "knowledge (the program in the knowledge), a PRG at its load address, or the image.json of a capture of the unpacked program with the entry_state.json beside it. Two or more", list: true }],
+    summary: "Compares releases byte by byte, in their common ranges, and suggests shifts when they are placed differently. With --align, maps two releases with moved code in blocks of equal bytes, each with its own shift. On the ZX Spectrum 128K, also compares each RAM bank that all releases hold.",
+    subjects: [
+      {
+        name: "<release>",
+        help: "knowledge (the program in the knowledge). In a C64 project, a PRG at its load address, or the image.json of a capture of the unpacked program with the entry_state.json beside it. In a ZX Spectrum project, a .z80 or .sna snapshot at the entry of the program. Two or more",
+        list: true,
+      },
+    ],
     options: {
       shift: {
         kind: "text",
@@ -641,7 +648,7 @@ const COMMANDS: CommandSpec[] = [
       align: { kind: "flag", help: "map the first release to the second in blocks of equal bytes, each with its own shift, for releases with added code and moved data. Two releases; not with --shift or --frames" },
       "min-block": { kind: "count", value: "<n>", min: 8, max: 0x10000, help: "with --align: the fewest bytes in a block (default 16)" },
       frames: { ...OPTIONS.frames, max: MAX_EXECUTION_COUNT, help: "run each release in its own emulator for n frames, and give each listed difference its first access and whether it changed" },
-      steps: { ...OPTIONS.steps, help: "with --frames: action steps (JSON) to run before the frames" },
+      steps: { ...OPTIONS.steps, help: 'with --frames: the steps (JSON) to run before the frames. Action steps on the C64. On the ZX Spectrum, { "frames": 50 }, { "press": ["space"], "frames": 5 } or { "joystick": { "right": true } }' },
     },
     run: compare,
   },
@@ -653,7 +660,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "leftovers",
-    summary: "What the program in the knowledge holds besides its working code: texts in PETSCII, screen codes, ASCII or with bit 7 set (Apple II), assembler source, BASIC lines away from the BASIC start, fills, untouched bytes outside code, copies of earlier bytes, and code regions that nothing reaches and no run executed.",
+    summary: "What the program in the knowledge holds besides its working code. Texts in ASCII or with bit 7 set (Apple II), and on the C64 also in PETSCII or screen codes. Assembler source. BASIC lines: on the C64 away from the BASIC start, on the ZX Spectrum at PROG. Fills, untouched bytes outside code, and copies of earlier bytes. Code regions that nothing reaches and no run executed.",
     options: {
       out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write all findings to this file" },
       "min-text": { kind: "count", value: "<n>", min: 4, max: 999, default: 8, help: "the shortest text to find (default 8)" },
@@ -663,7 +670,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "routine",
-    summary: "Saves a routine of the program in the knowledge to a library, with its user and LLM names, regions, comments, references and operand expressions at offsets.",
+    summary: "Saves a routine of the program in the knowledge to a library, with the CPU of the project. The routine keeps its user and LLM names, regions, comments, references and operand expressions at offsets.",
     subjects: [{ name: "<module|range>", help: "the start address of a module of the knowledge, or a range <start>-<end>" }],
     options: {
       library: LIBRARY,
@@ -675,7 +682,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "match",
-    summary: "Finds each routine of the library in the program of the knowledge: the opcodes and other fixed bytes equal, and the addresses into the routine moved by one shift.",
+    summary: "Finds each routine of the library in the program of the knowledge. The opcodes and other fixed bytes are equal, and the addresses into the routine move by one shift. Only the routines of the CPU of the project count. otherCpu counts the others.",
     options: {
       library: { ...LIBRARY, help: "the library folder, relative to the project folder, for example ../library" },
       apply: { kind: "flag", help: "write the changes to the project knowledge as one revision of the LLM. Without it, the result only shows the changes" },

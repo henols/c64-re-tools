@@ -1,11 +1,12 @@
 ---
 name: retro-provenance
-description: Compares two or more releases of a C64 program byte by byte and tells which releases agree at each difference. It can run each release and tell how the program uses each difference. It gives evidence for each range of the program in the project knowledge. It finds the leftovers in the program, for example texts, assembler source, BASIC lines, unused bytes, copies and dead code. It keeps a library of routines that several programs share, and finds these routines in a program. Use it to separate the original application from the changes of a crack or of a release. Use it to find the history of a program in its leftovers. Use it to find known routines, for example a music driver, in a program. It does not disassemble or analyze the code, and it does not change the project knowledge.
+description: Compares two or more releases of a C64 or ZX Spectrum program byte by byte and tells which releases agree at each difference. It can run each release and tell how the program uses each difference. It gives evidence for each range of the program in the project knowledge. It finds the leftovers in the program, for example texts, assembler source, BASIC lines, unused bytes, copies and dead code. It keeps a library of routines that several programs share, and finds these routines in a program. Use it to separate the original application from the changes of a crack or of a release. Use it to find the history of a program in its leftovers. Use it to find known routines, for example a music driver, in a program. It does not disassemble or analyze the code, and it does not change the project knowledge.
 ---
 
-# C64 provenance
+# Provenance of a program
 
-Use this script to compare releases of a C64 program, to find the leftovers in a program, and to keep a library of shared routines.
+Use this script to compare releases of a C64 or ZX Spectrum program. Also use it to find the leftovers in a program, and to keep a library of shared routines.
+The machine of the project knowledge sets the release files, the steps, the CPU and the text encodings. A project without knowledge is a C64 project.
 Use only the commands of the script. Do not compare releases or search for leftovers in another way.
 
 ```bash
@@ -24,10 +25,12 @@ To get the command list, run the script with no arguments.
 | Goal | Command |
 |---|---|
 | Compare two or more releases | `compare releases/a.prg releases/b.prg releases/c.prg` |
+| Compare two ZX Spectrum releases | `compare releases/a.z80 releases/b.sna` |
 | Compare a release that loads at a different address | `compare releases/a.prg releases/b.prg --shift 2:-256` |
 | Compare only the bytes in a range | `compare releases/a.prg releases/b.prg --range '$0900-$09ff'` |
 | Map two releases with moved code in blocks of equal bytes | `compare releases/a/image.json releases/b/image.json --align --range '$0400-$bfff'` |
 | Find how each release uses each difference | `compare knowledge .c64-re-tools/local/b/image.json --frames 600 --steps .c64-re-tools/local/start-game.json` |
+| Find how each ZX Spectrum release uses each difference | `compare knowledge releases/b.z80 --frames 600 --steps .c64-re-tools/local/press-space.json` |
 | Get the evidence for each range of the program in the project knowledge | `separate --out .c64-re-tools/local/separate.json` |
 | Find the leftovers in the program | `leftovers --out .c64-re-tools/local/leftovers.json` |
 | Find short texts, for example a group name | `leftovers --min-text 6` |
@@ -42,14 +45,18 @@ To get the command list, run the script with no arguments.
 
 - `compare` takes two or more releases. A release is one of these:
   - `knowledge`: the program in the project knowledge.
-  - A PRG file. The script puts it at its load address.
-  - The `image.json` of a capture of the unpacked program. Put its `entry_state.json` beside it. Without that file, `--frames` cannot start the release.
-- Get a PRG out of a disk image before you compare it. The script refuses a disk image, a tape image and a cartridge image.
+  - In a C64 project, a PRG file. The script puts it at its load address. A file without an extension is also a PRG.
+  - In a C64 project, the `image.json` of a capture of the unpacked program. Put its `entry_state.json` beside it. Without that file, `--frames` cannot start the release.
+  - In a ZX Spectrum project, a `.z80` or `.sna` snapshot at the entry of the program. The script compares the RAM at `$4000-$ffff` as the CPU sees it.
+- In a C64 project, get a PRG out of a disk image before you compare it. The script refuses a disk image, a tape image and a cartridge image.
+- In a ZX Spectrum project, the script refuses a tape and a file without an extension. Load the tape in the emulator, stop at the entry of the machine code, and export a `.z80` snapshot. Then compare that snapshot.
 - Unpack a packed release before you compare it.
 - The first release on the command line is release 1. `--shift` uses these numbers.
 - `separate`, `leftovers`, `routine` and `match` read the program in the project knowledge. Put the program, its coverage and its code regions into the project knowledge first.
-- The steps file of `--steps` is a JSON list of action steps, for example a key press that starts the game. The steps run before the frames.
-- A library is a folder of routine files. Each file holds one routine: its bytes and its knowledge.
+- The steps file of `--steps` is a JSON list of steps, for example a key press that starts the game. The steps run before the frames.
+  - In a C64 project, the steps are action steps.
+  - In a ZX Spectrum project, each step is one of these: `{ "frames": 50 }`, `{ "press": ["space"], "frames": 5 }` or `{ "joystick": { "right": true, "fire": true } }`. A key is `a`-`z`, `0`-`9`, `space`, `enter`, `caps` or `symbol`. The keys of a `press` step stay down for its frames. The default is 3 frames. The script refuses a step of the C64 form.
+- A library is a folder of routine files. Each file holds one routine: its CPU, its bytes and its knowledge.
 - Keep one library beside the project folders, for example `library/` at the root of the workspace. A library is not a project folder. Commit the library with the projects.
 - `--library` is relative to the project folder. For example, `../library` is the folder `library/` beside the project.
 - The subject of `routine` is the start address of a module, or a range `<start>-<end>`. Get the start addresses from the modules in the project knowledge.
@@ -85,7 +92,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--align` | `compare` | Map release 1 to release 2 in blocks of equal bytes. Each block has its own shift. Give two releases. Do not use it with `--shift` or `--frames`. Off by default. |
 | `--min-block <n>` | `compare` | With `--align`: the minimum number of bytes in a block, from 8. The default is 16. |
 | `--frames <n>` | `compare` | Run each release for `n` frames, and give each listed difference its runtime evidence. The default is no run. |
-| `--steps <file>` | `compare` | With `--frames`: run the action steps of this file before the frames. The default is no steps. |
+| `--steps <file>` | `compare` | With `--frames`: run the steps of this file before the frames. The default is no steps. |
 | `--out <file>` | `separate`, `leftovers` | Write all items to this file. The default is no file. |
 | `--apply` | `match` | Write the changes to the project knowledge as one revision of the LLM. Without it, `match` writes nothing. |
 | `--max-listed <n>` | `separate`, `leftovers`, `match` | List at most `n` items of each list. The default is 50. `count` always gives the full number. |
@@ -113,17 +120,21 @@ Compares the releases byte by byte at the addresses where all releases have byte
 - `moreDifferences: true`: `differences` holds only the first differences.
 - `suggestedShifts`: only when `identicalShare` is less than 0.5. Each item has `release`, `shift` and `matchingSequences`. Each release has at most 3 shifts, with the most `matchingSequences` first. `current: true` marks the shift of this run.
 - `shiftsNotSuggested`: each item has a `reason`. The reason tells why a shift does not fit in `$0000-$ffff`.
+- `banks`: only for releases of the ZX Spectrum 128K. Each item compares one RAM bank outside the CPU view, at `$c000-$ffff`. The script compares a bank only when all releases hold it. A release holds a bank when the bank has a byte that is not 0. Each item has `space` (`ram0` to `ram7`), and `common`, `identicalBytes`, `differingBytes`, `identicalShare`, `differences` and `moreDifferences` as above. `--shift` does not move a bank. `--frames` does not watch a bank.
 
 With `--shift`, the addresses of `segments`, `common` and `differences` are the release addresses plus the `shift` of the release.
 
 With `--frames`, the body also holds:
 
 - `runtime` in each difference: one item for each release that started. `start` and `end` are the addresses in the release, without the shift.
-  - `first`: the first access in that release: `read`, `write`, `execute` or `none`. An instruction that reads and then writes the same byte, for example INC, counts as `read`. The operand bytes of an executed instruction count as `execute`, for example the `$03` of `LDA #$03`.
+  - `first`: the first access in that release: `read`, `write`, `execute` or `none`. The operand bytes of an executed instruction count as `execute`, for example the `$03` of `LDA #$03`.
+  - On the C64, an instruction that reads and then writes the same byte, for example INC, counts as `read`.
+  - On the ZX Spectrum, the coverage has no reads. A watchpoint on the range gives the `read`. An instruction that reads and then writes the same byte, for example `INC (HL)`, counts as `write`.
+  - On the ZX Spectrum, the watchpoint sees only the last byte of a 2-byte read. When one instruction reads a word, and the range holds only its first byte, the range can show a later access or `none`.
   - `changed`: `true` when the bytes at the end of the run are not the bytes of the release.
 - `run`: `frames`, `steps` and `releases`. `releases` tells for each release if it started, or the `reason` that it did not start. `skipped` tells that the releases have no differences, so no release ran.
 
-A PRG starts with RUN after its load. An image starts at its entry, with the state of `entry_state.json`.
+A PRG starts with RUN after its load. An image starts at its entry, with the state of `entry_state.json`. A ZX Spectrum release starts at its entry state, with the registers, the border and the paging of its snapshot.
 
 With `--align`, the body holds a map in place of `differences` and the shift suggestions:
 
@@ -143,7 +154,7 @@ With `--align`, the body holds a map in place of `differences` and the shift sug
 Traps:
 
 - `common` is empty: the releases do not have bytes at the same addresses. Give `--shift`, or a `--range` that all releases have.
-- A release has `started: false`: the PRG has no BASIC start, or the image has no `entry_state.json`. The `reason` tells which. The other releases still give evidence.
+- A release has `started: false`: the PRG has no BASIC start, the image has no `entry_state.json`, or the knowledge has no entry state. The `reason` tells which. The other releases still give evidence.
 - Each release writes a range before it reads it: the range is probably runtime state, not a difference of the releases.
 - A range has `first: none` in each release: the run did not use it. Run more frames or other steps before you decide.
 - The script refuses `--align` with `--shift` or `--frames`. It refuses `--min-block` without `--align`, and `--steps` without `--frames`.
@@ -166,11 +177,12 @@ Gives evidence from the program in the project knowledge, its stages and its cov
 - `ranges`: the program in ranges with the same stage and access.
   - `stage` is the last unpack stage that wrote the range. The last stage is the program. An earlier stage is a depacker, an intro or a loader.
   - `access` is `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs.
-  - A `read` byte right after executed code, or at a return address, can be a dummy read of the 6502. The program does not use it.
-- `roots`: the addresses where the reachability starts, each with `address` and `from`. The roots are the entry, and the NMI, RESET and IRQ vectors at `$fffa`-`$ffff` when the program holds them. A text in place of the list tells why no code region is reachable.
+  - On the C64, a `read` byte right after executed code, or at a return address, can be a dummy read of the 6502. The program does not use it.
+  - On the ZX Spectrum, the coverage has no reads. Thus a byte that the program only reads is `untouched`.
+- `roots`: the addresses where the reachability starts, each with `address` and `from`. The roots are the entry, and on the C64 the NMI, RESET and IRQ vectors at `$fffa`-`$ffff` when the program holds them. A text in place of the list tells why no code region is reachable.
 - `codeRegions.total`: the number of code regions in the project knowledge.
-- `codeRegions.unreachable`: the code regions that no chain of call and jump references reaches from a root. The CPU also continues into the next code region when the last instruction of a region is not RTS, RTI, JMP, BRK or JAM.
-- `outside`: only with coverage. `read` and `executed` give the RAM outside the program that the program used but did not write. A loader or an earlier stage put these bytes there. `generated` gives the code that the program wrote outside its segments. A `generated` range can have gaps of two bytes or less: these are operand bytes.
+- `codeRegions.unreachable`: the code regions that no chain of call and jump references reaches from a root. The CPU also continues into the next code region when the last instruction of a region does not stop the flow. On the C64, these instructions stop the flow: RTS, RTI, JMP, BRK and JAM. On the ZX Spectrum, these instructions stop the flow: JP, JR and RET without a condition, `JP (HL)`, RETI and RETN.
+- `outside`: only with coverage. `read` and `executed` give the RAM outside the program that the program used but did not write. The ROM of the ZX Spectrum and the pages `$0000-$03ff` of the C64 are not in `outside`. A loader or an earlier stage put these bytes there. `generated` gives the code that the program wrote outside its segments. A `generated` range can have gaps of two bytes or less: these are operand bytes.
 - `out`, `bytes` and `sha256`: the file of `--out`. It holds the roots, and all ranges, code regions and outside ranges.
 
 `hint`: a list is cut. Without `--out`, give a larger `--max-listed`, or give `--out`. With `--out`, read the file.
@@ -189,8 +201,8 @@ Finds what the program in the project knowledge holds in addition to its working
 
 | List | What it holds |
 |---|---|
-| `text` | Text, and lines of assembler source. `encoding` is `petscii`, `screen`, `ascii` or `high-bit`. `reversed: true` marks screen codes with bit 7 set. `source: true` marks lines of assembler source. A line end in `text` is a new line. `mnemonics` counts 6502 instructions in the text. A text of more than 120 characters is cut, and `length` gives its full length. |
-| `basic` | Two or more BASIC lines away from the BASIC start. `linkedAt` is the address where BASIC linked the lines. It can be a different address from the address of the bytes now. |
+| `text` | Text, and lines of assembler source. `encoding` is `petscii`, `screen`, `ascii` or `high-bit`. The script finds `petscii` and `screen` only on the C64. `reversed: true` marks screen codes with bit 7 set. `source: true` marks lines of assembler source. A line end in `text` is a new line. `mnemonics` counts the instructions of the CPU of the project in the text: 6502 on the C64, Z80 on the ZX Spectrum. A text of more than 120 characters is cut, and `length` gives its full length. |
+| `basic` | On the C64: two or more BASIC lines away from the BASIC start. `linkedAt` is the address where BASIC linked the lines. It can be a different address from the address of the bytes now. On the ZX Spectrum: the BASIC program at the address in the system variable PROG, for example the loader that started the machine code. It has no `linkedAt`. |
 | `fill` | One byte that repeats at least 16 times, or a pattern of two to four bytes that repeats for at least 32 bytes. `pattern` is the repeated bytes. |
 | `residue` | Bytes that no run touched, and that are not text, BASIC, fill or a code region. `bytes` shows the first 16 bytes. |
 | `copies` | At least 32 bytes that are the same as earlier bytes of the program. `copyOf` is the address of the earlier bytes. |
@@ -204,7 +216,7 @@ Each finding has `stages`: the unpack stages that wrote its bytes. A stage befor
 
 Text from another computer can show the tools of the developer:
 
-- `ascii` is text in ASCII, with small letters. A cross assembler on another computer can leave it.
+- On the C64, `ascii` is text in ASCII, with small letters. A cross assembler on another computer can leave it. On the ZX Spectrum, `ascii` is also text in capitals, because the ZX Spectrum keeps its text in ASCII.
 - `high-bit` is text with bit 7 set. The Apple II keeps text in this form, with `$8d` at the end of a line. Apple II assembler source, for example from Merlin, has `DFB` lines and `*` comments. A C64 text in shifted letters with `$a0` spaces is also `high-bit`.
 - The script does not find data of another computer, for example a table of Atari key codes. Examine `residue` and the data that no code reads. Use your knowledge of the other computers.
 
@@ -227,7 +239,7 @@ Traps:
 
 ### `routine <module|range>`
 
-Saves a routine of the program in the project knowledge to the library. The file keeps the user and LLM names, comments, regions, references and operand expressions in the range. It also keeps the code regions of each origin.
+Saves a routine of the program in the project knowledge to the library. The file keeps the CPU of the project in `cpu` (`6502` or `z80`). It also keeps the user and LLM names, comments, regions, references and operand expressions in the range. It also keeps the code regions of each origin.
 
 - A module ends at the next module, or at the end of its segment.
 - A routine has at least 16 bytes. Its last instruction must end in the range.
@@ -239,8 +251,8 @@ Saves a routine of the program in the project knowledge to the library. The file
 - `out`, `bytes` and `sha256`: the routine file. `out` is relative to the project folder.
 - `start`, `end` and `length`: the range of the routine in the program.
 - `instructions`: the count of the instructions.
-- `relocations`: the count of the addresses into the routine.
-- `variable`: the count of the operand bytes that address something outside the routine.
+- `relocations`: the count of the addresses into the routine. On the ZX Spectrum, a 2-byte value into the routine also moves, for example the pointer that `LD HL,nn` loads.
+- `variable`: the count of the operand bytes that address something outside the routine. A value, a port and a displacement are not variable.
 - `counts`: the number of symbols, regions, comments, references and operands that the file keeps.
 - `leftOut`: the rows that the file does not keep, and why. For example, the file does not keep an operand expression that uses a name outside the routine.
 
@@ -257,13 +269,15 @@ Traps:
 
 Finds each routine of the library in the program of the project knowledge.
 
+- `match` uses only the routines of the CPU of the project.
 - The opcodes and the other bytes must be equal.
 - An address into the routine must point into the routine at its new address.
 - An operand that addresses something outside the routine can be different.
 
 `body` holds:
 
-- `library` and `routines`: the library folder and the number of routines in it.
+- `library` and `routines`: the library folder and the number of its routines for the CPU of the project.
+- `otherCpu`: the number of routines of another CPU. `match` does not use them.
 - `matches`: each item has `routine`, `start`, `end` and `shift`. `shift` is the address in the program minus the address in the library.
 - `differing` in each match: each operand that addresses something outside the routine and that is different. It gives the value in the `library` and in the `program`. Examine each one. For example, the program can use other variables or another SID voice.
 - `changes`: with matches. `writes` lists the writes for the project knowledge. `known` counts the writes that the project knowledge has already. `leftOut` lists the writes that the script left out, and why. `check` lists each comment of `writes` that gives an address outside its routine. Each item has `routine`, `address`, `comment` and the `outside` addresses. Such an address can be different in this program. With `--apply`, `revision` gives the revision of the changes.
@@ -291,6 +305,7 @@ Traps:
 - `match` does not change the project knowledge.
 - Error `not-found`: the library folder does not exist, or it has no routine files. Save a routine with `routine` first.
 - Error `invalid-input` with "is a project folder": the library folder is a project. Give a folder beside the projects.
+- Error `invalid-input` with "it has no cpu": the routine file has no `cpu`. Save the routine again with `routine --replace`.
 
 ---
 
@@ -326,7 +341,7 @@ Traps:
 6. Examine each important finding. Disassemble or analyze its bytes, or examine them in the emulator.
 7. Record each finding that you proved in the project knowledge. Do not record the full list of leftovers.
    - Do not remove a leftover from the program. A rebuild keeps it. Only the data of a cracktro goes out: leave it out of the capture of the program.
-   - Classify a PETSCII text that you proved as a `petscii` region, and a screen code text as a `screen` region. Classify other text as `bytes`.
+   - On the C64, classify a PETSCII text that you proved as a `petscii` region, and a screen code text as a `screen` region. Classify other text as `bytes`.
    - Write a comment that tells what the leftover is.
 
 ### Share routines
