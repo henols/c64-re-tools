@@ -76,7 +76,7 @@ Before a risky experiment, save the state with `c64_snapshot`. Restore it to try
 Some programs read input in a way that the input tools cannot give. The tool description tells when. Then use one of these ways:
 
 - Open the window and ask the user to give the input.
-- Record a test session with a `press` step.
+- Record a test session with a `press` step. A `press` step presses letters, digits, space, return and some symbols, in a session of a PRG file. It has no function keys.
 
 Do not change the program to make it accept the input.
 

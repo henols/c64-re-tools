@@ -121,7 +121,7 @@ export interface OptionSpec {
 /** The options that have one meaning in every script. A command can change the help, the value and whether it is required, never the kind. */
 export const OPTIONS = {
   out: { kind: "path", value: "<path>", help: "write the output here, relative to the project folder" },
-  space: { kind: "space", value: "<space>", help: "the knowledge space: c64 (the default), drive8 for 1541 drive code, loading for a captured stage of the loading, or bank0 to bank255 for a cartridge bank", default: "c64" },
+  space: { kind: "space", value: "<space>", help: "the knowledge space: c64 (the default), drive8 for 1541 drive code, loading for a captured stage of the loading, or bank0 to bank255 for a cartridge bank or another memory image of the program", default: "c64" },
   range: { kind: "range", value: "<start>-<end>", help: "only the addresses from start to end, for example '$c000-$cfff'" },
   entry: { kind: "address", value: "<address>", help: "an entry point of the program" },
   steps: { kind: "path", value: "<file>", help: "a JSON file of action steps that run after the start" },

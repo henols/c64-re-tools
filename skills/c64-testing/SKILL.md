@@ -42,6 +42,7 @@ To get the command list, run the script with no arguments.
 - The original gets its names from the project knowledge. Give `"symbols": "knowledge"` for the original.
 - The rebuild gets its names from the symbol file of its build. Build the rebuild with a symbol file that has all symbols, also the constants that the source does not use.
 - You write the scenario file, the run file and the record file. Their formats are in the files of the section "Reference".
+- A file in `tests/` is a scenario or a run file with expected values. Give a scenario to `test` and a run file to `run`. `test` refuses a run file.
 - `<recording>` is the `--out` folder of `record`.
 - `--checkpoint` is a routine that the program executes one time in each pass of its game logic, for example the main loop. Do not use an interrupt handler. Get the name from the project knowledge.
 - `--state` and `--pin` take a name or a `$` address, with `:size` for more than one byte, for example `room:2`. Use the names that the project knowledge has at the time of the replay.
