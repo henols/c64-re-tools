@@ -272,7 +272,7 @@ async function analyze(call: Call): Promise<unknown> {
     // The macro candidates read the code regions after both imports.
     const macros = macroCandidates(space, byteAt, romUseOfProgram(coverage, program.state), skip);
     // With --apply-macros, the candidates and their macros are a third revision of the LLM.
-    const written = applyMacros && macros.writes.length > 0 ? withWrite((db) => applyBatch(db, { origin: "llm", description: "Macro candidates in the program", image: operandImages(db) }, macros.writes)) : undefined;
+    const written = applyMacros && macros.writes.length > 0 ? withWrite((db) => applyBatch(db, { origin: "llm", description: "Macro candidates in the program", image: operandImages(db, new Map(platformNamesOfSpace(mainSpaceOf(db)).map((entry) => [entry.name, entry.address]))) }, macros.writes)) : undefined;
     // Platform pitfalls are C64 facts: drive code and banks get none. Pitfalls and pointers read the code regions after both imports.
     const codeDb = openForRead();
     const code = listRegions(codeDb, undefined, "code", undefined, space);

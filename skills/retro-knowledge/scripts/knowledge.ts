@@ -370,9 +370,9 @@ function imageRequest(image: Image, space: string): ImageRequest {
   return request;
 }
 
-/** The programs that operand, patch and macro use writes are checked against, with the platform names of each space. */
+/** The programs that operand, patch and macro use writes are checked against, with the platform names of the project machine. */
 function operandImages(db: DatabaseSync): (space: string) => OperandImage {
-  return programImages(db);
+  return programImages(db, new Map(platformNamesOfSpace(mainSpaceOf(db)).map((entry) => [entry.name, entry.address])));
 }
 
 /** An offset: a whole number in decimal or $ hex, with an optional minus sign. */
