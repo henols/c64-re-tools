@@ -320,14 +320,16 @@ function stagesOf(stages: Array<Record<string, unknown>> | undefined, where = "t
   }));
 }
 
-/** The program in the knowledge with its stages and coverage, and the separation of its bytes. */
+/** The program in the knowledge with its stages and coverage, and the separation of its bytes with the CPU of the machine. */
 function programEvidence() {
   const db = openForRead();
+  let machine: Machine;
   let program: ReturnType<typeof requireProgram>;
   let coverage: Uint8Array | undefined;
   let regions: ReturnType<typeof listRegions>;
   let references: ReturnType<typeof listReferences>;
   try {
+    machine = machineOf(db);
     program = requireProgram(db);
     coverage = programCoverage(db)?.map;
     regions = listRegions(db).filter((region) => CODE_REGION_TYPES.includes(region.type));
@@ -344,14 +346,21 @@ function programEvidence() {
     ...(coverage === undefined ? {} : { coverage }),
     codeRegions: regions,
     references,
+    cpu: machine.cpu,
+    // The outside ranges leave out the ROM that the CPU always sees; the C64 can switch its ROMs out, and pages 0-3 are its system area.
+    ...(machine.rom.length === 0 ? {} : { systemEnd: Math.max(...machine.rom.map((range) => range.end)) }),
   });
-  return { program, stages, coverage, found };
+  return { machine, program, stages, coverage, found };
 }
 
 /** The roots of the reachability as a person reads them. */
 const showRoots = (roots: readonly Root[]) => roots.map((root) => ({ address: formatAddress(root.address), from: root.from }));
 
-const NO_ROOTS = "none: the program in the knowledge has no entry, and the image does not hold the hardware vectors at $fffa-$ffff, so no code region is reachable or unreachable.";
+/** Why no code region is reachable or unreachable: no entry, and no hardware vector of the CPU in the image. */
+const noRoots = (machine: Machine) =>
+  machine.cpu.vectors.length === 0
+    ? "none: the program in the knowledge has no entry, so no code region is reachable or unreachable."
+    : `none: the program in the knowledge has no entry, and the image does not hold the hardware vectors at ${formatAddress(Math.min(...machine.cpu.vectors.map((vector) => vector.at)))}-${formatAddress(Math.max(...machine.cpu.vectors.map((vector) => vector.at)) + 1)}, so no code region is reachable or unreachable.`;
 
 const NO_STAGES = "The program in the knowledge has no stage log. Only a capture of the unpack stages gives one. A capture of the loads of a loader holds one part of a program and has none.";
 
@@ -359,7 +368,7 @@ const NO_STAGES = "The program in the knowledge has no stage log. Only a capture
 function separateCommand(call: Call): unknown {
   const out = call.string("out");
   const max = call.count("max-listed")!;
-  const { program, stages, coverage, found } = programEvidence();
+  const { machine, program, stages, coverage, found } = programEvidence();
   const loaded = { entry: program.entry, stages };
   const show = (range: AddressRange) => ({ start: formatAddress(range.start), end: formatAddress(range.end) });
   const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
@@ -381,7 +390,7 @@ function separateCommand(call: Call): unknown {
     ...(coverage === undefined ? {} : { bytesByAccess: Object.fromEntries((["executed", "read", "written", "read-written", "untouched"] as const).map((access) => [access, bytes((range) => range.access === access)])) }),
     ranges: list(ranges),
     // The roots of the reachability: the entry and the hardware vectors in the image.
-    roots: roots.length === 0 ? NO_ROOTS : roots,
+    roots: roots.length === 0 ? noRoots(machine) : roots,
     // total counts every code region; unreachable is a list like the others.
     codeRegions: {
       total: codeRegions.length,
@@ -421,12 +430,13 @@ function leftoversCommand(call: Call): unknown {
   const out = call.string("out");
   const max = call.count("max-listed")!;
   const min = call.count("min-text")!;
-  const { program, stages, coverage, found } = programEvidence();
+  const { machine, program, stages, coverage, found } = programEvidence();
   const leftovers = findLeftovers({
     segments: program.segments,
     memory: program.memory,
     separation: found,
-    ...(program.segments.some((segment) => segment.start === 0x0801) ? { basicStart: 0x0801 } : {}),
+    machine,
+    ...(machine.family === "c64" && program.segments.some((segment) => segment.start === 0x0801) ? { basicStart: 0x0801 } : {}),
     minText: min,
   });
   const show = <T extends AddressRange & { stages?: number[]; access?: string[] }>({ start, end, stages: wrote, access, ...rest }: T) => ({
@@ -438,7 +448,7 @@ function leftoversCommand(call: Call): unknown {
   });
   const all = {
     text: leftovers.text.map(show),
-    basic: leftovers.basic.map(({ linkedAt, ...rest }) => ({ ...show(rest), linkedAt: formatAddress(linkedAt) })),
+    basic: leftovers.basic.map(({ linkedAt, ...rest }) => ({ ...show(rest), ...(linkedAt === undefined ? {} : { linkedAt: formatAddress(linkedAt) }) })),
     fill: leftovers.fill.map(({ pattern, ...rest }) => ({ ...show(rest), pattern: hexBytes(pattern) })),
     residue: leftovers.residue.map((range) => ({ ...show(range), bytes: hexBytes([...program.memory.subarray(range.start, Math.min(range.end, range.start + 15) + 1)]) + (range.end - range.start >= 16 ? " ..." : "") })),
     copies: leftovers.copies.map(({ copyOf, ...rest }) => ({ ...show(rest), copyOf: formatAddress(copyOf) })),
@@ -448,7 +458,7 @@ function leftoversCommand(call: Call): unknown {
   const list = <T>(items: T[]) => listed(items, max, undefined, out ?? "a larger --max-listed, or --out <file>");
   const body = {
     ...(program.entry === undefined ? {} : { entry: formatAddress(program.entry) }),
-    roots: found.roots.length === 0 ? NO_ROOTS : showRoots(found.roots),
+    roots: found.roots.length === 0 ? noRoots(machine) : showRoots(found.roots),
     ...(stages === undefined ? { noStages: NO_STAGES } : { stages: stages.length }),
     ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Put the coverage of runs into the project knowledge." } : {}),
     text: list(all.text.map((item) => (item.text.length > SHOWN_TEXT ? { ...item, text: `${item.text.slice(0, SHOWN_TEXT)} ...`, length: item.text.length } : item))),

@@ -44,6 +44,8 @@ export interface Cpu {
    * port or a displacement, and for an instruction without an operand.
    */
   operandIsAddress(byteAt: ByteAt, address: number): boolean;
+  /** The mnemonics of the documented instructions, in lower case: the words of assembler source. */
+  mnemonics: ReadonlySet<string>;
   /** The words that cannot be a label, in lower case: the mnemonics, and for the Z80 the register and condition names too. */
   reserved: ReadonlySet<string>;
   /** Why a reserved word cannot be a label, after "<name> is". */

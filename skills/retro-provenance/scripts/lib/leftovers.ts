@@ -1,6 +1,7 @@
-// Leftovers in one program for the retro-provenance script: text in PETSCII,
-// screen codes, ASCII or text with bit 7 set (Apple II), assembler source
-// lines, BASIC lines away from the BASIC start, fills, untouched
+// Leftovers in one program for the retro-provenance script: text in PETSCII
+// or screen codes (on the C64), ASCII or text with bit 7 set (Apple II),
+// assembler source lines of the CPU of the machine, BASIC lines away from the
+// BASIC start of the C64 or the BASIC program of a ZX Spectrum, fills, untouched
 // bytes outside code regions that no other finding explains, exact copies of
 // a byte range, and code that no call or jump reaches and no run executed. Each finding gets the stages and the accesses of
 // its bytes from the separation. Evidence only: nothing here decides what a
@@ -8,15 +9,20 @@
 
 import { basicLineText } from "#src/c64.ts";
 import { type AddressRange } from "#src/address.ts";
-import { MNEMONICS } from "#src/opcodes.ts";
+import type { Cpu } from "#src/cpu.ts";
 import type { Access, Separation } from "#src/knowledge/separate.ts";
+import { C64, type Machine } from "#src/machine.ts";
+import { SPECTRUM_SYSTEM } from "#src/platform/spectrum.ts";
+import { parseSinclairBasic, sinclairLineText } from "#src/spectrum.ts";
 
 export interface LeftoversInput {
   segments: AddressRange[];
   /** 64 KiB with the program bytes at their addresses. */
   memory: Uint8Array;
   separation: Separation;
-  /** The first address of the BASIC start, which RUN lists: it is no leftover. */
+  /** The machine of the program: its CPU gives the words of assembler source, its family the text encodings and the BASIC. The C64 when none is given. */
+  machine?: Machine;
+  /** The C64: the first address of the BASIC start, which RUN lists: it is no leftover. */
   basicStart?: number;
   /** The fewest characters of a text (default 8). */
   minText?: number;
@@ -41,13 +47,13 @@ export interface TextFinding extends AddressRange, Placement {
   text: string;
   /** Lines of assembler source: most lines are an instruction, a data directive or a comment. */
   source?: true;
-  /** Words that are 6502 mnemonics before an operand or a line end. */
+  /** Words that are mnemonics of the CPU before an operand or a line end. */
   mnemonics?: number;
 }
 
 export interface BasicFinding extends AddressRange, Placement {
-  /** The address of the first line where the links put it: where the lines were when BASIC linked them. */
-  linkedAt: number;
+  /** The C64: the address of the first line where the links put it, where the lines were when BASIC linked them. A Sinclair BASIC line has no link. */
+  linkedAt?: number;
   lines: string[];
 }
 
@@ -193,42 +199,55 @@ function readsAsText(characters: Character[], min: number): boolean {
   return longest >= 3;
 }
 
-/** The undocumented opcodes: words such as LAX or ISC in a text are seldom source. */
-const UNDOCUMENTED = new Set(["jam", "slo", "rla", "sre", "rra", "sax", "lax", "dcp", "isc", "anc", "asr", "arr", "ane", "sha", "tas", "shy", "shx", "lxa", "las", "sbx"]);
+/**
+ * A word that is an instruction of the CPU when an operand or the end of the
+ * text follows. A Z80 operand starts with a register and a comma, a register
+ * pair, a bracket, a $, # or % sign or a digit: English words such as "in a"
+ * do not count.
+ */
+const MNEMONIC_WORD: Record<Cpu["id"], RegExp> = {
+  "6502": /(?:^|[^a-z])([a-z]{3})(?= ?[#$(<>%]| *$)/g,
+  z80: /(?:^|[^a-z])([a-z]{2,4})(?= +(?:[a-z]{1,3}'?,|[($#%0-9]|(?:hl|bc|de|af|ix|iy|sp)\b)| *$)/g,
+};
 
-/** Counts the words that are a documented 6502 mnemonic followed by an operand sign or the end of the text. */
-function mnemonicCount(text: string): number {
-  return [...text.toLowerCase().matchAll(/(?:^|[^a-z])([a-z]{3})(?= ?[#$(<>%]| *$)/g)].filter((match) => MNEMONICS.has(match[1]!) && !UNDOCUMENTED.has(match[1]!)).length;
+/** Counts the words that are a documented mnemonic of the CPU followed by an operand or the end of the text. */
+function mnemonicCount(text: string, cpu: Cpu): number {
+  return [...text.toLowerCase().matchAll(MNEMONIC_WORD[cpu.id])].filter((match) => cpu.mnemonics.has(match[1]!)).length;
 }
 
-const DIRECTIVES = ["dfb", "db", "dw", "ddb", "dc", "dcb", "ds", "dfs", "byte", "word", "hex", "asc", "dci", "str", "txt", "text", "org", "equ", "epz", "end"];
+/** The data and other directives of the assemblers of each CPU. */
+const DIRECTIVES: Record<Cpu["id"], readonly string[]> = {
+  "6502": ["dfb", "db", "dw", "ddb", "dc", "dcb", "ds", "dfs", "byte", "word", "hex", "asc", "dci", "str", "txt", "text", "org", "equ", "epz", "end"],
+  z80: ["db", "dw", "ds", "dm", "defb", "defw", "defs", "defm", "org", "equ", "ent", "end"],
+};
 
 /** A line of assembler source: a comment, or an optional label and then an instruction or a data directive. */
-function sourceLine(line: string): boolean {
+function sourceLine(line: string, cpu: Cpu): boolean {
   if (/^[*;]/.test(line)) return true;
   const words = line.toLowerCase().split(/\s+/);
   const first = words[0]!.replace(/^[.!]/, "");
   const second = (words[1] ?? "").replace(/^[.!]/, "");
-  const known = (word: string) => (MNEMONICS.has(word) && !UNDOCUMENTED.has(word)) || DIRECTIVES.includes(word);
+  const known = (word: string) => cpu.mnemonics.has(word) || DIRECTIVES[cpu.id].includes(word);
   return known(first) || (/^[a-z_][\w.]*:?$/.test(first) && known(second));
 }
 
-/** Whether the bytes of a run show the encoding and no other one: the other scans report the rest. */
-function ownEncoding(encoding: TextEncoding, bytes: number[], characters: Character[]): boolean {
+/** Whether the bytes of a run show the encoding and no other one: the other scans report the rest. `petscii` tells that the PETSCII scan runs too. */
+function ownEncoding(encoding: TextEncoding, bytes: number[], characters: Character[], petscii: boolean): boolean {
   if (encoding === "screen") return characters.some((character) => character.letter === "a");
   // ASCII text is in capitals, or mostly in small letters: a few small letters are stray bytes at the edges of another text.
   const letters = characters.filter((character) => character.letter !== undefined).length;
   const small = characters.filter((character) => character.letter === "a").length;
   if (small > 0 && small * 2 < letters) return false;
   // Capitals and signs alone are PETSCII too.
-  if (encoding === "ascii") return bytes.some((byte) => byte >= 0x61 && byte <= 0x7a);
+  if (encoding === "ascii") return !petscii || bytes.some((byte) => byte >= 0x61 && byte <= 0x7a);
   // Shifted letters alone are PETSCII too: a space, a digit or a sign with bit 7 shows ASCII.
-  if (encoding === "high-bit") return bytes.some((byte) => byte >= 0xa0 && byte <= 0xc0);
+  if (encoding === "high-bit") return !petscii || bytes.some((byte) => byte >= 0xa0 && byte <= 0xc0);
   return true;
 }
 
 /** The runs of one encoding in a segment that read as text. `reversed` reads the bytes with bit 7 set, without that bit. */
-function textRuns(memory: Uint8Array, segment: AddressRange, encoding: TextEncoding, reversed: boolean, min: number): TextFinding[] {
+function textRuns(memory: Uint8Array, segment: AddressRange, encoding: TextEncoding, reversed: boolean, min: number, machine: Machine): TextFinding[] {
+  const { cpu } = machine;
   const decode = { petscii: petsciiOrLineEnd, screen: screenCharacter, ascii: asciiCharacter, "high-bit": highAsciiCharacter }[encoding];
   const found: TextFinding[] = [];
   let run: Array<{ address: number; character: Character }> = [];
@@ -243,15 +262,15 @@ function textRuns(memory: Uint8Array, segment: AddressRange, encoding: TextEncod
     const kept = piece.slice(first, last + 1);
     const characters = kept.map((item) => item.character);
     if (!(asSource ? characters.length >= min : readsAsText(characters, min))) return;
-    if (!ownEncoding(encoding, kept.map((item) => memory[item.address]!), characters)) return;
+    if (!ownEncoding(encoding, kept.map((item) => memory[item.address]!), characters, machine.family === "c64")) return;
     const mixed = encoding !== "ascii" && encoding !== "high-bit" && characters.some((character) => character.letter === "b");
     const text = characters.map((character) => (mixed ? character.mixed : character.plain)).join("");
-    const mnemonics = mnemonicCount(text);
+    const mnemonics = mnemonicCount(text, cpu);
     found.push({ start: kept[0]!.address, end: kept.at(-1)!.address, encoding, ...(reversed ? { reversed } : {}), text, ...(asSource ? { source: true as const } : {}), ...(mnemonics > 0 ? { mnemonics } : {}) });
   };
   const close = () => {
     const lines = run.map((item) => item.character.plain).join("").split("\n").map((line) => line.trim()).filter((line) => line !== "");
-    const source = lines.filter(sourceLine).length;
+    const source = lines.filter((line) => sourceLine(line, cpu)).length;
     if (lines.length >= 2 && source >= 2 && source * 2 >= lines.length) report(run, true);
     else {
       // Not source: each line is a text of its own.
@@ -276,12 +295,14 @@ function textRuns(memory: Uint8Array, segment: AddressRange, encoding: TextEncod
   return found;
 }
 
-export function findText(memory: Uint8Array, segments: AddressRange[], min = MIN_TEXT): TextFinding[] {
-  const scan = (encoding: TextEncoding, reversed = false) => segments.flatMap((segment) => textRuns(memory, segment, encoding, reversed, min));
+/** The texts of the segments. PETSCII and screen codes are C64 encodings; ASCII and text with bit 7 set are found on each machine. */
+export function findText(memory: Uint8Array, segments: AddressRange[], min = MIN_TEXT, machine: Machine = C64): TextFinding[] {
+  const scan = (encoding: TextEncoding, reversed = false) => segments.flatMap((segment) => textRuns(memory, segment, encoding, reversed, min, machine));
   // A run that is mostly a run of an earlier list is the same text, read in another encoding, with stray bytes at its edges.
   const overlap = (a: AddressRange, b: AddressRange) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start) + 1);
   const kept: TextFinding[] = [];
-  for (const list of [[...scan("high-bit"), ...scan("ascii")], scan("petscii"), [...scan("screen"), ...scan("screen", true)]]) {
+  const lists = [[...scan("high-bit"), ...scan("ascii")], ...(machine.family === "c64" ? [scan("petscii"), [...scan("screen"), ...scan("screen", true)]] : [])];
+  for (const list of lists) {
     kept.push(...list.filter((run) => !kept.some((other) => overlap(run, other) * 2 > run.end - run.start + 1)));
   }
   return kept.sort((a, b) => a.start - b.start);
@@ -345,6 +366,29 @@ export function findBasic(memory: Uint8Array, segments: AddressRange[], basicSta
     }
   }
   return found;
+}
+
+/** The address of a system variable of the ZX Spectrum, by its name. */
+const systemVariable = (name: string) => SPECTRUM_SYSTEM.find((entry) => entry.name === name)!.start;
+
+/**
+ * The Sinclair BASIC program of a ZX Spectrum snapshot: the lines from the
+ * address in PROG to the address in VARS, when they are in the segments and
+ * read as BASIC lines. A snapshot at the entry of the machine code still holds
+ * the BASIC that started it, for example a loader.
+ */
+export function findSinclairBasic(memory: Uint8Array, segments: AddressRange[], model: "48k" | "128k"): BasicFinding[] {
+  const word = (at: number) => memory[at]! | (memory[at + 1]! << 8);
+  const inside = (start: number, end: number) => segments.some((segment) => start >= segment.start && end <= segment.end);
+  const prog = systemVariable("PROG");
+  const vars = systemVariable("VARS");
+  if (!inside(prog, prog + 1) || !inside(vars, vars + 1)) return [];
+  const start = word(prog);
+  const end = word(vars);
+  if (end <= start || !inside(start, end - 1)) return [];
+  const program = parseSinclairBasic(memory.subarray(start, end));
+  if ("reason" in program) return [];
+  return [{ start, end: start + program.variablesAt - 1, lines: program.lines.map((line) => sinclairLineText(line, model)) }];
 }
 
 /** Runs of one byte of at least MIN_FILL bytes, and runs of a pattern of two to four bytes of at least twice that. */
@@ -421,8 +465,9 @@ export function findLeftovers(input: LeftoversInput): Leftovers {
   };
   const placed = <T extends AddressRange>(items: T[]) => items.map((item) => ({ ...item, ...placement(item) }));
 
-  const text = findText(memory, segments, input.minText);
-  const basic = findBasic(memory, segments, input.basicStart);
+  const machine = input.machine ?? C64;
+  const text = findText(memory, segments, input.minText, machine);
+  const basic = machine.family === "spectrum" ? findSinclairBasic(memory, segments, machine.id === "spectrum128" ? "128k" : "48k") : findBasic(memory, segments, input.basicStart);
   const fill = findFills(memory, segments);
   // Untouched bytes that no other finding explains.
   const untouched: AddressRange[] = [];

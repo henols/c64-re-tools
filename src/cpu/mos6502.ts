@@ -32,9 +32,13 @@ const NO_FALL = new Set([0x00, 0x40, 0x4c, 0x60, 0x6c]);
 /** The JAM opcodes: the CPU stops. */
 const JAMS = new Set([0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
 
+/** The mnemonics of the undocumented opcodes: words such as LAX or ISC in a text are seldom source. */
+const UNDOCUMENTED = new Set(["jam", "slo", "rla", "sre", "rra", "sax", "lax", "dcp", "isc", "anc", "asr", "arr", "ane", "sha", "tas", "shy", "shx", "lxa", "las", "sbx"]);
+
 export const MOS6502: Cpu = {
   id: "6502",
   maxInstructionLength: 3,
+  mnemonics: new Set([...MNEMONICS].filter((mnemonic) => !UNDOCUMENTED.has(mnemonic))),
   reserved: MNEMONICS,
   reservedReason: "the name of a 6502 instruction, which ACME cannot read as a label",
   /** The hardware vectors of the 6510: the CPU reads them from $fffa-$ffff, the RAM when the KERNAL is banked out. */

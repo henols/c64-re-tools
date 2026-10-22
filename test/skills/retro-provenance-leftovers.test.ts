@@ -13,7 +13,12 @@ import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { findBasic, findCopies, findFills, findLeftovers, findText } from "../../skills/retro-provenance/scripts/lib/leftovers.ts";
 import { separate } from "../../src/knowledge/separate.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
-import { importCoverage, importImage } from "../fixtures/program.ts";
+import { importCoverage, importImage, importSnapshot } from "../fixtures/program.ts";
+import { z80Snapshot } from "../fixtures/z80/keyboard-counter.ts";
+import { Z80 } from "../../src/cpu/z80.ts";
+import { MACHINES } from "../../src/machine.ts";
+import { withWrite } from "../../src/knowledge/database.ts";
+import { applyBatch } from "../../src/knowledge/write.ts";
 
 const roots: string[] = [];
 after(() => {
@@ -174,4 +179,56 @@ test("the leftovers command reads the program, its stages and the coverage from 
   const all = JSON.parse(readFileSync(join(root, ".c64-re-tools/local/leftovers.json"), "utf8")) as Record<string, Array<Record<string, unknown>>>;
   assert.deepEqual(all.text!.map((item) => [item.start, item.encoding, item.stages]), [["$2010", "petscii", [0]], ["$2100", "screen", [1]], ["$2180", "petscii", [1]]]);
   assert.deepEqual(Object.keys(all), ["text", "basic", "fill", "residue", "copies", "deadCode"]);
+});
+
+/** ASCII bytes of a text; "\n" is $0a. */
+const ascii = (text: string) => [...text].map((character) => character.charCodeAt(0));
+
+test("on the ZX Spectrum, leftovers give the Sinclair BASIC program at PROG, ASCII text in capitals, and the Z80 instructions in source", () => {
+  const memory = new Uint8Array(0x10000);
+  /** A Sinclair BASIC line: its number high byte first, the length of the rest, the rest and ENTER. */
+  const line = (number: number, body: number[]) => [number >> 8, number & 0xff, (body.length + 1) & 0xff, (body.length + 1) >> 8, ...body, 0x0d];
+  // 10 RANDOMIZE USR 32768, with the 5-byte form of the number; 20 STOP.
+  const program = [...line(10, [0xf9, 0xc0, ...ascii("32768"), 0x0e, 0x00, 0x00, 0x00, 0x80, 0x00]), ...line(20, [0xe2])];
+  memory.set(program, 0x5ccb);
+  const vars = 0x5ccb + program.length;
+  memory.set([0xcb, 0x5c], 0x5c53); // PROG
+  memory.set([vars & 0xff, vars >> 8], 0x5c4b); // VARS
+  memory.set(ascii("GAME OVER - PRESS ANY KEY"), 0x9000);
+  memory.set(ascii("ld a,(ix+5)\njp nz,$8000\n"), 0x9100);
+  memory.set(ascii("Written in a week"), 0x9200);
+  const segments = [{ start: 0x4000, end: 0xffff }];
+  const separation = separate({ segments, memory, codeRegions: [], references: [], cpu: Z80 });
+  const found = findLeftovers({ segments, memory, separation, machine: MACHINES.spectrum48 });
+  assert.deepEqual(found.basic, [{ start: 0x5ccb, end: vars - 1, lines: ["10 RANDOMIZE USR 32768", "20 STOP"] }]);
+  assert.deepEqual(
+    found.text.map((item) => [item.start, item.encoding, item.text, item.source ?? false, item.mnemonics ?? 0]),
+    [
+      [0x9000, "ascii", "GAME OVER - PRESS ANY KEY", false, 0],
+      [0x9100, "ascii", "ld a,(ix+5)\njp nz,$8000", true, 2],
+      [0x9200, "ascii", "Written in a week", false, 0],
+    ],
+  );
+});
+
+test("separate in a ZX Spectrum project decodes with the Z80 and leaves the ROM out of the outside ranges", () => {
+  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-leftovers-zx-"));
+  roots.push(root);
+  const ram = new Uint8Array(0xc000);
+  // $8000 LD HL,$1234 runs on into $8003 RET. The 6502 reads $21 as two bytes and stops at the JAM $12.
+  ram.set([0x21, 0x34, 0x12, 0xc9], 0x8000 - 0x4000);
+  importSnapshot(root, z80Snapshot(ram, { pc: 0x8000, sp: 0xff00, iy: 0x5c3a, im: 1, border: 7 }));
+  withWrite((db) => applyBatch(db, { origin: "llm" }, [
+    { op: "classify", start: 0x8000, end: 0x8002, type: "code" },
+    { op: "classify", start: 0x8003, end: 0x8003, type: "code" },
+  ]), root);
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x2000] = COVERAGE.ramRead; // in the ROM
+  importCoverage(root, { "cov.bin": coverage });
+  const run = script(provenance, ["separate"], root);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const result = run.json as { roots: unknown; codeRegions: { total: number; unreachable: { count: number } }; outside: { read: { count: number } } };
+  assert.deepEqual(result.roots, [{ address: "$8000", from: "entry" }]);
+  assert.deepEqual([result.codeRegions.total, result.codeRegions.unreachable.count], [2, 0]);
+  assert.equal(result.outside.read.count, 0);
 });

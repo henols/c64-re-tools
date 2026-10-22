@@ -54,9 +54,12 @@ function usesMemoryHl(opcode: number): boolean {
   return false;
 }
 
+/** The mnemonics of the Z80. */
+const MNEMONICS = ["adc", "add", "and", "bit", "call", "ccf", "cp", "cpd", "cpdr", "cpi", "cpir", "cpl", "daa", "dec", "di", "djnz", "ei", "ex", "exx", "halt", "im", "in", "inc", "ind", "indr", "ini", "inir", "jp", "jr", "ld", "ldd", "lddr", "ldi", "ldir", "neg", "nop", "or", "otdr", "otir", "out", "outd", "outi", "pop", "push", "res", "ret", "reti", "retn", "rl", "rla", "rlc", "rlca", "rld", "rr", "rra", "rrc", "rrca", "rrd", "rst", "sbc", "scf", "set", "sla", "sll", "sra", "srl", "sub", "xor"];
+
 /** The mnemonics, registers and conditions of the Z80: an assembler reads none of them as a label. */
 const RESERVED = new Set([
-  ...["adc", "add", "and", "bit", "call", "ccf", "cp", "cpd", "cpdr", "cpi", "cpir", "cpl", "daa", "dec", "di", "djnz", "ei", "ex", "exx", "halt", "im", "in", "inc", "ind", "indr", "ini", "inir", "jp", "jr", "ld", "ldd", "lddr", "ldi", "ldir", "neg", "nop", "or", "otdr", "otir", "out", "outd", "outi", "pop", "push", "res", "ret", "reti", "retn", "rl", "rla", "rlc", "rlca", "rld", "rr", "rra", "rrc", "rrca", "rrd", "rst", "sbc", "scf", "set", "sla", "sll", "sra", "srl", "sub", "xor"],
+  ...MNEMONICS,
   ...["a", "b", "c", "d", "e", "h", "l", "i", "r", "af", "bc", "de", "hl", "sp", "ix", "iy", "ixh", "ixl", "iyh", "iyl"],
   ...["nz", "z", "nc", "po", "pe", "p", "m"],
 ]);
@@ -74,6 +77,7 @@ export function operandIsAddress(instruction: Instruction): boolean {
 export const Z80: Cpu = {
   id: "z80",
   maxInstructionLength: 4,
+  mnemonics: new Set(MNEMONICS),
   reserved: RESERVED,
   reservedReason: "the name of a Z80 instruction, register or condition, which an assembler cannot read as a label",
   // The Z80's own entry points ($0000, $0038, $0066) are in the ROM of a Spectrum; an IM 2 table is found by the analysis.
