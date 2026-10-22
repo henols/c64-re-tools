@@ -48,6 +48,8 @@ import { launchZesarux, type ZesaruxProcess } from "./process.ts";
 import { zsfHalted, zsfOnHaltInstruction } from "./zsf.ts";
 
 const FRAME_TSTATES = { "48k": 69_888, "128k": 70_908 } as const;
+/** The machines that ZEsarUX runs for c64-re-tools. */
+export const ZESARUX_MACHINES: readonly MachineId[] = ["spectrum48", "spectrum128"];
 const TARGET_SLOT = 99;
 const FRAMES_SLOT = 100;
 const MAX_USER_SLOT = 90;
@@ -915,10 +917,11 @@ export class ZesaruxSession implements SessionHandle {
   }
 }
 
-/** The Spectrum family on ZEsarUX. */
+/** The ZX Spectrum 48K and 128K on ZEsarUX. */
 export function zesaruxBackend(options: { supervisor: ProcessSupervisor; env?: NodeJS.ProcessEnv }): MachineBackend {
   return {
     emulator: "ZEsarUX",
+    machines: ZESARUX_MACHINES,
     start: async ({ machine, log }) => ZesaruxSession.start({ ...options, machine, ...(log === undefined ? {} : { log }) }),
     isOperation: (op) => (SPECTRUM_OPERATIONS as readonly string[]).includes(op),
     validate: (op, params) => validateSpectrumParams(op as SpectrumOperation, params),

@@ -19,7 +19,7 @@ after(async () => {
 test("a snapshot file from one session restores the machine in a new session", { skip: liveSkip, timeout: 300_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
+  server = await startHostServer({ port: 0, backends: [viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }))] });
   const env = { C64RT_HOST: `${server.host}:${server.port}` };
 
   const first = await ViceSessionClient.open({ videoStandard: "pal", env });

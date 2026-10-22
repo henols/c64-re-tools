@@ -21,9 +21,9 @@ test("a client on an address that is not loopback connects with no setting", { s
   server = await startHostServer({
     host: "0.0.0.0",
     port: 0,
-    backends: { c64: viceBackend(async () => {
+    backends: [viceBackend(async () => {
       throw new WireFailure("machine-unavailable", "no emulators here");
-    }) },
+    })],
   });
   for (const address of ["127.0.0.1", outside!]) {
     const connection = await HostConnection.open({ role: "tool", env: { C64RT_HOST: `${address}:${server.port}` } });

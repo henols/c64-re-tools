@@ -19,7 +19,7 @@ after(async () => {
 async function openClient(): Promise<ViceSessionClient> {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
+  const server = await startHostServer({ port: 0, backends: [viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }))] });
   servers.push(server);
   return ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${server.host}:${server.port}` } });
 }

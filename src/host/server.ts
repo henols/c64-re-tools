@@ -1,6 +1,6 @@
 import { createServer, type Server, type Socket } from "node:net";
 
-import { MACHINES, type Family, type MachineId } from "../machine.ts";
+import { MACHINES, type MachineId } from "../machine.ts";
 import { encodeFrame, FrameTooLarge, MessageReader } from "../protocol/framing.ts";
 import { isRefusal } from "../errors.ts";
 import { PACKAGE } from "../package.ts";
@@ -31,10 +31,12 @@ export interface SessionHandle {
   close(): Promise<void>;
 }
 
-/** The emulator of one family of machines on this host: how a session starts, and the operations of its sessions. */
+/** One emulator on this host: the machines that it runs, how a session starts, and the operations of its sessions. */
 export interface MachineBackend {
-  /** The emulator by name, for the log. */
+  /** The emulator by name, for the log and the refusals. */
   emulator: string;
+  /** The machines that this emulator runs: a session of one of them starts on it. */
+  machines: readonly MachineId[];
   /** Starts a session. Throws WireFailure with an actionable code when it cannot. */
   start(options: { machine: MachineId; videoStandard: VideoStandard; log?: (line: string) => void }): Promise<SessionHandle>;
   isOperation(op: string): boolean;
@@ -44,10 +46,14 @@ export interface MachineBackend {
   attachments(op: string, params: unknown): number;
 }
 
-/** The C64 family on VICE. */
+/** The machines that VICE runs. */
+export const VICE_MACHINES: readonly MachineId[] = ["c64"];
+
+/** The C64 on VICE. */
 export function viceBackend(create: ViceSessionFactory): MachineBackend {
   return {
     emulator: "VICE",
+    machines: VICE_MACHINES,
     start: async ({ videoStandard, log }) => {
       const session = await create({ videoStandard, ...(log === undefined ? {} : { log }) });
       return { handle: (op, params, attachments, reply) => session.handle(op as ViceOperation, params as never, attachments, reply), close: () => session.close() };
@@ -69,11 +75,19 @@ export type ToolDispatcher = <O extends ToolOperation>(
   signal: AbortSignal,
 ) => Promise<{ result: ToolOperations[O]["result"]; attachments?: Buffer[] }>;
 
+/** An emulator that did not start when the host started: it serves no session of its machines. */
+export interface UnavailableEmulator {
+  emulator: string;
+  machines: readonly MachineId[];
+  /** Why it did not start, with the remedy. */
+  reason: string;
+}
+
 export interface HostServerOptions {
-  /** The emulator of each family that this host runs. */
-  backends: Partial<Record<Family, MachineBackend>>;
-  /** Why a family has no backend here, with the remedy: the emulator did not start when the host started. */
-  unavailable?: Partial<Record<Family, string>>;
+  /** The emulators that this host runs. A session starts on the first one whose machines hold the machine of its hello. */
+  backends: readonly MachineBackend[];
+  /** The emulators that did not start when the host started. */
+  unavailable?: readonly UnavailableEmulator[];
   /** Native-tool requests on "tool" connections; without it they are refused. */
   tools?: ToolDispatcher;
   /** Defaults to 127.0.0.1; 0.0.0.0 listens on every address, so a container reaches it too. */
@@ -112,7 +126,7 @@ function toWireError(error: unknown, fallback: WireError): WireError {
 /** Numbers the connections of this process, for the trace. */
 let connectionCount = 0;
 
-/** Owns one client connection: handshake, then requests against at most one VICE session. */
+/** Owns one client connection: handshake, then requests against at most one emulator session. */
 class Connection {
   readonly closed: Promise<void>;
   readonly #id = ++connectionCount;
@@ -253,9 +267,13 @@ class Connection {
         return;
       }
       const machine = MACHINES[message.machine!];
-      const backend = this.#options.backends[machine.family];
+      const backend = this.#options.backends.find((item) => item.machines.includes(machine.id));
       if (backend === undefined) {
-        const why = this.#options.unavailable?.[machine.family] ?? `This host runtime runs no emulator for the ${machine.name}.`;
+        const down = this.#options.unavailable?.find((item) => item.machines.includes(machine.id));
+        const why =
+          down === undefined
+            ? `This host runtime runs no emulator for the ${machine.name}.`
+            : `The ${machine.name} runs on ${down.emulator}, which did not start when the host runtime started. ${down.reason}`;
         this.#log(`refusing a ${machine.id} session: ${why}`);
         this.#send({ type: "error", error: { code: "installation-incomplete", message: why } });
         this.#endRefused();
@@ -419,7 +437,7 @@ export class ListenError extends Error {
   }
 }
 
-/** Starts the Host Runtime listener. Each connection owns at most one VICE session. */
+/** Starts the Host Runtime listener. Each connection owns at most one emulator session. */
 export async function startHostServer(options: HostServerOptions): Promise<HostServer> {
   const log = options.log ?? (() => {});
   const host = options.host ?? "127.0.0.1";

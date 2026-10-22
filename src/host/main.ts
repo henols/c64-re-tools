@@ -1,20 +1,20 @@
 #!/usr/bin/env tsx
 
 import { constants } from "node:os";
-import type { Family } from "../machine.ts";
+import { MACHINES, type MachineId } from "../machine.ts";
 import { parseArgs } from "node:util";
 
 import { DEFAULT_HOST_PORT } from "../protocol/messages.ts";
 import { ProcessSupervisor } from "../native/processes.ts";
 import { startTrace, trace } from "../trace.ts";
-import { ListenError, parsePort, startHostServer, stopSignal, viceBackend, type MachineBackend } from "./server.ts";
+import { ListenError, parsePort, startHostServer, stopSignal, VICE_MACHINES, viceBackend, type MachineBackend, type UnavailableEmulator } from "./server.ts";
 import { viceFlaws, type ViceVersion } from "../native/discover.ts";
 import { inspect } from "./tools/c1541.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
 import { checkZesaruxStarts } from "./zesarux/process.ts";
-import { zesaruxBackend } from "./zesarux/session.ts";
+import { ZESARUX_MACHINES, zesaruxBackend } from "./zesarux/session.ts";
 import { oldNodeRefusal, PACKAGE } from "../package.ts";
 
 const HELP = `c64-re-tools-host
@@ -92,9 +92,11 @@ async function main(): Promise<number> {
   supervisor.startWatchdog("host");
 
   // Each emulator is started once, headless: one that does not start serves no
-  // sessions, and a session of its machine is refused by name with the remedy.
-  const backends: Partial<Record<Family, MachineBackend>> = {};
-  const unavailable: Partial<Record<Family, string>> = {};
+  // sessions, and a session of its machines is refused by name with the remedy.
+  // A session starts on the emulator that runs the machine of its hello.
+  const backends: MachineBackend[] = [];
+  const unavailable: UnavailableEmulator[] = [];
+  const names = (machines: readonly MachineId[]) => machines.map((id) => MACHINES[id].name).join(" and ");
 
   // VICE for the C64. Finding x64sc is not enough: VICE without its ROM files exits at once.
   let vice: ViceVersion | undefined;
@@ -105,7 +107,7 @@ async function main(): Promise<number> {
     const flaws = viceFlaws(vice);
     // A known VICE flaw is named, not worked around.
     for (const flaw of flaws) log(`Known VICE flaw: ${flaw.text}`);
-    backends.c64 = viceBackend(
+    backends.push(viceBackend(
       viceSessionFactory({
         supervisor,
         log,
@@ -116,27 +118,28 @@ async function main(): Promise<number> {
           return result.action === "directory" ? result.entries : [];
         },
       }),
-    );
+    ));
   } catch (error) {
-    unavailable.c64 = (error as Error).message;
+    unavailable.push({ emulator: "VICE", machines: VICE_MACHINES, reason: (error as Error).message });
   }
 
   // ZEsarUX for the ZX Spectrum.
   try {
     const version = await checkZesaruxStarts({ supervisor });
     log(`ZEsarUX ${version} starts`);
-    backends.spectrum = zesaruxBackend({ supervisor });
+    backends.push(zesaruxBackend({ supervisor }));
   } catch (error) {
-    unavailable.spectrum = (error as Error).message;
+    unavailable.push({ emulator: "ZEsarUX", machines: ZESARUX_MACHINES, reason: (error as Error).message });
   }
 
   // Without any emulator the runtime is useless: refuse to start, by name and with the remedy.
-  if (Object.keys(backends).length === 0) {
-    for (const why of Object.values(unavailable)) process.stderr.write(`${why}\n`);
+  if (backends.length === 0) {
+    for (const { reason } of unavailable) process.stderr.write(`${reason}\n`);
     await supervisor.stopAll();
     return 1;
   }
-  for (const [family, why] of Object.entries(unavailable)) log(`No ${family} sessions on this host: ${why}`);
+  for (const backend of backends) log(`${backend.emulator} serves sessions of the ${names(backend.machines)}`);
+  for (const down of unavailable) log(`${down.emulator} did not start, so no sessions of the ${names(down.machines)} on this host: ${down.reason}`);
 
   let server;
   try {

@@ -42,9 +42,9 @@ async function hostEnv(): Promise<string> {
     supervisor.installExitGuard();
     server = await startHostServer({
       port: 0,
-      backends: { c64: viceBackend(async () => {
+      backends: [viceBackend(async () => {
         throw new WireFailure("machine-unavailable", "no emulators here");
-      }) },
+      })],
       tools: createToolDispatcher({ supervisor }),
     });
   }

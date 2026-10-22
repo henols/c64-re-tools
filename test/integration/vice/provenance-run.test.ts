@@ -45,7 +45,7 @@ function release(variant: "a" | "b"): Uint8Array {
 test("each difference gets its first access in every release and whether the run changed it", { skip: liveSkip, timeout: 300_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
+  server = await startHostServer({ port: 0, backends: [viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }))] });
 
   const prg = (bytes: Uint8Array) => Buffer.concat([Buffer.from([LOAD & 0xff, LOAD >> 8]), bytes]);
   writeFileSync(join(project, "a.prg"), prg(release("a")));

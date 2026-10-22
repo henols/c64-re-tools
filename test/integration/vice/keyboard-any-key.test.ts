@@ -29,7 +29,7 @@ test("a wait for any key that reads all keyboard columns ends without input only
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
   const flawed = viceFlaws(await checkViceStarts({ supervisor, env: liveEnv() })).length > 0;
-  server = await startHostServer({ port: 0, backends: { c64: viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })) } });
+  server = await startHostServer({ port: 0, backends: [viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }))] });
   const client = await ViceSessionClient.open({ videoStandard: "pal", env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` } });
   try {
     await client.reset({ mode: "hard", run: true });

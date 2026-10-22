@@ -70,7 +70,7 @@ async function call(client: Client): Promise<CallToolResult> {
 
 test("the MCP opens one session at start and closes it when the harness disconnects", async () => {
   const state: StubState = { opened: [], closed: 0 };
-  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(stub(state)) } });
+  const server = await startHostServer({ port: 0, backends: [viceBackend(stub(state))] });
   servers.push(server);
   const client = await mcp(server.port, { C64RT_VIDEO: "ntsc" });
   assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), TOOLS);
@@ -89,7 +89,7 @@ test("a host that starts after the MCP is used on the next tool call", async () 
   assert.equal(JSON.parse((first.content[0] as { text: string }).text).error.code, "machine-unavailable");
 
   const state: StubState = { opened: [], closed: 0 };
-  servers.push(await startHostServer({ port, backends: { c64: viceBackend(stub(state)) } }));
+  servers.push(await startHostServer({ port, backends: [viceBackend(stub(state))] }));
   assert.equal((await call(client)).isError, undefined);
   assert.equal(state.opened.length, 1);
   await client.close();
@@ -100,7 +100,7 @@ test("after the host comes back, the next call opens a new session; a lost sessi
   const port = await freePort();
   const code = (result: CallToolResult) => (result.isError === true ? JSON.parse((result.content[0] as { text: string }).text).error.code : "ok");
   const host = async (state: StubState) => {
-    const server = await startHostServer({ port, backends: { c64: viceBackend(stub(state)) } });
+    const server = await startHostServer({ port, backends: [viceBackend(stub(state))] });
     servers.push(server);
     return server;
   };
@@ -133,7 +133,7 @@ test("after the host comes back, the next call opens a new session; a lost sessi
 
 test("a bad C64RT_VIDEO is reported to the caller", async () => {
   const state: StubState = { opened: [], closed: 0 };
-  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(stub(state)) } });
+  const server = await startHostServer({ port: 0, backends: [viceBackend(stub(state))] });
   servers.push(server);
   const client = await mcp(server.port, { C64RT_VIDEO: "secam" });
   const result = await call(client);
@@ -149,7 +149,7 @@ test("a project path is read in the MCP's working directory and only its bytes r
     const prg = Buffer.from([0x01, 0x08, 0xa9, 0x00, 0x60]);
     writeFileSync(join(project, "build", "game.prg"), prg);
     const state: StubState = { opened: [], closed: 0 };
-    const server = await startHostServer({ port: 0, backends: { c64: viceBackend(stub(state)) } });
+    const server = await startHostServer({ port: 0, backends: [viceBackend(stub(state))] });
     servers.push(server);
     const client = await mcp(server.port, {}, project);
     const result = (await client.callTool({ name: "program_load", arguments: { path: "build/game.prg" } })) as CallToolResult;

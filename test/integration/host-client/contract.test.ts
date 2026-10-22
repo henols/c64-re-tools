@@ -51,7 +51,7 @@ after(async () => {
 });
 
 async function host(factory: ViceSessionFactory): Promise<NodeJS.ProcessEnv> {
-  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(factory) } });
+  const server = await startHostServer({ port: 0, backends: [viceBackend(factory)] });
   servers.push(server);
   return { C64RT_HOST: `${server.host}:${server.port}` };
 }
@@ -113,7 +113,7 @@ test("two clients get two independent sessions", async () => {
 
 test("a host that shuts down fails a session that the emulator answered as lost machine state", async () => {
   const state: StubState = { opened: [], closed: 0, calls: [] };
-  const server = await startHostServer({ port: 0, backends: { c64: viceBackend(stub(state)) } });
+  const server = await startHostServer({ port: 0, backends: [viceBackend(stub(state))] });
   const client = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${server.host}:${server.port}` } });
   await client.status();
   await server.close();

@@ -157,7 +157,7 @@ test("every private operation has a contract example", () => {
 test("every operation crosses the real host boundary with its parameters and result intact", async () => {
   server = await startHostServer({
     port: 0,
-    backends: { c64: viceBackend(async () => ({
+    backends: [viceBackend(async () => ({
       async handle(op, params, attachments, reply) {
         seen.set(op, { params, attachments: attachments?.length ?? 0 });
         const example = EXAMPLES[op];
@@ -165,7 +165,7 @@ test("every operation crosses the real host boundary with its parameters and res
         return (example.reply?.result ?? example.result) as never;
       },
       async close() {},
-    })) },
+    }))],
   });
   client = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${server.host}:${server.port}` } });
   for (const [op, example] of Object.entries(EXAMPLES)) {
@@ -178,14 +178,14 @@ test("every operation crosses the real host boundary with its parameters and res
 test("a snapshot export comes back as the one attachment of the reply", async () => {
   const exporting = await startHostServer({
     port: 0,
-    backends: { c64: viceBackend(async () => ({
+    backends: [viceBackend(async () => ({
       async handle(op, params, _attachments, reply) {
         assert.deepEqual([op, params], ["snapshotFile", { action: "export", name: "room0" }]);
         reply?.push(Buffer.from("VICE Snapshot File"));
         return { exported: true, bytes: 18 } as never;
       },
       async close() {},
-    })) },
+    }))],
   });
   const exportClient = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${exporting.host}:${exporting.port}` } });
   try {
