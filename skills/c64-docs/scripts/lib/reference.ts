@@ -11,6 +11,7 @@ import { bitmapFrame, charsetFrame, encodePng, PATTERN_PALETTES, scaleFrame, scr
 import { mermaidGraph, ownerOf, routineEdges, routineHeads, type GraphReference, type RoutineHead } from "#src/knowledge/graph.ts";
 import type { CommentRow, ModuleRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
 import type { RegionType } from "#src/knowledge/schema.ts";
+import { platformNames } from "#src/platform.ts";
 import type { SourceMap } from "./source-map.ts";
 
 /** The first line of every generated page. A page without it is a page of a person, and docs.ts generate never writes over it. */
@@ -73,6 +74,8 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
   const entries = new Map<string, Entry>();
   const sortedNames = [...new Set([...input.symbols.map((symbol) => symbol.address), ...map.labels.filter((label) => label.file === "constants.asm").map((label) => label.address)])].sort((a, b) => a - b);
   const nextName = (address: number) => sortedNames.find((other) => other > address);
+  /** A name of the platform covers only its register or area: RANDOM is $D41B, not the color RAM after it. */
+  const platformEnd = new Map(platformNames().map((entry) => [entry.name, entry.end]));
   const regionAt = (address: number) => input.regions.find((region) => region.start <= address && region.end >= address);
   const spanOf = (address: number, kind: string) => {
     if (kind === "routine" || kind === "label") return address;
@@ -90,7 +93,8 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     // A name that c64-source makes (l_xxxx) is no entry: it has no meaning of its own.
     if (symbol === undefined && label.file !== "constants.asm") continue;
     const kind = symbol?.kind ?? "platform";
-    entries.set(label.name, { name: label.name, address: label.address, kind, page: pageOfFile(label.file), spanEnd: spanOf(label.address, kind) });
+    const platform = symbol === undefined ? platformEnd.get(label.name) : undefined;
+    entries.set(label.name, { name: label.name, address: label.address, kind, page: pageOfFile(label.file), spanEnd: platform ?? spanOf(label.address, kind) });
   }
   const entryAt = new Map<number, Entry>();
   for (const entry of entries.values()) if (!entryAt.has(entry.address)) entryAt.set(entry.address, entry);

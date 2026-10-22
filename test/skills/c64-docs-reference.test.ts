@@ -56,3 +56,50 @@ test("the code of an I/O register is no reader or writer of the data in RAM unde
   assert.match(sprites, /- \*\*Read by:\*\* .*copy_sprites/);
   assert.doesNotMatch(sprites, /play_sound/, "the write of SIGVOL is no write of the sprites");
 });
+
+test("a platform name in the memory map covers only its register: RANDOM is no writer of the color RAM, SP0Y none of SP1Y", () => {
+  const items = [
+    { start: 0x1000, end: 0x1002, file: "game.asm", line: 2 },
+    { start: 0x1010, end: 0x1012, file: "game.asm", line: 4 },
+    { start: 0x1020, end: 0x1022, file: "game.asm", line: 6 },
+  ];
+  const labels = [
+    { address: 0x1000, name: "get_random", file: "game.asm", line: 1 },
+    { address: 0x1010, name: "fill_color", file: "game.asm", line: 3 },
+    { address: 0x1020, name: "move_sprites", file: "game.asm", line: 5 },
+    { address: 0xd001, name: "SP0Y", file: "constants.asm", line: 1 },
+    { address: 0xd41b, name: "RANDOM", file: "constants.asm", line: 2 },
+  ];
+  const map: SourceMap = {
+    directory: "src",
+    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
+    space: "c64",
+    revision: "1",
+    files: ["constants.asm", "game.asm"],
+    labels,
+    labelOf: (name) => labels.find((label) => label.name === name),
+    lineOf: (address) => items.find((item) => address >= item.start && address <= item.end),
+    pathOf: (file) => `src/${file}`,
+  };
+  const { files } = buildReference({
+    out: "docs/reference",
+    map,
+    revision: "1",
+    symbols: ["get_random", "fill_color", "move_sprites"].map((name, index) => ({ ...row, address: 0x1000 + index * 0x10, name, kind: "routine" })),
+    regions: [{ ...row, start: 0x1000, end: 0x1022, type: "code" }],
+    comments: [],
+    references: [
+      { ...row, from: 0x1000, to: 0xd41b, kind: "read" },
+      { ...row, from: 0x1010, to: 0xd800, kind: "write" },
+      { ...row, from: 0x1020, to: 0xd001, kind: "write" },
+      { ...row, from: 0x1020, to: 0xd003, kind: "write" },
+    ],
+    modules: [],
+    image: { byteAt: () => 0, inImage: (address: number) => address >= 0x1000 && address <= 0x1022 },
+  } as never);
+  const memoryMap = files.find((file) => file.path === "docs/reference/memory-map.md")!.bytes.toString("utf8");
+  const rowOf = (name: string) => memoryMap.split("\n").find((line) => line.includes(`id="${name}"`))!;
+  assert.match(rowOf("RANDOM"), /^\| `\$D41B` \|.*get_random/);
+  assert.doesNotMatch(rowOf("RANDOM"), /fill_color/);
+  assert.match(rowOf("SP0Y"), /^\| `\$D001` \|.*move_sprites/);
+});
