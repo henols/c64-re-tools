@@ -113,8 +113,6 @@ describe("the packed package works through npx", { skip: liveSkip }, () => {
     const declaredArgs = args.map((arg) => (arg.startsWith("--package=") ? `--package=${tarball}` : arg));
     await client.connect(new StdioClientTransport({ command, args: declaredArgs, env: { ...env, ...npmEnv(), C64RT_HOST: address } as Record<string, string>, cwd: project, stderr: "inherit" }));
     try {
-      const status = (await client.callTool({ name: "c64_status", arguments: {} })) as CallToolResult;
-      assert.notEqual(status.isError, true, JSON.stringify(status.content));
       const kernal = (await client.callTool({ name: "c64_memory_read", arguments: { address: "$fffc", size: 2 } })) as CallToolResult;
       assert.equal((kernal.structuredContent as { data: string }).data, "e2fc", "the reset vector of the real KERNAL");
     } finally {

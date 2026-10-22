@@ -90,10 +90,6 @@ jobs:
           test -z "$(find . -type l)"
           grep -qE 'c64-re-tools@(latest|next)"' .mcp.json
           node .claude/skills/c64-memory-map/scripts/memory-map.ts at '$d020' | grep -q EXTCOL
-          # No host and no native tools here: status reports them and exits 1.
-          code=0
-          npx -y "$package" c64-re-tools status || code=$?
-          test "$code" -eq 1
 
   # A release tag: the commit must be on main and its CI run must have passed.
   tested:

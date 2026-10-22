@@ -27,7 +27,6 @@ Use only the MCP tools. Each MCP session has its own machine. Nothing else can c
 
 | Need | C64 tool |
 |---|---|
-| Run state, warp mode, window | `c64_status` |
 | Reset, power cycle | `c64_reset` |
 | Fast emulation | `c64_warp` |
 | Show the machine to the user in a window, hide it again | `c64_window` |
@@ -64,12 +63,11 @@ To keep a coverage run:
 ## Workflow
 
 1. Read the project knowledge for the addresses in the question.
-2. Get the machine state with `c64_status`.
-3. Load the subject if it is not loaded. Use `c64_autostart` to start it as a user does. Use `c64_program_load` to put a program in memory with no start.
-4. Set the stop condition. Use a breakpoint, a watchpoint or a `c64_run_until` target. Add a condition when the stop must occur only in one state.
-5. Run, step or give input. Prefer `c64_run_until` and `advance-frames` to waits. They stop at the same emulated time on every run.
-6. Read only the state that answers the question. To read several things from one moment, use `c64_observe`.
-7. Interpret the evidence. Keep the observed facts apart from your conclusions.
+2. Load the subject if it is not loaded. Use `c64_autostart` to start it as a user does. Use `c64_program_load` to put a program in memory with no start.
+3. Set the stop condition. Use a breakpoint, a watchpoint or a `c64_run_until` target. Add a condition when the stop must occur only in one state.
+4. Run, step or give input. Prefer `c64_run_until` and `advance-frames` to waits. They stop at the same emulated time on every run.
+5. Read only the state that answers the question. To read several things from one moment, use `c64_observe`.
+6. Interpret the evidence. Keep the observed facts apart from your conclusions.
 
 Before a risky experiment, save the state with `c64_snapshot`. Restore it to try again from the same point.
 

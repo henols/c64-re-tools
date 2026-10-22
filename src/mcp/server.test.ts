@@ -23,7 +23,6 @@ import { videoTools } from "./tools/video.ts";
 
 /** The public tool list, in its order. */
 const PUBLIC_TOOLS = [
-  "c64_status",
   "c64_reset",
   "c64_warp",
   "c64_window",
@@ -62,17 +61,9 @@ const ALL_TOOLS = [...machineTools, ...executionTools, ...debugTools, ...memoryT
 const REGISTERS: Registers = { pc: 0xe5cf, a: 0x42, x: 3, y: 0, sp: 0xf9, flags: { n: false, v: false, b: true, d: false, i: true, z: false, c: true } };
 
 class FakeSession implements ViceSessionApi {
-  stopped = false;
   reads: MemoryReadParams[] = [];
   spaces: string[] = [];
   failure: WireFailure | Error | undefined;
-
-  async status() {
-    if (this.failure) throw this.failure;
-    return this.stopped
-      ? { state: "stopped" as const, videoStandard: "pal" as const, warp: false, window: false, cartridge: false, pc: 0x2a }
-      : { state: "running" as const, videoStandard: "pal" as const, warp: false, window: false, cartridge: false };
-  }
 
   async memoryRead(params: MemoryReadParams) {
     if (this.failure) throw this.failure;
@@ -345,7 +336,6 @@ test("the server lists exactly the public tools with object input and output sch
     assert.equal(tool.outputSchema?.type, "object");
     // c64_memory_read, c64_disassemble and c64_cpu_history can write a project file (out).
     const readOnly = [
-      "c64_status",
       "c64_memory_search",
       "c64_memory_compare",
       "c64_vicii",
@@ -371,17 +361,6 @@ test("every MCP tool that a skill names is a public tool", () => {
       assert.ok((PUBLIC_TOOLS as readonly string[]).includes(name), `${doc} names ${name}, which is not a tool`);
     }
   }
-});
-
-test("c64_status returns the domain result directly, with pc only when stopped", async () => {
-  const session = new FakeSession();
-  const client = await connect(async () => session);
-  const running = await call(client, "c64_status");
-  assert.deepEqual(running.structuredContent, { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false });
-  assert.deepEqual(JSON.parse((running.content[0] as { text: string }).text), running.structuredContent);
-  session.stopped = true;
-  assert.deepEqual((await call(client, "c64_status")).structuredContent, { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: "$002a" });
-  await client.close();
 });
 
 test("c64_memory_read takes canonical addresses and fills defaults", async () => {
@@ -430,7 +409,7 @@ test("host and session failures keep their code and message", async () => {
   const session = new FakeSession();
   session.failure = new WireFailure("machine-state-lost", "The emulator stopped unexpectedly.");
   const client = await connect(async () => session);
-  assert.deepEqual(errorOf(await call(client, "c64_status")), { code: "machine-state-lost", message: "The emulator stopped unexpectedly." });
+  assert.deepEqual(errorOf(await call(client, "c64_registers", { action: "read" })), { code: "machine-state-lost", message: "The emulator stopped unexpectedly." });
 
   const unavailable = await connect(async () => {
     throw new WireFailure("machine-unavailable", "The c64-re-tools host runtime is not running.");
@@ -444,7 +423,7 @@ test("an installation-incomplete error tells the agent to stop and ask the user"
   const broken = await connect(async () => {
     throw new WireFailure("installation-incomplete", "VICE (x64sc) is not installed on the host.");
   });
-  assert.deepEqual(errorOf(await call(broken, "c64_status")), {
+  assert.deepEqual(errorOf(await call(broken, "c64_registers", { action: "read" })), {
     code: "installation-incomplete",
     message: `VICE (x64sc) is not installed on the host. ${STOP_AND_ASK}`,
   });
@@ -455,7 +434,7 @@ test("an unexpected exception becomes operation-failed without internals", async
   const session = new FakeSession();
   session.failure = new Error("ECONNRESET at /tmp/c64-re-tools-vice-x port 51234");
   const client = await connect(async () => session);
-  const error = errorOf(await call(client, "c64_status"));
+  const error = errorOf(await call(client, "c64_registers", { action: "read" }));
   assert.equal(error.code, "operation-failed");
   assert.doesNotMatch(error.message, /ECONNRESET|tmp|51234/);
   await client.close();
@@ -473,11 +452,11 @@ test("a result goes out in its output schema: an extra key is removed, and a res
   const opened = await call(client, "c64_window", { action: "open" });
   assert.deepEqual(opened.structuredContent, { window: true, state: "running", notCarried: [] });
   assert.doesNotMatch((opened.content[0] as { text: string }).text, /hostPid|4242/);
-  session.status = async () => ({ state: "dancing", videoStandard: "pal", warp: false, window: false, cartridge: false }) as never;
-  const error = errorOf(await call(client, "c64_status"));
+  session.warp = async () => ({ enabled: "dancing" }) as never;
+  const error = errorOf(await call(client, "c64_warp", { enabled: true }));
   assert.equal(error.code, "operation-failed");
-  assert.doesNotMatch(error.message, /dancing|state/);
-  assert.match(lines.join("\n"), /c64_status gave a result outside its output schema: state:/);
+  assert.doesNotMatch(error.message, /dancing|enabled/);
+  assert.match(lines.join("\n"), /c64_warp gave a result outside its output schema: enabled:/);
   await client.close();
 });
 
@@ -919,7 +898,7 @@ test("with C64RT_TRACE every tool call leaves one trace line with its name, argu
   try {
     const on = startTrace("mcp", { env: { [TRACE_VARIABLE]: dir } });
     const client = await connect(async () => new FakeSession());
-    await call(client, "c64_status");
+    await call(client, "c64_registers", { action: "read" });
     await call(client, "no_such_tool", { a: 1 });
     await client.close();
 
@@ -929,11 +908,11 @@ test("with C64RT_TRACE every tool call leaves one trace line with its name, argu
       .map((line) => JSON.parse(line) as Record<string, unknown>)
       .filter((event) => event.event === "tool.call");
     assert.equal(calls.length, 2);
-    const [status, missing] = calls as [Record<string, unknown>, Record<string, unknown>];
-    assert.equal(status.name, "c64_status");
-    assert.equal(status.ok, true);
-    assert.equal(typeof status.ms, "number");
-    assert.equal(typeof status.result, "object");
+    const [read, missing] = calls as [Record<string, unknown>, Record<string, unknown>];
+    assert.equal(read.name, "c64_registers");
+    assert.equal(read.ok, true);
+    assert.equal(typeof read.ms, "number");
+    assert.equal(typeof read.result, "object");
     assert.equal(missing.name, "no_such_tool");
     assert.deepEqual(missing.args, { a: 1 });
     assert.equal(missing.ok, false);
@@ -1005,7 +984,7 @@ test("in a folder with projects below it, a tool with a path takes project and r
     await call(client, "c64_autostart", { path: "original/game.prg", project: "b" });
     assert.deepEqual(session.media.at(-1), ["autostart", { path: "original/game.prg", index: 0, run: true, root: join(workspace, "b") }]);
     assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save", name: "room1", project: "b" })).code, "invalid-input", "project without out");
-    assert.equal((await call(client, "c64_status")).isError, undefined, "a tool without a path needs no project");
+    assert.equal((await call(client, "c64_warp", { enabled: false })).isError, undefined, "a tool without a path needs no project");
     await client.close();
   } finally {
     process.chdir(home);

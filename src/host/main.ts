@@ -126,7 +126,7 @@ async function main(): Promise<number> {
           return result.action === "directory" ? result.entries : [];
         },
       }),
-      tools: createToolDispatcher({ supervisor, log, vice }),
+      tools: createToolDispatcher({ supervisor, log }),
     });
   } catch (error) {
     if (error instanceof ListenError && error.code === "EADDRINUSE") {

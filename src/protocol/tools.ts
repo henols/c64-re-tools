@@ -79,38 +79,12 @@ export type PetcatResult =
       handoffs: BasicHandoff[];
     };
 
-/** One native tool on the host, as host.status found and ran it. */
-export interface ToolStatus {
-  name: string;
-  found: boolean;
-  /** Where it is, when found. */
-  path?: string;
-  /** Its version text, when it ran. */
-  version?: string;
-  runs: boolean;
-  /** What is wrong and what to do, when it is missing or does not run. */
-  problem?: string;
-  /** Known flaws of this version, each with the version that fixes it. The tool still runs. */
-  flaws?: string[];
-}
-
-/** The Host Runtime itself: its package version and the system it runs on. */
-export interface HostInfo {
-  version: string;
-  /** Node's name of the operating system: linux, darwin or win32. */
-  platform: string;
-  /** The release of the operating system. */
-  release: string;
-  arch: string;
-}
-
 export interface ToolOperations {
-  "host.status": { params: Record<string, never>; result: { host: HostInfo; tools: ToolStatus[] } };
   "c1541.inspect": { params: C1541Params; result: C1541Result };
   "petcat.decode": { params: PetcatParams; result: PetcatResult };
 }
 export type ToolOperation = keyof ToolOperations;
-export const TOOL_OPERATIONS = ["host.status", "c1541.inspect", "petcat.decode"] as const satisfies readonly ToolOperation[];
+export const TOOL_OPERATIONS = ["c1541.inspect", "petcat.decode"] as const satisfies readonly ToolOperation[];
 
 const RELATIVE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[^\0\\]+$/;
 
@@ -166,10 +140,6 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
       oneFile(attachments, "the program");
       return {} as ToolOperations[O]["params"];
     }
-    case "host.status":
-      onlyFields(params, []);
-      if (attachments.length !== 0) invalid("host.status takes no attachment");
-      return {} as ToolOperations[O]["params"];
   }
   return invalid(`unknown tool operation: ${String(op)}`);
 }
@@ -184,20 +154,6 @@ export function validateToolResult<O extends ToolOperation>(op: O, value: unknow
     }
     case "petcat.decode": {
       if (!isPetcatResult(value) || attachments.length !== 0) throw new ProtocolError("petcat.decode result is malformed");
-      return value as unknown as ToolOperations[O]["result"];
-    }
-    case "host.status": {
-      const tools = value.tools;
-      const isStatus = (tool: unknown) =>
-        isObject(tool) &&
-        typeof tool.name === "string" &&
-        typeof tool.found === "boolean" &&
-        typeof tool.runs === "boolean" &&
-        [tool.path, tool.version, tool.problem].every((field) => field === undefined || typeof field === "string") &&
-        (tool.flaws === undefined || (Array.isArray(tool.flaws) && tool.flaws.every((flaw: unknown) => typeof flaw === "string")));
-      const host = value.host;
-      const isHost = isObject(host) && [host.version, host.platform, host.release, host.arch].every((field) => typeof field === "string");
-      if (!isHost || !Array.isArray(tools) || !tools.every(isStatus) || attachments.length !== 0) throw new ProtocolError("host.status result is malformed");
       return value as unknown as ToolOperations[O]["result"];
     }
   }

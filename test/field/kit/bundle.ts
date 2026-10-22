@@ -1,8 +1,8 @@
 // Packs a field-test run into one archive for report.ts in the c64-re-tools
 // checkout: the run record, the notes, the trace of Claude Code's programs,
 // the Claude Code transcripts of this project, a summary of project
-// knowledge, the skill descriptions, the status and the configuration with
-// its secrets removed. Run it in the project after you quit Claude Code:
+// knowledge, the skill descriptions and the configuration with its secrets
+// removed. Run it in the project after you quit Claude Code:
 //
 //   node <kit>/bundle.ts [--out <dir>]
 
@@ -110,11 +110,6 @@ function main(): void {
       mkdirSync(join(root, "config"), { recursive: true });
       writeFileSync(target, `${JSON.stringify(redact(JSON.parse(readFileSync(path, "utf8"))), null, 2)}\n`);
     }
-    // Status as Claude Code's programs see the host: with the env of the settings (the token in a container), without the trace.
-    const settings = join(project, ".claude", "settings.local.json");
-    const { C64RT_TRACE: _trace, ...settingsEnv } = existsSync(settings) ? ((JSON.parse(readFileSync(settings, "utf8")) as { env?: Record<string, string> }).env ?? {}) : {};
-    const status = run("npx", ["-y", `--package=${record.spec}`, "c64-re-tools", "status"], { cwd: project, timeoutMs: 180_000, env: { ...process.env, ...settingsEnv } });
-    writeFileSync(join(root, "status.txt"), `${status.stdout}${status.stderr}`);
     writeFileSync(
       join(root, "bundle.json"),
       `${JSON.stringify({ createdAt: isoCet(), project, package: PACKAGE_NAME, transcripts: transcripts ?? null, inContainer: inContainer(), platform: process.platform, node: process.version }, null, 2)}\n`,

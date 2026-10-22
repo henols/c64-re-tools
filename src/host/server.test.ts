@@ -410,17 +410,17 @@ test("the log has one line for each call of a skill script, and none for a VICE 
   const server = await startHostServer({
     port: 0,
     createViceSession: stubFactory({ started: [], closed: 0 }),
-    tools: async () => ({ result: { host: { version: "0", platform: "linux", release: "", arch: "x64" }, tools: [] } }),
+    tools: async () => {
+      throw new Error("no tool operation runs in this test");
+    },
     log: (line) => lines.push(line),
   });
   servers.push(server);
   const tool = await RawClient.open(server);
   tool.send({ ...hello, role: "tool" });
   await tool.next();
-  tool.send({ type: "request", id: 1, op: "host.status", params: {} });
-  await tool.next();
   // Without the program it takes, petcat.decode is refused before it runs.
-  tool.send({ type: "request", id: 2, op: "petcat.decode", params: {} });
+  tool.send({ type: "request", id: 1, op: "petcat.decode", params: {} });
   await tool.next();
   const session = await RawClient.open(server);
   session.send(hello);
@@ -428,10 +428,9 @@ test("the log has one line for each call of a skill script, and none for a VICE 
   session.send({ type: "request", id: 1, op: "status", params: {} });
   await session.next();
 
-  const calls = lines.filter((line) => /: (host\.status|petcat\.decode|status) /.test(line));
-  assert.equal(calls.length, 2, calls.join("\n"));
-  assert.match(calls[0]!, /^connection \d+: host\.status \{\}: ok \(\d+(\.\d)? ms\)$/);
-  assert.match(calls[1]!, /^connection \d+: petcat\.decode \{\}: invalid-input: .+ \(\d+(\.\d)? ms\)$/);
+  const calls = lines.filter((line) => /: (petcat\.decode|status) /.test(line));
+  assert.equal(calls.length, 1, calls.join("\n"));
+  assert.match(calls[0]!, /^connection \d+: petcat\.decode \{\}: invalid-input: .+ \(\d+(\.\d)? ms\)$/);
   tool.end();
   session.end();
 });

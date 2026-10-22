@@ -4,7 +4,7 @@
 // ACME, DXA and Ghidra themselves through src/native.
 
 import { ProtocolError, WireFailure } from "../protocol/messages.ts";
-import { DISK_IMAGE_TYPES, validateToolResult, type C1541Result, type DiskAction, type DiskImageType, type DiskSector, type PetcatResult, type ToolOperation, type ToolOperations, type HostInfo, type ToolStatus } from "../protocol/tools.ts";
+import { DISK_IMAGE_TYPES, validateToolResult, type C1541Result, type DiskAction, type DiskImageType, type DiskSector, type PetcatResult, type ToolOperation, type ToolOperations } from "../protocol/tools.ts";
 import { HostConnection } from "./connect.ts";
 import { readPrg } from "./image.ts";
 import { readProjectFile } from "./transfer.ts";
@@ -82,11 +82,6 @@ export async function inspectDisk(request: InspectDiskRequest, options: ToolCall
 export async function decodeBasic(request: { program: string }, options: ToolCallOptions = {}): Promise<PetcatResult> {
   const { bytes } = readPrg(request.program);
   return (await callTool("petcat.decode", {}, [bytes], options)).result;
-}
-
-/** host.status: the Host Runtime, and each native tool on the host, found and run once. */
-export async function hostTools(options: ToolCallOptions = {}): Promise<{ host: HostInfo; tools: ToolStatus[] }> {
-  return (await callTool("host.status", {}, [], options)).result;
 }
 
 /** Skill scripts see failures and wire limits through the host-client, never the private protocol module. */

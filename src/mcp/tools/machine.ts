@@ -1,49 +1,10 @@
-// Machine tools: c64_status, c64_reset, c64_warp and c64_window.
+// Machine tools: c64_reset, c64_warp and c64_window.
 
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { VIDEO_STANDARDS } from "../../protocol/messages.ts";
-import { POINT_STOP_REASONS, RESET_MODES, RUN_STATES, SPACES, WINDOW_ACTIONS } from "../../protocol/vice.ts";
+import { RESET_MODES, RUN_STATES, WINDOW_ACTIONS } from "../../protocol/vice.ts";
 import { AddressOutput, defineTool } from "../server.ts";
-
-export const c64Status = defineTool({
-  name: "c64_status",
-  title: "C64 status",
-  description:
-    "Get the state of the C64. The result tells if the CPU runs or has stopped, the video standard (pal or ntsc), " +
-    "and if warp mode is on. It also tells if the emulator window is open (window). " +
-    "When the CPU has stopped, the result also gives the program counter (pc). " +
-    "When a breakpoint, a watchpoint or a JAM opcode stopped the CPU, stopReason tells which, and pointId gives the id of the breakpoint or watchpoint. " +
-    "cartridge is true while a cartridge from c64_autostart is attached: a reset keeps it, and an autostart of another file detaches it.",
-  inputSchema: z.object({}).strict(),
-  outputSchema: z.object({
-    state: z.enum(RUN_STATES),
-    videoStandard: z.enum(VIDEO_STANDARDS),
-    warp: z.boolean(),
-    window: z.boolean().describe("true when the emulator window is open (c64_window)"),
-    pc: AddressOutput.optional().describe("program counter. Only when the CPU is stopped"),
-    stopReason: z.enum(POINT_STOP_REASONS).optional().describe("what stopped the CPU. Only when a breakpoint, a watchpoint or a JAM opcode stopped it"),
-    pointId: z.number().int().min(1).optional().describe("the id of the breakpoint or watchpoint that stopped the CPU"),
-    space: z.enum(SPACES).optional().describe("with pc: c64, or drive8 when a breakpoint or watchpoint in the disk drive stopped the CPU. pc is the address in that space"),
-    cartridge: z.boolean().describe("true while a cartridge from c64_autostart is attached"),
-  }),
-  readOnly: true,
-  async run(_input, session) {
-    const status = await session.status();
-    return {
-      state: status.state,
-      videoStandard: status.videoStandard,
-      warp: status.warp,
-      window: status.window,
-      cartridge: status.cartridge,
-      ...(status.pc === undefined ? {} : { pc: formatC64Address(status.pc) }),
-      ...(status.stopReason === undefined ? {} : { stopReason: status.stopReason }),
-      ...(status.pointId === undefined ? {} : { pointId: status.pointId }),
-      ...(status.space === undefined ? {} : { space: status.space }),
-    };
-  },
-});
 
 export const c64Window = defineTool({
   name: "c64_window",
@@ -104,4 +65,4 @@ export const c64Warp = defineTool({
   },
 });
 
-export const machineTools = [c64Status, c64Reset, c64Warp, c64Window];
+export const machineTools = [c64Reset, c64Warp, c64Window];

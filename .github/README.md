@@ -90,12 +90,6 @@ start it installs the newest toolkit of its channel into the project, with the
 tools of that version. It reads its options only when the container is built:
 rebuild after a change.
 
-Check what works, in the container:
-
-```
-npx -y @henols/c64-re-tools@latest status
-```
-
 ## Use it
 
 Start the agent in the project, for example `claude`, and ask for what you want:

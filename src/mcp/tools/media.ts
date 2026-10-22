@@ -30,7 +30,7 @@ export const c64Autostart = defineTool({
     "Without index, a disk image loads like LOAD\"*\",8,1. index selects one directory entry by its number in the directory list of the disk (0 is the first entry). " +
       "The tool refuses an index of a DEL entry, or an index after the last entry. " +
     "The machine runs when this tool returns, and the load continues. The emulator keeps warp mode on until it types RUN. " +
-    "A key in that time stops the autostart, so c64_keyboard refuses keys until then. Run frames with c64_execution advance-frames until c64_status gives warp false. " +
+    "A key in that time stops the autostart, so c64_keyboard refuses keys until then. Run frames with c64_execution advance-frames, then type again. " +
     "The c64_timing stopwatch starts again from zero.",
   inputSchema: z
     .object({

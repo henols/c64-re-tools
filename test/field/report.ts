@@ -119,7 +119,6 @@ function summary(dir: string, events: Event[], notes: Note[], skew: { skewMs: nu
   const bundle = readJson<Record<string, unknown>>(join(dir, "bundle.json"), {});
   const skills = readJson<Record<string, string>>(join(dir, "skills.json"), {});
   const tools = new Map([...machineTools, ...executionTools, ...debugTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools].map((tool) => [tool.name, tool.description]));
-  const statusText = existsSync(join(dir, "status.txt")) ? readFileSync(join(dir, "status.txt"), "utf8").trim() : "(no status)";
   const knowledge = readJson<unknown>(join(dir, "knowledge-summary.json"), { present: false });
 
   const lines: string[] = [];
@@ -144,9 +143,6 @@ function summary(dir: string, events: Event[], notes: Note[], skew: { skewMs: nu
   for (const [kind, versions] of builds) lines.push(`- ${kind}: ${[...versions].join(", ")}`);
   if (skew === undefined) lines.push(`- Clock difference: unknown (no ready pair of a client and the host).`);
   else lines.push(`- Clock difference: the clients are ${skew.skewMs} ms ${skew.skewMs >= 0 ? "ahead of" : "behind"} the host (median of ${skew.pairs} pairs). The times below are on the host's clock.`);
-
-  h(2, "Status at bundle time");
-  lines.push("```", statusText, "```");
 
   h(2, "Programs and events");
   lines.push("| Kind | Files | Events | Failures | First | Last |", "|---|---|---|---|---|---|");

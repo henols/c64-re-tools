@@ -476,7 +476,7 @@ export class ViceSession implements ViceSessionHandle {
         if (this.#autostarting && !this.#userWarp && (await this.#observe(() => this.#machine.warp()))) {
           throw new WireFailure(
             "operation-failed",
-            "The autostart still loads the program, and a key now stops it before RUN. Run frames with c64_execution advance-frames until c64_status gives warp false, then type.",
+            "The autostart still loads the program, and a key now stops it before RUN. Run frames with c64_execution advance-frames, then type again.",
           );
         }
         await this.#observe(() => this.#machine.feedKeyboard(bytes));

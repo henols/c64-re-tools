@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../protocol/messages.ts";
-import { analyze, dxaArguments, dxaVersion, parseListing } from "./dxa.ts";
+import { analyze, DXA_VERSION, dxaArguments, dxaVersion, parseListing, versionLine } from "./dxa.ts";
 import { ProcessSupervisor } from "./processes.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-dxa-test-"));
@@ -161,4 +161,17 @@ test("a request beyond the seed bounds is refused by name before dxa runs", asyn
   await assert.rejects(analyze({ ...SEEDS, entryPoints: many(1025) }, PRG, context(env)), refused("The request has 1025 entry points. Give at most 1024 entry points."));
   await assert.rejects(analyze({ ...SEEDS, dataRanges: many(1025).map((start) => ({ start, end: start })) }, PRG, context(env)), refused("The request has 1025 data ranges. Give at most 1024 data ranges."));
   await assert.rejects(analyze({ ...SEEDS, labels: many(4097).map((address) => ({ address, name: "x" })) }, PRG, context(env)), refused("The request has 4097 labels. Give at most 4096 labels."));
+});
+
+test("a version line is found among notices and colour codes", () => {
+  const output = "\u001b[97;40mOPENCBM\u001b[0m: opening dynamic library libopencbm.so failed!\nc1541 (VICE 3.10)\n";
+  assert.equal(versionLine(output, /^c1541 \(VICE \d/), "c1541 (VICE 3.10)");
+  assert.equal(versionLine("nothing useful", /^c1541 \(VICE \d/), undefined);
+});
+
+test("dxa's version line is found also where it names itself by its full Windows path", () => {
+  assert.equal(versionLine("dxa v0.1.5 -- symbolic 65xx disassembler\n", DXA_VERSION), "dxa v0.1.5 -- symbolic 65xx disassembler");
+  const windows = "D:\\a\\_temp\\dxa-0.1.5\\dxa.exe: option requires an argument -- h\r\nD:\\a\\_temp\\dxa-0.1.5\\dxa.exe v0.1.5 -- symbolic 65xx disassembler\r\n";
+  assert.match(versionLine(windows, DXA_VERSION) ?? "", /dxa\.exe v0\.1\.5/);
+  assert.equal(versionLine("dxarchive v2", DXA_VERSION), undefined);
 });

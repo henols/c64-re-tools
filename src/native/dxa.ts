@@ -6,6 +6,7 @@
 // changed listing is refused instead of half imported.
 
 import { writeFileSync } from "node:fs";
+import { stripVTControlCharacters } from "node:util";
 
 import { Refusal } from "../errors.ts";
 import { SYMBOL_NAME } from "../c64.ts";
@@ -14,7 +15,17 @@ import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaPa
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
 import { outputTail, runTool, runToolOrFail, type ToolContext } from "./run.ts";
-import { DXA_VERSION, versionLine } from "./status.ts";
+
+/** dxa's version line, also as "D:\\tools\\dxa.exe v0.1.5 -- symbolic 65xx disassembler" on Windows. */
+export const DXA_VERSION = /^(?:.*[\\/])?dxa(?:\.exe)? v\d/i;
+
+/** The first output line that matches, without terminal color codes. */
+export function versionLine(output: string, pattern: RegExp): string | undefined {
+  return stripVTControlCharacters(output)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => pattern.test(line));
+}
 
 const TIMEOUT_MS = 120_000;
 /** The listing is returned as an attachment; larger output is refused. */

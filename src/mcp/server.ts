@@ -19,7 +19,6 @@ import { elapsedMs, trace, type TraceFields } from "../trace.ts";
 /** The session operations tools may call. */
 export type ViceSessionApi = Pick<
   ViceSessionClient,
-  | "status"
   | "memoryRead"
   | "registersGet"
   | "memoryWrite"

@@ -1,19 +1,14 @@
 // The c64-re-tools CLI from src/: install and uninstall the skills and
-// the MCP declaration in a project through AP SDK, and report status.
+// the MCP declaration in a project through AP SDK.
 
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import { once } from "node:events";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { mcpServerFor } from "../../distribution/package.ts";
-import { PACKAGE } from "../../src/package.ts";
-import { encodeFrame } from "../../src/protocol/framing.ts";
-import { FrameDecoder } from "../../src/protocol/framing.testkit.ts";
 import { readEnvelope } from "../kit.ts";
 
 const cli = resolve(import.meta.dirname, "../../src/cli/main.ts");
@@ -81,52 +76,11 @@ test("a project install for every harness leaves the home directory alone; unins
   }
 });
 
-test("status reports the version, the package, the tools here and a Host Runtime that does not answer", () => {
-  const status = run("status");
-  assert.equal(status.status, 1, "a host that does not answer is a setup that is not ready");
-  assert.match(status.stdout, /^c64-re-tools \S+\nPackage: .+\nNode: v\d+/);
-  // Found or missing, each tool that skill scripts run here has a line.
-  assert.match(status.stdout, /Tools here:\n {2}ACME: .+\n {2}dxa: .+\n {2}Exomizer: .+\n {2}Ghidra: .+\n/);
-  assert.match(status.stdout, /Host Runtime: not reachable/);
-});
-
-test("status reports a Host Runtime that accepts the connection but drops the request as not reachable", async () => {
-  // A host that answers the handshake, then closes each connection at the request.
-  const server = createServer((socket) => {
-    const decoder = new FrameDecoder();
-    socket.on("data", (chunk) => {
-      for (const message of decoder.push(chunk) as Array<{ type: string }>) {
-        if (message.type === "hello") socket.write(encodeFrame({ type: "ready", release: PACKAGE.version }));
-        else socket.destroy();
-      }
-    });
-    socket.on("error", () => {});
-  });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  try {
-    const port = (server.address() as { port: number }).port;
-    const child = spawn(process.execPath, [...process.execArgv, cli, "status"], { cwd: project, env: { ...process.env, C64RT_HOST: `127.0.0.1:${port}` } });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
-    const [code] = (await once(child, "close")) as [number | null];
-    assert.equal(code, 1, stdout + stderr);
-    assert.match(stdout, /Host Runtime: not reachable\. .+/);
-    assert.doesNotMatch(stdout, /Host Runtime: reachable/);
-    assert.equal(stderr, "");
-  } finally {
-    server.close();
-  }
-});
-
-test("an unknown command or option, or an option that status does not take, exits 2 with the help", () => {
-  assert.equal(run("doctor").status, 2);
-  assert.equal(run("install", "--force").status, 2);
-  for (const option of [["--global"], ["--target", "claude"]]) {
-    const refused = run("status", ...option);
+test("an unknown command or option exits 2 with the help", () => {
+  for (const command of ["doctor", "status"]) {
+    const refused = run(command);
     assert.equal(refused.status, 2);
-    assert.match(refused.stderr, /^status takes no --target or --global\.\n\nc64-re-tools:/);
+    assert.match(refused.stderr, new RegExp(`^Unknown command ${command}\\.\\n\\nc64-re-tools:`));
   }
+  assert.equal(run("install", "--force").status, 2);
 });

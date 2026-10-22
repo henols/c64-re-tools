@@ -171,7 +171,7 @@ test("an operation refuses a field it does not take, also inside a nested object
     () => validateViceParams("runUntil", { target: { kind: "address", address: 0, space: "c64", condition: { kind: "register", register: "a", operator: "eq", value: 0, mask: 1 } }, timeoutFrames: 1 }),
     unknown("mask"),
   );
-  assert.throws(() => validateToolParams("host.status", { verbose: true }, []), unknown("verbose"));
+  assert.throws(() => validateToolParams("petcat.decode", { verbose: true }, [new Uint8Array(1)]), unknown("verbose"));
 });
 
 test("a screen comparison mask holds at most the rectangle limit", () => {

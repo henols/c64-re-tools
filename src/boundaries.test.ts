@@ -198,8 +198,6 @@ test("checkImport accepts every allowed direction", () => {
     ["skills/c64-disk/scripts/disk.ts", "#src/knowledge/write.ts"],
     ["skills/c64-disk/scripts/disk.ts", "./helpers.ts"],
     ["distribution/plugin.ts", AP_SDK],
-    ["src/cli/main.ts", "../host-client/tools.ts"],
-    ["src/cli/main.ts", "../native/status.ts"],
     ["src/cli/main.ts", "../../distribution/plugin.ts"],
     ["src/host/server.ts", "node:net"],
     ["src/script.ts", "./protocol/messages.ts"],
