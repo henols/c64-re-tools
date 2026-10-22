@@ -81,7 +81,9 @@ The map of each server has the flags that its `memmap` description gives. On the
 5. Read only the state that answers the question. On the C64, use `observe` to read several things from one moment.
 6. Interpret the evidence. Keep the observed facts apart from your conclusions.
 
-Before a risky experiment, save the state with `snapshot`. Restore it to try again from the same point.
+Before a risky experiment, save the state with `snapshot`. Restore it to try again from the saved machine state.
+
+On the `spectrum` server, a restore starts the frame again from its first t-state. Thus the interrupts come at different times than after the save, and the same calls can give a different run. To do the same run two times, restore the snapshot before each of the two runs.
 
 ### Input that the tools cannot give
 
