@@ -359,7 +359,7 @@ const autostart = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "autostart",
   title: "Load and start a Spectrum program",
   description:
-    "Load a project file and start it as a user does. A tape (.tap, .tzx) loads with LOAD \"\". A snapshot (.z80, .sna, .zsf) continues at its PC, with its border colour. The CPU runs after it. Stop the CPU with execution action pause before you read memory. " +
+    "Load a project file and start it as a user does. A tape (.tap, .tzx) loads with LOAD \"\". A snapshot (.z80, .sna, .zsf) continues at its PC, with its border colour. As after a restore, the first interrupt comes at the end of the first frame. The CPU runs after it. Stop the CPU with execution action pause before you read memory. " +
     "The tool refuses a file whose contents do not agree with its extension. Then the machine does not change. " +
     "A snapshot sets the model: for example, a 128K snapshot changes a 48K to a 128K. The tool refuses model with a snapshot. " +
     "A tape runs on the model in model. Without model, a tape runs on the model that the session started with, also after a snapshot of the other model. " +
@@ -395,7 +395,8 @@ const snapshot = defineTool<z.ZodObject, z.ZodObject, Session>({
   title: "Spectrum snapshots",
   description:
     "Save, restore, remove or list named snapshots of the machine in this session. Each of these actions gives the names of the snapshots that the session keeps after the action. " +
-    "A restore starts the frame from its first t-state. Thus the interrupts come at different times than after the save, and the same calls can stop at different places. To do the same run two times, restore the snapshot before each of the two runs. " +
+    "A restore starts the frame from its first t-state. The emulator does not give the interrupt at the start of that frame. The first interrupt comes at the end of the frame, after 69888 t-states (48K) or 70908 t-states (128K). Thus a CPU that waits after opcode $76 waits one full frame first. " +
+    "The interrupts come at different times than after the save, and the same calls can stop at different places. To do the same run two times, restore the snapshot before each of the two runs. " +
     "Action export writes the machine as a version 3 .z80 file to out. The name in out must end in .z80. The knowledge takes the file as the program, and other emulators load it. " +
     "A .z80 file does not keep the wait for an interrupt. When the CPU waits after opcode $76, the file gives the address of the $76 as PC, and R one less. Thus a load executes the $76 again, and the CPU then waits. The export does not change the machine in this session. The CPU must be stopped.",
   inputSchema: z.object({ action: z.enum(["save", "restore", "remove", "list", "export"]), name: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/).optional(), out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
