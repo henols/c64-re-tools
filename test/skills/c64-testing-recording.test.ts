@@ -150,6 +150,9 @@ test("an address of the original moves with the name before it", () => {
 test("text types as keys of the matrix, and directions give joystick masks", () => {
   assert.deepEqual(keyCodes("run\n"), [0x52, 0x55, 0x4e, 0x0d]);
   assert.throws(() => keyCodes("~"), /cannot press/);
+  // A key without a character has its name in braces, in either case.
+  assert.deepEqual(keyCodes("{F1}{stop}{Up}a{CTRL}"), [0xf1, 0x03, 0x0b, 0x41, 0x0e]);
+  assert.throws(() => keyCodes("{F9}"), /press has no key \{F9\}\. The keys in braces are \{F1\}/);
   assert.equal(joystickMask("center", false), 0);
   assert.equal(joystickMask("up-left", true), 0x15);
   assert.equal(joystickMask("right", false), 0x08);

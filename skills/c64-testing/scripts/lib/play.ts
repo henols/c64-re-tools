@@ -9,6 +9,7 @@
 import { createServer, type ServerResponse } from "node:http";
 
 import { PAL_FRAME_CYCLES, type C64RunSession } from "#src/native/c64run.ts";
+import { C64_KEYS, F_KEYS } from "./keys.ts";
 
 const FRAME_MS = 20;
 
@@ -26,12 +27,7 @@ export interface PlayOptions {
   restore: () => Promise<string | undefined>;
 }
 
-/** The key codes of the replay core: chips c64.h, and 11, 12 and 5e of c64run. */
-const C64 = {
-  del: 0x01, clr: 0x02, stop: 0x03, leftArrow: 0x04, run: 0x07, csrLeft: 0x08, csrRight: 0x09, csrDown: 0x0a, csrUp: 0x0b,
-  home: 0x0c, return: 0x0d, ctrl: 0x0e, cbm: 0x0f, inst: 0x10, leftShift: 0x11, rightShift: 0x12, space: 0x20, upArrow: 0x5e, pound: 0x7e,
-} as const;
-const F_KEYS = [0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8];
+const C64 = C64_KEYS;
 const LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
 const DIGITS = [..."0123456789"];
 const code = (character: string) => character.charCodeAt(0);

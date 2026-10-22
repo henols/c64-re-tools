@@ -19,6 +19,7 @@ import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
 import { START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
+import { NAMED_KEYS } from "./keys.ts";
 import { namesOf, type Outcome } from "./scenario.ts";
 
 export const RECORDING_FORMAT = 1;
@@ -144,11 +145,19 @@ const KEY_CODES = new Map<string, number>([
   ["\n", 0x0d],
 ]);
 
-/** The key codes of a text; a-z type as A-Z, as the C64 shows them after power-on. */
+/**
+ * The key codes of a text; a-z type as A-Z, as the C64 shows them after
+ * power-on. A key without a character has its name in braces, for example {F1}.
+ */
 export function keyCodes(text: string): number[] {
-  return [...text.replace(/\r\n?/g, "\n")].map((character) => {
-    const code = KEY_CODES.get(character.toUpperCase());
-    if (code === undefined) throw new Refusal("invalid-input", `press cannot press ${JSON.stringify(character)} on the C64 keyboard`);
+  return (text.replace(/\r\n?/g, "\n").match(/\{[^{}]*\}|[^]/g) ?? []).map((part) => {
+    if (part.length > 1) {
+      const named = NAMED_KEYS[part.slice(1, -1).toUpperCase()];
+      if (named === undefined) throw new Refusal("invalid-input", `press has no key ${part}. The keys in braces are ${Object.keys(NAMED_KEYS).map((name) => `{${name}}`).join(", ")}`);
+      return named;
+    }
+    const code = KEY_CODES.get(part.toUpperCase());
+    if (code === undefined) throw new Refusal("invalid-input", `press cannot press ${JSON.stringify(part)} on the C64 keyboard`);
     return code;
   });
 }

@@ -54,6 +54,14 @@ A record file has no `raster` target and no `condition`. `write` and `runUntil` 
 
 A `press` step can press A to Z, 0 to 9, space, return (`\n`) and `+-.:@,*;=/!"#$%&'()[]<>?`. It presses a to z as A to Z.
 
+A key without a character has its name in braces, in upper or lower case. `{STOP}` is RUN/STOP, and `{CBM}` is the Commodore key. The names are:
+
+- `{F1}` to `{F8}`, `{RETURN}`, `{SPACE}`, `{DEL}`, `{INST}`, `{HOME}`, `{CLR}`
+- `{STOP}`, `{RUN}`, `{CTRL}`, `{CBM}`, `{LSHIFT}`, `{RSHIFT}`
+- `{UP}`, `{DOWN}`, `{LEFT}`, `{RIGHT}`, `{POUND}`, `{UPARROW}`, `{LEFTARROW}`
+
+For example, `{ "press": "{F1}" }` presses F1. The step presses each key alone, one after the other. It cannot hold two keys at the same time.
+
 The keyboard queue of the KERNAL holds 10 keys. If the keys of a `type` step and the keys that wait in the queue do not fit, the session stops. A program that reads the keyboard hardware does not see the keys of a `type` step. Use `press` for that program.
 
 `joystick`, `press` and `frames` steps are input and time. The recording keeps their effect in the reads, so a replay does not do these steps again.

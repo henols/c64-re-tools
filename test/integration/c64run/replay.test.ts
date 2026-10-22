@@ -98,6 +98,23 @@ test("a session records with no checkpoint, and replays on the original to the c
   assert.ok((counted.result.checkpoints as number) >= 65, `${counted.result.checkpoints} checkpoints`);
 });
 
+test("a press step presses a key of the matrix by its name: F1 reads in row 0", { skip, timeout: 120_000 }, () => {
+  // The counter reads row 0 of the keyboard ($dc00 = $fe) at $c018 in place of joystick 2, and F1 is bit 4 of $dc01 there.
+  const keys = counterAt(0xc000);
+  keys[2 + 0x0a] = 0xfe;
+  keys[2 + 0x19] = 0x01;
+  keys[2 + 0x1c] = 0x10;
+  writeFileSync(join(project, "keys.prg"), keys);
+  const press = { name: "F1", program: "keys.prg", symbols: "counter.json", load: true, steps: [{ registers: { pc: "start" } }, { frames: 20 }, { press: "{F1}" }, { frames: 20 }] };
+  writeFileSync(join(project, "press.json"), JSON.stringify(press));
+  const recorded = script("record", ["press.json", "--out", "tests/recordings/press"]);
+  assert.equal(recorded.status, 0, JSON.stringify(recorded.result));
+  assert.equal(recorded.result.recorded, true);
+  const reads = readFileSync(join(project, "tests/recordings/press/reads.txt"), "utf8");
+  assert.match(reads, /^c018 dc01 \d+ ef$/m, "the program reads F1 held in row 0");
+});
+
+
 test("the coverage of a record file starts at the program start, or at the first execution of an address", { skip, timeout: 120_000 }, () => {
   const record = (name: string, coverage: string) => {
     writeFileSync(join(project, `${name}.json`), JSON.stringify({ ...walk, coverage }));
