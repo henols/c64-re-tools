@@ -23,12 +23,14 @@ Usage:
   npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host [--port <port>] [--log-console] [--log-dir <directory>]
   c64-re-tools-host --help
 
-Runs the c64-re-tools Host Runtime in the foreground. It first starts VICE
-once (x64sc on PATH, or C64RT_VICE) and does not start if VICE cannot run.
-It listens on port ${DEFAULT_HOST_PORT} on every address, so a dev container
-reaches it as host.docker.internal. It starts one VICE emulator for each
-connected c64-re-tools-mcp process, and runs the tools that come with VICE
-(c1541, petcat) for skill scripts. Stop it with Ctrl+C; that stops every
+Runs the c64-re-tools Host Runtime in the foreground. It first starts each
+emulator once: VICE (x64sc on PATH, or C64RT_VICE) for the C64, and ZEsarUX
+(zesarux on PATH, or C64RT_ZESARUX) for the ZX Spectrum 48K and 128K. It
+serves the machines of each emulator that starts, and does not start if no
+emulator can run. It listens on port ${DEFAULT_HOST_PORT} on every address, so a
+dev container reaches it as host.docker.internal. It starts one emulator for
+each connected c64-re-tools-mcp process, for the machine of that process, and
+runs the tools that come with VICE (c1541, petcat) for skill scripts. Stop it with Ctrl+C; that stops every
 emulator and tool it started.
 
 Options:
