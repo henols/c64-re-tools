@@ -3,6 +3,14 @@
 
 import { invalid, isInteger, isObject, isOneOf, onlyFields } from "./messages.ts";
 
+/** The models that a Spectrum session runs. */
+export const SPECTRUM_MODELS = ["48k", "128k"] as const;
+export type SpectrumModelName = (typeof SPECTRUM_MODELS)[number];
+/** The files that autostart loads: the tapes first. */
+export const SPECTRUM_TAPES = ["tap", "tzx"] as const;
+export const SPECTRUM_MEDIA = [...SPECTRUM_TAPES, "z80", "sna", "zsf"] as const;
+export type SpectrumMediaType = (typeof SPECTRUM_MEDIA)[number];
+
 export const SPECTRUM_RUN_STATES = ["running", "stopped"] as const;
 export type SpectrumRunState = (typeof SPECTRUM_RUN_STATES)[number];
 
@@ -125,8 +133,12 @@ export interface SpectrumOperations {
   keyboard: { params: { text: string }; result: SpectrumStop & { typed: number } };
   keys: { params: { keys: string[]; frames: number }; result: SpectrumStop };
   joystick: { params: { up: boolean; down: boolean; left: boolean; right: boolean; fire: boolean }; result: { set: boolean } };
-  /** The result gives the model after the load: a file can change it. */
-  autostart: { params: { type: "tap" | "tzx" | "z80" | "sna" | "zsf" }; result: SpectrumStop & { model: "48k" | "128k" } };
+  /**
+   * A tape runs on `model`, else on the model that the session started with.
+   * A snapshot sets its own model and takes no `model`. The result gives the
+   * model after the load.
+   */
+  autostart: { params: { type: SpectrumMediaType; model?: SpectrumModelName }; result: SpectrumStop & { model: SpectrumModelName } };
   programLoad: { params: { address: number }; result: { address: number; size: number } };
   snapshot: { params: { action: "save" | "restore" | "remove"; name: string } | { action: "list" }; result: { names: string[] } };
   snapshotExport: { params: Record<string, never>; result: { bytes: number } };
@@ -288,9 +300,12 @@ export function validateSpectrumParams<O extends SpectrumOperation>(op: O, param
       onlyFields(params, ["up", "down", "left", "right", "fire"]);
       return as({ up: bool(params.up, "up"), down: bool(params.down, "down"), left: bool(params.left, "left"), right: bool(params.right, "right"), fire: bool(params.fire, "fire") });
     case "autostart":
-      onlyFields(params, ["type"]);
-      if (!isOneOf(["tap", "tzx", "z80", "sna", "zsf"] as const, params.type)) invalid("type must be tap, tzx, z80, sna or zsf");
-      return as({ type: params.type });
+      onlyFields(params, ["type", "model"]);
+      if (!isOneOf(SPECTRUM_MEDIA, params.type)) invalid("type must be tap, tzx, z80, sna or zsf");
+      if (params.model === undefined) return as({ type: params.type });
+      if (!isOneOf(SPECTRUM_MODELS, params.model)) invalid("model must be 48k or 128k");
+      if (!isOneOf(SPECTRUM_TAPES, params.type)) invalid(`model is only for a tape (.tap, .tzx). A .${params.type} snapshot sets its own model: give no model.`);
+      return as({ type: params.type, model: params.model });
     case "programLoad":
       onlyFields(params, ["address"]);
       return as({ address: address(params.address, "address") });

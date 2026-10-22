@@ -57,7 +57,7 @@ const RegisterValues = z
 const reset = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "reset",
   title: "Reset the Spectrum",
-  description: "Reset the Spectrum. The ROM starts again from $0000. With run false, the CPU stops after the reset.",
+  description: "Reset the Spectrum. The ROM starts again from $0000. With run false, the CPU stops after the reset. The model does not change. To run a tape on the other model, use autostart with model.",
   inputSchema: z.object({ run: z.boolean().default(false).describe("true: the CPU runs after the reset") }).strict(),
   outputSchema: StopOutput,
   readOnly: false,
@@ -351,15 +351,17 @@ const autostart = defineTool<z.ZodObject, z.ZodObject, Session>({
   description:
     "Load a project file and start it as a user does. A tape (.tap, .tzx) loads with LOAD \"\". A snapshot (.z80, .sna, .zsf) continues at its PC, with its border colour. The CPU runs after it. Stop the CPU with execution action pause before you read memory. " +
     "The tool refuses a file whose contents do not agree with its extension. Then the machine does not change. " +
-    "The file sets the model: for example, a 128K snapshot changes a 48K to a 128K. model in the result is the model after the load. The frames, the paging and the AY follow that model. The tool refuses a file for a different machine, for example a +3 or a ZX81 file. Then the model does not change, and the machine starts again from a reset.",
-  inputSchema: z.object({ path: z.string().min(1).describe("the file, relative to the project folder"), project: ProjectInput.optional() }).strict(),
+    "A snapshot sets the model: for example, a 128K snapshot changes a 48K to a 128K. The tool refuses model with a snapshot. " +
+    "A tape runs on the model in model. Without model, a tape runs on the model that the session started with, also after a snapshot of the other model. " +
+    "The result model gives the model after the load. The frames, the paging and the AY follow that model. The tool refuses a file for a different machine, for example a +3 or a ZX81 file. Then the model does not change, and the machine starts again from a reset.",
+  inputSchema: z.object({ path: z.string().min(1).describe("the file, relative to the project folder"), model: z.enum(["48k", "128k"]).optional().describe("the model for a tape: 48k or 128k"), project: ProjectInput.optional() }).strict(),
   outputSchema: StopOutput.extend({ model: z.enum(["48k", "128k"]) }),
   readOnly: false,
   async run(input, session) {
-    const { path, project } = input as { path: string; project?: string };
+    const { path, model, project } = input as { path: string; model?: "48k" | "128k"; project?: string };
     const type = path.toLowerCase().split(".").at(-1);
     if (!["tap", "tzx", "z80", "sna", "zsf"].includes(type ?? "")) throw new WireFailure("invalid-input", "autostart takes a .tap, .tzx, .z80, .sna or .zsf file.");
-    const result = await session.autostart({ path, ...(project === undefined ? {} : { root: project }) });
+    const result = await session.autostart({ path, ...(model === undefined ? {} : { model }), ...(project === undefined ? {} : { root: project }) });
     return { ...stop(result), model: result.model };
   },
 });

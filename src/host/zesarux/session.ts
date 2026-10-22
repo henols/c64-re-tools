@@ -18,7 +18,9 @@
 // 48K session gives a 128K. After each load the session asks ZEsarUX for its
 // machine and takes its model from it: the frame length, the paging, the AY and
 // the export follow the loaded machine. A machine that the session does not
-// serve is refused, and ZEsarUX gets the model of the session again.
+// serve is refused, and ZEsarUX gets the model of the session again. A tape
+// keeps the machine that ZEsarUX runs, so before a tape the session sets the
+// model that the session started with, or the model that the call gives.
 //
 // The coverage comes from ZEsarUX's code coverage (the address of each
 // executed instruction) and its visual memory of written addresses. The
@@ -37,6 +39,7 @@ import type { ProcessSupervisor } from "../../native/processes.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import {
   SPECTRUM_OPERATIONS,
+  SPECTRUM_TAPES,
   spectrumAttachmentCount,
   validateSpectrumParams,
   z80WritableMax,
@@ -51,7 +54,7 @@ import {
 } from "../../protocol/spectrum.ts";
 import { writeZ80, type SpectrumSnapshot } from "../../spectrum.ts";
 import type { MachineBackend, SessionHandle } from "../server.ts";
-import { checkMedia, type MediaType } from "./media.ts";
+import { checkMedia } from "./media.ts";
 import { launchZesarux, type ZesaruxProcess } from "./process.ts";
 import { zsfHalted, zsfOnHaltInstruction } from "./zsf.ts";
 
@@ -231,6 +234,8 @@ export class ZesaruxSession implements SessionHandle {
   readonly #zesarux: ZesaruxProcess;
   /** The model of the machine that ZEsarUX runs: it follows each load. */
   #model: Model;
+  /** The model that the session started with: a tape runs on it unless the autostart gives a model. */
+  readonly #startModel: Model;
   readonly #log: (line: string) => void;
   #queue: Promise<unknown> = Promise.resolve();
   #state: SpectrumRunState = "stopped";
@@ -254,6 +259,7 @@ export class ZesaruxSession implements SessionHandle {
   private constructor(zesarux: ZesaruxProcess, model: Model, log: (line: string) => void) {
     this.#zesarux = zesarux;
     this.#model = model;
+    this.#startModel = model;
     this.#log = log;
     this.#snapshots = join(zesarux.scratch, "snapshots");
   }
@@ -972,16 +978,24 @@ export class ZesaruxSession implements SessionHandle {
   // ---- Media and snapshots ----
 
   /**
-   * Loads and starts the file. The result gives the model after the load: the
-   * file can change it. A file that is not what its type says is refused
-   * before the load, and the machine does not change.
+   * Loads and starts the file. The result gives the model after the load: a
+   * snapshot sets it, and a tape runs on the model of the call or else on the
+   * model that the session started with. A file that is not what its type
+   * says is refused before the load, and the machine does not change.
    */
-  async #autostart(params: { type: MediaType }, bytes: Buffer): Promise<SpectrumOperations["autostart"]["result"]> {
+  async #autostart(params: SpectrumOperations["autostart"]["params"], bytes: Buffer): Promise<SpectrumOperations["autostart"]["result"]> {
     const media = checkMedia(params.type, bytes);
     if (this.#run !== undefined) await this.#execution({ action: "pause" });
     const file = join(this.#zesarux.scratch, `media.${params.type}`);
     writeFileSync(file, media.bytes);
     await this.#drainCoverage();
+    if ((SPECTRUM_TAPES as readonly string[]).includes(params.type)) {
+      const model = params.model ?? this.#startModel;
+      if (model !== this.#model) {
+        this.#log(`the Spectrum session runs the tape on the ${MODEL_NAME[model]}`);
+        await this.#setMachine(model);
+      }
+    }
     // smartload works only in step mode; after a change of the machine the first try can fail.
     let answer = await this.#zrcp(`smartload ${file}`);
     if (answer.startsWith("Error")) {

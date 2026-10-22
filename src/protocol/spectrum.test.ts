@@ -43,3 +43,10 @@ test("a register write takes the interrupt mode and the flip-flops", () => {
   assert.throws(() => validateSpectrumParams("registersSet", { values: { im: 3 } }), refused(/im must be 0 to 2/));
   assert.throws(() => validateSpectrumParams("registersSet", { values: { iff1: 2 } }), refused(/iff1 must be 0 to 1/));
 });
+
+test("autostart takes a model for a tape only: a snapshot sets its own model", () => {
+  assert.deepEqual(validateSpectrumParams("autostart", { type: "tzx", model: "48k" }), { type: "tzx", model: "48k" });
+  assert.deepEqual(validateSpectrumParams("autostart", { type: "tap" }), { type: "tap" });
+  assert.throws(() => validateSpectrumParams("autostart", { type: "z80", model: "48k" }), refused(/model is only for a tape.*\.z80 snapshot sets its own model/));
+  assert.throws(() => validateSpectrumParams("autostart", { type: "tap", model: "+3" }), refused(/model must be 48k or 128k/));
+});

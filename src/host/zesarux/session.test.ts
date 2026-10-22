@@ -102,13 +102,20 @@ function tapeOf(text: string): Buffer {
 
 /**
  * A stand-in ZEsarUX on a ZRCP port: smartload runs the machine that the
- * text in its tape names, set-machine the machine of its name. A run ends at
- * the frame breakpoint, a few t-states after it, or at the next stop in
- * `fires`. Each command is kept.
+ * text in its tape names (an empty text keeps the machine, as a real tape
+ * does), set-machine the machine of its name. A run ends at the frame
+ * breakpoint, a few t-states after it, or at the next stop in `fires`. A step
+ * adds the next entry of `steps` to the CPU history and its address to the
+ * code coverage. Each command is kept.
  */
-async function standInZesarux(machine: string, options: { fires?: string[]; overshoot?: number; ioPorts?: string; history?: string[] } = {}): Promise<{ zesarux: ZesaruxProcess; commands: string[] }> {
+async function standInZesarux(
+  machine: string,
+  options: { fires?: string[]; overshoot?: number; ioPorts?: string; history?: string[]; steps?: string[]; memory?: Record<number, number> } = {},
+): Promise<{ zesarux: ZesaruxProcess; commands: string[] }> {
   // The CPU history, the most recent entry first: a step adds one entry.
   const history = [...(options.history ?? [])];
+  const steps = [...(options.steps ?? [])];
+  const coverage = new Set<string>();
   const commands: string[] = [];
   const fires = [...(options.fires ?? [])];
   let frames: string | undefined;
@@ -119,20 +126,27 @@ async function standInZesarux(machine: string, options: { fires?: string[]; over
     if (command === "get-current-machine") return machine;
     if (command === "smartload") {
       const tape = readFileSync(argument);
-      machine = tape.subarray(3, tape.length - 1).toString("latin1");
+      machine = tape.subarray(3, tape.length - 1).toString("latin1") || machine;
     }
     if (command === "set-machine") machine = SET_MACHINE[argument] ?? machine;
     if (command === "get-registers") return REGISTERS;
-    if (command === "read-memory") return "00".repeat(Number(rest[1]));
+    if (command === "read-memory") {
+      const start = Number.parseInt(rest[0]!, 16);
+      return Array.from({ length: Number(rest[1]) }, (_, offset) => (options.memory?.[start + offset] ?? 0).toString(16).padStart(2, "0")).join("");
+    }
     if (command === "evaluate") return String(partial);
     if (command === "reset-tstates-partial") partial = 0;
     if (command === "cpu-step") {
       partial += 4;
-      history.unshift(`PC=a000 R=${history.length}`);
+      const entry = steps.shift() ?? `PC=a000 R=${history.length}`;
+      history.unshift(entry);
+      coverage.add(entry.slice(3, 7));
       return REGISTERS;
     }
     if (command === "cpu-history" && rest[0] === "get-pc") return history.slice(Number(rest[1]), Number(rest[1]) + Number(rest[2])).map((entry) => entry.slice(3, 7)).join(" ");
     if (command === "cpu-history" && rest[0] === "get-extended") return history[Number(rest[1])] ?? "";
+    if (command === "cpu-code-coverage" && rest[0] === "get") return [...coverage].join(" ");
+    if (command === "cpu-code-coverage" && rest[0] === "clear") coverage.clear();
     if (command === "get-io-ports") return options.ioPorts ?? "Spectrum FE port: 07\nSpectrum 7FFD port: 10\nSelected register: 0";
     if (line.startsWith("set-breakpoint 100")) frames = rest[1];
     if (command === "run") {
@@ -290,6 +304,27 @@ test("cpu_history leaves out the copies of the last instruction that ZEsarUX rec
     await session.handle("execution", { action: "step", count: 2 });
     // A loop of one instruction is no copy: R changes at each execution.
     assert.deepEqual(((await session.handle("cpuHistory", { count: 8 })) as { pcs: number[] }).pcs, [0xa000, 0xa000, 0x962c, 0x962f, 0x962e, 0x962d, 0x962c, 0x962c]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("a tape runs on the model that the session started with, or on the model of the call, not on the model of the last snapshot", async () => {
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k");
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    assert.equal(((await session.handle("autostart", { type: "tap" }, [tapeOf("ZX Spectrum+ 128k")])) as { model: string }).model, "128k");
+    await session.handle("execution", { action: "pause" });
+    const loads = () => commands.filter((command) => command.startsWith("set-machine") || command.startsWith("smartload")).map((command) => command.split(" ").slice(0, 2).join(" "));
+    commands.length = 0;
+    assert.equal(((await session.handle("autostart", { type: "tap" }, [tapeOf("")])) as { model: string }).model, "48k");
+    assert.deepEqual(loads(), ["set-machine 48k", `smartload ${join(zesarux.scratch, "media.tap")}`]);
+    await session.handle("execution", { action: "pause" });
+    commands.length = 0;
+    assert.equal(((await session.handle("autostart", { type: "tap", model: "128k" }, [tapeOf("")])) as { model: string }).model, "128k");
+    assert.deepEqual(loads(), ["set-machine 128k", `smartload ${join(zesarux.scratch, "media.tap")}`]);
+    await session.handle("execution", { action: "pause" });
+    assert.equal(((await session.handle("ula", {})) as { frameTstates: number }).frameTstates, 70_908);
   } finally {
     await session.close();
   }

@@ -295,6 +295,7 @@ INSTRUCTIONS.spectrum =
   "An error is {\"error\": {\"code\", \"message\"}}. The message tells what is wrong and what to do. Memory data is lowercase hex without separators. " +
   "I, R, the interrupt mode and the other values are decimal numbers. " +
   "The CPU is a Z80. The ROM is at $0000-$3fff, the screen at $4000-$5aff with its attributes, and the system variables from $5c00. Tool ula gives the model and the t-states of a frame. " +
+  "A tape runs on the model that the session started with. To run a tape on the other model, give model to autostart. " +
   "A run (resume, advance-frames, run_until, keyboard) holds the machine: while the CPU runs, only execution action pause, reset and autostart work. A frame takes about 20 ms of real time. " +
   "Keys are keys of the keyboard matrix that the program reads from port $fe. Use advance-frames for time: the same calls from the same state stop at the same emulated time. " +
   "Runs of advance-frames one after the other stop where one run of all their frames stops.";

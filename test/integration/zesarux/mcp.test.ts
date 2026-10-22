@@ -40,6 +40,13 @@ writeFileSync(
     ay: { registers: AY_REGISTERS, selected: 7 },
   }),
 );
+/** A TAP block: its length, the bytes and their XOR. */
+const tapBlock = (bytes: number[]) => [bytes.length + 1, (bytes.length + 1) >> 8, ...bytes, bytes.reduce((xor, byte) => xor ^ byte, 0)];
+// A BASIC tape that starts at line 10: 10 POKE 40000,42.
+const POKED = 40_000;
+const basic = [0x00, 0x0a, 0x16, 0x00, 0xf4, ...Buffer.from("40000"), 0x0e, 0x00, 0x00, 0x40, 0x9c, 0x00, 0x2c, ...Buffer.from("42"), 0x0e, 0x00, 0x00, 0x2a, 0x00, 0x00, 0x0d];
+const header = [0x00, 0x00, ...Buffer.from("poke      "), basic.length, 0x00, 0x0a, 0x00, basic.length, 0x00];
+writeFileSync(join(project, "poke.tap"), Uint8Array.from([...tapBlock(header), ...tapBlock([0xff, ...basic])]));
 // A PNG file with the name of a snapshot.
 writeFileSync(join(project, "bad.z80"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array<number>(60_000).fill(0x41)]));
 // The same snapshot for a +3: hardware mode 7 in the header of a version 3 .z80.
@@ -334,6 +341,26 @@ test("a 48K session that loads a 128K snapshot runs as a 128K: autostart and ula
     assert.equal((await call("ula")).frameTstates, 69_888);
     const tstates48 = await frames(2);
     assert.ok(Math.abs(tstates48 - 2 * 69_888) < 32, `${tstates48} t-states in two 48K frames`);
+
+    // A tape runs on the model that the session started with, also after a 128K snapshot, and model selects the other model.
+    assert.equal((await call("autostart", { path: "counter128.z80" })).model, "128k");
+    assert.equal((await call("autostart", { path: "poke.tap" })).model, "48k");
+    await call("execution", { action: "pause" });
+    assert.equal((await call("ula")).frameTstates, 69_888);
+    let poked = "00";
+    for (let run = 0; run < 20 && poked !== "2a"; run++) {
+      await call("execution", { action: "advance-frames", count: 50 });
+      poked = (await call("memory_read", { address: `$${POKED.toString(16)}`, size: 1 })).data as string;
+    }
+    assert.equal(poked, "2a", "the BASIC program of the tape ran on the 48K");
+    assert.equal((await call("autostart", { path: "poke.tap", model: "128k" })).model, "128k");
+    await call("execution", { action: "pause" });
+    assert.equal((await call("ula")).frameTstates, 70_908);
+    const refused = (await client.callTool({ name: "autostart", arguments: { path: "counter.z80", model: "48k" } })) as CallToolResult;
+    assert.equal(refused.isError, true);
+    assert.match((refused.content[0] as { text: string }).text, /invalid-input.*model is only for a tape/);
+    assert.equal((await call("autostart", { path: "counter.z80" })).model, "48k");
+    await call("execution", { action: "pause" });
 
     // A file that is not what its extension says is refused, and the machine does not change.
     const bad = (await client.callTool({ name: "autostart", arguments: { path: "bad.z80" } })) as CallToolResult;
