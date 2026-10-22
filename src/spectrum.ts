@@ -210,6 +210,8 @@ export function writeZ80(snapshot: SpectrumSnapshot): Uint8Array {
   header[33] = r.pc >> 8;
   header[34] = snapshot.model === "128k" ? 4 : 0;
   header[35] = snapshot.model === "128k" ? snapshot.port7ffd : 0;
+  // Bit 2: the AY is in use. A 128K always has it, and some readers (ZEsarUX) load the AY registers only with this bit.
+  header[37] = snapshot.model === "128k" ? 4 : 0;
   if (snapshot.ay !== undefined) {
     header[38] = snapshot.ay.selected;
     header.set(snapshot.ay.registers.slice(0, 16), 39);

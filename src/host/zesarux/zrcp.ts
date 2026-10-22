@@ -73,6 +73,8 @@ export class Zrcp {
           socket.once("error", reject);
           socket.connect(port, "127.0.0.1", () => {
             socket.off("error", reject);
+            // Each command is a short line that waits for its answer: Nagle's delay would add tens of ms to each.
+            socket.setNoDelay(true);
             resolve(socket);
           });
         });

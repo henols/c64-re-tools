@@ -24,8 +24,11 @@ const usedBanks = (value: SpectrumSnapshot) => (value.model === "48k" ? [5, 2, 0
 test("a version 3 .z80 keeps every register, the border, the paging and the RAM of the 48K and the 128K", () => {
   for (const model of ["48k", "128k"] as const) {
     const original = snapshot(model);
-    const again = readZ80(writeZ80(original));
+    const written = writeZ80(original);
+    const again = readZ80(written);
     assert.deepEqual(again.registers, original.registers, model);
+    // Byte 37 bit 2 tells a reader that the AY is in use: always on a 128K.
+    assert.equal(written[37]! & 4, model === "128k" ? 4 : 0, model);
     assert.deepEqual([again.model, again.border, again.port7ffd], [model, 5, original.port7ffd]);
     for (const bank of usedBanks(original)) assert.deepEqual(again.banks[bank], original.banks[bank], `${model} bank ${bank}`);
     if (model === "128k") assert.deepEqual(again.ay, original.ay);

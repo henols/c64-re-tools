@@ -40,8 +40,9 @@ test("a .z80 and a .sna give the border of their header", () => {
 });
 
 test("a 128K .z80 goes to ZEsarUX with the AY in use, so that ZEsarUX loads its AY registers; a 48K .z80 stays as it is", () => {
+  // A 128K .z80 of another program, without the AY bit.
   const file = writeZ80(snapshot("128k"));
-  assert.equal(file[37]! & 4, 0);
+  file[37] = file[37]! & ~4;
   const checked = checkMedia("z80", file);
   assert.equal(checked.bytes[37]! & 4, 4);
   assert.deepEqual([...checked.bytes.subarray(38, 55)], [7, ...Array.from({ length: 16 }, (_, index) => index)]);
