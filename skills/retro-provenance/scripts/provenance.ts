@@ -363,7 +363,11 @@ const noRoots = (machine: Machine) =>
     ? "none: the program in the knowledge has no entry, so no code region is reachable or unreachable."
     : `none: the program in the knowledge has no entry, and the image does not hold the hardware vectors at ${formatAddress(Math.min(...machine.cpu.vectors.map((vector) => vector.at)))}-${formatAddress(Math.max(...machine.cpu.vectors.map((vector) => vector.at)) + 1)}, so no code region is reachable or unreachable.`;
 
-const NO_STAGES = "The program in the knowledge has no stage log. Only a capture of the unpack stages gives one. A capture of the loads of a loader holds one part of a program and has none.";
+/** Why the program has no stages: only a capture of a C64 program has a stage log. */
+const noStages = (machine: Machine) =>
+  machine.family === "c64"
+    ? "The program in the knowledge has no stage log. Only a capture of the unpack stages gives one. A capture of the loads of a loader holds one part of a program and has none."
+    : `The program in the knowledge has no stage log: only a capture of a C64 program has one. A ${machine.name} program has no stages.`;
 
 /** separate: evidence from the program in the knowledge, with all ranges in --out and the first ones in the result. */
 function separateCommand(call: Call): unknown {
@@ -383,7 +387,7 @@ function separateCommand(call: Call): unknown {
   const body = {
     ...(loaded.entry === undefined ? {} : { entry: formatAddress(loaded.entry) }),
     ...(lastStage === undefined
-      ? { noStages: NO_STAGES }
+      ? { noStages: noStages(machine) }
       : {
           stages: lastStage + 1,
           bytesByStage: Object.fromEntries([...[...Array(lastStage + 1).keys()].map((stage): [string, number] => [String(stage), bytes((range) => range.stage === stage)]), ["none", bytes((range) => range.stage === undefined)]]),
@@ -460,7 +464,7 @@ function leftoversCommand(call: Call): unknown {
   const body = {
     ...(program.entry === undefined ? {} : { entry: formatAddress(program.entry) }),
     roots: found.roots.length === 0 ? noRoots(machine) : showRoots(found.roots),
-    ...(stages === undefined ? { noStages: NO_STAGES } : { stages: stages.length }),
+    ...(stages === undefined ? { noStages: noStages(machine) } : { stages: stages.length }),
     ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Put the coverage of runs into the project knowledge." } : {}),
     text: list(all.text.map((item) => (item.text.length > SHOWN_TEXT ? { ...item, text: `${item.text.slice(0, SHOWN_TEXT)} ...`, length: item.text.length } : item))),
     basic: list(all.basic),

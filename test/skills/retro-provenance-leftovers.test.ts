@@ -184,7 +184,7 @@ test("the leftovers command reads the program, its stages and the coverage from 
 /** ASCII bytes of a text; "\n" is $0a. */
 const ascii = (text: string) => [...text].map((character) => character.charCodeAt(0));
 
-test("on the ZX Spectrum, leftovers give the Sinclair BASIC program at PROG, ASCII text in capitals, and the Z80 instructions in source", () => {
+test("on the ZX Spectrum, leftovers give the Sinclair BASIC program at PROG, ASCII text in any mix of capitals and small letters, and the Z80 instructions in source", () => {
   const memory = new Uint8Array(0x10000);
   /** A Sinclair BASIC line: its number high byte first, the length of the rest, the rest and ENTER. */
   const line = (number: number, body: number[]) => [number >> 8, number & 0xff, (body.length + 1) & 0xff, (body.length + 1) >> 8, ...body, 0x0d];
@@ -197,6 +197,10 @@ test("on the ZX Spectrum, leftovers give the Sinclair BASIC program at PROG, ASC
   memory.set(ascii("GAME OVER - PRESS ANY KEY"), 0x9000);
   memory.set(ascii("ld a,(ix+5)\njp nz,$8000\n"), 0x9100);
   memory.set(ascii("Written in a week"), 0x9200);
+  // Mostly capitals, with some small letters.
+  memory.set(ascii("SHIFT/BREAK::::::restart game"), 0x9300);
+  // The edges of a text are letters or digits.
+  memory.set(ascii(" * PAUSING :    Press 'ENTER' *"), 0x9400);
   const segments = [{ start: 0x4000, end: 0xffff }];
   const separation = separate({ segments, memory, codeRegions: [], references: [], cpu: Z80 });
   const found = findLeftovers({ segments, memory, separation, machine: MACHINES.spectrum48 });
@@ -207,8 +211,13 @@ test("on the ZX Spectrum, leftovers give the Sinclair BASIC program at PROG, ASC
       [0x9000, "ascii", "GAME OVER - PRESS ANY KEY", false, 0],
       [0x9100, "ascii", "ld a,(ix+5)\njp nz,$8000", true, 2],
       [0x9200, "ascii", "Written in a week", false, 0],
+      [0x9300, "ascii", "SHIFT/BREAK::::::restart game", false, 0],
+      [0x9403, "ascii", "PAUSING :    Press 'ENTER", false, 0],
     ],
   );
+  const random = new Uint8Array(0x10000);
+  random.set(seededBytes(0xc64, 0x4000), 0x4000);
+  assert.ok(findText(random, [{ start: 0x4000, end: 0x7fff }], undefined, MACHINES.spectrum48).length <= 2, "16 KiB of random bytes read as text at most two times");
 });
 
 test("separate in a ZX Spectrum project decodes with the Z80 and leaves the ROM out of the outside ranges", () => {
@@ -227,8 +236,9 @@ test("separate in a ZX Spectrum project decodes with the Z80 and leaves the ROM 
   importCoverage(root, { "cov.bin": coverage });
   const run = script(provenance, ["separate"], root);
   assert.equal(run.status, 0, run.stdout + run.stderr);
-  const result = run.json as { roots: unknown; codeRegions: { total: number; unreachable: { count: number } }; outside: { read: { count: number } } };
+  const result = run.json as { roots: unknown; noStages: string; codeRegions: { total: number; unreachable: { count: number } }; outside: { read: { count: number } } };
   assert.deepEqual(result.roots, [{ address: "$8000", from: "entry" }]);
+  assert.equal(result.noStages, "The program in the knowledge has no stage log: only a capture of a C64 program has one. A ZX Spectrum 48K program has no stages.");
   assert.deepEqual([result.codeRegions.total, result.codeRegions.unreachable.count], [2, 0]);
   assert.equal(result.outside.read.count, 0);
 });

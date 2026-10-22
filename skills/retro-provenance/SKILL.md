@@ -126,13 +126,13 @@ With `--shift`, the addresses of `segments`, `common` and `differences` are the 
 
 With `--frames`, the body also holds:
 
-- `runtime` in each difference: one item for each release that started. `start` and `end` are the addresses in the release, without the shift.
+- `runtime` in each difference: an object with one key for each release that started. The key is the name of the release. `start` and `end` are the addresses in the release, without the shift.
   - `first`: the first access in that release: `read`, `write`, `execute` or `none`. The operand bytes of an executed instruction count as `execute`, for example the `$03` of `LDA #$03`.
   - On the C64, an instruction that reads and then writes the same byte, for example INC, counts as `read`.
   - On the ZX Spectrum, the coverage has no reads. A watchpoint on the range gives the `read`. An instruction that reads and then writes the same byte, for example `INC (HL)`, counts as `write`.
   - On the ZX Spectrum, the watchpoint sees only the last byte of a 2-byte read. When one instruction reads a word, and the range holds only its first byte, the range can show a later access or `none`.
   - `changed`: `true` when the bytes at the end of the run are not the bytes of the release.
-- `run`: `frames`, `steps` and `releases`. `releases` tells for each release if it started, or the `reason` that it did not start. `skipped` tells that the releases have no differences, so no release ran.
+- `run`: `frames`, `steps` and `releases`. `releases` is an object with one key for each release, as in `runtime`. Each value has `started`, and the `reason` when the release did not start. `skipped` tells that the releases have no differences, so no release ran.
 
 A PRG starts with RUN after its load. An image starts at its entry, with the state of `entry_state.json`. A ZX Spectrum release starts at its entry state, with the registers, the border and the paging of its snapshot.
 
@@ -171,8 +171,8 @@ Gives evidence from the program in the project knowledge, its stages and its cov
 `body` holds:
 
 - `entry`: the entry of the program.
-- `stages` and `bytesByStage`: the number of unpack stages, and the bytes of each stage. `none` counts the bytes that no stage wrote.
-- `noStages`: the program has no stage log. Only a capture of the unpack stages has one.
+- `stages` and `bytesByStage`: only on the C64. The number of unpack stages, and the bytes of each stage. `none` counts the bytes that no stage wrote.
+- `noStages`: the program has no stage log. Only a capture of the unpack stages of a C64 program has one. A ZX Spectrum program always gives `noStages`, and no range has a `stage`.
 - `bytesByAccess`: the bytes of each access in the coverage.
 - `ranges`: the program in ranges with the same stage and access.
   - `stage` is the last unpack stage that wrote the range. The last stage is the program. An earlier stage is a depacker, an intro or a loader.
@@ -208,7 +208,7 @@ Finds what the program in the project knowledge holds in addition to its working
 | `copies` | At least 32 bytes that are the same as earlier bytes of the program. `copyOf` is the address of the earlier bytes. |
 | `deadCode` | Code regions that no root reaches, as in `codeRegions.unreachable` of `separate`, and that no run executed. |
 
-Each finding has `stages`: the unpack stages that wrote its bytes. A stage before the last stage is a depacker, an intro or a loader. Each finding also has `access`: the accesses of its bytes in the coverage.
+On the C64, each finding has `stages`: the unpack stages that wrote its bytes. A stage before the last stage is a depacker, an intro or a loader. On the ZX Spectrum, a finding has no `stages`. Each finding has `access`: the accesses of its bytes in the coverage.
 
 `out`, `bytes` and `sha256` give the file of `--out`. It holds all findings with the full texts.
 
@@ -216,7 +216,7 @@ Each finding has `stages`: the unpack stages that wrote its bytes. A stage befor
 
 Text from another computer can show the tools of the developer:
 
-- On the C64, `ascii` is text in ASCII, with small letters. A cross assembler on another computer can leave it. On the ZX Spectrum, `ascii` is also text in capitals, because the ZX Spectrum keeps its text in ASCII.
+- On the C64, `ascii` is text in ASCII, with small letters. A cross assembler on another computer can leave it. On the ZX Spectrum, `ascii` is text in ASCII in capitals, in small letters, or in the two together. The ZX Spectrum keeps its text in ASCII.
 - `high-bit` is text with bit 7 set. The Apple II keeps text in this form, with `$8d` at the end of a line. Apple II assembler source, for example from Merlin, has `DFB` lines and `*` comments. A C64 text in shifted letters with `$a0` spaces is also `high-bit`.
 - The script does not find data of another computer, for example a table of Atari key codes. Examine `residue` and the data that no code reads. Use your knowledge of the other computers.
 
@@ -333,7 +333,7 @@ Traps:
 
 ### Find the leftovers
 
-1. Capture the unpack stages of the program, and put the capture into the project knowledge.
+1. On the C64, capture the unpack stages of the program, and put the capture into the project knowledge. On the ZX Spectrum, put the snapshot of the program at its entry into the project knowledge.
 2. Put the coverage of runs that use many parts of the program into the project knowledge.
 3. Analyze the program for its code regions.
 4. Run `leftovers`. When you have two or more releases, also run `compare`.

@@ -234,14 +234,16 @@ function sourceLine(line: string, cpu: Cpu): boolean {
 /** Whether the bytes of a run show the encoding and no other one: the other scans report the rest. `petscii` tells that the PETSCII scan runs too. */
 function ownEncoding(encoding: TextEncoding, bytes: number[], characters: Character[], petscii: boolean): boolean {
   if (encoding === "screen") return characters.some((character) => character.letter === "a");
-  // ASCII text is in capitals, or mostly in small letters: a few small letters are stray bytes at the edges of another text.
+  // Without the PETSCII scan, no other text of the machine has these bytes: a run with letters is text in any mix of capitals and small letters.
+  if (!petscii) return characters.some((character) => character.letter !== undefined);
+  // On the C64, ASCII text is in capitals, or mostly in small letters: a few small letters are stray bytes at the edges of a PETSCII text.
   const letters = characters.filter((character) => character.letter !== undefined).length;
   const small = characters.filter((character) => character.letter === "a").length;
   if (small > 0 && small * 2 < letters) return false;
   // Capitals and signs alone are PETSCII too.
-  if (encoding === "ascii") return !petscii || bytes.some((byte) => byte >= 0x61 && byte <= 0x7a);
+  if (encoding === "ascii") return bytes.some((byte) => byte >= 0x61 && byte <= 0x7a);
   // Shifted letters alone are PETSCII too: a space, a digit or a sign with bit 7 shows ASCII.
-  if (encoding === "high-bit") return !petscii || bytes.some((byte) => byte >= 0xa0 && byte <= 0xc0);
+  if (encoding === "high-bit") return bytes.some((byte) => byte >= 0xa0 && byte <= 0xc0);
   return true;
 }
 
