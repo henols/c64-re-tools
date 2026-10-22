@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { formatC64Address } from "../c64.ts";
+import { formatAddress } from "../address.ts";
 import { Refusal } from "../errors.ts";
 import { openForWrite, transaction } from "./database.ts";
 import { memoryRows, releaseImage, setImage } from "./program.ts";
@@ -38,7 +38,6 @@ import {
   setStartScreen,
   setSwitch,
   removeStartScreen,
-  leastPatchBytes,
   unclassifyRegion,
   type OperandImage,
   type WriteContext,
@@ -352,7 +351,7 @@ test("a module starts a file of generated source: one per address and per file, 
   setModule(db, { origin: "user" }, { start: 0x2000, file: "player.asm" });
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
   for (const file of ["../x.asm", "a/b/x.asm", "Music/x.asm", "/x.asm", "x.a", ".asm", "x y.asm", "leftovers/x.asm", "Segments/x.asm", "music/main.asm", "music/Config.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
-  // c64-source writes these files itself; macOS and Windows ignore the letter case.
+  // retro-source writes these files itself; macOS and Windows ignore the letter case.
   for (const file of ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm", "start_screen.asm", "Main.asm", "CONSTANTS.asm", "Switches.asm"]) {
     assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /writes main\.asm, loader\.asm, switches\.asm, config\.asm, constants\.asm, macros\.asm, start_screen\.asm in any folder, and the folders leftovers\/, segments\/ itself/.test(error.message), file);
   }
@@ -474,7 +473,7 @@ test("an operand expression that does not give the operand in the image is refus
   const { db, context } = operands();
   assert.throws(() => setOperand(db, context, { address: 0x8079, select: "hi", symbol: "irq_handler" }), /At \$8079, >irq_handler gives \$80, but the operand in the image is \$c0\./);
   assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "value", symbol: "bar_colours" }), /gives \$8a98, but the operand in the image is \$8a97/);
-  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo", symbol: "nowhere" }), /nowhere is not a symbol of the knowledge or a platform name. Give a number, a symbol of the project knowledge, or a platform name of the C64 memory map\./);
+  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo", symbol: "nowhere" }), /nowhere is not a symbol of the knowledge or a platform name. Give a number, a symbol of the project knowledge, or a platform name of the memory map of the machine\./);
   assert.throws(() => setOperand(db, context, { address: 0x8000, select: "expr", expression: "5" }), /is a branch/);
   assert.throws(() => setOperand(db, context, { address: 0x8005, select: "expr", expression: "5" }), /has no operand/);
   assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "lo", symbol: "bar_colours" }), /lo and hi give one byte/);
@@ -584,7 +583,7 @@ test("a patch puts code in a range of the image under a switch", () => {
   assert.throws(() => setPatch(db, context, { start: 0x807c, end: 0x807e, switch: "TRAINER", code: "" }), /overlaps the patch of CRACK at \$8079-\$807d/);
   for (const name of ["crack", "C", "1UP", "CRACK-1"]) assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: name, code: "" }), failsWith("invalid-input"), name);
   assert.throws(() => renameSymbol(db, llm, { address: 0x2001, name: "CRACK" }), /CRACK is the name of a switch/);
-  // c64-source writes the code inside { }: braces must pair, except in comments and strings.
+  // retro-source writes the code inside { }: braces must pair, except in comments and strings.
   for (const code of ["!if X {", "}"]) assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code }), /The patch code has a/, code);
   for (const code of ["lda #0 ; }", 'lda #"{"', "!if X { nop }"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
   // Code whose length the lines give is refused when it is longer than the range; other code is checked by the build of the switch.
@@ -594,7 +593,6 @@ test("a patch puts code in a range of the image under a switch", () => {
   );
   assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code: "!byte $ea, $ea\n!word $1234" }), /at least 4 bytes/);
   for (const code of ["!fill 3, $ea", "nop\nasl a\nrts ; done", "jsr $1234", "+inc16 ptr\nlda #1\nlda #2", "loop lda #1\nlda #2"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
-  assert.deepEqual(["lda+2 $12", "!fill $10", "bne .skip\n.skip", "!text \"ab\""].map(leastPatchBytes), [3, 16, undefined, undefined]);
 
   removePatch(db, llm, { start: 0x807e });
   assert.throws(() => removePatch(db, llm, { start: 0x807e }), failsWith("not-found"));
@@ -621,7 +619,7 @@ test("a switch has a kind, a default and the releases that have it on; the base 
   assert.throws(() => setSwitch(db, context, { name: "OTHER", kind: "change" }), /needs a default/);
   assert.throws(() => setSwitch(db, context, { name: "OTHER", kind: "fix", releases: ["V3"] }), /There is no release V3/);
   assert.throws(() => setSwitch(db, context, { name: "RELEASE_V2", kind: "fix" }), /does not start with RELEASE_/);
-  assert.throws(() => setSwitch(db, context, { name: "VICSCN", kind: "fix" }), /is a C64 platform name/);
+  assert.throws(() => setSwitch(db, context, { name: "VICSCN", kind: "fix" }), /is a platform name of the Commodore 64/);
   renameSymbol(db, llm, { address: 0x2000, name: "LIVES" });
   assert.throws(() => setSwitch(db, context, { name: "LIVES", kind: "fix" }), /is the name of the symbol at \$2000/);
   assert.throws(() => renameSymbol(db, llm, { address: 0x2001, name: "RELEASE_V2" }), /RELEASE_V2 builds the release V2/);
@@ -828,7 +826,7 @@ test("a module and a comment start at an instruction: an operand byte of a code 
   assert.throws(() => applyBatch(db, llm, [{ op: "module", start: 0x1bc3, file: "mid_module.asm" }]), /^Refusal: Write 1: \$1bc3 is not the start of an instruction/);
   assert.equal(currentRevision(db), before, "a refused write leaves no revision");
   // At an instruction, in data, and where the knowledge has no program, they are written.
-  for (const address of [0x1bc2, 0x1bc4, 0x1bc9, 0x2000]) assert.notEqual(setComment(db, llm, { address, placement: "side", text: "here" }).revision, null, formatC64Address(address));
+  for (const address of [0x1bc2, 0x1bc4, 0x1bc9, 0x2000]) assert.notEqual(setComment(db, llm, { address, placement: "side", text: "here" }).revision, null, formatAddress(address));
   assert.notEqual(setModule(db, llm, { start: 0x1bc4, file: "store.asm" }).revision, null);
   assert.notEqual(setModule(db, llm, { start: 0x1bca, file: "table.asm" }).revision, null);
 });

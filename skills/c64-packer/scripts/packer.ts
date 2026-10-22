@@ -5,7 +5,8 @@
 
 import { posix } from "node:path";
 
-import { findHandoffs, formatC64Address, parseTokenized, prgRange } from "#src/c64.ts";
+import { findHandoffs, parseTokenized, prgRange } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { compareBuild, mergedPrograms } from "#src/compare.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
@@ -20,7 +21,7 @@ const PAL_CYCLES_PER_SECOND = 985_248;
 /** The SYS address of the BASIC line of a PRG at $0801, or the reason that there is none. */
 function sysEntry(program: Uint8Array): number | string {
   const load = prgRange(program).start;
-  if (load !== 0x0801) return `It loads at ${formatC64Address(load)}, not at $0801 where BASIC starts.`;
+  if (load !== 0x0801) return `It loads at ${formatAddress(load)}, not at $0801 where BASIC starts.`;
   const tokenized = parseTokenized(program);
   if ("reason" in tokenized) return tokenized.reason;
   const sys = findHandoffs(tokenized.lines).find((handoff) => handoff.kind === "sys");
@@ -83,11 +84,11 @@ await runScript({
           packedBytes: packed.program.length,
           unpackedBytes,
           percent: Math.round((packed.program.length / unpackedBytes) * 1000) / 10,
-          entry: formatC64Address(entry),
+          entry: formatAddress(entry),
           ...(exitMemory === undefined ? {} : { exitMemory: `$${exitMemory.toString(16)}` }),
           ...(packed.cycles === undefined ? {} : { unpackSeconds: Math.round((packed.cycles / PAL_CYCLES_PER_SECOND) * 10) / 10 }),
-          inputs: programs.map((program) => ({ file: program.file, loadRange: { start: formatC64Address(program.start), end: formatC64Address(program.end) }, bytes: program.body.length })),
-          check: { entry: formatC64Address(packed.entry), ...check },
+          inputs: programs.map((program) => ({ file: program.file, loadRange: { start: formatAddress(program.start), end: formatAddress(program.end) }, bytes: program.body.length })),
+          check: { entry: formatAddress(packed.entry), ...check },
         };
         const hint =
           result === "PASS"

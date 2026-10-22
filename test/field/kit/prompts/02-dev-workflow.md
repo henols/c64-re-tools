@@ -15,5 +15,5 @@ Steps:
 2. Start the program in the emulator. Capture the screen. Check the text in screen memory, not only in the image.
 3. Set a breakpoint in the interrupt routine. At the stop, check the registers and the raster line. Then resume.
 4. Measure how many cycles one interrupt takes.
-5. Write a c64-testing scenario that checks the text at `$0400` and the change of the border color. Run it.
+5. Write a retro-testing scenario that checks the text at `$0400` and the change of the border color. Run it.
 6. Record the routines of the program in project knowledge, with names.

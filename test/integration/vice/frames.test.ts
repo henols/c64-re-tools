@@ -150,7 +150,7 @@ test("a JAM holds the CPU until a reset or a restore, and the CPU history stays 
   assert.equal((await session.handle("execution", { action: "advance-frames", count: 5, space: "c64" })).stopReason, "jam");
   assert.equal((await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 5 })).stopReason, "jam");
   await assert.rejects(session.handle("execution", { action: "step", count: 1, space: "c64" }), /The CPU is jammed by the JAM opcode/);
-  await assert.rejects(session.handle("execution", { action: "resume", space: "c64" }), /c64_reset, a snapshot restore or c64_autostart/);
+  await assert.rejects(session.handle("execution", { action: "resume", space: "c64" }), /reset, a snapshot restore or autostart/);
   assert.equal((await session.handle("status", {})).stopReason, "jam");
   // The history up to the JAM is good.
   assert.equal((await session.handle("cpuHistory", { limit: 1, space: "c64" })).entries.length, 1);

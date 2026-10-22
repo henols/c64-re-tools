@@ -255,7 +255,7 @@ test("the user closes the window: the session goes back headless from the state 
   vices[1]!.process.crash();
 
   const notice = await noticeAfterWindowClosed(session);
-  assert.ok(failsWith("machine-state-lost", /window closed before c64_window close/i)(notice), String(notice));
+  assert.ok(failsWith("machine-state-lost", /window closed before window close/i)(notice), String(notice));
   assert.match((notice as Error).message, /Breakpoints and watchpoints are kept/);
 
   const headless = current();

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { COVERAGE } from "./c64.ts";
+import { COVERAGE } from "./cpu/coverage.ts";
 import { platformNames, platformNamesFor, romRanges, romUseOf, romUseOfPort } from "./platform.ts";
 
 test("a program without the KERNAL and BASIC gets no system or ROM names, only the processor port and I/O", () => {

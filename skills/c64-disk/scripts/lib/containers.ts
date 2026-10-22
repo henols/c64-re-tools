@@ -3,7 +3,8 @@
 // load address; a T64 file holds a directory of PRG files. TAP files hold
 // raw pulses and go through the emulator only.
 
-import { formatC64Address, petsciiNameToText } from "#src/c64.ts";
+import { petsciiNameToText } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { hasSignature } from "#src/media.ts";
 
@@ -55,7 +56,7 @@ export function parseCrt(bytes: Uint8Array): Crt {
     const size = buffer.readUInt16BE(offset + 14);
     if (packetLength < 0x10 || offset + packetLength > buffer.length) throw new Refusal("media-error", `the CHIP packet at offset ${offset} runs past the end of the file`);
     if (bank > 255) throw new Refusal("media-error", `the CHIP packet at offset ${offset} has bank ${bank}; banks go up to 255`);
-    if (size > packetLength - 0x10 || address + size > 0x10000) throw new Refusal("media-error", `the CHIP packet at offset ${offset} has a wrong size ${size} at ${formatC64Address(address)}`);
+    if (size > packetLength - 0x10 || address + size > 0x10000) throw new Refusal("media-error", `the CHIP packet at offset ${offset} has a wrong size ${size} at ${formatAddress(address)}`);
     if (size > 0) chips.push({ bank, address, size, chipType, data: buffer.subarray(offset + 0x10, offset + 0x10 + size) });
     offset += packetLength;
   }

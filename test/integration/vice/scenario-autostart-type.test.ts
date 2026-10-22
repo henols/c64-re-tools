@@ -11,13 +11,13 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { keyWaitPrg } from "../../fixtures/prg/key-wait.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-autostart-type-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -39,7 +39,7 @@ test("a type step right after autostart reaches the program", { skip: liveSkip, 
   );
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  server = await startHostServer({ port: 0, backends: [viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }))] });
   const child = spawn(process.execPath, [...process.execArgv, script, "test", "key.json"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },

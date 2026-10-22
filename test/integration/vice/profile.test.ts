@@ -6,7 +6,7 @@ import { after, before, test } from "node:test";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { COVERAGE, EXECUTE } from "../../../src/c64.ts";
+import { COVERAGE, EXECUTE } from "../../../src/cpu/coverage.ts";
 import type { MemmapRange, ProfileEntry } from "../../../src/protocol/vice.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 

@@ -1,4 +1,4 @@
-// Real-VICE checks: a session starts headless, and c64_window moves the
+// Real-VICE checks: a session starts headless, and window moves the
 // machine into a VICE with a window and back. Each test has its own session.
 // The window tests open real VICE windows on the host's desktop, so they
 // also need C64RT_LIVE_WINDOW=1.
@@ -304,7 +304,7 @@ test("the window VICE ends by itself: the session goes back headless from the op
       if (Date.now() > deadline) break;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    assert.ok(failsWith("machine-state-lost", /window closed before c64_window close/i)(notice), String(notice));
+    assert.ok(failsWith("machine-state-lost", /window closed before window close/i)(notice), String(notice));
     const status = await live.call("status", {});
     assert.deepEqual([status.window, status.state], [false, "stopped"]);
     assert.deepEqual(live.supervisor.running(), ["headless"]);

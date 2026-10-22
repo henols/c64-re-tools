@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 
-import { readImage, readPrg } from "./image.ts";
+import { MACHINES } from "../machine.ts";
+import { writeZ80, type SpectrumSnapshot } from "../spectrum.ts";
+import { readImage, readPrg, readProgramFile, snapshotImage } from "./image.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-image-"));
 const cwd = process.cwd();
@@ -63,4 +65,39 @@ test("readImage reads a PRG as one segment at its load address", () => {
   const image = readImage("game.prg");
   assert.deepEqual(image.segments, [{ start: 0xc000, end: 0xc001 }]);
   assert.equal(image.byteAt(0xc001), 0x60);
+});
+
+/** A snapshot of the model with the PC at $8000 and the RAM banks of `banks`. */
+function spectrumSnapshot(model: "48k" | "128k", port7ffd: number, banks = Array.from({ length: 8 }, () => new Uint8Array(0x4000))): SpectrumSnapshot {
+  const registers = { af: 0, bc: 0, de: 0, hl: 0, af2: 0, bc2: 0, de2: 0, hl2: 0, ix: 0, iy: 0x5c3a, sp: 0x8ff0, pc: 0x8000, i: 0x3f, r: 0, iff1: false, iff2: false, im: 1 as const };
+  return { model, registers, border: 0, port7ffd, banks };
+}
+
+test("a 128K snapshot gives the CPU view with the paged bank, the paging in the state, and each other RAM bank that holds data", () => {
+  const banks = Array.from({ length: 8 }, () => new Uint8Array(0x4000));
+  banks[1]![0] = 0xc9;
+  banks[2]![0] = 0xf3;
+  banks[3]![0x10] = 0x55;
+  const image = snapshotImage(spectrumSnapshot("128k", 0x13, banks));
+  assert.equal(image.machine, "spectrum128");
+  assert.deepEqual([image.main.segments, image.main.entry, image.main.byteAt(0x8000), image.main.byteAt(0xc010)], [[{ start: 0x4000, end: 0xffff }], 0x8000, 0xf3, 0x55]);
+  assert.equal(image.main.state.port7ffd, "$13");
+  // Banks 5, 2 and the paged bank 3 are in the CPU view; of the others only bank 1 holds data.
+  assert.deepEqual(image.banks.map((bank) => [bank.bank, bank.byteAt(0xc000)]), [[1, 0xc9]]);
+});
+
+test("a Spectrum project takes a snapshot as its program and refuses a tape with the way to a snapshot; a .tzx is a Spectrum tape in a C64 project too", () => {
+  writeFileSync("counter.z80", writeZ80(spectrumSnapshot("48k", 0)));
+  writeFileSync("game.tzx", Uint8Array.of(1, 2, 3));
+  writeFileSync("loader.tap", Uint8Array.of(1, 2, 3));
+  writeFileSync("block1.bin", Uint8Array.of(1, 2, 3));
+  const read = readProgramFile("counter.z80", MACHINES.spectrum48);
+  assert.ok("snapshot" in read);
+  assert.deepEqual([read.snapshot.machine, read.snapshot.main.segments], ["spectrum48", [{ start: 0x4000, end: 0xffff }]]);
+  for (const tape of ["game.tzx", "loader.tap"]) {
+    assert.throws(() => readProgramFile(tape, MACHINES.spectrum48), { code: "invalid-input", message: /is a ZX Spectrum tape .* export the machine state as a \.z80 snapshot/ }, tape);
+  }
+  assert.throws(() => readProgramFile("block1.bin", MACHINES.spectrum48), { code: "invalid-input", message: /block1\.bin is no snapshot\. A program of the ZX Spectrum 48K comes into the knowledge as a \.z80 or \.sna snapshot/ });
+  assert.throws(() => readProgramFile("game.tzx", MACHINES.c64), { code: "invalid-input", message: /is a ZX Spectrum tape/ });
+  assert.throws(() => readProgramFile("missing.z80", MACHINES.spectrum48), { code: "not-found", message: /^There is no file at missing\.z80 in the project folder\.$/ });
 });

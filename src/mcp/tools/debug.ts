@@ -1,9 +1,10 @@
-// Debug tools: c64_breakpoint, c64_watchpoint, c64_cpu_history, c64_backtrace,
-// c64_profile, c64_memmap and c64_timing.
+// Debug tools: breakpoint, watchpoint, cpu_history, backtrace,
+// profile, memmap and timing.
 
 import { z } from "zod";
 
-import { COVERAGE, executedRamCode, EXECUTE, formatC64Address, READ, WRITE, type CodeRange } from "../../c64.ts";
+import { COVERAGE, executedRamCode, EXECUTE, READ, WRITE, type CodeRange } from "../../cpu/coverage.ts";
+import { formatAddress } from "../../address.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
 import { readCoverage } from "../../host-client/coverage.ts";
@@ -28,16 +29,16 @@ const WatchpointOutput = BreakpointOutput.omit({ address: true }).extend({ start
 
 function showBreakpoint(point: Breakpoint) {
   const { condition, ...rest } = point;
-  return { ...rest, address: formatC64Address(point.address), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
+  return { ...rest, address: formatAddress(point.address), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
 }
 
 function showWatchpoint(point: Watchpoint) {
   const { condition, address, size, ...rest } = point;
-  return { ...rest, start: formatC64Address(address), end: formatC64Address(address + size - 1), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
+  return { ...rest, start: formatAddress(address), end: formatAddress(address + size - 1), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
 }
 
 export const c64Breakpoint = defineTool({
-  name: "c64_breakpoint",
+  name: "breakpoint",
   title: "C64 breakpoints",
   description:
     "Manage breakpoints. A breakpoint stops the CPU when it is about to execute the instruction at an address. " +
@@ -81,7 +82,7 @@ export const c64Breakpoint = defineTool({
 });
 
 export const c64Watchpoint = defineTool({
-  name: "c64_watchpoint",
+  name: "watchpoint",
   title: "C64 watchpoints",
   description:
     "Manage watchpoints. A watchpoint stops the CPU when an instruction reads or writes memory in a range. " +
@@ -133,7 +134,7 @@ export const c64Watchpoint = defineTool({
 });
 
 export const c64CpuHistory = defineTool({
-  name: "c64_cpu_history",
+  name: "cpu_history",
   title: "CPU history",
   description:
     "Get the last instructions that the CPU executed, oldest first. " +
@@ -141,7 +142,7 @@ export const c64CpuHistory = defineTool({
     "Each entry gives the address, the bytes, the instruction and the registers a, x, y and sp before the instruction executed. " +
     "In space c64, it also gives the raster line and cycle when the instruction started. " +
     "With out, it writes the entries as text lines to that project file, and the result gives the file in place of the entries. " +
-    "After a JAM, the emulator records no history until the next reset. If the CPU ran again after a snapshot restore, this tool refuses. Then use c64_reset, or use c64_trace. " +
+    "After a JAM, the emulator records no history until the next reset. If the CPU ran again after a snapshot restore, this tool refuses. Then use reset, or use trace. " +
     "This does not change the run state of the machine.",
   inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput, out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({
@@ -166,11 +167,11 @@ export const c64CpuHistory = defineTool({
     const { out, project, ...request } = input;
     if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
     const { entries } = await session.cpuHistory(request);
-    if (out === undefined) return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+    if (out === undefined) return { entries: entries.map((entry) => ({ ...entry, address: formatAddress(entry.address) })) };
     const byte = (value: number) => value.toString(16).padStart(2, "0");
     const lines = entries.map((entry) => {
       const raster = entry.rasterLine === undefined ? "" : `  line ${entry.rasterLine} cycle ${entry.rasterCycle ?? 0}`;
-      return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${byte(entry.a)} x=${byte(entry.x)} y=${byte(entry.y)} sp=${byte(entry.sp)}${raster}`;
+      return `${formatAddress(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${byte(entry.a)} x=${byte(entry.x)} y=${byte(entry.y)} sp=${byte(entry.sp)}${raster}`;
     });
     return { count: entries.length, ...writeOut(out, linesText(lines), project) };
   },
@@ -180,7 +181,7 @@ export const c64CpuHistory = defineTool({
 const TRACE_LISTED = 200;
 
 export const c64Trace = defineTool({
-  name: "c64_trace",
+  name: "trace",
   title: "Trace accesses and instructions",
   description:
     "Run the machine and record each hit of the points. The program does not stop for you. " +
@@ -235,15 +236,15 @@ export const c64Trace = defineTool({
     const ranges = points.map((point) => ({ kind: point.kind, start: point.start, end: point.end ?? point.start }));
     if (ranges.some((point) => point.end < point.start)) throw new WireFailure("invalid-input", "A point end must not be before its start.");
     const traced = await session.trace({ points: ranges, ...request });
-    const shown = traced.hits.map(({ address, ...hit }) => ({ ...hit, pc: formatC64Address(hit.pc), ...(address === undefined ? {} : { address: formatC64Address(address) }) }));
-    const summary = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length, hits: shown.slice(0, TRACE_LISTED) };
+    const shown = traced.hits.map(({ address, ...hit }) => ({ ...hit, pc: formatAddress(hit.pc), ...(address === undefined ? {} : { address: formatAddress(address) }) }));
+    const summary = { end: traced.end, frames: traced.frames, pc: formatAddress(traced.pc), count: traced.hits.length, hits: shown.slice(0, TRACE_LISTED) };
     if (out === undefined) return summary;
     return { ...summary, ...writeOut(out, linesText(shown.map((hit) => JSON.stringify(hit))), project) };
   },
 });
 
 export const c64Backtrace = defineTool({
-  name: "c64_backtrace",
+  name: "backtrace",
   title: "Call backtrace",
   description:
     `Get the chain of subroutine calls that leads to the current instruction, most recent first, at most depth calls (1 to ${MAX_BACKTRACE}, default 16). ` +
@@ -256,19 +257,19 @@ export const c64Backtrace = defineTool({
     const { frames } = await session.backtrace(input);
     return {
       frames: frames.map((frame) => ({
-        address: formatC64Address(frame.address),
-        ...(frame.returnAddress === undefined ? {} : { returnAddress: formatC64Address(frame.returnAddress) }),
+        address: formatAddress(frame.address),
+        ...(frame.returnAddress === undefined ? {} : { returnAddress: formatAddress(frame.returnAddress) }),
       })),
     };
   },
 });
 
 export const c64Timing = defineTool({
-  name: "c64_timing",
+  name: "timing",
   title: "Cycle stopwatch",
   description:
     "A stopwatch that counts C64 CPU cycles. Action start sets it to zero. Action read gives the cycles since the last start, " +
-    "or since the session started, as a decimal string. A reset and c64_autostart start it again from the reset. " +
+    "or since the session started, as a decimal string. A reset and autostart start it again from the reset. " +
     "A PAL frame has 19656 cycles and an NTSC frame 17095.",
   inputSchema: z.object({ action: z.enum(TIMING_ACTIONS) }).strict(),
   outputSchema: z.object({ started: z.boolean().optional(), cycles: z.string().regex(/^\d+$/).optional() }),
@@ -279,14 +280,14 @@ export const c64Timing = defineTool({
 });
 
 export const c64Profile = defineTool({
-  name: "c64_profile",
+  name: "profile",
   title: "Cycle profile",
   description:
-    "Action read gets the routines where the C64 CPU spent the most cycles since the session started, the last clear or the last c64_window. " +
+    "Action read gets the routines where the C64 CPU spent the most cycles since the session started, the last clear or the last window. " +
     "Action clear sets all counts to zero, so that the next read measures only what runs after it. " +
     "The emulator gives the cycles to the routine that a JSR called last. " +
     "Code that the CPU enters with JMP or a branch counts for that routine. " +
-    "After c64_window or a snapshot restore, the emulator can give the cycles to a routine that ran before the restore, for example $fd50. Do not trust the routine addresses then. " +
+    "After window or a snapshot restore, the emulator can give the cycles to a routine that ran before the restore, for example $fd50. Do not trust the routine addresses then. " +
     `limit is the maximum number of routines for read (1 to ${MAX_PROFILE}, default 20). ` +
     "Each entry gives the routine address, its total cycles with the routines it calls, and its own cycles. " +
     "percent is the part of all cycles that the routine used itself. " +
@@ -309,7 +310,7 @@ export const c64Profile = defineTool({
       return session.profile({ action: "clear" });
     }
     const { entries } = await session.profile({ action: "read", limit: fields.limit ?? 20 });
-    return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+    return { entries: entries.map((entry) => ({ ...entry, address: formatAddress(entry.address) })) };
   },
 });
 
@@ -327,10 +328,10 @@ function sources(flags: number): Array<"ram" | "rom" | "io"> {
 
 const count = (map: Uint8Array, bit: number) => map.reduce((sum, flags) => sum + ((flags & bit) === 0 ? 0 : 1), 0);
 const RangeOutput = z.object({ start: AddressOutput, end: AddressOutput });
-const showRanges = (ranges: CodeRange[]) => ranges.slice(0, MAX_SUMMARY_RANGES).map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) }));
+const showRanges = (ranges: CodeRange[]) => ranges.slice(0, MAX_SUMMARY_RANGES).map((range) => ({ start: formatAddress(range.start), end: formatAddress(range.end) }));
 
 export const c64Memmap = defineTool({
-  name: "c64_memmap",
+  name: "memmap",
   title: "Memory access map",
   description:
     "Get how the C64 CPU used memory since the session started or since the last clear. RAM, ROM and I/O are apart. " +
@@ -409,15 +410,15 @@ export const c64Memmap = defineTool({
     }
     const result = await session.memmap({ action: "read", start, end, maxRanges: fields.maxRanges ?? 256 });
     const ranges = result.ranges.map((range) => ({
-      start: formatC64Address(range.start),
-      end: formatC64Address(range.end),
+      start: formatAddress(range.start),
+      end: formatAddress(range.end),
       execute: (range.flags & EXECUTE) !== 0,
       read: (range.flags & READ) !== 0,
       write: (range.flags & WRITE) !== 0,
       in: sources(range.flags),
     }));
     const flaw = basicRomFlaw(result.ranges.some((range) => range.start <= 0xbfff && range.end >= 0xa000 && (range.flags & ROM_ACCESS) !== 0));
-    return result.next === undefined ? { ranges, ...flaw } : { ranges, truncated: true, next: formatC64Address(result.next), ...flaw };
+    return result.next === undefined ? { ranges, ...flaw } : { ranges, truncated: true, next: formatAddress(result.next), ...flaw };
   },
 });
 

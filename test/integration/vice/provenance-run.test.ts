@@ -1,4 +1,4 @@
-// Runtime evidence of c64-provenance: each release runs in its own
+// Runtime evidence of retro-provenance: each release runs in its own
 // emulator, a PRG by autostart and an image by writing it with its entry
 // state; each difference gets its first access and whether it changed.
 // Opt-in with C64RT_LIVE_VICE.
@@ -12,12 +12,12 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-provenance/scripts/provenance.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-provenance/scripts/provenance.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-run-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -45,7 +45,7 @@ function release(variant: "a" | "b"): Uint8Array {
 test("each difference gets its first access in every release and whether the run changed it", { skip: liveSkip, timeout: 300_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  server = await startHostServer({ port: 0, backends: [viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }))] });
 
   const prg = (bytes: Uint8Array) => Buffer.concat([Buffer.from([LOAD & 0xff, LOAD >> 8]), bytes]);
   writeFileSync(join(project, "a.prg"), prg(release("a")));

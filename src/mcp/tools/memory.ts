@@ -1,9 +1,9 @@
-// Memory and CPU tools: c64_memory_read, c64_memory_write, c64_memory_search,
-// c64_memory_compare, c64_registers and c64_disassemble.
+// Memory and CPU tools: memory_read, memory_write, memory_search,
+// memory_compare, registers and disassemble.
 
 import { z } from "zod";
 
-import { formatC64Address } from "../../c64.ts";
+import { formatAddress } from "../../address.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { MAX_COMPARE_DIFFERENCES, MAX_COMPARE_SIZE, MAX_DISASSEMBLE, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_SEARCH_PATTERN, MAX_SEARCH_RESULTS, type RegisterValues } from "../../protocol/vice.ts";
 import { linesText, OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
@@ -17,7 +17,7 @@ const MAX_DISASSEMBLE_OUT = 32768;
 const HexByte = z.string().regex(/^[0-9a-f]{2}$/);
 
 export const c64MemoryRead = defineTool({
-  name: "c64_memory_read",
+  name: "memory_read",
   title: "Read C64 memory",
   description:
     `Read 1 to ${MAX_MEMORY_READ} bytes of memory, starting at an address. ` +
@@ -42,7 +42,7 @@ export const c64MemoryRead = defineTool({
     if (out === undefined) {
       if (read.size > MAX_MEMORY_READ) throw new WireFailure("invalid-input", `size can be at most ${MAX_MEMORY_READ} without out.`);
       const result = await session.memoryRead(read);
-      return { address: formatC64Address(result.address), size: result.data.length / 2, data: result.data };
+      return { address: formatAddress(result.address), size: result.data.length / 2, data: result.data };
     }
     if (read.address + read.size > 0x10000) throw new WireFailure("invalid-input", "The range must not go past $ffff.");
     const parts: Buffer[] = [];
@@ -50,15 +50,15 @@ export const c64MemoryRead = defineTool({
       const part = await session.memoryRead({ ...read, address: at, size: Math.min(MAX_MEMORY_READ, read.address + read.size - at) });
       parts.push(Buffer.from(part.data, "hex"));
     }
-    return { address: formatC64Address(read.address), size: read.size, ...writeOut(out, Buffer.concat(parts), project) };
+    return { address: formatAddress(read.address), size: read.size, ...writeOut(out, Buffer.concat(parts), project) };
   },
 });
 
 export const c64MemoryWrite = defineTool({
-  name: "c64_memory_write",
+  name: "memory_write",
   title: "Write C64 memory",
   description:
-    `Write 1 to ${MAX_MEMORY_WRITE} bytes to memory, starting at an address. First stop the CPU with c64_execution action pause. ` +
+    `Write 1 to ${MAX_MEMORY_WRITE} bytes to memory, starting at an address. First stop the CPU with execution action pause. ` +
     "The range must not go past $ffff. With view cpu, the write goes where the CPU writes now. " +
     "A write to a ROM address goes to the RAM under it, and a write to I/O goes to the chip. " +
     "With view ram, the write goes to RAM (c64 only).",
@@ -67,12 +67,12 @@ export const c64MemoryWrite = defineTool({
   readOnly: false,
   async run(input, session) {
     const result = await session.memoryWrite(input);
-    return { address: formatC64Address(result.address), bytesWritten: result.bytesWritten };
+    return { address: formatAddress(result.address), bytesWritten: result.bytesWritten };
   },
 });
 
 export const c64Registers = defineTool({
-  name: "c64_registers",
+  name: "registers",
   title: "C64 CPU registers",
   description:
     "Read or write the CPU registers: pc, a, x, y, sp and the status flags n, v, b, d, i, z and c. " +
@@ -107,7 +107,7 @@ export const c64Registers = defineTool({
       }
       registers = await session.registersSet(input.space, values);
     }
-    return { ...registers, pc: formatC64Address(registers.pc) };
+    return { ...registers, pc: formatAddress(registers.pc) };
   },
 });
 
@@ -119,7 +119,7 @@ const SearchPattern = z
   .describe("hex bytes and ?? (any byte), separated by spaces, for example a9 ?? 8d 20 d0");
 
 export const c64MemorySearch = defineTool({
-  name: "c64_memory_search",
+  name: "memory_search",
   title: "Search C64 memory",
   description:
     `Find a byte pattern of 1 to ${MAX_SEARCH_PATTERN} bytes in memory from start to end. ?? matches any byte. ` +
@@ -147,7 +147,7 @@ export const c64MemorySearch = defineTool({
     // VICE refuses a range shorter than the pattern. Such a range has no match.
     if (end - input.start + 1 < input.pattern.length) return { matches: [] };
     const result = await session.memorySearch({ ...input, end });
-    const matches = result.matches.map(formatC64Address);
+    const matches = result.matches.map(formatAddress);
     return matches.length >= input.maxResults ? { matches, truncated: true } : { matches };
   },
 });
@@ -157,7 +157,7 @@ const Location = z
   .strict();
 
 export const c64MemoryCompare = defineTool({
-  name: "c64_memory_compare",
+  name: "memory_compare",
   title: "Compare C64 memory",
   description:
     `Compare two memory ranges of size bytes (1 to ${MAX_COMPARE_SIZE}). Each range has its own address, space and view. ` +
@@ -181,7 +181,7 @@ export const c64MemoryCompare = defineTool({
 });
 
 export const c64Disassemble = defineTool({
-  name: "c64_disassemble",
+  name: "disassemble",
   title: "Disassemble live C64 memory",
   description:
     `Disassemble count instructions (1 to ${MAX_DISASSEMBLE}) from an address, as the bytes are in the live machine now. ` +
@@ -206,7 +206,7 @@ export const c64Disassemble = defineTool({
     if (out === undefined) {
       if (request.count > MAX_DISASSEMBLE) throw new WireFailure("invalid-input", `count can be at most ${MAX_DISASSEMBLE} without out.`);
       const result = await session.disassemble(request);
-      return { instructions: result.instructions.map((instruction) => ({ ...instruction, address: formatC64Address(instruction.address) })) };
+      return { instructions: result.instructions.map((instruction) => ({ ...instruction, address: formatAddress(instruction.address) })) };
     }
     const lines: string[] = [];
     let address = request.address;
@@ -221,7 +221,7 @@ export const c64Disassemble = defineTool({
           wrapped = true;
           break;
         }
-        lines.push(`${formatC64Address(instruction.address)}  ${spaced(instruction.bytes).padEnd(9)} ${instruction.text}`);
+        lines.push(`${formatAddress(instruction.address)}  ${spaced(instruction.bytes).padEnd(9)} ${instruction.text}`);
         address = instruction.address + instruction.bytes.length / 2;
       }
     }

@@ -1,5 +1,5 @@
 // The typed tool dispatcher of the Host Runtime. The host runs only
-// VICE and the tools that come with it (c1541, petcat); skill scripts run
+// the emulators and the tools that come with VICE (c1541, petcat); skill scripts run
 // ACME, DXA and Ghidra themselves. One entry per operation, never a
 // generic executable route.
 

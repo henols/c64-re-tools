@@ -1,4 +1,4 @@
-// c64-testing for real releases: steps for one side, a raster sync, a
+// retro-testing for real releases: steps for one side, a raster sync, a
 // normalize step, an exclude with its reason, and the files of a FAIL.
 // The original is the key-gated packed counter; the rebuild is the plain
 // counter, loaded and started without BASIC. Opt-in with C64RT_LIVE_VICE.
@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
 import { gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
@@ -20,7 +20,7 @@ import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { importImage } from "../../fixtures/program.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-d46-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -32,7 +32,7 @@ async function runTest(...args: string[]): Promise<{ status: number | null; json
   if (server === undefined) {
     const supervisor = new ProcessSupervisor();
     supervisor.installExitGuard();
-    server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+    server = await startHostServer({ port: 0, backends: [viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }))] });
   }
   const child = spawn(process.execPath, [...process.execArgv, script, "test", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";

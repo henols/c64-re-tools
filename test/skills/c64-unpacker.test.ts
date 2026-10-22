@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 import { inspect, readMemoryMap, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
 import { removeStaleFiles } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
 import { callReturn, captureSegments, executedIn, stageCandidates, stagePoints, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
-import { COVERAGE } from "../../src/c64.ts";
+import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
 

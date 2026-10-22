@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { START_SCREEN_CODE } from "../../../skills/c64-source/scripts/lib/loader.ts";
+import { START_SCREEN_CODE } from "../../../skills/retro-source/scripts/lib/loader.ts";
 import { assemble } from "../../../src/native/acme.ts";
 import { ACME, findTool } from "../../../src/native/discover.ts";
 import { localToolContext } from "../../../src/native/local.ts";

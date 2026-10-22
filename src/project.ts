@@ -340,7 +340,7 @@ export function writeProblem(error: unknown, path: string, what?: string): strin
 /**
  * Checks a path that a command writes, before the command does any work. The
  * path must stay inside the project, also through symbolic links, and must
- * not be in the knowledge (only the c64-knowledge skill writes it). A file
+ * not be in the knowledge (only the retro-knowledge skill writes it). A file
  * must not be a folder or a symbolic link; a folder must be a folder. The
  * nearest folder that exists must be a folder that can be written. Returns
  * the absolute path. Throws a Refusal (invalid-input) whose message starts

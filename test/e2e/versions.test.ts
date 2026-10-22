@@ -69,7 +69,7 @@ test("two versions in a group folder: each script runs on its version, v2 reads 
   writeFileSync(join(group, "v2", "game_fix.prg"), program(true, 0x02));
 
   // v1: the folder becomes a project at its first write, from the group folder.
-  ok("c64-knowledge", "knowledge.ts", ["image", "game.prg", "--project", "v1"]);
+  ok("retro-knowledge", "knowledge.ts", ["image", "game.prg", "--project", "v1"]);
   const named = [
     { op: "classify", start: "$1010", end: "$1023", type: "code" },
     { op: "classify", start: "$1024", end: "$1028", type: "code" },
@@ -81,33 +81,33 @@ test("two versions in a group folder: each script runs on its version, v2 reads 
     { op: "module", start: "$1010", file: "sound.asm", title: "The sound driver" },
   ];
   writeFileSync(join(group, "v1", "named.json"), JSON.stringify(named));
-  ok("c64-knowledge", "knowledge.ts", ["apply", "named.json", "--reason", "the sound driver", "--project", "v1"]);
+  ok("retro-knowledge", "knowledge.ts", ["apply", "named.json", "--reason", "the sound driver", "--project", "v1"]);
 
   // The library of the group is beside the versions. --library is relative to the project folder: "library" names a folder in v1.
-  refused("c64-provenance", "provenance.ts", ["routine", "$1010", "--library", "library", "--project", "v1"], /there is no library folder library in the project folder.*Give a library folder beside the projects, for example \.\.\/library\./);
+  refused("retro-provenance", "provenance.ts", ["routine", "$1010", "--library", "library", "--project", "v1"], /there is no library folder library in the project folder.*Give a library folder beside the projects, for example \.\.\/library\./);
   assert.equal(existsSync(join(group, "v1", "library")), false);
-  ok("c64-provenance", "provenance.ts", ["routine", "$1010", "--library", "../library", "--project", "v1"]);
+  ok("retro-provenance", "provenance.ts", ["routine", "$1010", "--library", "../library", "--project", "v1"]);
   assert.deepEqual(readdirSync(join(group, "library")), ["play.json"]);
 
   // v2, from inside its folder: the program and its second release with the one-byte fix.
-  ok("c64-knowledge", "knowledge.ts", ["image", "game.prg", "--project", "."], join(group, "v2"));
-  ok("c64-knowledge", "knowledge.ts", ["release", "BASE", "--file", "game.prg", "--base"], join(group, "v2"));
-  ok("c64-knowledge", "knowledge.ts", ["release", "FIX", "--file", "game_fix.prg"], join(group, "v2"));
-  const releases = ok("c64-provenance", "provenance.ts", ["compare", "game.prg", "game_fix.prg", "--project", "v2"]);
+  ok("retro-knowledge", "knowledge.ts", ["image", "game.prg", "--project", "."], join(group, "v2"));
+  ok("retro-knowledge", "knowledge.ts", ["release", "BASE", "--file", "game.prg", "--base"], join(group, "v2"));
+  ok("retro-knowledge", "knowledge.ts", ["release", "FIX", "--file", "game_fix.prg"], join(group, "v2"));
+  const releases = ok("retro-provenance", "provenance.ts", ["compare", "game.prg", "game_fix.prg", "--project", "v2"]);
   assert.deepEqual({ differing: releases.differingBytes, at: releases.differences[0].start }, { differing: 1, at: "$1004" });
 
   // v2 reads v1 in the group folder: the versions differ from the fix on, and the routine moved by 5 bytes.
-  const versions = ok("c64-provenance", "provenance.ts", ["compare", "../v1/game.prg", "game.prg", "--project", "v2"]);
+  const versions = ok("retro-provenance", "provenance.ts", ["compare", "../v1/game.prg", "game.prg", "--project", "v2"]);
   assert.equal(versions.releases[0].name, "../v1/game.prg");
   assert.ok(versions.differingBytes > 1);
   // A release stays in its project: the knowledge does not name a file of another version.
-  refused("c64-knowledge", "knowledge.ts", ["release", "V1", "--file", "../v1/game.prg", "--project", "v2"], /--file must be a path relative to the project folder that stays inside it/);
+  refused("retro-knowledge", "knowledge.ts", ["release", "V1", "--file", "../v1/game.prg", "--project", "v2"], /--file must be a path relative to the project folder that stays inside it/);
 
   // The names of v1 go to v2 through the library, at the moved addresses.
-  const matched = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--apply", "--project", "v2"]);
+  const matched = ok("retro-provenance", "provenance.ts", ["match", "--library", "../library", "--apply", "--project", "v2"]);
   assert.deepEqual(matched.matches.listed.map((match: Record<string, unknown>) => ({ routine: match.routine, start: match.start, shift: match.shift })), [{ routine: "play", start: "$1015", shift: 5 }]);
-  assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$1029", "--project", "v2"]).symbol.name, "set_pointer");
-  assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$1024"], join(group, "v1")).symbol.name, "set_pointer");
+  assert.equal(ok("retro-knowledge", "knowledge.ts", ["at", "$1029", "--project", "v2"]).symbol.name, "set_pointer");
+  assert.equal(ok("retro-knowledge", "knowledge.ts", ["at", "$1024"], join(group, "v1")).symbol.name, "set_pointer");
 
   // The scripts ran from the group folder, and none of them made it a project.
   assert.equal(existsSync(join(group, ".c64-re-tools")), false);

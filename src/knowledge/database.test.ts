@@ -95,9 +95,9 @@ test("the index keeps the field rules of the knowledge", () => {
   const root = project();
   const db = openForWrite(root);
   db.prepare("INSERT INTO revisions (id, created_at, origin, operation) VALUES ('r', 't', 'llm', 'test')").run();
-  const symbol = db.prepare("INSERT INTO symbols (id, address, name, kind, origin, valid_from_revision) VALUES (?, ?, ?, 'label', 'llm', 'r')");
+  const symbol = db.prepare("INSERT INTO symbols (id, space, address, name, kind, origin, valid_from_revision) VALUES (?, 'c64', ?, ?, 'label', 'llm', 'r')");
   assert.throws(() => symbol.run("a", 0x10000, "too_high"), /CHECK/);
-  assert.throws(() => db.prepare("INSERT INTO regions (id, start_address, end_address, type, origin, valid_from_revision) VALUES ('b', 5, 4, 'code', 'llm', 'r')").run(), /CHECK/);
+  assert.throws(() => db.prepare("INSERT INTO regions (id, space, start_address, end_address, type, origin, valid_from_revision) VALUES ('b', 'c64', 5, 4, 'code', 'llm', 'r')").run(), /CHECK/);
   assert.throws(() => db.prepare("INSERT INTO revisions (id, created_at, origin, operation) VALUES ('s', 't', 'hacker', 'x')").run(), /CHECK/);
   db.close();
 });

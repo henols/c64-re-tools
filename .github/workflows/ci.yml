@@ -86,7 +86,7 @@ jobs:
           mkdir "$RUNNER_TEMP/project"
           cd "$RUNNER_TEMP/project"
           npx -y "$package" c64-re-tools install --target claude
-          test -f .claude/skills/emulator/SKILL.md
+          test -f .claude/skills/retro-emulator/SKILL.md
           test -f .claude/skills/c64-memory-map/scripts/memory-map.ts
           test -f .claude/skills/c64-memory-map/package.json
           test -z "$(find . -type l)"

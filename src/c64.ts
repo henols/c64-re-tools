@@ -1,54 +1,14 @@
 import { Refusal } from "./errors.ts";
-
-/** A C64 address as text: $ and 1 to 4 hex digits, either case. */
-const ADDRESS_PATTERN = /^\$([0-9a-fA-F]{1,4})$/;
-
-/** The address that the text gives ($ and 1 to 4 hex digits), or undefined. */
-export function c64AddressOf(text: string): number | undefined {
-  const match = ADDRESS_PATTERN.exec(text);
-  return match === null ? undefined : Number.parseInt(match[1]!, 16);
-}
-
-/** Returns the value when it is a C64 address (0-$ffff). Refuses it otherwise. */
-function checkAddress(value: number): number {
-  if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new Refusal("invalid-input", `${value} is not a C64 address: an address is from $0000 to $ffff.`);
-  return value;
-}
-
-/** The address of $ and 1 to 4 hex digits. Refuses other text. */
-export function parseC64Address(text: string): number {
-  const value = c64AddressOf(text);
-  if (value === undefined) throw new Refusal("invalid-input", `${JSON.stringify(text)} is not a C64 address: give $ and 1 to 4 hex digits, for example $c000 or $fb.`);
-  return value;
-}
-
-export function formatC64Address(value: number): string {
-  return `$${checkAddress(value).toString(16).padStart(4, "0")}`;
-}
-
-/** An inclusive span of C64 addresses. */
-export interface AddressRange {
-  start: number;
-  end: number;
-}
-
-/** The knowledge spaces: the C64, the 1541 drive in unit 8, and cartridge banks 0 to 255. */
-export const SPACE_PATTERN = /^(c64|drive8|loading|bank(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$/;
+import { formatAddress } from "./address.ts";
 
 /** VIC-II state with its addresses as $xxxx; the other values stay numbers. */
 export function formatVicii<T extends { screenAddress: number; graphicsAddress: number }>(state: T): Omit<T, "screenAddress" | "graphicsAddress"> & { screenAddress: string; graphicsAddress: string } {
-  return { ...state, screenAddress: formatC64Address(state.screenAddress), graphicsAddress: formatC64Address(state.graphicsAddress) };
+  return { ...state, screenAddress: formatAddress(state.screenAddress), graphicsAddress: formatAddress(state.graphicsAddress) };
 }
 
 /** A sprite with its data address as $xxxx; the other values stay numbers. */
 export function formatSprite<T extends { dataAddress: number }>(sprite: T): Omit<T, "dataAddress"> & { dataAddress: string } {
-  return { ...sprite, dataAddress: formatC64Address(sprite.dataAddress) };
-}
-
-/** A byte as $xx. Refuses a value outside 0-255. */
-export function formatC64Byte(value: number): string {
-  if (!Number.isInteger(value) || value < 0 || value > 0xff) throw new Refusal("invalid-input", `${value} is not a byte: a byte is from 0 to 255.`);
-  return `$${value.toString(16).padStart(2, "0")}`;
+  return { ...sprite, dataAddress: formatAddress(sprite.dataAddress) };
 }
 
 /**
@@ -61,30 +21,6 @@ export function prgRange(prg: Uint8Array): { start: number; end: number; body: U
   if (start + prg.length - 2 > 0x10000) throw new Refusal("invalid-input", "The PRG runs past $ffff.");
   return { start, end: start + prg.length - 3, body: prg.subarray(2) };
 }
-
-/** The tables of addresses: words, or words minus 1 for an RTS dispatch; a split table has all low bytes, then all high bytes. */
-export const POINTER_TABLE_TYPES = ["addresses", "addresses-split", "rts-addresses", "rts-addresses-split"] as const;
-export type PointerTableType = (typeof POINTER_TABLE_TYPES)[number];
-
-/** The entries of a table of addresses in [start, end]: the address of each low and high byte, and the target that the entry names. */
-export function pointerTableEntries(table: { start: number; end: number; type: PointerTableType }, byteAt: (address: number) => number): Array<{ low: number; high: number; target: number }> {
-  const length = table.end - table.start + 1;
-  const split = table.type === "addresses-split" || table.type === "rts-addresses-split";
-  const minus = table.type === "rts-addresses" || table.type === "rts-addresses-split" ? 1 : 0;
-  const count = Math.floor(length / 2);
-  return Array.from({ length: count }, (_, index) => {
-    const low = split ? table.start + index : table.start + 2 * index;
-    const high = split ? table.start + count + index : low + 1;
-    return { low, high, target: ((byteAt(low) | (byteAt(high) << 8)) + minus) & 0xffff };
-  });
-}
-
-/** How 6502 code refers to an address. A pointer is code that builds the address from immediates. */
-export const REFERENCE_KINDS = ["call", "jump", "read", "write", "reference", "pointer"] as const;
-export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
-
-/** A symbol or label name: assembler label syntax, at most 64 characters; a leading dot marks a local label. */
-export const SYMBOL_NAME = /^\.?[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 /** The VIC-II's 16 KiB bank base, from CIA 2 port A bits 0-1 (inverted); undriven lines read high. */
 export function vicBankBase(cia2PortA: number, cia2DdrA = 0xff): number {
@@ -213,10 +149,10 @@ export function parseTokenized(program: Uint8Array): TokenizedProgram {
   if (program.length < 4) return { reason: "The file is too short for a BASIC program." };
   const loadAddress = program[0]! | (program[1]! << 8);
   if (loadAddress < MIN_BASIC_LOAD) {
-    return { reason: `The load address ${formatC64Address(loadAddress)} is below $0400, in the zero page, the stack or the system pages. The file is a memory dump or machine code, not a BASIC program.` };
+    return { reason: `The load address ${formatAddress(loadAddress)} is below $0400, in the zero page, the stack or the system pages. The file is a memory dump or machine code, not a BASIC program.` };
   }
   if (loadAddress + program.length - 2 > 0x10000) {
-    return { reason: `The file holds ${program.length - 2} bytes from ${formatC64Address(loadAddress)}, which runs past $ffff. The file is a memory dump, not a BASIC program.` };
+    return { reason: `The file holds ${program.length - 2} bytes from ${formatAddress(loadAddress)}, which runs past $ffff. The file is a memory dump, not a BASIC program.` };
   }
   const lines: TokenizedLine[] = [];
   let at = 2;
@@ -387,158 +323,4 @@ export function findHandoffs(lines: TokenizedLine[]): BasicHandoff[] {
     }
   }
   return handoffs;
-}
-
-// Execution coverage: the byte format of a coverage map, and the 6502
-// instruction lengths that turn the instruction starts in it into code ranges.
-// VICE marks only the opcode byte of an executed instruction as executed.
-
-/** One byte per address: the access flags as VICE reports them, RAM, ROM and I/O apart. */
-export const COVERAGE = {
-  ramRead: 1 << 0,
-  ramWrite: 1 << 1,
-  ramExecute: 1 << 2,
-  romRead: 1 << 3,
-  romExecute: 1 << 4,
-  ioRead: 1 << 5,
-  ioWrite: 1 << 6,
-  ioExecute: 1 << 7,
-} as const;
-
-export const EXECUTE = COVERAGE.ramExecute | COVERAGE.romExecute | COVERAGE.ioExecute;
-export const READ = COVERAGE.ramRead | COVERAGE.romRead | COVERAGE.ioRead;
-export const WRITE = COVERAGE.ramWrite | COVERAGE.ioWrite;
-
-/**
- * The length in bytes of the NMOS 6502/6510 instruction with this opcode, for
- * all 256 opcodes with the undocumented ones. The opcode is aaabbbcc: bbb
- * selects the addressing mode within a group cc. JAM (KIL) and BRK count one byte.
- */
-export function instructionLength(opcode: number): 1 | 2 | 3 {
-  const group = opcode & 0b11;
-  const mode = (opcode >> 2) & 0b111;
-  if (group === 0b00) {
-    if (mode === 0b000) return opcode === 0x20 ? 3 : opcode === 0x00 || opcode === 0x40 || opcode === 0x60 ? 1 : 2;
-    return ([2, 2, 1, 3, 2, 2, 1, 3] as const)[mode]!;
-  }
-  if (group === 0b10) {
-    if (mode === 0b000) return opcode === 0x02 || opcode === 0x22 || opcode === 0x42 || opcode === 0x62 ? 1 : 2;
-    return ([2, 2, 1, 3, 1, 2, 1, 3] as const)[mode]!;
-  }
-  // Groups 01 and 11 share their addressing modes.
-  return ([2, 2, 2, 3, 2, 2, 3, 3] as const)[mode]!;
-}
-
-export interface CodeRange {
-  start: number;
-  end: number;
-}
-
-/**
- * The executed code in RAM as ranges: each RAM instruction start in `map`
- * with its operand bytes, by the opcode in `memory` (64 KiB from $0000).
- * `map` starts at `base`. Adjacent and overlapping instructions merge.
- */
-export function executedRamCode(map: Uint8Array, base: number, memory: Uint8Array): CodeRange[] {
-  const ranges: CodeRange[] = [];
-  for (let offset = 0; offset < map.length; offset++) {
-    if ((map[offset]! & COVERAGE.ramExecute) === 0) continue;
-    const start = base + offset;
-    const end = Math.min(0xffff, start + instructionLength(memory[start]!) - 1);
-    const last = ranges.at(-1);
-    if (last !== undefined && start <= last.end + 1) last.end = Math.max(last.end, end);
-    else ranges.push({ start, end });
-  }
-  return ranges;
-}
-
-// Coverage flows: the seeds that a coverage map gives a static analysis.
-
-/**
- * Instructions after which the next instruction starts a flow for the seeds: the
- * ones that do not fall through, and JSR, because an analyzer that takes the
- * called routine for one that does not return stops there (the Bruce Lee run).
- */
-const FLOW_ENDS = new Set([0x00, 0x20, 0x40, 0x4c, 0x60, 0x6c]);
-/**
- * The executed instruction starts in RAM that begin a flow: the first after
- * a gap, or the first after an instruction that does not fall through or is a
- * JSR. The analyzers follow the rest of a flow themselves.
- */
-export function coverageEntries(map: Uint8Array, image: (address: number) => number | undefined): number[] {
-  const entries: number[] = [];
-  let falls: number | undefined;
-  for (let address = 0; address < 0x10000; address++) {
-    if ((map[address]! & COVERAGE.ramExecute) === 0) continue;
-    const opcode = image(address);
-    if (opcode === undefined) continue;
-    if (falls !== address) entries.push(address);
-    falls = FLOW_ENDS.has(opcode) ? undefined : address + instructionLength(opcode);
-  }
-  return entries;
-}
-
-const ROM_ACCESS = COVERAGE.romRead | COVERAGE.romExecute;
-const RAM_USE = COVERAGE.ramRead | COVERAGE.ramExecute;
-
-/**
- * The image bytes under ROM that the runs never used: the CPU read or ran the
- * ROM there, and never read or ran the RAM. A JSR $FFE4 or an IRQ
- * vector at $FFFE then leads into ROM, not into the leftover RAM bytes of a
- * flat image, so the ranges are data for an analysis run.
- */
-export function romOnlyRanges(map: Uint8Array, image: (address: number) => number | undefined): AddressRange[] {
-  const ranges: AddressRange[] = [];
-  for (let address = 0; address < 0x10000; address++) {
-    if ((map[address]! & ROM_ACCESS) === 0 || (map[address]! & RAM_USE) !== 0 || image(address) === undefined) continue;
-    const last = ranges.at(-1);
-    if (last !== undefined && last.end === address - 1) last.end = address;
-    else ranges.push({ start: address, end: address });
-  }
-  return ranges;
-}
-
-/** Every executed instruction start in RAM inside the image: VICE marks the opcode byte of an instruction as executed, not its operand. */
-export function executedStarts(map: Uint8Array, image: (address: number) => number | undefined): number[] {
-  const starts: number[] = [];
-  for (let address = 0; address < 0x10000; address++) if ((map[address]! & COVERAGE.ramExecute) !== 0 && image(address) !== undefined) starts.push(address);
-  return starts;
-}
-
-const BRANCHES = new Set([0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xf0]);
-
-/** Instructions that never fall through to the next one. */
-const NO_FALL = new Set([0x00, 0x40, 0x4c, 0x60, 0x6c]);
-
-/**
- * The coverage flow starts split for Ghidra. A start is a code start, a
- * place in a routine, when it follows an executed JSR, or when an executed
- * branch or JMP from outside its own flow reaches it (the loop of a routine
- * that jumps back to its own start does not count). Any other start, for
- * example a vector or table target, is a routine entry.
- */
-export function coverageSeedKinds(map: Uint8Array, image: (address: number) => number | undefined): { routines: number[]; codeStarts: number[] } {
-  const entries = coverageEntries(map, image);
-  const flowOf = new Map<number, number>();
-  for (const entry of entries) {
-    // A flow runs over the executed instructions that fall through, also over a JSR.
-    for (let at = entry; ; ) {
-      const opcode = image(at);
-      if (opcode === undefined || (map[at]! & COVERAGE.ramExecute) === 0 || flowOf.has(at)) break;
-      flowOf.set(at, entry);
-      if (NO_FALL.has(opcode)) break;
-      at += instructionLength(opcode);
-    }
-  }
-  const inside = new Set<number>();
-  for (const address of executedStarts(map, image)) {
-    const opcode = image(address)!;
-    const low = image(address + 1);
-    const high = image(address + 2);
-    const reach = (target: number) => flowOf.get(address) !== target && inside.add(target);
-    if (BRANCHES.has(opcode) && low !== undefined) reach((address + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff);
-    if (opcode === 0x4c && low !== undefined && high !== undefined) reach(low | (high << 8));
-    if (opcode === 0x20) inside.add(address + 3);
-  }
-  return { routines: entries.filter((entry) => !inside.has(entry)), codeStarts: entries.filter((entry) => inside.has(entry)) };
 }

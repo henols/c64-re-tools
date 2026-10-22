@@ -5,7 +5,7 @@
 import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { formatC64Address } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
 import { writeRefusal } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -58,7 +58,7 @@ export async function machineState(client: ViceSessionClient): Promise<MachineSt
   return { port, pages, io, cia: { cia1: cia1!, cia2: cia2! }, romVectors };
 }
 
-const word = (bytes: Buffer, offset: number) => formatC64Address(bytes[offset]! | (bytes[offset + 1]! << 8));
+const word = (bytes: Buffer, offset: number) => formatAddress(bytes[offset]! | (bytes[offset + 1]! << 8));
 
 /** The KERNAL vectors in page 3, the hardware vectors in RAM, and the ROM's own. */
 export function vectorsOf(state: MachineState, memory: Buffer) {
@@ -80,7 +80,7 @@ export async function readyState(client: ViceSessionClient): Promise<MachineStat
 /** The bytes that differ from a clean machine: the CPU port, pages 0-3 from $0002, and the I/O areas. */
 export function differsFrom(state: MachineState, clean: MachineState): Array<{ address: string; entry: number; reset: number }> {
   const differs: Array<{ address: string; entry: number; reset: number }> = [];
-  const compare = (base: number, entry: Buffer, reset: Buffer) => entry.forEach((value, offset) => value !== reset[offset] && differs.push({ address: formatC64Address(base + offset), entry: value, reset: reset[offset]! }));
+  const compare = (base: number, entry: Buffer, reset: Buffer) => entry.forEach((value, offset) => value !== reset[offset] && differs.push({ address: formatAddress(base + offset), entry: value, reset: reset[offset]! }));
   compare(0x0000, state.port, clean.port);
   compare(0x0002, state.pages.subarray(2), clean.pages.subarray(2));
   for (const name of CHIP_AREAS) compare(IO_AREAS[name][0], state.io[name], clean.io[name]);
@@ -100,10 +100,10 @@ export function entryStateFile(registers: Registers, state: MachineState, vector
 /** The content of entry_state.json. */
 function entryState(registers: Registers, state: MachineState, vectors: ReturnType<typeof vectorsOf>, differsFromReset: Array<{ address: string; entry: number; reset: number }>) {
   return {
-    registers: { pc: formatC64Address(registers.pc), a: registers.a, x: registers.x, y: registers.y, sp: registers.sp, flags: registers.flags },
+    registers: { pc: formatAddress(registers.pc), a: registers.a, x: registers.x, y: registers.y, sp: registers.sp, flags: registers.flags },
     cpuPort: { $00: state.port[0], $01: state.port[1] },
-    pages: Object.fromEntries([0, 1, 2, 3].map((page) => [formatC64Address(page << 8), state.pages.subarray(page << 8, (page + 1) << 8).toString("hex")])),
-    io: Object.fromEntries(Object.entries(IO_AREAS).map(([name, [address]]) => [name, { from: formatC64Address(address), bytes: state.io[name as keyof typeof IO_AREAS].toString("hex") }])),
+    pages: Object.fromEntries([0, 1, 2, 3].map((page) => [formatAddress(page << 8), state.pages.subarray(page << 8, (page + 1) << 8).toString("hex")])),
+    io: Object.fromEntries(Object.entries(IO_AREAS).map(([name, [address]]) => [name, { from: formatAddress(address), bytes: state.io[name as keyof typeof IO_AREAS].toString("hex") }])),
     // The CIA latches and interrupt masks: write-only on the chip, so the I/O bytes do not hold them.
     cia: state.cia,
     vectors,

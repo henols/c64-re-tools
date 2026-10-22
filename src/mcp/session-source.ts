@@ -1,9 +1,17 @@
-// The C64 session of the MCP server: one at a time, opened again after a loss.
+// The session of the MCP server: one at a time, opened again after a loss.
 
-import type { ViceSessionClient } from "../host-client/vice-session.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { elapsedMs, trace } from "../trace.ts";
 import type { SessionSource } from "./server.ts";
+
+/** What the session source needs of the session client of a family. */
+export interface SessionClient {
+  readonly closed: Promise<void>;
+  readonly lost: boolean;
+  readonly answered: boolean;
+  readonly unreportedLoss: WireFailure | undefined;
+  close(): Promise<void>;
+}
 
 /**
  * One session at a time (1 MCP = 1 session = 1 VICE). It opens at start; if
@@ -15,8 +23,8 @@ import type { SessionSource } from "./server.ts";
  * release refuses the new session: then that refusal comes instead of the
  * machine-state-lost, since it tells what to do.
  */
-export function sessionSource(openClient: (signal: AbortSignal) => Promise<ViceSessionClient>, log: (line: string) => void): { get: SessionSource; close(): Promise<void> } {
-  let opening: Promise<ViceSessionClient> | undefined;
+export function sessionSource<C extends SessionClient>(openClient: (signal: AbortSignal) => Promise<C>, log: (line: string) => void, name = "C64"): { get: SessionSource<C>; close(): Promise<void> } {
+  let opening: Promise<C> | undefined;
   let lostNotice: WireFailure | undefined;
   let closed = false;
   const stop = new AbortController();
@@ -38,15 +46,15 @@ export function sessionSource(openClient: (signal: AbortSignal) => Promise<ViceS
     return current;
   };
   /** Forgets a lost session, once; the next call opens a new one. */
-  const drop = (current: Promise<ViceSessionClient>, client: ViceSessionClient) => {
+  const drop = (current: Promise<C>, client: C) => {
     if (closed || opening !== current) return;
     log("the connection to the host runtime was lost; the next call opens a new session");
     opening = undefined;
     if (client.answered) lostNotice = client.unreportedLoss;
   };
   open();
-  const get = async (): Promise<ViceSessionClient> => {
-    if (closed) throw new WireFailure("machine-unavailable", "The C64 session is shutting down.");
+  const get = async (): Promise<C> => {
+    if (closed) throw new WireFailure("machine-unavailable", `The ${name} session is shutting down.`);
     if (lostNotice !== undefined) {
       const notice = lostNotice;
       lostNotice = undefined;

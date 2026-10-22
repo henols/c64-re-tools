@@ -5,7 +5,7 @@
 
 import { z } from "zod";
 
-import { c64AddressOf } from "../c64.ts";
+import { addressOf } from "../address.ts";
 import { keyTaps, MAX_PRESS_FRAMES, PRESS_FRAMES } from "../c64-keys.ts";
 import { DEFAULT_TIMEOUT_FRAMES, keyboardBytes, MAX_RASTER_LINE } from "../host-client/steps.ts";
 import { COMPARISONS, CONDITION_REGISTERS, JOYSTICK_DIRECTIONS, MAX_KEYBOARD_BYTES, MAX_MEMORY_WRITE, MAX_TIMEOUT_FRAMES, MEMORY_VIEWS, SPACES } from "../protocol/vice.ts";
@@ -28,11 +28,11 @@ export const MemoryViewInput = z
 /** A tool address: $ and 1 to 4 hex digits, either case. Parses to a number. */
 export const AddressInput = z
   .string()
-  .refine((value) => c64AddressOf(value) !== undefined, {
+  .refine((value) => addressOf(value) !== undefined, {
     message: "must be $ and 1 to 4 hex digits, for example $c000 or $fb. A tool takes no names: get the address of the name from the project knowledge",
   })
-  .transform((value) => c64AddressOf(value)!)
-  .describe("C64 address: $ and 1 to 4 hex digits, $0000 to $ffff");
+  .transform((value) => addressOf(value)!)
+  .describe("address: $ and 1 to 4 hex digits, $0000 to $ffff");
 
 /** The space of a memory target or condition: the emulator tests only C64 memory. */
 const MemorySpaceInput = SpaceInput.describe("c64 only: the emulator tests only C64 memory. For the drive, use a watchpoint or an address target in space drive8");

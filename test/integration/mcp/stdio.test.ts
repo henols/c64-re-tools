@@ -12,16 +12,16 @@ import { after, test } from "node:test";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { startHostServer, type HostServer, type ViceSessionFactory } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, type ViceSessionFactory, viceBackend } from "../../../src/host/server.ts";
 import { freePort } from "../../../src/host/vice/process.ts";
 import { startMcp, waitFor } from "../../kit.ts";
 
 /** Every tool that the MCP server registers. */
 const TOOLS = [
-  "c64_autostart", "c64_backtrace", "c64_breakpoint", "c64_cia", "c64_cpu_history", "c64_disassemble", "c64_disk_attach", "c64_execution",
-  "c64_joystick", "c64_keyboard", "c64_memmap", "c64_memory_compare", "c64_memory_read", "c64_memory_search", "c64_memory_write", "c64_observe",
-  "c64_press", "c64_profile", "c64_program_load", "c64_registers", "c64_reset", "c64_run_until", "c64_screen", "c64_sid", "c64_snapshot",
-  "c64_sprite", "c64_timing", "c64_trace", "c64_vicii", "c64_warp", "c64_watchpoint", "c64_window",
+  "autostart", "backtrace", "breakpoint", "cia", "cpu_history", "disassemble", "execution", "joystick",
+  "keyboard", "media_attach", "memmap", "memory_compare", "memory_read", "memory_search", "memory_write", "observe",
+  "press", "profile", "program_load", "registers", "reset", "run_until", "screen", "sid",
+  "snapshot", "sprite", "timing", "trace", "vicii", "warp", "watchpoint", "window",
 ];
 
 interface StubState {
@@ -65,12 +65,12 @@ async function mcp(port: number, env: Record<string, string> = {}, cwd?: string)
 
 /** One call that needs the session: warp mode off. */
 async function call(client: Client): Promise<CallToolResult> {
-  return (await client.callTool({ name: "c64_warp", arguments: { enabled: false } })) as CallToolResult;
+  return (await client.callTool({ name: "warp", arguments: { enabled: false } })) as CallToolResult;
 }
 
 test("the MCP opens one session at start and closes it when the harness disconnects", async () => {
   const state: StubState = { opened: [], closed: 0 };
-  const server = await startHostServer({ port: 0, createViceSession: stub(state) });
+  const server = await startHostServer({ port: 0, backends: [viceBackend(stub(state))] });
   servers.push(server);
   const client = await mcp(server.port, { C64RT_VIDEO: "ntsc" });
   assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), TOOLS);
@@ -89,7 +89,7 @@ test("a host that starts after the MCP is used on the next tool call", async () 
   assert.equal(JSON.parse((first.content[0] as { text: string }).text).error.code, "machine-unavailable");
 
   const state: StubState = { opened: [], closed: 0 };
-  servers.push(await startHostServer({ port, createViceSession: stub(state) }));
+  servers.push(await startHostServer({ port, backends: [viceBackend(stub(state))] }));
   assert.equal((await call(client)).isError, undefined);
   assert.equal(state.opened.length, 1);
   await client.close();
@@ -100,7 +100,7 @@ test("after the host comes back, the next call opens a new session; a lost sessi
   const port = await freePort();
   const code = (result: CallToolResult) => (result.isError === true ? JSON.parse((result.content[0] as { text: string }).text).error.code : "ok");
   const host = async (state: StubState) => {
-    const server = await startHostServer({ port, createViceSession: stub(state) });
+    const server = await startHostServer({ port, backends: [viceBackend(stub(state))] });
     servers.push(server);
     return server;
   };
@@ -133,7 +133,7 @@ test("after the host comes back, the next call opens a new session; a lost sessi
 
 test("a bad C64RT_VIDEO is reported to the caller", async () => {
   const state: StubState = { opened: [], closed: 0 };
-  const server = await startHostServer({ port: 0, createViceSession: stub(state) });
+  const server = await startHostServer({ port: 0, backends: [viceBackend(stub(state))] });
   servers.push(server);
   const client = await mcp(server.port, { C64RT_VIDEO: "secam" });
   const result = await call(client);
@@ -149,13 +149,13 @@ test("a project path is read in the MCP's working directory and only its bytes r
     const prg = Buffer.from([0x01, 0x08, 0xa9, 0x00, 0x60]);
     writeFileSync(join(project, "build", "game.prg"), prg);
     const state: StubState = { opened: [], closed: 0 };
-    const server = await startHostServer({ port: 0, createViceSession: stub(state) });
+    const server = await startHostServer({ port: 0, backends: [viceBackend(stub(state))] });
     servers.push(server);
     const client = await mcp(server.port, {}, project);
-    const result = (await client.callTool({ name: "c64_program_load", arguments: { path: "build/game.prg" } })) as CallToolResult;
+    const result = (await client.callTool({ name: "program_load", arguments: { path: "build/game.prg" } })) as CallToolResult;
     assert.deepEqual(result.structuredContent, { state: "stopped", loadAddress: "$0801", size: 3 });
     assert.deepEqual(state.received, [prg]);
-    const missing = (await client.callTool({ name: "c64_program_load", arguments: { path: "build/none.prg" } })) as CallToolResult;
+    const missing = (await client.callTool({ name: "program_load", arguments: { path: "build/none.prg" } })) as CallToolResult;
     assert.equal(JSON.parse((missing.content[0] as { text: string }).text).error.code, "not-found");
     await client.close();
   } finally {

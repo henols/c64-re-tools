@@ -3,7 +3,7 @@
 // parser of that state, and the one way to put a program at its entry in the
 // emulator.
 
-import { c64AddressOf } from "../c64.ts";
+import { addressOf } from "../address.ts";
 import { Refusal } from "../errors.ts";
 import { MAX_MEMORY_WRITE } from "./tools.ts";
 import { readProjectFile } from "./transfer.ts";
@@ -40,7 +40,7 @@ export function parseEntryState(value: unknown, where: string): EntryState {
   };
   if (!isObject(value)) return fail("it is not a JSON object");
   const registers = isObject(value.registers) ? value.registers : fail("it has no registers");
-  const pc = typeof registers.pc === "string" ? c64AddressOf(registers.pc) : undefined;
+  const pc = typeof registers.pc === "string" ? addressOf(registers.pc) : undefined;
   if (pc === undefined) fail("registers.pc is not a $ address");
   for (const name of ["a", "x", "y", "sp"]) if (!isByte(registers[name])) fail(`registers.${name} is not a byte`);
   const flags = isObject(registers.flags) ? registers.flags : fail("registers.flags is not an object");

@@ -11,9 +11,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { formatC64Address } from "../../../src/c64.ts";
+import { formatAddress } from "../../../src/address.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { openForWrite } from "../../../src/knowledge/database.ts";
 import { renameSymbol } from "../../../src/knowledge/write.ts";
@@ -21,7 +21,7 @@ import { BROKEN, EQUIVALENT, ORIGINAL } from "../../fixtures/prg/counter-variant
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m9-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -37,9 +37,9 @@ function setUpProject(): void {
   for (const [name, address] of Object.entries(ORIGINAL.symbols)) renameSymbol(db, { origin: "llm" }, { address, name, kind: name === "counter" ? "variable" : "label" });
   db.close();
   // The good rebuild's symbols as c64-assembler prints them; the bad one's as a plain map.
-  const assembled = { assembled: true, symbols: Object.entries(EQUIVALENT.symbols).map(([name, address]) => ({ name, kind: "address", address: formatC64Address(address), used: true })) };
+  const assembled = { assembled: true, symbols: Object.entries(EQUIVALENT.symbols).map(([name, address]) => ({ name, kind: "address", address: formatAddress(address), used: true })) };
   writeFileSync(join(project, "good.json"), JSON.stringify(assembled));
-  writeFileSync(join(project, "bad.json"), JSON.stringify(Object.fromEntries(Object.entries(BROKEN.symbols).map(([name, address]) => [name, formatC64Address(address)]))));
+  writeFileSync(join(project, "bad.json"), JSON.stringify(Object.fromEntries(Object.entries(BROKEN.symbols).map(([name, address]) => [name, formatAddress(address)]))));
   const scenario = (name: string, rebuild: string, checkpoint: string, timeoutFrames: number) => ({
     name,
     original: { program: "original.prg", symbols: "knowledge" },
@@ -63,7 +63,7 @@ async function hostAddress(): Promise<string> {
   if (server === undefined) {
     const supervisor = new ProcessSupervisor();
     supervisor.installExitGuard();
-    server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+    server = await startHostServer({ port: 0, backends: [viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }))] });
   }
   return `${server.host}:${server.port}`;
 }

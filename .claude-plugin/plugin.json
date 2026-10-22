@@ -3,7 +3,7 @@
   "name": "c64-re-tools",
   "displayName": "C64 Reverse-Engineering Tools",
   "version": "0.0.0-development",
-  "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing.",
+  "description": "Agent-friendly Commodore 64 and ZX Spectrum engineering toolkit for reverse engineering, debugging, development and testing.",
   "author": {
     "name": "Henrik Olsson",
     "url": "https://github.com/henols"
@@ -16,13 +16,21 @@
     "6502",
     "6510",
     "acme",
+    "zx-spectrum",
+    "zesarux",
+    "z80",
+    "sjasmplus",
     "reverse-engineering",
     "mcp"
   ],
   "mcpServers": {
-    "c64-re-tools": {
+    "c64": {
       "command": "npx",
-      "args": ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"]
+      "args": ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp", "--machine", "c64"]
+    },
+    "spectrum": {
+      "command": "npx",
+      "args": ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp", "--machine", "spectrum"]
     }
   },
   "defaultEnabled": false

@@ -14,7 +14,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { definePlugin, defineSkill, type Skill } from "@jalco/ap-sdk";
 
 import { PACKAGE } from "../src/package.ts";
-import { MCP_SERVER } from "./package.ts";
+import { mcpServers } from "./package.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const SOURCE = join(root, "src");
@@ -110,12 +110,12 @@ function c64Plugin() {
   return definePlugin({
     id: "c64-re-tools",
     version: PACKAGE.version,
-    description: "Commodore 64 reverse engineering and development: a live VICE emulator, static analysis, disk and BASIC tools, project knowledge, building and testing.",
+    description: "Commodore 64 and ZX Spectrum reverse engineering and development: live VICE and ZEsarUX emulators, static analysis, media and BASIC tools, project knowledge, building and testing.",
     author: { name: "Henrik Olsson" },
     homepage: "https://github.com/henols/c64-re-tools",
     license: "MIT",
     skills,
-    mcpServers: { "c64-re-tools": MCP_SERVER },
+    mcpServers: mcpServers(),
   });
 }
 

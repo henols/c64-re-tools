@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { COVERAGE } from "../c64.ts";
+import { COVERAGE } from "../cpu/coverage.ts";
 import { markIoRamWrites, writtenBlocks } from "./coverage.ts";
 
 test("a run of writes under the I/O area with a changed byte is RAM written; a run of register writes is not", () => {

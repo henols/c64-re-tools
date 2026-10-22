@@ -71,6 +71,30 @@ export const C64RUN: ToolSpec = {
   remedy: INSTALL_STEPS,
 };
 
+export const ZXRUN: ToolSpec = {
+  name: "zxrun",
+  envVar: "C64RT_ZXRUN",
+  binaries: ["zxrun"],
+  where: "on this machine",
+  remedy: INSTALL_STEPS,
+};
+
+export const SJASMPLUS: ToolSpec = {
+  name: "sjasmplus",
+  envVar: "C64RT_SJASMPLUS",
+  binaries: ["sjasmplus"],
+  where: "on this machine",
+  remedy: INSTALL_STEPS,
+};
+
+export const ZESARUX: ToolSpec = {
+  name: "ZEsarUX",
+  envVar: "C64RT_ZESARUX",
+  binaries: ["zesarux"],
+  where: "on the host",
+  remedy: "Install ZEsarUX 13.0 or later on the host so that zesarux is on PATH, or set C64RT_ZESARUX to the full path of zesarux, then restart the Host Runtime.",
+};
+
 export const VICE: ToolSpec = {
   name: "VICE (x64sc)",
   envVar: "C64RT_VICE",

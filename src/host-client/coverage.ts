@@ -1,7 +1,7 @@
 // Reads the emulator's memory access map as coverage bytes: one byte
 // per address, RAM, ROM and I/O apart. The MCP tool and the skill scripts share it.
 
-import { COVERAGE, type CodeRange } from "../c64.ts";
+import { COVERAGE, type CodeRange } from "../cpu/coverage.ts";
 import { MAX_MEMMAP_RANGES, type MemmapRange } from "../protocol/vice.ts";
 import type { ViceSessionClient } from "./vice-session.ts";
 

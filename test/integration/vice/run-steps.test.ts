@@ -1,4 +1,4 @@
-// The c64-testing run: steps in its own emulator, with screens, a
+// The retro-testing run: steps in its own emulator, with screens, a
 // coverage map, a snapshot file and observations written to a directory; a
 // second run starts from the snapshot file of the first. Opt-in with C64RT_LIVE_VICE.
 
@@ -10,15 +10,15 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE } from "../../../src/c64.ts";
+import { COVERAGE } from "../../../src/cpu/coverage.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
+import { startHostServer, type HostServer, viceBackend } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { joystickCounterPrg, LEFT_SEEN } from "../../fixtures/prg/joystick-counter.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-run-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -30,7 +30,7 @@ async function runSteps(...args: string[]): Promise<{ status: number | null; jso
   if (server === undefined) {
     const supervisor = new ProcessSupervisor();
     supervisor.installExitGuard();
-    server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+    server = await startHostServer({ port: 0, backends: [viceBackend(viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }))] });
   }
   const child = spawn(process.execPath, [...process.execArgv, script, "run", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
@@ -149,7 +149,7 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
   assert.equal(all.length, 0x10000);
   assert.deepEqual([...all.subarray(0xe000, 0xe004)], [1, 2, 3, 4]);
 
-  const differ = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+  const differ = resolve(import.meta.dirname, "../../../skills/retro-testing/scripts/testing.ts");
   const child = spawn(process.execPath, [...process.execArgv, differ, "diff", "runs/under/a.vsf", "runs/under/b.vsf"], { cwd: project, env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));

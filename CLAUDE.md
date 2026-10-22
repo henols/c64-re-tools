@@ -19,12 +19,15 @@ when the emulator misbehaves.
 Released as 2.0.0. `.github/README.md` is the user documentation (GitHub shows it on the repository page). It stays out of the npm package: the agent side gets only skills and tools, never the README. Do not add design
 documents, plans or decision numbers to the repository.
 
-Architecture in one line: one MCP process owns one VICE instance and is
-VICE-only; a Host Runtime on the graphical host owns VICE and the tools that
-come with it (c1541, petcat); skill scripts call the Host Runtime for those,
-run ACME, DXA and Exomizer themselves and Ghidra in process (a committed WebAssembly
-build of a Rust port, from `native/sleigh/`, as base64 in a `.ts` file), and keep project knowledge local as
-text in `.c64-re-tools/knowledge/`, with a SQLite index in `local/`.
+Architecture in one line: one MCP process per machine family
+(`c64-re-tools-mcp --machine c64|spectrum`) owns one emulator; a Host Runtime
+on the graphical host owns the emulators (VICE with c1541 and petcat, ZEsarUX)
+and starts when at least one starts; skill scripts call the Host Runtime for
+those, run ACME, sjasmplus, DXA, Exomizer, c64run and zxrun themselves and Ghidra
+in process (a committed WebAssembly build of a Rust port, from `native/sleigh/`,
+as base64 in a `.ts` file), and keep project knowledge local as text in `.c64-re-tools/knowledge/`, with a SQLite
+index in `local/`. The project's machine (`machine.jsonl`) picks the CPU,
+the spaces, the assembler and the platform names.
 
 ## Commands
 
@@ -51,8 +54,8 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
 - Live suites: the full suite on VICE 3.10, `C64RT_LIVE_VICE=/usr/local/bin/x64sc pnpm test`.
   VICE 3.9 runs only the tests of what a VICE flaw breaks:
   `C64RT_LIVE_VICE=/usr/bin/x64sc pnpm test $(grep -rl viceFlaws test/integration)`.
-  Every VICE runs headless. The c64_window tests open real windows and also
-  need `C64RT_LIVE_WINDOW=1`.
+  Every VICE runs headless. The window tests open real windows and also
+  need `C64RT_LIVE_WINDOW=1`. The ZEsarUX suites: `C64RT_LIVE_ZESARUX=/usr/local/bin/zesarux`.
 - Real VICE is given by absolute path. `-default` must precede
   `-binarymonitor`, and autostart needs `-autostartprgmode 1`.
 - `/tmp` is a RAM tmpfs here; tests that leak scratch dirs fill it.
@@ -60,7 +63,7 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
 ## Conventions that bite
 
 - **TypeScript only.** No `.js`/`.mjs` anywhere, also not installed: nothing is built at install or release, there is no `dist/`. The one exception is the Rust in `native/sleigh/`, whose WebAssembly is committed as `src/native/ghidra/c64rt-wasm.ts`. Users run everything through `npx -y @henols/c64-re-tools@latest` (the MCP declaration too), so it updates itself; never link (`npm link`, `npm install -g <dir>`). Node never strips types under `node_modules`, so the bins are `.ts` with a `#!/usr/bin/env tsx` shebang, and every spawn of node on our own `.ts` passes `process.execArgv`. Skill scripts import `src/` as `#src/...`. npx exits on SIGTERM without passing it on: signal the process group.
-- The Host Runtime runs only VICE, c1541 and petcat. Skill scripts run ACME, DXA and Exomizer through `src/native/` (supervisor, staging, bounded `runTool`); never a bare `spawnSync`. Ghidra is `src/native/ghidra/c64rt-wasm.ts` (WebAssembly as base64: skills install as text), built by hand with `native/sleigh/build.sh` (Rust, a patched crates.io crate) and committed; rebuild it only when `native/sleigh/` or the language changes, and compile `c64rt_6510.sla` from the `.slaspec` with Ghidra's `support/sleigh`. The toolkit never installs external tools: it detects them, refuses by name and prints the remedy. The one installer is the dev container Feature: at image build and at each start it installs the tools in `tools/` of the toolkit version that it puts into the project.
+- The Host Runtime runs only VICE, c1541 and petcat. Skill scripts run ACME, DXA and Exomizer through `src/native/` (supervisor, staging, bounded `runTool`); never a bare `spawnSync`. Ghidra is `src/native/ghidra/c64rt-wasm.ts` (WebAssembly as base64: skills install as text), built by hand with `native/sleigh/build.sh` (Rust, a patched crates.io crate) and committed; rebuild it only when `native/sleigh/` or the language changes, and compile `c64rt_6510.sla` from the `.slaspec` with Ghidra's `support/sleigh`; the Z80 files (`z80.sla`, `.pspec`, `.cspec`) are the crate's own `languages/Z80`. The toolkit never installs external tools: it detects them, refuses by name and prints the remedy. The one installer is the dev container Feature: at image build and at each start it installs the tools in `tools/` of the toolkit version that it puts into the project.
 - The host refuses to start unless VICE starts (ROMs present); the host is started by hand only.
 - Tools take client paths and stream bytes; never a fixed file list or a path over the socket.
 - Stopping the Host Runtime or a skill script must stop every emulator, tool and descendant it started.

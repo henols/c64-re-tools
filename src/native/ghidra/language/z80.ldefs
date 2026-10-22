@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Ghidra's Zilog Z80 language, from the decompiler crate: the CPU of the ZX Spectrum. -->
+<language_definitions>
+  <language processor="Z80"
+            endian="little"
+            size="16"
+            variant="default"
+            version="1.0"
+            slafile="z80.sla"
+            processorspec="z80.pspec"
+            id="z80:LE:16:default">
+    <description>Zilog Z80</description>
+    <compiler name="default" spec="z80.cspec" id="default"/>
+  </language>
+</language_definitions>

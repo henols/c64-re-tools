@@ -74,7 +74,7 @@ function main(): void {
   // The MCP server from the same spec: install declares the channel of its version, and a tarball has none.
   const mcpFile = join(project, ".mcp.json");
   const mcp = readJson<{ mcpServers?: Record<string, { args?: string[] }> }>(mcpFile, {});
-  const server = mcp.mcpServers?.["c64-re-tools"];
+  const server = mcp.mcpServers?.["c64"];
   if (server?.args === undefined) {
     console.error(`${mcpFile} declares no c64-re-tools server.`);
     process.exit(1);

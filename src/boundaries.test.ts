@@ -16,10 +16,10 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["build-name", "c64", "c64-keys", "compare", "errors", "graphics", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
+      return ["address", "assembler", "build-name", "c64-keys", "c64", "compare", "cpu", "errors", "graphics", "machine", "media", "opcodes", "package", "platform", "project", "script", "spectrum", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
-    return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
+    return ["mcp", "host-client", "host", "knowledge", "cli", "assembler", "cpu", "native", "platform", "protocol"].includes(dir) ? dir : undefined;
   }
   if (parts[0] === "skills" && parts.length > 2) return `skill:${parts[1]}`;
   // The one-off conversion of an old knowledge.db is no part of the package edge.
@@ -31,15 +31,25 @@ function areaOf(path: string): string | undefined {
 const ALLOWED: Record<string, readonly string[]> = {
   // The error codes and the refusal class import nothing.
   errors: [],
+  // Addresses as text, ranges, tables of addresses: every area uses them.
+  address: [],
   c64: [],
-  // The name of a build and of its symbols file: c64-assembler and c64-source name a program by what it is.
+  // The name of a build and of its symbols file: c64-assembler and retro-source name a program by what it is.
   "build-name": [],
   // The byte check of a PRG against a reference: the build of c64-assembler and the unpack of c64-packer.
   compare: ["c64"],
-  // The ACME spelling of each 6510 opcode: c64-source and the listing of c64-knowledge decode with one table.
+  // The ACME spelling of each 6510 opcode: retro-source and the listing of retro-knowledge decode with one table.
   opcodes: ["c64"],
-  // The platform memory map: names and meanings of C64 addresses.
-  platform: ["c64"],
+  // The platform memory maps: names and meanings of the addresses of each machine.
+  platform: ["c64", "cpu", "machine"],
+  // The CPU of a machine for the analysis: instruction lengths, flow and text (6502, Z80), and the coverage flows.
+  cpu: ["opcodes"],
+  // The assembler of a machine: the rules for patch code and macro bodies in its syntax.
+  assembler: ["opcodes"],
+  // ZX Spectrum media and snapshots: TAP and TZX blocks, .z80 and .sna.
+  spectrum: [],
+  // A machine: its CPU, its spaces, its assembler and its Ghidra language.
+  machine: ["cpu", "assembler"],
   // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images.
   graphics: [],
   // The one time format (ISO 8601 at +01:00).
@@ -49,7 +59,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   // The opt-in trace of a process, for people. Every program may write to it.
   trace: ["time"],
   project: ["c64"],
-  protocol: ["c64", "c64-keys"],
+  protocol: ["c64", "c64-keys", "machine"],
   // The package name and channel: the npx command in refusals and help texts.
   package: [],
   // Media file signatures and sizes: the host checks a file before VICE gets it, and c64-disk reads it.
@@ -58,21 +68,21 @@ const ALLOWED: Record<string, readonly string[]> = {
   "c64-keys": [],
   // The modules of a VICE snapshot file, and the changes that press keys in it.
   vsf: ["media"],
-  "host-client": ["protocol", "c64", "c64-keys", "project", "trace", "package"],
-  mcp: ["host-client", "protocol", "c64", "c64-keys", "trace", "package"],
-  host: ["native", "protocol", "c64", "c64-keys", "graphics", "opcodes", "trace", "package", "media", "vsf"],
+  "host-client": ["protocol", "c64", "c64-keys", "cpu", "project", "trace", "package", "machine", "spectrum"],
+  mcp: ["host-client", "protocol", "c64", "c64-keys", "cpu", "trace", "package", "machine"],
+  host: ["native", "protocol", "c64", "c64-keys", "cpu", "graphics", "opcodes", "trace", "package", "media", "vsf", "machine", "spectrum"],
   // opcodes: one rule for a name that ACME can take as a label.
-  knowledge: ["c64", "project", "time", "opcodes"],
+  knowledge: ["c64", "cpu", "machine", "project", "time", "opcodes"],
   // The call contract of the skill scripts: the command line, the values, the envelope.
-  script: ["protocol", "project", "trace", "c64"],
+  script: ["protocol", "project", "trace", "c64", "machine"],
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
-  native: ["protocol", "c64", "trace"],
+  native: ["protocol", "c64", "trace", "cpu", "machine"],
   // The installation and status edge: host tool status through the host-client, local tool status through native.
-  cli: ["host-client", "native", "protocol", "script", "distribution", "trace", "package"],
-  distribution: ["package"],
+  cli: ["host-client", "native", "protocol", "script", "distribution", "trace", "package", "machine"],
+  distribution: ["package", "machine"],
   convert: ["knowledge"],
 };
-const SKILL_ALLOWED = ["build-name", "host-client", "native", "knowledge", "project", "c64", "c64-keys", "compare", "graphics", "opcodes", "package", "platform", "script", "time", "media", "vsf", "zip"];
+const SKILL_ALLOWED = ["build-name", "c64-keys", "c64", "compare", "cpu", "graphics", "host-client", "knowledge", "machine", "media", "native", "opcodes", "package", "platform", "project", "script", "spectrum", "time", "vsf", "zip"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.
@@ -103,7 +113,8 @@ function checkTarget(from: string, source: string, target: string): string | und
   if (targetArea === undefined) return `${from}: imports ${target}, which is outside every source area`;
   if (targetArea === source) return undefined;
   // The one list of error codes and the one refusal class: every area reports failures with them.
-  if (targetArea === "errors") return undefined;
+  // The one address format: every area reads and writes addresses with it.
+  if (targetArea === "errors" || targetArea === "address") return undefined;
 
   const allowed = source.startsWith("skill:") ? SKILL_ALLOWED : (ALLOWED[source] ?? []);
   return allowed.includes(targetArea) ? undefined : `${from}: ${source} must not import ${targetArea} (${target})`;
@@ -190,7 +201,7 @@ test("checkImport accepts every allowed direction", () => {
   const accepted: Array<[string, string]> = [
     ["src/mcp/server.ts", "../host-client/vice-session.ts"],
     ["src/host/vice/session.ts", "../../graphics.ts"],
-    ["skills/c64-docs/scripts/docs.ts", "#src/graphics.ts"],
+    ["skills/retro-docs/scripts/docs.ts", "#src/graphics.ts"],
     ["src/mcp/tools/memory.ts", "../../c64.ts"],
     ["src/host-client/connect.ts", "../protocol/messages.ts"],
     ["src/host-client/transfer.ts", "../project.ts"],

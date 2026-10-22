@@ -4,7 +4,7 @@
 // spelling, ACME writes only one of them: the generator finds those with a
 // probe and writes the others as bytes.
 
-import { formatC64Byte, formatC64Address, SYMBOL_NAME } from "./c64.ts";
+import { formatByte, formatAddress, SYMBOL_NAME } from "./address.ts";
 
 export type Mode = "imp" | "imm" | "zp" | "zpx" | "zpy" | "abs" | "abx" | "aby" | "ind" | "izx" | "izy" | "rel";
 
@@ -44,17 +44,6 @@ export const MODE_LENGTH: Record<Mode, 1 | 2 | 3> = { imp: 1, imm: 2, zp: 2, zpx
 
 /** Every mnemonic in the table: a symbol with one of these names would read as an instruction. */
 export const MNEMONICS: ReadonlySet<string> = new Set(OPCODES.map((opcode) => opcode.mnemonic));
-
-/**
- * Why ACME cannot take a name as a label, or undefined when it can. A label
- * has label syntax (SYMBOL_NAME) and is no mnemonic in upper or lower case.
- * The one rule for a symbol of the knowledge and a label of c64-source.
- */
-export function labelProblem(name: string): string | undefined {
-  if (!SYMBOL_NAME.test(name)) return "A symbol name is a letter or underscore, then letters, digits or underscores (at most 64), with an optional leading dot.";
-  if (MNEMONICS.has(name.toLowerCase())) return `${name} is the name of a 6502 instruction, which ACME cannot read as a label. Give another name.`;
-  return undefined;
-}
 
 const ZERO_PAGE_OF: Partial<Record<Mode, Mode>> = { abs: "zp", abx: "zpx", aby: "zpy" };
 
@@ -151,8 +140,8 @@ export function operandNumber(bytes: readonly number[], pc: number): string {
   const { mode } = OPCODES[bytes[0]!]!;
   const low = bytes[1] ?? 0;
   if (mode === "imp") return "";
-  if (mode === "rel") return formatC64Address((pc + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff);
-  return MODE_LENGTH[mode] === 3 ? formatC64Address(low | ((bytes[2] ?? 0) << 8)) : formatC64Byte(low);
+  if (mode === "rel") return formatAddress((pc + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff);
+  return MODE_LENGTH[mode] === 3 ? formatAddress(low | ((bytes[2] ?? 0) << 8)) : formatByte(low);
 }
 
 /** The text of the instruction in `bytes` at `pc` as the monitor shows it, for example "STA $d011" or "BNE $c002". */

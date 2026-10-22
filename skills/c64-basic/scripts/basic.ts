@@ -4,7 +4,7 @@
 
 import { statSync } from "node:fs";
 
-import { formatC64Address } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { decodeBasic } from "#src/host-client/tools.ts";
 import { resolveProjectPath } from "#src/project.ts";
@@ -24,11 +24,11 @@ await runScript({
         if (!result.decoded) throw new Refusal("invalid-input", `${program} is no BASIC program: ${result.reason}`, { hint: "Usually the file is machine code. Disassemble it from its load address." });
         const size = statSync(resolveProjectPath(program)).size - 2;
         const end = result.loadAddress + size - 1;
-        const handoffs = result.handoffs.map((handoff) => ("address" in handoff ? { ...handoff, address: formatC64Address(handoff.address) } : handoff));
+        const handoffs = result.handoffs.map((handoff) => ("address" in handoff ? { ...handoff, address: formatAddress(handoff.address) } : handoff));
         const body = {
-          loadRange: { start: formatC64Address(result.loadAddress), end: formatC64Address(end) },
+          loadRange: { start: formatAddress(result.loadAddress), end: formatAddress(end) },
           // From here to the end of the load range, the file holds no BASIC (often machine code).
-          basicEnd: result.basicEnd <= end ? formatC64Address(result.basicEnd) : null,
+          basicEnd: result.basicEnd <= end ? formatAddress(result.basicEnd) : null,
           listing: result.listing,
           handoffs,
         };

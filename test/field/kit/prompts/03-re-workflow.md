@@ -11,4 +11,4 @@ Steps:
 3. Run a first static analysis with DXA, then a deeper one with Ghidra, into project knowledge. Report the conflicts.
 4. Run the program in the emulator. Find the main loop and the routine that draws the screen. Use breakpoints, the CPU history and the profiler. Name both in project knowledge.
 5. Take three addresses that the program writes often. Explain what each one means on the platform.
-6. Reconstruct one small routine as ACME source. Assemble it. Show with a c64-testing A/B scenario that the rebuilt routine behaves the same as the original.
+6. Reconstruct one small routine as ACME source. Assemble it. Show with a retro-testing A/B scenario that the rebuilt routine behaves the same as the original.

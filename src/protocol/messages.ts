@@ -1,6 +1,7 @@
 // The message layer of the Host Runtime wire: protocol identity, error codes, the message shapes and
 // their parsers, and the field checks that every validator uses.
 
+import { isMachineId, type MachineId } from "../machine.ts";
 import { ERROR_CODES, Refusal, type ErrorCode } from "../errors.ts";
 import type { ToolOperation, ToolOperations } from "./tools.ts";
 import type { ViceOperation, ViceOperations } from "./vice.ts";
@@ -8,7 +9,7 @@ import type { ViceOperation, ViceOperations } from "./vice.ts";
 /** Private Host Runtime protocol identifier. */
 export const HOST_PROTOCOL_ID = "c64-re-tools-host" as const;
 /** Bumped on any incompatible change; a mismatch fails the handshake. */
-export const HOST_PROTOCOL_VERSION = 5;
+export const HOST_PROTOCOL_VERSION = 6;
 /** After ready, the client pings this often, on every connection. */
 export const HEARTBEAT_INTERVAL_MS = 10_000;
 /** Either side closes a connection that has sent nothing for this long. */
@@ -25,7 +26,8 @@ export interface WireError {
   message: string;
 }
 
-export const ROLES = ["vice-session", "tool"] as const;
+/** session: one emulator session of one machine; tool: the native tools of the host. */
+export const ROLES = ["session", "tool"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const VIDEO_STANDARDS = ["pal", "ntsc"] as const;
@@ -41,7 +43,9 @@ export interface Hello {
   /** The package version of the client (see checkRelease). A client of an older protocol version sends none. */
   release?: string;
   role: Role;
-  /** vice-session only; fixed for the session. */
+  /** session only: the machine of the session, fixed for it. */
+  machine?: MachineId;
+  /** session of a C64 only; fixed for the session. */
   videoStandard?: VideoStandard;
 }
 
@@ -164,8 +168,11 @@ export function parseClientMessage(value: unknown): ReceivedClientMessage {
     if (value.videoStandard !== undefined && !isOneOf(VIDEO_STANDARDS, value.videoStandard)) {
       throw new ProtocolError("hello has an unknown video standard");
     }
+    if (value.machine !== undefined && !isMachineId(value.machine)) throw new ProtocolError("hello has an unknown machine");
+    if (value.role === "session" && value.machine === undefined) throw new ProtocolError("a session hello names no machine");
     const hello: Hello = { type: "hello", protocol: value.protocol, version: value.version, role: value.role };
     if (value.release !== undefined) hello.release = value.release;
+    if (value.machine !== undefined) hello.machine = value.machine;
     if (value.videoStandard !== undefined) hello.videoStandard = value.videoStandard;
     return hello;
   }

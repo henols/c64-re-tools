@@ -1,10 +1,15 @@
 // C64 platform reference data and decoders: the c64-memory-map script, and the
-// platform names that c64-source uses.
+// platform names that retro-source uses.
 // Names follow "Mapping the Commodore 64". Only platform facts live here:
 // an address without one belongs to the application.
 
-import { type AddressRange, COVERAGE, d018Offsets, formatC64Address, romOnlyRanges, vicBankBase } from "./c64.ts";
+import { d018Offsets, vicBankBase } from "./c64.ts";
+import { COVERAGE } from "./cpu/coverage.ts";
+import { type AddressRange, formatAddress } from "./address.ts";
+import { romOnlyRanges } from "./cpu/coverage.ts";
 import { Refusal } from "./errors.ts";
+import { C64, MACHINES } from "./machine.ts";
+import { spectrumPlatformNames } from "./platform/spectrum.ts";
 
 export interface Entry {
   start: number;
@@ -340,7 +345,7 @@ export function areaOf(address: number): Area {
   return { name: area.area, start: area.start, end: area.end, kind: area.kind, meaning: area.meaning };
 }
 
-/** The area of an address, and the register that an I/O mirror repeats: c64-source groups and describes its constants with them. */
+/** The area of an address, and the register that an I/O mirror repeats: retro-source groups and describes its constants with them. */
 export function describeAddress(address: number): { area: Area; mirrorOf?: number } {
   const { mirrorOf } = lookup(address);
   return { area: areaOf(address), ...(mirrorOf === undefined ? {} : { mirrorOf }) };
@@ -353,7 +358,7 @@ export function lookup(address: number): Lookup {
     const base = block.start + ((address - block.start) % block.period);
     const register = block.registers.find((entry) => entry.start === base);
     const mirror = base !== address ? { mirrorOf: base } : {};
-    if (register === undefined) return { address, kind: "platform", area: block.area, meaning: `Unused register (${formatC64Address(base)}): reads give no useful value.`, ...mirror };
+    if (register === undefined) return { address, kind: "platform", area: block.area, meaning: `Unused register (${formatAddress(base)}): reads give no useful value.`, ...mirror };
     return { address, kind: "platform", area: block.area, name: register.name, meaning: register.meaning, ...mirror };
   }
   const entry = [...SYSTEM, ...ROM].find((candidate) => address >= candidate.start && address <= candidate.end);
@@ -402,6 +407,17 @@ export function platformNamesFor(use: RomUse): ReturnType<typeof platformNames> 
 }
 
 /**
+ * The platform names of a space: the C64 names in the main space of the C64
+ * (only those of the ROMs in use, when `use` is given), the Spectrum names in
+ * the main space of the Spectrum, none in drive code and banks.
+ */
+export function platformNamesOfSpace(space: string, use?: RomUse): ReturnType<typeof platformNames> {
+  if (space === C64.spaces.main) return use === undefined ? platformNames() : platformNamesFor(use);
+  if (space === MACHINES.spectrum48.spaces.main) return spectrumPlatformNames();
+  return [];
+}
+
+/**
  * The ROMs that a coverage map shows in use: code of the ROM executed. A read
  * of ROM bytes is data, for example a table or random numbers, and does not use
  * the routines of the ROM or their workspace (Bruce Lee reads 1,571 bytes of the
@@ -422,8 +438,8 @@ export function romUseOfPort(port: number): RomUse {
 
 /**
  * The ROMs that a program uses, and what tells it: the coverage when the
- * knowledge has it, else $01 of the entry state, else both ROMs. c64-source and
- * c64-static-analysis give the platform names of platformNamesFor of it, so
+ * knowledge has it, else $01 of the entry state, else both ROMs. retro-source and
+ * retro-static-analysis give the platform names of platformNamesFor of it, so
  * they use the same names.
  */
 export function romUseOfProgram(coverage: Uint8Array | undefined, state: Record<string, unknown> | undefined): RomUse & { from: "coverage" | "entry state" | "none" } {
@@ -497,13 +513,13 @@ export function decode(register: number, value: number, dd00?: number): Decoded 
       return { xScroll: value & 0x07, columns: value & 0x08 ? 40 : 38, multicolorMode: (value & 0x10) !== 0 };
     case 0xd018: {
       const { screen, characters, bitmap } = d018Offsets(value);
-      const result: Decoded = { screenOffset: formatC64Address(screen), characterOffset: formatC64Address(characters), bitmapOffset: formatC64Address(bitmap) };
+      const result: Decoded = { screenOffset: formatAddress(screen), characterOffset: formatAddress(characters), bitmapOffset: formatAddress(bitmap) };
       if (dd00 !== undefined) {
         const bank = vicBank(dd00);
         result.bank = bank.bank;
-        result.screen = formatC64Address(bank.start + screen);
-        result.characters = formatC64Address(bank.start + characters);
-        result.bitmap = formatC64Address(bank.start + bitmap);
+        result.screen = formatAddress(bank.start + screen);
+        result.characters = formatAddress(bank.start + characters);
+        result.bitmap = formatAddress(bank.start + bitmap);
         if (bank.bank === 0 || bank.bank === 2) result.note = "In banks 0 and 2 the VIC-II sees the character ROM at offsets $1000-$1FFF.";
       } else {
         result.note = "Offsets are inside the VIC-II bank; give --bank with the $DD00 value for addresses.";
@@ -512,7 +528,7 @@ export function decode(register: number, value: number, dd00?: number): Decoded 
     }
     case 0xdd00: {
       const bank = vicBank(value);
-      return { vicBank: bank.bank, vicAddresses: `${formatC64Address(bank.start)}-${formatC64Address(bank.end)}` };
+      return { vicBank: bank.bank, vicAddresses: `${formatAddress(bank.start)}-${formatAddress(bank.end)}` };
     }
     case 0xd015:
     case 0xd017:
@@ -541,6 +557,6 @@ export function decode(register: number, value: number, dd00?: number): Decoded 
       };
     }
     default:
-      throw new Refusal("invalid-input", `There is no decoder for ${formatC64Address(register)}. Decoders exist for $0001, $d010, $d011, $d015-$d01f (sprite and interrupt bits), $d016, $d018, $dc0d, $dd00 and $dd0d`);
+      throw new Refusal("invalid-input", `There is no decoder for ${formatAddress(register)}. Decoders exist for $0001, $d010, $d011, $d015-$d01f (sprite and interrupt bits), $d016, $d018, $dc0d, $dd00 and $dd0d`);
   }
 }

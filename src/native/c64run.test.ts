@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../protocol/messages.ts";
-import { C64RunSession, commandLimitMs, parseStatus } from "./c64run.ts";
+import { C64RunSession, parseStatus } from "./c64run.ts";
+import { commandLimitMs } from "./line-core.ts";
 import { ProcessSupervisor } from "./processes.ts";
 
 const skip = process.platform === "win32" ? "the stand-in c64run is a shell script" : false;

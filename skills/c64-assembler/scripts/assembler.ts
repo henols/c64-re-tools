@@ -2,11 +2,12 @@
 // itself, and writes the program into the project.
 
 import { BUILD_DIRECTORY, type BuildKind, buildName, CONFIG_FILE, configValues, symbolsPath } from "#src/build-name.ts";
-import { formatC64Address } from "#src/c64.ts";
+
+import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { readSourceTree, writeReported } from "#src/host-client/transfer.ts";
 import { openForRead } from "#src/knowledge/database.ts";
-import { knowledgeNames } from "#src/knowledge/names.ts";
+import { knowledgeNames, projectMainSpace } from "#src/knowledge/names.ts";
 import { releaseImage, requireProgram } from "#src/knowledge/program.ts";
 import { listSwitches, releaseLabeled } from "#src/knowledge/read.ts";
 import { LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
@@ -40,6 +41,7 @@ await runScript({
   name: "assembler",
   summary: "Assembles project source with ACME and writes the program into the project.",
   names: knowledgeNames,
+  mainSpace: projectMainSpace,
   commands: [
     {
       name: "build",
@@ -113,7 +115,7 @@ await runScript({
           assembled: true,
           ...written,
           ...(plain ? { plain: true } : {}),
-          loadRange: { start: formatC64Address(range.start), end: formatC64Address(range.end), bytes: range.bytes },
+          loadRange: { start: formatAddress(range.start), end: formatAddress(range.end), bytes: range.bytes },
           symbols,
           // The symbols of the program for a test run, in symbols/ next to it.
           symbolsFile: writeReported(symbolsPath(out), symbolsFileText(shown), { what: "--out" }),

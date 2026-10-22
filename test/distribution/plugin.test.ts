@@ -37,7 +37,7 @@ test("the plugin holds every skill with its scripts, their src/ modules, referen
   assert.equal(plugin.id, "c64-re-tools");
   const names = plugin.skills!.map((skill) => skill.name);
   assert.deepEqual(names, readdirSync(resolve(root, "skills")).sort());
-  const testing = plugin.skills!.find((skill) => skill.name === "c64-testing")!;
+  const testing = plugin.skills!.find((skill) => skill.name === "retro-testing")!;
   const paths = testing.resources!.map((resource) => resource.path);
   assert.deepEqual(
     testing.resources!.filter((resource) => resource.executable === true).map((resource) => resource.path),
@@ -61,7 +61,7 @@ test("the plugin holds every skill with its scripts, their src/ modules, referen
   assert.ok(!paths.some((path) => path.startsWith("src/mcp/") || path.startsWith("src/host/")), "only what the scripts reach");
   assert.equal(testing.resources!.find((resource) => resource.path === "package.json")!.content, SKILL_PACKAGE);
 
-  const analysis = plugin.skills!.find((skill) => skill.name === "c64-static-analysis")!.resources!.map((resource) => resource.path);
+  const analysis = plugin.skills!.find((skill) => skill.name === "retro-static-analysis")!.resources!.map((resource) => resource.path);
   for (const path of ["src/native/watchdog.ts", "src/native/ghidra/c64rt-wasm.ts"]) assert.ok(analysis.includes(path), path);
 
   for (const skill of plugin.skills!) {
@@ -120,10 +120,11 @@ test("every installed script runs without the repository", async () => {
 
 test("the agent starts the newest MCP server of the installed channel through npx", () => {
   const spec = `--package=@henols/c64-re-tools@${channelOf(PACKAGE.version)}`;
-  assert.deepEqual(plugin.mcpServers, { "c64-re-tools": mcpServerFor(process.platform) });
-  assert.deepEqual(mcpServerFor("linux"), { command: "npx", args: ["-y", spec, "c64-re-tools-mcp"] });
+  assert.deepEqual(plugin.mcpServers, { c64: mcpServerFor(process.platform, "c64") });
+  assert.deepEqual(mcpServerFor("linux"), { command: "npx", args: ["-y", spec, "c64-re-tools-mcp", "--machine", "c64"] });
+  assert.deepEqual(mcpServerFor("linux", "spectrum").args.slice(-2), ["--machine", "spectrum"]);
   assert.deepEqual(mcpServerFor("darwin"), mcpServerFor("linux"));
-  assert.deepEqual(mcpServerFor("win32"), { command: "cmd", args: ["/c", "npx", "-y", spec, "c64-re-tools-mcp"] }, "npx is a .cmd shim on Windows");
+  assert.deepEqual(mcpServerFor("win32"), { command: "cmd", args: ["/c", "npx", "-y", spec, "c64-re-tools-mcp", "--machine", "c64"] }, "npx is a .cmd shim on Windows");
 });
 
 test("a prerelease goes to the next channel and a release to latest", () => {

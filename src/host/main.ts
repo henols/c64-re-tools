@@ -1,17 +1,20 @@
 #!/usr/bin/env tsx
 
 import { constants } from "node:os";
+import { MACHINES, type MachineId } from "../machine.ts";
 import { parseArgs } from "node:util";
 
 import { DEFAULT_HOST_PORT } from "../protocol/messages.ts";
 import { ProcessSupervisor } from "../native/processes.ts";
 import { startTrace, trace } from "../trace.ts";
-import { ListenError, parsePort, startHostServer, stopSignal } from "./server.ts";
+import { ListenError, parsePort, startHostServer, stopSignal, VICE_MACHINES, viceBackend, type MachineBackend, type UnavailableEmulator } from "./server.ts";
 import { viceFlaws, type ViceVersion } from "../native/discover.ts";
 import { inspect } from "./tools/c1541.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
+import { checkZesaruxStarts } from "./zesarux/process.ts";
+import { ZESARUX_MACHINES, zesaruxBackend } from "./zesarux/session.ts";
 import { oldNodeRefusal, PACKAGE } from "../package.ts";
 
 const HELP = `c64-re-tools-host
@@ -20,12 +23,14 @@ Usage:
   npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host [--port <port>] [--log-console] [--log-dir <directory>]
   c64-re-tools-host --help
 
-Runs the c64-re-tools Host Runtime in the foreground. It first starts VICE
-once (x64sc on PATH, or C64RT_VICE) and does not start if VICE cannot run.
-It listens on port ${DEFAULT_HOST_PORT} on every address, so a dev container
-reaches it as host.docker.internal. It starts one VICE emulator for each
-connected c64-re-tools-mcp process, and runs the tools that come with VICE
-(c1541, petcat) for skill scripts. Stop it with Ctrl+C; that stops every
+Runs the c64-re-tools Host Runtime in the foreground. It first starts each
+emulator once: VICE (x64sc on PATH, or C64RT_VICE) for the C64, and ZEsarUX
+(zesarux on PATH, or C64RT_ZESARUX) for the ZX Spectrum 48K and 128K. It
+serves the machines of each emulator that starts, and does not start if no
+emulator can run. It listens on port ${DEFAULT_HOST_PORT} on every address, so a
+dev container reaches it as host.docker.internal. It starts one emulator for
+each connected c64-re-tools-mcp process, for the machine of that process, and
+runs the tools that come with VICE (c1541, petcat) for skill scripts. Stop it with Ctrl+C; that stops every
 emulator and tool it started.
 
 Options:
@@ -82,41 +87,30 @@ async function main(): Promise<number> {
   // First, so that every start, also a refused one, tells which runtime runs.
   log(`${PACKAGE.name} ${PACKAGE.version} (Node.js ${process.version}, ${process.platform} ${process.arch})`);
 
-  // Without an emulator the runtime is useless: refuse to start, by name and with the remedy.
-  try {
-    findVice(process.env);
-  } catch (error) {
-    process.stderr.write(`${(error as Error).message}\n`);
-    return 1;
-  }
-
   // Every emulator and tool is started through this one supervisor; however
   // this process ends, the exit guard takes their process groups down with it,
   // and the watchdog does the same if this process is killed.
   const supervisor = new ProcessSupervisor();
   supervisor.startWatchdog("host");
 
-  // Finding x64sc is not enough: VICE without its ROM files exits at once.
-  let vice: ViceVersion;
-  try {
-    vice = await checkViceStarts({ supervisor });
-  } catch (error) {
-    process.stderr.write(`${(error as Error).message}\n`);
-    await supervisor.stopAll();
-    return 1;
-  }
-  log(`VICE ${vice.major}.${vice.minor}${vice.revision === undefined ? "" : ` r${vice.revision}`} starts`);
-  const flaws = viceFlaws(vice);
-  // A known VICE flaw is named, not worked around.
-  for (const flaw of flaws) log(`Known VICE flaw: ${flaw.text}`);
+  // Each emulator is started once, headless: one that does not start serves no
+  // sessions, and a session of its machines is refused by name with the remedy.
+  // A session starts on the emulator that runs the machine of its hello.
+  const backends: MachineBackend[] = [];
+  const unavailable: UnavailableEmulator[] = [];
+  const names = (machines: readonly MachineId[]) => machines.map((id) => MACHINES[id].name).join(" and ");
 
-  let server;
+  // VICE for the C64. Finding x64sc is not enough: VICE without its ROM files exits at once.
+  let vice: ViceVersion | undefined;
   try {
-    server = await startHostServer({
-      host: "0.0.0.0",
-      port,
-      log,
-      createViceSession: viceSessionFactory({
+    findVice(process.env);
+    vice = await checkViceStarts({ supervisor });
+    log(`VICE ${vice.major}.${vice.minor}${vice.revision === undefined ? "" : ` r${vice.revision}`} starts`);
+    const flaws = viceFlaws(vice);
+    // A known VICE flaw is named, not worked around.
+    for (const flaw of flaws) log(`Known VICE flaw: ${flaw.text}`);
+    backends.push(viceBackend(
+      viceSessionFactory({
         supervisor,
         log,
         flaws,
@@ -126,6 +120,37 @@ async function main(): Promise<number> {
           return result.action === "directory" ? result.entries : [];
         },
       }),
+    ));
+  } catch (error) {
+    unavailable.push({ emulator: "VICE", machines: VICE_MACHINES, reason: (error as Error).message });
+  }
+
+  // ZEsarUX for the ZX Spectrum.
+  try {
+    const version = await checkZesaruxStarts({ supervisor });
+    log(`ZEsarUX ${version} starts`);
+    backends.push(zesaruxBackend({ supervisor }));
+  } catch (error) {
+    unavailable.push({ emulator: "ZEsarUX", machines: ZESARUX_MACHINES, reason: (error as Error).message });
+  }
+
+  // Without any emulator the runtime is useless: refuse to start, by name and with the remedy.
+  if (backends.length === 0) {
+    for (const { reason } of unavailable) process.stderr.write(`${reason}\n`);
+    await supervisor.stopAll();
+    return 1;
+  }
+  for (const backend of backends) log(`${backend.emulator} serves sessions of the ${names(backend.machines)}`);
+  for (const down of unavailable) log(`${down.emulator} did not start, so no sessions of the ${names(down.machines)} on this host: ${down.reason}`);
+
+  let server;
+  try {
+    server = await startHostServer({
+      host: "0.0.0.0",
+      port,
+      log,
+      backends,
+      unavailable,
       tools: createToolDispatcher({ supervisor, log }),
     });
   } catch (error) {

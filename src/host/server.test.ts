@@ -10,9 +10,10 @@ import { HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, type ClientMessage, WireFailur
 import { FrameDecoder } from "../protocol/framing.testkit.ts";
 import { PACKAGE } from "../package.ts";
 import { startTrace, TRACE_VARIABLE } from "../trace.ts";
-import { ListenError, parsePort, startHostServer, stopSignal, type HostServer, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
+import type { MachineId } from "../machine.ts";
+import { ListenError, parsePort, startHostServer, stopSignal, type HostServer, type MachineBackend, type ViceSessionFactory, type ViceSessionHandle, viceBackend } from "./server.ts";
 
-const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release: PACKAGE.version, role: "vice-session" } as const;
+const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release: PACKAGE.version, role: "session", machine: "c64" } as const;
 
 /** A raw framed client: no host-client code, so these tests pin the wire. */
 class RawClient {
@@ -96,7 +97,7 @@ after(async () => {
 async function serve(factory: ViceSessionFactory, handshakeTimeoutMs?: number, heartbeatTimeoutMs?: number): Promise<HostServer> {
   const server = await startHostServer({
     port: 0,
-    createViceSession: factory,
+    backends: [viceBackend(factory)],
     ...(handshakeTimeoutMs === undefined ? {} : { handshakeTimeoutMs }),
     ...(heartbeatTimeoutMs === undefined ? {} : { heartbeatTimeoutMs }),
   });
@@ -110,7 +111,7 @@ test("the host binds to loopback only", async () => {
   assert.ok(server.port > 0);
 });
 
-test("a vice-session handshake starts one session and answers ready", async () => {
+test("a session handshake starts one session and answers ready", async () => {
   const log: StubLog = { started: [], closed: 0 };
   const client = await RawClient.open(await serve(stubFactory(log)));
   client.send({ ...hello, videoStandard: "ntsc" });
@@ -128,6 +129,89 @@ test("the video standard defaults to PAL", async () => {
   client.end();
 });
 
+test("a session of a machine whose emulator did not start is refused by name with its reason, and nothing starts", async () => {
+  const log: StubLog = { started: [], closed: 0 };
+  const server = await startHostServer({
+    port: 0,
+    backends: [viceBackend(stubFactory(log))],
+    unavailable: [{ emulator: "ZEsarUX", machines: ["spectrum48", "spectrum128"], reason: "zesarux was not found. Install ZEsarUX 13.0, then start the Host Runtime again." }],
+  });
+  servers.push(server);
+  const client = await RawClient.open(server);
+  client.send({ ...hello, machine: "spectrum48" });
+  const reply = (await client.next()) as { type: string; error: { code: string; message: string } };
+  assert.deepEqual([reply.type, reply.error.code], ["error", "installation-incomplete"]);
+  assert.match(reply.error.message, /The ZX Spectrum 48K runs on ZEsarUX, which did not start when the host runtime started\. zesarux was not found\. Install ZEsarUX 13\.0/);
+  await client.closed;
+  assert.equal(log.started.length, 0);
+});
+
+/** A stand-in emulator of other machines: it records the machine of each session that starts on it. */
+function otherBackend(emulator: string, machines: readonly MachineId[], started: MachineId[]): MachineBackend {
+  return {
+    emulator,
+    machines,
+    start: async ({ machine }) => {
+      started.push(machine);
+      return { handle: async (op) => ({ op, machine }), close: async () => {} };
+    },
+    isOperation: (op) => op === "status",
+    validate: (_op, params) => params,
+    attachments: () => 0,
+  };
+}
+
+test("each session starts on the emulator that lists its machine; a machine of an emulator that did not start, or of none, is refused", async () => {
+  const vice: StubLog = { started: [], closed: 0 };
+  const spectrum: MachineId[] = [];
+  const server = await startHostServer({
+    port: 0,
+    backends: [viceBackend(stubFactory(vice)), otherBackend("Stand-in", ["spectrum128"], spectrum)],
+    unavailable: [{ emulator: "Other", machines: ["spectrum48"], reason: "Other is not installed." }],
+  });
+  servers.push(server);
+  const session = async (machine: MachineId) => {
+    const client = await RawClient.open(server);
+    client.send({ ...hello, machine });
+    const first = (await client.next()) as { type: string; error?: { code: string; message: string } };
+    if (first.type !== "ready") return { client, first };
+    client.send({ type: "request", id: 1, op: "status", params: {} });
+    return { client, first, reply: (await client.next()) as { result: unknown } };
+  };
+
+  const zx = await session("spectrum128");
+  assert.equal(zx.first.type, "ready");
+  assert.deepEqual(zx.reply?.result, { op: "status", machine: "spectrum128" });
+  const c64 = await session("c64");
+  assert.equal(c64.first.type, "ready");
+  assert.deepEqual(spectrum, ["spectrum128"]);
+  assert.deepEqual(vice.started, [{ videoStandard: "pal" }]);
+
+  const down = await session("spectrum48");
+  assert.deepEqual([down.first.type, down.first.error?.code], ["error", "installation-incomplete"]);
+  assert.match(down.first.error!.message, /The ZX Spectrum 48K runs on Other, which did not start when the host runtime started\. Other is not installed\./);
+  await down.client.closed;
+  zx.client.end();
+  c64.client.end();
+
+  const only = await startHostServer({ port: 0, backends: [otherBackend("Stand-in", ["spectrum128"], spectrum)] });
+  servers.push(only);
+  const client = await RawClient.open(only);
+  client.send(hello);
+  const refused = (await client.next()) as { error: { code: string; message: string } };
+  assert.deepEqual(refused.error, { code: "installation-incomplete", message: "This host runtime runs no emulator for the Commodore 64." });
+  await client.closed;
+  assert.deepEqual(spectrum, ["spectrum128"]);
+});
+
+test("a session hello that names no machine is a protocol error", async () => {
+  const client = await RawClient.open(await serve(stubFactory({ started: [], closed: 0 })));
+  const { machine: _machine, ...nameless } = hello as typeof hello & { machine?: string };
+  client.send(nameless);
+  assert.equal(await client.next(), undefined);
+  await client.closed;
+});
+
 test("a protocol version mismatch is refused as installation-incomplete and closed", async () => {
   const log: StubLog = { started: [], closed: 0 };
   const client = await RawClient.open(await serve(stubFactory(log)));
@@ -142,7 +226,7 @@ test("a protocol version mismatch is refused as installation-incomplete and clos
 
 test("a client of another release, or one that gives no release, is refused as installation-incomplete before an emulator starts", async () => {
   const log: StubLog = { started: [], closed: 0 };
-  const server = await startHostServer({ port: 0, createViceSession: stubFactory(log), release: "2.1.5" });
+  const server = await startHostServer({ port: 0, backends: [viceBackend(stubFactory(log))], release: "2.1.5" });
   servers.push(server);
   const { release: _release, ...noRelease } = hello;
   for (const [sent, older] of [
@@ -257,7 +341,7 @@ test("a result too large for one reply is refused as limit-exceeded with its siz
       return { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false } as never;
     },
   });
-  const server = await startHostServer({ port: 0, createViceSession: factory, log: (line) => lines.push(line) });
+  const server = await startHostServer({ port: 0, backends: [viceBackend(factory)], log: (line) => lines.push(line) });
   servers.push(server);
   const client = await RawClient.open(server);
   client.send(hello);
@@ -385,7 +469,7 @@ test("two connections own two independent sessions", async () => {
 
 test("closing the server closes every session", async () => {
   const log: StubLog = { started: [], closed: 0 };
-  const server = await startHostServer({ port: 0, createViceSession: stubFactory(log) });
+  const server = await startHostServer({ port: 0, backends: [viceBackend(stubFactory(log))] });
   const clients = await Promise.all([RawClient.open(server), RawClient.open(server)]);
   for (const client of clients) client.send(hello);
   for (const client of clients) await client.next();
@@ -409,7 +493,7 @@ test("the log has one line for each call of a skill script, and none for a VICE 
   const lines: string[] = [];
   const server = await startHostServer({
     port: 0,
-    createViceSession: stubFactory({ started: [], closed: 0 }),
+    backends: [viceBackend(stubFactory({ started: [], closed: 0 }))],
     tools: async () => {
       throw new Error("no tool operation runs in this test");
     },
@@ -519,7 +603,7 @@ test("a port is decimal digits from 0 to 65535 and nothing else", () => {
 test("a port in use names the address and the port that failed", async () => {
   const busy = await serve(stubFactory({ started: [], closed: 0 }));
   await assert.rejects(
-    startHostServer({ port: busy.port, createViceSession: stubFactory({ started: [], closed: 0 }) }),
+    startHostServer({ port: busy.port, backends: [viceBackend(stubFactory({ started: [], closed: 0 }))] }),
     (error: unknown) => error instanceof ListenError && error.code === "EADDRINUSE" && error.address === "127.0.0.1" && error.port === busy.port,
   );
 });
@@ -582,7 +666,7 @@ test("with C64RT_TRACE every connection and request leaves a trace line with the
     assert.equal(failed.code, "unsupported-in-space");
     assert.deepEqual(failed.params, { space: "drive8" });
     const ready = events.find((event) => event.event === "connection.ready")!;
-    assert.equal(ready.role, "vice-session");
+    assert.equal(ready.role, "session");
     assert.equal(ready.connection, ok.connection);
   } finally {
     startTrace("host", { env: {} });

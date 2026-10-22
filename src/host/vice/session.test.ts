@@ -644,12 +644,12 @@ test("a tool that a known VICE flaw breaks is not implemented for the caller, an
   assert.doesNotMatch((joystick as Error).message, /VICE|3\.10|#2202/, "the caller learns no VICE version");
   assert.deepEqual(fake.joyport, ports, "no joystick reached VICE");
   await assert.rejects(session.handle("autostart", { type: "tap", index: 0, run: true }, [Buffer.from("C64-TAPE-RAW")]), { code: "not-implemented", message: /^The load of a tape image is not implemented in this setup\./ });
-  assert.match(logged.join("\n"), /c64_joystick was used, and this VICE does not support it\. VICE 3\.10 holds bits 5-7 low/);
-  assert.match(logged.join("\n"), /c64_autostart of a tape image was used, and this VICE does not support it\./);
+  assert.match(logged.join("\n"), /joystick was used, and this VICE does not support it\. VICE 3\.10 holds bits 5-7 low/);
+  assert.match(logged.join("\n"), /autostart of a tape image was used, and this VICE does not support it\./);
   const dumps = fake.commands.filter((command) => command === Command.dump).length;
   await assert.rejects(session.handle("press", { taps: [{ keys: [4], restore: false }], frames: 3 }), { code: "not-implemented", message: /^Keys of the keyboard matrix are not implemented in this setup./ });
   assert.equal(fake.commands.filter((command) => command === Command.dump).length, dumps, "no key reached VICE");
-  assert.match(logged.join("\n"), /c64_press was used, and this VICE does not support it\./);
+  assert.match(logged.join("\n"), /press was used, and this VICE does not support it\./);
   assert.deepEqual(await session.handle("keyboard", { data: "52" }), { queuedBytes: 1 }, "the keyboard works");
   assert.deepEqual(await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]), { state: "running" }, "a PRG loads");
   await session.close();
@@ -881,7 +881,7 @@ test("a breakpoint ends a press early: all keys go up, and the machine stays sto
 test("press at the reset stop is refused until an instruction ran", async () => {
   const { fake, session } = await startSession();
   await session.handle("reset", { mode: "hard", run: false });
-  await assert.rejects(session.handle("press", { taps: [{ keys: [4], restore: false }], frames: 1 }), failsWith("operation-failed", /reset stop of c64_reset.*Step one instruction/));
+  await assert.rejects(session.handle("press", { taps: [{ keys: [4], restore: false }], frames: 1 }), failsWith("operation-failed", /reset stop of reset.*Step one instruction/));
   assert.equal(fake.commands.filter((command) => command === Command.dump).length, 0, "no key reached VICE");
   await session.close();
 });
@@ -892,7 +892,7 @@ test("a snapshot of a layout that c64-re-tools does not know is not changed: pre
   fake.keyboardVersion = { major: 1, minor: 2 };
   await assert.rejects(session.handle("press", { taps: [{ keys: [4], restore: false }], frames: 1 }), failsWith("not-implemented", /^Keys of the keyboard matrix are not implemented in this setup./));
   assert.equal(fake.undumps.length, 0, "the machine was not restored");
-  assert.match(logged.join("\n"), /c64_press was used, and this VICE writes snapshots that c64-re-tools does not know: the snapshot has KEYBOARD 1\.2/);
+  assert.match(logged.join("\n"), /press was used, and this VICE writes snapshots that c64-re-tools does not know: the snapshot has KEYBOARD 1\.2/);
   await session.close();
 });
 
@@ -1339,6 +1339,6 @@ test("a snapshot save at the reset stop is refused until an instruction ran", as
 test("removing a point names the other kind when the id is of a watchpoint", async () => {
   const { session } = await startSession();
   const watch = await session.handle("watchpoint", { action: "add", address: 0xd020, size: 1, access: "write", space: "c64" });
-  await assert.rejects(session.handle("breakpoint", { action: "remove", id: (watch as { id: number }).id }), failsWith("not-found", /is a watchpoint: use c64_watchpoint/));
+  await assert.rejects(session.handle("breakpoint", { action: "remove", id: (watch as { id: number }).id }), failsWith("not-found", /is a watchpoint: use the watchpoint tool/));
   await session.close();
 });

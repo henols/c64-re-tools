@@ -101,8 +101,8 @@ test("VICE runs the extracted loader from BASIC to the decoded handoff", { skip:
       return result.structuredContent as Record<string, unknown>;
     };
     // Autostart types RUN, so BASIC itself executes the SYS.
-    await call("c64_autostart", { path: extracted });
-    const reached = await call("c64_run_until", { target: { kind: "address", address: handoff }, timeoutFrames: 1000 });
+    await call("autostart", { path: extracted });
+    const reached = await call("run_until", { target: { kind: "address", address: handoff }, timeoutFrames: 1000 });
     assert.equal(reached.stopReason, "target");
     assert.equal(reached.pc, handoff);
     assert.equal(Number.parseInt(handoff.slice(1), 16), BORDER_LOOP_START);

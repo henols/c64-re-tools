@@ -7,7 +7,7 @@ import { test } from "node:test";
 
 import { z } from "zod";
 
-import { c64AddressOf } from "../c64.ts";
+import { addressOf } from "../address.ts";
 import { checkActionSteps, STEP_FIELDS, type ActionStepKind } from "../host-client/steps.ts";
 import { TOOL_INPUTS } from "./inputs.ts";
 import { c64RunUntil } from "./tools/execution.ts";
@@ -27,13 +27,13 @@ test("each step input has the fields of its tool input", () => {
   assert.deepEqual([fieldsOf(address!), fieldsOf(memory!), fieldsOf(raster!)], [sorted(STEP_FIELDS.addressTarget), sorted(STEP_FIELDS.memoryTarget), sorted(STEP_FIELDS.rasterTarget)]);
   const [register, memoryCondition, rasterCondition] = optionsOf(TOOL_INPUTS.condition);
   assert.deepEqual([fieldsOf(register!), fieldsOf(memoryCondition!), fieldsOf(rasterCondition!)], [sorted(STEP_FIELDS.registerCondition), sorted(STEP_FIELDS.memoryCondition), sorted(STEP_FIELDS.rasterCondition)]);
-  // A runUntil step has the target and the wait of c64_run_until; observe and history are for a tool call alone.
+  // A runUntil step has the target and the wait of run_until; observe and history are for a tool call alone.
   for (const field of STEP_FIELDS.runUntil) assert.ok(fieldsOf(c64RunUntil.inputSchema).includes(field), field);
 });
 
 /** A step output with its $ addresses as numbers, as the tool output has them. */
 function asTool(value: unknown, key?: string): unknown {
-  if (typeof value === "string" && (key === "address" || key === "pc")) return c64AddressOf(value);
+  if (typeof value === "string" && (key === "address" || key === "pc")) return addressOf(value);
   if (Array.isArray(value)) return value.map((item) => asTool(item));
   if (typeof value === "object" && value !== null) return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, asTool(item, name)]));
   return value;

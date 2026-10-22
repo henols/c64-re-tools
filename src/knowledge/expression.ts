@@ -1,6 +1,6 @@
 // Operand expressions: the part of ACME's expression syntax that names
 // an operand by symbols and numbers. Knowledge checks an expression against
-// the image with it, and c64-source writes it with the names of its layout.
+// the image with it, and retro-source writes it with the names of its layout.
 //
 // Priorities are ACME's, from high to low: unary - and !, then * / %, + -,
 // << >> >>>, unary < and >, &, XOR, |. A unary < or > takes everything of a
@@ -119,7 +119,7 @@ function value(node: Node, resolve: (name: string) => number | undefined): numbe
       return node.value;
     case "name": {
       const found = resolve(node.name);
-      if (found === undefined) throw new Refusal("invalid-input", `${node.name} is not a symbol of the knowledge or a platform name. Give a number, a symbol of the project knowledge, or a platform name of the C64 memory map.`);
+      if (found === undefined) throw new Refusal("invalid-input", `${node.name} is not a symbol of the knowledge or a platform name. Give a number, a symbol of the project knowledge, or a platform name of the memory map of the machine.`);
       return found;
     }
     case "unary": {

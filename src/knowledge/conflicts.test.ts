@@ -83,7 +83,7 @@ test("two names at one address and one name at two addresses are conflicts, and 
   const found = read(root, conflicts);
   assert.deepEqual(rules(found), ["symbol-address"]);
   assert.deepEqual(found[0]!.rows.map((entry) => (entry.row as { name: string }).name), ["read_joystick", "poll_input"], "oldest first");
-  const merged = withWrite((db) => mergeConflicts(db, { origin: "user", description: "keep the newer name" }, platform), root);
+  const merged = withWrite((db) => mergeConflicts(db, { origin: "user", description: "keep the newer name" }, () => platform), root);
   assert.deepEqual(merged.current.map((choice) => [choice.rule, (choice.kept.row as { name: string }).name, choice.closed.map((entry) => (entry.row as { name: string }).name)]), [["symbol-address", "poll_input", ["read_joystick"]]]);
   assert.deepEqual(read(root, conflicts), []);
   assert.equal(read(root, (db) => symbolAt(db, 0x2100)?.name), "poll_input");
@@ -94,7 +94,7 @@ test("two names at one address and one name at two addresses are conflicts, and 
     (b) => withWrite((db) => renameSymbol(db, llm, { address: 0x2200, name: "main" }), b),
   );
   assert.deepEqual(rules(read(moved, conflicts)), ["symbol-name"]);
-  withWrite((db) => mergeConflicts(db, llm, platform), moved);
+  withWrite((db) => mergeConflicts(db, llm, () => platform), moved);
   assert.equal(read(moved, (db) => symbolAt(db, 0x2200)?.name), "main");
   assert.equal(read(moved, (db) => symbolAt(db, 0x2100)), undefined);
 });
@@ -106,7 +106,7 @@ test("overlapping regions are a conflict, and merge keeps the newer region and t
     (b) => withWrite((db) => classifyRegion(db, llm, { start: 0x1080, end: 0x117f, type: "code" }), b),
   );
   assert.deepEqual(rules(read(root, conflicts)), ["region"]);
-  withWrite((db) => mergeConflicts(db, llm, platform), root);
+  withWrite((db) => mergeConflicts(db, llm, () => platform), root);
   assert.deepEqual(
     read(root, (db) => listRegions(db).map((region) => [region.start, region.end, region.type, region.element])),
     [
@@ -147,7 +147,7 @@ test("comments, references, operands, modules and region suppressions have their
       }, b),
   );
   assert.deepEqual(rules(read(root, conflicts)), ["region", "comment", "reference", "reference", "operand", "module-start", "module-file", "suppression-region"]);
-  const merged = withWrite((db) => mergeConflicts(db, llm, platform), root);
+  const merged = withWrite((db) => mergeConflicts(db, llm, () => platform), root);
   assert.equal(merged.current.length, 8);
   assert.deepEqual(read(root, conflicts), []);
   assert.equal(read(root, (db) => operandAt(db, 0x8079)?.expression), "<irq_handler");
@@ -163,9 +163,9 @@ test("while the knowledge has conflicts, writes and imports are refused, and mer
   assert.throws(() => withWrite((db) => renameSymbol(db, llm, { address: 0x3000, name: "other" }), root), (error: unknown) => isConflict(error) && /two symbols at one address in c64 \(\$2100\).*Decide the conflicts of the git merge in the project knowledge/.test((error as Error).message));
   const findings = { analyzer: "dxa" as const, coverage: [{ start: 0x3000, end: 0x30ff }], authoritative: { symbols: true, regions: true, references: true }, symbols: [], regions: [], references: [] };
   assert.throws(() => withWrite((db) => importFindings(db, findings), root), isConflict);
-  const merged = withWrite((db) => mergeConflicts(db, llm, platform), root);
+  const merged = withWrite((db) => mergeConflicts(db, llm, () => platform), root);
   assert.notEqual(merged.revision, null);
-  assert.equal(withWrite((db) => mergeConflicts(db, llm, platform), root).revision, null, "no conflicts, no revision");
+  assert.equal(withWrite((db) => mergeConflicts(db, llm, () => platform), root).revision, null, "no conflicts, no revision");
   assert.notEqual(withWrite((db) => renameSymbol(db, llm, { address: 0x3000, name: "other" }), root).revision, null);
 });
 
@@ -219,7 +219,7 @@ test("patches, switches, macros and macro uses have their conflicts, and merge k
       }, b),
   );
   assert.deepEqual(rules(read(root, conflicts)), ["patch", "switch", "macro", "macro-use"]);
-  withWrite((db) => mergeConflicts(db, llm, platform), root);
+  withWrite((db) => mergeConflicts(db, llm, () => platform), root);
   assert.deepEqual(read(root, conflicts), []);
   assert.deepEqual(read(root, (db) => listPatches(db).map((row) => row.switch)), ["TRAINER"]);
   assert.deepEqual(read(root, (db) => listSwitches(db).map((row) => [row.name, row.default])), [["CRACK", 0], ["LEVELS", 1], ["TRAINER", 0]], "the newest LEVELS stays");
@@ -231,7 +231,7 @@ test("two start screens are a conflict, and merge keeps the newest", () => {
   const screen = (background: number) => (db: DatabaseSync) => setStartScreen(db, llm, { mode: "multicolour", screen: 0x5c00, bitmap: 0x6000, colours: 0x7f40, border: 0, background });
   const root = computers(nothing, (a) => withWrite(screen(1), a), (b) => withWrite(screen(2), b));
   assert.deepEqual(rules(read(root, conflicts)), ["start-screen"]);
-  withWrite((db) => mergeConflicts(db, llm, platform), root);
+  withWrite((db) => mergeConflicts(db, llm, () => platform), root);
   assert.deepEqual(read(root, conflicts), []);
   assert.equal(read(root, (db) => currentStartScreen(db)?.background), 2);
 });

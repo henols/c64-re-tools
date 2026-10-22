@@ -2,14 +2,14 @@
 // values in platform registers. Local lookup only; nothing is stored. export
 // writes the platform names to a project file as an ACME include.
 
-import { formatC64Address, formatC64Byte } from "#src/c64.ts";
+import { formatAddress, formatByte } from "#src/address.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { decode, IO, lookup, platformNames, ROM, SYSTEM, type Entry } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError } from "#src/script.ts";
 
-const show = (entry: Entry) => ({ start: formatC64Address(entry.start), ...(entry.end !== entry.start ? { end: formatC64Address(entry.end) } : {}), name: entry.name, meaning: entry.meaning });
+const show = (entry: Entry) => ({ start: formatAddress(entry.start), ...(entry.end !== entry.start ? { end: formatAddress(entry.end) } : {}), name: entry.name, meaning: entry.meaning });
 
 /** The platform names by name in upper case: memory-map knows them also outside a project. */
 const PLATFORM = new Map(platformNames().map((entry) => [entry.name.toUpperCase(), entry.address]));
@@ -54,9 +54,9 @@ await runScript({
           const io = found.address >= 0xd000 && found.address <= 0xdfff;
           return {
             ...found,
-            address: formatC64Address(found.address),
-            ...(found.mirrorOf === undefined ? {} : { mirrorOf: formatC64Address(found.mirrorOf) }),
-            ...(found.entryStart === undefined ? {} : { entryStart: formatC64Address(found.entryStart) }),
+            address: formatAddress(found.address),
+            ...(found.mirrorOf === undefined ? {} : { mirrorOf: formatAddress(found.mirrorOf) }),
+            ...(found.entryStart === undefined ? {} : { entryStart: formatAddress(found.entryStart) }),
             ...(io ? { visible: "when $01 shows I/O at $D000 (the default)" } : {}),
           };
         });
@@ -77,8 +77,8 @@ await runScript({
         const register = call.parseAddress(call.subject(0), "<register>");
         const value = call.parseNumber(call.subject(1), "<value>", 0, 0xff);
         const bank = call.count("bank");
-        if (bank !== undefined && register !== 0xd018) throw new UsageError(`--bank works only with $d018 (VMCSB), not with ${formatC64Address(register)}. Remove --bank.`);
-        const body = { register: formatC64Address(register), value: formatC64Byte(value), name: lookup(register).name, ...decode(register, value, bank) };
+        if (bank !== undefined && register !== 0xd018) throw new UsageError(`--bank works only with $d018 (VMCSB), not with ${formatAddress(register)}. Remove --bank.`);
+        const body = { register: formatAddress(register), value: formatByte(value), name: lookup(register).name, ...decode(register, value, bank) };
         if (register === 0xd018 && bank === undefined) return reply(body, { hint: "The addresses are offsets in the VIC-II bank. To get the addresses, give --bank with the value of $dd00." });
         return body;
       },
@@ -103,7 +103,7 @@ await runScript({
       options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "the include file, relative to the project folder", required: true } },
       run: (call) => {
         const names = platformNames();
-        const lines = ["; C64 platform names from the c64-memory-map skill, for ACME.", ...names.map((item) => `${item.name} = ${item.address < 0x100 ? formatC64Byte(item.address) : formatC64Address(item.address)}`.padEnd(24) + `; ${item.meaning}`)];
+        const lines = ["; C64 platform names from the c64-memory-map skill, for ACME.", ...names.map((item) => `${item.name} = ${item.address < 0x100 ? formatByte(item.address) : formatAddress(item.address)}`.padEnd(24) + `; ${item.meaning}`)];
         return { names: names.length, ...writeReported(call.string("out")!, `${lines.join("\n")}\n`, { what: "--out" }) };
       },
     },

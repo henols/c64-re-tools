@@ -41,7 +41,7 @@ function script(clone: string, skill: string, file: string, ...args: string[]): 
   return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, unknown> };
 }
 
-const knowledge = (clone: string, ...args: string[]) => script(clone, "c64-knowledge", "knowledge.ts", ...args);
+const knowledge = (clone: string, ...args: string[]) => script(clone, "retro-knowledge", "knowledge.ts", ...args);
 
 function write(clone: string, ...args: string[]): void {
   const run = knowledge(clone, ...args);
@@ -150,7 +150,7 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
 
   if (generateSkip === false) {
     for (const clone of [first, second]) {
-      const generated = script(clone, "c64-source", "source.ts", "generate", "--out", ".c64-re-tools/local/src");
+      const generated = script(clone, "retro-source", "source.ts", "generate", "--out", ".c64-re-tools/local/src");
       assert.equal(generated.status, 0, JSON.stringify(generated.json));
     }
     const source = (clone: string) => files(join(clone, "game", ".c64-re-tools", "local", "src"));
