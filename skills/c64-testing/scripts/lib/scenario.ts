@@ -7,7 +7,7 @@ import { isRefusal, Refusal } from "#src/errors.ts";
 import { c64AddressOf, formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
-import { ACTION_STEP_KINDS, checkActionStep, checkLocation, isInteger, isObject, refuseOldStep, renamedField, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, checkLocation, isInteger, isObject, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
 import { applyEntryState, parseEntryState } from "#src/host-client/entry-state.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
@@ -52,7 +52,7 @@ type StepBody =
   | { autostart: true }
   | { snapshot: string }
   | { normalize: true }
-  | Exclude<ActionStep, { press: string }>
+  | ActionStep
   | { observe: string; memory?: Array<Location | MemoryObservation>; registers?: ObservedRegister[]; screen?: ScreenPolicy; vicii?: boolean; sprites?: number[] };
 
 /** A step; with side, only that side does it. An observe step has no side: it compares both. */
@@ -108,8 +108,6 @@ export interface ScenarioResult {
 }
 
 const STEP_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", ...ACTION_STEP_KINDS, "observe"];
-/** The step kinds that a scenario runs: press is for the replay core only. */
-const SHOWN_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", ...VICE_STEP_KINDS, "observe"];
 
 /** The keys of a scenario file: all but videoStandard are required. */
 const SCENARIO_KEYS = ["name", "original", "rebuild", "steps", "videoStandard"];
@@ -156,7 +154,7 @@ export function readScenario(path: string): Scenario {
     // An observe step names what it observes with "memory" and "registers" too.
     const kinds = "observe" in step ? ["observe"] : Object.keys(step).filter((key) => STEP_KINDS.includes(key));
     if (kinds.length > 1) return fail(`${at} has ${kinds.length} step kinds: ${kinds.join(", ")}. Give each one its own step`);
-    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${SHOWN_KINDS.join(", ")}`);
+    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${STEP_KINDS.join(", ")}`);
     const kind = kinds[0]!;
     refuseOldStep(kind, step, at, fail);
     const allowed = [...(STEP_KEYS[kind] ?? [kind]), ...(kind === "observe" ? [] : ["side"])];

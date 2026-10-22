@@ -21,7 +21,7 @@ Ask for what you want in plain words. The agent picks the skill for each step.
 - Load and run the program in VICE. Set breakpoints and watchpoints, step, and read the CPU history and the call stack.
 - Read, write, search and compare memory, and disassemble it.
 - Show the VIC-II, sprite, SID and CIA state, and capture the screen.
-- Type on the keyboard and move the joystick.
+- Type on the keyboard, press keys of the keyboard matrix (also several together, and RESTORE), and move the joystick.
 - Count cycles, profile the code, and wait for a raster line.
 - Run many steps in one go and keep screens, snapshots and coverage as files.
 - Tell what any address or register value means on the C64.

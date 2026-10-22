@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { STOP_AND_ASK } from "../../src/protocol/messages.ts";
-import { firstDifference, joystickMask, keyCodes, mover, parseStateItem, pinLines, readRecordFile, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { Refusal } from "../../src/errors.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 import { readEnvelope } from "../kit.ts";
@@ -28,7 +28,7 @@ const valid = {
   symbols: "none",
   checkpoint: "$c015",
   state: ["$c100", { address: "$c101", size: 2 }],
-  steps: [{ frames: 10 }, { joystick: { port: 2, direction: "left" } }, { press: "RUN\n" }, { runUntil: { target: { kind: "address", address: "$c015" }, timeoutFrames: 5 } }],
+  steps: [{ frames: 10 }, { joystick: { port: 2, direction: "left" } }, { press: { keys: "RUN\n" } }, { runUntil: { target: { kind: "address", address: "$c015" }, timeoutFrames: 5 } }],
 };
 
 function file(name: string, value: unknown): string {
@@ -53,7 +53,7 @@ test("a record file needs a program and steps the replay core can do; a checkpoi
     unknownKey: { ...valid, observe: true },
     raster: { ...valid, steps: [{ runUntil: { target: { kind: "raster", line: 100 }, timeoutFrames: 5 } }] },
     observeStep: { ...valid, steps: [{ observe: "x" }] },
-    badKey: { ...valid, steps: [{ press: "£" }] },
+    badKey: { ...valid, steps: [{ press: { keys: "£" } }] },
     badInput: { ...valid, inputs: ["$c000"] },
     badRange: { ...valid, inputs: ["$de00-$e000"] },
     badCoverage: { ...valid, coverage: "game_start" },
@@ -89,7 +89,7 @@ function recordingCore(name: string, from: string): { path: string; log: string 
       "while read cmd rest; do",
       `  echo "$cmd $rest" >> ${log}`,
       '  case "$cmd" in',
-      '    version) echo "ok c64run protocol=3 chips=test" ;;',
+      '    version) echo "ok c64run protocol=4 chips=test" ;;',
       '    inputs|joy|key|write) echo "ok" ;;',
       '    record) [ "$rest" = off ] || : > "$rest"; echo "ok" ;;',
       '    sites) echo "ok unknown=0" ;;',
@@ -147,12 +147,7 @@ test("an address of the original moves with the name before it", () => {
   assert.equal(move(0x0400), 0x0400);
 });
 
-test("text types as keys of the matrix, and directions give joystick masks", () => {
-  assert.deepEqual(keyCodes("run\n"), [0x52, 0x55, 0x4e, 0x0d]);
-  assert.throws(() => keyCodes("~"), /cannot press/);
-  // A key without a character has its name in braces, in either case.
-  assert.deepEqual(keyCodes("{F1}{stop}{Up}a{CTRL}"), [0xf1, 0x03, 0x0b, 0x41, 0x0e]);
-  assert.throws(() => keyCodes("{F9}"), /press has no key \{F9\}\. The keys in braces are \{F1\}/);
+test("directions give joystick masks", () => {
   assert.equal(joystickMask("center", false), 0);
   assert.equal(joystickMask("up-left", true), 0x15);
   assert.equal(joystickMask("right", false), 0x08);
@@ -235,7 +230,7 @@ test("a record file names itself and the step of a key that the replay core does
     }
     return assert.fail(`${name} is not refused`);
   };
-  assert.equal(message("umlaut.json", { ...valid, steps: [{ frames: 10 }, { press: "ä" }] }), 'record file umlaut.json: step 2: press cannot press "ä" on the C64 keyboard');
+  assert.equal(message("umlaut.json", { ...valid, steps: [{ frames: 10 }, { press: { keys: "ä" } }] }), 'record file umlaut.json: step 2: press.keys: the C64 keyboard has no key "ä"');
   assert.equal(message("old-state.json", { ...valid, state: [{ at: "falls_left", size: 3 }] }), "record file old-state.json: state item 1 has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(message("old-pin.json", { ...valid, pin: [{ at: "random_ptr", size: 2 }] }), "record file old-pin.json: pin item 1 has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(message("old-type.json", { ...valid, steps: [{ type: " " }] }), 'record file old-type.json: step 1 has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes');

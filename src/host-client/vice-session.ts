@@ -2,7 +2,8 @@
 // one VICE. Exposes C64-domain operations only.
 
 import { ProtocolError, WireFailure, type VideoStandard } from "../protocol/messages.ts";
-import { MAX_MEMORY_READ, traceHitsFromAttachment, validateViceResult, type TraceResult, type Breakpoint, type BreakpointParams, type PointRemoved, type Watchpoint, type WatchpointParams, type ExecutionParams, type ExecutionResult, type JoystickState, type MachineStatus, type MemmapRange, type MemoryWriteParams, type ProfileEntry, type RegisterValues, type ResetMode, type RunState, type RunTarget, type RunUntilResult, type MemoryReadParams, type MemoryReadResult, type Registers, type Space, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
+import { MAX_MEMORY_READ, traceHitsFromAttachment, validateViceResult, type TraceResult, type Breakpoint, type BreakpointParams, type PointRemoved, type Watchpoint, type WatchpointParams, type ExecutionParams, type ExecutionResult, type JoystickState, type MachineStatus, type PressResult, type MemmapRange, type MemoryWriteParams, type ProfileEntry, type RegisterValues, type ResetMode, type RunState, type RunTarget, type RunUntilResult, type MemoryReadParams, type MemoryReadResult, type Registers, type Space, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
+import type { KeyTap } from "../c64-keys.ts";
 import { HostConnection } from "./connect.ts";
 import { readProjectFile } from "./transfer.ts";
 
@@ -156,6 +157,11 @@ export class ViceSessionClient {
 
   joystick(state: JoystickState): Promise<JoystickState> {
     return this.#request("joystick", state);
+  }
+
+  /** Presses keys of the keyboard matrix and RESTORE: each tap holds its keys `frames` frames, then waits `frames` frames with all keys up. */
+  press(taps: KeyTap[], frames: number): Promise<PressResult> {
+    return this.#request("press", { taps, frames });
   }
 
   /** Action list gives all breakpoints, remove gives `{removed, id}`; add, enable and disable give the one breakpoint. */

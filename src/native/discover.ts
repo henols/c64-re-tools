@@ -99,8 +99,8 @@ export function viceVersionOf(text: string): ViceVersion | undefined {
   return { major: Number(match[1]), minor: Number(match[2]), ...(match[3] === undefined ? {} : { revision: Number(match[3]) }) };
 }
 
-/** What a VICE flaw stops from working: joystick input, or the load of a tape image. */
-export type ViceFeature = "joystick" | "tape";
+/** What a VICE flaw stops from working: joystick input, the load of a tape image, or keys of the keyboard matrix. */
+export type ViceFeature = "joystick" | "tape" | "keyboard";
 
 /** A known VICE flaw: the text for the person at the host, and what it stops from working. */
 export interface ViceFlaw {
@@ -120,7 +120,7 @@ const VICE_FLAWS = [
   {
     upTo: { major: 3, minor: 10 },
     fixedRevision: 45971,
-    breaks: ["joystick", "tape"],
+    breaks: ["joystick", "tape", "keyboard"],
     text:
       "VICE 3.10 and older hold bits 5-7 of CIA 1 ports A and B low with the joystick device that c64-re-tools uses (VICE bug #2202). " +
       "$DC00 and $DC01 read $1F with no input. A program that waits for one key of the keyboard matrix (for example LDA $DC01 / CMP #$EF for SPACE) waits forever. " +

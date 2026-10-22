@@ -35,6 +35,7 @@ export type ViceSessionApi = Pick<
   | "diskAttach"
   | "keyboard"
   | "joystick"
+  | "press"
   | "screenCapture"
   | "screenCompare"
   | "screenBaselines"

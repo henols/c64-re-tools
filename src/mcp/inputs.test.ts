@@ -22,6 +22,7 @@ test("each step input has the fields of its tool input", () => {
   assert.deepEqual(fieldsOf(TOOL_INPUTS.flags), sorted(STEP_FIELDS.flags));
   assert.deepEqual(fieldsOf(TOOL_INPUTS.joystick), sorted(STEP_FIELDS.joystick));
   assert.deepEqual(fieldsOf(TOOL_INPUTS.keyboard), sorted(STEP_FIELDS.type));
+  assert.deepEqual(fieldsOf(TOOL_INPUTS.press), sorted(STEP_FIELDS.press));
   const [address, memory, raster] = optionsOf(TOOL_INPUTS.runTarget);
   assert.deepEqual([fieldsOf(address!), fieldsOf(memory!), fieldsOf(raster!)], [sorted(STEP_FIELDS.addressTarget), sorted(STEP_FIELDS.memoryTarget), sorted(STEP_FIELDS.rasterTarget)]);
   const [register, memoryCondition, rasterCondition] = optionsOf(TOOL_INPUTS.condition);
@@ -45,6 +46,7 @@ const SCHEMAS: Partial<Record<ActionStepKind, z.ZodType>> = {
   registers: TOOL_INPUTS.registerValues,
   joystick: TOOL_INPUTS.joystick,
   type: TOOL_INPUTS.keyboard,
+  press: TOOL_INPUTS.press,
   runUntil: runUntilTool,
 };
 
@@ -73,6 +75,13 @@ const SAMPLES: Array<[ActionStepKind, unknown]> = [
   ["type", { mode: "text", bytes: [1] }],
   ["type", { mode: "petscii", bytes: [0] }],
   ["type", { mode: "text", text: "x".repeat(1025) }],
+  ["press", { keys: "{LSHIFT+CBM}a\n" }],
+  ["press", { keys: "{STOP+RESTORE}", frames: 50 }],
+  ["press", { keys: "" }],
+  ["press", { keys: "{F9}" }],
+  ["press", { keys: "{A+B+C+D+E}" }],
+  ["press", { keys: "a", frames: 3001 }],
+  ["press", { keys: 7 }],
   ["runUntil", { target: { kind: "address", address: "$0810" } }],
   ["runUntil", { target: { kind: "address", address: "$0810", condition: { kind: "raster", line: 100 } }, timeoutFrames: 50 }],
   ["runUntil", { target: { kind: "address", address: "$0810", condition: { kind: "register", register: "a", operator: "eq", value: 1 } } }],

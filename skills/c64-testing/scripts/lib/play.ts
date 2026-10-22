@@ -8,8 +8,8 @@
 
 import { createServer, type ServerResponse } from "node:http";
 
+import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession } from "#src/native/c64run.ts";
-import { C64_KEYS, F_KEYS } from "./keys.ts";
 
 const FRAME_MS = 20;
 
@@ -27,45 +27,46 @@ export interface PlayOptions {
   restore: () => Promise<string | undefined>;
 }
 
-const C64 = C64_KEYS;
 const LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
 const DIGITS = [..."0123456789"];
-const code = (character: string) => character.charCodeAt(0);
+const F_KEYS = [1, 2, 3, 4, 5, 6, 7, 8].map((number) => `{F${number}}`);
+/** The matrix places of one key, as a press step names it: a character, or a name in braces. */
+const places = (key: string) => (keyTaps(key) as KeyTap[])[0]!.keys;
 
 /**
- * The key maps of the page. Each one maps a KeyboardEvent property to a key code.
- * The symbolic map (event.key) gives the character on the PC key; the positional
- * map (event.code) gives the C64 key at the place of the PC key, with each SHIFT alone.
+ * The key maps of the page. Each one maps a KeyboardEvent property to the matrix places
+ * that go down together. The symbolic map (event.key) gives the character on the PC key;
+ * the positional map (event.code) gives the C64 key at the place of the PC key, with each SHIFT alone.
  */
 export const KEY_MAPS = {
   /** event.code, in both maps. */
-  both: { Tab: C64.ctrl, AltLeft: C64.cbm },
+  both: { Tab: places("{CTRL}"), AltLeft: places("{CBM}") },
   /** event.code, when the arrow keys and space are keyboard keys. */
-  arrows: { ArrowUp: C64.csrUp, ArrowDown: C64.csrDown, ArrowLeft: C64.csrLeft, ArrowRight: C64.csrRight, Space: C64.space },
+  arrows: { ArrowUp: places("{UP}"), ArrowDown: places("{DOWN}"), ArrowLeft: places("{LEFT}"), ArrowRight: places("{RIGHT}"), Space: places(" ") },
   /** event.code */
   positional: {
-    ...Object.fromEntries(LETTERS.map((letter) => ["Key" + letter, code(letter)])),
-    ...Object.fromEntries(DIGITS.map((digit) => ["Digit" + digit, code(digit)])),
-    ...Object.fromEntries(F_KEYS.map((key, index) => ["F" + (index + 1), key])),
-    Backquote: C64.leftArrow, Minus: code("+"), Equal: code("-"), Insert: C64.pound, Home: C64.home, Backspace: C64.del,
-    BracketLeft: code("@"), BracketRight: code("*"), Delete: C64.upArrow,
-    Escape: C64.stop, Semicolon: code(":"), Quote: code(";"), Backslash: code("="), Enter: C64.return,
-    ShiftLeft: C64.leftShift, ShiftRight: C64.rightShift, Comma: code(","), Period: code("."), Slash: code("/"),
-  } as Record<string, number>,
+    ...Object.fromEntries(LETTERS.map((letter) => ["Key" + letter, places(letter)])),
+    ...Object.fromEntries(DIGITS.map((digit) => ["Digit" + digit, places(digit)])),
+    ...Object.fromEntries(F_KEYS.map((key, index) => ["F" + (index + 1), places(key)])),
+    Backquote: places("{LEFTARROW}"), Minus: places("+"), Equal: places("-"), Insert: places("{POUND}"), Home: places("{HOME}"), Backspace: places("{DEL}"),
+    BracketLeft: places("@"), BracketRight: places("*"), Delete: places("{UPARROW}"),
+    Escape: places("{STOP}"), Semicolon: places(":"), Quote: places(";"), Backslash: places("="), Enter: places("{RETURN}"),
+    ShiftLeft: places("{LSHIFT}"), ShiftRight: places("{RSHIFT}"), Comma: places(","), Period: places("."), Slash: places("/"),
+  } as Record<string, number[]>,
   /** event.key; a-z are the C64 letters, A-Z the letters with SHIFT. */
   symbolic: {
-    ...Object.fromEntries(LETTERS.flatMap((letter) => [[letter.toLowerCase(), code(letter)], [letter, code(letter.toLowerCase())]])),
-    ...Object.fromEntries([...DIGITS, ..."+-.:@,*;=/!\"#$%&'()[]<>?"].map((character) => [character, code(character)])),
-    ...Object.fromEntries(F_KEYS.map((key, index) => ["F" + (index + 1), key])),
-    "£": C64.pound, "^": C64.upArrow, "`": C64.leftArrow,
-    Enter: C64.return, Backspace: C64.del, Delete: C64.del, Insert: C64.inst, Home: C64.home, Escape: C64.stop,
-  } as Record<string, number>,
+    ...Object.fromEntries(LETTERS.flatMap((letter) => [[letter.toLowerCase(), places(letter)], [letter, places(`{LSHIFT+${letter}}`)]])),
+    ...Object.fromEntries([...DIGITS, ..."+-.:@,*;=/!\"#$%&'()[]<>?"].map((character) => [character, places(character)])),
+    ...Object.fromEntries(F_KEYS.map((key, index) => ["F" + (index + 1), places(key)])),
+    "£": places("{POUND}"), "^": places("{UPARROW}"), "`": places("{LEFTARROW}"),
+    Enter: places("{RETURN}"), Backspace: places("{DEL}"), Delete: places("{DEL}"), Insert: places("{INST}"), Home: places("{HOME}"), Escape: places("{STOP}"),
+  } as Record<string, number[]>,
   /** event.key with SHIFT held, in the symbolic map. */
-  symbolicShift: { Home: C64.clr, Backspace: C64.inst, Escape: C64.run, F1: 0xf2, F3: 0xf4, F5: 0xf6, F7: 0xf8 } as Record<string, number>,
+  symbolicShift: { Home: places("{CLR}"), Backspace: places("{INST}"), Escape: places("{RUN}"), F1: places("{F2}"), F3: places("{F4}"), F5: places("{F6}"), F7: places("{F8}") } as Record<string, number[]>,
 };
 
-/** The key codes that the page can send: every code of the key maps. */
-const PAGE_KEYS = new Set(Object.values(KEY_MAPS).flatMap((map) => Object.values(map)));
+/** The matrix places that the page can send: every place of the key maps. */
+const PAGE_KEYS = new Set(Object.values(KEY_MAPS).flatMap((map) => Object.values(map).flat()));
 
 const PAGE = String.raw`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -96,7 +97,7 @@ const BITS = { ArrowUp: 1, ArrowDown: 2, ArrowLeft: 4, ArrowRight: 8, Space: 16 
 const $ = (id) => document.getElementById(id);
 const canvas = $("screen"), context = canvas.getContext("2d"), state = $("state");
 let palette = [], image = context.createImageData(392, 272), frames = 0, phase = "connecting", port = 2, arrows = "joystick", keyMap = "symbolic", sent = -1;
-// The C64 key of each PC key that is down (by event.code), and the joystick keys that are down.
+// The matrix places of each PC key that is down (by event.code), and the joystick keys that are down.
 const pressed = new Map(), stick = new Set();
 // One request at a time, so that the core gets each key down before its key up.
 let queue = Promise.resolve();
@@ -116,7 +117,7 @@ function show() {
   else state.textContent = phase;
 }
 function releaseAll() {
-  for (const code of pressed.values()) send("key?code=" + code.toString(16) + "&down=0");
+  for (const keys of pressed.values()) send("key?keys=" + keys.join(",") + "&down=0");
   pressed.clear();
   stick.clear();
 }
@@ -176,19 +177,19 @@ function key(event, down) {
   }
   if (arrows === "joystick" && event.code in BITS) { event.preventDefault(); down ? stick.add(event.code) : stick.delete(event.code); return; }
   if (!down) {
-    const code = pressed.get(event.code);
-    if (code === undefined) return;
+    const keys = pressed.get(event.code);
+    if (keys === undefined) return;
     event.preventDefault();
     pressed.delete(event.code);
-    send("key?code=" + code.toString(16) + "&down=0");
+    send("key?keys=" + keys.join(",") + "&down=0");
     return;
   }
-  const code = c64Key(event);
-  if (code === undefined) return;
+  const keys = c64Key(event);
+  if (keys === undefined) return;
   event.preventDefault();
   if (event.repeat || phase !== "playing" || pressed.has(event.code)) return;
-  pressed.set(event.code, code);
-  send("key?code=" + code.toString(16) + "&down=1");
+  pressed.set(event.code, keys);
+  send("key?keys=" + keys.join(",") + "&down=1");
 }
 addEventListener("keydown", (event) => key(event, true));
 addEventListener("keyup", (event) => key(event, false));
@@ -258,9 +259,10 @@ export async function play(core: Pick<C64RunSession, "command" | "status">, opti
       if (phase === "playing") mask = Number(url.searchParams.get("mask")) & 0x1f;
       answer(phase === "playing");
     } else if (request.method === "POST" && url.pathname === "/key") {
-      const key = Number.parseInt(url.searchParams.get("code") ?? "", 16);
-      if (!PAGE_KEYS.has(key)) return void response.writeHead(400).end();
-      if (phase === "playing") pending.push("key " + key.toString(16) + " " + (url.searchParams.get("down") === "1" ? "down" : "up"));
+      const keys = (url.searchParams.get("keys") ?? "").split(",").map((key) => (/^\d{1,2}$/.test(key) ? Number(key) : -1));
+      if (!keys.every((key) => PAGE_KEYS.has(key))) return void response.writeHead(400).end();
+      const state = url.searchParams.get("down") === "1" ? "down" : "up";
+      if (phase === "playing") for (const key of keys) pending.push("key " + (0x80 + key).toString(16) + " " + state);
       answer(phase === "playing");
     } else if (request.method === "POST" && url.pathname === "/restore") {
       if (phase === "playing") pending.push(RESTORE);

@@ -39,7 +39,7 @@ test("a steps file of loads has action steps and capture steps with new names", 
   mkdirSync(join(project, ".c64-re-tools"), { recursive: true });
   withWrite((db) => renameSymbol(db, { origin: "user" }, { address: 0xc000, name: "main" }), project);
   assert.equal(steps([{ runUntil: { target: { kind: "address", address: "main" }, timeoutFrames: 1 } }, { capture: "a" }])().length, 2, "a name is an address of the knowledge");
-  assert.throws(steps([{ press: "A" }, { capture: "a" }]), /step 1: press pushes keys of the keyboard matrix, and only the replay of a record file has them\. Use type for the KERNAL keyboard queue, or put the press step in a record file and play the record file$/);
+  assert.throws(steps([{ press: "A" }, { capture: "a" }]), /step 1: press must be an object with keys, frames$/);
 });
 
 test("a capture block is RAM from $0400 that changed and that the CPU wrote, joined across small gaps", () => {

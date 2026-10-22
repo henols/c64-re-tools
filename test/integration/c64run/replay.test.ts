@@ -98,20 +98,38 @@ test("a session records with no checkpoint, and replays on the original to the c
   assert.ok((counted.result.checkpoints as number) >= 65, `${counted.result.checkpoints} checkpoints`);
 });
 
-test("a press step presses a key of the matrix by its name: F1 reads in row 0", { skip, timeout: 120_000 }, () => {
-  // The counter reads row 0 of the keyboard ($dc00 = $fe) at $c018 in place of joystick 2, and F1 is bit 4 of $dc01 there.
-  const keys = counterAt(0xc000);
-  keys[2 + 0x0a] = 0xfe;
-  keys[2 + 0x19] = 0x01;
-  keys[2 + 0x1c] = 0x10;
-  writeFileSync(join(project, "keys.prg"), keys);
-  const press = { name: "F1", program: "keys.prg", symbols: "counter.json", load: true, steps: [{ registers: { pc: "start" } }, { frames: 20 }, { press: "{F1}" }, { frames: 20 }] };
-  writeFileSync(join(project, "press.json"), JSON.stringify(press));
-  const recorded = script("record", ["press.json", "--out", "tests/recordings/press"]);
+// The counter reads row 0 of the keyboard ($dc00 = $fe) at $c018 in place of joystick 2: F1 is bit 4 of $dc01 there, F3 bit 5.
+const keys = counterAt(0xc000);
+keys[2 + 0x0a] = 0xfe;
+keys[2 + 0x19] = 0x01;
+keys[2 + 0x1c] = 0x10;
+writeFileSync(join(project, "keys.prg"), keys);
+
+/** Records the press steps between 20 frames before and 20 frames after; gives the reads and the events of the recording. */
+function recordPress(name: string, press: Array<{ press: { keys: string } }>): { reads: string; events: unknown[] } {
+  const file = { name, program: "keys.prg", symbols: "counter.json", load: true, steps: [{ registers: { pc: "start" } }, { frames: 20 }, ...press, { frames: 20 }] };
+  writeFileSync(join(project, `${name}.json`), JSON.stringify(file));
+  const recorded = script("record", [`${name}.json`, "--out", `tests/recordings/${name}`]);
   assert.equal(recorded.status, 0, JSON.stringify(recorded.result));
   assert.equal(recorded.result.recorded, true);
-  const reads = readFileSync(join(project, "tests/recordings/press/reads.txt"), "utf8");
+  const folder = join(project, "tests/recordings", name);
+  return { reads: readFileSync(join(folder, "reads.txt"), "utf8"), events: (JSON.parse(readFileSync(join(folder, "recording.json"), "utf8")) as { events: unknown[] }).events };
+}
+
+test("a press step presses a key of the matrix by its name: F1 reads in row 0", { skip, timeout: 120_000 }, () => {
+  const { reads, events } = recordPress("press", [{ press: { keys: "{F1}" } }]);
   assert.match(reads, /^c018 dc01 \d+ ef$/m, "the program reads F1 held in row 0");
+  assert.equal(events.some((event) => (event as { action: { restore?: boolean } }).action.restore === true), false, "a key of the matrix is input, no event");
+});
+
+test("a press step holds keys together, and its RESTORE is an event that the replay does again", { skip, timeout: 120_000 }, () => {
+  const { reads, events } = recordPress("chord", [{ press: { keys: "{F1+F3}{RESTORE}" } }]);
+  assert.match(reads, /^c018 dc01 \d+ cf$/m, "the program reads F1 and F3 held together in row 0");
+  const restores = events.filter((event) => (event as { action: { restore?: boolean } }).action.restore === true);
+  assert.equal(restores.length, 1, JSON.stringify(events));
+  assert.equal((restores[0] as { step: number }).step, 3, "the RESTORE belongs to the press step");
+  const replayed = script("replay", ["tests/recordings/chord"]);
+  assert.deepEqual([replayed.status, replayed.result.result], [0, "PASS"], JSON.stringify(replayed.result));
 });
 
 

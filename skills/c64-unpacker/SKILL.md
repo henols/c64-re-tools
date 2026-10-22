@@ -58,6 +58,7 @@ Each step has one of these kinds:
 - `{ "registers": { "pc": "start", "a": 1 } }` sets registers. Only `pc` takes a name.
 - `{ "joystick": { "port": 2, "direction": "up", "fire": false } }` sets a joystick.
 - `{ "type": { "mode": "text", "text": "RUN\n" } }` or `{ "type": { "mode": "petscii", "bytes": [147] } }` puts keys in the keyboard queue of the KERNAL.
+- `{ "press": { "keys": "{F1}" } }` presses keys of the keyboard matrix. Each character is one tap. A name in braces is a key without a character, for example `{STOP}` or `{RESTORE}`. `+` in braces holds keys together, for example `{LSHIFT+CBM}`. `frames` is 1 to 3000, and 3 by default.
 - `{ "frames": 50 }` runs 1 to 30000 frames.
 - `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 300 } }` runs until the target. The target kinds are `address`, `memory` and `raster`. `timeoutFrames` is 1 to 30000. The default is 3000.
 - `{ "capture": "level1" }` captures a part. Only `loads` takes this step. Give each capture step a different name of 1 to 64 letters, digits, dots, underscores or hyphens.
@@ -65,7 +66,7 @@ Each step has one of these kinds:
 
 An address in a step can be a name. The script refuses an unknown name before the program runs. The message gives the file and the step.
 
-The script refuses a `press` step. A program that reads the keyboard matrix does not see the keys of a `type` step. A wait for any key that reads all keyboard columns can end without a key.
+A program that reads the keyboard matrix does not see the keys of a `type` step. Use a `press` step for that program. A wait for any key that reads all keyboard columns can end without a key.
 
 The script refuses a step in an old form. The message gives the step to write.
 

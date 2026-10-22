@@ -570,8 +570,8 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state:
       const port01 = `$${port.toString(16).padStart(2, "0")}`;
       return { verified: false, differences: [`The loader did not get to ${what}; it stopped at ${formatC64Address(pc)}.`], stop: { pc: formatC64Address(pc), port: port01, ...(cause === undefined ? {} : { cause }), history } };
     };
-    // The start screen waits for a key or a fire button. The emulator cannot press a key of the keyboard matrix
-    // on each VICE, so the check lets it wait, then sets the PC to the code after the wait.
+    // The start screen waits for a key or a fire button. Not each VICE can press a key of the keyboard matrix,
+    // so the check lets it wait, then sets the PC to the code after the wait.
     let screen: LoaderRun["startScreen"];
     const screenDifferences: string[] = [];
     const showScreen = async (at: { wait: number; continue: number }, wanted: StartScreenPlan, frames: number, copied: boolean, parts: readonly StagePart[] = [], colourRam?: Uint8Array): Promise<LoaderRun | undefined> => {

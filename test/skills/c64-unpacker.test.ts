@@ -91,9 +91,9 @@ test("inspect, trace, stages and capture take a PRG: a disk image and a file pas
   // A segment must hold the entry: refused before the emulator runs.
   assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--exclude", "$0800-$0900"), "--exclude $0800-$0900 holds the entry --until $080d. A segment must hold the entry: give an --exclude range without it.");
   assert.equal(refused("capture", "packed.prg", "--until", "$080d", "--out", "x", "--range", "$c000-$cfff"), "--range $c000-$cfff does not hold the entry --until $080d. Give a --range that holds the entry.");
-  // The steps of the unpacker run in VICE: a refusal lists the kinds that VICE runs, without press.
+  // A refusal lists the step kinds.
   writeFileSync(join(project, "wait.json"), JSON.stringify([{ wait: 10 }]));
-  assert.equal(refused("trace", "packed.prg", "--steps", "wait.json"), "--steps wait.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil");
+  assert.equal(refused("trace", "packed.prg", "--steps", "wait.json"), "--steps wait.json: step 1 must have exactly one of write, registers, joystick, type, press, frames, runUntil");
   writeFileSync(join(project, "old.json"), JSON.stringify([{ runUntil: { at: "$0400" }, timeoutFrames: 100 }]));
   assert.equal(refused("stages", "packed.prg", "--steps", "old.json"), '--steps old.json: step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "$0400"}, "timeoutFrames": 100}}');
   // Every name of the steps resolves before the emulator starts; an unknown one names the file and the step, as invalid-input like --until.
@@ -104,7 +104,7 @@ test("inspect, trace, stages and capture take a PRG: a disk image and a file pas
   writeFileSync(join(project, "raster.json"), JSON.stringify([{ frames: 10 }, { runUntil: { target: { kind: "raster", line: 100 }, timeoutFrames: 10 } }]));
   assert.equal(refused("stages", "packed.prg", "--steps", "raster.json"), "--steps raster.json: step 2: stages takes a runUntil step only with an address target without a condition. Use frames steps, or use capture.");
   writeFileSync(join(project, "parts.json"), JSON.stringify([{ wait: 10 }, { capture: "a" }]));
-  assert.equal(refused("loads", "game.d64", "--steps", "parts.json", "--out", "parts"), "--steps parts.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil, capture, save");
+  assert.equal(refused("loads", "game.d64", "--steps", "parts.json", "--out", "parts"), "--steps parts.json: step 1 must have exactly one of write, registers, joystick, type, press, frames, runUntil, capture, save");
   writeFileSync(join(project, "part.json"), JSON.stringify([{ capture: "a" }]));
   assert.equal(refused("loads", "game.d64", "--steps", "part.json", "--out", "parts", "--exclude", "$a9ff-$a000"), "--exclude ends at $a000, before its start $a9ff");
 });

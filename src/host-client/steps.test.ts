@@ -29,7 +29,7 @@ test("a step has the input of its MCP tool, with names and the defaults of the t
   ]);
   for (const [bad, why] of [
     [[], /at least one step/],
-    [[{ observe: "x" }], /must have exactly one of write, registers, joystick, type, frames, runUntil$/],
+    [[{ observe: "x" }], /must have exactly one of write, registers, joystick, type, press, frames, runUntil$/],
     [[{ frames: 10, type: { mode: "text", text: "x" } }], /step 1 has 2 step kinds: frames, type\. Give each one its own step$/],
     [[{ runUntil: { target: { kind: "address", address: "12-3" } } }], /step 1: runUntil\.target\.address must be \$ and 1 to 4 hex digits/],
     [[{ write: { at: "$c000", bytes: [1] } }], /step 1 has the 2\.0 form \(write\.at, write\.bytes\)/],
@@ -39,12 +39,15 @@ test("a step has the input of its MCP tool, with names and the defaults of the t
     [[{ registers: { flags: {} } }], /name at least one register/],
     [[{ frames: 0 }], /step 1: frames/],
     [[{ frames: 30_001 }], /step 1: frames/],
-    [[{ press: "A" }], /press pushes keys of the keyboard matrix, and only the replay of a record file has them\. Use type for the KERNAL keyboard queue, or put the press step in a record file and play the record file$/],
+    [[{ press: "A" }], /step 1: press must be an object with keys, frames$/],
+    [[{ press: { keys: "{F9}" } }], /step 1: press\.keys: there is no key \{F9\}/],
+    [[{ press: { keys: 7 } }], /step 1: press\.keys must be the keys as text/],
+    [[{ press: { keys: "a", frames: 0 } }], /step 1: press\.frames must be a whole number from 1 to 3000/],
+    [[{ press: { keys: "a", hold: 2 } }], /step 1: press has the field hold, which it does not take\. Its fields are keys, frames/],
   ] as const) {
     assert.throws(() => checkActionSteps(bad, refuse), why, JSON.stringify(bad));
   }
-  assert.deepEqual(checkActionSteps([{ press: "A" }], refuse, { press: true }), [{ press: "A" }], "the replay core presses keys");
-  assert.throws(() => checkActionSteps([{ observe: "x" }], refuse, { press: true }), /exactly one of write, registers, joystick, type, press, frames, runUntil$/, "the replay core lists press");
+  assert.deepEqual(checkActionSteps([{ press: { keys: "{LSHIFT+CBM}" } }, { press: { keys: "{STOP+RESTORE}", frames: 10 } }], refuse), [{ press: { keys: "{LSHIFT+CBM}", frames: 3 } }, { press: { keys: "{STOP+RESTORE}", frames: 10 } }], "frames defaults to 3");
 });
 
 test("a step in a form of the 2.0 files is refused with the field and the 2.1 step to write", () => {

@@ -274,7 +274,7 @@ The start screen:
 - With a start screen, the copier uses three pages, not two.
 - The start screen is part of the clean build only. The loader program always shows it. A release build has no start screen, and `LEFTOVERS = 1` also turns it off.
 - To start the program at once, set `START_SCREEN = 0` in `config.asm`, and assemble `loader.asm`. Do not define `START_SCREEN` on the command line of the build: `config.asm` sets it.
-- A test that runs the loader program stops at the start screen, because the emulator cannot press a key of the keyboard matrix. Run until `loader_start_screen_wait`. Then set the PC to `loader_start_screen_continue`.
+- A test that runs the loader program stops at the start screen, because the start screen waits for a key. Run until `loader_start_screen_wait`. Then set the PC to `loader_start_screen_continue`.
 
 `loader` holds these fields:
 

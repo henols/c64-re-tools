@@ -43,7 +43,7 @@ Use only the MCP tools. Each MCP session has its own machine. Nothing else can c
 | Chips of the machine | `c64_vicii`, `c64_sprite`, `c64_cia`, `c64_sid` |
 | Screen image, screen compare | `c64_screen` |
 | Several of these from one moment | `c64_observe` |
-| Keyboard, joystick | `c64_keyboard`, `c64_joystick` |
+| Keyboard, joystick | `c64_keyboard`, `c64_press`, `c64_joystick` |
 | Program and disk media | `c64_autostart`, `c64_program_load`, `c64_disk_attach` |
 | Machine state to go back to, also in a later session | `c64_snapshot` |
 
@@ -73,10 +73,7 @@ Before a risky experiment, save the state with `c64_snapshot`. Restore it to try
 
 ### Input that the tools cannot give
 
-Some programs read input in a way that the input tools cannot give. The tool description tells when. Then use one of these ways:
-
-- Open the window and ask the user to give the input.
-- Record a test session with a `press` step. A `press` step presses one key of the keyboard matrix at a time, for example `{F1}` or `{STOP}`, in a session of a PRG file.
+Some programs read input in a way that the input tools cannot give. The tool description tells when. Then open the window and ask the user to give the input.
 
 Do not change the program to make it accept the input.
 

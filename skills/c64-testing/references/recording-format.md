@@ -37,7 +37,7 @@ A record file is one JSON object in a project file.
 The steps have the form of the steps of a scenario. Two steps behave differently:
 
 - `type` puts at most 10 keys into the keyboard queue of the KERNAL. It is an event: a replay does it again.
-- `press` pushes keys of the keyboard matrix. It is input. A scenario has no `press` step.
+- `press` pushes keys of the keyboard matrix. It is input.
 
 A record file has no `raster` target and no `condition`. `write` and `runUntil` have only the space `c64`.
 
@@ -45,26 +45,30 @@ A record file has no `raster` target and no `condition`. `write` and `runUntil` 
 |---|---|
 | `{ "frames": 300 }` | Run 300 frames (19656 cycles each). |
 | `{ "joystick": { "port": 2, "direction": "left", "fire": true } }` | Set a joystick. It stays in this state until the next joystick step. |
-| `{ "press": "RUN\n" }` | Press each key of the text on the keyboard matrix for 3 frames, then release it for 3 frames. |
+| `{ "press": { "keys": "RUN\n" } }` | Press the keys of the keyboard matrix. Each tap holds its keys for 3 frames, then releases them for 3 frames. `frames` sets a different number, from 1 to 3000. |
 | `{ "type": { "mode": "text", "text": "RUN\n" } }` | Put at most 10 keys into the keyboard queue of the KERNAL, after the keys that wait there. |
 | `{ "write": { "address": "next_room", "data": "01" } }` | Write bytes into RAM. |
 | `{ "registers": { "pc": "change_room", "a": 16 } }` | Set registers at the next instruction. `pc` continues the program at that address. |
 | `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 300 } }` | Run until the CPU gets to an address. |
 | `{ "runUntil": { "target": { "kind": "memory", "address": "room", "operator": "eq", "value": 2 }, "timeoutFrames": 600 } }` | Run until a byte compares true with `value`. The script reads the byte at the end of each frame. |
 
-A `press` step can press A to Z, 0 to 9, space, return (`\n`) and `+-.:@,*;=/!"#$%&'()[]<>?`. It presses a to z as A to Z.
+Each character of `keys` is one tap. a to z press the same keys as A to Z. `\n` presses RETURN. A character with SHIFT, for example `!`, also presses the left SHIFT.
 
 A key without a character has its name in braces, in upper or lower case. `{STOP}` is RUN/STOP, and `{CBM}` is the Commodore key. The names are:
 
 - `{F1}` to `{F8}`, `{RETURN}`, `{SPACE}`, `{DEL}`, `{INST}`, `{HOME}`, `{CLR}`
-- `{STOP}`, `{RUN}`, `{CTRL}`, `{CBM}`, `{LSHIFT}`, `{RSHIFT}`
+- `{STOP}`, `{RUN}`, `{RESTORE}`, `{CTRL}`, `{CBM}`, `{LSHIFT}`, `{RSHIFT}`
 - `{UP}`, `{DOWN}`, `{LEFT}`, `{RIGHT}`, `{POUND}`, `{UPARROW}`, `{LEFTARROW}`
 
-For example, `{ "press": "{F1}" }` presses F1. The step presses each key alone, one after the other. It cannot hold two keys at the same time.
+`{F2}`, `{F4}`, `{F6}`, `{F8}`, `{RUN}`, `{CLR}`, `{INST}`, `{UP}` and `{LEFT}` also press the left SHIFT.
+
+To hold keys together in one tap, join them with `+` in braces. For example, `{ "press": { "keys": "{LSHIFT+CBM}" } }` holds the left SHIFT and the Commodore key together. One tap holds at most 4 keys. RESTORE counts as a key.
 
 The keyboard queue of the KERNAL holds 10 keys. If the keys of a `type` step and the keys that wait in the queue do not fit, the session stops. A program that reads the keyboard hardware does not see the keys of a `type` step. Use `press` for that program.
 
 `joystick`, `press` and `frames` steps are input and time. The recording keeps their effect in the reads, so a replay does not do these steps again.
+
+RESTORE starts an NMI and is not a read. The recording keeps each RESTORE of a `press` step as an event of that step. The replay presses RESTORE again at the same read of the program.
 
 `type`, `write`, `registers` and `runUntil` steps are events. The recording keeps a point in the program for each event. The point is the next read at the input site with the most reads. That site is not in ROM. A replay does the event again at the same read. An event that comes directly after another event runs at once after that event.
 

@@ -10,7 +10,7 @@ import { type AddressRange, COVERAGE, formatC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage } from "#src/host-client/coverage.ts";
-import { ACTION_STEP_KINDS, checkActionStep, checkStepNames, isObject, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, checkStepNames, isObject, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
@@ -64,7 +64,7 @@ export function readLoadSteps(path: string): LoadStep[] {
     }
     const kinds = Object.keys(step).filter((key) => (ACTION_STEP_KINDS as readonly string[]).includes(key));
     if (kinds.length > 1) return fail(`${at} has ${kinds.length} step kinds: ${kinds.join(", ")}. Give each one its own step`);
-    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...VICE_STEP_KINDS, "capture", "save"].join(", ")}`);
+    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...ACTION_STEP_KINDS, "capture", "save"].join(", ")}`);
     // The step with its defaults filled in, as the shared schema of the action steps gives it.
     const checked = checkActionStep(kinds[0] as ActionStepKind, step, at, fail);
     // Its names resolve now: an unknown name stops the call before the emulator starts.

@@ -86,6 +86,7 @@ const EXAMPLES: Record<
   reset: { call: (c) => c.reset({ mode: "hard", run: false }), params: { mode: "hard", run: false }, result: { state: "stopped" } },
   keyboard: { call: (c) => c.keyboard(Uint8Array.from([0x52, 0x0d])), params: { data: "520d" }, result: { queuedBytes: 2 } },
   joystick: { call: (c) => c.joystick({ port: 2, direction: "left", fire: true }), params: { port: 2, direction: "left", fire: true }, result: { port: 2, direction: "left", fire: true } },
+  press: { call: (c) => c.press([{ keys: [15, 61], restore: false }, { keys: [63], restore: true }], 3), params: { taps: [{ keys: [15, 61], restore: false }, { keys: [63], restore: true }], frames: 3 }, result: { taps: 2, state: "running" } },
   breakpoint: {
     call: (c) => c.breakpoint({ action: "add", address: 0x2100, space: "c64", condition: { kind: "register", register: "a", operator: "eq", value: 66 } }),
     params: { action: "add", address: 0x2100, space: "c64", condition: { kind: "register", register: "a", operator: "eq", value: 66 } },

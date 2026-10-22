@@ -27,11 +27,9 @@
 #include "systems/c1541.h"
 #include "systems/c64.h"
 
-#define C64RUN_PROTOCOL 3
-// Keys that chips has no code for: each SHIFT alone, and the up arrow.
-#define C64RUN_KEY_LSHIFT 0x11
-#define C64RUN_KEY_RSHIFT 0x12
-#define C64RUN_KEY_UPARROW 0x5E
+#define C64RUN_PROTOCOL 4
+// The key code of matrix place 0 (row 0, column 0); place n has code 0x80 + n.
+#define C64RUN_KEY_PLACE 0x80
 #ifndef CHIPS_COMMIT
 #define CHIPS_COMMIT "unknown"
 #endif
@@ -335,10 +333,9 @@ static const char* init(const char* romdir) {
             .chars = { .ptr = rom[2], .size = 0x1000 },
         },
     });
-    // The matrix positions (column, line) of the keys that chips has no code for.
-    kbd_register_key(&sys.kbd, C64RUN_KEY_LSHIFT, 7, 1, 0);
-    kbd_register_key(&sys.kbd, C64RUN_KEY_RSHIFT, 4, 6, 0);
-    kbd_register_key(&sys.kbd, C64RUN_KEY_UPARROW, 6, 6, 0);
+    // One code for each place of the matrix: place row * 8 + column, where the row is the
+    // line of CIA 1 port A and the column the bit of port B (chips: column, line).
+    for (int place = 0; place < 64; place++) kbd_register_key(&sys.kbd, C64RUN_KEY_PLACE + place, place & 7, place >> 3, 0);
     const uint16_t vector = rom[0][0x1FFC] | (rom[0][0x1FFD] << 8);
     for (int i = 0; i < 3; i++) free(rom[i]);
     pins = sys.pins;
@@ -536,11 +533,11 @@ int main(int argc, char** argv) {
             c64_joystick(&sys, (uint8_t)j1, (uint8_t)j2);
             printf("ok\n");
         } else if (!strcmp(cmd, "key")) {
-            // key <code hex> down|up: a key of the keyboard matrix; the code is ASCII as
-            // chips maps it (A-Z, 0-9, space 20, return 0d, ...); shifted keys press SHIFT.
-            // 11 and 12 are the left and right SHIFT alone, 5e the up arrow, ff RESTORE (NMI).
+            // key <code hex> down|up: 80 + place is the key at matrix place row * 8 + column
+            // (80-bf), ff is RESTORE (NMI). chips holds at most 4 keys at once.
             unsigned code;
             if (sscanf(a1, "%x", &code) != 1 || (strcmp(a2, "down") && strcmp(a2, "up"))) { printf("err key: give a code and down or up\n"); continue; }
+            if ((code < C64RUN_KEY_PLACE || code >= C64RUN_KEY_PLACE + 64) && code != C64_KEY_RESTORE) { printf("err key: give 80-bf (a matrix place) or ff (RESTORE)\n"); continue; }
             if (!strcmp(a2, "down")) c64_key_down(&sys, (int)code);
             else {
                 // chips releases a key in kbd_update, after its sticky time: one call

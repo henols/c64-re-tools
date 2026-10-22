@@ -420,15 +420,15 @@ test("a run and a scenario refuse the 2.0 step and memory forms with the field a
   assert.equal(run([{ runUntil: { at: "cold_start" }, timeoutFrames: 900 }]), 'run old-run.json: step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "cold_start"}, "timeoutFrames": 900}}');
   assert.equal(run([{ observe: "x", memory: [{ at: "$0400", size: 2 }] }]), "run old-run.json: step 1: a memory object has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(run([{ trace: "t", points: [{ kind: "exec", at: "$c000" }], frames: 5 }]), "run old-run.json: step 1: a point has the field at. at is a 2.0 field. Write start in place of at");
-  assert.equal(run([{ press: " " }]).startsWith("run old-run.json: step 1: press pushes keys of the keyboard matrix"), true);
-  assert.equal(run([{ wait: 5 }]), "run old-run.json: step 1 must have exactly one of write, registers, joystick, type, frames, runUntil, snapshot, save, screen, coverage, observe, expect, trace");
+  assert.equal(run([{ press: " " }]).startsWith("run old-run.json: step 1: press must be an object with keys, frames"), true);
+  assert.equal(run([{ wait: 5 }]), "run old-run.json: step 1 must have exactly one of write, registers, joystick, type, press, frames, runUntil, snapshot, save, screen, coverage, observe, expect, trace");
   const scenario = (steps: unknown[]) => message("checklist", "old-scenario.json", { ...valid, steps });
   assert.equal(scenario([{ type: " ", side: "original" }, valid.steps[2]]), 'scenario old-scenario.json: step 1 has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}, "side": "original"}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes');
   assert.equal(scenario([{ runUntil: { at: "title_menu_loop" }, timeoutFrames: 600 }, valid.steps[2]]), 'scenario old-scenario.json: step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "title_menu_loop"}, "timeoutFrames": 600}}');
   assert.equal(scenario([{ observe: "x", memory: [{ at: "$0002", size: 254 }] }]), "scenario old-scenario.json: step 1: a memory object has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(scenario([{ observe: "x", memory: [{ address: "$d01e", exclude: [{ at: "$d01e", reason: "latched" }] }] }]), "scenario old-scenario.json: step 1: an exclude has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(scenario([{ frames: 5, type: { mode: "text", text: " " } }, valid.steps[2]]), "scenario old-scenario.json: step 1 has 2 step kinds: frames, type. Give each one its own step");
-  assert.equal(scenario([{ sleep: 5 }, valid.steps[2]]), "scenario old-scenario.json: step 1 must have exactly one of reset, load, autostart, snapshot, normalize, write, registers, joystick, type, frames, runUntil, observe");
+  assert.equal(scenario([{ sleep: 5 }, valid.steps[2]]), "scenario old-scenario.json: step 1 must have exactly one of reset, load, autostart, snapshot, normalize, write, registers, joystick, type, press, frames, runUntil, observe");
 });
 
 test("test and run check every file before the emulator: a missing file is not-found, a disk image is no PRG", () => {

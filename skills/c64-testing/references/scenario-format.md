@@ -46,8 +46,9 @@ Before the first step of each side, the script does a hard reset. The CPU stops 
 | `{ "write": { "address": "seed", "data": "0102" } }` | Write 1 to 4096 bytes into memory. Optional: `space` (`c64` or `drive8`, default `c64`) and `view` (`cpu` or `ram`, default `cpu`). |
 | `{ "registers": { "pc": "start", "a": 0, "flags": { "i": true } } }` | Set registers: `pc`, `a`, `x`, `y`, `sp` and `flags` (`n`, `v`, `b`, `d`, `i`, `z`, `c`). Only `pc` can be a name. |
 | `{ "joystick": { "port": 2, "direction": "left", "fire": true } }` | Set a joystick. `fire` is `false` by default. The joystick stays in this state until the next joystick step. |
-| `{ "type": { "mode": "text", "text": "RUN\n" } }` | Put at most 1024 keys into the keyboard queue of the KERNAL. A program that reads the keyboard hardware does not see them. |
+| `{ "type": { "mode": "text", "text": "RUN\n" } }` | Put at most 1024 keys into the keyboard queue of the KERNAL. A program that reads the keyboard hardware does not see them. Use `press` for that program. |
 | `{ "type": { "mode": "petscii", "bytes": [147] } }` | Put PETSCII codes from 1 to 255 into the keyboard queue of the KERNAL. Use it for keys that mode `text` does not have. |
+| `{ "press": { "keys": "{F1}" } }` | Press keys of the keyboard matrix and RESTORE. A program that reads the keyboard hardware sees them. Each tap holds its keys for 3 frames, then releases them for 3 frames. Optional: `frames` from 1 to 3000. The keys are the same as the keys of a `press` step of a record file. |
 | `{ "runUntil": { "target": { "kind": "address", "address": "main_loop" }, "timeoutFrames": 600 } }` | Run until the CPU gets to an address. |
 | `{ "runUntil": { "target": { "kind": "memory", "address": "game_state", "operator": "eq", "value": 2 }, "timeoutFrames": 600 } }` | Run until a write to the byte makes the comparison with `value` true. `operator` is `eq`, `ne`, `lt`, `lte`, `gt` or `gte`. The run does not stop for a byte that is already true at the start. It also does not stop for a register that the hardware changes, for example `$d012`. For a raster line, use a `raster` target. |
 | `{ "runUntil": { "target": { "kind": "raster", "line": 250 }, "timeoutFrames": 5 } }` | Run until the raster beam gets to a line (0 to 311 for PAL, 0 to 262 for NTSC). Optional: `cycle` from 0 to 64. |
@@ -61,8 +62,6 @@ The `port` of a joystick is 1 or 2. The `direction` is `center`, `up`, `down`, `
 A `condition` has the `kind` `register`, `memory` or `raster`. A `register` condition has `register` (`a`, `x`, `y` or `sp`), `operator` and `value`. A `memory` condition has `address`, `operator` and `value`. A `raster` condition has `line` and an optional `cycle`.
 
 `timeoutFrames` is from 1 to 30000, and 3000 by default. A `runUntil` that does not get to its target in `timeoutFrames` frames makes the result INCONCLUSIVE.
-
-A scenario has no `press` step. Only a record file has `press` for keys of the keyboard matrix.
 
 Each step except `observe` can have `"side": "original"` or `"side": "rebuild"`. Then only that side does the step. Use it when only one side needs a step, for example a key for the intro of the original. An `observe` step has no `side`, because it compares both sides.
 

@@ -20,6 +20,8 @@ import { once } from "node:events";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 
+import { snapshotModule } from "../../vsf.ts";
+import { buildSnapshot, cpuModule, keyboardModule } from "../../vsf.testkit.ts";
 import { BinaryMonitor, Command, EVENT_REQUEST_ID } from "./binary-monitor.ts";
 import type { ViceProcess } from "./process.ts";
 import { TextMonitor } from "./text-monitor.ts";
@@ -134,6 +136,14 @@ export class FakeVice {
   mode: "headless" | "window" = "headless";
   /** Undump answers with an error, as VICE does for a snapshot it cannot read. */
   refuseUndump = false;
+  /** The keyboard matrix: bit n of row r is the key at row r, column n. A snapshot keeps it. */
+  matrix = [0, 0, 0, 0, 0, 0, 0, 0];
+  /** The version of the keyboard module that a dump writes. */
+  keyboardVersion = { major: 1, minor: 1 };
+  /** Each matrix that a restore set, in order. */
+  readonly matrices: number[][] = [];
+  /** The NMIs that restored snapshots had pending: the presses of RESTORE. */
+  nmis = 0;
   /** PETSCII fed to the keyboard buffer, in order. */
   readonly keyboard: number[] = [];
   /** Control-port line levels by 0-based joyport index; VICE 3.10 and older start them at 0 (all pressed, VICE bug #2202). */
@@ -484,23 +494,31 @@ export class FakeVice {
         return void answer(Buffer.concat([u16(16), ...items]));
       }
       case Command.dump: {
-        // Like real VICE, the snapshot holds the cycle clock and the disk in drive 8, not the checkpoints.
+        // Like real VICE, the snapshot holds the cycle clock, the keyboard matrix and the disk in drive 8, not the checkpoints.
         const file = body.subarray(3, 3 + body[2]!).toString("utf8");
-        const clock = Buffer.alloc(8);
-        clock.writeBigUInt64LE(this.clock);
-        writeFileSync(file, Buffer.concat([Buffer.from("FAKESNAP"), this.ram, u16(this.registers.PC!), clock, ...this.attached.slice(-1)]));
+        const keyboard = { ...keyboardModule(), ...this.keyboardVersion };
+        this.matrix.forEach((row, index) => keyboard.data.writeUInt32LE(row, index * 4));
+        const machine = Buffer.concat([this.ram, u16(this.registers.PC!), ...this.attached.slice(-1)]);
+        writeFileSync(file, buildSnapshot([cpuModule(this.clock), keyboard, { name: "FAKEMACHINE", major: 1, minor: 0, data: machine }]));
         return void answer();
       }
       case Command.undump: {
         const file = body.subarray(1, 1 + body[0]!).toString("utf8");
-        if (this.refuseUndump || !existsSync(file)) return void socket.write(frame(command, id, Buffer.alloc(0), 0x8f));
-        const saved = readFileSync(file);
-        saved.copy(this.ram, 0, 8, 8 + 0x10000);
-        this.registers.PC = saved.readUInt16LE(8 + 0x10000);
-        this.clock = saved.readBigUInt64LE(8 + 0x10002);
-        const disk = saved.subarray(8 + 0x10002 + 8);
+        const saved = existsSync(file) ? readFileSync(file) : Buffer.alloc(0);
+        const machine = snapshotModule(saved, "FAKEMACHINE")?.data;
+        if (this.refuseUndump || machine === undefined) return void socket.write(frame(command, id, Buffer.alloc(0), 0x8f));
+        machine.copy(this.ram, 0, 0, 0x10000);
+        this.registers.PC = machine.readUInt16LE(0x10000);
+        const disk = machine.subarray(0x10002);
         this.attached.length = 0;
         if (disk.length > 0) this.attached.push(Buffer.from(disk));
+        const cpu = snapshotModule(saved, "MAINC64CPU")!.data;
+        this.clock = cpu.readBigUInt64LE(0);
+        if ((cpu.readUInt32LE(83) & 1) !== 0) this.nmis++;
+        const keyboard = snapshotModule(saved, "KEYBOARD")!.data;
+        const matrix = Array.from({ length: 8 }, (_, row) => keyboard.readUInt32LE(row * 4));
+        if (matrix.some((row, index) => row !== this.matrix[index])) this.matrices.push(matrix);
+        this.matrix = matrix;
         this.undumps.push(file);
         return void answer(this.#pc());
       }

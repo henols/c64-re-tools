@@ -13,13 +13,13 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, renamedField, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
 import { START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
-import { NAMED_KEYS } from "./keys.ts";
 import { namesOf, type Outcome } from "./scenario.ts";
 
 export const RECORDING_FORMAT = 1;
@@ -139,28 +139,8 @@ const QUEUE_SIZE = 10;
 
 const hex = (address: number) => address.toString(16).padStart(4, "0");
 
-/** The keys of the replay core for the characters that a press step can have. */
-const KEY_CODES = new Map<string, number>([
-  ...[..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 +-.:@,*;=/!\"#$%&'()[]<>?"].map((character) => [character, character.charCodeAt(0)] as [string, number]),
-  ["\n", 0x0d],
-]);
-
-/**
- * The key codes of a text; a-z type as A-Z, as the C64 shows them after
- * power-on. A key without a character has its name in braces, for example {F1}.
- */
-export function keyCodes(text: string): number[] {
-  return (text.replace(/\r\n?/g, "\n").match(/\{[^{}]*\}|[^]/g) ?? []).map((part) => {
-    if (part.length > 1) {
-      const named = NAMED_KEYS[part.slice(1, -1).toUpperCase()];
-      if (named === undefined) throw new Refusal("invalid-input", `press has no key ${part}. The keys in braces are ${Object.keys(NAMED_KEYS).map((name) => `{${name}}`).join(", ")}`);
-      return named;
-    }
-    const code = KEY_CODES.get(part.toUpperCase());
-    if (code === undefined) throw new Refusal("invalid-input", `press cannot press ${JSON.stringify(part)} on the C64 keyboard`);
-    return code;
-  });
-}
+/** The key code of the replay core for a matrix place: 80 + the place. RESTORE is ff. */
+const coreKey = (place: number) => (0x80 + place).toString(16);
 
 /** The joystick mask of the replay core: 1 up, 2 down, 4 left, 8 right, $10 fire. */
 export function joystickMask(direction: Extract<ActionStep, { joystick: unknown }>["joystick"]["direction"], fire: boolean): number {
@@ -235,7 +215,7 @@ export function readRecordFile(path: string): RecordFile {
   if (!Array.isArray(value.steps) || value.steps.length === 0) fail("steps must be a list with at least one step");
   const steps = (value.steps as unknown[]).map((raw, index) => {
     const at = `step ${index + 1}`;
-    const step = checkActionStep(stepKind(raw, ACTION_STEP_KINDS, at, fail), raw as Record<string, unknown>, at, fail, { press: true });
+    const step = checkActionStep(stepKind(raw, ACTION_STEP_KINDS, at, fail), raw as Record<string, unknown>, at, fail);
     checkCoreStep(step, at, fail);
     return step;
   });
@@ -254,14 +234,6 @@ export function readRecordFile(path: string): RecordFile {
 /** What the replay core cannot do of a step that is right for VICE: it has the C64 alone, no raster wait and no conditions. */
 function checkCoreStep(step: ActionStep, at: string, fail: (message: string) => never): void {
   if ("write" in step && step.write.space !== "c64") fail(`${at}: a recording has the C64 alone, not ${step.write.space}`);
-  if ("press" in step) {
-    try {
-      keyCodes(step.press);
-    } catch (error) {
-      if (isRefusal(error)) fail(`${at}: ${error.message}`);
-      throw error;
-    }
-  }
   if ("type" in step) {
     const keys = keyboardBytes(step.type);
     if (typeof keys !== "string" && keys.length > QUEUE_SIZE) fail(`${at}: the KERNAL keyboard queue holds ${QUEUE_SIZE} keys; give more type steps, or press for keys of the keyboard matrix`);
@@ -307,7 +279,7 @@ export function readRecording(folder: string): Recording {
     const named = typeof event.step === "number" ? `${at} (step ${event.step})` : at;
     if (event.action.restore === true && Object.keys(event.action).length === 1) return;
     // The action with the defaults filled in, as the record file gave it.
-    event.action = checkActionStep(stepKind(event.action, ACTION_STEP_KINDS, named, where), event.action, named, where, { press: true });
+    event.action = checkActionStep(stepKind(event.action, ACTION_STEP_KINDS, named, where), event.action, named, where);
   });
   return value as unknown as Recording;
 }
@@ -532,11 +504,22 @@ export async function record(
       masks[step.joystick.port - 1] = joystickMask(step.joystick.direction, step.joystick.fire ?? false);
       await core.command(`joy ${masks[0]!.toString(16)} ${masks[1]!.toString(16)}`);
     } else if ("press" in step) {
-      for (const code of keyCodes(step.press)) {
-        await core.command(`key ${code.toString(16)} down`);
-        await core.status(`run ${(tick += KEY_FRAMES * PAL_FRAME_CYCLES)}`);
-        await core.command(`key ${code.toString(16)} up`);
-        await core.status(`run ${(tick += KEY_FRAMES * PAL_FRAME_CYCLES)}`);
+      const hold = step.press.frames * PAL_FRAME_CYCLES;
+      for (const tap of keyTaps(step.press.keys) as KeyTap[]) {
+        for (const place of tap.keys) await core.command(`key ${coreKey(place)} down`);
+        // RESTORE is no read: an event at the next read of the program, with the keys of the tap down.
+        if (tap.restore) reason = await runEvent({ restore: true }, index + 1);
+        if (reason !== undefined) break;
+        tick = (await core.status("status")).tick;
+        await core.status(`run ${(tick += hold)}`);
+        for (const place of tap.keys) await core.command(`key ${coreKey(place)} up`);
+        await core.status(`run ${(tick += hold)}`);
+        // Frames ran: the next RESTORE is no event right after an event.
+        afterEvent = false;
+      }
+      if (reason !== undefined) {
+        reason = `step ${index + 1}: RESTORE: ${reason}`;
+        break;
       }
     } else {
       reason = await runEvent(step, index + 1);

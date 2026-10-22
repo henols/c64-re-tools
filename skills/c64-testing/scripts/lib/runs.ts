@@ -9,7 +9,7 @@ import { screenText } from "#src/graphics.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
-import { ACTION_STEP_KINDS, checkActionStep, checkLocation, checkStepNames, isInteger, isObject, refuseOldStep, renamedField, runActionStep, VICE_STEP_KINDS, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, checkLocation, checkStepNames, isInteger, isObject, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, WireFailure, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
@@ -131,7 +131,7 @@ function readRun(path: string): Run {
     if (!isObject(step)) return fail(`${at} must be an object`);
     const kinds = "observe" in step ? ["observe"] : "expect" in step ? ["expect"] : "trace" in step ? ["trace"] : Object.keys(step).filter((key) => (ACTION_STEP_KINDS as readonly string[]).includes(key) || (OWN_KINDS as readonly string[]).includes(key));
     if (kinds.length > 1) return fail(`${at} has ${kinds.length} step kinds: ${kinds.join(", ")}. Give each one its own step`);
-    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...VICE_STEP_KINDS, ...OWN_KINDS].join(", ")}`);
+    if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...ACTION_STEP_KINDS, ...OWN_KINDS].join(", ")}`);
     const kind = kinds[0]!;
     refuseOldStep(kind, step, at, fail);
     const allowed = kind === "observe" ? OBSERVE_KEYS : kind === "expect" ? EXPECT_KEYS : kind === "trace" ? TRACE_KEYS : [kind];

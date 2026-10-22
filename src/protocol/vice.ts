@@ -1,5 +1,6 @@
 // The VICE-session operations of the Host Runtime wire: their vocabulary, shapes and validators.
 
+import { MAX_PRESS_FRAMES, MAX_PRESS_TAPS, MAX_TAP_KEYS, type KeyTap } from "../c64-keys.ts";
 import { invalid, isInteger, isObject, isOneOf, onlyFields, ProtocolError, VIDEO_STANDARDS, type VideoStandard } from "./messages.ts";
 
 export const SPACES = ["c64", "drive8"] as const;
@@ -475,6 +476,20 @@ export interface ExecutionResult {
   space?: "c64" | "drive8";
 }
 
+/**
+ * The end of a press: `taps` taps were done. A breakpoint, watchpoint or JAM
+ * can stop the taps early; then `stopReason` tells which, and the machine
+ * stays stopped. All keys are up again in both cases.
+ */
+export interface PressResult {
+  taps: number;
+  state: RunState;
+  stopReason?: PointStopReason;
+  pc?: number;
+  pointId?: number;
+  space?: "c64" | "drive8";
+}
+
 /** c64_run_until targets. */
 export type RunTarget =
   | { kind: "address"; address: number; space: Space; condition?: Condition }
@@ -528,6 +543,8 @@ export interface ViceOperations {
   /** `data`: PETSCII bytes as lowercase hex. */
   keyboard: { params: { data: string }; result: { queuedBytes: number } };
   joystick: { params: JoystickState; result: JoystickState };
+  /** Each tap holds its keys for `frames` frames, then waits `frames` frames with all keys up. */
+  press: { params: { taps: KeyTap[]; frames: number }; result: PressResult };
   breakpoint: { params: BreakpointParams; result: Breakpoint | PointRemoved | { breakpoints: Breakpoint[] } };
   watchpoint: { params: WatchpointParams; result: Watchpoint | PointRemoved | { watchpoints: Watchpoint[] } };
   cpuHistory: { params: { limit: number; space: Space }; result: { entries: HistoryEntry[] } };
@@ -589,6 +606,7 @@ export const VICE_OPERATIONS = [
   "reset",
   "keyboard",
   "joystick",
+  "press",
   "breakpoint",
   "watchpoint",
   "screenCapture",
@@ -915,6 +933,24 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       if (/^(?:..)*?00/.test(params.data)) invalid("PETSCII byte 0 cannot be typed");
       return { data: params.data } as ViceOperations[O]["params"];
     }
+    case "press": {
+      onlyFields(params, ["taps", "frames"]);
+      if (!Array.isArray(params.taps) || params.taps.length === 0 || params.taps.length > MAX_PRESS_TAPS) invalid(`taps must be a list of 1 to ${MAX_PRESS_TAPS} taps`);
+      const taps = (params.taps as unknown[]).map((tap): KeyTap => {
+        if (!isObject(tap)) invalid("each tap must be an object with keys and restore");
+        onlyFields(tap, ["keys", "restore"], "a tap");
+        const { keys, restore } = tap;
+        if (!Array.isArray(keys) || !keys.every((key, index) => isInteger(key, 0, 63) && (index === 0 || key > (keys[index - 1] as number)))) {
+          invalid("keys of a tap must be matrix places from 0 to 63, each once, in rising order");
+        }
+        if (typeof restore !== "boolean") invalid("restore of a tap must be true or false");
+        const count = keys.length + (restore ? 1 : 0);
+        if (count === 0 || count > MAX_TAP_KEYS) invalid(`a tap holds 1 to ${MAX_TAP_KEYS} keys, RESTORE included`);
+        return { keys: keys as number[], restore };
+      });
+      if (!isInteger(params.frames, 1, MAX_PRESS_FRAMES)) invalid(`frames must be a whole number from 1 to ${MAX_PRESS_FRAMES}`);
+      return { taps, frames: params.frames } as ViceOperations[O]["params"];
+    }
     case "joystick": {
       onlyFields(params, ["port", "direction", "fire"]);
       if (params.port !== 1 && params.port !== 2) invalid("port must be 1 or 2");
@@ -1204,6 +1240,17 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     }
     case "keyboard": {
       if (!isInteger(value.queuedBytes, 1, MAX_KEYBOARD_BYTES)) throw new ProtocolError("keyboard result is malformed");
+      break;
+    }
+    case "press": {
+      const ok =
+        isInteger(value.taps, 0, MAX_PRESS_TAPS) &&
+        isOneOf(RUN_STATES, value.state) &&
+        (value.stopReason === undefined || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
+        (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
+        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER)) &&
+        (value.space === undefined || isOneOf(SPACES, value.space));
+      if (!ok) throw new ProtocolError("press result is malformed");
       break;
     }
     case "breakpoint": {

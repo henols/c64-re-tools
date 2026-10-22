@@ -6,6 +6,7 @@
 import { z } from "zod";
 
 import { c64AddressOf } from "../c64.ts";
+import { keyTaps, MAX_PRESS_FRAMES, PRESS_FRAMES } from "../c64-keys.ts";
 import { DEFAULT_TIMEOUT_FRAMES, keyboardBytes, MAX_RASTER_LINE } from "../host-client/steps.ts";
 import { COMPARISONS, CONDITION_REGISTERS, JOYSTICK_DIRECTIONS, MAX_KEYBOARD_BYTES, MAX_MEMORY_WRITE, MAX_TIMEOUT_FRAMES, MEMORY_VIEWS, SPACES } from "../protocol/vice.ts";
 
@@ -90,6 +91,17 @@ export const TOOL_INPUTS = {
       fire: z.boolean().default(false),
     })
     .strict(),
+
+  press: z
+    .object({
+      keys: z.string().min(1).describe("the keys: each character is one tap, a name in braces is one key, for example {F1}, and + in braces holds keys together, for example {LSHIFT+CBM}"),
+      frames: z.number().int().min(1).max(MAX_PRESS_FRAMES).default(PRESS_FRAMES).describe("the frames that each tap holds its keys, and then waits with all keys up"),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      const taps = keyTaps(value.keys);
+      if (typeof taps === "string") context.addIssue({ code: "custom", message: taps, path: ["keys"] });
+    }),
 
   keyboard: z
     .object({

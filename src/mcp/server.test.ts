@@ -8,8 +8,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+import type { KeyTap } from "../c64-keys.ts";
 import { STOP_AND_ASK, WireFailure } from "../protocol/messages.ts";
-import { MAX_SEARCH_PATTERN, type Breakpoint, type BreakpointParams, type ExecutionParams, type JoystickState, type MemmapRange, type MemoryReadParams, type PointRemoved, type ProfileEntry, type MemoryWriteParams, type ObserveParams, type ObserveResult, type RegisterValues, type Registers, type RunTarget, type ViceOperations, type Watchpoint, type WatchpointParams } from "../protocol/vice.ts";
+import { MAX_SEARCH_PATTERN, type Breakpoint, type BreakpointParams, type ExecutionParams, type JoystickState, type MemmapRange, type MemoryReadParams, type PointRemoved, type ProfileEntry, type MemoryWriteParams, type ObserveParams, type ObserveResult, type PressResult, type RegisterValues, type Registers, type RunTarget, type ViceOperations, type Watchpoint, type WatchpointParams } from "../protocol/vice.ts";
 import { startTrace, TRACE_VARIABLE } from "../trace.ts";
 import { linesText } from "./output.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
@@ -49,6 +50,7 @@ const PUBLIC_TOOLS = [
   "c64_screen",
   "c64_observe",
   "c64_keyboard",
+  "c64_press",
   "c64_joystick",
   "c64_autostart",
   "c64_program_load",
@@ -109,6 +111,12 @@ class FakeSession implements ViceSessionApi {
   }
   async joystick(state: JoystickState) {
     return state;
+  }
+  pressed: Array<{ taps: KeyTap[]; frames: number }> = [];
+  pressResult: PressResult | undefined;
+  async press(taps: KeyTap[], frames: number) {
+    this.pressed.push({ taps, frames });
+    return this.pressResult ?? { taps: taps.length, state: "running" as const };
   }
 
   points: unknown[] = [];
@@ -578,6 +586,25 @@ test("c64_keyboard converts text, passes PETSCII through and refuses mixed or un
   ]) {
     assert.equal(errorOf(await call(client, "c64_keyboard", args)).code, "invalid-input", JSON.stringify(args));
   }
+  await client.close();
+});
+
+test("c64_press sends the taps of the keys, with frames 3 when the call gives none, and refuses keys the C64 does not have", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  assert.deepEqual((await call(client, "c64_press", { keys: "{LSHIFT+CBM}a" })).structuredContent, { taps: 2, state: "running" });
+  assert.deepEqual((await call(client, "c64_press", { keys: "{STOP+RESTORE}", frames: 10 })).structuredContent, { taps: 1, state: "running" });
+  assert.deepEqual(session.pressed, [
+    { taps: [{ keys: [15, 61], restore: false }, { keys: [10], restore: false }], frames: 3 },
+    { taps: [{ keys: [63], restore: true }], frames: 10 },
+  ]);
+  session.pressResult = { taps: 0, state: "stopped", stopReason: "breakpoint", pc: 0x2000, space: "c64", pointId: 1 };
+  assert.deepEqual((await call(client, "c64_press", { keys: "{F1}" })).structuredContent, { taps: 0, state: "stopped", stopReason: "breakpoint", pc: "$2000", space: "c64", pointId: 1 });
+  for (const args of [{ keys: "" }, { keys: "{F9}" }, { keys: "~" }, { keys: "{A+B+C+D+E}" }, { keys: "a", frames: 0 }, { keys: "a", frames: 3001 }, { keys: "a", hold: 3 }]) {
+    assert.equal(errorOf(await call(client, "c64_press", args)).code, "invalid-input", JSON.stringify(args));
+  }
+  assert.match(errorOf(await call(client, "c64_press", { keys: "{F9}" })).message, /there is no key \{F9\}\. The keys in braces are \{F1\}/);
+  assert.equal(session.pressed.length, 3, "a refused call sends nothing");
   await client.close();
 });
 

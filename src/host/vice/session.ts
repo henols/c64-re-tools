@@ -5,13 +5,14 @@
 
 import { isOneOf, WireFailure, type VideoStandard } from "../../protocol/messages.ts";
 import { DISK_IMAGE_TYPES, type DiskFile, type DiskImageType } from "../../protocol/tools.ts";
-import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type PointRemoved, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type TraceHit, type TraceKind, type TraceResult, type PointStopReason, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
+import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type PointRemoved, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type TraceHit, type TraceKind, type TraceResult, type PointStopReason, type PressResult, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { formatC64Address, instructionLength } from "../../c64.ts";
+import { matrixRows } from "../../c64-keys.ts";
 import { encodePng, type IndexedFrame } from "../../graphics.ts";
 import { accessedValue, instructionText, operandAddress } from "../../opcodes.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
@@ -33,6 +34,7 @@ import { compareFrames, differenceImage } from "./screen.ts";
 import { isRefusal } from "../../errors.ts";
 import type { ViceFeature, ViceFlaw } from "../../native/discover.ts";
 import { checkMedia, hasSignature } from "../../media.ts";
+import { pressSnapshotRestore, setSnapshotMatrix } from "../../vsf.ts";
 import { launchVice, startErrorLines, type ViceMode, type ViceProcess } from "./process.ts";
 import { TextMonitorError, TextMonitorTimeoutError } from "./text-monitor.ts";
 
@@ -136,6 +138,7 @@ export interface SessionOptions {
 const BROKEN_MESSAGES: Record<ViceFeature, string> = {
   joystick: "Joystick input is not implemented in this setup. Do not use the joystick in this task. Give this message to the user.",
   tape: "The load of a tape image is not implemented in this setup. Do not load tape images in this task. Give this message to the user.",
+  keyboard: "Keys of the keyboard matrix are not implemented in this setup. Do not press keys in this task. Give this message to the user.",
 };
 
 export type DiskDirectory = (type: DiskImageType, image: Buffer) => Promise<DiskFile[]>;
@@ -472,16 +475,12 @@ export class ViceSession implements ViceSessionHandle {
         return this.#reset(params as ViceOperations["reset"]["params"]);
       case "keyboard": {
         const bytes = Buffer.from((params as ViceOperations["keyboard"]["params"]).data, "hex");
-        // VICE turns warp on for an autostart and off when it types RUN. A key in between ends the autostart with no message.
-        if (this.#autostarting && !this.#userWarp && (await this.#observe(() => this.#machine.warp()))) {
-          throw new WireFailure(
-            "operation-failed",
-            "The autostart still loads the program, and a key now stops it before RUN. Run frames with c64_execution advance-frames, then type again.",
-          );
-        }
+        await this.#refuseWhileAutostartLoads("type");
         await this.#observe(() => this.#machine.feedKeyboard(bytes));
         return { queuedBytes: bytes.length };
       }
+      case "press":
+        return this.#press(params as ViceOperations["press"]["params"]);
       case "breakpoint":
         return this.#breakpoint(params as BreakpointParams);
       case "watchpoint":
@@ -1183,6 +1182,81 @@ export class ViceSession implements ViceSessionHandle {
     };
     this.#watchpoints.set(point.id, point);
     return publicView(point);
+  }
+
+  /** VICE turns warp on for an autostart and off when it types RUN. A key in between ends the autostart with no message. */
+  async #refuseWhileAutostartLoads(verb: string): Promise<void> {
+    if (this.#autostarting && !this.#userWarp && (await this.#observe(() => this.#machine.warp()))) {
+      throw new WireFailure(
+        "operation-failed",
+        `The autostart still loads the program, and a key now stops it before RUN. Run frames with c64_execution advance-frames, then ${verb} again.`,
+      );
+    }
+  }
+
+  /**
+   * Presses keys of the keyboard matrix and RESTORE. VICE has no command for
+   * that: a snapshot gets the keys in its keyboard module, and RESTORE as a
+   * pending NMI, and is restored at the same cycle. Each tap holds its keys
+   * for `frames` frames, then waits `frames` frames with all keys up. A
+   * breakpoint, watchpoint or JAM ends the taps early, and the machine stays
+   * stopped; else it runs again when it ran before. All keys are up at the end.
+   */
+  async #press(params: ViceOperations["press"]["params"]): Promise<PressResult> {
+    this.#refuseBroken("keyboard", "c64_press");
+    await this.#refuseWhileAutostartLoads("press the keys");
+    if (this.#atResetStop) {
+      throw new WireFailure(
+        "operation-failed",
+        "The CPU stands at the reset stop of c64_reset with run false. The emulator stops answering when keys are pressed here while the disk drive is busy. " +
+          "Step one instruction with c64_execution, then press the keys.",
+      );
+    }
+    const running = this.#state === "running";
+    await this.#stop();
+    await this.#refuseJammed("press");
+    let taps = 0;
+    for (const tap of params.taps) {
+      await this.#setKeys(matrixRows(tap.keys), tap.restore);
+      const held = await this.#runFrames(params.frames);
+      await this.#setKeys(matrixRows([]), false);
+      const end = held.end === "frames" ? await this.#runFrames(params.frames) : held;
+      if (end.end !== "frames") {
+        this.#stopSpace = end.space;
+        return {
+          taps,
+          state: "stopped",
+          stopReason: end.end as PointStopReason,
+          pc: end.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : end.pc,
+          space: end.space,
+          ...(end.pointId === undefined ? {} : { pointId: end.pointId }),
+        };
+      }
+      taps++;
+    }
+    if (running) await this.#resume();
+    return { taps, state: this.#state };
+  }
+
+  /** Sets the keyboard matrix (`rows`, bit n of row r for column n), and presses RESTORE, in a snapshot restored at the same cycle. */
+  async #setKeys(rows: number[], restore: boolean): Promise<void> {
+    const file = join(this.#workDir, "press.vsf");
+    try {
+      await this.#machine.saveSnapshot(file);
+      const bytes = readFileSync(file);
+      const why = setSnapshotMatrix(bytes, rows) ?? (restore ? pressSnapshotRestore(bytes) : undefined);
+      if (why !== undefined) {
+        this.#log(`c64_press was used, and this VICE writes snapshots that c64-re-tools does not know: ${why}.`);
+        throw new WireFailure("not-implemented", BROKEN_MESSAGES.keyboard);
+      }
+      writeFileSync(file, bytes);
+      await this.#machine.restoreSnapshot(file);
+    } finally {
+      rmSync(file, { force: true });
+    }
+    // A restore starts the CPU history of VICE again.
+    this.#historySince = await this.#machine.clock();
+    if (this.#historyStopped) this.#historyOld = true;
   }
 
   /**

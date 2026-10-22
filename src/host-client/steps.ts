@@ -7,13 +7,14 @@
 //   type      c64_keyboard       { mode: "text", text } or { mode: "petscii", bytes }: the KERNAL keyboard queue
 //   frames    c64_execution      the count of advance-frames
 //   runUntil  c64_run_until      { target, timeoutFrames? }
-//   press     (no tool)          keys of the keyboard matrix; only the replay core of c64-testing record and replay has them
+//   press     c64_press          { keys, frames? }: keys of the keyboard matrix and RESTORE
 //
 // An address in a step is $ and 1 to 4 hex digits, or a name that the script resolves.
 // The scripts install without packages, so this checker has no zod: the MCP
 // tools keep their zod schemas, and a test checks that both take the same inputs.
 
 import { c64AddressOf, SYMBOL_NAME, textToPetscii } from "../c64.ts";
+import { keyTaps, MAX_PRESS_FRAMES, PRESS_FRAMES, type KeyTap } from "../c64-keys.ts";
 import { isRefusal, Refusal } from "../errors.ts";
 import {
   COMPARISONS,
@@ -57,14 +58,12 @@ export type ActionStep =
   | { registers: { pc?: Location; a?: number; x?: number; y?: number; sp?: number; flags?: Flags } }
   | { joystick: { port: 1 | 2; direction: (typeof JOYSTICK_DIRECTIONS)[number]; fire: boolean } }
   | { type: KeyboardInput }
-  | { press: string }
+  | { press: { keys: string; frames: number } }
   | { frames: number }
   | { runUntil: { target: StepTarget; timeoutFrames: number } };
 
 export const ACTION_STEP_KINDS = ["write", "registers", "joystick", "type", "press", "frames", "runUntil"] as const;
 export type ActionStepKind = (typeof ACTION_STEP_KINDS)[number];
-/** The step kinds that VICE runs: all but press, which only the replay core has. */
-export const VICE_STEP_KINDS = ACTION_STEP_KINDS.filter((kind) => kind !== "press");
 
 /** The fields of each object of the steps: the same as the inputs of the MCP tools. */
 export const STEP_FIELDS = {
@@ -72,6 +71,7 @@ export const STEP_FIELDS = {
   registers: ["pc", "a", "x", "y", "sp", "flags"],
   joystick: ["port", "direction", "fire"],
   type: ["mode", "text", "bytes"],
+  press: ["keys", "frames"],
   runUntil: ["target", "timeoutFrames"],
   addressTarget: ["kind", "address", "space", "condition"],
   memoryTarget: ["kind", "address", "operator", "value", "space", "view"],
@@ -228,9 +228,6 @@ function checkTarget(value: unknown, where: string, fail: (message: string) => n
   return fail(`${where}.kind must be one of address, memory, raster`);
 }
 
-/** What a step of a script without the replay core gets for press: the scripts that read these steps run without a window. */
-const PRESS_REMEDY = "press pushes keys of the keyboard matrix, and only the replay of a record file has them. Use type for the KERNAL keyboard queue, or put the press step in a record file and play the record file";
-
 /** Checks the input of one step kind and returns it with the defaults of its MCP tool. */
 function checkInput(kind: ActionStepKind, value: unknown, at: string, fail: (message: string) => never): ActionStep {
   const where = `${at}: ${kind}`;
@@ -275,9 +272,14 @@ function checkInput(kind: ActionStepKind, value: unknown, at: string, fail: (mes
       else if (keys.length > MAX_KEYBOARD_BYTES) fail(`${where}: the keyboard queue takes at most ${MAX_KEYBOARD_BYTES} keys at once. This input has ${keys.length} keys`);
       return { type: input };
     }
-    case "press":
-      if (typeof value !== "string" || value === "") fail(`${where} needs the keys to press as text`);
-      return { press: value as string };
+    case "press": {
+      const fields = new Fields(value, where, STEP_FIELDS.press, fail);
+      const keys = fields.get("keys");
+      if (typeof keys !== "string") fields.fail("keys", "must be the keys as text, for example {F1} or {LSHIFT+CBM}");
+      const taps = keyTaps(keys as string);
+      if (typeof taps === "string") fail(`${where}.keys: ${taps}`);
+      return { press: { keys: keys as string, frames: fields.integer("frames", 1, MAX_PRESS_FRAMES, PRESS_FRAMES) } };
+    }
     case "frames":
       if (!isInteger(value, 1, MAX_TIMEOUT_FRAMES)) fail(`${where} must be a frame count from 1 to ${MAX_TIMEOUT_FRAMES}`);
       return { frames: value as number };
@@ -352,14 +354,12 @@ export function refuseOldStep(kind: string, step: Record<string, unknown>, at: s
 
 /**
  * Checks one action step of the given kind and returns it with the defaults
- * filled in. The step has no other key. `press` is refused unless the caller
- * runs the steps on the replay core. A step in a form of the 2.0 files is
+ * filled in. The step has no other key. A step in a form of the 2.0 files is
  * refused with the step to write.
  */
-export function checkActionStep(kind: ActionStepKind, step: Record<string, unknown>, at: string, fail: (message: string) => never, options: { press?: boolean } = {}): ActionStep {
+export function checkActionStep(kind: ActionStepKind, step: Record<string, unknown>, at: string, fail: (message: string) => never): ActionStep {
   refuseOldStep(kind, step, at, fail);
   for (const key of Object.keys(step)) if (key !== kind) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
-  if (kind === "press" && options.press !== true) fail(`${at}: ${PRESS_REMEDY}`);
   return checkInput(kind, step[kind], at, fail);
 }
 
@@ -376,11 +376,11 @@ export function stepKind<K extends string>(step: unknown, kinds: readonly K[], a
 }
 
 /** Checks a list of action steps and returns them with the defaults filled in. */
-export function checkActionSteps(value: unknown, fail: (message: string) => never, options: { press?: boolean } = {}): ActionStep[] {
+export function checkActionSteps(value: unknown, fail: (message: string) => never): ActionStep[] {
   if (!Array.isArray(value) || value.length === 0) return fail("the steps are a JSON list with at least one step");
   return value.map((step: unknown, index) => {
     const at = `step ${index + 1}`;
-    return checkActionStep(stepKind(step, ACTION_STEP_KINDS, at, fail, options.press === true ? ACTION_STEP_KINDS : VICE_STEP_KINDS), step as Record<string, unknown>, at, fail, options);
+    return checkActionStep(stepKind(step, ACTION_STEP_KINDS, at, fail), step as Record<string, unknown>, at, fail);
   });
 }
 
@@ -471,7 +471,7 @@ export async function runActionStep(client: ViceSessionClient, step: ActionStep,
   } else if ("type" in step) {
     await client.keyboard(keyboardBytes(step.type) as Uint8Array);
   } else if ("press" in step) {
-    throw new Refusal("invalid-input", PRESS_REMEDY);
+    await client.press(keyTaps(step.press.keys) as KeyTap[], step.press.frames);
   } else if ("frames" in step) {
     await stop(client);
     // One advance-frames runs at most MAX_EXECUTION_COUNT frames. Each part ends at the raster position

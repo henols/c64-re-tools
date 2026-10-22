@@ -8,6 +8,7 @@ import { networkInterfaces } from "node:os";
 import { after, test } from "node:test";
 
 import { CANCELLED, KEY_MAPS, play } from "../../skills/c64-testing/scripts/lib/play.ts";
+import { MATRIX_KEYS } from "../../src/c64-keys.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "../../src/native/c64run.ts";
 
 /** A core that logs each command; a run moves its tick. */
@@ -87,7 +88,7 @@ test("the page has Start, End and Cancel, and shows the start screen frozen unti
   assert.match(page.events(), /event: state\ndata: waiting\n\nevent: port\ndata: 2\n\n/);
 
   assert.equal(await page.post("joystick?mask=1"), 409);
-  assert.equal(await page.post("key?code=41&down=1"), 409);
+  assert.equal(await page.post("key?keys=10&down=1"), 409);
   assert.equal(await page.post("restore"), 409);
   assert.equal(await page.post("end"), 409);
   await sleep(100);
@@ -114,12 +115,16 @@ test("Start runs a frame at a time with the page input, and End freezes the mach
 
   assert.equal(await page.post("joystick?mask=1"), 204);
   await until(() => core.log.includes("joy 0 1"), "the joystick of port 2");
-  assert.equal(await page.post("key?code=41&down=1"), 204);
-  await until(() => core.log.includes("key 41 down"), "the key");
-  assert.equal(await page.post("key?code=11&down=1"), 204, "the left SHIFT alone");
-  await until(() => core.log.includes("key 11 down"), "the left SHIFT");
-  assert.equal(await page.post("key?code=ff&down=1"), 400, "RESTORE is no key of the page: it is an event");
-  assert.equal(await page.post("key?code=zz&down=1"), 400);
+  // Matrix place 10 is A (row 1, column 2); the core gets 80 + the place.
+  assert.equal(await page.post("key?keys=10&down=1"), 204);
+  await until(() => core.log.includes("key 8a down"), "the key");
+  assert.equal(await page.post("key?keys=15,61&down=1"), 204, "the left SHIFT and C= together");
+  await until(() => core.log.includes("key 8f down") && core.log.includes("key bd down"), "both keys");
+  assert.equal(await page.post("key?keys=15,61&down=0"), 204);
+  await until(() => core.log.includes("key 8f up") && core.log.includes("key bd up"), "both keys up");
+  assert.equal(await page.post("key?keys=ff&down=1"), 400, "RESTORE is no key of the page: it is an event");
+  assert.equal(await page.post("key?keys=64&down=1"), 400, "the matrix has 64 places");
+  assert.equal(await page.post("key?keys=&down=1"), 400);
 
   assert.equal(await page.post("end"), 204);
   const frozen = core.runs().length;
@@ -188,18 +193,20 @@ test("a RESTORE that fails stops the session with its reason", async () => {
   await until(() => page.events().includes("event: state\ndata: failed\n\n"), "the failed state on the page", page.events);
 });
 
-test("the key maps send C64 keys: SHIFT alone only in the positional map, shifted letters in the symbolic map", () => {
-  assert.equal(KEY_MAPS.positional.ShiftLeft, 0x11);
-  assert.equal(KEY_MAPS.positional.ShiftRight, 0x12);
-  assert.equal(KEY_MAPS.positional.KeyA, 0x41);
-  assert.equal(KEY_MAPS.positional.Minus, 0x2b, "the C64 + is right of 0");
-  assert.equal(KEY_MAPS.positional.Delete, 0x5e, "the up arrow");
+test("the key maps send matrix places: SHIFT alone only in the positional map, shifted letters in the symbolic map", () => {
+  const { LSHIFT, RSHIFT, A, CTRL, CBM, HOME, POUND, UPARROW, SPACE } = MATRIX_KEYS as Record<string, number>;
+  assert.deepEqual(KEY_MAPS.positional.ShiftLeft, [LSHIFT]);
+  assert.deepEqual(KEY_MAPS.positional.ShiftRight, [RSHIFT]);
+  assert.deepEqual(KEY_MAPS.positional.KeyA, [A]);
+  assert.deepEqual(KEY_MAPS.positional.Minus, [MATRIX_KEYS["+"]], "the C64 + is right of 0");
+  assert.deepEqual(KEY_MAPS.positional.Delete, [UPARROW], "the up arrow");
   assert.equal("ShiftLeft" in KEY_MAPS.symbolic, false);
-  assert.equal(KEY_MAPS.symbolic.a, 0x41, "a is the C64 letter");
-  assert.equal(KEY_MAPS.symbolic.A, 0x61, "A is the letter with SHIFT");
-  assert.equal(KEY_MAPS.symbolic["£"], 0x7e);
-  assert.equal(KEY_MAPS.symbolicShift.Home, 0x02, "SHIFT+Home is CLR");
-  assert.deepEqual(KEY_MAPS.both, { Tab: 0x0e, AltLeft: 0x0f });
-  assert.equal(KEY_MAPS.arrows.Space, 0x20);
-  for (const map of Object.values(KEY_MAPS)) for (const code of Object.values(map)) assert.notEqual(code, 0xff, "RESTORE is an event, not a key");
+  assert.deepEqual(KEY_MAPS.symbolic.a, [A], "a is the C64 letter");
+  assert.deepEqual(KEY_MAPS.symbolic.A, [A, LSHIFT], "A is the letter with SHIFT");
+  assert.deepEqual(KEY_MAPS.symbolic["!"], [LSHIFT, MATRIX_KEYS["1"]], "! is SHIFT and 1");
+  assert.deepEqual(KEY_MAPS.symbolic["£"], [POUND]);
+  assert.deepEqual(KEY_MAPS.symbolicShift.Home, [LSHIFT, HOME], "SHIFT+Home is CLR");
+  assert.deepEqual(KEY_MAPS.both, { Tab: [CTRL], AltLeft: [CBM] });
+  assert.deepEqual(KEY_MAPS.arrows.Space, [SPACE]);
+  for (const map of Object.values(KEY_MAPS)) for (const keys of Object.values(map)) assert.ok(keys.length > 0 && keys.every((key) => key >= 0 && key < 64), "matrix places only: RESTORE is an event, not a key");
 });

@@ -636,7 +636,7 @@ test("an autostart centres the held joysticks first and names them", async () =>
 
 test("a tool that a known VICE flaw breaks is not implemented for the caller, and the host console names the flaw", async () => {
   const logged: string[] = [];
-  const { fake, session } = await startSession({ flaws: [{ text: "VICE 3.10 holds bits 5-7 low (VICE bug #2202).", breaks: ["joystick", "tape"] }] }, (line) => logged.push(line));
+  const { fake, session } = await startSession({ flaws: [{ text: "VICE 3.10 holds bits 5-7 low (VICE bug #2202).", breaks: ["joystick", "tape", "keyboard"] }] }, (line) => logged.push(line));
   const ports = [...fake.joyport];
   const joystick = await session.handle("joystick", { port: 2, direction: "up", fire: false }).catch((error: Error & { code: string }) => error);
   assert.equal((joystick as { code: string }).code, "not-implemented");
@@ -646,6 +646,10 @@ test("a tool that a known VICE flaw breaks is not implemented for the caller, an
   await assert.rejects(session.handle("autostart", { type: "tap", index: 0, run: true }, [Buffer.from("C64-TAPE-RAW")]), { code: "not-implemented", message: /^The load of a tape image is not implemented in this setup\./ });
   assert.match(logged.join("\n"), /c64_joystick was used, and this VICE does not support it\. VICE 3\.10 holds bits 5-7 low/);
   assert.match(logged.join("\n"), /c64_autostart of a tape image was used, and this VICE does not support it\./);
+  const dumps = fake.commands.filter((command) => command === Command.dump).length;
+  await assert.rejects(session.handle("press", { taps: [{ keys: [4], restore: false }], frames: 3 }), { code: "not-implemented", message: /^Keys of the keyboard matrix are not implemented in this setup./ });
+  assert.equal(fake.commands.filter((command) => command === Command.dump).length, dumps, "no key reached VICE");
+  assert.match(logged.join("\n"), /c64_press was used, and this VICE does not support it\./);
   assert.deepEqual(await session.handle("keyboard", { data: "52" }), { queuedBytes: 1 }, "the keyboard works");
   assert.deepEqual(await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]), { state: "running" }, "a PRG loads");
   await session.close();
@@ -825,6 +829,70 @@ test("run-until times out after its frames, and reports a user breakpoint", asyn
   assert.deepEqual([byBreakpoint.stopReason, byBreakpoint.pointId], ["breakpoint", 2]);
   const advanced = await session.handle("execution", { action: "advance-frames", count: 5, space: "c64" });
   assert.deepEqual(advanced, { state: "stopped", pc: 0x2000, space: "c64", advancedFrames: 0, stopReason: "breakpoint", pointId: 2 });
+  await session.close();
+});
+
+test("press holds the keys of each tap for its frames, then releases them, and the machine runs again", async () => {
+  const { fake, session } = await startSession();
+  // The matrix at each stop of the frame clock: two stops per frame.
+  const seen: number[][] = [];
+  fake.onResume = (vice) => {
+    const clock = clockOf(vice);
+    if (clock === undefined) return undefined;
+    seen.push([...vice.matrix]);
+    return { pc: 0x1000, hits: [clock.number] };
+  };
+  const f1 = [0x10, 0, 0, 0, 0, 0, 0, 0];
+  const shiftCbm = [0, 0x80, 0, 0, 0, 0, 0, 0x20];
+  const none = [0, 0, 0, 0, 0, 0, 0, 0];
+  assert.deepEqual(await session.handle("press", { taps: [{ keys: [4], restore: false }, { keys: [15, 61], restore: true }], frames: 2 }), { taps: 2, state: "running" });
+  assert.deepEqual(fake.matrices, [f1, none, shiftCbm, none]);
+  assert.deepEqual(seen, [...Array(4).fill(f1), ...Array(4).fill(none), ...Array(4).fill(shiftCbm), ...Array(4).fill(none)]);
+  assert.equal(fake.nmis, 1, "RESTORE of the second tap");
+  assert.equal(fake.running, true);
+  assert.equal(fake.checkpoints.size, 0, "the frame clock is gone");
+  // A stopped machine stays stopped.
+  await session.handle("execution", { action: "pause", space: "c64" });
+  assert.deepEqual(await session.handle("press", { taps: [{ keys: [], restore: true }], frames: 1 }), { taps: 1, state: "stopped" });
+  assert.equal(fake.nmis, 2);
+  assert.equal(fake.running, false);
+  await session.close();
+});
+
+test("a breakpoint ends a press early: all keys go up, and the machine stays stopped", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("breakpoint", { action: "add", address: 0x2000, space: "c64" });
+  let stops = 0;
+  fake.onResume = (vice) => {
+    const clock = clockOf(vice);
+    if (clock === undefined) return undefined;
+    stops++;
+    const user = [...vice.checkpoints.values()].find((checkpoint) => checkpoint.start === 0x2000)!;
+    // The second frame of the hold of the first tap runs into the breakpoint.
+    return stops === 3 ? { pc: 0x2000, hits: [user.number] } : { pc: 0x1000, hits: [clock.number] };
+  };
+  const result = await session.handle("press", { taps: [{ keys: [63], restore: false }, { keys: [4], restore: false }], frames: 2 });
+  assert.deepEqual(result, { taps: 0, state: "stopped", stopReason: "breakpoint", pc: 0x2000, space: "c64", pointId: 1 });
+  assert.deepEqual(fake.matrices, [[0, 0, 0, 0, 0, 0, 0, 0x80], [0, 0, 0, 0, 0, 0, 0, 0]], "STOP went down and up, F1 never");
+  assert.equal(fake.running, false);
+  await session.close();
+});
+
+test("press at the reset stop is refused until an instruction ran", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("reset", { mode: "hard", run: false });
+  await assert.rejects(session.handle("press", { taps: [{ keys: [4], restore: false }], frames: 1 }), failsWith("operation-failed", /reset stop of c64_reset.*Step one instruction/));
+  assert.equal(fake.commands.filter((command) => command === Command.dump).length, 0, "no key reached VICE");
+  await session.close();
+});
+
+test("a snapshot of a layout that c64-re-tools does not know is not changed: press is not implemented, and the host console tells why", async () => {
+  const logged: string[] = [];
+  const { fake, session } = await startSession({}, (line) => logged.push(line));
+  fake.keyboardVersion = { major: 1, minor: 2 };
+  await assert.rejects(session.handle("press", { taps: [{ keys: [4], restore: false }], frames: 1 }), failsWith("not-implemented", /^Keys of the keyboard matrix are not implemented in this setup./));
+  assert.equal(fake.undumps.length, 0, "the machine was not restored");
+  assert.match(logged.join("\n"), /c64_press was used, and this VICE writes snapshots that c64-re-tools does not know: the snapshot has KEYBOARD 1\.2/);
   await session.close();
 });
 

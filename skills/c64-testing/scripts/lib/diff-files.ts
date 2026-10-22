@@ -10,8 +10,9 @@ import { isObject } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { checkSnapshotFile, hasSignature, VSF_SIGNATURE } from "#src/media.ts";
+import { checkSnapshotFile } from "#src/media.ts";
 import { listed, UsageError } from "#src/script.ts";
+import { snapshotModule } from "#src/vsf.ts";
 import { diffStates, type ChangedRange, type MachineState } from "./diff.ts";
 
 type Kind = "snapshot" | "memory" | "observation";
@@ -58,29 +59,14 @@ function cpuValues(registers: Record<string, unknown>): Record<string, number | 
   return values;
 }
 
-/** The size of the header of a module in a VICE snapshot file: the name (16 bytes), the version (2 bytes) and the size (4 bytes). */
-const MODULE_HEADER = 22;
-const VSF_VERSION = "VICE Version\x1a";
-
 /**
  * The data of the C64MEM module of a VICE snapshot file: the data and the
  * direction register of the CPU port, the cartridge lines (2 bytes), then
  * the 64 KiB of RAM. Undefined when the file has no such module.
  */
 function c64Memory(file: Uint8Array): Buffer | undefined {
-  const bytes = Buffer.from(file);
-  if (!hasSignature("vsf", bytes)) return undefined;
-  // The magic, the version (2 bytes) and the machine name (16 bytes); a newer VICE adds its own version (8 bytes).
-  let at = VSF_SIGNATURE.length + 2 + 16;
-  if (bytes.subarray(at, at + VSF_VERSION.length).toString("latin1") === VSF_VERSION) at += VSF_VERSION.length + 8;
-  while (at + MODULE_HEADER <= bytes.length) {
-    const name = bytes.subarray(at, at + 16).toString("latin1").replace(/\0+$/, "");
-    const size = bytes.readUInt32LE(at + 18);
-    if (size < MODULE_HEADER) return undefined;
-    if (name === "C64MEM") return at + MODULE_HEADER + 4 + 0x10000 <= bytes.length ? bytes.subarray(at + MODULE_HEADER, at + MODULE_HEADER + 4 + 0x10000) : undefined;
-    at += size;
-  }
-  return undefined;
+  const data = snapshotModule(Buffer.from(file), "C64MEM")?.data;
+  return data !== undefined && data.length >= 4 + 0x10000 ? data.subarray(0, 4 + 0x10000) : undefined;
 }
 
 /** The 64 KiB of C64 RAM that a VICE snapshot file holds, also the RAM under the CPU port at $00/$01. Undefined when the file has no C64MEM module. */
