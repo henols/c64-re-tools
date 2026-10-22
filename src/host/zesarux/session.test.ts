@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer, type Server } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { WireFailure } from "../../protocol/messages.ts";
-import { codeCoverageAddresses, firedStop, keysOf, parseRegisters, SPECTRUM_KEYS, visualmemAddresses } from "./session.ts";
+import type { ZesaruxProcess } from "./process.ts";
+import { Zrcp } from "./zrcp.ts";
+import { codeCoverageAddresses, firedStop, keysOf, modelOfMachineName, parseRegisters, SPECTRUM_KEYS, visualmemAddresses, ZesaruxSession } from "./session.ts";
 
 // The get-registers answer of ZEsarUX 13.0 after set-register IX=04d2H.
 const REGISTERS = "PC=11dc SP=ffff AF=3fa7 BC=00ff HL=b33a DE=ffff IX=04d2 IY=ffff AF'=ffff BC'=ffff HL'=0000 DE'=ffff I=3f R=26  F=S-5--PNC F'=SZ5H3PNC MEMPTR=11dc IM0 IFF-- VPS: 0 MMU=00000000000000000000000000000000";
@@ -77,4 +83,104 @@ test("the code coverage answer gives the address of each executed instruction", 
   assert.deepEqual(codeCoverageAddresses(""), []);
   // After a load the coverage is off: the answer is an error, not addresses such as "be".
   assert.throws(() => codeCoverageAddresses("Error. It's not enabled"), (error) => error instanceof WireFailure && error.code === "operation-failed");
+});
+
+test("the model of a machine that ZEsarUX names: the 48K and the 128K with their ROM variants, no other machine", () => {
+  for (const name of ["ZX Spectrum 48k", "ZX Spectrum+ 48k", "ZX Spectrum+ 48k (Spanish)"]) assert.equal(modelOfMachineName(name), "48k", name);
+  for (const name of ["ZX Spectrum+ 128k", "ZX Spectrum+ 128k (Spanish)", "ZX Spectrum +2", "ZX Spectrum +2 (French)", "ZX Spectrum +2 (Spanish)"]) assert.equal(modelOfMachineName(name), "128k", name);
+  for (const name of ["ZX Spectrum 16k", "ZX Spectrum +2A (ROM v4.0)", "ZX Spectrum +3 (ROM v4.0)", "Pentagon", "TC2048", "TK90X", "Inves Spectrum+", "ZX81", ""]) assert.equal(modelOfMachineName(name), undefined, name);
+});
+
+const SET_MACHINE: Record<string, string> = { "48k": "ZX Spectrum 48k", "128k": "ZX Spectrum+ 128k" };
+
+/**
+ * A stand-in ZEsarUX on a ZRCP port: smartload runs the machine that the file
+ * names as text, set-machine the machine of its name. Each command is kept.
+ */
+async function standInZesarux(machine: string): Promise<{ zesarux: ZesaruxProcess; commands: string[] }> {
+  const commands: string[] = [];
+  let frames: string | undefined;
+  const answer = (line: string): string => {
+    const [command = "", ...rest] = line.split(" ");
+    const argument = rest.join(" ");
+    if (command === "get-current-machine") return machine;
+    if (command === "smartload") machine = readFileSync(argument, "latin1");
+    if (command === "set-machine") machine = SET_MACHINE[argument] ?? machine;
+    if (command === "get-registers") return REGISTERS;
+    if (command === "evaluate") return "0";
+    if (command === "get-io-ports") return "Spectrum FE port: 07\nSpectrum 7FFD port: 10\nSelected register: 0";
+    if (line.startsWith("set-breakpoint 100")) frames = rest[1];
+    if (command === "run") return `Running until a breakpoint, key press or data sent, menu opening or other event\n${REGISTERS}${frames === undefined ? "" : `\nBreakpoint fired: ${frames}`}`;
+    return "";
+  };
+  const server: Server = createServer((socket) => {
+    socket.setEncoding("latin1");
+    socket.on("error", () => {});
+    socket.write("Welcome to ZEsarUX remote command protocol\ncommand> ");
+    let buffer = "";
+    socket.on("data", (chunk: string) => {
+      buffer += chunk;
+      for (let end = buffer.indexOf("\n"); end >= 0; end = buffer.indexOf("\n")) {
+        const line = buffer.slice(0, end).trim();
+        buffer = buffer.slice(end + 1);
+        // A line feed alone ends a run, which this stand-in already ended.
+        if (line === "") continue;
+        commands.push(line);
+        socket.write(`${answer(line)}\ncommand@cpu-step> `);
+      }
+    });
+  });
+  const port = await new Promise<number>((resolve) => server.listen(0, "127.0.0.1", () => resolve((server.address() as { port: number }).port)));
+  const zrcp = await Zrcp.connect(port);
+  const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-zesarux-test-"));
+  const zesarux: ZesaruxProcess = {
+    pid: 0,
+    zrcp,
+    version: "13.0",
+    scratch,
+    exited: new Promise(() => {}),
+    stop: async () => {
+      zrcp.close();
+      await new Promise((resolve) => server.close(resolve));
+      rmSync(scratch, { recursive: true, force: true });
+    },
+  };
+  return { zesarux, commands };
+}
+
+test("the session takes its model from the machine that a load gives: a 128K snapshot in a 48K session runs 128K frames", async () => {
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k");
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    assert.equal(((await session.handle("status", {})) as { model: string }).model, "48k");
+    const started = (await session.handle("autostart", { type: "z80" }, [Buffer.from("ZX Spectrum+ 128k")])) as { state: string; model: string };
+    assert.deepEqual(started, { state: "running", model: "128k" });
+    await session.handle("execution", { action: "pause" });
+    const ula = (await session.handle("ula", {})) as { model: string; frameTstates: number; pagedBank?: number };
+    assert.deepEqual([ula.model, ula.frameTstates, ula.pagedBank], ["128k", 70_908, 0]);
+    const ran = (await session.handle("execution", { action: "advance-frames", count: 2 })) as { stopReason?: string };
+    assert.equal(ran.stopReason, "frames");
+    assert.ok(commands.includes(`set-breakpoint 100 TSTATESP>=${2 * 70_908}`), commands.join("\n"));
+    assert.ok(!commands.some((command) => command.startsWith("set-machine")), "a served machine stays as it loaded");
+  } finally {
+    await session.close();
+  }
+});
+
+test("a load of a machine that the session does not serve is refused, and the session runs its model again and stays usable", async () => {
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k");
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    await assert.rejects(
+      session.handle("autostart", { type: "z80" }, [Buffer.from("ZX81")]),
+      (error) => error instanceof WireFailure && error.code === "invalid-input" && /The file is for the ZX81\. .*ZX Spectrum 48K and the ZX Spectrum 128K\. The emulator is a ZX Spectrum 48K again, after a reset\./.test(error.message),
+    );
+    assert.ok(commands.includes("set-machine 48k"), commands.join("\n"));
+    assert.deepEqual(await session.handle("status", {}), { state: "stopped", model: "48k", pc: 0x11dc });
+    assert.equal(((await session.handle("registersGet", {})) as { pc: number }).pc, 0x11dc);
+    const started = (await session.handle("autostart", { type: "z80" }, [Buffer.from("ZX Spectrum +2")])) as { model: string };
+    assert.equal(started.model, "128k");
+  } finally {
+    await session.close();
+  }
 });

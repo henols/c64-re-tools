@@ -337,15 +337,17 @@ const autostart = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "autostart",
   title: "Load and start a Spectrum program",
   description:
-    "Load a project file and start it as a user does. A tape (.tap, .tzx) loads with LOAD \"\". A snapshot (.z80, .sna, .zsf) continues at its PC. The CPU runs after it. Stop the CPU with execution action pause before you read memory.",
+    "Load a project file and start it as a user does. A tape (.tap, .tzx) loads with LOAD \"\". A snapshot (.z80, .sna, .zsf) continues at its PC. The CPU runs after it. Stop the CPU with execution action pause before you read memory. " +
+    "The file sets the model: for example, a 128K snapshot changes a 48K to a 128K. model in the result is the model after the load. The frames, the paging and the AY follow that model. The tool refuses a file for a different machine, for example a +3 or a ZX81 file. Then the model does not change, and the machine starts again from a reset.",
   inputSchema: z.object({ path: z.string().min(1).describe("the file, relative to the project folder"), project: ProjectInput.optional() }).strict(),
-  outputSchema: StopOutput,
+  outputSchema: StopOutput.extend({ model: z.enum(["48k", "128k"]) }),
   readOnly: false,
   async run(input, session) {
     const { path, project } = input as { path: string; project?: string };
     const type = path.toLowerCase().split(".").at(-1);
     if (!["tap", "tzx", "z80", "sna", "zsf"].includes(type ?? "")) throw new WireFailure("invalid-input", "autostart takes a .tap, .tzx, .z80, .sna or .zsf file.");
-    return stop(await session.autostart({ path, ...(project === undefined ? {} : { root: project }) }));
+    const result = await session.autostart({ path, ...(project === undefined ? {} : { root: project }) });
+    return { ...stop(result), model: result.model };
   },
 });
 

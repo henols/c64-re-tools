@@ -11,8 +11,8 @@ import { after, test } from "node:test";
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { readZ80 } from "../../../src/spectrum.ts";
-import { COUNT, FRAMES_SEEN, HALT_AT, keyboardCounterSnapshot, PRESSES } from "../../fixtures/z80/keyboard-counter.ts";
+import { readZ80, writeZ80 } from "../../../src/spectrum.ts";
+import { COUNT, COUNTER_START, FRAMES_SEEN, HALT_AT, keyboardCounterRam, keyboardCounterSnapshot, PRESSES } from "../../fixtures/z80/keyboard-counter.ts";
 import { startMcp } from "../../kit.ts";
 import { startHost, stopHosts } from "../vice/live.ts";
 
@@ -23,6 +23,25 @@ const project = mkdtempSync(join(tmpdir(), "c64-re-tools-spectrum-mcp-"));
 mkdirSync(join(project, ".c64-re-tools"));
 writeFileSync(join(project, "counter.z80"), keyboardCounterSnapshot());
 writeFileSync(join(project, "bytes.bin"), Uint8Array.from([0x11, 0x22, 0x33]));
+// The keyboard counter as a 128K snapshot: banks 5, 2 and 0 at $4000-$ffff, and the 48K BASIC ROM paged in.
+const ram = keyboardCounterRam();
+const banks = Array.from({ length: 8 }, () => new Uint8Array(0x4000));
+[5, 2, 0].forEach((bank, index) => banks[bank]!.set(ram.subarray(index * 0x4000, (index + 1) * 0x4000)));
+writeFileSync(
+  join(project, "counter128.z80"),
+  writeZ80({
+    model: "128k",
+    registers: { pc: COUNTER_START, sp: 0xff00, af: 0, bc: 0, de: 0, hl: 0, ix: 0, iy: 0x5c3a, af2: 0, bc2: 0, de2: 0, hl2: 0, i: 0x3f, r: 0, im: 1, iff1: false, iff2: false },
+    border: 7,
+    port7ffd: 0x10,
+    banks,
+    ay: { registers: new Array<number>(16).fill(0), selected: 0 },
+  }),
+);
+// The same snapshot for a +3: hardware mode 7 in the header of a version 3 .z80.
+const plus3 = readFileSync(join(project, "counter128.z80"));
+plus3[34] = 7;
+writeFileSync(join(project, "plus3.z80"), plus3);
 after(async () => {
   await stopHosts();
   rmSync(project, { recursive: true, force: true });
@@ -250,6 +269,53 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     assert.match(await refusal("keyboard", { text: "a", keys: ["a"] }), /not both/);
     const typed = await call("keyboard", { text: "ab" });
     assert.deepEqual([typed.typed, typed.state, typed.stopReason], [2, "stopped", "frames"]);
+  } finally {
+    await client.close();
+    await host.stop();
+  }
+});
+
+test("a 48K session that loads a 128K snapshot runs as a 128K: autostart and ula tell the model, and a frame is 70908 t-states", { skip, timeout: 120_000 }, async () => {
+  const host = await startHost({ ...process.env, C64RT_ZESARUX: zesarux! });
+  const { client } = await startMcp(host.address, { args: ["--machine", "spectrum"], cwd: project, env: { C64RT_SPECTRUM_MODEL: "48k" } });
+  try {
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
+      assert.notEqual(result.isError, true, `${name}: ${(result.content[0] as { text: string }).text}`);
+      return json(result);
+    };
+    const frames = async (count: number) => {
+      await call("timing", { action: "start" });
+      assert.equal((await call("execution", { action: "advance-frames", count })).stopReason, "frames");
+      return (await call("timing", { action: "read" })).tstates as number;
+    };
+
+    const started = await call("autostart", { path: "counter128.z80" });
+    assert.deepEqual([started.state, started.model], ["running", "128k"]);
+    await call("execution", { action: "pause" });
+    const ula = await call("ula");
+    assert.deepEqual([ula.model, ula.frameTstates, ula.rom], ["128k", 70_908, 1]);
+    const tstates = await frames(2);
+    assert.ok(Math.abs(tstates - 2 * 70_908) < 32, `${tstates} t-states in two 128K frames`);
+    assert.equal(((await call("ay")).registers as number[]).length, 16);
+    // The program runs on the 128K: it counts its frames.
+    const seen = Number.parseInt((await call("memory_read", { address: `$${FRAMES_SEEN.toString(16)}`, size: 1 })).data as string, 16);
+    assert.ok(seen >= 2, `${seen} frames seen`);
+
+    // A 48K snapshot makes it a 48K again.
+    assert.equal((await call("autostart", { path: "counter.z80" })).model, "48k");
+    await call("execution", { action: "pause" });
+    assert.equal((await call("ula")).frameTstates, 69_888);
+    const tstates48 = await frames(2);
+    assert.ok(Math.abs(tstates48 - 2 * 69_888) < 32, `${tstates48} t-states in two 48K frames`);
+
+    // A +3 snapshot is refused: the session is a 48K again, from a reset, and it runs.
+    const plus3 = await client.callTool({ name: "autostart", arguments: { path: "plus3.z80" } }) as CallToolResult;
+    assert.equal(plus3.isError, true);
+    assert.match((plus3.content[0] as { text: string }).text, /The file is for the ZX Spectrum \+3.*The emulator is a ZX Spectrum 48K again, after a reset\./);
+    assert.deepEqual([(await call("ula")).model, (await call("registers", { action: "read" })).pc], ["48k", "$0000"]);
+    assert.ok(Math.abs((await frames(2)) - 2 * 69_888) < 32);
+    assert.equal((await call("autostart", { path: "counter128.z80" })).model, "128k");
   } finally {
     await client.close();
     await host.stop();

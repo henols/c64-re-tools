@@ -14,6 +14,12 @@
 // of real time. A load (snapshot-load, smartload) turns all breakpoints off,
 // so the session sets its points again after each load.
 //
+// A load can also change the machine that ZEsarUX runs: a 128K snapshot in a
+// 48K session gives a 128K. After each load the session asks ZEsarUX for its
+// machine and takes its model from it: the frame length, the paging, the AY and
+// the export follow the loaded machine. A machine that the session does not
+// serve is refused, and ZEsarUX gets the model of the session again.
+//
 // The coverage comes from ZEsarUX's code coverage (the address of each
 // executed instruction) and its visual memory of written addresses. The
 // visual memory of reads is no CPU evidence: the CPU history reads the bytes
@@ -48,8 +54,24 @@ import { launchZesarux, type ZesaruxProcess } from "./process.ts";
 import { zsfHalted, zsfOnHaltInstruction } from "./zsf.ts";
 
 const FRAME_TSTATES = { "48k": 69_888, "128k": 70_908 } as const;
+type Model = keyof typeof FRAME_TSTATES;
 /** The machines that ZEsarUX runs for c64-re-tools. */
 export const ZESARUX_MACHINES: readonly MachineId[] = ["spectrum48", "spectrum128"];
+/** The set-machine name of each model. */
+const MACHINE_OF_MODEL: Record<Model, string> = { "48k": "48k", "128k": "128k" };
+const MODEL_NAME: Record<Model, string> = { "48k": "ZX Spectrum 48K", "128k": "ZX Spectrum 128K" };
+
+/**
+ * The model of a machine that get-current-machine names (ZEsarUX 13.0): the
+ * 48K and the 48K+, the 128K+ and the +2, also with a Spanish or French ROM.
+ * Undefined for any other machine, for example the +2A, the +3, the Pentagon
+ * or the ZX81: their paging or their frame differ.
+ */
+export function modelOfMachineName(name: string): Model | undefined {
+  if (/^ZX Spectrum\+? 48k(?: \([^)]*\))?$/.test(name)) return "48k";
+  if (/^ZX Spectrum(?:\+ 128k| \+2)(?: \([^)]*\))?$/.test(name)) return "128k";
+  return undefined;
+}
 const TARGET_SLOT = 99;
 const FRAMES_SLOT = 100;
 const MAX_USER_SLOT = 90;
@@ -180,7 +202,8 @@ export function firedStop(fired: string | undefined, points: readonly SpectrumPo
 
 export class ZesaruxSession implements SessionHandle {
   readonly #zesarux: ZesaruxProcess;
-  readonly #model: "48k" | "128k";
+  /** The model of the machine that ZEsarUX runs: it follows each load. */
+  #model: Model;
   readonly #log: (line: string) => void;
   #queue: Promise<unknown> = Promise.resolve();
   #state: SpectrumRunState = "stopped";
@@ -201,7 +224,7 @@ export class ZesaruxSession implements SessionHandle {
   #joystick = 0;
   readonly #snapshots: string;
 
-  private constructor(zesarux: ZesaruxProcess, model: "48k" | "128k", log: (line: string) => void) {
+  private constructor(zesarux: ZesaruxProcess, model: Model, log: (line: string) => void) {
     this.#zesarux = zesarux;
     this.#model = model;
     this.#log = log;
@@ -211,9 +234,15 @@ export class ZesaruxSession implements SessionHandle {
   static async start(options: { supervisor: ProcessSupervisor; machine: MachineId; env?: NodeJS.ProcessEnv; log?: (line: string) => void }): Promise<ZesaruxSession> {
     const log = options.log ?? (() => {});
     const zesarux = await launchZesarux({ ...options, log });
-    const session = new ZesaruxSession(zesarux, options.machine === "spectrum128" ? "128k" : "48k", log);
+    return ZesaruxSession.open(zesarux, options.machine, log);
+  }
+
+  /** A session on a ZEsarUX that runs: the start of start(), and of a test on a stand-in ZEsarUX. Stops ZEsarUX when it fails. */
+  static async open(zesarux: ZesaruxProcess, machine: MachineId, log: (line: string) => void = () => {}): Promise<ZesaruxSession> {
+    const session = new ZesaruxSession(zesarux, machine === "spectrum128" ? "128k" : "48k", log);
     try {
       await session.#zrcp("enter-cpu-step");
+      await session.#followMachine();
       await session.#afterLoad();
       await session.#discardCoverage();
       await session.#zrcp("reset-tstates-partial");
@@ -531,6 +560,50 @@ export class ZesaruxSession implements SessionHandle {
     for (const point of this.#points.values()) await this.#setPoint(point);
   }
 
+  /**
+   * Takes the model of the session from the machine that ZEsarUX runs. A
+   * machine that the session does not serve is refused: ZEsarUX then runs the
+   * model of the session again, from a reset.
+   */
+  async #followMachine(): Promise<void> {
+    const name = (await this.#zrcp("get-current-machine")).trim();
+    const model = modelOfMachineName(name);
+    if (model !== undefined) {
+      if (model !== this.#model) this.#log(`the Spectrum session follows the machine of ZEsarUX: ${name}`);
+      this.#model = model;
+      return;
+    }
+    this.#log(`ZEsarUX runs a machine that the Spectrum session does not serve: ${name}`);
+    await this.#setMachine(this.#model);
+    throw new WireFailure(
+      "invalid-input",
+      `The file is for the ${name}. The spectrum tools serve only the ZX Spectrum 48K and the ZX Spectrum 128K. The emulator is a ${MODEL_NAME[this.#model]} again, after a reset. Load a file for one of these two models.`,
+    );
+  }
+
+  /** Makes ZEsarUX run a model, from a reset with the CPU at $0000. set-machine works only in step mode. */
+  async #setMachine(model: Model): Promise<void> {
+    await this.#stepMode();
+    let answer = await this.#zrcp(`set-machine ${MACHINE_OF_MODEL[model]}`);
+    if (answer.startsWith("Error")) {
+      await this.#stepMode();
+      answer = await this.#zrcp(`set-machine ${MACHINE_OF_MODEL[model]}`);
+    }
+    await this.#stepMode();
+    const name = (await this.#zrcp("get-current-machine")).trim();
+    if (modelOfMachineName(name) !== model) {
+      this.#lost = `ZEsarUX did not change to the ${MODEL_NAME[model]}: it runs the ${name}${answer === "" ? "" : ` (${answer.split("\n")[0]})`}.`;
+      throw new WireFailure("machine-unavailable", `${this.#lost} Restart the c64-re-tools MCP server: that starts a new emulator.`);
+    }
+    this.#model = model;
+    // The step mode can let the ROM run for a moment: the CPU starts again from $0000.
+    await this.#zrcp("reset-cpu");
+    await this.#zrcp("reset-tstates-partial");
+    await this.#discardCoverage();
+    await this.#afterLoad();
+    this.#stop = {};
+  }
+
   #listed(kind: "breakpoint" | "watchpoint"): SpectrumPoint[] {
     return [...this.#points.values()].filter((point) => point.kind === kind).map((point) => this.#shown(point));
   }
@@ -750,18 +823,26 @@ export class ZesaruxSession implements SessionHandle {
 
   // ---- Media and snapshots ----
 
-  async #autostart(params: { type: string }, bytes: Buffer): Promise<SpectrumStop> {
+  /** Loads and starts the file. The result gives the model after the load: the file can change it. */
+  async #autostart(params: { type: string }, bytes: Buffer): Promise<SpectrumOperations["autostart"]["result"]> {
     if (this.#run !== undefined) await this.#execution({ action: "pause" });
     const file = join(this.#zesarux.scratch, `media.${params.type}`);
     writeFileSync(file, bytes);
     await this.#drainCoverage();
-    await this.#zrcp(`smartload ${file}`);
+    // smartload works only in step mode; after a change of the machine the first try can fail.
+    let answer = await this.#zrcp(`smartload ${file}`);
+    if (answer.startsWith("Error")) {
+      await this.#stepMode();
+      answer = await this.#zrcp(`smartload ${file}`);
+    }
+    if (answer.startsWith("Error")) throw new WireFailure("media-error", `ZEsarUX did not load the file: ${answer.split("\n")[0]}`);
     await this.#stepMode();
+    await this.#followMachine();
     // The load wrote the memory, not the CPU.
     await this.#discardCoverage();
     await this.#afterLoad();
     this.#stop = {};
-    return this.#execution({ action: "resume" });
+    return { ...(await this.#execution({ action: "resume" })), model: this.#model };
   }
 
   async #programLoad(params: { address: number }, bytes: Buffer): Promise<{ address: number; size: number }> {
@@ -828,6 +909,8 @@ export class ZesaruxSession implements SessionHandle {
       if (halted) rmSync(loaded, { force: true });
     }
     await this.#stepMode();
+    // A snapshot of the session can be of the other model: the session follows it.
+    await this.#followMachine();
     await this.#zrcp("reset-tstates-partial");
     await this.#discardCoverage();
     await this.#afterLoad();

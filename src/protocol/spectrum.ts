@@ -118,7 +118,8 @@ export interface SpectrumOperations {
   keyboard: { params: { text: string }; result: SpectrumStop & { typed: number } };
   keys: { params: { keys: string[]; frames: number }; result: SpectrumStop };
   joystick: { params: { up: boolean; down: boolean; left: boolean; right: boolean; fire: boolean }; result: { set: boolean } };
-  autostart: { params: { type: "tap" | "tzx" | "z80" | "sna" | "zsf" }; result: SpectrumStop };
+  /** The result gives the model after the load: a file can change it. */
+  autostart: { params: { type: "tap" | "tzx" | "z80" | "sna" | "zsf" }; result: SpectrumStop & { model: "48k" | "128k" } };
   programLoad: { params: { address: number }; result: { address: number; size: number } };
   snapshot: { params: { action: "save" | "restore" | "remove"; name: string } | { action: "list" }; result: { names: string[] } };
   snapshotExport: { params: Record<string, never>; result: { bytes: number } };

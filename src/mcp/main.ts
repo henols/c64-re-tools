@@ -34,7 +34,8 @@ it installs, through npx with the newest version of its channel.
 
 Environment:
   C64RT_VIDEO           c64: pal (default) or ntsc; fixed for the life of the process.
-  C64RT_SPECTRUM_MODEL  spectrum: 48k (default) or 128k; fixed for the life of the process.
+  C64RT_SPECTRUM_MODEL  spectrum: the model at the start, 48k (default) or 128k.
+                        A file that autostart loads can change it.
   C64RT_HOST   host:port of the Host Runtime when it is not on 127.0.0.1:6464,
                host.docker.internal:6464 or host.containers.internal:6464.`;
 
