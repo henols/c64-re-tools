@@ -127,6 +127,7 @@ test("a result can give a hint and a next command line that runs from any direct
     rmSync(sandbox, { recursive: true, force: true });
   }
   assert.match(run(["cut"]).envelope.hint, /^A list in the body is cut: count gives its full size\. To get the rest, give a larger --max-listed\.$/);
+  assert.equal(run(["cut-noted"]).envelope.hint, "A list in the body is cut: count gives its full size. x.json holds all items.");
   assert.equal(shellWord("$c000"), "'$c000'");
   assert.equal(shellWord("src/main.asm"), "src/main.asm");
   assert.equal(shellWord("it's"), "'it'\\''s'");

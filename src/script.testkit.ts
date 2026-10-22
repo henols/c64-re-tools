@@ -44,6 +44,7 @@ export const DEMO: ScriptSpec = {
     { name: "hinted", summary: "A refusal with its own hint.", run: () => { throw new Refusal("conflict", "Two writes disagree. This stays in the error.", { hint: "Merge them first." }); } },
     { name: "next", summary: "A result with a next command.", run: (call) => reply({ done: true }, { hint: "Run where next.", nextAction: call.next("where", "$c000") }) },
     { name: "cut", summary: "A cut list.", run: () => ({ items: listed([1, 2, 3], 1) }) },
+    { name: "cut-noted", summary: "A cut list whose hint tells about it.", run: () => reply({ items: listed([1, 2, 3], 1, undefined, "x.json") }, { hint: "A list in the body is cut: count gives its full size. x.json holds all items." }) },
     { name: "coded", summary: "An error with a code from the list.", run: () => { throw new Coded("two writes disagree"); } },
     { name: "usage", summary: "A usage error.", run: () => { throw new UsageError("give one file"); } },
     { name: "crash", summary: "A fault.", run: () => { throw new RangeError("index out of range"); } },

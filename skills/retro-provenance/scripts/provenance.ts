@@ -240,11 +240,11 @@ async function compare(call: Call): Promise<unknown> {
   }
   // A poor match at the load addresses can mean that the releases are placed differently.
   // Each release gets its best shifts: data that stayed can outvote code that moved, so one is not enough.
-  // With no common range, no byte was compared: a shift from bytes outside the range tells nothing about it.
+  // The shifts come from all bytes of the releases: with --range, or with no common range, they tell nothing about the bytes that were compared.
   const applied = loaded.map((item) => item.shift);
   const empty = comparison.common.length === 0;
   const suggestions =
-    share < 0.5 && !empty
+    share < 0.5 && !empty && range === undefined
       ? releases.slice(1).flatMap((release, index) =>
           suggestShifts(releases[0]!, release).map((found) => {
             const suggestion = shiftSuggestion(releases, applied, index + 1, found);

@@ -738,7 +738,8 @@ async function envelope(script: Envelope): Promise<void> {
     });
     const { body, hint, nextAction } = result instanceof Reply ? result : { body: result ?? {}, hint: undefined, nextAction: undefined };
     const cut = cutListHint(body);
-    const shownHint = hint === undefined ? cut : cut === undefined || hint.includes("--max-listed") ? hint : `${sentence(hint)} ${cut}`;
+    // A hint of the command that already tells about the cut list (for example that --out holds all items) is not told again.
+    const shownHint = hint === undefined ? cut : cut === undefined || hint.includes("--max-listed") || hint.includes("A list in the body is cut") ? hint : `${sentence(hint)} ${cut}`;
     print({ ok: true, command: commandName ?? "help", body: body ?? {}, ...(shownHint === undefined ? {} : { hint: shownHint }), ...(nextAction === undefined ? {} : { nextAction }) }, 0);
     trace().event("script.end", { ms: elapsedMs(started), status: 0, result: body });
   } catch (error) {

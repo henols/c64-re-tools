@@ -553,6 +553,10 @@ test("compare with no common range tells to give a shift or another range, and a
   assert.equal(empty.envelope.nextAction, undefined);
   // No byte was compared: no shift is suggested.
   assert.equal(empty.json.suggestedShifts, undefined);
+  // A --range of one changed byte: the shifts of all the other bytes tell nothing about it.
+  const ranged = provenance(["compare", "knowledge", "changed.z80", "--range", "$8036-$8036"], root);
+  assert.equal(ranged.json.identicalShare, 0);
+  assert.equal(ranged.json.suggestedShifts, undefined);
   const missing = provenance(["compare", "knowledge", "nothere.z80"], root);
   assert.equal(missing.status, 2, missing.stdout);
   assert.equal(missing.envelope.code, "not-found");
