@@ -155,6 +155,20 @@ test("the tokens $a3 and $a4 are SPECTRUM and PLAY on the 128K and the graphics 
   assert.equal(sinclairLineText(parsed.lines[0]!, "48k"), '1 {UDG U}""');
 });
 
+test("a hidden number shows as PRINT shows it, and a POKE of ERR_SP is a handoff", () => {
+  // 10 POKE 23633{=23613.1},PEEK 23641{=23641.1}: the loader of Bruce Lee puts the address of its code into the error return.
+  const float = (value: number) => {
+    const exponent = Math.floor(Math.log2(value)) + 1;
+    const mantissa = Math.round((value / 2 ** exponent) * 2 ** 32);
+    return [exponent + 128, (mantissa >>> 24) & 0x7f, (mantissa >>> 16) & 0xff, (mantissa >>> 8) & 0xff, mantissa & 0xff];
+  };
+  const program = Uint8Array.from(basicLine(10, [0xf4, ...text("23633"), 0x0e, ...float(23613.1), 0x2c, 0xbe, ...text("23641"), 0x0e, ...float(23641.1)]));
+  const parsed = parseSinclairBasic(program);
+  assert.ok("lines" in parsed, JSON.stringify(parsed));
+  assert.equal(sinclairLineText(parsed.lines[0]!), "10 POKE 23633{=23613.1}, PEEK 23641{=23641.1}");
+  assert.deepEqual(findSinclairHandoffs(parsed.lines), [{ kind: "err-sp", line: 10 }]);
+});
+
 test("the 5-byte numbers: the small integer form and the floating point form", () => {
   assert.equal(sinclairNumber(Uint8Array.of(0, 0, 0x39, 0x30, 0)), 12345);
   assert.equal(sinclairNumber(Uint8Array.of(0, 0xff, 0xff, 0xff, 0)), -1);

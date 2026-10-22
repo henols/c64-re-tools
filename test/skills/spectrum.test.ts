@@ -109,7 +109,7 @@ test("spectrum-memory-map names addresses, decodes the paging and exports a sjas
   assert.match(readFileSync(join(project, ".c64-re-tools/local/zx.asm"), "utf8"), /^FRAMES EQU \$5c78 +; The frame counter/m);
 });
 
-test("spectrum-basic tells the bytes after the last line apart from the variables, and names ERR_SP when the BASIC has no USR", () => {
+test("spectrum-basic tells the bytes after the last line apart from the variables, and gives a POKE of ERR_SP as a handoff", () => {
   // 10 POKE 23613,0: the program length of the header holds 4 more bytes of machine code after the line; 6 bytes of variables follow.
   const line = basicLine(10, [0xf4, ...literal("23613"), 0x2c, ...literal("0")]);
   const hidden = [0xf3, 0x31, 0x00, 0x80];
@@ -120,6 +120,7 @@ test("spectrum-basic tells the bytes after the last line apart from the variable
   assert.equal(status, 0);
   const [listed] = (result as { programs: Array<Record<string, unknown>> }).programs;
   assert.deepEqual([listed!.variableBytes, listed!.hiddenBytes], [6, { offset: line.length, bytes: 4 }]);
-  assert.match(envelope.hint!, /The BASIC has no USR\. It can start machine code in another way, for example with a POKE of the error return at ERR_SP \(23613 and 23614\)/);
+  assert.deepEqual(listed!.handoffs, [{ kind: "err-sp", line: 10 }]);
+  assert.match(envelope.hint!, /Line 10 changes the error return at ERR_SP: an error or the end of the BASIC then starts machine code\./);
   assert.match(envelope.hint!, new RegExp(`The program hidden has 4 bytes after its last line at offset ${line.length} of the program, which LIST does not show`));
 });

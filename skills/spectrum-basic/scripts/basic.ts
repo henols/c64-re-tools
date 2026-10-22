@@ -81,7 +81,10 @@ function answer(body: { programs: Array<Partial<Listed>>; code?: Array<{ block: 
   const known = usr.flatMap((item) => ("address" in item && item.address !== undefined ? [item.address] : []));
   const computed = usr.filter((item) => "computed" in item).map((item) => item.line);
   const missing = body.programs.filter((item) => item.problem !== undefined).map((item) => item.block);
-  if (body.programs.every((item) => item.problem === undefined) && usr.length === 0) {
+  const errorReturn = handoffs.filter((item) => item.kind === "err-sp").map((item) => item.line);
+  if (errorReturn.length > 0) {
+    hints.push(`Line ${errorReturn.join(", ")} changes the error return at ERR_SP: an error or the end of the BASIC then starts machine code. Load the program in the emulator and stop at the first instruction after the BASIC to find the entry.`);
+  } else if (body.programs.every((item) => item.problem === undefined) && usr.length === 0) {
     hints.push("The BASIC has no USR. It can start machine code in another way, for example with a POKE of the error return at ERR_SP (23613 and 23614). Look in the listing for a POKE, a hidden number and a LOAD of another file.");
   }
   for (const item of body.programs) {

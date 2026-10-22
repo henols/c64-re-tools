@@ -79,7 +79,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 On a tape, `body.code` lists the CODE files of the tape. Each CODE file has `block`, `name`, `address` and `length`. `address` is the load address from the header.
 
-Look for `{=value}` after a number in the listing. BASIC keeps a hidden form of each number in the text, and the program uses the hidden form. A loader can show `USR 0` and keep `32768` hidden. Then the listing shows `USR 0{=32768}`, and the program calls `$8000`.
+Look for `{=value}` after a number in the listing. The value shows as PRINT shows it: a whole number, or a number with at most 8 digits. BASIC keeps a hidden form of each number in the text, and the program uses the hidden form. A loader can show `USR 0` and keep `32768` hidden. Then the listing shows `USR 0{=32768}`, and the program calls `$8000`.
 
 The kinds of handoff:
 
@@ -88,6 +88,7 @@ The kinds of handoff:
 - `clear`: CLEAR puts the top of BASIC (RAMTOP) at `address`. Usually the machine code is above that address.
 - `load-code`: the program loads the next file with LOAD "" CODE. `address` is the load address when the text gives it. Else the header of the file gives the address.
 - `load-screen`: the program loads the next file with LOAD "" SCREEN$.
+- `err-sp`: the program writes the error return at `ERR_SP` (23613 and 23614) with POKE. An error or the end of the BASIC then starts machine code at an address that the program puts there.
 
 On a tape, compare the `usr` address with `body.code`. The CODE file that loads to that address holds the machine code.
 
@@ -97,6 +98,7 @@ A program on a tape without its data block has `problem` and no listing. Then th
 
 - A `usr` address: disassemble the machine code at that address. `hint` also names the CODE file that loads to that address.
 - A computed address: find the address in the emulator at run time. Do not guess the address.
+- An `err-sp` handoff: load the program in the emulator, and stop at the first instruction after the BASIC. That is the entry of the machine code.
 - No `usr` handoff: the BASIC has no USR. It can start machine code in another way, for example with a POKE of the error return at `ERR_SP` (23613 and 23614). Look in the listing for a POKE, a hidden number and a LOAD of another file. Do not make up a handoff.
 - `hiddenBytes`: disassemble the bytes after the last line.
 - A program without its data block: load the tape in the emulator, and stop at the entry of the machine code.

@@ -528,6 +528,9 @@ const TOKEN_CLEAR = 0xfd;
 const TOKEN_LOAD = 0xef;
 const TOKEN_CODE = 0xaf;
 const TOKEN_SCREEN = 0xaa;
+const TOKEN_POKE = 0xf4;
+/** ERR_SP: the address on the machine stack of the error return of BASIC, two bytes. */
+const ERR_SP = 0x5c3d;
 
 /** The colour and position codes that take parameters: their name and the number of parameter bytes. */
 const CONTROL_CODES: Record<number, [name: string, parameters: number]> = {
@@ -547,6 +550,15 @@ export function sinclairNumber(bytes: Uint8Array): number {
   const mantissa = (((bytes[1]! | 0x80) << 24) >>> 0) + bytes[2]! * 0x10000 + bytes[3]! * 0x100 + bytes[4]!;
   const value = (mantissa / 2 ** 32) * 2 ** (bytes[0]! - 128);
   return bytes[1]! & 0x80 ? -value : value;
+}
+
+/**
+ * A number as PRINT of the ROM shows it: a whole number as it is, else
+ * rounded to the 8 significant digits of the ROM. The binary fraction of a
+ * 5-byte number (23641.1 is kept as 23641.09999847412) thus does not show.
+ */
+export function sinclairNumberText(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toPrecision(8)));
 }
 
 function sameNumber(text: string, bin: boolean, value: number): boolean {
@@ -573,7 +585,7 @@ export function sinclairLineText(line: SinclairLine, model: SpectrumModel = "48k
     const byte = bytes[at]!;
     if (byte === NUMBER_MARK && at + 5 < bytes.length + 1) {
       const value = sinclairNumber(bytes.subarray(at + 1, at + 6));
-      if (!quoted && !rem && !sameNumber(digits, bin, value)) text += `{=${value}}`;
+      if (!quoted && !rem && !sameNumber(digits, bin, value)) text += `{=${sinclairNumberText(value)}}`;
       digits = "";
       bin = false;
       at += 5;
@@ -615,11 +627,15 @@ export function sinclairLineText(line: SinclairLine, model: SpectrumModel = "48k
  * What a program hands over to machine code or memory: USR with a value that
  * the text gives (a number, or VAL with a string of digits), USR with another
  * argument, CLEAR with a value (the top of BASIC), and LOAD "" CODE or SCREEN$
- * (with the address when the text gives one). Not in strings or REM.
+ * (with the address when the text gives one), and a POKE of ERR_SP (23613 or
+ * 23614): the error return of BASIC then goes to an address that the program
+ * puts there, so an error or the end of the BASIC starts machine code. Not in
+ * strings or REM.
  */
 export type SinclairHandoff =
   | { kind: "usr"; line: number; address: number }
   | { kind: "usr"; line: number; computed: true }
+  | { kind: "err-sp"; line: number }
   | { kind: "clear"; line: number; address: number }
   | { kind: "load-code"; line: number; address?: number }
   | { kind: "load-screen"; line: number };
@@ -659,6 +675,10 @@ export function findSinclairHandoffs(lines: SinclairLine[]): SinclairHandoff[] {
       if (byte === TOKEN_USR) {
         const value = address(constantArgument(bytes, at + 1));
         handoffs.push(value === undefined ? { kind: "usr", line: number, computed: true } : { kind: "usr", line: number, address: value });
+      } else if (byte === TOKEN_POKE) {
+        // POKE rounds its address, as FIND-INT2 of the ROM does.
+        const value = constantArgument(bytes, at + 1);
+        if (value !== undefined && (Math.round(value) === ERR_SP || Math.round(value) === ERR_SP + 1)) handoffs.push({ kind: "err-sp", line: number });
       } else if (byte === TOKEN_CLEAR) {
         const value = address(constantArgument(bytes, at + 1));
         if (value !== undefined) handoffs.push({ kind: "clear", line: number, address: value });
