@@ -8,7 +8,7 @@ import type { Machine } from "../machine.ts";
 import { isRefusal, Refusal } from "../errors.ts";
 import { prgRange } from "../c64.ts";
 import { formatAddress, formatByte } from "../address.ts";
-import { cpuRam, pagedBank, readSna, readZ80, type SpectrumSnapshot } from "../spectrum.ts";
+import { cpuRam, pagedBank, readSna, readZ80, type SpectrumSnapshot, type Z80Registers } from "../spectrum.ts";
 import { readEntryState, type EntryState } from "./entry-state.ts";
 import { readProjectFile } from "./transfer.ts";
 
@@ -147,6 +147,60 @@ export function z80EntryState(snapshot: SpectrumSnapshot): Record<string, unknow
     border: snapshot.border,
     ...(snapshot.model === "128k" ? { port7ffd: formatByte(snapshot.port7ffd) } : {}),
   };
+}
+
+/** The Z80 state of a Spectrum entry state: the registers, the border and, on the 128K, port $7ffd. */
+export interface Z80EntryState {
+  registers: Z80Registers;
+  border: number;
+  port7ffd?: number;
+}
+
+/**
+ * Reads an entry state that z80EntryState wrote. `where` names it in a
+ * refusal, for example "the entry state of the knowledge".
+ */
+export function parseZ80EntryState(value: unknown, where: string): Z80EntryState {
+  const fail = (what: string): never => {
+    throw new Refusal("invalid-input", `${where} is not the entry state of a ZX Spectrum snapshot: ${what}. Put the snapshot of the program into the project knowledge again.`);
+  };
+  const isObject = (item: unknown): item is Record<string, unknown> => typeof item === "object" && item !== null && !Array.isArray(item);
+  if (!isObject(value)) return fail("it is not a JSON object");
+  const registers = isObject(value.registers) ? value.registers : fail("it has no registers");
+  const number = (item: unknown, what: string, max: number) => {
+    const parsed = typeof item === "string" && /^\$[0-9a-f]{1,4}$/i.test(item) ? Number.parseInt(item.slice(1), 16) : undefined;
+    return parsed !== undefined && parsed <= max ? parsed : fail(`${what} is not a $ value up to ${formatAddress(max)}`);
+  };
+  const word = (name: string) => number(registers[name], `registers.${name}`, 0xffff);
+  const flag = (name: string) => (typeof registers[name] === "boolean" ? (registers[name] as boolean) : fail(`registers.${name} is not true or false`));
+  const im = registers.im === 0 || registers.im === 1 || registers.im === 2 ? registers.im : fail("registers.im is not 0, 1 or 2");
+  const border = Number.isInteger(value.border) && (value.border as number) >= 0 && (value.border as number) <= 7 ? (value.border as number) : fail("border is not 0 to 7");
+  return {
+    registers: {
+      pc: word("pc"), sp: word("sp"), af: word("af"), bc: word("bc"), de: word("de"), hl: word("hl"), ix: word("ix"), iy: word("iy"),
+      af2: word("af2"), bc2: word("bc2"), de2: word("de2"), hl2: word("hl2"), i: number(registers.i, "registers.i", 0xff), r: number(registers.r, "registers.r", 0xff), im, iff1: flag("iff1"), iff2: flag("iff2"),
+    },
+    border,
+    ...(value.port7ffd === undefined ? {} : { port7ffd: number(value.port7ffd, "port7ffd", 0xff) }),
+  };
+}
+
+/**
+ * The snapshot of a program at its entry: the inverse of snapshotImage. The
+ * CPU view gives banks 5 and 2 and the paged bank; each other RAM bank of the
+ * 128K comes from `banks`, and a bank that is not there holds 0.
+ */
+export function snapshotOfImage(image: Pick<SnapshotImage, "machine" | "main" | "banks">, where: string): SpectrumSnapshot {
+  const state = parseZ80EntryState(image.main.state, where);
+  const model = image.machine === "spectrum128" ? "128k" : "48k";
+  const port7ffd = model === "128k" ? (state.port7ffd ?? 0) : 0;
+  const banks = Array.from({ length: 8 }, () => new Uint8Array(0x4000));
+  for (const bank of image.banks) banks[bank.bank] = Uint8Array.from({ length: 0x4000 }, (_, offset) => bank.byteAt(0xc000 + offset));
+  const view = (start: number) => Uint8Array.from({ length: 0x4000 }, (_, offset) => image.main.byteAt(start + offset));
+  banks[model === "128k" ? port7ffd & 7 : 0] = view(0xc000);
+  banks[5] = view(0x4000);
+  banks[2] = view(0x8000);
+  return { model, registers: state.registers, border: state.border, port7ffd, banks };
 }
 
 /** The program in a file: a snapshot of the ZX Spectrum, or an image.json or a PRG of the C64. */

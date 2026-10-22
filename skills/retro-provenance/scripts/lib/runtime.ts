@@ -15,6 +15,7 @@ import { knowledgeAt } from "#src/knowledge/names.ts";
 import { MAX_MEMORY_READ } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import type { SpectrumSnapshot } from "#src/spectrum.ts";
 
 export type FirstAccess = "read" | "write" | "execute" | "none";
 
@@ -24,10 +25,13 @@ export interface RangeAccess {
   changed: boolean;
 }
 
-/** How a release starts in the emulator: autostart of a PRG, or the captured program at its entry. */
-export type Start =
-  | { kind: "program"; path: string }
-  | { kind: "image"; segments: AddressRange[]; byteAt: (address: number) => number; state: EntryState };
+/** How a C64 release starts in VICE: autostart of a PRG, or the captured program at its entry. */
+export type ViceStart = { kind: "program"; path: string } | { kind: "image"; segments: AddressRange[]; byteAt: (address: number) => number; state: EntryState };
+
+/** How a ZX Spectrum release starts in ZEsarUX: the snapshot of the program at its entry state. */
+export type SnapshotStart = { kind: "snapshot"; snapshot: SpectrumSnapshot };
+
+export type Start = ViceStart | SnapshotStart;
 
 const MAX_WATCH = 256;
 
@@ -44,7 +48,7 @@ export function accessOf(flags: number): FirstAccess {
 }
 
 /** Starts the release; returns why it did not start, or undefined. */
-async function start(client: ViceSessionClient, how: Start): Promise<string | undefined> {
+async function start(client: ViceSessionClient, how: ViceStart): Promise<string | undefined> {
   if (how.kind === "program") {
     const failed = await runProgram(client, how.path, readProjectFile(how.path).bytes);
     if (failed === "not-loaded") return "The program was not in memory after autostart.";
@@ -61,7 +65,7 @@ async function start(client: ViceSessionClient, how: Start): Promise<string | un
  */
 export async function watchRelease(
   client: ViceSessionClient,
-  how: Start,
+  how: ViceStart,
   ranges: AddressRange[],
   release: (address: number) => number,
   run: { frames: number; steps: ActionStep[] },

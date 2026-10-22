@@ -8,19 +8,19 @@
 // routines that several programs share in a library folder and find them in the
 // program (D71).
 
-import { projectMainSpace } from "#src/knowledge/names.ts";
+import { projectMachine, projectMainSpace } from "#src/knowledge/names.ts";
 import { basename } from "node:path";
 
 import { type AddressRange, addressOf, formatAddress, parseAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
-import { readImage } from "#src/host-client/image.ts";
+import { readProgramFile, snapshotOfImage, type SnapshotImage } from "#src/host-client/image.ts";
 import { readActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
-import { operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
+import { operandImages, programCoverage, programImage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import {
   commentsAt,
@@ -41,7 +41,7 @@ import {
   symbolSuppressed,
 } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
-import { C64 } from "#src/machine.ts";
+import { C64, type Machine, type Space } from "#src/machine.ts";
 import { platformNames } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
@@ -54,6 +54,9 @@ import { separate, type Root } from "#src/knowledge/separate.ts";
 
 const hexBytes = (bytes: number[]) => Buffer.from(bytes).toString("hex").replace(/(..)(?!$)/g, "$1 ");
 
+/** Bytes at their addresses: a release in one space. */
+type SpaceBytes = Pick<Release, "segments" | "byteAt">;
+
 interface LoadedRelease {
   release: Release;
   shift: number;
@@ -62,44 +65,75 @@ interface LoadedRelease {
   memory: Uint8Array;
   entry?: number;
   stages?: Array<{ entry: number; wrote: AddressRange[] }>;
+  /** The 128K: each RAM bank outside the CPU view that the release holds, by its space (ram0 to ram7), at $c000-$ffff. */
+  banks: Map<Space, SpaceBytes>;
 }
+
+/** The RAM banks of a 128K snapshot as spaces, in bank order. */
+const bankSpaces = (banks: SnapshotImage["banks"]) => new Map(banks.map((bank) => [`ram${bank.bank}`, { segments: [{ start: 0xc000, end: 0xffff }], byteAt: bank.byteAt }]));
 
 /**
  * A release to compare: "knowledge" (the program of the knowledge, with its
- * entry state and stages), a PRG at its load address, or an image.json of an
- * unpacked program (a capture) with the entry_state.json beside it.
+ * entry state and stages), or a file of the project machine: a PRG at its
+ * load address or an image.json of an unpacked program (a capture) with the
+ * entry_state.json beside it on the C64, a .z80 or .sna snapshot on the
+ * ZX Spectrum. A snapshot starts at its entry state.
  */
-function readRelease(name: string, shift: number): LoadedRelease {
+function readRelease(name: string, shift: number, machine: Machine): LoadedRelease {
   const moved = (range: AddressRange) => ({ start: range.start + shift, end: range.end + shift });
   const inside = (range: AddressRange) => range.start >= 0 && range.end <= 0xffff;
   let image: { segments: AddressRange[]; byteAt: (address: number) => number; memory?: Uint8Array; entry?: number; stages?: Array<Record<string, unknown>>; state?: EntryState };
+  let snapshot: Pick<SnapshotImage, "machine" | "main" | "banks"> | undefined;
   let noState: string;
   if (name === "knowledge") {
     const db = openForRead();
     try {
-      const program = requireProgram(db);
-      image = { ...program, ...(program.state === undefined ? {} : { state: parseEntryState(program.state, "the entry state of the knowledge") }) } as typeof image;
+      const program = requireProgram(db, machine.spaces.main);
+      if (machine.family === "spectrum") {
+        // The Z80 state starts the snapshot, not a C64 entry state.
+        const { state: _state, ...bytes } = program;
+        image = bytes;
+        const banks = Array.from({ length: 8 }, (_, bank) => bank)
+          .filter((bank) => machine.spaces.pattern.test(`ram${bank}`))
+          .flatMap((bank) => {
+            const held = programImage(db, `ram${bank}`);
+            return held === undefined ? [] : [{ bank, byteAt: held.byteAt }];
+          });
+        if (program.state !== undefined) snapshot = { machine: machine.id as SnapshotImage["machine"], main: { ...program, entry: program.entry ?? 0, state: program.state }, banks };
+      } else image = { ...program, ...(program.state === undefined ? {} : { state: parseEntryState(program.state, "the entry state of the knowledge") }) } as typeof image;
     } finally {
       db?.close();
     }
     noState = "The knowledge has no entry state. Put a capture of the unpacked program, with its entry state, into the project knowledge.";
   } else {
-    image = readImage(name);
+    const file = readProgramFile(name, machine);
+    if ("snapshot" in file) {
+      if (machine.family !== "spectrum") {
+        throw new UsageError(`${name} is a ZX Spectrum snapshot, and this project is a ${machine.name} project.`, { hint: "Compare the releases in a ZX Spectrum project: put the snapshot of the program into the project knowledge of a new project first." });
+      }
+      const { state: _state, ...main } = file.snapshot.main;
+      image = main;
+      snapshot = file.snapshot;
+    } else image = file.image;
     noState = "It has no entry_state.json beside it. Capture the unpacked program again, with its entry state.";
   }
   const segments = image.segments.map(moved);
   if (!segments.every(inside)) throw new UsageError(`The shift moves ${name} outside $0000-$ffff.`, { hint: "Give a shift that keeps each segment of the release in $0000-$ffff." });
   const memory = image.memory ?? new Uint8Array(0x10000);
   if (image.memory === undefined) for (const segment of image.segments) for (let at = segment.start; at <= segment.end; at++) memory[at] = image.byteAt(at);
-  const prg = name !== "knowledge" && !name.endsWith(".json");
   const stages = stagesOf(image.stages, name);
+  let start: LoadedRelease["start"];
+  if (machine.family === "spectrum") start = snapshot === undefined ? { kind: "none", reason: noState } : { kind: "snapshot", snapshot: snapshotOfImage(snapshot, name === "knowledge" ? "the entry state of the knowledge" : name) };
+  else if (name !== "knowledge" && !name.endsWith(".json")) start = { kind: "program", path: name };
+  else start = image.state === undefined ? { kind: "none", reason: noState } : { kind: "image", segments: image.segments, byteAt: (at) => memory[at]!, state: image.state };
   return {
     release: { name, segments, byteAt: (at) => memory[at - shift]! },
     shift,
-    start: prg ? { kind: "program", path: name } : image.state === undefined ? { kind: "none", reason: noState } : { kind: "image", segments: image.segments, byteAt: (at) => memory[at]!, state: image.state },
+    start,
     memory,
     ...(image.entry === undefined ? {} : { entry: image.entry }),
     ...(stages === undefined ? {} : { stages }),
+    banks: bankSpaces(snapshot?.banks ?? []),
   };
 }
 
@@ -131,13 +165,39 @@ async function compare(call: Call): Promise<unknown> {
     if (frames !== undefined) throw new UsageError("--align does not work with --frames: --align gives no differences to run.", { hint: "Run --frames without --align." });
     if (positionals.length !== 2) throw new UsageError(`--align maps two releases, not ${positionals.length}.`, { hint: "Give two releases." });
   }
+  const machine = projectMachine();
+  if (frames !== undefined && machine.family === "spectrum") throw new UsageError("--frames does not run a ZX Spectrum release yet.", { hint: "Remove --frames." });
   const steps: ActionStep[] = stepsFile === undefined ? [] : readActionSteps(stepsFile, "--steps", knowledgeAt());
-  const loaded = positionals.map((path, index) => readRelease(path, shifts.get(index + 1) ?? 0));
+  const loaded = positionals.map((path, index) => readRelease(path, shifts.get(index + 1) ?? 0, machine));
   const releases = loaded.map((item) => item.release);
   const range = call.range("range");
-  const comparison = compareReleases(releases, range === undefined ? {} : { from: range.start, to: range.end });
+  const within = range === undefined ? {} : { from: range.start, to: range.end };
+  const comparison = compareReleases(releases, within);
   const share = identicalShare(comparison.identicalBytes, comparison.differingBytes);
   const show = (range: AddressRange) => ({ start: formatAddress(range.start), end: formatAddress(range.end) });
+  const shownValues = (difference: (typeof comparison.differences)[number]) => ({
+    start: formatAddress(difference.start),
+    end: formatAddress(difference.end),
+    values: Object.fromEntries(Object.entries(difference.values).map(([name, bytes]) => [name, hexBytes(bytes.slice(0, 32)) + (bytes.length > 32 ? " ..." : "")])),
+    groups: difference.groups,
+  });
+  // The 128K: each RAM bank outside the CPU view that every release holds, compared at its own addresses without a shift.
+  const heldBanks = [...(loaded[0]?.banks.keys() ?? [])].filter((space) => loaded.every((item) => item.banks.has(space)));
+  const banks = heldBanks.map((space) => {
+    const bank = compareReleases(
+      loaded.map((item) => ({ name: item.release.name, ...item.banks.get(space)! })),
+      within,
+    );
+    return {
+      space,
+      common: bank.common.map(show),
+      identicalBytes: bank.identicalBytes,
+      differingBytes: bank.differingBytes,
+      identicalShare: identicalShare(bank.identicalBytes, bank.differingBytes),
+      differences: bank.differences.map(shownValues),
+      ...(bank.moreDifferences ? { moreDifferences: true } : {}),
+    };
+  });
   const compared = {
     releases: loaded.map((item) => ({ name: item.release.name, shift: item.shift, segments: item.release.segments.map(show) })),
     common: comparison.common.map(show),
@@ -181,8 +241,8 @@ async function compare(call: Call): Promise<unknown> {
   if (frames !== undefined && comparison.differences.length > 0) {
     for (const item of loaded) {
       const name = item.release.name;
-      if (item.start.kind === "none") {
-        runs[name] = { started: false, reason: item.start.reason };
+      if (item.start.kind === "none" || item.start.kind === "snapshot") {
+        runs[name] = { started: false, reason: item.start.kind === "none" ? item.start.reason : "" };
         continue;
       }
       const ranges = comparison.differences.map((difference) => ({ start: difference.start - item.shift, end: difference.end - item.shift }));
@@ -216,14 +276,11 @@ async function compare(call: Call): Promise<unknown> {
     hints.push("identicalShare is low, and no suggested shift is better. The code and the data can be at other addresses in each release. Map the releases in blocks with --align.");
     nextAction = call.next("compare", ...positionals, "--align", ...rangeArgs);
   }
-  if (comparison.moreDifferences) hints.push("differences holds only the first differences. Give --range to compare a part of the releases.");
+  if (comparison.moreDifferences || banks.some((bank) => bank.moreDifferences === true)) hints.push("differences holds only the first differences. Give --range to compare a part of the releases.");
   const body = {
     ...compared,
     differences: comparison.differences.map((difference, index) => ({
-      start: formatAddress(difference.start),
-      end: formatAddress(difference.end),
-      values: Object.fromEntries(Object.entries(difference.values).map(([name, bytes]) => [name, hexBytes(bytes.slice(0, 32)) + (bytes.length > 32 ? " ..." : "")])),
-      groups: difference.groups,
+      ...shownValues(difference),
       // runtime gives the release's own addresses: with a shift, they are not the addresses of the difference.
       ...(runtime.size === 0
         ? {}
@@ -237,6 +294,7 @@ async function compare(call: Call): Promise<unknown> {
           }),
     })),
     ...(comparison.moreDifferences ? { moreDifferences: true } : {}),
+    ...(banks.length > 0 ? { banks } : {}),
     ...(suggested.length > 0 ? { suggestedShifts: suggested } : {}),
     ...(notSuggested.length > 0 ? { shiftsNotSuggested: notSuggested } : {}),
     ...(frames === undefined

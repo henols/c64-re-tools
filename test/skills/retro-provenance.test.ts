@@ -12,7 +12,9 @@ import { formatAddress } from "../../src/address.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/retro-provenance/scripts/lib/compare.ts";
 import { separate } from "../../src/knowledge/separate.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
-import { importCoverage, importImage } from "../fixtures/program.ts";
+import { importCoverage, importImage, importSnapshot } from "../fixtures/program.ts";
+import { COUNTER_START, keyboardCounterRam, keyboardCounterSnapshot, z80Snapshot } from "../fixtures/z80/keyboard-counter.ts";
+import { writeZ80 } from "../../src/spectrum.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-"));
 const programs: string[] = [];
@@ -421,4 +423,54 @@ test("the identical share is 1 only when no byte differs, and 0 only when no byt
     [identicalShare(35974, 1), identicalShare(10, 0), identicalShare(0, 10), identicalShare(0, 0), identicalShare(1, 35974), identicalShare(29, 71)],
     [0.999, 1, 0, 0, 0.001, 0.29],
   );
+});
+
+/** The keyboard counter with one changed code byte: AND 7 at $8035 is AND 3. */
+function changedCounter(): Uint8Array {
+  const ram = keyboardCounterRam();
+  ram[0x8036 - 0x4000] = 0x03;
+  return z80Snapshot(ram, { pc: COUNTER_START, sp: 0xff00, iy: 0x5c3a, im: 1, border: 7 });
+}
+
+test("compare reads .z80 releases and the program of a ZX Spectrum project, and refuses a file without an extension", () => {
+  const root = fresh();
+  importSnapshot(root, keyboardCounterSnapshot());
+  writeFileSync(join(root, "counter.z80"), keyboardCounterSnapshot());
+  writeFileSync(join(root, "changed.z80"), changedCounter());
+  const run = provenance(["compare", "knowledge", "counter.z80", "changed.z80"], root);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const result = run.json as { common: unknown; differences: Array<{ start: string; end: string; groups: string[][] }>; banks?: unknown };
+  assert.deepEqual(result.common, [{ start: "$4000", end: "$ffff" }]);
+  assert.deepEqual(result.differences.map((difference) => [difference.start, difference.end, difference.groups]), [["$8036", "$8036", [["knowledge", "counter.z80"], ["changed.z80"]]]]);
+  assert.equal(result.banks, undefined, "a 48K has no other RAM banks");
+  // c1541 names a PRG without an extension: in a Spectrum project such a file is no release.
+  writeFileSync(join(root, "game"), Buffer.from([0x01, 0x08, 0xea]));
+  const refused = provenance(["compare", "game", "counter.z80"], root);
+  assert.equal(refused.status, 2, refused.stdout);
+  assert.equal(refused.json.error.code, "invalid-input");
+  assert.match(refused.json.error.message, /^game is no snapshot/);
+});
+
+test("compare of 128K releases compares each RAM bank outside the CPU view that all releases hold", () => {
+  const snapshot = (bank1: number, bank3: boolean): Uint8Array => {
+    const banks = Array.from({ length: 8 }, () => new Uint8Array(0x4000));
+    banks[5]!.set(keyboardCounterRam().subarray(0, 0x4000));
+    banks[2]!.set(keyboardCounterRam().subarray(0x4000, 0x8000));
+    banks[1]!.fill(0x11);
+    banks[1]![0x0010] = bank1;
+    if (bank3) banks[3]!.fill(0x33);
+    const registers = { af: 0, bc: 0, de: 0, hl: 0, af2: 0, bc2: 0, de2: 0, hl2: 0, ix: 0, iy: 0x5c3a, sp: 0xff00, pc: COUNTER_START, i: 0x3f, r: 0, iff1: false, iff2: false, im: 1 as const };
+    return writeZ80({ model: "128k", registers, border: 7, port7ffd: 0x10, banks });
+  };
+  const root = fresh();
+  importSnapshot(root, snapshot(0x11, true));
+  writeFileSync(join(root, "a.z80"), snapshot(0x11, true));
+  writeFileSync(join(root, "b.z80"), snapshot(0x22, false));
+  const run = provenance(["compare", "knowledge", "a.z80", "b.z80"], root);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const result = run.json as { differingBytes: number; banks: Array<{ space: string; common: unknown; differingBytes: number; differences: Array<{ start: string; groups: string[][] }> }> };
+  assert.equal(result.differingBytes, 0, "the CPU view is the same");
+  // Bank 3 is only in two releases, so only bank 1 is compared.
+  assert.deepEqual(result.banks.map((bank) => [bank.space, bank.common, bank.differingBytes]), [["ram1", [{ start: "$c000", end: "$ffff" }], 1]]);
+  assert.deepEqual(result.banks[0]!.differences.map((difference) => [difference.start, difference.groups]), [["$c010", [["knowledge", "a.z80"], ["b.z80"]]]]);
 });
