@@ -561,6 +561,16 @@ export function layout(input: SourceInput): Layout {
       }
     }
   }
+  // A macro line also uses the addresses that its instructions name besides its args, for example the high byte
+  // CUTHI of +mov16 CUTLO: a name of the source counts that use too. The args count as macro argument above.
+  for (const candidate of accepted) {
+    const argAddresses = new Set(candidate.use.args.flatMap((arg) => identifiers(arg)).map((name) => byName.get(name)));
+    for (const item of candidate.items) {
+      if (!takesAddress(OPCODES[item.opcode]!.mode)) continue;
+      const value = operandValue(item.address, item.opcode, input.byteAt)!;
+      if (!argAddresses.has(value) && uses.has(value)) tally(value, useKind(item.opcode));
+    }
+  }
 
   const names = new Map<number, string>();
   const taken = new Set([...knowledgeNames, ...platform.values()]);

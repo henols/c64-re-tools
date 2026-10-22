@@ -1452,6 +1452,17 @@ test("a macro use is one +name args line, and macros.asm holds the macros", () =
   assert.equal(without.files.some((file) => file.name === "macros.asm"), false, "no macros, no macros.asm");
 });
 
+test("a name that a macro line uses besides its args counts that use, for example the high byte of the arg", () => {
+  // $1000 INC $fb; BNE +2; INC $fc as +inc16 ptr; $1006 LDA $fc; RTS. ptr_hi ($fc) is a name of its own.
+  const bytes = [0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xa5, 0xfc, 0x60];
+  const instructions = new Map([[0x1000, 2], [0x1002, 2], [0x1004, 2], [0x1006, 2], [0x1008, 1]]);
+  const symbols = [{ address: 0x1000, name: "start" }, { address: 0x00fb, name: "ptr" }, { address: 0x00fc, name: "ptr_hi" }];
+  const rendered = render(layout(input(bytes, 0x1000, { instructions, symbols, macros: [INC16], macroUses: [{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }] })), new Set(), []);
+  assert.match(textOf(rendered, "constants.asm"), /^ptr {4}= \$fb ; Used: macro argument 1\.$/m);
+  assert.match(textOf(rendered, "constants.asm"), /^ptr_hi = \$fc ; Used: read 1, modified 1\.$/m, "the INC of the macro line is a use of ptr_hi");
+});
+
+
 test("a macro arg that is a platform name of a ROM that the program does not use gets that reason, not that it is no platform name", () => {
   const laid = layout(
     macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["CHRGET"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["nowhere"] }], {
