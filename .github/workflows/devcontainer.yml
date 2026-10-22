@@ -2,7 +2,7 @@ name: Dev container Feature
 
 # Builds the c64-re-tools dev container Feature on the base images and channels of
 # devcontainer/test/c64-re-tools/scenarios.json and checks that every tool
-# runs and that the toolkit and tools of the channel are in the project. arm64 builds Ghidra's natives.
+# runs and that the toolkit and tools of the channel are in the project.
 # Runs only when started by hand.
 
 on:

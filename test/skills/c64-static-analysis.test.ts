@@ -1,5 +1,5 @@
-// The c64-static-analysis script with real Ghidra and DXA, which it runs
-// itself. Skipped (never passed) when Ghidra is not found.
+// The c64-static-analysis script with Ghidra and real DXA, which it runs
+// itself.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -10,20 +10,12 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { openForRead } from "../../src/knowledge/database.ts";
 import { analyzerNamesAt, listReferences, regionsOverlapping, symbolAt } from "../../src/knowledge/read.ts";
 import { analysisSubjectPrg, MAIN, ROUTINE, TABLE_START } from "../fixtures/prg/analysis-subject.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 import { importPrg } from "../fixtures/program.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
-
-let skip: string | false = false;
-try {
-  findGhidra();
-} catch {
-  skip = "Ghidra is not installed: set C64RT_GHIDRA to the Ghidra installation directory to run these tests";
-}
 
 let dxaSkip: string | false = false;
 try {
@@ -49,7 +41,7 @@ async function analyze(...args: string[]): Promise<{ status: number | null; json
   return { status, ...readEnvelope(stdout, status) };
 }
 
-test("an analysis imports Ghidra's structure into knowledge and reports it", { skip, timeout: 600_000 }, async () => {
+test("an analysis imports Ghidra's structure into knowledge and reports it", { timeout: 600_000 }, async () => {
   const { status, json } = await analyze("--entry", "$080d", "--decompile", "$0818", "--max-listed", "1");
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.coverage, [{ start: "$0801", end: "$0827" }]);
@@ -103,7 +95,7 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
   db?.close();
 });
 
-test("bad calls are refused before anything is sent", { skip }, async () => {
+test("bad calls are refused before anything is sent", async () => {
   for (const args of [
     ["game.prg"],
     ["--entry", "2061"],

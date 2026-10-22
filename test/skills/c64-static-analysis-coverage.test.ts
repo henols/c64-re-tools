@@ -123,7 +123,7 @@ test("the RAM under ROM that the runs never read or ran is data for the analysis
   assert.deepEqual(romOnlyRanges(map, imageReader(prg, "prg")), [{ start: 0xa001, end: 0xa001 }], "only bytes of the image");
 });
 
-test("with coverage, Ghidra does not follow a KERNAL call or the IRQ vector into the RAM under the KERNAL", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
+test("with coverage, Ghidra does not follow a KERNAL call or the IRQ vector into the RAM under the KERNAL", { timeout: 120_000 }, () => {
   const { image, map } = kernalCall();
   const root = fresh();
   // The program and the RAM under the KERNAL that holds bytes like code.
@@ -160,7 +160,7 @@ test("with coverage, DXA finds the code that only a vector reaches", { skip: dxa
   assert.deepEqual(seeded.coverageConflicts, []);
 });
 
-test("with coverage, a branch target after an RTS is no Ghidra function, and no executed start is missing", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
+test("with coverage, a branch target after an RTS is no Ghidra function, and no executed start is missing", { timeout: 120_000 }, () => {
   // $0810 LDA $02 / BEQ $0815 / RTS / $0815 INC $d020 / RTS: the coverage seed at $0815 must not become FUN_0815.
   const prg = Buffer.from([0x10, 0x08, 0xa5, 0x02, 0xf0, 0x01, 0x60, 0xee, 0x20, 0xd0, 0x60]);
   const root = fresh();
@@ -172,7 +172,7 @@ test("with coverage, a branch target after an RTS is no Ghidra function, and no 
   assert.equal(json.coverageGaps.count, 0, run.stdout);
 });
 
-test("with coverage, Ghidra makes a function of the code that only a vector reaches", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
+test("with coverage, Ghidra makes a function of the code that only a vector reaches", { timeout: 120_000 }, () => {
   const root = fresh();
   importPrg(root, vectoredPrg);
   importCoverage(root, { "run.bin": mapWith([0x080d, 0x080f, 0x0812, 0x0814, 0x0817, VECTORED_ROUTINE, VECTORED_ROUTINE + 3]) });

@@ -17,25 +17,25 @@ import { readEnvelope } from "../kit.ts";
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-instructions-"));
 after(() => rmSync(project, { recursive: true, force: true }));
 
-test("the mode comes from Ghidra's operand text, the length, and the opcode where the text is the same", () => {
-  // The operand texts as Ghidra 12.1.3 prints them with the c64-re-tools language.
-  const cases: Array<[number, number, string, string]> = [
-    [0xa9, 2, "#0x1", "immediate"],
-    [0xa5, 2, "0x0010", "zeropage"],
-    [0xb5, 2, "0x10,X", "zeropage,x"],
-    [0xad, 3, "0xc000", "absolute"],
-    [0xbd, 3, "0xc000,X", "absolute,x"],
-    [0xb9, 3, "0xc000,Y", "absolute,y"],
-    [0xa1, 2, "(0x10,X)", "(indirect,x)"],
-    [0xb1, 2, "(0x10),Y", "(indirect),y"],
-    [0x0a, 1, "A", "accumulator"],
-    [0xd0, 2, "0x1018", "relative"],
-    [0x20, 3, "0x1020", "absolute"],
-    [0xb6, 2, "0x10,Y", "zeropage,y"],
-    [0x6c, 3, "0x300", "(indirect)"],
-    [0x60, 1, "", "implied"],
+test("the mode comes from the opcode", () => {
+  const cases: Array<[number, string]> = [
+    [0xa9, "immediate"],
+    [0xa5, "zeropage"],
+    [0xb5, "zeropage,x"],
+    [0xad, "absolute"],
+    [0xbd, "absolute,x"],
+    [0xb9, "absolute,y"],
+    [0xa1, "(indirect,x)"],
+    [0xb1, "(indirect),y"],
+    [0x0a, "accumulator"],
+    [0xd0, "relative"],
+    [0x20, "absolute"],
+    [0xb6, "zeropage,y"],
+    [0x6c, "(indirect)"],
+    [0x60, "implied"],
+    [0xb3, "(indirect),y"],
   ];
-  for (const [opcode, length, operands, mode] of cases) assert.equal(modeOf(opcode, length, operands), mode, `${opcode.toString(16)} ${operands}`);
+  for (const [opcode, mode] of cases) assert.equal(modeOf(opcode), mode, opcode.toString(16));
 });
 
 test("the list writes operands in 6502 syntax, the flow target, and executed from the coverage", () => {
@@ -56,7 +56,7 @@ test("the list writes operands in 6502 syntax, the flow target, and executed fro
   ]);
 });
 
-test("analyze --out-instructions writes Ghidra's instructions to a project file", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
+test("analyze --out-instructions writes Ghidra's instructions to a project file", { timeout: 120_000 }, () => {
   importPrg(project, vectoredPrg);
   const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--entry", "$080d", "--out-instructions", "analysis/instructions.json"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });

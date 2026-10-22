@@ -22,7 +22,8 @@ documents, plans or decision numbers to the repository.
 Architecture in one line: one MCP process owns one VICE instance and is
 VICE-only; a Host Runtime on the graphical host owns VICE and the tools that
 come with it (c1541, petcat); skill scripts call the Host Runtime for those,
-run ACME, DXA, Exomizer and Ghidra themselves, and keep project knowledge local as
+run ACME, DXA and Exomizer themselves and Ghidra in process (a committed WebAssembly
+build of a Rust port, from `native/sleigh/`, as base64 in a `.ts` file), and keep project knowledge local as
 text in `.c64-re-tools/knowledge/`, with a SQLite index in `local/`.
 
 ## Commands
@@ -55,8 +56,8 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
 
 ## Conventions that bite
 
-- **TypeScript only.** No `.js`/`.mjs` anywhere, also not installed: nothing is built, there is no `dist/`. Users run everything through `npx -y @henols/c64-re-tools@latest` (the MCP declaration too), so it updates itself; never link (`npm link`, `npm install -g <dir>`). Node never strips types under `node_modules`, so the bins are `.ts` with a `#!/usr/bin/env tsx` shebang, and every spawn of node on our own `.ts` passes `process.execArgv`. Skill scripts import `src/` as `#src/...`. npx exits on SIGTERM without passing it on: signal the process group.
-- The Host Runtime runs only VICE, c1541 and petcat. Skill scripts run ACME, DXA, Exomizer and Ghidra through `src/native/` (supervisor, staging, bounded `runTool`); never a bare `spawnSync`. The toolkit never installs external tools: it detects them, refuses by name and prints the remedy. The one installer is the dev container Feature: at image build and at each start it installs the tools in `tools/` of the toolkit version that it puts into the project.
+- **TypeScript only.** No `.js`/`.mjs` anywhere, also not installed: nothing is built at install or release, there is no `dist/`. The one exception is the Rust in `native/sleigh/`, whose WebAssembly is committed as `src/native/ghidra/c64rt-wasm.ts`. Users run everything through `npx -y @henols/c64-re-tools@latest` (the MCP declaration too), so it updates itself; never link (`npm link`, `npm install -g <dir>`). Node never strips types under `node_modules`, so the bins are `.ts` with a `#!/usr/bin/env tsx` shebang, and every spawn of node on our own `.ts` passes `process.execArgv`. Skill scripts import `src/` as `#src/...`. npx exits on SIGTERM without passing it on: signal the process group.
+- The Host Runtime runs only VICE, c1541 and petcat. Skill scripts run ACME, DXA and Exomizer through `src/native/` (supervisor, staging, bounded `runTool`); never a bare `spawnSync`. Ghidra is `src/native/ghidra/c64rt-wasm.ts` (WebAssembly as base64: skills install as text), built by hand with `native/sleigh/build.sh` (Rust, a patched crates.io crate) and committed; rebuild it only when `native/sleigh/` or the language changes, and compile `c64rt_6510.sla` from the `.slaspec` with Ghidra's `support/sleigh`. The toolkit never installs external tools: it detects them, refuses by name and prints the remedy. The one installer is the dev container Feature: at image build and at each start it installs the tools in `tools/` of the toolkit version that it puts into the project.
 - The host refuses to start unless VICE starts (ROMs present); the host is started by hand only.
 - Tools take client paths and stream bytes; never a fixed file list or a path over the socket.
 - Stopping the Host Runtime or a skill script must stop every emulator, tool and descendant it started.

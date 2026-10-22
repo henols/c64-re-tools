@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The native tools of the skill scripts in a Debian or Ubuntu dev container,
-# as root: ACME, dxa, Exomizer, c64run with its C64 ROMs, and Ghidra. The dev container
+# as root: ACME, dxa, Exomizer, and c64run with its C64 ROMs. The dev container
 # Feature runs the copy of this script that comes with the toolkit version it
 # installs, so the tools and the skills are always of the same version.
 # A tool is installed again only when its install files changed: a stamp in
@@ -57,6 +57,5 @@ packages acme unzip curl ca-certificates build-essential
 tool dxa install-dxa.sh
 tool exomizer install-exomizer.sh
 tool c64run install-chips.sh c64run.c
-tool ghidra install-ghidra.sh
 
 [[ -z "${APT_UPDATED}" ]] || rm -rf /var/lib/apt/lists/*

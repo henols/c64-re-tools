@@ -1,22 +1,14 @@
-// Real-Ghidra checks of the Ghidra adapter, run where the skill script runs
-// it. Skipped (never passed) when Ghidra is not found.
+// The Ghidra analysis of a known program: functions, regions, references
+// and decompiled code.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { analyze } from "../../../src/native/ghidra/analyze.ts";
-import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import type { GhidraParams } from "../../../src/native/types.ts";
 import { WireFailure } from "../../../src/protocol/messages.ts";
 import { analysisSubjectPrg, MAIN, MAIN_LOOP, RESULT, ROUTINE, TABLE_END, TABLE_START } from "../../fixtures/prg/analysis-subject.ts";
-
-let skip: string | false = false;
-try {
-  findGhidra();
-} catch {
-  skip = "Ghidra is not installed: set C64RT_GHIDRA to the Ghidra installation directory to run these tests";
-}
 
 const supervisor = new ProcessSupervisor();
 supervisor.installExitGuard();
@@ -34,7 +26,7 @@ const seeds = (overrides: Partial<GhidraParams> = {}): GhidraParams => ({
   ...overrides,
 });
 
-test("Ghidra finds the functions, regions and references of a known program", { skip, timeout: 600_000 }, async () => {
+test("Ghidra finds the functions, regions and references of a known program", async () => {
   const { result } = await run(seeds());
   assert.deepEqual(result.coverage, [{ start: 0x0801, end: 0x0827 }]);
   assert.deepEqual(result.functions, [
@@ -57,24 +49,25 @@ test("Ghidra finds the functions, regions and references of a known program", { 
   assert.deepEqual(result.completeness, { functions: true, regions: true, references: true });
 });
 
-test("decompiled code uses the seed name and drops the decimal path of ADC", { skip, timeout: 600_000 }, async () => {
+test("decompiled code uses the seed name and drops the decimal path of ADC", async () => {
   const { result } = await run(seeds());
   const [decompiled] = result.decompilations;
   assert.equal(decompiled?.entry, ROUTINE);
   assert.equal(decompiled.truncated, false);
   assert.match(decompiled.text, /init_result\(void\)/);
-  assert.match(decompiled.text, /\+ 5;/, "binary ADC");
+  // The decompiler types the byte as a char: + '\x05'.
+  assert.match(decompiled.text, /\+ (5|'\\x05');/, "binary ADC");
   assert.doesNotMatch(decompiled.text, /\bD\b|0x60|0xa0/, "no decimal adjustment is left");
 });
 
-test("a run without an entry point in the program is refused before Ghidra starts", { skip }, async () => {
+test("a run without an entry point in the program is refused before Ghidra starts", async () => {
   await assert.rejects(
     run(seeds({ entryPoints: [0xe000] })),
     (error: unknown) => error instanceof WireFailure && error.code === "invalid-input",
   );
 });
 
-test("a routine that cannot be decompiled is reported with the reason, not left out silently", { skip, timeout: 600_000 }, async () => {
+test("a routine that cannot be decompiled is reported with the reason, not left out silently", async () => {
   const { result } = await run(seeds({ decompile: [ROUTINE, TABLE_START] }));
   assert.deepEqual(result.decompilations.map((item) => item.entry), [ROUTINE]);
   assert.deepEqual(result.notDecompiled, [{ entry: TABLE_START, reason: "no function starts at this address" }]);

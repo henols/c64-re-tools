@@ -12,15 +12,13 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ACME, findTool } from "../../src/native/discover.ts";
-import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 
 let generateSkip: string | false = false;
 try {
   findTool(ACME);
-  findGhidra();
 } catch {
-  generateSkip = "ACME or Ghidra is not installed: the source of program B is not generated";
+  generateSkip = "ACME is not installed: the source of program B is not generated";
 }
 
 const skills = resolve(import.meta.dirname, "../../skills");

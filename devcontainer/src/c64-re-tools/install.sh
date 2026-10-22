@@ -3,8 +3,7 @@
 # of its own: project.sh installs the native tools that come with the
 # toolkit version of the channel (tools/ in its npm package), now and at each
 # start, so an old copy of this Feature still gets the tools that the skills
-# need. Node 24 and Java 21 come from the official Node and Java Features
-# (dependsOn).
+# need. Node 24 comes from the official Node Feature (dependsOn).
 
 set -Eeuo pipefail
 

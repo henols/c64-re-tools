@@ -5,7 +5,7 @@
 // equal the entry state. The segments
 // lie under the loader, at $c000 and under the I/O area. An image too large
 // for one loader file gets the packed form, which Exomizer unpacks. Opt-in
-// with C64RT_LIVE_VICE; Ghidra and ACME are necessary too, and Exomizer for
+// with C64RT_LIVE_VICE; ACME is necessary too, and Exomizer for
 // the packed form. A start screen in the knowledge shows before the copier
 // sets the entry state, and waits for a key or a fire button.
 
@@ -18,7 +18,6 @@ import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ACME, EXOMIZER, findTool } from "../../../src/native/discover.ts";
-import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
@@ -29,9 +28,8 @@ let skip: string | false = liveSkip;
 if (skip === false) {
   try {
     findTool(ACME);
-    findGhidra();
   } catch {
-    skip = "ACME and Ghidra are necessary: install acme and set C64RT_GHIDRA to run this test";
+    skip = "ACME is necessary: install acme to run this test";
   }
 }
 

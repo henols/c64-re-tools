@@ -119,13 +119,6 @@ function macroCandidates(space: string, byteAt: ImageByte, romUse: RomUse) {
   }
 }
 
-/** A decompiler that did not start gets the remedy: Ghidra ships no native decompiler for macOS. */
-function withRemedy(reason: string): string {
-  return reason.startsWith("the Ghidra decompiler did not start")
-    ? `${reason} On macOS, build the native decompiler once: in <Ghidra>/support/gradle run ./gradlew buildNatives.`
-    : reason;
-}
-
 /** One conflict: what the knowledge has, and what the analyzer found, under the analyzer's name. */
 function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<string, unknown> {
   if (conflict.category === "code-evidence") {
@@ -340,7 +333,7 @@ async function analyze(call: Call): Promise<unknown> {
     decompilations: result.decompilations.map((item) => ({ entry: formatC64Address(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
     ...((result.notDecompiled ?? []).length === 0
       ? {}
-      : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: withRemedy(item.reason) })) }),
+      : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: item.reason })) }),
   };
   return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision });
 }

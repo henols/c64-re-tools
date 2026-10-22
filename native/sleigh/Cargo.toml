@@ -1,0 +1,20 @@
+[package]
+name = "c64rt-sleigh"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Fetched and patched by build.sh: the crate has no API to add a language from memory.
+ghidra-decompiler = { path = "target/ghidra-decompiler-2.1.0", default-features = false }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+# Thin, never fat: fat LTO over this crate needs more memory than a desktop has.
+lto = "thin"
+panic = "abort"
+strip = true

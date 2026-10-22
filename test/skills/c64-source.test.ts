@@ -14,7 +14,6 @@ import { after, test } from "node:test";
 import { COVERAGE, instructionLength } from "../../src/c64.ts";
 import { assemble } from "../../src/native/acme.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
-import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
 import { ciaSection, copyOrder, loaderLimits, packLoader, planLoader, loaderState, loaderSymbols, simulate, START_SCREEN_CODE, START_SCREEN_FILE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
@@ -36,12 +35,6 @@ try {
   findTool(EXOMIZER);
 } catch {
   exomizerSkip ||= "Exomizer is not installed: install exomizer or set C64RT_EXOMIZER to run these tests";
-}
-let ghidraSkip: string | false = acmeSkip;
-try {
-  findGhidra();
-} catch {
-  ghidraSkip = "Ghidra is not installed: set C64RT_GHIDRA to the Ghidra installation directory to run these tests";
 }
 
 const projects: string[] = [];
@@ -629,7 +622,7 @@ test("with real ACME, operand expressions assemble to the same bytes", { skip: a
   assert.deepEqual([...attachments![0]!.subarray(2)], Array.from({ length: 0x24 }, (_, offset) => source.byteAt(0x1000 + offset)));
 });
 
-test("with real Ghidra and ACME, the script writes source that assembles to the program, aliases as bytes", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+test("with real ACME, the script writes source that assembles to the program, aliases as bytes", { skip: acmeSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
   // LDX #0; LDA $0012 (absolute); SBC #1 as $eb; NOP as $1a; ANC #$0f as $0b and as $2b; STA into the next LDA; BIT skip; RTS.
@@ -709,7 +702,7 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
   assert.equal(named.status, 2, "the program comes from the knowledge, not from a path");
 });
 
-test("with real Ghidra and ACME, generate tells which leftovers changed since the earlier run", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+test("with real ACME, generate tells which leftovers changed since the earlier run", { skip: acmeSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
   // 10 SYS2061, $080d RTS, then 16 bytes that nothing uses. The BASIC line gives the entry, and it stays.
@@ -739,7 +732,7 @@ test("with real Ghidra and ACME, generate tells which leftovers changed since th
   assert.equal(generate()?.changed, undefined);
 });
 
-test("with real Ghidra and ACME, an operand expression that ACME assembles to other bytes is written as its number", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+test("with real ACME, an operand expression that ACME assembles to other bytes is written as its number", { skip: acmeSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
   // $1000 LDA #$0b / STA $0314 / LDA #$10 / STA $0315 / RTS, then the handler at $100b: RTS.
@@ -774,7 +767,7 @@ test("with real Ghidra and ACME, an operand expression that ACME assembles to ot
   assert.deepEqual(lines.slice(first, first + 4), ["lda #<handler", "sta CINV", "lda #$10                        ; = >handler+$100", "sta CINV+1"]);
 });
 
-test("with real Ghidra and ACME, a loader that cannot be planned still gives the checked source and says why", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+test("with real ACME, a loader that cannot be planned still gives the checked source and says why", { skip: acmeSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
   // One segment of $0400-$ffff: too large for the plain loader, and no free range for the copier of the packed form. $1000 is RTS.
@@ -810,7 +803,7 @@ test("with real Ghidra and ACME, a loader that cannot be planned still gives the
   assert.match(json.loader.reason, /A packed loader needs one free range of \d+ bytes or more for its copier/);
 });
 
-test("with real Ghidra and ACME, an image whose entry is in no segment gives the checked source and fails", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+test("with real ACME, an image whose entry is in no segment gives the checked source and fails", { skip: acmeSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
   // The program at $0801 is missing: the image has only $1000-$1003, which starts with RTS.
@@ -873,7 +866,7 @@ test("with real ACME, a space with no known code gives a source of data only, wi
   }
   const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--space", "bank3", "--out", "src"], {
     cwd: project,
-    env: { ...process.env, C64RT_HOST: "127.0.0.1:1", C64RT_GHIDRA: join(project, "no-ghidra") },
+    env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
     encoding: "utf8",
   });
   assert.equal(run.status, 0, run.stdout + run.stderr);
@@ -1341,7 +1334,7 @@ test("with real ACME, each release builds its bytes, the default build is the cl
 });
 
 
-test("with real Ghidra and ACME, the script builds each switch on and reports it; a patch too long fails the run", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+test("with real ACME, the script builds each switch on and reports it; a patch too long fails the run", { skip: acmeSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
   // $1000 LDA #$00; STA $d020; JMP $1000.
@@ -1464,7 +1457,7 @@ test("with real ACME, macro uses assemble to the same bytes", { skip: acmeSkip }
   assert.deepEqual((await assembleRendered(rendered)).bytes, Array.from({ length: 13 }, (_, offset) => source.byteAt(0x1000 + offset)));
 });
 
-test("with real Ghidra and ACME, a macro use that ACME refuses or assembles to other bytes is written as its instructions, and the source stays identical", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+test("with real ACME, a macro use that ACME refuses or assembles to other bytes is written as its instructions, and the source stays identical", { skip: acmeSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
   // $1000, $1006 and $100c INC $fb/$fd/$02; BNE +2; INC $fc/$fe/$03; $1012 RTS.
@@ -1621,7 +1614,7 @@ function capturedProject(entry: string): { project: string; knowledge: string; g
   const generate = (...args: string[]) =>
     spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src", ...args], {
       cwd: project,
-      env: { ...process.env, C64RT_HOST: "127.0.0.1:1", ...(ghidraSkip === false ? {} : { C64RT_GHIDRA: join(project, "no-ghidra") }) },
+      env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
       encoding: "utf8",
     });
   return { project, knowledge, generate };
@@ -1681,7 +1674,7 @@ test("with real ACME, a stale loader of a knowledge without an entry state gets 
   writeFileSync(join(project, "src", "loader.asm"), "; Generated by c64-source. Do not edit: change the knowledge and generate again.\n");
   const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], {
     cwd: project,
-    env: { ...process.env, C64RT_HOST: "127.0.0.1:1", C64RT_GHIDRA: join(project, "no-ghidra") },
+    env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
     encoding: "utf8",
   });
   assert.equal(run.status, 0, run.stdout + run.stderr);
@@ -1692,7 +1685,7 @@ test("with real ACME, a stale loader of a knowledge without an entry state gets 
   assert.doesNotMatch(envelope.nextAction ?? "", /--loader/);
 });
 
-test("with real Ghidra and ACME, a --loader run whose check cannot run keeps the loader program of an earlier run and says why", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+test("with real ACME, a --loader run whose check cannot run keeps the loader program of an earlier run and says why", { skip: acmeSkip, timeout: 600_000 }, async () => {
   const { project, knowledge, generate } = capturedProject("$1000");
   mkdirSync(join(project, "build"));
   writeFileSync(join(project, "build", "clean_loader.prg"), Uint8Array.from([0x01, 0x08]));

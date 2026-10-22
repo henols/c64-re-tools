@@ -91,7 +91,7 @@ export function windowsQuote(arg: string): string {
 }
 
 /**
- * On Windows a .bat or .cmd file (Ghidra's analyzeHeadless.bat, for example)
+ * On Windows a .bat or .cmd file
  * starts only through cmd.exe: Node refuses it without a shell (EINVAL). /s
  * keeps the quoted command line as it is. Undefined for any other program.
  */

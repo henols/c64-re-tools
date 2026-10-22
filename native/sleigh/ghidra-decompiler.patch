@@ -1,0 +1,19 @@
+Adds a language from in-memory spec files: wasm32 has no file system.
+Upstream request: https://github.com/koute/ghidra-decompiler/issues/1
+
+diff --git a/src/sleigh_arch.rs b/src/sleigh_arch.rs
+index a7e6687..89c6d15 100644
+--- a/src/sleigh_arch.rs
++++ b/src/sleigh_arch.rs
+@@ -351,6 +351,11 @@ impl LanguageRegistry {
+         registry
+     }
+ 
++    pub fn add_static_directory(&mut self, files: &[(&str, &'static [u8])]) {
++        let files = files.iter().map(|(name, data)| (name.to_string(), SpecFileData::Embedded(data))).collect();
++        self.add_spec_directory(files);
++    }
++
+     pub fn from_directory(path: &Path) -> Result<LanguageRegistry> {
+         let mut registry = LanguageRegistry::new();
+         registry.add_directory(path)?;

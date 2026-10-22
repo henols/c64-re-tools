@@ -1,8 +1,8 @@
-// The iterative loop through the real skill scripts with real Ghidra, which
-// the script runs itself:
+// The iterative loop through the real skill scripts with Ghidra, which the
+// script runs itself:
 //   Ghidra import → semantic rename → Ghidra seeded from knowledge →
 //   the same importer, history and conflicts kept, echoed seeds not owned.
-// The language checks are in language.test.ts. Skipped without Ghidra.
+// The language checks are in src/native/ghidra/language.test.ts.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -12,19 +12,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { findGhidra } from "../../../src/native/ghidra/index.ts";
-import { analysisSubjectPrg } from "../../fixtures/prg/analysis-subject.ts";
-import { nthIn } from "../../../src/knowledge/revisions.testkit.ts";
-import { readEnvelope } from "../../kit.ts";
+import { analysisSubjectPrg } from "../fixtures/prg/analysis-subject.ts";
+import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
+import { readEnvelope } from "../kit.ts";
 
-let skip: string | false = false;
-try {
-  findGhidra();
-} catch {
-  skip = "Ghidra is not installed: set C64RT_GHIDRA to the Ghidra installation directory to run this test";
-}
-
-const skills = resolve(import.meta.dirname, "../../../skills");
+const skills = resolve(import.meta.dirname, "../../skills");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m8-"));
 writeFileSync(join(project, "game.prg"), analysisSubjectPrg);
 after(() => rmSync(project, { recursive: true, force: true }));
@@ -41,7 +33,7 @@ async function skill(name: string, file: string, ...args: string[]): Promise<Rec
   return readEnvelope(stdout, status).json as Record<string, unknown>;
 }
 
-test("Ghidra findings, a semantic rename and a seeded re-run go through one importer", { skip, timeout: 900_000 }, async () => {
+test("Ghidra findings, a semantic rename and a seeded re-run go through one importer", { timeout: 120_000 }, async () => {
   // 1. The program goes into the knowledge; the first Ghidra pass makes generated names, regions and references Ghidra knowledge.
   assert.equal((await skill("c64-knowledge", "knowledge.ts", "image", "game.prg", "--by", "user")).revision, nthIn(project, 1));
   const first = await skill("c64-static-analysis", "static-analysis.ts", "analyze", "--entry", "$080d");

@@ -11,7 +11,7 @@
   "image": "mcr.microsoft.com/devcontainers/base:bookworm",
 
   "features": {
-    // The toolkit: Node.js 24, ACME, dxa, Exomizer, Java 21, Ghidra and c64run. At each start it
+    // The toolkit: Node.js 24, ACME, dxa, Exomizer and c64run. At each start it
     // installs the newest toolkit of its channel into the project, with the tools of that version.
     "https://github.com/henols/c64-re-tools/releases/latest/download/devcontainer-feature-c64-re-tools.tgz": {
       // The harnesses to install the skills and the VICE MCP for. One name, or a comma list:
