@@ -148,7 +148,9 @@ test("stages finds each stage of a staged release and where the next one starts"
   );
   assert.deepEqual(fromScreen(found[0]!.wrote), [{ start: "$c000", end: "$c07f" }], "stage 0 wrote stage 1");
   assert.deepEqual(fromScreen(found[1]!.wrote), [{ start: "$4000", end: "$407f" }], "stage 1 wrote the program");
-  assert.ok(found[1]!.wrote.some((block) => block.start === "$00c6"), `wrote keeps a small block: the length of the keyboard queue. ${JSON.stringify(found[1]!.wrote)}`);
+  // VICE 3.10 also writes the last key ($00c5) in this stage: the block holds $00c6, it need not start there.
+  const at = (text: string) => Number.parseInt(text.slice(1), 16);
+  assert.ok(found[1]!.wrote.some((block) => at(block.start) <= 0xc6 && at(block.end) >= 0xc6), `wrote keeps a small block: the length of the keyboard queue. ${JSON.stringify(found[1]!.wrote)}`);
 });
 
 test("--min-stage decides only where a stage starts: wrote and the segments keep every written block", { skip: liveSkip, timeout: 300_000 }, async () => {
