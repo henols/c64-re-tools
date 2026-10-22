@@ -23,6 +23,8 @@ const project = mkdtempSync(join(tmpdir(), "c64-re-tools-spectrum-mcp-"));
 mkdirSync(join(project, ".c64-re-tools"));
 writeFileSync(join(project, "counter.z80"), keyboardCounterSnapshot());
 writeFileSync(join(project, "bytes.bin"), Uint8Array.from([0x11, 0x22, 0x33]));
+/** The AY registers of the 128K snapshot: tone, mixer and volume values that are not 0. */
+const AY_REGISTERS = [0x10, 0x01, 0x20, 0x02, 0x30, 0x03, 0x1f, 0x38, 0x0f, 0x0e, 0x0d, 0x00, 0x10, 0x09, 0x00, 0x00];
 // The keyboard counter as a 128K snapshot: banks 5, 2 and 0 at $4000-$ffff, and the 48K BASIC ROM paged in.
 const ram = keyboardCounterRam();
 const banks = Array.from({ length: 8 }, () => new Uint8Array(0x4000));
@@ -32,12 +34,14 @@ writeFileSync(
   writeZ80({
     model: "128k",
     registers: { pc: COUNTER_START, sp: 0xff00, af: 0, bc: 0, de: 0, hl: 0, ix: 0, iy: 0x5c3a, af2: 0, bc2: 0, de2: 0, hl2: 0, i: 0x3f, r: 0, im: 1, iff1: false, iff2: false },
-    border: 7,
+    border: 1,
     port7ffd: 0x10,
     banks,
-    ay: { registers: new Array<number>(16).fill(0), selected: 0 },
+    ay: { registers: AY_REGISTERS, selected: 7 },
   }),
 );
+// A PNG file with the name of a snapshot.
+writeFileSync(join(project, "bad.z80"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array<number>(60_000).fill(0x41)]));
 // The same snapshot for a +3: hardware mode 7 in the header of a version 3 .z80.
 const plus3 = readFileSync(join(project, "counter128.z80"));
 plus3[34] = 7;
@@ -154,7 +158,7 @@ test("the spectrum MCP server watches, writes, searches, times, types and keeps 
     assert.deepEqual((await call("snapshot", { action: "list" })).names, []);
     const ay = (await client.callTool({ name: "ay", arguments: {} })) as CallToolResult;
     assert.equal(ay.isError, true);
-    assert.match((ay.content[0] as { text: string }).text, /not-implemented.*48K has no AY/);
+    assert.match((ay.content[0] as { text: string }).text, /invalid-input.*machine is a 48K now.*has no AY/);
   } finally {
     await client.close();
     await host.stop();
@@ -224,13 +228,25 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
 
     // A restore of a CPU that waits in a HALT: IM 1 again, and the CPU still waits for the interrupt.
     await call("run_until", { address: `$${HALT_AT.toString(16)}`, timeoutFrames: 2 });
-    await call("execution", { action: "step", count: 2 });
+    assert.equal((await call("registers", { action: "read" })).waitsForInterrupt, false);
+    assert.equal((await call("execution", { action: "step", count: 2 })).waitsForInterrupt, true);
     const halted = await call("registers", { action: "read" });
+    assert.equal(halted.waitsForInterrupt, true);
     await call("snapshot", { action: "save", name: "halted" });
     await call("execution", { action: "advance-frames", count: 1 });
     await call("snapshot", { action: "restore", name: "halted" });
     assert.deepEqual(await call("registers", { action: "read" }), halted);
     assert.equal((await call("execution", { action: "step", count: 1 })).pc, halted.pc, "the CPU waits in the HALT");
+    // A pc write ends the HALT: the CPU executes from the new pc, also with the interrupts off.
+    await call("snapshot", { action: "save", name: "halted" });
+    const waiting = await call("registers", { action: "read" });
+    const moved = await call("registers", { action: "write", values: { pc: "$801f", iff1: false, iff2: false } });
+    assert.deepEqual([moved.pc, moved.waitsForInterrupt, moved.sp, moved.r], ["$801f", false, waiting.sp, waiting.r]);
+    assert.equal((await call("execution", { action: "step", count: 1 })).pc, "$8022");
+    await call("snapshot", { action: "restore", name: "halted" });
+    assert.match(await refusal("registers", { action: "write", values: { im: 2 } }), /Write pc in the same call/);
+    assert.equal((await call("registers", { action: "write", values: { im: 2, pc: "$8023" } })).im, 2);
+    await call("snapshot", { action: "restore", name: "halted" });
     const exported = await call("snapshot", { action: "export", out: "halted.z80" });
     assert.equal(readZ80(readFileSync(join(project, String(exported.out)))).registers.im, 1);
     assert.deepEqual((await call("snapshot", { action: "remove", name: "halted" })).names, ["im1"]);
@@ -244,7 +260,8 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     await call("execution", { action: "step", count: 1 });
     assert.equal(((await call("registers", { action: "read" })).af as string).slice(1, 3), "11");
     await call("execution", { action: "step", count: 2 });
-    assert.equal(Number.parseInt(((await call("registers", { action: "read" })).af as string).slice(1, 3), 16) & 0x1f, 0x1f);
+    // No key down: the row reads $bf, as on a real 48K (issue 3) with no tape signal. Bits 5 and 7 are 1.
+    assert.equal(((await call("registers", { action: "read" })).af as string).slice(1, 3), "bf");
     await call("joystick", {});
 
     // The memmap gives only what the CPU did: instruction starts, CPU writes, no reads.
@@ -295,9 +312,18 @@ test("a 48K session that loads a 128K snapshot runs as a 128K: autostart and ula
     await call("execution", { action: "pause" });
     const ula = await call("ula");
     assert.deepEqual([ula.model, ula.frameTstates, ula.rom], ["128k", 70_908, 1]);
+    // The load gives the border and the AY of the file.
+    assert.equal(ula.border, 1);
+    assert.deepEqual(await call("ay"), { selected: 7, registers: AY_REGISTERS });
+    await call("snapshot", { action: "export", out: "counter128-out.z80" });
+    assert.deepEqual(readZ80(readFileSync(join(project, "counter128-out.z80"))).ay, { selected: 7, registers: AY_REGISTERS });
     const tstates = await frames(2);
     assert.ok(Math.abs(tstates - 2 * 70_908) < 32, `${tstates} t-states in two 128K frames`);
-    assert.equal(((await call("ay")).registers as number[]).length, 16);
+    // The AY takes the writes of the program.
+    await call("memory_write", { address: "$9100", data: "01fdff3e07ed7906bf3e3eed79" });
+    await call("registers", { action: "write", values: { pc: "$9100", iff1: false, iff2: false } });
+    await call("execution", { action: "step", count: 6 });
+    assert.equal(((await call("ay")).registers as number[])[7], 0x3e);
     // The program runs on the 128K: it counts its frames.
     const seen = Number.parseInt((await call("memory_read", { address: `$${FRAMES_SEEN.toString(16)}`, size: 1 })).data as string, 16);
     assert.ok(seen >= 2, `${seen} frames seen`);
@@ -308,6 +334,12 @@ test("a 48K session that loads a 128K snapshot runs as a 128K: autostart and ula
     assert.equal((await call("ula")).frameTstates, 69_888);
     const tstates48 = await frames(2);
     assert.ok(Math.abs(tstates48 - 2 * 69_888) < 32, `${tstates48} t-states in two 48K frames`);
+
+    // A file that is not what its extension says is refused, and the machine does not change.
+    const bad = (await client.callTool({ name: "autostart", arguments: { path: "bad.z80" } })) as CallToolResult;
+    assert.equal(bad.isError, true);
+    assert.match((bad.content[0] as { text: string }).text, /invalid-input.*not a \.z80 snapshot/);
+    assert.equal((await call("ula")).model, "48k");
 
     // A +3 snapshot is refused: the session is a 48K again, from a reset, and it runs.
     const plus3 = await client.callTool({ name: "autostart", arguments: { path: "plus3.z80" } }) as CallToolResult;

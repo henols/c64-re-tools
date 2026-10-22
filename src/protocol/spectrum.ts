@@ -38,6 +38,9 @@ export interface Z80RegisterValues {
   iff2: boolean;
 }
 
+/** The registers and the HALT state: waitsForInterrupt is true while the CPU waits in a HALT for an interrupt. */
+export type Z80RegisterState = Z80RegisterValues & { waitsForInterrupt: boolean };
+
 /** The register names that registersSet takes: the 16-bit pairs, I and R, the interrupt mode (0-2) and the interrupt flip-flops (0 or 1). */
 export const Z80_WRITABLE = ["pc", "sp", "af", "bc", "de", "hl", "ix", "iy", "af2", "bc2", "de2", "hl2", "i", "r", "im", "iff1", "iff2"] as const;
 export type Z80Writable = (typeof Z80_WRITABLE)[number];
@@ -56,6 +59,8 @@ export interface SpectrumStatus {
   pc?: number;
   stopReason?: SpectrumStopReason;
   pointId?: number;
+  /** True while the CPU waits in a HALT; absent otherwise. */
+  waitsForInterrupt?: boolean;
 }
 
 export interface SpectrumStop {
@@ -64,6 +69,8 @@ export interface SpectrumStop {
   pc?: number;
   stopReason?: SpectrumStopReason;
   pointId?: number;
+  /** True while the CPU waits in a HALT; absent otherwise. */
+  waitsForInterrupt?: boolean;
   /** The t-states since the last timing start. */
   tstates?: number;
 }
@@ -109,8 +116,8 @@ export interface SpectrumOperations {
   watchpoint: { params: { action: "add"; start: number; end: number; access: "read" | "write" | "both" } | { action: "remove"; id: number } | { action: "list" }; result: { points: SpectrumPoint[] } };
   memoryRead: { params: { address: number; size: number }; result: { address: number; data: string } };
   memoryWrite: { params: { address: number; data: string }; result: { address: number; bytesWritten: number } };
-  registersGet: { params: Record<string, never>; result: Z80RegisterValues };
-  registersSet: { params: { values: Partial<Record<Z80Writable, number>> }; result: Z80RegisterValues };
+  registersGet: { params: Record<string, never>; result: Z80RegisterState };
+  registersSet: { params: { values: Partial<Record<Z80Writable, number>> }; result: Z80RegisterState };
   disassemble: { params: { address: number; count: number }; result: { instructions: SpectrumInstruction[] } };
   cpuHistory: { params: { count: number }; result: { pcs: number[] } };
   memmap: { params: { action: "clear" | "read" }; result: { cleared?: boolean; ranges?: Array<{ start: number; end: number; flags: number }> } };

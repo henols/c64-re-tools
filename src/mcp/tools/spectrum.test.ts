@@ -16,7 +16,7 @@ test("a register write takes some of the registers, and only those that a write 
 
 /** A session that gives the values of a stopped 48K and records the calls. */
 function fakeSession(calls: Array<[string, unknown]> = []) {
-  const registers = { pc: 0xe200, sp: 0x62d2, af: 0x0054, bc: 0x7d02, de: 0xa86c, hl: 0xed5c, ix: 0x4000, iy: 0xee1a, af2: 0xcb09, bc2: 0x421a, de2: 0xd844, hl2: 0xffd8, i: 0x3f, r: 0x12, im: 1, iff1: true, iff2: true };
+  const registers = { pc: 0xe200, sp: 0x62d2, af: 0x0054, bc: 0x7d02, de: 0xa86c, hl: 0xed5c, ix: 0x4000, iy: 0xee1a, af2: 0xcb09, bc2: 0x421a, de2: 0xd844, hl2: 0xffd8, i: 0x3f, r: 0x12, im: 1, iff1: true, iff2: true, waitsForInterrupt: false };
   return new Proxy(
     {},
     {
@@ -25,6 +25,7 @@ function fakeSession(calls: Array<[string, unknown]> = []) {
         if (name === "registersGet" || name === "registersSet") return registers;
         if (name === "keyboard") return { state: "stopped", pc: 0x8023, stopReason: "frames", typed: 2 };
         if (name === "keys") return { state: "stopped", pc: 0x8023, stopReason: "frames" };
+        if (name === "execution") return { state: "stopped", pc: 0x8024, stopReason: "steps", waitsForInterrupt: true };
         if (name === "memoryRead") return { address: 0, data: "00".repeat((params as { size: number }).size) };
         return {};
       },
@@ -71,4 +72,12 @@ test("the spectrum server has no C64 chip tools", () => {
 
 test("no spectrum tool names the emulator or the replay core that runs it", () => {
   for (const item of spectrumTools) assert.doesNotMatch(`${item.description} ${JSON.stringify(item.inputSchema)}`, /ZEsarUX|zxrun|\bZRCP\b|monitor|tcp|socket/i, item.name);
+});
+
+test("a stop and the registers tell when the CPU waits for an interrupt after opcode $76", async () => {
+  const stopped = (await tool("execution").run({ action: "step", count: 1 }, fakeSession())) as Record<string, unknown>;
+  assert.deepEqual(stopped, { state: "stopped", pc: "$8024", stopReason: "steps", waitsForInterrupt: true });
+  assert.equal(tool("execution").outputSchema.safeParse(stopped).success, true);
+  const registers = (await tool("registers").run({ action: "read" }, fakeSession())) as Record<string, unknown>;
+  assert.equal(registers.waitsForInterrupt, false);
 });

@@ -22,8 +22,13 @@ interface Block {
   length: number;
 }
 
+/** True when the bytes start as a ZEsarUX snapshot file does. */
+export function isZsf(file: Uint8Array): boolean {
+  return Buffer.from(file.subarray(0, MAGIC.length)).toString("latin1") === MAGIC;
+}
+
 function blocks(file: Uint8Array): Block[] {
-  if (Buffer.from(file.subarray(0, MAGIC.length)).toString("latin1") !== MAGIC) throw new Error("not a ZEsarUX snapshot file");
+  if (!isZsf(file)) throw new Error("not a ZEsarUX snapshot file");
   const view = new DataView(file.buffer, file.byteOffset, file.byteLength);
   const found: Block[] = [];
   for (let at = MAGIC.length; at + 6 <= file.length; ) {

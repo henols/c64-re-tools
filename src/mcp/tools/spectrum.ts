@@ -7,7 +7,7 @@ import { z } from "zod";
 import { formatAddress } from "../../address.ts";
 import type { SpectrumSessionClient } from "../../host-client/spectrum-session.ts";
 import { WireFailure } from "../../protocol/messages.ts";
-import { SPECTRUM_MAX_DISASSEMBLE, SPECTRUM_MAX_FRAMES, SPECTRUM_MAX_HISTORY, SPECTRUM_MAX_MEMORY_READ, SPECTRUM_MAX_MEMORY_WRITE, SPECTRUM_MAX_STEPS, SPECTRUM_MAX_TEXT, Z80_WRITABLE, type SpectrumStop, type Z80RegisterValues } from "../../protocol/spectrum.ts";
+import { SPECTRUM_MAX_DISASSEMBLE, SPECTRUM_MAX_FRAMES, SPECTRUM_MAX_HISTORY, SPECTRUM_MAX_MEMORY_READ, SPECTRUM_MAX_MEMORY_WRITE, SPECTRUM_MAX_STEPS, SPECTRUM_MAX_TEXT, Z80_WRITABLE, type SpectrumStop, type Z80RegisterState } from "../../protocol/spectrum.ts";
 import { AddressInput } from "../inputs.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressOutput, defineTool, HexData, requireFields, ToolOutput } from "../server.ts";
@@ -16,10 +16,16 @@ type Session = Pick<SpectrumSessionClient, Exclude<keyof SpectrumSessionClient, 
 
 const RunState = z.enum(["running", "stopped"]);
 const StopReason = z.enum(["breakpoint", "watchpoint", "frames", "steps", "target", "timeout", "pause"]);
-const StopOutput = z.object({ state: RunState, pc: AddressOutput.optional(), stopReason: StopReason.optional(), pointId: z.number().int().optional() });
+const StopOutput = z.object({ state: RunState, pc: AddressOutput.optional(), stopReason: StopReason.optional(), pointId: z.number().int().optional(), waitsForInterrupt: z.boolean().optional() });
 const Point = z.object({ id: z.number().int(), kind: z.enum(["breakpoint", "watchpoint"]), start: AddressOutput, end: AddressOutput, access: z.enum(["read", "write", "both"]).optional(), enabled: z.boolean() });
 
-const stop = (value: SpectrumStop) => ({ state: value.state, ...(value.pc === undefined ? {} : { pc: formatAddress(value.pc) }), ...(value.stopReason === undefined ? {} : { stopReason: value.stopReason }), ...(value.pointId === undefined ? {} : { pointId: value.pointId }) });
+const stop = (value: SpectrumStop) => ({
+  state: value.state,
+  ...(value.pc === undefined ? {} : { pc: formatAddress(value.pc) }),
+  ...(value.stopReason === undefined ? {} : { stopReason: value.stopReason }),
+  ...(value.pointId === undefined ? {} : { pointId: value.pointId }),
+  ...(value.waitsForInterrupt === true ? { waitsForInterrupt: true } : {}),
+});
 const point = (value: { id: number; kind: "breakpoint" | "watchpoint"; start: number; end: number; access?: "read" | "write" | "both"; enabled: boolean }) => ({ ...value, start: formatAddress(value.start), end: formatAddress(value.end) });
 
 /** The 16-bit registers: a result gives each as $ and four hex digits. */
@@ -32,8 +38,9 @@ const REGISTERS = z.object({
   im: z.number().int(),
   iff1: z.boolean(),
   iff2: z.boolean(),
+  waitsForInterrupt: z.boolean(),
 });
-const registers = (value: Z80RegisterValues) => ({ ...value, ...Object.fromEntries(PAIRS.map((pair) => [pair, formatAddress(value[pair])])) });
+const registers = (value: Z80RegisterState) => ({ ...value, ...Object.fromEntries(PAIRS.map((pair) => [pair, formatAddress(value[pair])])) });
 /** A 16-bit register value to write: $ and 1 to 4 hex digits, or a number. */
 const WordInput = z.union([z.number().int().min(0).max(0xffff), AddressInput]);
 const RegisterValues = z
@@ -64,9 +71,12 @@ const execution = defineTool<z.ZodObject, z.ZodObject, Session>({
   title: "Stop, run or step the Z80",
   description:
     "Control the Z80. pause stops it. resume lets it run until a breakpoint or a watchpoint stops it, or until pause. step executes count instructions. " +
-    `advance-frames runs count frames of 69888 t-states (48K) or 70908 t-states (128K), up to ${SPECTRUM_MAX_FRAMES}, and stops at the same emulated time on every run. The default count is 1. ` +
-    "A frame takes about 20 ms of real time. " +
+    `advance-frames runs count frames of 69888 t-states (48K) or 70908 t-states (128K), up to ${SPECTRUM_MAX_FRAMES}. The default count is 1. ` +
+    "The CPU stops at the first instruction at or after the end of the frames, thus some t-states late. " +
+    "When the CPU did not run after the last advance-frames, the frames count from the end of that run, not from its stop. Thus advance-frames 1 and then 11 stops at the same place as advance-frames 12. " +
+    "The same calls from the same state stop at the same place. A frame takes about 20 ms of real time. " +
     "A breakpoint or a watchpoint stops a run before its end: stopReason and pointId tell which. pause after such a stop gives that stop again. " +
+    "waitsForInterrupt true: the CPU executed opcode $76 and waits for an interrupt. Then a step executes no instruction, and the PC does not change. " +
     "While the CPU runs, only execution action pause, reset and autostart work.",
   inputSchema: z.object({ action: z.enum(["pause", "resume", "step", "advance-frames"]), count: z.number().int().min(1).max(SPECTRUM_MAX_STEPS).optional().describe("instructions for step, frames for advance-frames") }).strict(),
   outputSchema: StopOutput,
@@ -207,7 +217,8 @@ const registersTool = defineTool<z.ZodObject, z.ZodObject, Session>({
   description:
     "Read or write the Z80 registers. The result gives each 16-bit register as $ and four hex digits. It gives i, r and im as numbers, and iff1 and iff2 as true or false. " +
     `Action write sets the registers in values: ${Z80_WRITABLE.join(", ")}. af2 to hl2 are the other set, AF' to HL'. A 16-bit value is $ and 1 to 4 hex digits, or a number. ` +
-    "To set im, the CPU runs one IM instruction: 8 t-states pass in the frame. The CPU must be stopped. When you set im, the CPU must not wait for an interrupt after opcode $76.",
+    "waitsForInterrupt true: the CPU executed opcode $76 and waits for an interrupt. A write of pc ends the wait: the CPU then executes from the new pc. To end the wait, the CPU accepts one NMI: 15 t-states pass in the frame. " +
+    "To set im, the CPU runs one IM instruction: 8 t-states pass in the frame. When the CPU waits for an interrupt, write pc in the same call as im. The CPU must be stopped.",
   inputSchema: z.object({ action: z.enum(["read", "write"]), values: RegisterValues.optional() }).strict(),
   outputSchema: REGISTERS,
   readOnly: false,
@@ -305,7 +316,8 @@ const keyboard = defineTool<z.ZodObject, z.ZodObject, Session>({
     `Press keys of the keyboard matrix. With text, type up to ${SPECTRUM_MAX_TEXT} characters one by one: each key stays down 3 frames, then up 3 frames. ` +
     "A capital letter presses CAPS SHIFT too, and a sign presses SYMBOL SHIFT with its key. In BASIC the ROM shows a keyword for a letter in K mode. " +
     "With keys, hold those keys down together for frames frames, then release them: a key is a-z, 0-9, space, enter, caps or symbol. Give text or keys, not both. " +
-    "The CPU runs during the keys and stops after them. A breakpoint or a watchpoint stops the keys first: with text, typed tells how many characters went in. The CPU must be stopped first.",
+    "The CPU runs during the keys and stops after them. A breakpoint or a watchpoint can stop the keys first. With text, typed then gives the number of characters whose keys were down for all 3 frames. " +
+    "When the stop comes while the keys of a character are down, the stop releases them, and typed does not count that character. The CPU must be stopped first.",
   inputSchema: z.object({ text: z.string().min(1).max(SPECTRUM_MAX_TEXT).optional(), keys: z.array(z.string()).min(1).max(8).optional(), frames: z.number().int().min(1).max(SPECTRUM_MAX_FRAMES).default(3) }).strict(),
   outputSchema: z.object({ typed: z.number().int().optional(), ...StopOutput.partial().shape }),
   readOnly: false,
@@ -337,7 +349,8 @@ const autostart = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "autostart",
   title: "Load and start a Spectrum program",
   description:
-    "Load a project file and start it as a user does. A tape (.tap, .tzx) loads with LOAD \"\". A snapshot (.z80, .sna, .zsf) continues at its PC. The CPU runs after it. Stop the CPU with execution action pause before you read memory. " +
+    "Load a project file and start it as a user does. A tape (.tap, .tzx) loads with LOAD \"\". A snapshot (.z80, .sna, .zsf) continues at its PC, with its border colour. The CPU runs after it. Stop the CPU with execution action pause before you read memory. " +
+    "The tool refuses a file whose contents do not agree with its extension. Then the machine does not change. " +
     "The file sets the model: for example, a 128K snapshot changes a 48K to a 128K. model in the result is the model after the load. The frames, the paging and the AY follow that model. The tool refuses a file for a different machine, for example a +3 or a ZX81 file. Then the model does not change, and the machine starts again from a reset.",
   inputSchema: z.object({ path: z.string().min(1).describe("the file, relative to the project folder"), project: ProjectInput.optional() }).strict(),
   outputSchema: StopOutput.extend({ model: z.enum(["48k", "128k"]) }),
@@ -404,7 +417,9 @@ const ula = defineTool<z.ZodObject, z.ZodObject, Session>({
 const ay = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "ay",
   title: "Spectrum AY sound chip",
-  description: "Get the 16 registers of the AY-3-8912 sound chip of the 128K and the selected register: tone periods, noise, mixer, volumes and envelope. The 48K has no AY: on the 48K the tool refuses.",
+  description:
+    "Get the 16 registers of the AY-3-8912 sound chip of the 128K and the selected register: tone periods, noise, mixer, volumes and envelope. " +
+    "The 48K has no AY: on the 48K the tool refuses with invalid-input. After a load of a 128K file, the tool works again.",
   inputSchema: z.object({}).strict(),
   outputSchema: z.object({ selected: z.number().int(), registers: z.array(z.number().int()) }),
   readOnly: true,
