@@ -736,6 +736,39 @@ test("with real ACME, generate tells which leftovers changed since the earlier r
   assert.equal(generate()?.changed, undefined);
 });
 
+test("with real ACME, a macro use in code that nothing uses is in the leftover with that code", { skip: acmeSkip, timeout: 600_000 }, async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
+  projects.push(project);
+  // 10 SYS2061, $080d RTS, then code that nothing calls: $080e INC $fb / BNE +2 / INC $fc / RTS.
+  const basic = [0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00];
+  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x01, 0x08, ...basic, 0x60, 0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0x60]));
+  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
+  const write = (...args: string[]) => {
+    const run = spawnSync(process.execPath, [...process.execArgv, knowledge, ...args], { cwd: project, encoding: "utf8" });
+    assert.equal(run.status, 0, `${args.join(" ")}: ${run.stdout}`);
+  };
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x080d] = COVERAGE.ramExecute;
+  writeFileSync(join(project, "run.bin"), coverage);
+  write("image", "test.prg");
+  write("rename", "$080d", "start", "--kind", "routine");
+  write("rename", "$080e", "dead_inc", "--kind", "routine");
+  write("classify", "$0801-$080c", "bytes");
+  write("classify", "$080d-$0814", "code");
+  write("coverage", "run.bin");
+  writeFileSync(join(project, "batch.json"), JSON.stringify([
+    { op: "macro", name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+" },
+    { op: "use", start: "$080e", end: "$0813", macro: "inc16", args: ["$fb"] },
+  ]));
+  write("apply", "batch.json");
+  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, encoding: "utf8" });
+  const json = readEnvelope(run.stdout, run.status).json as { check: { identical: boolean }; leftovers?: { listed: Array<{ start: string; end: string }> } };
+  assert.equal(json.check.identical, true, run.stdout);
+  assert.deepEqual(json.leftovers?.listed.map((range) => [range.start, range.end]), [["$080e", "$0814"]], "the dead code with its macro use is one leftover");
+  assert.match(readFileSync(join(project, "src", "leftovers", "leftover_080e.asm"), "utf8"), /^ {8}\+inc16 \$fb$/m);
+});
+
+
 test("with real ACME, an operand expression that ACME assembles to other bytes is written as its number", { skip: acmeSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);

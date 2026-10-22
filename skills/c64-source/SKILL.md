@@ -195,7 +195,7 @@ Do these actions for the findings:
 
 #### The leftovers
 
-A leftover is a range of the program that nothing uses: unused code, old copies and old data. The script finds the leftovers from the coverage, as the export finds its free ranges (see "The free ranges"). The start screen, the patches, the macro uses and the addresses that the code of a patch names are never leftovers.
+A leftover is a range of the program that nothing uses: unused code, old copies and old data. The script finds the leftovers from the coverage, as the export finds its free ranges (see "The free ranges"). The start screen, the patches and the addresses that the code of a patch names are never leftovers. A macro use in code that nothing uses is in the leftover with that code. A leftover never cuts a macro use in two.
 
 - Each range of leftovers is a file `leftovers/leftover_xxxx.asm`. When a range cuts a module, the module continues after the range in `<module>_xxxx.asm`, in the folder of the module. The module in the knowledge does not change.
 - `main.asm` builds a leftover file only when `LEFTOVERS` is 1. When it is 0, the build skips the bytes. Thus the addresses after the range do not change.

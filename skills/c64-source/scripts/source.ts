@@ -1469,9 +1469,12 @@ function leftoversOf(knowledge: SourceKnowledge, instructions: ReadonlyMap<numbe
   const addressOf = new Map(knowledge.symbols.map((symbol) => [symbol.name, symbol.address]));
   const screenParts = knowledge.startScreen === undefined || knowledge.startScreen.stage !== undefined ? [] : startScreenRanges(knowledge.startScreen).map((part) => part.range);
   const named = knowledge.patches.flatMap((patch) => patchTargets(patch.code, addressOf)).map((address) => ({ start: address, end: address }));
-  const keep = [...screenParts, ...kept, ...knowledge.macroUses, ...named].map((range) => ({ start: range.start, end: range.end })).filter(inImage);
+  const keep = [...screenParts, ...kept, ...named].map((range) => ({ start: range.start, end: range.end })).filter(inImage);
   const changed = knowledge.patches.map((patch) => ({ start: patch.start, end: patch.end })).filter(inImage);
-  return freeRanges(knowledge, image.memory, instructions, { changed, keep, drop: [] }).free.map((range) => ({ start: range.start, end: range.end }));
+  const free = freeRanges(knowledge, image.memory, instructions, { changed, keep, drop: [] }).free.map((range) => ({ start: range.start, end: range.end }));
+  // A macro use in code that nothing uses goes with that code. A leftover never cuts a use in two: its edge stops at the use.
+  const cut = (range: AddressRange) => knowledge.macroUses.filter((use) => use.start <= range.end && range.start <= use.end && (use.start < range.start || use.end > range.end));
+  return free.flatMap((range) => subtract(range, cut(range)));
 }
 
 /** Every file in a folder with its path in it, with / between the parts, in path order. `skip` leaves out a folder by its path. */
