@@ -3,6 +3,9 @@
 
 import type { MachineId } from "../machine.ts";
 import type { SpectrumOperation, SpectrumOperations } from "../protocol/spectrum.ts";
+
+/** The limits of one operation and the stop of a run, for the scripts that call the session. */
+export { SPECTRUM_MAX_FRAMES, SPECTRUM_MAX_MEMORY_READ, type SpectrumStop } from "../protocol/spectrum.ts";
 import { HostConnection } from "./connect.ts";
 import { HostSession } from "./host-session.ts";
 import { readProjectFile } from "./transfer.ts";
@@ -102,7 +105,12 @@ export class SpectrumSessionClient extends HostSession {
   /** Loads a project tape or snapshot and runs it. `root` is the project folder; it stays on this side. */
   async autostart(params: { path: string; root?: string }): Promise<Result<"autostart">> {
     const file = readProjectFile(params.path, params.root === undefined ? { what: "path" } : { root: params.root, what: "path" });
-    return this.#call("autostart", { type: file.type as Params<"autostart">["type"] }, [file.bytes]);
+    return this.autostartBytes({ type: file.type as Params<"autostart">["type"], bytes: file.bytes });
+  }
+
+  /** Loads the bytes of a tape or snapshot of the given type and runs them, as autostart does with a file. */
+  autostartBytes(params: { type: Params<"autostart">["type"]; bytes: Uint8Array }): Promise<Result<"autostart">> {
+    return this.#call("autostart", { type: params.type }, [params.bytes]);
   }
 
   /** Puts the bytes of a project file into memory at `address`. */

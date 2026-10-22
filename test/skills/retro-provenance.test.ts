@@ -11,6 +11,9 @@ import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { formatAddress } from "../../src/address.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/retro-provenance/scripts/lib/compare.ts";
 import { separate } from "../../src/knowledge/separate.ts";
+import { executesInto } from "../../skills/retro-provenance/scripts/lib/runtime.ts";
+import { MOS6502 } from "../../src/cpu/mos6502.ts";
+import { Z80 } from "../../src/cpu/z80.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
 import { importCoverage, importImage, importSnapshot } from "../fixtures/program.ts";
 import { COUNTER_START, keyboardCounterRam, keyboardCounterSnapshot, z80Snapshot } from "../fixtures/z80/keyboard-counter.ts";
@@ -473,4 +476,26 @@ test("compare of 128K releases compares each RAM bank outside the CPU view that 
   // Bank 3 is only in two releases, so only bank 1 is compared.
   assert.deepEqual(result.banks.map((bank) => [bank.space, bank.common, bank.differingBytes]), [["ram1", [{ start: "$c000", end: "$ffff" }], 1]]);
   assert.deepEqual(result.banks[0]!.differences.map((difference) => [difference.start, difference.groups]), [["$c010", [["knowledge", "a.z80"], ["b.z80"]]]]);
+});
+
+test("an instruction that starts before a range executes into it by the length that the CPU decodes", () => {
+  const range = { start: 0x8004, end: 0x8004 };
+  const at = (code: number[]) => Uint8Array.from([...code, 0, 0, 0, 0]);
+  const opcodeAt = (address: number) => (from: number) => from === address;
+  // LD HL,$1234 at $8001 ends at $8003; LD IX,$1234 at $8001 ends at $8004; on the 6502, LDA $1234 at $8002 ends at $8004.
+  assert.equal(executesInto(Z80, range, 0x8001, at([0x21, 0x34, 0x12]), opcodeAt(0x8001)), false);
+  assert.equal(executesInto(Z80, range, 0x8001, at([0xdd, 0x21, 0x34, 0x12]), opcodeAt(0x8001)), true);
+  assert.equal(executesInto(MOS6502, range, 0x8002, at([0xad, 0x34, 0x12]), opcodeAt(0x8002)), true);
+});
+
+test("compare in a ZX Spectrum project takes the ZX Spectrum steps and refuses a C64 step before an emulator starts", () => {
+  const root = fresh();
+  importSnapshot(root, keyboardCounterSnapshot());
+  writeFileSync(join(root, "counter.z80"), keyboardCounterSnapshot());
+  writeFileSync(join(root, "changed.z80"), changedCounter());
+  writeFileSync(join(root, "steps.json"), JSON.stringify([{ type: { mode: "text", text: "RUN" } }]));
+  const run = provenance(["compare", "counter.z80", "changed.z80", "--frames", "10", "--steps", "steps.json"], root, { ...process.env, C64RT_HOST: "127.0.0.1:1" });
+  assert.equal(run.status, 2, run.stdout);
+  assert.equal(run.json.error.code, "invalid-input");
+  assert.match(run.json.error.message, /^--steps steps\.json: step 1: type is a step for a C64 program\. A ZX Spectrum step is \{ "frames": 50 \}/);
 });

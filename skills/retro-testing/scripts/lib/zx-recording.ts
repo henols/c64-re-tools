@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
+import { checkZxSteps, ZX_STEP_FORMS, type ZxStep } from "#src/host-client/zx-steps.ts";
 import type { Machine } from "#src/machine.ts";
 import { UsageError } from "#src/script.ts";
 import { ZX_FRAME_CYCLES, type ZxModel, type ZxRunSession } from "#src/native/zxrun.ts";
@@ -24,16 +25,10 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 
 /** The input ports: the keyboard (the ULA reads each even port; programs use $xxFE) and the Kempston joystick ($xx1F). */
 export const ZX_INPUTS = "xxfe,xx1f";
-const KEY_FRAMES = 3;
-const MAX_FRAMES = 1_000_000;
 
 /** The chips key code of each key of the keyboard: the letters and digits, and the special keys. CAPS SHIFT alone is $0E in zxrun. */
 const KEY_CODES: Record<string, number> = { space: 0x20, enter: 0x0d, symbol: 0x0f, caps: 0x0e };
 for (const char of "abcdefghijklmnopqrstuvwxyz0123456789") KEY_CODES[char] = char.charCodeAt(0);
-
-const DIRECTIONS = ["up", "down", "left", "right", "fire"] as const;
-
-export type ZxStep = { frames: number } | { press: string[]; frames: number } | { joystick: { up: boolean; down: boolean; left: boolean; right: boolean; fire: boolean } };
 
 export interface ZxRecordFile {
   name: string;
@@ -43,10 +38,6 @@ export interface ZxRecordFile {
 
 /** The keys of a record file of a C64 program: a ZX Spectrum record file has none of them. */
 const C64_KEYS = ["symbols", "load", "checkpoint", "state", "pin", "inputs", "coverage"];
-/** The steps of a record file of a C64 program that a ZX Spectrum record file does not have. */
-const C64_STEPS = ["type", "write", "registers", "runUntil"];
-
-const STEP_FORMS = '{ "frames": 50 }, { "press": ["space"], "frames": 5 } or { "joystick": { "right": true, "fire": true } }';
 
 /** test and run start a C64 in VICE: in a project of another machine they refuse before they read a file. */
 export function refuseOtherMachine(command: string, machine: Machine): void {
@@ -88,44 +79,9 @@ export function readZxRecordFile(path: string): ZxRecordFile {
   }
   if (typeof file.name !== "string" || file.name === "") fail("name must be a text");
   if (typeof file.program !== "string" || !/\.(z80|sna)$/i.test(file.program)) fail("program must be a .z80 or .sna snapshot of the program, relative to the project folder");
-  if (!Array.isArray(file.steps) || file.steps.length === 0) fail("steps must be a list of at least one step");
-  const steps = (file.steps as unknown[]).map((value, index): ZxStep => {
-    const at = `step ${index + 1}`;
-    const step = isObject(value) ? value : fail(`${at} is not an object`);
-    const only = (...keys: string[]) => {
-      for (const key of Object.keys(step)) if (!keys.includes(key)) fail(`${at}: ${key} is not a key of this step. The step has only ${keys.join(" and ")}`);
-    };
-    const frames = (given: unknown, fallback?: number) => {
-      const count = given ?? fallback;
-      if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > MAX_FRAMES) fail(`${at}: frames must be 1 to ${MAX_FRAMES}`);
-      return count as number;
-    };
-    if ("press" in step) {
-      only("press", "frames");
-      const keys = Array.isArray(step.press) ? step.press : fail(`${at}: press must be a list of keys, for example ["space"]`);
-      if (keys.length === 0 || keys.length > 8 || !keys.every((key) => typeof key === "string" && key in KEY_CODES)) fail(`${at}: press takes 1 to 8 keys: a-z, 0-9, space, enter, caps or symbol`);
-      return { press: keys as string[], frames: frames(step.frames, KEY_FRAMES) };
-    }
-    if ("joystick" in step) {
-      only("joystick");
-      const form = 'The Kempston joystick is { "joystick": { "right": true, "fire": true } } with up, down, left, right and fire, or { "joystick": null }';
-      const stick = step.joystick === null ? {} : isObject(step.joystick) ? step.joystick : fail(`${at}: joystick must be an object or null. ${form}`);
-      for (const [key, set] of Object.entries(stick)) {
-        if (!(DIRECTIONS as readonly string[]).includes(key)) fail(`${at}: joystick has no ${key}${key === "port" || key === "direction" ? ": that is the C64 form" : ""}. ${form}`);
-        if (typeof set !== "boolean") fail(`${at}: joystick ${key} must be true or false. ${form}`);
-      }
-      const bit = (name: string) => stick[name] === true;
-      return { joystick: { up: bit("up"), down: bit("down"), left: bit("left"), right: bit("right"), fire: bit("fire") } };
-    }
-    if ("frames" in step) {
-      only("frames");
-      return { frames: frames(step.frames) };
-    }
-    const c64 = Object.keys(step).find((key) => C64_STEPS.includes(key));
-    return fail(`${at}: ${c64 === undefined ? "the step is not frames, press or joystick" : `${c64} is a step for a C64 program`}. A ZX Spectrum step is ${STEP_FORMS}`);
-  });
+  const steps = checkZxSteps(file.steps, fail);
   // A joystick step only sets the input: without frames, the session has no time and records nothing.
-  if (!steps.some((step) => "frames" in step)) fail(`the steps run no frame. Give a frames or a press step, for example ${STEP_FORMS}`);
+  if (!steps.some((step) => "frames" in step)) fail(`the steps run no frame. Give a frames or a press step, for example ${ZX_STEP_FORMS}`);
   return { name: file.name as string, program: file.program as string, steps };
 }
 

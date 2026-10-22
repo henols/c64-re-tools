@@ -1,21 +1,26 @@
 // Runtime evidence for the differences between releases: each release
 // runs in its own emulator, and each differing range gets its first access
 // (read, write, execute or none) and whether its bytes changed by the end.
-// Watchpoints and range breakpoints stop the run at an access; the coverage
-// map then tells which range and which access it was.
+// Watchpoints (and in VICE range breakpoints) stop the run at an access; the
+// coverage map then tells which range and which access it was. VICE runs a C64
+// release, ZEsarUX a ZX Spectrum release.
 
-import { COVERAGE } from "#src/cpu/coverage.ts";
-import { instructionLength } from "#src/cpu/mos6502.ts";
+import { COVERAGE, EXECUTE, READ, WRITE } from "#src/cpu/coverage.ts";
+import type { Cpu } from "#src/cpu.ts";
+import { MOS6502 } from "#src/cpu/mos6502.ts";
 import { type AddressRange, formatAddress } from "#src/address.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { startAtEntry, type EntryState } from "#src/host-client/entry-state.ts";
+import { SPECTRUM_MAX_FRAMES, SPECTRUM_MAX_MEMORY_READ, SpectrumSessionClient, type SpectrumStop } from "#src/host-client/spectrum-session.ts";
 import { runActionStep, type ActionStep } from "#src/host-client/steps.ts";
-import { knowledgeAt } from "#src/knowledge/names.ts";
 import { MAX_MEMORY_READ } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
-import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
-import type { SpectrumSnapshot } from "#src/spectrum.ts";
+import { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import type { ZxStep } from "#src/host-client/zx-steps.ts";
+import { knowledgeAt } from "#src/knowledge/names.ts";
+import type { Machine } from "#src/machine.ts";
+import { writeZ80, type SpectrumSnapshot } from "#src/spectrum.ts";
 
 export type FirstAccess = "read" | "write" | "execute" | "none";
 
@@ -33,11 +38,9 @@ export type SnapshotStart = { kind: "snapshot"; snapshot: SpectrumSnapshot };
 
 export type Start = ViceStart | SnapshotStart;
 
-const MAX_WATCH = 256;
+export type Watched = { started: true; accesses: RangeAccess[] } | { started: false; reason: string };
 
-const READ = COVERAGE.ramRead | COVERAGE.romRead | COVERAGE.ioRead;
-const WRITE = COVERAGE.ramWrite | COVERAGE.ioWrite;
-const EXECUTE = COVERAGE.ramExecute | COVERAGE.romExecute | COVERAGE.ioExecute;
+const MAX_WATCH = 256;
 
 /** The first access that coverage flags show; a read-modify-write reads first. */
 export function accessOf(flags: number): FirstAccess {
@@ -46,6 +49,27 @@ export function accessOf(flags: number): FirstAccess {
   if ((flags & WRITE) !== 0) return "write";
   return "none";
 }
+
+/**
+ * True when an instruction that starts before `range` runs into it: the
+ * coverage marks only the opcode byte of an executed instruction, so its
+ * operand bytes execute too. `code` holds the bytes from `from` on, and
+ * `executed` tells whether an instruction starts at an address.
+ */
+export function executesInto(cpu: Cpu, range: AddressRange, from: number, code: Uint8Array, executed: (address: number) => boolean): boolean {
+  for (let address = from; address < range.start; address++) {
+    if (!executed(address)) continue;
+    const length = cpu.decode((at) => code[at - from], address)?.length ?? 1;
+    if (address + length - 1 >= range.start) return true;
+  }
+  return false;
+}
+
+/** The first address before the range where an instruction that runs into it can start. */
+const lookBack = (cpu: Cpu, range: AddressRange) => Math.max(0, range.start - (cpu.maxInstructionLength - 1));
+
+/** The bytes from the look-back address to the end of an instruction that starts just before the range. */
+const lookBackSize = (cpu: Cpu, range: AddressRange, from: number) => Math.min(range.start - from + cpu.maxInstructionLength - 1, 0x10000 - from);
 
 /** Starts the release; returns why it did not start, or undefined. */
 async function start(client: ViceSessionClient, how: ViceStart): Promise<string | undefined> {
@@ -60,16 +84,20 @@ async function start(client: ViceSessionClient, how: ViceStart): Promise<string 
 }
 
 /**
- * Runs one release and watches the ranges (addresses of the release, after
- * any shift is taken away). `release` gives the release's own bytes.
+ * Runs one C64 release in its own VICE and watches the ranges (addresses of
+ * the release, after any shift is taken away). `release` gives the release's
+ * own bytes.
  */
-export async function watchRelease(
-  client: ViceSessionClient,
-  how: ViceStart,
-  ranges: AddressRange[],
-  release: (address: number) => number,
-  run: { frames: number; steps: ActionStep[] },
-): Promise<{ started: true; accesses: RangeAccess[] } | { started: false; reason: string }> {
+export async function watchViceRelease(how: ViceStart, ranges: AddressRange[], release: (address: number) => number, run: { frames: number; steps: ActionStep[] }): Promise<Watched> {
+  const client = await ViceSessionClient.open({ videoStandard: "pal" });
+  try {
+    return await watchVice(client, how, ranges, release, run);
+  } finally {
+    await client.close();
+  }
+}
+
+async function watchVice(client: ViceSessionClient, how: ViceStart, ranges: AddressRange[], release: (address: number) => number, run: { frames: number; steps: ActionStep[] }): Promise<Watched> {
   await client.reset({ mode: "hard", run: false });
   const failed = await start(client, how);
   if (failed !== undefined) return { started: false, reason: failed };
@@ -101,12 +129,11 @@ export async function watchRelease(
       const range = ranges[index]!;
       let flags = 0;
       for (let address = range.start; address <= range.end; address++) flags |= map[address]!;
-      const from = Math.max(0, range.start - 2);
-      if ((flags & EXECUTE) === 0 && map.subarray(from, range.start).some((byte) => (byte & COVERAGE.ramExecute) !== 0)) {
-        const code = Buffer.from((await client.memoryRead({ address: from, size: range.start - from, space: "c64", view: "ram" })).data, "hex");
-        for (let address = from; address < range.start; address++) {
-          if ((map[address]! & COVERAGE.ramExecute) !== 0 && address + instructionLength(code[address - from]!) - 1 >= range.start) flags |= COVERAGE.ramExecute;
-        }
+      const from = lookBack(MOS6502, range);
+      const executed = (address: number) => (map[address]! & COVERAGE.ramExecute) !== 0;
+      if ((flags & EXECUTE) === 0 && map.subarray(from, range.start).some((_, offset) => executed(from + offset))) {
+        const code = Buffer.from((await client.memoryRead({ address: from, size: lookBackSize(MOS6502, range, from), space: "c64", view: "ram" })).data, "hex");
+        if (executesInto(MOS6502, range, from, code, executed)) flags |= COVERAGE.ramExecute;
       }
       if (accessOf(flags) === "none") continue;
       first[index] = accessOf(flags);
@@ -166,6 +193,105 @@ export async function watchRelease(
       else await client.breakpoint({ action: "remove", id: point.id });
     }
   }
+  return { started: true, accesses };
+}
+
+/**
+ * Runs one ZX Spectrum release in its own ZEsarUX and watches the ranges of
+ * its CPU view, as watchViceRelease does. The steps are the ZX Spectrum steps.
+ */
+export async function watchSpectrumRelease(machine: Machine, how: SnapshotStart, ranges: AddressRange[], release: (address: number) => number, run: { frames: number; steps: ZxStep[] }): Promise<Watched> {
+  const client = await SpectrumSessionClient.open({ machine: machine.id });
+  try {
+    return await watchSpectrum(client, machine.cpu, how, ranges, release, run);
+  } finally {
+    await client.close();
+  }
+}
+
+/**
+ * ZEsarUX has a watchpoint for a range, but no breakpoint for a range, and
+ * its coverage has no read flags. So each range gets one watchpoint for reads
+ * and writes. At a stop, the coverage gives the writes and the executed
+ * instructions. A watchpoint stop with no write and no execution in its
+ * range is a read. An execution in a range that no watchpoint stops shows in
+ * the coverage at the next stop or at the end.
+ */
+async function watchSpectrum(client: SpectrumSessionClient, cpu: Cpu, how: SnapshotStart, ranges: AddressRange[], release: (address: number) => number, run: { frames: number; steps: ZxStep[] }): Promise<Watched> {
+  await client.reset({ run: false });
+  await client.memmap({ action: "clear" });
+  // The points are set before the load, and the load keeps them: the first instructions of the program are watched too.
+  const first: FirstAccess[] = ranges.map(() => "none");
+  const points = new Map<number, number>();
+  for (const [index, range] of ranges.entries()) points.set(index, (await client.watchpoint({ action: "add", start: range.start, end: range.end, access: "both" })).points[0]!.id);
+  await client.autostartBytes({ type: "z80", bytes: writeZ80(how.snapshot) });
+  // The load runs the program at once: a watchpoint can stop it before the pause.
+  const started = await client.execution({ action: "pause" });
+  const frameTstates = (await client.ula()).frameTstates;
+  await client.timing({ action: "start" });
+
+  const settle = async (stop: SpectrumStop | undefined): Promise<void> => {
+    const map = new Uint8Array(0x10000);
+    for (const range of (await client.memmap({ action: "read" })).ranges ?? []) map.fill(range.flags, range.start, range.end + 1);
+    const executed = (address: number) => (map[address]! & EXECUTE) !== 0;
+    for (const [index, id] of points) {
+      const range = ranges[index]!;
+      let flags = 0;
+      for (let address = range.start; address <= range.end; address++) flags |= map[address]!;
+      const from = lookBack(cpu, range);
+      if ((flags & EXECUTE) === 0 && map.subarray(from, range.start).some((_, offset) => executed(from + offset))) {
+        const code = Buffer.from((await client.memoryRead({ address: from, size: lookBackSize(cpu, range, from) })).data, "hex");
+        if (executesInto(cpu, range, from, code, executed)) flags |= COVERAGE.ramExecute;
+      }
+      let access = accessOf(flags);
+      // The coverage of ZEsarUX has no reads: the watchpoint of the range stopped the run, and nothing wrote or executed there.
+      if (access === "none" && stop?.stopReason === "watchpoint" && stop.pointId === id) access = "read";
+      if (access === "none") continue;
+      first[index] = access;
+      await client.watchpoint({ action: "remove", id });
+      points.delete(index);
+    }
+  };
+  if (started.stopReason === "watchpoint") await settle(started);
+
+  // A stop before the end of the frames settles at least one range, so the stops are bounded; the guard ends a run that stops without an access.
+  let guard = 4 * ranges.length + 16;
+  /** The t-states from the start of the run to the end of the frames of the steps so far. */
+  let planned = 0;
+  /**
+   * Runs frames up to the planned end: the frames count from the t-states of
+   * the session, so a stop at a watchpoint does not change the frames that run.
+   * With keys, the keys stay down for these frames.
+   */
+  const runFrames = async (count: number, keys?: string[]) => {
+    planned += count * frameTstates;
+    while (guard > 0) {
+      const left = Math.ceil((planned - (await client.timing({ action: "read" })).tstates) / frameTstates);
+      if (left <= 0) return;
+      const frames = Math.min(left, SPECTRUM_MAX_FRAMES);
+      const stop = keys === undefined ? await client.execution({ action: "advance-frames", count: frames }) : await client.keys({ keys, frames });
+      if (stop.stopReason === "frames") continue;
+      guard--;
+      await settle(stop);
+    }
+  };
+  for (const step of run.steps) {
+    if ("joystick" in step) await client.joystick(step.joystick);
+    else await runFrames(step.frames, "press" in step ? step.press : undefined);
+  }
+  await runFrames(run.frames);
+  if (points.size > 0) await settle(undefined);
+
+  const accesses: RangeAccess[] = [];
+  for (const [index, range] of ranges.entries()) {
+    const parts: Buffer[] = [];
+    for (let at = range.start; at <= range.end; at += SPECTRUM_MAX_MEMORY_READ) {
+      parts.push(Buffer.from((await client.memoryRead({ address: at, size: Math.min(SPECTRUM_MAX_MEMORY_READ, range.end - at + 1) })).data, "hex"));
+    }
+    const now = Buffer.concat(parts);
+    accesses.push({ first: first[index]!, changed: now.some((byte, offset) => byte !== release(range.start + offset)) });
+  }
+  for (const id of points.values()) await client.watchpoint({ action: "remove", id });
   return { started: true, accesses };
 }
 

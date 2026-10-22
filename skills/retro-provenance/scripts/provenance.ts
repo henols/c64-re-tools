@@ -18,7 +18,7 @@ import { readProgramFile, snapshotOfImage, type SnapshotImage } from "#src/host-
 import { readActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
-import { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { readZxSteps, type ZxStep } from "#src/host-client/zx-steps.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { operandImages, programCoverage, programImage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
@@ -48,7 +48,7 @@ import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts, type Release } from "./lib/compare.ts";
 import { findRoutine, libraryFolder, readLibrary, routineFrom, saveRoutine, suggest, type BatchWrite } from "./lib/library.ts";
-import { watchRelease, type Start } from "./lib/runtime.ts";
+import { watchSpectrumRelease, watchViceRelease, type Start } from "./lib/runtime.ts";
 import { findLeftovers } from "./lib/leftovers.ts";
 import { separate, type Root } from "#src/knowledge/separate.ts";
 
@@ -166,8 +166,10 @@ async function compare(call: Call): Promise<unknown> {
     if (positionals.length !== 2) throw new UsageError(`--align maps two releases, not ${positionals.length}.`, { hint: "Give two releases." });
   }
   const machine = projectMachine();
-  if (frames !== undefined && machine.family === "spectrum") throw new UsageError("--frames does not run a ZX Spectrum release yet.", { hint: "Remove --frames." });
-  const steps: ActionStep[] = stepsFile === undefined ? [] : readActionSteps(stepsFile, "--steps", knowledgeAt());
+  // The steps of the machine: the action steps of VICE on the C64, the ZX Spectrum steps on the Spectrum.
+  const steps: { c64: ActionStep[] } | { spectrum: ZxStep[] } =
+    machine.family === "spectrum" ? { spectrum: stepsFile === undefined ? [] : readZxSteps(stepsFile, "--steps") } : { c64: stepsFile === undefined ? [] : readActionSteps(stepsFile, "--steps", knowledgeAt()) };
+  const stepCount = "c64" in steps ? steps.c64.length : steps.spectrum.length;
   const loaded = positionals.map((path, index) => readRelease(path, shifts.get(index + 1) ?? 0, machine));
   const releases = loaded.map((item) => item.release);
   const range = call.range("range");
@@ -241,21 +243,20 @@ async function compare(call: Call): Promise<unknown> {
   if (frames !== undefined && comparison.differences.length > 0) {
     for (const item of loaded) {
       const name = item.release.name;
-      if (item.start.kind === "none" || item.start.kind === "snapshot") {
-        runs[name] = { started: false, reason: item.start.kind === "none" ? item.start.reason : "" };
+      if (item.start.kind === "none") {
+        runs[name] = { started: false, reason: item.start.reason };
         continue;
       }
       const ranges = comparison.differences.map((difference) => ({ start: difference.start - item.shift, end: difference.end - item.shift }));
-      const client = await ViceSessionClient.open({ videoStandard: "pal" });
-      try {
-        const watched = await watchRelease(client, item.start, ranges, (at) => item.release.byteAt(at + item.shift), { frames, steps });
-        if (!watched.started) runs[name] = { started: false, reason: watched.reason };
-        else {
-          runs[name] = { started: true };
-          runtime.set(name, watched.accesses.map((access, index) => ({ ...ranges[index]!, ...access })));
-        }
-      } finally {
-        await client.close();
+      const release = (at: number) => item.release.byteAt(at + item.shift);
+      const watched =
+        item.start.kind === "snapshot"
+          ? await watchSpectrumRelease(machine, item.start, ranges, release, { frames, steps: "spectrum" in steps ? steps.spectrum : [] })
+          : await watchViceRelease(item.start, ranges, release, { frames, steps: "c64" in steps ? steps.c64 : [] });
+      if (!watched.started) runs[name] = { started: false, reason: watched.reason };
+      else {
+        runs[name] = { started: true };
+        runtime.set(name, watched.accesses.map((access, index) => ({ ...ranges[index]!, ...access })));
       }
     }
   }
@@ -299,7 +300,7 @@ async function compare(call: Call): Promise<unknown> {
     ...(notSuggested.length > 0 ? { shiftsNotSuggested: notSuggested } : {}),
     ...(frames === undefined
       ? {}
-      : { run: { frames, steps: steps.length, releases: runs, ...(comparison.differences.length === 0 ? { skipped: "The releases have no differences, so no release ran." } : {}) } }),
+      : { run: { frames, steps: stepCount, releases: runs, ...(comparison.differences.length === 0 ? { skipped: "The releases have no differences, so no release ran." } : {}) } }),
   };
   return hints.length === 0 && nextAction === undefined ? body : reply(body, { ...(hints.length === 0 ? {} : { hint: hints.join(" ") }), nextAction });
 }
