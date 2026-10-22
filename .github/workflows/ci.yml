@@ -47,7 +47,7 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      # Runs every test. The live suites (real VICE, Ghidra and
+      # Runs every test. The live suites (real VICE and
       # the native tools) are opt-in and show as skipped, with their reason.
       - name: Test
         run: pnpm test

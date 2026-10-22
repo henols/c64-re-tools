@@ -2,7 +2,7 @@
 // random numbers from it: capture, source with a loader, and a c64-testing
 // scenario against the original. The loader sets the CIA timers, so
 // the rebuild reads the same value; a loader without them reads another.
-// Needs real VICE (C64RT_LIVE_VICE), Ghidra (C64RT_GHIDRA) and ACME.
+// Needs real VICE (C64RT_LIVE_VICE) and ACME.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -13,7 +13,6 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ACME, findTool } from "../../../src/native/discover.ts";
-import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { liveSkip, startHost, stopHosts } from "../../integration/vice/live.ts";
 import { readEnvelope } from "../../kit.ts";
 
@@ -21,7 +20,6 @@ let skip: string | false = liveSkip;
 if (skip === false) {
   try {
     findTool(ACME);
-    findGhidra();
   } catch (error) {
     skip = `a native tool is missing: ${(error as Error).message}`;
   }

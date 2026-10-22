@@ -2,8 +2,7 @@
 // scripts and the Host Runtime from this checkout:
 //   disk → BASIC → packing → DXA → knowledge → seeded Ghidra →
 //   reconstructed source → ACME → c64-testing PASS.
-// Needs real VICE (C64RT_LIVE_VICE), Ghidra (C64RT_GHIDRA), DXA, ACME, c1541
-// and petcat.
+// Needs real VICE (C64RT_LIVE_VICE), DXA, ACME, c1541 and petcat.
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -14,7 +13,6 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ACME, C1541, DXA, findTool, PETCAT } from "../../../src/native/discover.ts";
-import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { basicCounterPrg } from "../../fixtures/prg/basic-counter.ts";
 import { liveSkip, startHost, stopHosts } from "../../integration/vice/live.ts";
 import { readEnvelope } from "../../kit.ts";
@@ -27,7 +25,6 @@ if (skip === false) {
     findTool(PETCAT);
     findTool(ACME);
     findTool(DXA);
-    findGhidra();
   } catch (error) {
     skip = `a native tool is missing: ${(error as Error).message}`;
   }

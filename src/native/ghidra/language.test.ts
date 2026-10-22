@@ -1,34 +1,14 @@
 // The c64-re-tools NMOS 6510 Ghidra language:
-// it compiles, decodes all 105 undocumented opcodes with the right lengths,
-// executes the deterministic ones correctly (decimal mode included), keeps the
-// unstable ones opaque and stops flow at JAM. Skipped (never passed) without Ghidra.
+// it decodes all 105 undocumented opcodes with the right lengths, executes
+// the deterministic ones correctly in p-code (decimal mode included), keeps
+// the unstable ones opaque and stops flow at JAM.
 
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { after, before, test } from "node:test";
+import { test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { Workspace } from "../../../src/native/staging.ts";
-import { findGhidra, runHeadless, type GhidraInstallation } from "../../../src/native/ghidra/index.ts";
-
-let ghidra: GhidraInstallation | undefined;
-let skip: string | false = false;
-try {
-  ghidra = findGhidra();
-} catch {
-  skip = "Ghidra is not installed: set C64RT_GHIDRA to the Ghidra installation directory to run these tests";
-}
-
-interface Opcode {
-  op: number;
-  mnemonic?: string;
-  length?: number;
-  fallthrough?: boolean;
-  flows?: number[];
-  flowType?: string;
-  pcode?: string[];
-}
+import { PcodeState } from "./pcode.ts";
+import { walk } from "./walk.ts";
+import { decode, loadImage, type Decoded } from "./wasm.ts";
 
 interface Case {
   name: string;
@@ -101,50 +81,31 @@ const CASES: Case[] = [
   { name: "RTS adds one", bytes: [0x60], registers: { SP: 0x01fd }, memory: { 0x1fe: 0x02, 0x1ff: 0xc0 }, expect: { PC: 0xc003, SP: 0x01ff } },
 ];
 
-let opcodes: Opcode[] = [];
-let results: Array<Record<string, number> & { name: string; memory: Record<string, number> }> = [];
-const supervisor = new ProcessSupervisor();
-supervisor.installExitGuard();
-const workspace = Workspace.create();
-after(() => workspace.remove());
+/** The register varnodes of the language (c64rt_6510.slaspec). */
+const REGISTERS: Record<string, { offset: number; size: number }> = {
+  A: { offset: 0x00, size: 1 },
+  X: { offset: 0x01, size: 1 },
+  Y: { offset: 0x02, size: 1 },
+  SP: { offset: 0x22, size: 2 },
+  N: { offset: 0x30, size: 1 },
+  V: { offset: 0x31, size: 1 },
+  D: { offset: 0x33, size: 1 },
+  I: { offset: 0x34, size: 1 },
+  Z: { offset: 0x35, size: 1 },
+  C: { offset: 0x36, size: 1 },
+};
 
-before(async () => {
-  if (ghidra === undefined) return;
-  const image = Buffer.alloc(1024);
-  for (let op = 0; op < 256; op++) image.set([op, 0x10, 0x20, 0x30], op * 4);
-  workspace.materialize("input", [{ path: "opcodes.bin", size: image.length }], [image]);
-  const cases = CASES.map((spec) => ({
-    name: spec.name,
-    bytes: spec.bytes,
-    registers: spec.registers ?? {},
-    memory: Object.fromEntries(Object.entries(spec.memory ?? {}).map(([address, value]) => [String(address), value])),
-    read: Object.keys(spec.expectMemory ?? {}).map(Number),
-  }));
-  writeFileSync(workspace.path("cases.json"), JSON.stringify({ cases }));
-  await runHeadless({
-    ghidra,
-    workspace,
-    file: "input/opcodes.bin",
-    baseAddress: 0x1000,
-    scriptDirectories: [resolve(import.meta.dirname, "scripts")],
-    postScripts: [{ name: "LanguageCheck.java", args: [workspace.path("cases.json"), workspace.path("out.json")] }],
-    analyze: false,
-    timeoutMs: 180_000,
-    supervisor,
-    signal: new AbortController().signal,
-  });
-  const output = JSON.parse(readFileSync(join(workspace.root, "out.json"), "utf8")) as { opcodes: Opcode[]; cases: typeof results };
-  opcodes = output.opcodes;
-  results = output.cases;
-});
+const image = new Uint8Array(1024);
+for (let op = 0; op < 256; op++) image.set([op, 0x10, 0x20, 0x30], op * 4);
+loadImage(image, 0x1000);
+const opcodes: Decoded[] = Array.from({ length: 256 }, (_, op) => decode(0x1000 + op * 4));
 
-test("every opcode decodes with its NMOS length", { skip }, () => {
-  assert.equal(opcodes.length, 256);
-  const wrong = opcodes.filter((opcode) => opcode.length !== LENGTHS[opcode.op]).map((opcode) => `$${opcode.op.toString(16)}: ${opcode.mnemonic ?? "none"} ${opcode.length}`);
+test("every opcode decodes with its NMOS length", () => {
+  const wrong = opcodes.flatMap((opcode, op) => (opcode.length === LENGTHS[op] ? [] : [`$${op.toString(16)}: ${opcode.mnemonic} ${opcode.length}`]));
   assert.deepEqual(wrong, []);
 });
 
-test("the 105 undocumented opcodes decode as their instructions", { skip }, () => {
+test("the 105 undocumented opcodes decode as their instructions", () => {
   const all = Object.values(UNDOCUMENTED).flat();
   assert.equal(all.length, 105);
   assert.equal(new Set(all).size, 105);
@@ -154,34 +115,54 @@ test("the 105 undocumented opcodes decode as their instructions", { skip }, () =
   assert.deepEqual(wrong, []);
 });
 
-test("JAM stops flow: Ghidra sees a terminator with no fall-through", { skip }, () => {
+/** The instructions that the analysis decodes from one entry: the instruction there, then four NOPs. */
+function flowFrom(op: number): Array<{ address: number; flows: number[] }> {
+  const code = Uint8Array.from([op, 0xea, 0xea, 0xea, 0xea]);
+  loadImage(code, 0x2000);
+  return walk(code, 0x2000, 0x2004, { entryPoints: [0x2000], codeStarts: [], dataRanges: [], labels: [] }).instructions;
+}
+
+test("JAM stops flow: the analysis decodes nothing after it", () => {
   for (const op of UNDOCUMENTED.JAM!) {
-    const opcode = opcodes[op]!;
-    assert.equal(opcode.fallthrough, false, `$${op.toString(16)}`);
-    assert.equal(opcode.flowType, "TERMINATOR", `$${op.toString(16)}`);
-    assert.deepEqual(opcode.flows, [], `$${op.toString(16)}`);
+    assert.deepEqual(flowFrom(op).map((instruction) => [instruction.address, instruction.flows]), [[0x2000, []]], `$${op.toString(16)}`);
   }
-  assert.equal(opcodes[0xea]!.fallthrough, true);
-  assert.equal(opcodes[0x60]!.flowType, "TERMINATOR", "RTS ends a routine the same way");
+  assert.equal(flowFrom(0xea).length, 5, "NOP falls through");
+  assert.equal(flowFrom(0x60).length, 1, "RTS ends a routine the same way");
 });
 
-test("unstable instructions use opaque operations; deterministic ones do not", { skip }, () => {
+test("unstable instructions use opaque operations; deterministic ones do not", () => {
+  const userops = (op: number) => opcodes[op]!.pcode.filter((operation) => operation.op === "CALLOTHER").map((operation) => operation.userop);
   const opaque: Record<number, string> = { 0x8b: "ane", 0xab: "lxa", 0x93: "sha", 0x9f: "sha", 0x9e: "shx", 0x9c: "shy", 0x9b: "tas" };
   for (const [op, name] of Object.entries(opaque)) {
-    assert.ok(opcodes[Number(op)]!.pcode!.includes(`CALLOTHER:${name}`), `$${Number(op).toString(16)} uses ${name}`);
+    assert.ok(userops(Number(op)).includes(name), `$${Number(op).toString(16)} uses ${name}`);
   }
   for (const op of [...UNDOCUMENTED.SLO!, ...UNDOCUMENTED.RRA!, ...UNDOCUMENTED.ISC!, 0x6b, 0xcb, 0xbb]) {
-    assert.ok(!opcodes[op]!.pcode!.some((name) => name.startsWith("CALLOTHER")), `$${op.toString(16)} has real p-code`);
+    assert.deepEqual(userops(op), [], `$${op.toString(16)} has real p-code`);
   }
   // TAS also sets S = A AND X deterministically.
-  assert.ok(opcodes[0x9b]!.pcode!.includes("INT_AND"));
+  assert.ok(opcodes[0x9b]!.pcode.some((operation) => operation.op === "INT_AND"));
 });
 
 for (const spec of CASES) {
-  test(`p-code: ${spec.name}`, { skip }, () => {
-    const result = results.find((candidate) => candidate.name === spec.name);
-    assert.ok(result !== undefined, "the case ran");
-    for (const [register, value] of Object.entries(spec.expect)) assert.equal(result[register], value, `${register} after ${spec.name}`);
-    for (const [address, value] of Object.entries(spec.expectMemory ?? {})) assert.equal(result.memory[address], value, `memory ${address} after ${spec.name}`);
+  test(`p-code: ${spec.name}`, () => {
+    const pc = 0xc000;
+    loadImage(Uint8Array.from(spec.bytes), pc);
+    const instruction = decode(pc);
+    const memory = new Map(Object.entries(spec.memory ?? {}).map(([address, value]) => [Number(address), value]));
+    spec.bytes.forEach((byte, index) => memory.set(pc + index, byte));
+    // Memory that the case does not set reads as 0.
+    const state = new PcodeState((address) => memory.get(address) ?? 0);
+    for (const [name, register] of Object.entries(REGISTERS)) {
+      state.set({ space: "register", ...register }, spec.registers?.[name] ?? (name === "SP" ? 0x01ff : 0));
+    }
+    const exit = state.run(instruction.pcode);
+    const next = exit.kind === "fall" ? pc + instruction.length : exit.kind === "stop" ? undefined : exit.next;
+    for (const [name, value] of Object.entries(spec.expect)) {
+      const actual = name === "PC" ? next : state.get({ space: "register", ...REGISTERS[name]! });
+      assert.equal(actual, value, `${name} after ${spec.name}`);
+    }
+    for (const [address, value] of Object.entries(spec.expectMemory ?? {})) {
+      assert.equal(state.get({ space: "ram", offset: Number(address), size: 1 }), value, `memory ${address} after ${spec.name}`);
+    }
   });
 }

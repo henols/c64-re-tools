@@ -165,7 +165,7 @@ The script does not record the candidates. Examine each candidate and decide.
 - `coverageGaps` has starts. Normally its count is 0. Each start is not in `--out-instructions` and not in the generated source. Examine the code at the start. Overlapped instructions and self-modified code can cause a gap. A start in a `dual-use` region is a known overlap, for example a BIT skip, and is not in the list.
 - `coverageSeeds.used` is smaller than `coverageSeeds.entryPoints`. The analysis did not use all entry points of the coverage. Give the important entry points with `--entry`, or record them as routines in the project knowledge. These come first.
 - `romOnlyUsed` is smaller than `romOnlyRanges`. The analysis did not keep all RAM under ROM as data. Classify the RAM under ROM that is not code as data in the project knowledge.
-- `notDecompiled` has a reason that the decompiler did not start. Give the remedy in the reason to the user.
+- `notDecompiled` has a routine. The `reason` tells why the decompiler did not decompile it. Read the instructions of that routine in the file of `--out-instructions`.
 
 #### Failures
 

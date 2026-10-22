@@ -63,7 +63,7 @@ export interface GhidraInstruction {
   /** Lowercase hex, 1 to 3 bytes. */
   bytes: string;
   mnemonic: string;
-  /** Ghidra's text of the operands, empty for an implied operand. */
+  /** The decoder's text of the operands, empty for an implied operand. */
   operands: string;
   /** Where the flow goes besides the next instruction: a branch, jump or call target. */
   flows: number[];
@@ -81,7 +81,7 @@ export interface GhidraResult {
   instructions: GhidraInstruction[];
   /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { functions: boolean; regions: boolean; references: boolean };
-  /** The version of the Ghidra that made the result, for example "Ghidra 12.1.3". */
+  /** The version of the Ghidra port that made the result, for example "ghidra-decompiler 2.1.0". */
   toolVersion?: string;
 }
 

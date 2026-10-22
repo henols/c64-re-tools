@@ -32,7 +32,7 @@ Ask for what you want in plain words. The agent picks the skill for each step.
 
 - Read D64, D71, D81, G64, T64 and CRT images, list BASIC and find the SYS address.
 - Find packers and capture the unpacked program from the emulator.
-- Analyse the code with DXA and Ghidra. The toolkit brings its own NMOS 6510 language for Ghidra, with all 256 opcodes.
+- Analyse the code with DXA and Ghidra. The toolkit brings Ghidra's decoder and decompiler with its own NMOS 6510 language, with all 256 opcodes: nothing to install.
 - Keep names, regions and comments as text in the project, ready for git.
 - Compare releases, and find routines that several programs share.
 - Generate ACME source that rebuilds the program byte for byte, and its documentation.
@@ -85,7 +85,7 @@ http://localhost:6465/ of your computer; rebuild the container after you add it.
 
 Open the project in the container, for example with "Reopen in Container" in
 VS Code, or with `npx -y @devcontainers/cli up --workspace-folder .`. The
-Feature gives the container ACME, dxa, Exomizer, Java 21, Ghidra and c64run. At each
+Feature gives the container ACME, dxa, Exomizer and c64run. At each
 start it installs the newest toolkit of its channel into the project, with the
 tools of that version. It reads its options only when the container is built:
 rebuild after a change.

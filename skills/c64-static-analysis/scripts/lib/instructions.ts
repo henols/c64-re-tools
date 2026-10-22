@@ -3,6 +3,7 @@
 // with a coverage file, whether the instruction ran.
 
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
+import { OPCODES, type Mode as OpcodeMode } from "#src/opcodes.ts";
 import type { GhidraInstruction } from "#src/native/types.ts";
 
 export type Mode =
@@ -20,26 +21,27 @@ export type Mode =
   | "(indirect),y"
   | "relative";
 
-const BRANCHES = new Set([0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xf0]);
-const JMP_INDIRECT = 0x6c;
+/** ASL, ROL, LSR and ROR of the accumulator: the implied forms that work on A. */
+const ACCUMULATOR = new Set([0x0a, 0x2a, 0x4a, 0x6a]);
 
-/**
- * The addressing mode from Ghidra's operand text and the instruction length.
- * Ghidra prints zero page and absolute alike, and JMP (indirect) as an
- * address, so the length and the opcode decide those.
- */
-export function modeOf(opcode: number, length: number, operands: string): Mode {
-  const text = operands.toUpperCase();
-  if (text === "") return "implied";
-  if (text === "A") return "accumulator";
-  if (text.startsWith("#")) return "immediate";
-  if (text.startsWith("(") && text.endsWith(",X)")) return "(indirect,x)";
-  if (text.startsWith("(") && text.endsWith("),Y")) return "(indirect),y";
-  if (text.endsWith(",X")) return length === 2 ? "zeropage,x" : "absolute,x";
-  if (text.endsWith(",Y")) return length === 2 ? "zeropage,y" : "absolute,y";
-  if (BRANCHES.has(opcode)) return "relative";
-  if (opcode === JMP_INDIRECT) return "(indirect)";
-  return length === 2 ? "zeropage" : "absolute";
+const MODES: Record<OpcodeMode, Mode> = {
+  imp: "implied",
+  imm: "immediate",
+  zp: "zeropage",
+  zpx: "zeropage,x",
+  zpy: "zeropage,y",
+  abs: "absolute",
+  abx: "absolute,x",
+  aby: "absolute,y",
+  ind: "(indirect)",
+  izx: "(indirect,x)",
+  izy: "(indirect),y",
+  rel: "relative",
+};
+
+/** The addressing mode of an opcode. */
+export function modeOf(opcode: number): Mode {
+  return ACCUMULATOR.has(opcode) ? "accumulator" : MODES[OPCODES[opcode]!.mode];
 }
 
 /** The operand in 6502 syntax, from the instruction bytes; empty for implied. */
@@ -90,7 +92,7 @@ export interface ListedInstruction {
 export function instructionList(instructions: GhidraInstruction[], coverage?: Uint8Array): ListedInstruction[] {
   return instructions.map((instruction) => {
     const bytes = Buffer.from(instruction.bytes, "hex");
-    const mode = modeOf(bytes[0]!, bytes.length, instruction.operands);
+    const mode = modeOf(bytes[0]!);
     const [target] = instruction.flows;
     return {
       address: formatC64Address(instruction.address),

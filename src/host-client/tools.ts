@@ -1,7 +1,7 @@
 // Short-lived typed requests to the Host Runtime for skill scripts:
 // VICE's own tools (c1541, petcat) and the host tool status. Each request
 // opens its own "tool" connection, sends bytes, and closes. Skill scripts run
-// ACME, DXA and Ghidra themselves through src/native.
+// ACME, DXA and Ghidra themselves through src/native (Ghidra in process).
 
 import { ProtocolError, WireFailure } from "../protocol/messages.ts";
 import { DISK_IMAGE_TYPES, validateToolResult, type C1541Result, type DiskAction, type DiskImageType, type DiskSector, type PetcatResult, type ToolOperation, type ToolOperations } from "../protocol/tools.ts";

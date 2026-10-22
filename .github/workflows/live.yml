@@ -3,7 +3,7 @@ name: Live
 # The live suites with a real VICE on Linux, macOS and Windows. CI installs
 # VICE itself; the product never does (it refuses by name with the remedy).
 # The skill scripts run only in the Linux dev container, so only Linux gets
-# ACME, dxa, Exomizer, c64run and Ghidra; on macOS and Windows their tests skip.
+# ACME, dxa, Exomizer and c64run; on macOS and Windows their tests skip.
 # c64-re-tools needs VICE 3.9 or later and supports the latest release:
 # Linux runs in Debian 13, whose package is VICE 3.9, the minimum (Ubuntu
 # 24.04 has 3.7.1). Windows and macOS (Homebrew), which run the latest release, are off for now.
@@ -52,11 +52,8 @@ jobs:
 
       - uses: actions/checkout@v4
       # The native tools of the skill scripts, as the dev container Feature installs them.
-      - name: Install ACME, dxa, Exomizer, c64run and Ghidra
-        run: |
-          apt-get install -y --no-install-recommends openjdk-21-jdk-headless
-          bash tools/install-container.sh
-          echo "C64RT_GHIDRA=/opt/ghidra" >> "$GITHUB_ENV"
+      - name: Install ACME, dxa, Exomizer and c64run
+        run: bash tools/install-container.sh
       # In a container, Node.js must come first: the pnpm installer runs on it.
       - uses: actions/setup-node@v4
         with:

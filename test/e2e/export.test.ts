@@ -15,16 +15,14 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ACME, findTool } from "../../src/native/discover.ts";
-import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { readZip } from "../../src/zip.testkit.ts";
 import { readEnvelope } from "../kit.ts";
 
 let skip: string | false = false;
 try {
   findTool(ACME);
-  findGhidra();
 } catch {
-  skip = "ACME or Ghidra is not installed";
+  skip = "ACME is not installed";
 }
 
 const skills = resolve(import.meta.dirname, "../../skills");
