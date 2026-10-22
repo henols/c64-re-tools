@@ -27,6 +27,8 @@ export interface ReferenceInput {
   references: ReferenceRow[];
   modules: ModuleRow[];
   image?: { byteAt: (address: number) => number; inImage: (address: number) => boolean };
+  /** The machine of a program that is not a C64 program: the reference draws only the graphics formats of the C64 (sprites, bitmaps, charsets, screen codes). */
+  otherMachine?: string;
 }
 
 export interface ReferenceFile {
@@ -335,14 +337,15 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       "",
       `Each sprite, bitmap, charset and screen region of the knowledge. The knowledge gives no display mode and no colours, so a sprite, bitmap or charset shows in hires and in multicolour, in pattern colours: black is pixel value 0, white is 1 in hires; in multicolour light grey is 1, grey is 2 and yellow is 3. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`,
     ];
-    if (input.image === undefined && graphics.length > 0) lines.push("", "Put the program bytes into the project knowledge. Then generate the reference again to show the graphics.");
+    if (input.otherMachine !== undefined && graphics.length > 0) lines.push("", `The reference draws only the graphics formats of the C64, and the program is a program of the ${input.otherMachine}. Thus the regions have no images.`);
+    else if (input.image === undefined && graphics.length > 0) lines.push("", "Put the program bytes into the project knowledge. Then generate the reference again to show the graphics.");
     for (const region of graphics) {
       const anchor = entryAt.get(region.start)?.name ?? `${region.type}_${region.start.toString(16).padStart(4, "0")}`;
       const name = entryAt.get(region.start);
       lines.push("", `<a id="${anchor}"></a>`, `## ${name === undefined ? codeOfAddress(page, region.start) : pair(page, name.name, region.start)} \`${range(region.start, region.end)}\``, "", `*${region.type}*`);
       const comments = commentLines(region.start);
       if (comments.length > 0) lines.push("", ...comments);
-      if (input.image === undefined) continue;
+      if (input.image === undefined || input.otherMachine !== undefined) continue;
       const bytes = Uint8Array.from({ length: region.end - region.start + 1 }, (_, offset) => input.image!.byteAt(region.start + offset));
       if (region.type === "screen") {
         lines.push("", "```text", ...screenText(bytes), "```");

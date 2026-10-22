@@ -1,11 +1,12 @@
 ---
 name: retro-docs
-description: Writes the documentation of a C64 program. You write the pages by the method of this skill. The script generates the reference pages from the project knowledge and the generated source. The pages put first the development of the program and its copy protection, in depth, with the findings and what each one means in practice. They explain how the program works, with links to the main parts of the source, and they list the releases in short. They tell the history of a crack only when the crack left traces in the program. Use it to document a program after its rebuilt source is identical to the original. Use it to keep the documentation correct after a change to the project knowledge. It does not change the project knowledge, and it does not run the program.
+description: Writes the documentation of a C64 or ZX Spectrum program. You write the pages by the method of this skill. The script generates the reference pages from the project knowledge and the generated source. The pages put first the development of the program and its copy protection, in depth, with the findings and what each one means in practice. They explain how the program works, with links to the main parts of the source, and they list the releases in short. They tell the history of a crack only when the crack left traces in the program. Use it to document a program after its rebuilt source is identical to the original. Use it to keep the documentation correct after a change to the project knowledge. It does not change the project knowledge, and it does not run the program.
 ---
 
-# C64 documentation
+# Program documentation
 
 Use this script to generate the reference pages of a program, and to link the pages that you write to the source.
+The script works for a C64 program and for a ZX Spectrum program. The source is the source that you generated from the project knowledge for the machine of the project.
 Use only the commands of the script. Do not generate the reference or write the links to the source in another way.
 
 ```bash
@@ -115,7 +116,7 @@ The reference has these pages:
 - `modules/<file>.md`: a call graph of the file, its data regions with their readers and writers, and an entry for each name. An entry has the comment, the callers and the table that holds the name. For a routine, it also has the calls, the jumps, the reads and the writes.
 - `tables.md`: each table of addresses, jumps and words, entry by entry, with its target. An RTS table holds each target minus 1. The page gives the target.
 - `memory-map.md`: each region in address order. Then each variable outside the program, with its comment and the routines that read it and write it.
-- `graphics.md`: each `sprite`, `bitmap`, `charset` and `screen` region. The project knowledge has no graphics mode. Thus a sprite, a bitmap or a charset shows in hires and in multicolour. A charset shows 16 characters in each row. A screen shows as text.
+- `graphics.md`: each `sprite`, `bitmap`, `charset` and `screen` region. The project knowledge has no graphics mode. Thus a sprite, a bitmap or a charset shows in hires and in multicolour. A charset shows 16 characters in each row. A screen shows as text. The page draws only the graphics formats of the C64. For a program of another machine, the page lists the regions without images.
 
 In a call graph, a solid arrow is a call, a thick arrow is a table entry, and a dotted arrow is a jump. A table entry goes from each routine that reads the table to each target in code. A table of data addresses gives no arrow.
 
@@ -131,7 +132,7 @@ Errors and their actions:
 - The reference draws each sprite, bitmap and charset region, and it decodes each table. To get the image of a graphic or the entries of a table, classify its region in the project knowledge. Do not write a script that draws or decodes them.
 - A script of the project decodes only a format of the program, for example a packed map or a music stream. Put the script in `tools/` of the project. Its output files are the assets, for example in `assets/rooms/`.
 - When two or more projects of a group folder use the script, put it in `tools/` of the group folder. The script takes the paths of its input and output files as arguments.
-- When the code of the program makes the data, run that code in a test run. Read the memory, or capture the screen. Do not write a 6502 emulator in the script.
+- When the code of the program makes the data, run that code in a test run. Read the memory, or capture the screen. Do not write a CPU emulator in the script.
 
 ---
 

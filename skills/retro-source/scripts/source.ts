@@ -1228,8 +1228,8 @@ async function generateZ80(call: Call, machine: Machine): Promise<{ output: Reco
   const written = files.map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
   // The reports go to the local folder: the source folder holds only source files.
   const reports = generatedDirectory(projectRelative(out));
-  written.push(writeReported(`${reports}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.revision, files)));
-  if (rendered.notExecuted !== undefined) written.push(writeReported(`${reports}/${NOT_EXECUTED_FILE}`, notExecutedReport(rendered.notExecuted, rendered.pieces, knowledge.symbols, knowledge.revision)));
+  written.push(writeReported(`${reports}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.sourceRevision, files)));
+  if (rendered.notExecuted !== undefined) written.push(writeReported(`${reports}/${NOT_EXECUTED_FILE}`, notExecutedReport(rendered.notExecuted, rendered.pieces, knowledge.symbols, knowledge.sourceRevision)));
   const showRange = (range: AddressRange) => ({ start: formatAddress(range.start), end: formatAddress(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
   const base = {

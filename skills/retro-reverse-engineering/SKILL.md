@@ -3,17 +3,17 @@ name: retro-reverse-engineering
 description: Reverse engineers a C64 or ZX Spectrum program or a part of it. The work goes from an unknown disk image or file to documented understanding or a rebuilt program. It selects the next unknown to examine and the task that examines it. Use it when the user asks what a program does, for example "what does this game do", "find the main loop" or "understand $2100". Use it to rebuild a program from its original file, for example "rebuild this program". It does not do the specialist work of each task itself, and it does not add a feature to a program.
 ---
 
-# C64 reverse engineering
+# Reverse engineering
 
 ## Purpose
 
-Coordinate the reverse engineering of a C64 program. Select the next unknown to examine and the task that examines it.
+Coordinate the reverse engineering of a C64 program or a ZX Spectrum program. Select the next unknown to examine and the task that examines it.
 
 Do the specialist work of each task as that task tells. Do not do it in another way.
 
 ## Inputs
 
-- The subject: a disk image or a program file in the project, or a program that runs in the emulator.
+- The subject: a disk image, a tape or a program file in the project, or a program that runs in the emulator.
 - The scope: the question or the target. Examples:
   - identify the main loop
   - understand the routine at `$2100`
@@ -63,11 +63,12 @@ Select the path for the scope:
 | Unknown | Task |
 |---|---|
 | The files on a disk image, or a file to extract | List the disk image. Extract the file into the project. |
-| A BASIC program, and where it starts machine code | List the BASIC program. Find its SYS address. |
+| The blocks of a tape | List the blocks of the tape. |
+| A BASIC program, and where it starts machine code | List the BASIC program. Find its SYS address on the C64, or its USR address on the ZX Spectrum. |
 | A program that can be packed or crunched | Examine the program for a packer. Capture the unpacked program. |
 | What the program does at run time: values, input, timing, screen | Run the program in the emulator. Read the values, give the input, measure the timing and capture the screen. |
 | The routines, code, data and references of the program | Analyze the program statically. |
-| The platform meaning of an address or a register | Find the address in the memory map of the C64. |
+| The platform meaning of an address or a register | Find the address in the memory map of the machine of the project. |
 | Differences between releases of the program | Compare the releases. Record each release, switch and patch in the project knowledge. |
 | Leftovers of the development, a crack or a recrack: texts, old copies, unused bytes, dead code | Find the leftovers in the program. |
 | A routine that another program of the workspace has, for example a music driver | Match the program against the routine library of the workspace. |
@@ -119,10 +120,11 @@ For a ZX Spectrum program, these stages change. The other stages stay the same.
 | 4. Load and capture | Load the tape in the emulator of the ZX Spectrum, and run it until the entry of the machine code. For a game with its own loader, find the entry with breakpoints. Write the machine state as a snapshot into `.c64-re-tools/local/`. Put the snapshot into the project knowledge. |
 | 5. Run | Record the program from its snapshot with frames, keys and joystick steps. A ZX Spectrum recording has no play session of the user. Put the coverage of each recording into the project knowledge. |
 | 6. Analyze | Analyze the program statically with Ghidra. DXA reads only 6502 code. |
-| 7. Name | Find the platform addresses in the memory map of the ZX Spectrum. |
-| 8. Releases and switches | Not for a ZX Spectrum program. Give it as an exception. |
-| 9. Generate | Generate the source from the project knowledge into `src`. The source is `main.asm` for sjasmplus. There is no loader: the snapshot is the start. |
+| 7. Name | Do this stage as for a C64 program, but find the platform addresses in the memory map of the ZX Spectrum. |
+| 8. Releases and switches | The releases, the switches and the patches are not for a ZX Spectrum program. Give them as an exception. Find the leftovers. Record each leftover as a region with a comment. The source keeps them, and each build has them. |
+| 9. Generate | Generate the source from the project knowledge into `src`. The source is for sjasmplus. `main.asm` includes a file for each module. There is no loader: the snapshot is the start. |
 | 10. Build and test | Build `main.asm` into `build/`, and compare it with the program. Replay each recording on the rebuild. Give the build and the first address of its range. |
+| 11. Document | Do this stage as for a C64 program. The graphics page of the reference has no images, because the reference draws only the graphics formats of the C64. |
 
 ### Deliverables of a full rebuild
 

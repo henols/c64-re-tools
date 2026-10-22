@@ -242,7 +242,7 @@ Put this block near the top of each subsystem page. Change the terms for the pro
 
 ```markdown
 **Conventions.**
-- Addresses are C64 addresses. Names are the names of the knowledge.
+- Addresses are C64 addresses. For a ZX Spectrum program, write ZX Spectrum addresses. Names are the names of the knowledge.
 - A *pass* is one run of the main loop. A *frame* is one raster interrupt.
 - **Observed** marks a fact that a run showed. **Code** marks a fact from the code only. **Conclusion** marks an interpretation.
 ```

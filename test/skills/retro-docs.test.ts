@@ -13,6 +13,8 @@ import { readPng } from "../../src/graphics.testkit.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { applyBatch, renameSymbol, setComment } from "../../src/knowledge/write.ts";
 import { importPrg } from "../fixtures/program.ts";
+import { buildReference } from "../../skills/retro-docs/scripts/lib/reference.ts";
+import type { SourceMap } from "../../skills/retro-docs/scripts/lib/source-map.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 
 const SCRIPTS = resolve(import.meta.dirname, "../../skills");
@@ -425,4 +427,36 @@ test("docs.ts link in a group folder: a label names the project of a name, the p
   const outProblems = (out.json.problems as { listed: Array<{ at: string; project: string; kind: string; message: string }> }).listed;
   assert.deepEqual(outProblems.map((problem) => [problem.at, problem.project, problem.kind]), [["README.md:1", "v1", "outside-group"], ["README.md:1", "v1", "missing-file"]]);
   assert.match(outProblems[1]!.message, /there is no \.\.\/v2\/MISSING\.md\.$/);
+});
+
+test("the reference draws the graphics formats of the C64 only: a region of another machine gets no image", () => {
+  const map: SourceMap = {
+    directory: "src",
+    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
+    space: "spectrum",
+    revision: "r1",
+    files: ["main.asm", "segments/segment_4000.asm"],
+    labels: [{ address: 0x4000, name: "screen", file: "segments/segment_4000.asm", line: 5 }],
+    labelOf: (name) => (name === "screen" ? { address: 0x4000, file: "segments/segment_4000.asm", line: 5 } : undefined),
+    lineOf: (address) => (address >= 0x4000 && address <= 0x57ff ? { file: "segments/segment_4000.asm", line: 6 } : undefined),
+    pathOf: (file) => `src/${file}`,
+  };
+  const input = {
+    out: "docs/reference",
+    map,
+    revision: "r1",
+    symbols: [{ space: "spectrum", address: 0x4000, name: "screen", kind: "label" as const, origin: "user" as const, revision: "r1" }],
+    regions: [{ space: "spectrum", start: 0x4000, end: 0x57ff, type: "bitmap" as const, origin: "user" as const, revision: "r1" }],
+    comments: [],
+    references: [],
+    modules: [],
+    image: { byteAt: () => 0xaa, inImage: (address: number) => address >= 0x4000 },
+  };
+  const page = (files: Array<{ path: string; bytes: Buffer }>) => files.find((file) => file.path === "docs/reference/graphics.md")!.bytes.toString("utf8");
+  const spectrum = buildReference({ ...input, otherMachine: "ZX Spectrum 48K" });
+  assert.equal(spectrum.counts.images, 0);
+  assert.match(page(spectrum.files), /The reference draws only the graphics formats of the C64, and the program is a program of the ZX Spectrum 48K\. Thus the regions have no images\./);
+  assert.ok(!spectrum.files.some((file) => file.path.endsWith(".png")));
+  const c64 = buildReference(input);
+  assert.equal(c64.counts.images, 2);
 });

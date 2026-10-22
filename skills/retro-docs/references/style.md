@@ -48,7 +48,7 @@ These rules apply to each page that you write. The `link` command checks the rul
 - Write the pages in the language and the style that the user or the project asks for.
 - Use a numbered list for steps in an order. Use a bulleted list for items without an order. Use a table for items with the same fields.
 - Use the same word for the same thing on each page. Define each term of the program one time, in the conventions block.
-- Write the entry page up to the findings for any reader who knows the C64 as a user. Write the other pages for a person who knows the 6502 and the C64, but not the program.
+- Write the entry page up to the findings for any reader who knows the machine as a user. Write the other pages for a person who knows the CPU and the machine, but not the program. For a C64 program, that is the 6502 and the C64. For a ZX Spectrum program, that is the Z80 and the ZX Spectrum.
 
 ## Generated pages
 

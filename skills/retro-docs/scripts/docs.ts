@@ -15,6 +15,8 @@ import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
 import { listComments, listModules, listReferences, listRegions, listSymbols, sourceRevision } from "#src/knowledge/read.ts";
+import { machineOf } from "#src/knowledge/project-machine.ts";
+import { C64 } from "#src/machine.ts";
 import { groupOf, namedGroup, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
 import { checkLinks, linkPage, type Files, type LinkContext, type Names, type Problem } from "./lib/links.ts";
@@ -60,8 +62,12 @@ function generate(call: Call): Reply {
   const db = openForRead();
   let knowledge;
   let image: ProgramImage | undefined;
+  // The reference draws the graphics formats of the C64 only: the regions of another machine get no images.
+  let otherMachine: string | undefined;
   try {
     image = programImage(db, map.space);
+    const machine = machineOf(db);
+    if (machine.id !== C64.id) otherMachine = machine.name;
     const found = conflicts(db).length;
     if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was written. Resolve the merge conflicts of the project knowledge. Then generate the source again from the knowledge, and run generate again.`);
     // A source of another revision has other lines: the links would point to the wrong code. A change in another space does not change the source.
@@ -85,6 +91,7 @@ function generate(call: Call): Reply {
     out: posix.normalize(out),
     map,
     ...knowledge,
+    ...(otherMachine === undefined ? {} : { otherMachine }),
     ...(image === undefined ? {} : { image: { byteAt: image.byteAt, inImage: (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end) } }),
   });
   for (const path of old) rmSync(join(directory, path), { force: true });
