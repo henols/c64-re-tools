@@ -162,9 +162,15 @@ test("a macro candidate names no platform name of a ROM that the program does no
   assert.deepEqual(shown.args, ["TXTPTR", "$3000"]);
   // Without --apply-macros, the hint tells how to write the candidates; with it, the macro and its use are one revision.
   assert.equal(shown.hint, "Examine idioms.candidates.macros. To write them to the project knowledge, run the analysis again with --apply-macros.");
-  const applied = await analyze(join(scratch, "set16-false"), dxa, "--apply-macros");
+  // --skip leaves a wrong candidate out: no use and no macro is written.
+  const skipped = await analyze(join(scratch, "set16-false"), dxa, "--apply-macros", "--skip", "$2000");
+  const none = (skipped.json.idioms as { candidates: { macros: Record<string, unknown> } }).candidates.macros;
+  assert.deepEqual([none.writes, none.skipped], [undefined, 1]);
+  // An address that starts no candidate is named, and the candidates are written.
+  const applied = await analyze(join(scratch, "set16-false"), dxa, "--apply-macros", "--skip", "$2002");
   assert.equal(applied.status, 0, JSON.stringify(applied.json));
   const macros = (applied.json.idioms as { candidates: { macros: Record<string, unknown> } }).candidates.macros;
+  assert.deepEqual(macros.notCandidates, ["$2002"]);
   assert.equal(macros.writes, 2);
   assert.equal(typeof macros.revision, "string");
   assert.equal(applied.envelope.hint, "The project knowledge has the macro candidates now. Generate the source again.");

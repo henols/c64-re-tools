@@ -75,11 +75,11 @@ function showMacro(candidate: MacroCandidate) {
  * the ROMs that the program uses, as c64-source names them. A candidate is left out when
  * a name or a reference target is inside it, or a patch or a use overlaps it:
  * c64-source would write its instructions. The same use in the knowledge is
- * known. The writes are the candidates with the macros they need. A macro of
- * the catalogue that the knowledge has with another body leaves its
- * candidates out of the writes.
+ * known. The writes are the candidates with the macros they need, without the
+ * candidates that start at an address of `skip`. A macro of the catalogue that
+ * the knowledge has with another body leaves its candidates out of the writes.
  */
-function macroCandidates(space: string, byteAt: ImageByte, romUse: RomUse) {
+function macroCandidates(space: string, byteAt: ImageByte, romUse: RomUse, skip: ReadonlySet<number>) {
   const db = openForRead();
   try {
     // The platform names that c64-source uses: a name of a ROM that the program does not use is no arg.
@@ -104,16 +104,18 @@ function macroCandidates(space: string, byteAt: ImageByte, romUse: RomUse) {
     const macros = new Map(listMacros(db, undefined, space).map((macro) => [macro.name, macro]));
     const writes: BatchOperation[] = [];
     const other = new Set<string>();
-    for (const idiom of CATALOGUE.filter((item) => candidates.some((candidate) => candidate.macro === item.name))) {
+    const chosen = candidates.filter((candidate) => !skip.has(candidate.start));
+    for (const idiom of CATALOGUE.filter((item) => chosen.some((candidate) => candidate.macro === item.name))) {
       const existing = macros.get(idiom.name);
       if (existing === undefined) writes.push({ op: "macro", space, name: idiom.name, params: [...idiom.params], body: idiom.body, comment: idiom.comment });
       else if (existing.params.join(",") !== idiom.params.join(",") || existing.body !== idiom.body) other.add(idiom.name);
     }
-    for (const candidate of candidates) {
+    for (const candidate of chosen) {
       if (other.has(candidate.macro)) continue;
       writes.push({ op: "use", space, start: candidate.start, end: candidate.end, macro: candidate.macro, args: candidate.args });
     }
-    return { candidates, known, leftOut, writes, otherMacros: [...other].map((name) => `The knowledge has another macro ${name}: its candidates are not written.`) };
+    const notCandidates = [...skip].filter((address) => !candidates.some((candidate) => candidate.start === address)).sort((a, b) => a - b);
+    return { candidates, known, leftOut, writes, skipped: candidates.length - chosen.length, notCandidates, otherMacros: [...other].map((name) => `The knowledge has another macro ${name}: its candidates are not written.`) };
   } finally {
     db?.close();
   }
@@ -177,6 +179,8 @@ async function analyze(call: Call): Promise<unknown> {
   const listingPath = call.string("out-listing");
   const instructionsPath = call.string("out-instructions");
   const applyMacros = call.flag("apply-macros");
+  const skip = new Set(call.addresses("skip"));
+  if (skip.size > 0 && !applyMacros) throw new UsageError("--skip works only with --apply-macros: it names a macro candidate that the run does not write");
   if (analyzer === "dxa" && decompile.length > 0) throw new UsageError("--decompile works only with --analyzer ghidra");
   if (analyzer === "ghidra" && listingPath !== undefined) throw new UsageError("--out-listing works only with --analyzer dxa");
   if (analyzer === "dxa" && instructionsPath !== undefined) throw new UsageError("--out-instructions works only with --analyzer ghidra");
@@ -223,7 +227,7 @@ async function analyze(call: Call): Promise<unknown> {
   const idiomsResult = () => {
     const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: "Idioms in the program" }));
     // The macro candidates read the code regions after both imports.
-    const macros = macroCandidates(space, byteAt, romUseOfProgram(coverage, program.state));
+    const macros = macroCandidates(space, byteAt, romUseOfProgram(coverage, program.state), skip);
     // With --apply-macros, the candidates and their macros are a third revision of the LLM.
     const platformNamed = new Map(platformNames().map((entry) => [entry.name, entry.address]));
     const written = applyMacros && macros.writes.length > 0 ? withWrite((db) => applyBatch(db, { origin: "llm", description: "Macro candidates in the program", image: operandImages(db, platformNamed) }, macros.writes)) : undefined;
@@ -253,6 +257,8 @@ async function analyze(call: Call): Promise<unknown> {
             ...(macros.known === 0 ? {} : { known: macros.known }),
             ...(macros.leftOut === 0 ? {} : { leftOut: macros.leftOut }),
             ...(written === undefined ? {} : { revision: written.revision, writes: macros.writes.length }),
+            ...(macros.skipped === 0 ? {} : { skipped: macros.skipped }),
+            ...(macros.notCandidates.length === 0 ? {} : { notCandidates: macros.notCandidates.map(formatC64Address) }),
             ...(macros.otherMacros.length === 0 ? {} : { otherMacros: macros.otherMacros }),
           },
         },
@@ -355,6 +361,7 @@ await runScript({
         "out-listing": { kind: "path", output: "file", value: "<file>", help: "dxa: write the disassembly listing to this project file" },
         "out-instructions": { kind: "path", output: "file", value: "<file>", help: "ghidra: write every instruction (address, bytes, mnemonic, mode, operand, target, executed) to this project file as JSON" },
         "apply-macros": { kind: "flag", help: "write the macro candidates (the macros and their uses) to the project knowledge as one revision of the LLM" },
+        skip: { kind: "address", value: "<address>", multiple: true, help: "with --apply-macros: the start of a macro candidate that is not correct. The run does not write it" },
       },
       notes: "The program and the coverage come from the project knowledge: put them into the project knowledge first. The executed code of the coverage gives entry points. Routine symbols in the knowledge are entry points too. Ghidra needs at least one entry point. DXA finds the SYS of a BASIC start by itself.",
       run: analyze,

@@ -30,6 +30,7 @@ To get the command list, run the script with no arguments.
 | Get each instruction as JSON | `analyze --entry '$080d' --out-instructions .c64-re-tools/local/instructions.json` |
 | Analyze drive code or a cartridge bank | `analyze --space drive8` |
 | Write the macro candidates to the project knowledge | `analyze --apply-macros` |
+| Write only the correct macro candidates | `analyze --apply-macros --skip '$1e64' --skip '$2010'` |
 | Get more items in each list | `analyze --max-listed 500` |
 
 ---
@@ -87,6 +88,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--out-listing <file>` | `analyze` | DXA only. Write the disassembly listing to this project file. There is no default. |
 | `--out-instructions <file>` | `analyze` | Ghidra only. Write each instruction to this project file as JSON. There is no default. |
 | `--apply-macros` | `analyze` | Write the macro candidates and their macros to the project knowledge as one revision of the LLM. Off by default. |
+| `--skip <address>` | `analyze` | With `--apply-macros`: the start of a macro candidate that is not correct. The run does not write it. Give one `--skip` for each such candidate. |
 
 ---
 
@@ -127,7 +129,7 @@ The `hint` gives each of these cases:
 
 - `conflicts` is not empty. Find the correct answer in the emulator. Then correct the project knowledge.
 - `coverageConflicts` is not empty. Classify each range as code in the project knowledge, or as `dual-use` when its bytes are also data. For many ranges, write all classifications in one batch of changes.
-- `idioms.candidates.macros` has candidates, and the run had no `--apply-macros`. Examine the candidates. To write them to the project knowledge, run the analysis again with `--apply-macros`. Then generate the source again.
+- `idioms.candidates.macros` has candidates, and the run had no `--apply-macros`. Examine the candidates. To write the correct candidates to the project knowledge, run the analysis again with `--apply-macros`. Give `--skip` with the start of each candidate that is not correct. Then generate the source again.
 - A list is cut. Give a larger `--max-listed`. The project knowledge has all `labels` and `functions` as analyzer names.
 
 There is no `nextAction`.
@@ -140,7 +142,7 @@ The script does not record the candidates. Examine each candidate and decide.
 - `selfModified`: opcodes that the program wrote and then executed. The write and the execution must be in one coverage file. A coverage file does not record the order. Thus a candidate can also be code that ran first, and that the program then wrote over. To prevent this, save one coverage file for each part of the program, for example the intro, the game, or a loader that copies code. Clear the memory map between the parts.
 - `pointers`: code that makes an address from immediates. A `vector` or a `zero-page pointer` candidate stores a low byte (`low`) and a high byte (`high`) to a vector or to a zero-page pair. A `sprite pointer` candidate stores an immediate (`at`) to a sprite pointer of the screen at `$0400` in VIC bank 0. For each correct candidate, record a low and a high operand expression to its `target` in the project knowledge. Then a rebuild can move the target.
 - `pitfalls`: code that a C64 runs in a different way than it reads. For `raster-bit-8`, the instruction at `at` reads `$D011`, and the instruction at `store` writes the value back. The write can move the raster interrupt to line 256 or later. On PAL, past line 311, the interrupt never comes. Where the code must not keep bit 7, add a comment and test the program.
-- `macros`: runs of instructions that one macro line can replace, for example `+inc16 ptr`. Each candidate has `macro`, `start`, `end`, `args` and `text`. The macros are `inc16`, `dec16`, `add16_8`, `add16`, `sub16`, `set16`, `mov16` and `wait_line`. An arg is a name of the user or the LLM, or a platform name of a ROM that the program uses. `known` counts the uses that the project knowledge has. `leftOut` counts the candidates with a label inside, or with a patch over them, or with another use of the project knowledge over them. With `--apply-macros`, `revision` gives the revision of the writes, and `writes` counts them. The writes hold the macros that the project knowledge does not have, with their bodies, and the uses. Do not write these macros yourself. `otherMacros` names each macro that the project knowledge has with another body. The writes do not have the uses of that macro.
+- `macros`: runs of instructions that one macro line can replace, for example `+inc16 ptr`. Each candidate has `macro`, `start`, `end`, `args` and `text`. The macros are `inc16`, `dec16`, `add16_8`, `add16`, `sub16`, `set16`, `mov16` and `wait_line`. An arg is a name of the user or the LLM, or a platform name of a ROM that the program uses. `known` counts the uses that the project knowledge has. `leftOut` counts the candidates with a label inside, or with a patch over them, or with another use of the project knowledge over them. With `--apply-macros`, `revision` gives the revision of the writes, and `writes` counts them. The writes hold the macros that the project knowledge does not have, with their bodies, and the uses. Do not write these macros yourself. `otherMacros` names each macro that the project knowledge has with another body. The writes do not have the uses of that macro. `skipped` counts the candidates that `--skip` left out. `notCandidates` lists each `--skip` address that starts no candidate.
 
 #### Which facts the analysis replaces
 
