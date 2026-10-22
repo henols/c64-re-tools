@@ -73,6 +73,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 - `listing`: the BASIC lines. Each line starts with its BASIC line number. The keywords show in capitals, also in strings and in REM, as LIST shows them. A colour code or a position code shows in braces, for example `{INK 2}` or `{AT 3,4}`. A user graphic shows as `{UDG A}`. Another byte that is not a character shows as `{$xx}`.
 - `handoffs`: each place where the BASIC gives control to machine code or loads a file. Each handoff has a `kind` and the BASIC `line`.
 - `variableBytes`: the number of bytes of the BASIC variables after the program.
+- `hiddenBytes`: only when the program has bytes after its last line. LIST does not show these bytes, and a loader can keep machine code there. It has `offset` (the offset in the program), `bytes` (the number of bytes) and, in a snapshot, `address`. The length of the program comes from the tape header or from `VARS`. Bytes of a program file have no such length, so they give no `hiddenBytes`.
 - On a tape: `block`, `name` and `autostart`. `block` is the number of the header block. `autostart` is the line that the header starts, or `null`.
 - In a snapshot: `from`, the address where the program starts. For the bytes of a program, `from` is `file`.
 
@@ -96,7 +97,8 @@ A program on a tape without its data block has `problem` and no listing. Then th
 
 - A `usr` address: disassemble the machine code at that address. `hint` also names the CODE file that loads to that address.
 - A computed address: find the address in the emulator at run time. Do not guess the address.
-- No `usr` handoff: the BASIC starts no machine code with USR. Look in the listing for a POKE or a LOAD of another file. Do not make up a handoff.
+- No `usr` handoff: the BASIC has no USR. It can start machine code in another way, for example with a POKE of the error return at `ERR_SP` (23613 and 23614). Look in the listing for a POKE, a hidden number and a LOAD of another file. Do not make up a handoff.
+- `hiddenBytes`: disassemble the bytes after the last line.
 - A program without its data block: load the tape in the emulator, and stop at the entry of the machine code.
 
 When the address where the machine code starts is a durable fact, record it in the project knowledge. Do not record the listing.

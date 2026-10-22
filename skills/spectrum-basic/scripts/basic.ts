@@ -26,11 +26,24 @@ const E_LINE = 0x5c59;
 
 const handoff = (item: SinclairHandoff) => ("address" in item && item.address !== undefined ? { ...item, address: formatAddress(item.address) } : item);
 
-/** The listing of a program, its handoffs and the size of its variables: `bytes` are the program and its variables, the first `length` the program. */
-function program(bytes: Uint8Array, length: number, model: SpectrumModel, what: string) {
+/**
+ * The listing of a program, its handoffs and the size of its variables:
+ * `bytes` are the program and its variables, the first `length` the program,
+ * when a tape header or VARS gives that length. Bytes of the program after its
+ * last line are hidden: LIST does not show them, and a loader can keep machine
+ * code there. `at` is the address of the first byte, when it is known.
+ */
+function program(bytes: Uint8Array, length: number | undefined, model: SpectrumModel, what: string, at?: number) {
   const parsed = parseSinclairBasic(bytes, length);
   if ("reason" in parsed) throw new Refusal("invalid-input", `${what} is no BASIC program: ${parsed.reason}`, { hint: "Usually the bytes are machine code. Disassemble them from their load address." });
-  return { listing: parsed.lines.map((line) => sinclairLineText(line, model)), handoffs: findSinclairHandoffs(parsed.lines).map(handoff), variableBytes: bytes.length - parsed.variablesAt };
+  const end = Math.min(length ?? parsed.variablesAt, bytes.length);
+  const hidden = end - parsed.variablesAt;
+  return {
+    listing: parsed.lines.map((line) => sinclairLineText(line, model)),
+    handoffs: findSinclairHandoffs(parsed.lines).map(handoff),
+    variableBytes: bytes.length - end,
+    ...(hidden > 0 ? { hiddenBytes: { offset: parsed.variablesAt, bytes: hidden, ...(at === undefined ? {} : { address: formatAddress(at + parsed.variablesAt) }) } } : {}),
+  };
 }
 
 /** The programs of a tape (a header block and the data block after it), and the code files it holds. */
@@ -58,7 +71,7 @@ function tape(blocks: TapeBlock[], model: SpectrumModel) {
   return { programs, code };
 }
 
-type Listed = ReturnType<typeof program> & { block?: number; problem?: string; from?: string };
+type Listed = ReturnType<typeof program> & { block?: number; name?: string; problem?: string; from?: string };
 
 /** The body with a hint: the machine code to disassemble, a handoff to find at run time, or a program without its data. */
 function answer(body: { programs: Array<Partial<Listed>>; code?: Array<{ block: number; name: string; address: string }> }) {
@@ -68,7 +81,15 @@ function answer(body: { programs: Array<Partial<Listed>>; code?: Array<{ block: 
   const known = usr.flatMap((item) => ("address" in item && item.address !== undefined ? [item.address] : []));
   const computed = usr.filter((item) => "computed" in item).map((item) => item.line);
   const missing = body.programs.filter((item) => item.problem !== undefined).map((item) => item.block);
-  if (body.programs.every((item) => item.problem === undefined) && usr.length === 0) hints.push("The BASIC starts no machine code with USR. Look in the listing for a POKE or a LOAD of another file.");
+  if (body.programs.every((item) => item.problem === undefined) && usr.length === 0) {
+    hints.push("The BASIC has no USR. It can start machine code in another way, for example with a POKE of the error return at ERR_SP (23613 and 23614). Look in the listing for a POKE, a hidden number and a LOAD of another file.");
+  }
+  for (const item of body.programs) {
+    if (item.hiddenBytes === undefined) continue;
+    const where = item.hiddenBytes.address ?? `offset ${item.hiddenBytes.offset} of the program`;
+    const named = item.name === undefined ? "The program" : `The program ${item.name}`;
+    hints.push(`${named} has ${item.hiddenBytes.bytes} bytes after its last line at ${where}, which LIST does not show. Machine code can be there: disassemble them.`);
+  }
   for (const address of new Set(known)) {
     const file = body.code?.find((item) => item.address === address);
     hints.push(file === undefined ? `Disassemble the machine code at ${address}.` : `Disassemble the machine code at ${address}. The CODE file ${file.name} at block ${file.block} loads to that address.`);
@@ -106,9 +127,10 @@ await runScript({
             throw new Refusal("invalid-input", `${path}: PROG is ${formatAddress(start)}, VARS ${formatAddress(variables)} and E_LINE ${formatAddress(edited)}, so the memory holds no BASIC program.`);
           }
           const bytes = ram.subarray(start - 0x4000, edited - 0x4000);
-          return answer({ programs: [{ from: formatAddress(start), ...program(bytes, variables - start, given ?? snapshot.model, path) }] });
+          return answer({ programs: [{ from: formatAddress(start), ...program(bytes, variables - start, given ?? snapshot.model, path, start) }] });
         }
-        return answer({ programs: [{ from: "file", ...program(file.bytes, file.bytes.length, given ?? "48k", path) }] });
+        // The bytes of a program have no length of the program: its variables start at the first byte that starts no line.
+        return answer({ programs: [{ from: "file", ...program(file.bytes, undefined, given ?? "48k", path) }] });
       },
     },
   ],
