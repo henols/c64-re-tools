@@ -26,7 +26,7 @@ function script(skill: string, file: string, args: readonly string[], options: {
   return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, unknown> };
 }
 
-const knowledge = (args: readonly string[], options: { cwd?: string; input?: string } = {}) => script("c64-knowledge", "knowledge.ts", args, options);
+const knowledge = (args: readonly string[], options: { cwd?: string; input?: string } = {}) => script("retro-knowledge", "knowledge.ts", args, options);
 
 test("from the workspace root, scripts write into the project that --project names, and never at the root", () => {
   assert.equal(knowledge(["rename", "$c000", "start", "--project", "hover-bovver"]).status, 0);

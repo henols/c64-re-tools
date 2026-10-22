@@ -253,7 +253,7 @@ export function entryMemory(image: ProgramImage): Uint8Array {
 /**
  * The bytes for an analyzer: a PRG for one segment without an entry state,
  * else the 64 KiB with the entry-state pages (entryMemory). DXA, Ghidra and
- * c64-source get the same bytes.
+ * retro-source get the same bytes.
  */
 export function analyzedBytes(image: ProgramImage): { bytes: Buffer; kind: "prg" | "flat64k" } {
   if (image.segments.length === 1 && image.state === undefined) {

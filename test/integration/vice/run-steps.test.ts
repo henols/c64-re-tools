@@ -1,4 +1,4 @@
-// The c64-testing run: steps in its own emulator, with screens, a
+// The retro-testing run: steps in its own emulator, with screens, a
 // coverage map, a snapshot file and observations written to a directory; a
 // second run starts from the snapshot file of the first. Opt-in with C64RT_LIVE_VICE.
 
@@ -18,7 +18,7 @@ import { joystickCounterPrg, LEFT_SEEN } from "../../fixtures/prg/joystick-count
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-run-"));
 let server: HostServer | undefined;
 after(async () => {
@@ -149,7 +149,7 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
   assert.equal(all.length, 0x10000);
   assert.deepEqual([...all.subarray(0xe000, 0xe004)], [1, 2, 3, 4]);
 
-  const differ = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+  const differ = resolve(import.meta.dirname, "../../../skills/retro-testing/scripts/testing.ts");
   const child = spawn(process.execPath, [...process.execArgv, differ, "diff", "runs/under/a.vsf", "runs/under/b.vsf"], { cwd: project, env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));

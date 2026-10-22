@@ -74,26 +74,26 @@ test("a routine saved from program A is found in program B at another address, a
     { op: "module", start: "$1000", file: "sound.asm", title: "The sound driver" },
   ];
   writeFileSync(join(workspace, "game-a", "named.json"), JSON.stringify(named));
-  ok("c64-knowledge", "knowledge.ts", ["image", "a.prg", "--project", "game-a"]);
-  ok("c64-knowledge", "knowledge.ts", ["apply", "named.json", "--reason", "the sound driver", "--project", "game-a"]);
+  ok("retro-knowledge", "knowledge.ts", ["image", "a.prg", "--project", "game-a"]);
+  ok("retro-knowledge", "knowledge.ts", ["apply", "named.json", "--reason", "the sound driver", "--project", "game-a"]);
 
   // The routine goes to the library beside the projects; --library is relative to the project folder.
-  const saved = ok("c64-provenance", "provenance.ts", ["routine", "$1000", "--library", "../library", "--project", "game-a"]);
+  const saved = ok("retro-provenance", "provenance.ts", ["routine", "$1000", "--library", "../library", "--project", "game-a"]);
   assert.deepEqual({ routine: saved.routine, out: saved.out, start: saved.start, end: saved.end, length: saved.length }, { routine: "play", out: "../library/play.json", start: "$1000", end: "$1026", length: 39 });
   // The routine file shows as a written file: its size and SHA-256 are those of the file.
   const file = readFileSync(join(workspace, "library", "play.json"));
   assert.deepEqual({ bytes: saved.bytes, sha256: saved.sha256, file: saved.file }, { bytes: file.length, sha256: createHash("sha256").update(file).digest("hex"), file: undefined });
   assert.deepEqual(saved.counts, { symbols: 3, regions: 3, comments: 1, references: 0, operands: 2 });
   assert.match(readFileSync(join(workspace, "library", "play.json"), "utf8"), /"title": "The sound driver"/);
-  assert.equal(script("c64-provenance", "provenance.ts", ["routine", "$1000", "--library", "../library", "--project", "game-a"]).json.error.code, "conflict");
+  assert.equal(script("retro-provenance", "provenance.ts", ["routine", "$1000", "--library", "../library", "--project", "game-a"]).json.error.code, "conflict");
   // The library is no project, and nothing is written at the workspace root.
   assert.deepEqual(readdirSync(join(workspace, "library")), ["play.json"]);
   assert.ok(!existsSync(join(workspace, ".c64-re-tools")));
-  assert.equal(script("c64-provenance", "provenance.ts", ["match", "--library", "../game-a", "--project", "game-b"]).json.error.code, "invalid-input");
+  assert.equal(script("retro-provenance", "provenance.ts", ["match", "--library", "../game-a", "--project", "game-b"]).json.error.code, "invalid-input");
 
   // Program B: match finds the routine $2000 bytes higher, with the other SID register listed.
-  ok("c64-knowledge", "knowledge.ts", ["image", "b.prg", "--project", "game-b"]);
-  const matchRun = script("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--project", "game-b"]);
+  ok("retro-knowledge", "knowledge.ts", ["image", "b.prg", "--project", "game-b"]);
+  const matchRun = script("retro-provenance", "provenance.ts", ["match", "--library", "../library", "--project", "game-b"]);
   assert.equal(matchRun.status, 0, JSON.stringify(matchRun.json));
   const matched = matchRun.json;
   assert.deepEqual(matched.matches, { count: 1, listed: [{ routine: "play", start: "$3000", end: "$3026", shift: 0x2000, differing: [{ address: "$3005", library: "$d400", program: "$d407" }] }] });
@@ -101,25 +101,25 @@ test("a routine saved from program A is found in program B at another address, a
   assert.deepEqual(matched.changes.writes.listed[0], { op: "rename", address: "$3000", name: "play", kind: "routine" });
   assert.match(matchRun.envelope.hint!, /Then nextAction writes the changes to the project knowledge\. Then examine changes\.check:/);
   assert.match(matchRun.envelope.nextAction!, / match --library \.\.\/library --apply /);
-  assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]).symbol, undefined, "without --apply, match writes nothing");
+  assert.equal(ok("retro-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]).symbol, undefined, "without --apply, match writes nothing");
 
   // With --apply, match writes the changes as one revision of the LLM.
-  const applied = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--apply", "--project", "game-b"]);
+  const applied = ok("retro-provenance", "provenance.ts", ["match", "--library", "../library", "--apply", "--project", "game-b"]);
   assert.equal(typeof applied.changes.revision, "string");
-  const at = ok("c64-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]);
+  const at = ok("retro-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]);
   assert.equal(at.symbol.name, "set_pointer");
   assert.equal(at.symbol.origin, "llm");
   // The address in the comment moved with the routine.
   assert.deepEqual(at.comments.map((comment: { text: string }) => comment.text), ["Point A/Y at the voice table at $3020 for the copy to $d400."]);
   // A second match finds that B already has every name.
-  const again = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--project", "game-b"]);
+  const again = ok("retro-provenance", "provenance.ts", ["match", "--library", "../library", "--project", "game-b"]);
   assert.deepEqual(again.changes, { writes: { count: 0, listed: [] }, known: 9, leftOut: { count: 0, listed: [] }, check: { count: 0, listed: [] } });
 
   if (generateSkip !== false) {
     t.diagnostic(generateSkip);
     return;
   }
-  const generated = ok("c64-source", "source.ts", ["generate", "--out", ".c64-re-tools/local/src", "--project", "game-b"]);
+  const generated = ok("retro-source", "source.ts", ["generate", "--out", ".c64-re-tools/local/src", "--project", "game-b"]);
   assert.equal(generated.check.identical, true, JSON.stringify(generated.check));
   const source = (readdirSync(join(workspace, "game-b", ".c64-re-tools", "local", "src"), { recursive: true }) as string[])
     .filter((file) => file.endsWith(".asm"))

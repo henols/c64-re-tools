@@ -1,7 +1,7 @@
 // An unknown C64 artifact goes through the whole chain with the real skill
 // scripts and the Host Runtime from this checkout:
 //   disk → BASIC → packing → DXA → knowledge → seeded Ghidra →
-//   reconstructed source → ACME → c64-testing PASS.
+//   reconstructed source → ACME → retro-testing PASS.
 // Needs real VICE (C64RT_LIVE_VICE), DXA, ACME, c1541 and petcat.
 
 import assert from "node:assert/strict";
@@ -72,8 +72,8 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   assert.deepEqual(packing.json.basicStart, { line: 10, sys: "$080d" });
 
   // 4. The program goes into the knowledge, and a fast DXA first pass finds the BASIC start by itself.
-  assert.equal((await run("c64-knowledge", "knowledge.ts", "image", "extracted/game.prg")).status, 0);
-  const first = await run("c64-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa", "--out-listing", "analysis/game.lst");
+  assert.equal((await run("retro-knowledge", "knowledge.ts", "image", "extracted/game.prg")).status, 0);
+  const first = await run("retro-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa", "--out-listing", "analysis/game.lst");
   assert.equal(first.status, 0, first.stdout);
   assert.deepEqual(first.json.regions, [
     { start: "$0801", end: "$080c", classification: "data" },
@@ -86,12 +86,12 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
     ["rename", "$c100", "counter", "--kind", "variable", "--reason", "counted to ten"],
     ["rename", "$0821", "done", "--kind", "label", "--reason", "endless loop after the count"],
   ]) {
-    const renamed = await run("c64-knowledge", "knowledge.ts", ...args);
+    const renamed = await run("retro-knowledge", "knowledge.ts", ...args);
     assert.notEqual(renamed.json.revision, undefined, renamed.stdout);
   }
 
   // 6. Deeper analysis seeded with the names.
-  const second = await run("c64-static-analysis", "static-analysis.ts", "analyze", "--entry", "$080d", "--decompile", "$080d");
+  const second = await run("retro-static-analysis", "static-analysis.ts", "analyze", "--entry", "$080d", "--decompile", "$080d");
   assert.deepEqual(second.json.conflicts, []);
   assert.match((second.json.decompilations as Array<{ text: string }>)[0]!.text, /void main\(void\)/);
 
@@ -119,7 +119,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
       ],
     }),
   );
-  const verified = await run("c64-testing", "testing.ts", "test", "counts.json");
+  const verified = await run("retro-testing", "testing.ts", "test", "counts.json");
   assert.deepEqual(verified.json, { result: "PASS", scenario: "counts to ten and turns the border green", checkpoints: ["counted"], differences: [] });
   assert.equal(verified.status, 0);
 });

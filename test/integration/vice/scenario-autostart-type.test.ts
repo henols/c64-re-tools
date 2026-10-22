@@ -17,7 +17,7 @@ import { keyWaitPrg } from "../../fixtures/prg/key-wait.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-autostart-type-"));
 let server: HostServer | undefined;
 after(async () => {

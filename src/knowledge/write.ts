@@ -878,7 +878,7 @@ function unmoduleStep(db: DatabaseSync, change: Change, _origin: Origin, request
 
 /**
  * Refuses ACME text whose braces do not pair outside comments and strings:
- * c64-source writes patch code and a macro body inside { }.
+ * retro-source writes patch code and a macro body inside { }.
  */
 function checkBraces(text: string, what: string): void {
   let depth = 0;

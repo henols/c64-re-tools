@@ -1,4 +1,4 @@
-// Runtime evidence of c64-provenance: each release runs in its own
+// Runtime evidence of retro-provenance: each release runs in its own
 // emulator, a PRG by autostart and an image by writing it with its entry
 // state; each difference gets its first access and whether it changed.
 // Opt-in with C64RT_LIVE_VICE.
@@ -17,7 +17,7 @@ import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-provenance/scripts/provenance.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-provenance/scripts/provenance.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-run-"));
 let server: HostServer | undefined;
 after(async () => {

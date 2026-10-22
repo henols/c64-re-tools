@@ -28,7 +28,7 @@ try {
   skip = "dxa is not installed: install dxa or set C64RT_DXA to run this test";
 }
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-static-analysis/scripts/static-analysis.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-static-analysis/scripts/static-analysis.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m7-"));
 after(() => rmSync(project, { recursive: true, force: true }));
 

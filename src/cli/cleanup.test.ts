@@ -164,7 +164,7 @@ test("an install removes the skill files of the earlier version that it no longe
     for (const item of before) for (const file of item.files) write(file);
     write(".claude/skills/c64-emulator/notes.md");
     // The new install: claude only, c64-emulator renamed to emulator, and no MCP item recorded.
-    const after = [skill("claude", "emulator", [".claude/skills/emulator/SKILL.md", ".claude/skills/shared.md"]), skill("claude", "c64-disk", [".claude/skills/c64-disk/SKILL.md"])];
+    const after = [skill("claude", "retro-emulator", [".claude/skills/retro-emulator/SKILL.md", ".claude/skills/shared.md"]), skill("claude", "c64-disk", [".claude/skills/c64-disk/SKILL.md"])];
     for (const item of after) for (const file of item.files) write(file);
     write(".ap-sdk/install-manifest.json");
     writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: after } } }));

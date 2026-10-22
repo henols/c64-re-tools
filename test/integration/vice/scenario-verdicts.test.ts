@@ -21,7 +21,7 @@ import { BROKEN, EQUIVALENT, ORIGINAL } from "../../fixtures/prg/counter-variant
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m9-"));
 let server: HostServer | undefined;
 after(async () => {

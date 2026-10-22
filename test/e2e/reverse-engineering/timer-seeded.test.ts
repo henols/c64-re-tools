@@ -1,5 +1,5 @@
 // A program that reads the CIA timer at its entry, as a game that seeds its
-// random numbers from it: capture, source with a loader, and a c64-testing
+// random numbers from it: capture, source with a loader, and a retro-testing
 // scenario against the original. The loader sets the CIA timers, so
 // the rebuild reads the same value; a loader without them reads another.
 // Needs real VICE (C64RT_LIVE_VICE) and ACME.
@@ -66,8 +66,8 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
   const state = JSON.parse(readFileSync(join(project, "unpacked", "entry_state.json"), "utf8")) as Record<string, any>;
   assert.equal(state.cia.cia1.latchA, 0x4025, "the KERNAL's latch of CIA 1 timer A");
 
-  assert.equal((await run("c64-knowledge", "knowledge.ts", "image", "unpacked/image.json")).status, 0);
-  const generated = await run("c64-source", "source.ts", "generate", "--out", "src", "--loader");
+  assert.equal((await run("retro-knowledge", "knowledge.ts", "image", "unpacked/image.json")).status, 0);
+  const generated = await run("retro-source", "source.ts", "generate", "--out", "src", "--loader");
   assert.equal(generated.status, 0, generated.stdout);
   assert.equal(generated.json.loader.verified, true, generated.stdout);
   // The next run writes the loader program of the build again: keep this one.
@@ -76,8 +76,8 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
   // The control: the same entry state without the CIA part gives a loader that leaves the timers as the KERNAL ran them.
   delete state.cia;
   writeFileSync(join(project, "unpacked", "entry_state.json"), JSON.stringify(state));
-  assert.equal((await run("c64-knowledge", "knowledge.ts", "image", "unpacked/image.json")).json.entryChanged, true);
-  const old = await run("c64-source", "source.ts", "generate", "--out", "src-old", "--loader");
+  assert.equal((await run("retro-knowledge", "knowledge.ts", "image", "unpacked/image.json")).json.entryChanged, true);
+  const old = await run("retro-source", "source.ts", "generate", "--out", "src-old", "--loader");
   assert.equal(old.json.loader.verified, true, old.stdout);
 
   const scenario = (name: string, loader: string) => {
@@ -90,7 +90,7 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
         steps: [{ reset: "hard" }, { autostart: true }, { runUntil: { target: { kind: "address", address: "$c00c" }, timeoutFrames: 300 } }, { observe: "seeded", memory: [{ address: "$c100", size: 2 }] }],
       }),
     );
-    return run("c64-testing", "testing.ts", "test", name);
+    return run("retro-testing", "testing.ts", "test", name);
   };
   const withTimers = await scenario("timers.json", "build/with_timers.prg");
   assert.equal(withTimers.json.result, "PASS", withTimers.stdout);

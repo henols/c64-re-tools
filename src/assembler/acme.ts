@@ -12,7 +12,7 @@ const DATA_ITEM_BYTES: Record<string, number> = { "!byte": 1, "!by": 1, "!8": 1,
  * a 6510 instruction without a label. An instruction is 1 byte without an
  * operand (or with A), else at least 2. Undefined for code with another line,
  * for example a label, a macro use or a condition: then only the build of the
- * switch (c64-source generate) gives the length.
+ * switch (retro-source generate) gives the length.
  */
 export function leastPatchBytes(code: string): number | undefined {
   let bytes = 0;

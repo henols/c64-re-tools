@@ -49,7 +49,7 @@ function symbols(base: number) {
 }
 
 function script(name: string, args: string[]): { status: number | null; result: Record<string, unknown> } {
-  const run = spawnSync(process.execPath, [...process.execArgv, join(root, "skills/c64-testing/scripts/testing.ts"), name, ...args], { cwd: project, encoding: "utf8", timeout: 120_000 });
+  const run = spawnSync(process.execPath, [...process.execArgv, join(root, "skills/retro-testing/scripts/testing.ts"), name, ...args], { cwd: project, encoding: "utf8", timeout: 120_000 });
   assert.ok(run.stdout !== "", run.stderr);
   return { status: run.status, result: readEnvelope(run.stdout, run.status).json as Record<string, unknown> };
 }

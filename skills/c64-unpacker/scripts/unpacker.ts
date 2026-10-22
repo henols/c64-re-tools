@@ -143,7 +143,7 @@ const SYS_FRAMES = 50;
  * BASIC computes: an exec breakpoint over that part of the program stops there.
  */
 /**
- * Starts the program as a c64-testing scenario does: hard reset, load,
+ * Starts the program as a retro-testing scenario does: hard reset, load,
  * an empty memory map, then RUN up to the first BASIC line, or the pc at
  * `entry`. Gives why it did not start.
  */

@@ -3,8 +3,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildReference } from "../../skills/c64-docs/scripts/lib/reference.ts";
-import type { SourceMap } from "../../skills/c64-docs/scripts/lib/source-map.ts";
+import { buildReference } from "../../skills/retro-docs/scripts/lib/reference.ts";
+import type { SourceMap } from "../../skills/retro-docs/scripts/lib/source-map.ts";
 
 const row = { space: "c64", origin: "llm", revision: "1" } as const;
 

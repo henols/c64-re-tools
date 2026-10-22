@@ -1,5 +1,5 @@
 // C64 platform reference data and decoders: the c64-memory-map script, and the
-// platform names that c64-source uses.
+// platform names that retro-source uses.
 // Names follow "Mapping the Commodore 64". Only platform facts live here:
 // an address without one belongs to the application.
 
@@ -343,7 +343,7 @@ export function areaOf(address: number): Area {
   return { name: area.area, start: area.start, end: area.end, kind: area.kind, meaning: area.meaning };
 }
 
-/** The area of an address, and the register that an I/O mirror repeats: c64-source groups and describes its constants with them. */
+/** The area of an address, and the register that an I/O mirror repeats: retro-source groups and describes its constants with them. */
 export function describeAddress(address: number): { area: Area; mirrorOf?: number } {
   const { mirrorOf } = lookup(address);
   return { area: areaOf(address), ...(mirrorOf === undefined ? {} : { mirrorOf }) };
@@ -425,8 +425,8 @@ export function romUseOfPort(port: number): RomUse {
 
 /**
  * The ROMs that a program uses, and what tells it: the coverage when the
- * knowledge has it, else $01 of the entry state, else both ROMs. c64-source and
- * c64-static-analysis give the platform names of platformNamesFor of it, so
+ * knowledge has it, else $01 of the entry state, else both ROMs. retro-source and
+ * retro-static-analysis give the platform names of platformNamesFor of it, so
  * they use the same names.
  */
 export function romUseOfProgram(coverage: Uint8Array | undefined, state: Record<string, unknown> | undefined): RomUse & { from: "coverage" | "entry state" | "none" } {

@@ -1,7 +1,7 @@
 // From a clean C64 project folder, a read needs no knowledge, the first
 // write creates .c64-re-tools/knowledge/, and several semantic changes give
 // a correct current view with the full history.
-// Only the c64-knowledge script runs: no Host Runtime is involved.
+// Only the retro-knowledge script runs: no Host Runtime is involved.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -12,7 +12,7 @@ import { after, test } from "node:test";
 import { nthIn } from "../../../src/knowledge/revisions.testkit.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-knowledge/scripts/knowledge.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-knowledge/scripts/knowledge.ts");
 const root = mkdtempSync(join(tmpdir(), "c64-re-tools-m4-"));
 after(() => rmSync(root, { recursive: true, force: true }));
 

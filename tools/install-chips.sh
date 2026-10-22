@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds c64run, the replay core of c64-testing: floooh/chips c64.h at a pinned
+# Builds c64run, the replay core of retro-testing: floooh/chips c64.h at a pinned
 # commit with the line-command harness c64run.c next to this script. Installs
 # /usr/local/bin/c64run and the three C64 ROMs that it loads to
 # /usr/local/share/c64-re-tools/roms. install-container.sh runs it as root,

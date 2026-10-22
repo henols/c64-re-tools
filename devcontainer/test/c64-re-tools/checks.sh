@@ -28,9 +28,9 @@ check "c64run starts the C64 with its ROMs" bash -c "printf 'init\\nquit\\n' | c
 check "the tools are stamped with the toolkit version" bash -c "test -s /usr/local/share/c64-re-tools/tools.version && ls /usr/local/share/c64-re-tools/stamps/dxa /usr/local/share/c64-re-tools/stamps/exomizer /usr/local/share/c64-re-tools/stamps/c64run"
 check "a start with the same version installs no tools" bash -c "! /usr/local/share/c64-re-tools/project.sh update 2>&1 | grep 'installing the native tools'"
 check "a start with the same version asks for no restart" bash -c "! /usr/local/share/c64-re-tools/project.sh update 2>&1 | grep 'Restart the agent session'"
-check "the toolkit is installed in the project" bash -c "ls .claude/skills/c64-reverse-engineering/SKILL.md .mcp.json"
+check "the toolkit is installed in the project" bash -c "ls .claude/skills/retro-reverse-engineering/SKILL.md .mcp.json"
 check "the tools are of the channel ${CHANNEL}: ${VERSION}" bash -c "test \"\$(cat /usr/local/share/c64-re-tools/tools.version)\" = '${VERSION}'"
-check "the skills are of the channel ${CHANNEL}: ${VERSION}" bash -c "grep -F '\"version\": \"${VERSION}\"' .claude/skills/c64-knowledge/package.json"
+check "the skills are of the channel ${CHANNEL}: ${VERSION}" bash -c "grep -F '\"version\": \"${VERSION}\"' .claude/skills/retro-knowledge/package.json"
 check "the MCP server runs the npm tag ${TAG}" bash -c "grep -F -- '--package=@henols/c64-re-tools@${TAG}\"' .mcp.json"
 
 reportResults

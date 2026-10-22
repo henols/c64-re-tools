@@ -94,7 +94,7 @@ test("every script gives its command list without arguments, with the synopsis o
 });
 
 test("a script is named after its skill", () => {
-  for (const script of SCRIPTS) assert.equal(script.name, `${script.skill.replace(/^c64-/, "")}.ts`, script.path);
+  for (const script of SCRIPTS) assert.equal(script.name, `${script.skill.replace(/^(retro|c64|spectrum)-/, "")}.ts`, script.path);
 });
 
 test("a wrong call is one ok:false envelope with exit status 2 and nothing on stderr", async () => {
@@ -253,7 +253,7 @@ test("no skill names another skill or the script of another skill", () => {
         .forEach((line, index) => {
           // Code comments may name a skill: only the text that the agent reads counts.
           if (file.endsWith(".ts") && /^\s*(\/\/|\*|\/\*|import )/.test(line)) return;
-          for (const other of SKILLS) if (other !== skill && other.startsWith("c64-") && new RegExp(`\\b${other}\\b(?![-/])`).test(line)) problems.push(`${skill}/${file}:${index + 1} names ${other}`);
+          for (const other of SKILLS) if (other !== skill && /^(retro|c64|spectrum)-/.test(other) && new RegExp(`\\b${other}\\b(?![-/])`).test(line)) problems.push(`${skill}/${file}:${index + 1} names ${other}`);
           for (const [name, owner] of scripts) if (owner !== skill && new RegExp(`(?<![\\w/-])${name.replace(".", "\\.")}\\b`).test(line)) problems.push(`${skill}/${file}:${index + 1} names ${name}`);
         });
     }

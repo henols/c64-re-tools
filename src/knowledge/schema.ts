@@ -102,14 +102,14 @@ export type CoverageKind = (typeof COVERAGE_KINDS)[number];
 /** The most bytes of one memory row: a changed byte changes one short line of memory.jsonl. */
 export const MEMORY_ROW = 64;
 
-/** Files that c64-source writes itself: no module can have these names. */
+/** Files that retro-source writes itself: no module can have these names. */
 export const GENERATED_FILES = ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm", "start_screen.asm"] as const;
 
 /** The folder of the leftovers in the generated source: leftovers/leftover_xxxx.asm. */
 export const LEFTOVER_FOLDER = "leftovers";
 /** The folder of the parts of segments that no module holds: segments/segment_xxxx.asm. */
 export const SEGMENT_FOLDER = "segments";
-/** The folders that c64-source writes itself: no module file is in them. */
+/** The folders that retro-source writes itself: no module file is in them. */
 export const GENERATED_FOLDERS = [LEFTOVER_FOLDER, SEGMENT_FOLDER] as const;
 
 /**

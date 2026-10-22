@@ -138,7 +138,7 @@ export async function loads(program: string, options: { out: string; steps: Load
       previous.fill(0, load, Math.min(0x10000, load + bytes.length - 2));
       loadedProgram = bytes;
       await client.memmap({ action: "clear" });
-      // RUN as c64-testing types it: the steps start at the same time as a scenario's.
+      // RUN as retro-testing types it: the steps start at the same time as a scenario's.
       if (!(await typeRun(client))) {
         const reason = `After RUN, BASIC ran no program line in ${RUN_LIMIT_FRAMES} frames. loads starts a PRG with RUN, so it needs a program with a BASIC start line, for example 10 SYS 2061. For a PRG without a BASIC start, use capture with --entry.`;
         return { output: { loaded: false, reason, captures: [] }, failed: true };

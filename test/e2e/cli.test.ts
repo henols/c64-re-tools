@@ -19,7 +19,7 @@ const run = (...args: string[]) => spawnSync(process.execPath, [...process.execA
 test("install puts the skills and the MCP declaration into the project; uninstall removes them", () => {
   const installed = run("install", "--target", "claude");
   assert.equal(installed.status, 0, installed.stdout + installed.stderr);
-  assert.ok(existsSync(join(project, ".claude", "skills", "emulator", "SKILL.md")));
+  assert.ok(existsSync(join(project, ".claude", "skills", "retro-emulator", "SKILL.md")));
   const disk = join(project, ".claude", "skills", "c64-disk");
   for (const file of ["scripts/disk.ts", "src/host-client/tools.ts", "package.json"]) assert.ok(existsSync(join(disk, file)), file);
   assert.deepEqual(JSON.parse(readFileSync(join(project, ".mcp.json"), "utf8")), { mcpServers: { c64: mcpServerFor(process.platform, "c64") } });
@@ -28,7 +28,7 @@ test("install puts the skills and the MCP declaration into the project; uninstal
 
   const removed = run("uninstall", "--target", "claude");
   assert.equal(removed.status, 0, removed.stdout + removed.stderr);
-  assert.equal(existsSync(join(project, ".claude", "skills", "emulator")), false);
+  assert.equal(existsSync(join(project, ".claude", "skills", "retro-emulator")), false);
 });
 
 test("install --machines declares one MCP server per family, and an update without it keeps them", () => {
@@ -67,7 +67,7 @@ test("a project install for every harness leaves the home directory alone; unins
       manifest.plugins["c64-re-tools"].items.some((item: { harness: string; kind: string }) => item.harness === "windsurf" && item.kind === "mcp"),
       false,
     );
-    assert.ok(existsSync(join(fresh, ".windsurf", "skills", "emulator", "SKILL.md")), "Windsurf still gets the skills");
+    assert.ok(existsSync(join(fresh, ".windsurf", "skills", "retro-emulator", "SKILL.md")), "Windsurf still gets the skills");
 
     const removed = inHome("uninstall");
     assert.equal(removed.status, 0, removed.stdout + removed.stderr);

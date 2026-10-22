@@ -37,7 +37,7 @@ test("the plugin holds every skill with its scripts, their src/ modules, referen
   assert.equal(plugin.id, "c64-re-tools");
   const names = plugin.skills!.map((skill) => skill.name);
   assert.deepEqual(names, readdirSync(resolve(root, "skills")).sort());
-  const testing = plugin.skills!.find((skill) => skill.name === "c64-testing")!;
+  const testing = plugin.skills!.find((skill) => skill.name === "retro-testing")!;
   const paths = testing.resources!.map((resource) => resource.path);
   assert.deepEqual(
     testing.resources!.filter((resource) => resource.executable === true).map((resource) => resource.path),
@@ -61,7 +61,7 @@ test("the plugin holds every skill with its scripts, their src/ modules, referen
   assert.ok(!paths.some((path) => path.startsWith("src/mcp/") || path.startsWith("src/host/")), "only what the scripts reach");
   assert.equal(testing.resources!.find((resource) => resource.path === "package.json")!.content, SKILL_PACKAGE);
 
-  const analysis = plugin.skills!.find((skill) => skill.name === "c64-static-analysis")!.resources!.map((resource) => resource.path);
+  const analysis = plugin.skills!.find((skill) => skill.name === "retro-static-analysis")!.resources!.map((resource) => resource.path);
   for (const path of ["src/native/watchdog.ts", "src/native/ghidra/c64rt-wasm.ts"]) assert.ok(analysis.includes(path), path);
 
   for (const skill of plugin.skills!) {

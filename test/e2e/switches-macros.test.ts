@@ -14,7 +14,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ACME, findTool } from "../../src/native/discover.ts";
-import { CATALOGUE } from "../../skills/c64-static-analysis/scripts/lib/macros.ts";
+import { CATALOGUE } from "../../skills/retro-static-analysis/scripts/lib/macros.ts";
 import { readEnvelope } from "../kit.ts";
 
 let skip: string | false = false;
@@ -77,14 +77,14 @@ test("switches and macros: the original stays identical, each switch fits, and t
       { op: "patch", start: "$102a", end: "$102c", switch: "PROTECTION", code: "        rts" },
     ]),
   );
-  ok("c64-knowledge", "knowledge.ts", ["image", "game.prg"]);
-  ok("c64-knowledge", "knowledge.ts", ["release", "ORIGINAL", "--file", "game.prg", "--base", "--comment", "With the copy check."]);
-  ok("c64-knowledge", "knowledge.ts", ["switch", "PROTECTION", "--kind", "protection", "--releases", "ORIGINAL", "--comment", "The copy check reads the keyboard."]);
-  ok("c64-knowledge", "knowledge.ts", ["switch", "TRAINER", "--kind", "trainer", "--comment", "Infinite lives."]);
-  ok("c64-knowledge", "knowledge.ts", ["apply", "knowledge.json", "--reason", "the copy check and the counters"]);
-  ok("c64-knowledge", "knowledge.ts", ["patch", "$100b-$100d", "TRAINER", "--nop", "--comment", "Lives stay."]);
+  ok("retro-knowledge", "knowledge.ts", ["image", "game.prg"]);
+  ok("retro-knowledge", "knowledge.ts", ["release", "ORIGINAL", "--file", "game.prg", "--base", "--comment", "With the copy check."]);
+  ok("retro-knowledge", "knowledge.ts", ["switch", "PROTECTION", "--kind", "protection", "--releases", "ORIGINAL", "--comment", "The copy check reads the keyboard."]);
+  ok("retro-knowledge", "knowledge.ts", ["switch", "TRAINER", "--kind", "trainer", "--comment", "Infinite lives."]);
+  ok("retro-knowledge", "knowledge.ts", ["apply", "knowledge.json", "--reason", "the copy check and the counters"]);
+  ok("retro-knowledge", "knowledge.ts", ["patch", "$100b-$100d", "TRAINER", "--nop", "--comment", "Lives stay."]);
 
-  const generated = ok("c64-source", "source.ts", ["generate", "--out", "src"]);
+  const generated = ok("retro-source", "source.ts", ["generate", "--out", "src"]);
   assert.equal(generated.check.identical, true);
   assert.deepEqual(generated.files.map((file: { out: string }) => file.out).filter((path: string) => path.endsWith(".asm")), ["src/segments/segment_1000.asm", "src/switches.asm", "src/config.asm", "src/constants.asm", "src/macros.asm", "src/main.asm"]);
   assert.deepEqual(generated.switches.map((item: { name: string; result: string; changedBytes: number }) => [item.name, item.result, item.changedBytes]), [["PROTECTION", "fits", 8], ["TRAINER", "fits", 3]]);
@@ -120,11 +120,11 @@ test("switches and macros: the original stays identical, each switch fits, and t
   assert.deepEqual([...readFileSync(join(project, "build", "trained.prg")).subarray(2 + 0x0b, 2 + 0x0e)], [0xea, 0xea, 0xea], "lives stay");
 
   // The analyzer finds the set16 at $1017 and knows the two uses of inc16 in the knowledge.
-  const analyzed = ok("c64-static-analysis", "static-analysis.ts", ["analyze", "--entry", "$1000", "--apply-macros"]);
+  const analyzed = ok("retro-static-analysis", "static-analysis.ts", ["analyze", "--entry", "$1000", "--apply-macros"]);
   const macros = analyzed.idioms.candidates.macros;
   assert.deepEqual(macros.listed, [{ macro: "set16", start: "$1017", end: "$101e", args: ["ptr", "start"], text: "+set16 ptr, start" }]);
   assert.deepEqual([macros.known, macros.leftOut, macros.writes], [2, undefined, 2], "the set16 macro and its use");
-  const again = ok("c64-source", "source.ts", ["generate", "--out", "src"]);
+  const again = ok("retro-source", "source.ts", ["generate", "--out", "src"]);
   assert.equal(again.check.identical, true);
   assert.equal(again.macroUses, 2);
   assert.match(readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8"), /^ {8}\+set16 ptr, start$/m);

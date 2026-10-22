@@ -351,7 +351,7 @@ test("a module starts a file of generated source: one per address and per file, 
   setModule(db, { origin: "user" }, { start: 0x2000, file: "player.asm" });
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
   for (const file of ["../x.asm", "a/b/x.asm", "Music/x.asm", "/x.asm", "x.a", ".asm", "x y.asm", "leftovers/x.asm", "Segments/x.asm", "music/main.asm", "music/Config.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
-  // c64-source writes these files itself; macOS and Windows ignore the letter case.
+  // retro-source writes these files itself; macOS and Windows ignore the letter case.
   for (const file of ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm", "start_screen.asm", "Main.asm", "CONSTANTS.asm", "Switches.asm"]) {
     assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /writes main\.asm, loader\.asm, switches\.asm, config\.asm, constants\.asm, macros\.asm, start_screen\.asm in any folder, and the folders leftovers\/, segments\/ itself/.test(error.message), file);
   }
@@ -583,7 +583,7 @@ test("a patch puts code in a range of the image under a switch", () => {
   assert.throws(() => setPatch(db, context, { start: 0x807c, end: 0x807e, switch: "TRAINER", code: "" }), /overlaps the patch of CRACK at \$8079-\$807d/);
   for (const name of ["crack", "C", "1UP", "CRACK-1"]) assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: name, code: "" }), failsWith("invalid-input"), name);
   assert.throws(() => renameSymbol(db, llm, { address: 0x2001, name: "CRACK" }), /CRACK is the name of a switch/);
-  // c64-source writes the code inside { }: braces must pair, except in comments and strings.
+  // retro-source writes the code inside { }: braces must pair, except in comments and strings.
   for (const code of ["!if X {", "}"]) assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code }), /The patch code has a/, code);
   for (const code of ["lda #0 ; }", 'lda #"{"', "!if X { nop }"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
   // Code whose length the lines give is refused when it is longer than the range; other code is checked by the build of the switch.

@@ -1,4 +1,4 @@
-// c64-testing for real releases: steps for one side, a raster sync, a
+// retro-testing for real releases: steps for one side, a raster sync, a
 // normalize step, an exclude with its reason, and the files of a FAIL.
 // The original is the key-gated packed counter; the rebuild is the plain
 // counter, loaded and started without BASIC. Opt-in with C64RT_LIVE_VICE.
@@ -20,7 +20,7 @@ import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { importImage } from "../../fixtures/program.ts";
 import { readEnvelope } from "../../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
+const script = resolve(import.meta.dirname, "../../../skills/retro-testing/scripts/testing.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-d46-"));
 let server: HostServer | undefined;
 after(async () => {

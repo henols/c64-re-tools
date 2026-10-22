@@ -34,11 +34,11 @@ const ALLOWED: Record<string, readonly string[]> = {
   // Addresses as text, ranges, tables of addresses: every area uses them.
   address: [],
   c64: [],
-  // The name of a build and of its symbols file: c64-assembler and c64-source name a program by what it is.
+  // The name of a build and of its symbols file: c64-assembler and retro-source name a program by what it is.
   "build-name": [],
   // The byte check of a PRG against a reference: the build of c64-assembler and the unpack of c64-packer.
   compare: ["c64"],
-  // The ACME spelling of each 6510 opcode: c64-source and the listing of c64-knowledge decode with one table.
+  // The ACME spelling of each 6510 opcode: retro-source and the listing of retro-knowledge decode with one table.
   opcodes: ["c64"],
   // The platform memory map: names and meanings of C64 addresses.
   platform: ["c64", "cpu"],
@@ -199,7 +199,7 @@ test("checkImport accepts every allowed direction", () => {
   const accepted: Array<[string, string]> = [
     ["src/mcp/server.ts", "../host-client/vice-session.ts"],
     ["src/host/vice/session.ts", "../../graphics.ts"],
-    ["skills/c64-docs/scripts/docs.ts", "#src/graphics.ts"],
+    ["skills/retro-docs/scripts/docs.ts", "#src/graphics.ts"],
     ["src/mcp/tools/memory.ts", "../../c64.ts"],
     ["src/host-client/connect.ts", "../protocol/messages.ts"],
     ["src/host-client/transfer.ts", "../project.ts"],
