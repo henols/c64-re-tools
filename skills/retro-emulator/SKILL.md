@@ -1,6 +1,6 @@
 ---
 name: retro-emulator
-description: Operates and debugs the live emulator through the MCP tools of the machine server. It loads programs and disks, controls and steps the CPU, and sets breakpoints and watchpoints. It reads and writes memory and registers, gives keyboard and joystick input, advances frames and captures the screen. Use it to get runtime evidence or runtime state from the machine. Use it when the user must play or look at the program in a window. It does not analyze code statically, change the project knowledge, assemble source or list the files on a disk image.
+description: Operates and debugs the live emulator through the MCP tools of the machine server. It loads programs and media, controls and steps the CPU, and sets breakpoints and watchpoints. It reads and writes memory and registers, gives keyboard and joystick input, advances frames and captures the screen. Use it to get runtime evidence or runtime state from the machine. On the C64, use it also when the user must play or look at the program in a window. It does not analyze code statically, change the project knowledge, assemble source or list the files on a disk image.
 ---
 
 # emulator
@@ -25,27 +25,36 @@ A tool takes addresses, not names. The server instructions give the address form
 
 Use only the MCP tools. Each MCP session has its own machine. Nothing else can change that machine.
 
-| Need | Tool |
-|---|---|
-| Reset, power cycle | `reset` |
-| Fast emulation | `warp` |
-| Show the machine to the user in a window, hide it again | `window` |
-| Stop, start, step, step over, step out, exact frames | `execution` |
-| Run until an address, a memory value or a beam position | `run_until` |
-| Run to a place and read the machine there in one call | `run_until` with `observe` and `history` |
-| Each access or routine entry over many frames | `trace` |
-| Stop on an instruction address, stop on a memory access | `breakpoint`, `watchpoint` |
-| Memory | `memory_read`, `memory_write`, `memory_search`, `memory_compare` |
-| CPU registers | `registers` |
-| Code as it is in memory now | `disassemble` |
-| Executed instructions, call chain | `cpu_history`, `backtrace` |
-| Cycles of each routine, memory use, cycles between two points | `profile`, `memmap`, `timing` |
-| Chips of the machine | `vicii`, `sprite`, `cia`, `sid` |
-| Screen image, screen compare | `screen` |
-| Several of these from one moment | `observe` |
-| Keyboard, joystick | `keyboard`, `press`, `joystick` |
-| Program and disk media | `autostart`, `program_load`, `media_attach` |
-| Machine state to go back to, also in a later session | `snapshot` |
+Each machine family has its own MCP server: `c64` for the Commodore 64 and `spectrum` for the ZX Spectrum. The column Server tells which servers have the tool. The value `all` means every server. The inputs of a tool can be different on each server.
+
+| Need | Tool | Server |
+|---|---|---|
+| Reset | `reset` | all |
+| Stop, start, step, exact frames | `execution` | all |
+| Run until an address | `run_until` | all |
+| Run until a memory value or a beam position | `run_until` | c64 |
+| Run to a place and read the machine there in one call | `run_until` with `observe` and `history` | c64 |
+| Fast emulation | `warp` | c64 |
+| Show the machine to the user in a window, hide it again | `window` | c64 |
+| Each access or routine entry over many frames | `trace` | c64 |
+| Stop on an instruction address, stop on a memory access | `breakpoint`, `watchpoint` | all |
+| Memory | `memory_read`, `memory_write`, `memory_search` | all |
+| Compare memory | `memory_compare` | c64 |
+| CPU registers | `registers` | all |
+| Code as it is in memory now | `disassemble` | all |
+| Executed instructions | `cpu_history` | all |
+| Call chain | `backtrace` | c64 |
+| Memory use, cycles between two points | `memmap`, `timing` | all |
+| Cycles of each routine | `profile` | c64 |
+| Chips of the C64 | `vicii`, `sprite`, `cia`, `sid` | c64 |
+| ULA, paging and model of the Spectrum, sound chip of the 128K | `ula`, `ay` | spectrum |
+| Screen image | `screen` | all |
+| Several of these from one moment | `observe` | c64 |
+| Keyboard, joystick | `keyboard`, `joystick` | all |
+| Keys of the keyboard matrix, RESTORE | `press` | c64 |
+| Program media | `autostart`, `program_load` | all |
+| Disk media | `media_attach` | c64 |
+| Machine state to go back to | `snapshot` | all |
 
 Read the description of a tool before you use it for the first time. It gives the limits of the tool and the facts of the machine that change the result.
 
@@ -60,26 +69,28 @@ To keep a coverage run:
 3. Read the map with `memmap` action `read` and `out`, for example to `.c64-re-tools/local/attract.bin`.
 4. Add the file to the coverage of the project knowledge.
 
+The map of each server has the flags that its `memmap` description gives. On the `spectrum` server, the map has no reads, and its addresses are CPU addresses.
+
 ## Workflow
 
 1. Read the project knowledge for the addresses in the question.
 2. Load the subject if it is not loaded. Use `autostart` to start it as a user does. Use `program_load` to put a program in memory with no start.
-3. Set the stop condition. Use a breakpoint, a watchpoint or a `run_until` target. Add a condition when the stop must occur only in one state.
+3. Set the stop condition. Use a breakpoint, a watchpoint or a `run_until` target. On the C64, add a condition when the stop must occur only in one state.
 4. Run, step or give input. Prefer `run_until` and `advance-frames` to waits. They stop at the same emulated time on every run.
-5. Read only the state that answers the question. To read several things from one moment, use `observe`.
+5. Read only the state that answers the question. On the C64, use `observe` to read several things from one moment.
 6. Interpret the evidence. Keep the observed facts apart from your conclusions.
 
 Before a risky experiment, save the state with `snapshot`. Restore it to try again from the same point.
 
 ### Input that the tools cannot give
 
-Some programs read input in a way that the input tools cannot give. The tool description tells when. Then open the window and ask the user to give the input.
+Some programs read input in a way that the input tools cannot give. The tool description tells when. Then, on the C64, open the window and ask the user to give the input.
 
 Do not change the program to make it accept the input.
 
 ### The window
 
-The emulator has no window. When the user must type, play or look at the machine, do these steps:
+This section is only for the `c64` server. The emulator has no window. When the user must type, play or look at the machine, do these steps:
 
 1. Open the window with `window` action `open`.
 2. Tell the user that the window is open and what to do in it.
@@ -120,7 +131,7 @@ An error is `{"error": {"code": "...", "message": "..."}}`. The message tells wh
 - `machine-unavailable` with a message that names a pause or a dialog in the window: do not send more operations. Give the message to the user. When the user tells you that the emulator runs again, do the operation again.
 - `machine-unavailable` for a different cause: wait a few seconds. Then do the operation again one time. If you get the same error again, stop the task. Tell the user to restart the c64-re-tools MCP server, and wait for the user.
 - `machine-state-lost`: do not use results from before the error. Do what the message tells. Then read the machine state again.
-- `stopReason` `timeout` or `jam`: this is evidence too. Report it. For `jam`, report the address.
+- `stopReason` `timeout`, or `jam` on the C64: this is evidence too. Report it. For `jam`, report the address.
 - A different code: the message names the cause. Change the call, or report the cause.
 
 If the runtime evidence does not agree with the current knowledge, do not change the knowledge. Report the conflict with the runtime evidence. Then resolve the conflict in the project knowledge.
@@ -130,4 +141,4 @@ If the runtime evidence does not agree with the current knowledge, do not change
 - To explain code without a run, analyze the program statically.
 - Record a durable conclusion in the project knowledge.
 - To compare runs or to assert values in a run, write a test run file.
-- To find the meaning of a C64 address or register, read the memory map of the C64.
+- To find the meaning of an address or a register, read the memory map of the machine.
