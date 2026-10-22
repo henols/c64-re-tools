@@ -367,6 +367,15 @@ export function spacesRevision(db: DatabaseSync | undefined, spaces: readonly Sp
   return newest;
 }
 
+/**
+ * The revision of the source of a space: the newest revision of that space and
+ * of the stage of its start screen. A change in another space does not change it.
+ */
+export function sourceRevision(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): string {
+  const stage = space === DEFAULT_SPACE ? currentStartScreen(db, space)?.stage : undefined;
+  return spacesRevision(db, [space, ...(stage === undefined ? [] : [stage])]);
+}
+
 /** One import of a coverage map: its project path, its SHA-256, the space it went into and the revision. */
 export interface CoverageRun {
   name: string;

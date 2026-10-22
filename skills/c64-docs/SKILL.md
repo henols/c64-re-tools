@@ -41,7 +41,7 @@ The documentation is Markdown in the project. It has two parts:
 
 Get the values for the commands from these places:
 
-- `<source-dir>` and `--source`: the folder of the source that you generated from the project knowledge, for example `src`. The source must be from the current revision of the project knowledge.
+- `<source-dir>` and `--source`: the folder of the source that you generated from the project knowledge, for example `src`. The source must be from the current revision of the project knowledge in its space. A change in another space does not make the source old.
 - `--out`: a folder that holds only the reference, for example `docs/reference`. Keep the pages that you write outside it.
 - `<page>`: the entry page `README.md` and the folder of the other pages, for example `docs`.
 - The program bytes: put them into the project knowledge before `generate`. Then the reference decodes the tables and shows the graphics.

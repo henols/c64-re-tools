@@ -14,7 +14,7 @@ import { writeProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
-import { currentRevision, listComments, listModules, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
+import { listComments, listModules, listReferences, listRegions, listSymbols, sourceRevision } from "#src/knowledge/read.ts";
 import { groupOf, namedGroup, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
 import { checkLinks, linkPage, type Files, type LinkContext, type Names, type Problem } from "./lib/links.ts";
@@ -64,10 +64,10 @@ function generate(call: Call): Reply {
     image = programImage(db, map.space);
     const found = conflicts(db).length;
     if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was written. Resolve the merge conflicts of the project knowledge. Then generate the source again from the knowledge, and run generate again.`);
-    const revision = currentRevision(db);
-    // A source of another revision has other lines: the links would point to the wrong code.
+    // A source of another revision has other lines: the links would point to the wrong code. A change in another space does not change the source.
+    const revision = sourceRevision(db, map.space);
     if (map.revision !== revision) {
-      throw new WireFailure("invalid-input", `${map.mapPath} is from knowledge revision ${map.revision}, and the knowledge is at revision ${revision}. Nothing was written. Generate the source again from the knowledge. Then run generate again.`);
+      throw new WireFailure("invalid-input", `${map.mapPath} is from knowledge revision ${map.revision}, and the knowledge of the source is at revision ${revision}. Nothing was written. Generate the source again from the knowledge. Then run generate again.`);
     }
     knowledge = {
       revision,
@@ -266,13 +266,13 @@ function link(call: Call): Reply {
     let symbols;
     let revision;
     try {
-      revision = currentRevision(db);
+      revision = sourceRevision(db, map.space);
       symbols = listSymbols(db, undefined, undefined, undefined, map.space);
     } finally {
       db?.close();
     }
     if (map.revision !== revision) {
-      problems.push({ page: inProject(map.mapPath), line: 1, kind: "stale-reference", message: `The source${of} is from knowledge revision ${map.revision}, and the knowledge is at ${revision}. Generate the source and the reference again, then run docs.ts link.` });
+      problems.push({ page: inProject(map.mapPath), line: 1, kind: "stale-reference", message: `The source${of} is from knowledge revision ${map.revision}, and the knowledge of the source is at ${revision}. Generate the source and the reference again, then run docs.ts link.` });
     }
     const addresses = new Map<string, number>();
     for (const label of map.labels) addresses.set(label.name, label.address);
