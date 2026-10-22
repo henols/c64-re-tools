@@ -114,8 +114,12 @@ const NMI_ADDRESS = 0x66;
 const ROM_END = 0x4000;
 /** How long a key stays down and up when the session types text, in frames: the ROM reads the keyboard once a frame. */
 const KEY_FRAMES = 3;
-/** The most copies of one CPU history entry that the session looks for after a stop. */
+/** The most copies of one CPU history entry that ZEsarUX records at the stop of a run, or at the end of a frame (it waits for the real time in steps of 1 ms, and a frame takes 20 ms). */
 const MAX_REPEATS = 100;
+/** How many more CPU history entries than the count cpu_history reads first: the copies of a stop or of the end of a frame are left out. */
+const HISTORY_MARGIN = 128;
+/** The prefix opcodes of the Z80: an instruction with one has two opcode fetches, and R increases by 2. */
+const PREFIXES = [0xcb, 0xdd, 0xed, 0xfd];
 /** The CPU history entries that one get-pc command gives when the session looks back for the start of a run of one address. Each ZRCP command takes tens of ms, and 10000 entries take few more. */
 const HISTORY_CHUNK = 10_000;
 /** How far back the session looks for the instruction before a run of one address in the CPU history. */
@@ -575,7 +579,6 @@ export class ZesaruxSession implements SessionHandle {
 
   /** One ZRCP run command: it answers when the CPU stops. */
   async #runCommand(): Promise<string> {
-    this.#repeats = undefined;
     this.#runs++;
     this.#partial = undefined;
     this.#inRun = true;
@@ -665,12 +668,8 @@ export class ZesaruxSession implements SessionHandle {
     }
     this.#requireStopped();
     if (params.action === "step") {
-      await this.#measureRepeats();
       let output = "";
-      for (let index = 0; index < (params.count ?? 1); index++) {
-        output = await this.#zrcp("cpu-step");
-        this.#repeats!.newer++;
-      }
+      for (let index = 0; index < (params.count ?? 1); index++) output = await this.#zrcp("cpu-step");
       const pc = this.#seen(parseRegisters(output)).pc;
       this.#stop = { pc, reason: "steps" };
       return this.#shownStopAt(pc);
@@ -749,7 +748,6 @@ export class ZesaruxSession implements SessionHandle {
    * sets the points of the session again.
    */
   async #afterLoad(): Promise<void> {
-    this.#repeats = undefined;
     this.#imOne = false;
     await this.#zrcp("enable-breakpoints");
     await this.#zrcp("cpu-history enabled yes");
@@ -1017,16 +1015,84 @@ export class ZesaruxSession implements SessionHandle {
     return { instructions };
   }
 
-  /** A HALT cycle shows at the address of its HALT instruction, not as an execution of the byte after it. */
+  /**
+   * The executed instructions, the most recent first. A HALT cycle shows at
+   * the address of its HALT instruction, not as an execution of the byte
+   * after it.
+   *
+   * ZEsarUX records an entry each time its CPU loop runs, also when the CPU
+   * executes nothing: while it waits for the real time at the end of a frame
+   * (the interrupt has started, so these entries are at the address of the
+   * handler), and at the stop of a run. Such a copy has the registers of the
+   * entry above it, R too, and its number changes with the real time. Each
+   * real execution changes R, so the session counts the executions of each
+   * run of entries at one address by R, and leaves out the copies. When the
+   * newest entries are at the PC now with the R of now, the CPU did not
+   * execute them yet: they are left out too.
+   */
   async #history(params: { count: number }): Promise<{ pcs: number[] }> {
     this.#requireStopped();
-    await this.#measureRepeats();
-    const { newer, count } = this.#repeats!;
-    const pcs = await this.#historyPcs(0, params.count + count);
-    pcs.splice(newer, count);
-    const shown = pcs.slice(0, params.count);
-    const cycles = await this.#haltCycles(shown, (index) => (index < newer ? index : index + count));
-    return { pcs: shown.map((pc, index) => (cycles[index] ? (pc - 1) & 0xffff : pc)) };
+    const now = parseRegisters(await this.#zrcp("get-registers"));
+    const r = this.#historyR();
+    for (let read = params.count + HISTORY_MARGIN; ; read *= 2) {
+      const pcs = await this.#historyPcs(0, read);
+      const all = pcs.length < read;
+      const runs = pcRuns(pcs);
+      const cycles = await this.#haltCycles(pcs, (index) => index);
+      const shown: number[] = [];
+      for (const [index, run] of runs.entries()) {
+        const executions = await this.#runExecutions(run, cycles[run.first]!, r, index === 0 ? now : undefined);
+        const pc = cycles[run.first] ? (run.pc - 1) & 0xffff : run.pc;
+        for (let copy = 0; copy < executions && shown.length < params.count; copy++) shown.push(pc);
+        if (shown.length >= params.count) return { pcs: shown };
+      }
+      // The copies left fewer entries than count: read more of the history.
+      if (all) return { pcs: shown };
+    }
+  }
+
+  /** R of each CPU history entry, by its index: one get-extended command for each, and each answer is kept. */
+  #historyR(): (index: number) => Promise<{ r: number; opcode?: number } | undefined> {
+    const known = new Map<number, { r: number; opcode?: number } | undefined>();
+    return async (index) => {
+      if (!known.has(index)) {
+        const entry = await this.#zrcp(`cpu-history get-extended ${index}`);
+        const r = /(?:^|\s)R=([0-9a-f]{1,2})(?:\s|$)/i.exec(entry);
+        const opcode = historyOpcode(entry);
+        known.set(index, r === null ? undefined : { r: Number.parseInt(r[1]!, 16), ...(opcode === undefined ? {} : { opcode }) });
+      }
+      return known.get(index);
+    };
+  }
+
+  /**
+   * The executions in a run of CPU history entries at one address. Between
+   * two executions at the same address, R increases by the opcode fetches of
+   * the instruction: 1 for a HALT cycle or an instruction with no prefix, 2
+   * with a prefix ($cb, $dd, $ed, $fd). A copy does not change R. The low 7
+   * bits of R count, so the session reads R at entries no more than 127
+   * fetches apart. `now` is given for the newest run: entries with the PC and
+   * R of now are not executed yet. With no R, each entry counts.
+   */
+  async #runExecutions(run: { pc: number; first: number; last: number }, cycle: boolean, r: (index: number) => Promise<{ r: number; opcode?: number } | undefined>, now?: Z80RegisterValues): Promise<number> {
+    const newest = run.last > run.first || now !== undefined ? await r(run.first) : undefined;
+    let executions = 1;
+    if (run.last > run.first) {
+      if (newest === undefined) return run.last - run.first + 1;
+      const fetches = !cycle && newest.opcode !== undefined && PREFIXES.includes(newest.opcode) ? 2 : 1;
+      const gap = Math.floor(0x7f / fetches);
+      let newer = { index: run.first, r: newest.r };
+      while (newer.index < run.last) {
+        const index = Math.min(run.last, newer.index + gap);
+        const older = await r(index);
+        if (older === undefined) return run.last - run.first + 1;
+        executions += Math.round(((newer.r - older.r) & 0x7f) / fetches);
+        newer = { index, r: older.r };
+      }
+      executions = Math.min(executions, run.last - run.first + 1);
+    }
+    if (now !== undefined && run.first === 0 && newest !== undefined && now.pc === run.pc && (now.r & 0x7f) === (newest.r & 0x7f)) executions--;
+    return executions;
   }
 
   /** The addresses of up to `count` CPU history entries from entry `start` back; 0 is the most recent entry. */
@@ -1080,31 +1146,6 @@ export class ZesaruxSession implements SessionHandle {
       if (pcs.length < HISTORY_CHUNK) return undefined;
     }
     return undefined;
-  }
-
-  /**
-   * The entries of the CPU history that ZEsarUX repeated at the last stop of
-   * a run: after `newer` entries, `count` entries that are copies of the entry
-   * below them. Undefined when the CPU ran after the last count.
-   */
-  #repeats: { newer: number; count: number } | undefined;
-
-  /**
-   * Counts the repeated entries at the top of the CPU history. At the stop of
-   * a run, ZEsarUX 13.0 can record the last instruction again, a few times,
-   * with all registers the same. Each real execution changes R, so two equal
-   * entries one after the other are always such a copy. Do this before a step
-   * puts new entries on top of them.
-   */
-  async #measureRepeats(): Promise<void> {
-    if (this.#repeats !== undefined) return;
-    let count = 0;
-    const top = (await this.#zrcp("cpu-history get-pc 0 2")).split(/\s+/).filter((item) => item !== "");
-    if (top.length === 2 && top[0] === top[1]) {
-      const entry = await this.#zrcp("cpu-history get-extended 0");
-      while (count < MAX_REPEATS && (await this.#zrcp(`cpu-history get-extended ${count + 1}`)) === entry) count++;
-    }
-    this.#repeats = { newer: 0, count };
   }
 
   // ---- Coverage ----
@@ -1164,8 +1205,9 @@ export class ZesaruxSession implements SessionHandle {
     if (open.size === 0) return { only, unchecked };
     const tstates = this.#elapsed + (await this.#partialTstates()) - this.#coverageSince.tstates;
     if (tstates < 0) return { only, unchecked: open };
-    // Each entry takes at least 4 t-states, and each stop of a run can add MAX_REPEATS copies: the window has no more entries.
-    const window = Math.floor(tstates / 4) + (this.#runs - this.#coverageSince.runs + 1) * MAX_REPEATS;
+    // Each entry takes at least 4 t-states, and each stop of a run and each end of a frame can add MAX_REPEATS copies: the window has no more entries.
+    const frames = Math.ceil(tstates / FRAME_TSTATES[this.#model]);
+    const window = Math.floor(tstates / 4) + (this.#runs - this.#coverageSince.runs + 1 + frames) * MAX_REPEATS;
     const { executes, covered } = await this.#realExecutions(open, window, this.#coverageSince.historySize);
     for (const address of open) {
       if (executes.has(address)) continue;

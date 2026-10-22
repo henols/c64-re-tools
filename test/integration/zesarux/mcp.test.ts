@@ -469,3 +469,51 @@ test("autostart with run false of the session client keeps the CPU at the PC of 
     await host.stop();
   }
 });
+
+test("a HALT wait survives a write of its HALT byte and a snapshot, and cpu_history gives an IM 2 handler once in each identical run", { skip, timeout: 180_000 }, async () => {
+  const host = await startHost({ ...process.env, C64RT_ZESARUX: zesarux! });
+  const { client } = await startMcp(host.address, { args: ["--machine", "spectrum"], cwd: project });
+  try {
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
+      assert.notEqual(result.isError, true, `${name}: ${(result.content[0] as { text: string }).text}`);
+      return json(result);
+    };
+    await call("autostart", { path: "counter128.z80" });
+    await call("execution", { action: "pause" });
+    // EI ; HALT ; JR $9400
+    await call("memory_write", { address: "$9400", data: "fb7618fc" });
+    await call("registers", { action: "write", values: { pc: "$9400", iff1: false, iff2: false } });
+    assert.equal((await call("execution", { action: "step", count: 2 })).waitsForInterrupt, true);
+    await call("snapshot", { action: "save", name: "wait" });
+
+    // DI ; NOP ; JR $9400 in the wait: the CPU still waits. A pc write ends the wait, and a snapshot of that state restores as saved.
+    await call("memory_write", { address: "$9400", data: "f30018fd" });
+    assert.equal((await call("registers", { action: "read" })).waitsForInterrupt, true);
+    assert.equal((await call("registers", { action: "write", values: { pc: "$9400" } })).waitsForInterrupt, false);
+    const moved = await call("registers", { action: "read" });
+    await call("snapshot", { action: "save", name: "moved" });
+    await call("execution", { action: "step", count: 3 });
+    await call("snapshot", { action: "restore", name: "moved" });
+    assert.deepEqual(await call("registers", { action: "read" }), moved);
+    assert.equal((await call("execution", { action: "step", count: 1 })).pc, "$9401");
+
+    // An IM 2 handler at $9292 (POP HL ; JP $9400): two identical runs give the same history, with one entry of the POP HL after each interrupt.
+    const runs: unknown[] = [];
+    for (let run = 0; run < 2; run++) {
+      await call("snapshot", { action: "restore", name: "wait" });
+      await call("memory_write", { address: "$9000", data: "92".repeat(257) });
+      await call("memory_write", { address: "$9292", data: "e1c30094" });
+      await call("registers", { action: "write", values: { pc: "$9400", i: 0x90, im: 2 } });
+      await call("execution", { action: "advance-frames", count: 10 });
+      const pcs = (await call("cpu_history", { count: 16 })).pcs as string[];
+      const handler = pcs.indexOf("$9292");
+      assert.ok(handler >= 0 && pcs[handler + 1] !== "$9292", pcs.join(" "));
+      runs.push(pcs);
+    }
+    assert.deepEqual(runs[1], runs[0]);
+  } finally {
+    await client.close();
+    await host.stop();
+  }
+});

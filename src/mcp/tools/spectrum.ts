@@ -250,7 +250,7 @@ const disassemble = defineTool<z.ZodObject, z.ZodObject, Session>({
 const cpuHistory = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "cpu_history",
   title: "Z80 instruction history",
-  description: `The addresses of the last 1 to ${SPECTRUM_MAX_HISTORY} instructions that the CPU executed, the most recent first. While the CPU waits after opcode $76 (waitsForInterrupt true), each wait cycle of 4 t-states is one entry at the address of that opcode. The CPU must be stopped.`,
+  description: `The addresses of the last 1 to ${SPECTRUM_MAX_HISTORY} instructions that the CPU executed, the most recent first. While the CPU waits after opcode $76 (waitsForInterrupt true), each wait cycle of 4 t-states is one entry at the address of that opcode. An interrupt is no entry: the next entry is the first instruction of the interrupt handler. The CPU must be stopped.`,
   inputSchema: z.object({ count: z.number().int().min(1).max(SPECTRUM_MAX_HISTORY).default(32) }).strict(),
   outputSchema: z.object({ pcs: z.array(AddressOutput) }),
   readOnly: true,

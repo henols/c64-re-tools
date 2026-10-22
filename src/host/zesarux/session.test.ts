@@ -606,3 +606,32 @@ test("a register write that runs an instruction counts its t-states on the clock
     await session.close();
   }
 });
+
+test("cpu_history leaves out the copies that ZEsarUX records at the end of a frame, and the entries that the CPU did not execute yet", async () => {
+  // Most recent first. The IM 2 handler at $9292 ran one time after the interrupt: ZEsarUX recorded it four more times while it waited for the real time.
+  // On top, the CPU stopped at $11dc with R $26 before it executed the instruction there.
+  const handler = "PC=9292 R=32 (PC)=e1c30080";
+  const history = ["PC=11dc R=26 (PC)=00000000", "PC=11dc R=26 (PC)=00000000", "PC=9293 R=33 (PC)=c3008000", handler, handler, handler, handler, handler, "PC=8000 R=30 (PC)=f30018fd", "PC=8002 R=2f (PC)=18fd0000"];
+  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { history });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    assert.deepEqual(((await session.handle("cpuHistory", { count: 4 })) as { pcs: number[] }).pcs, [0x9293, 0x9292, 0x8000, 0x8002]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("cpu_history counts the executions of a loop on one address by R, also past 127 fetches, and an instruction with a prefix by 2", async () => {
+  // LDIR at $a000 ran 200 times, with copies at a frame end; then JR $ at $b000 ran 3 times.
+  const ldir = Array.from({ length: 200 }, (_, index) => `PC=a000 R=${((400 - index * 2) & 0x7f).toString(16).padStart(2, "0")} (PC)=edb00000`);
+  ldir.splice(100, 0, ldir[100]!, ldir[100]!);
+  const jr = ["PC=b000 R=12 (PC)=18fe0000", "PC=b000 R=11 (PC)=18fe0000", "PC=b000 R=10 (PC)=18fe0000"];
+  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { history: [...jr, ...ldir] });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    const pcs = ((await session.handle("cpuHistory", { count: 1000 })) as { pcs: number[] }).pcs;
+    assert.deepEqual([pcs.length, pcs.filter((pc) => pc === 0xb000).length, pcs.filter((pc) => pc === 0xa000).length], [203, 3, 200]);
+  } finally {
+    await session.close();
+  }
+});
