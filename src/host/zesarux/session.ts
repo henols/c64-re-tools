@@ -22,6 +22,12 @@
 // keeps the machine that ZEsarUX runs, so before a tape the session sets the
 // model that the session started with, or the model that the call gives.
 //
+// While the CPU waits in a HALT, ZEsarUX records each wait cycle in the CPU
+// history and in the code coverage as an execution of the byte after the HALT.
+// The session tells these cycles apart in the history: the history shows them
+// at the address of the HALT, and the coverage leaves out a mark that only
+// they made.
+//
 // The coverage comes from ZEsarUX's code coverage (the address of each
 // executed instruction) and its visual memory of written addresses. The
 // visual memory of reads is no CPU evidence: the CPU history reads the bytes
@@ -31,7 +37,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { COVERAGE } from "../../cpu/coverage.ts";
+import { COVERAGE, EXECUTE } from "../../cpu/coverage.ts";
 import { Z80 } from "../../cpu/z80.ts";
 import { encodePng, SPECTRUM_PALETTE, spectrumScreenFrame } from "../../graphics.ts";
 import type { MachineId } from "../../machine.ts";
@@ -99,6 +105,38 @@ const ROM_END = 0x4000;
 const KEY_FRAMES = 3;
 /** The most copies of one CPU history entry that the session looks for after a stop. */
 const MAX_REPEATS = 100;
+/** The CPU history entries that one get-pc command gives when the session looks back for the start of a run of one address. */
+const HISTORY_CHUNK = 10_000;
+/** How far back the session looks for the instruction before a run of one address in the CPU history. */
+const HALT_LOOKBACK = 100_000;
+/**
+ * The most CPU history entries that the session reads to find the coverage
+ * marks of HALT cycles: about 10 frames. Each entry takes at least 4
+ * t-states, and each stop of a run can add MAX_REPEATS copies.
+ */
+const COVERAGE_HISTORY_MAX = 300_000;
+/** The ZRCP commands that do not run the CPU and do not change the partial t-state counter. */
+const KEEPS_TSTATES = ["evaluate ", "read-memory ", "write-memory ", "get-registers", "set-register ", "cpu-history ", "cpu-code-coverage ", "get-visualmem-written-dump", "set-breakpoint ", "set-membreakpoint ", "enable-breakpoints", "get-io-ports", "get-current-machine", "set-ui-io-ports ", "set-memory-zone ", "snapshot-save "];
+
+/**
+ * The runs of one address in CPU history addresses, the most recent first:
+ * the address of each run and the indexes of its first and last entry.
+ */
+export function pcRuns(pcs: readonly number[]): Array<{ pc: number; first: number; last: number }> {
+  const runs: Array<{ pc: number; first: number; last: number }> = [];
+  pcs.forEach((pc, index) => {
+    const run = runs.at(-1);
+    if (run !== undefined && run.pc === pc) run.last = index;
+    else runs.push({ pc, first: index, last: index });
+  });
+  return runs;
+}
+
+/** The opcode of a cpu-history get-extended entry: the first of the bytes at its PC, "(PC)=76fe0000". */
+export function historyOpcode(entry: string): number | undefined {
+  const match = /\(PC\)=([0-9a-f]{2})/i.exec(entry);
+  return match === null ? undefined : Number.parseInt(match[1]!, 16);
+}
 
 /**
  * The keyboard: each key's row (the port $xxfe high byte order of
@@ -236,6 +274,10 @@ export class ZesaruxSession implements SessionHandle {
   #model: Model;
   /** The model that the session started with: a tape runs on it unless the autostart gives a model. */
   readonly #startModel: Model;
+  /** The runs that the session started: each stop of a run can add copies to the CPU history. */
+  #runs = 0;
+  /** The session time and the runs at the start of the coverage that ZEsarUX keeps now. */
+  #coverageSince = { tstates: 0, runs: 0 };
   readonly #log: (line: string) => void;
   #queue: Promise<unknown> = Promise.resolve();
   #state: SpectrumRunState = "stopped";
@@ -277,8 +319,8 @@ export class ZesaruxSession implements SessionHandle {
       await session.#zrcp("enter-cpu-step");
       await session.#followMachine();
       await session.#afterLoad();
-      await session.#discardCoverage();
       await session.#zrcp("reset-tstates-partial");
+      await session.#discardCoverage();
     } catch (error) {
       await zesarux.stop();
       throw error;
@@ -287,8 +329,13 @@ export class ZesaruxSession implements SessionHandle {
   }
 
   #zrcp(text: string): Promise<string> {
+    if (text === "reset-tstates-partial") this.#partial = 0;
+    else if (!KEEPS_TSTATES.some((command) => text.startsWith(command))) this.#partial = undefined;
     return this.#zesarux.zrcp.command(text);
   }
+
+  /** The partial t-state counter of ZEsarUX when the session knows it without a question: a command that can run the CPU makes it unknown. */
+  #partial: number | undefined;
 
   handle(op: string, params: unknown, attachments: Buffer[] = [], reply: Buffer[] = []): Promise<unknown> {
     const run = this.#queue.then(() => this.#run_(op as SpectrumOperation, params, attachments, reply));
@@ -372,13 +419,20 @@ export class ZesaruxSession implements SessionHandle {
     if (this.#state === "running") throw new WireFailure("machine-running", "The CPU runs. Stop it first with execution action pause.");
   }
 
-  /** Adds the partial t-state counter of ZEsarUX to the clock of the session and sets the counter to zero. */
-  async #settleClock(): Promise<void> {
+  /** The partial t-state counter of ZEsarUX. */
+  async #partialTstates(): Promise<number> {
+    if (this.#partial !== undefined) return this.#partial;
     const text = await this.#zrcp("evaluate TSTATESP");
     const value = Number.parseInt(text.trim(), 10);
     if (!Number.isFinite(value)) throw new WireFailure("operation-failed", `ZEsarUX gave no t-state count: ${text.split("\n")[0]}`);
     // The expression is a signed 32-bit number.
-    this.#elapsed += value >>> 0;
+    this.#partial = value >>> 0;
+    return this.#partial;
+  }
+
+  /** Adds the partial t-state counter of ZEsarUX to the clock of the session and sets the counter to zero. */
+  async #settleClock(): Promise<void> {
+    this.#elapsed += await this.#partialTstates();
     await this.#zrcp("reset-tstates-partial");
   }
 
@@ -445,6 +499,8 @@ export class ZesaruxSession implements SessionHandle {
     try {
       await this.#stepMode();
       this.#repeats = undefined;
+      this.#runs++;
+      this.#partial = undefined;
       const running = this.#zesarux.zrcp.command("run", "none");
       const limitMs = frames * FRAME_MS * RUN_SLACK + RUN_EXTRA_MS;
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -516,6 +572,8 @@ export class ZesaruxSession implements SessionHandle {
       this.#frameEnd = undefined;
       // The run command answers when a breakpoint fires or pause sends data. Its first line tells that it runs.
       this.#repeats = undefined;
+      this.#runs++;
+      this.#partial = undefined;
       const running = this.#zesarux.zrcp.command("run", "none");
       const first = await Promise.race([running, new Promise<undefined>((resolve) => setTimeout(resolve, 100))]);
       if (first !== undefined && !first.startsWith("Running until")) throw new WireFailure("operation-failed", `ZEsarUX did not run: ${first.split("\n")[0]}`);
@@ -843,14 +901,73 @@ export class ZesaruxSession implements SessionHandle {
     return { instructions };
   }
 
+  /** A HALT cycle shows at the address of its HALT instruction, not as an execution of the byte after it. */
   async #history(params: { count: number }): Promise<{ pcs: number[] }> {
     this.#requireStopped();
     await this.#measureRepeats();
     const { newer, count } = this.#repeats!;
-    const text = await this.#zrcp(`cpu-history get-pc 0 ${params.count + count}`);
-    const pcs = text.split(/\s+/).filter((item) => /^[0-9a-f]{1,4}$/i.test(item)).map((item) => Number.parseInt(item, 16));
+    const pcs = await this.#historyPcs(0, params.count + count);
     pcs.splice(newer, count);
-    return { pcs: pcs.slice(0, params.count) };
+    const shown = pcs.slice(0, params.count);
+    const cycles = await this.#haltCycles(shown, (index) => (index < newer ? index : index + count));
+    return { pcs: shown.map((pc, index) => (cycles[index] ? (pc - 1) & 0xffff : pc)) };
+  }
+
+  /** The addresses of up to `count` CPU history entries from entry `start` back; 0 is the most recent entry. */
+  async #historyPcs(start: number, count: number): Promise<number[]> {
+    const text = await this.#zrcp(`cpu-history get-pc ${start} ${count}`);
+    return text
+      .split(/\s+/)
+      .filter((item) => /^[0-9a-f]{1,4}$/i.test(item))
+      .map((item) => Number.parseInt(item, 16));
+  }
+
+  /**
+   * Which of the CPU history entries `pcs` (the most recent first) are HALT
+   * cycles. `entry` gives the history index of each. ZEsarUX records each
+   * cycle of a HALT wait as an entry at the address after the HALT, with only
+   * R changed. A HALT cycle comes after the HALT or after another HALT cycle,
+   * and an interrupt or a NMI comes after it, never the instruction after the
+   * HALT. Thus a run of entries at one address are HALT cycles when the entry
+   * before the run is the HALT instruction just before that address. Only the
+   * runs after a HALT opcode in memory now are examined, and with `addresses`
+   * only the runs at those addresses.
+   */
+  async #haltCycles(pcs: readonly number[], entry: (index: number) => number, addresses?: ReadonlySet<number>): Promise<boolean[]> {
+    const cycles = new Array<boolean>(pcs.length).fill(false);
+    const byteAt = this.#byteReader();
+    for (const run of pcRuns(pcs)) {
+      if (addresses !== undefined && !addresses.has(run.pc)) continue;
+      const halt = (run.pc - 1) & 0xffff;
+      if (run.last + 1 < pcs.length && pcs[run.last + 1] !== halt) continue;
+      if ((await byteAt(halt)) !== HALT) continue;
+      let before: { pc: number; entry: number } | undefined;
+      if (run.last + 1 < pcs.length) {
+        before = { pc: halt, entry: entry(run.last + 1) };
+      } else {
+        // The run goes to the end of the entries: look further back.
+        before = await this.#entryBefore(entry(run.last), run.pc);
+        // No start in the history: the byte before the run is a HALT opcode, so the run is a long wait.
+        if (before === undefined) {
+          cycles.fill(true, run.first, run.last + 1);
+          continue;
+        }
+        if (before.pc !== halt) continue;
+      }
+      if (historyOpcode(await this.#zrcp(`cpu-history get-extended ${before.entry}`)) === HALT) cycles.fill(true, run.first, run.last + 1);
+    }
+    return cycles;
+  }
+
+  /** The first CPU history entry back from `last` whose address is not `pc`. Undefined at the start of the history, or after HALT_LOOKBACK entries. */
+  async #entryBefore(last: number, pc: number): Promise<{ pc: number; entry: number } | undefined> {
+    for (let start = last + 1; start <= last + HALT_LOOKBACK; start += HISTORY_CHUNK) {
+      const pcs = await this.#historyPcs(start, HISTORY_CHUNK);
+      const other = pcs.findIndex((item) => item !== pc);
+      if (other >= 0) return { pc: pcs[other]!, entry: start + other };
+      if (pcs.length < HISTORY_CHUNK) return undefined;
+    }
+    return undefined;
   }
 
   /**
@@ -880,19 +997,74 @@ export class ZesaruxSession implements SessionHandle {
 
   // ---- Coverage ----
 
-  /** Joins the executed instructions and the written addresses since the last drain into the coverage of the session; ZEsarUX then forgets them. */
+  /**
+   * Joins the executed instructions and the written addresses since the last
+   * drain into the coverage of the session; ZEsarUX then forgets them. An
+   * address that only HALT cycles marked does not get the execute flag.
+   */
   async #drainCoverage(): Promise<void> {
     const executed = codeCoverageAddresses(await this.#zrcp("cpu-code-coverage get"));
     await this.#zrcp("cpu-code-coverage clear");
     const written = visualmemAddresses(await this.#zrcp("get-visualmem-written-dump"));
-    for (const address of executed) this.#coverage[address]! |= address < ROM_END ? COVERAGE.romExecute : COVERAGE.ramExecute;
+    const cyclesOnly = await this.#haltCyclesOnly(executed);
+    for (const address of executed) if (!cyclesOnly.has(address)) this.#coverage[address]! |= address < ROM_END ? COVERAGE.romExecute : COVERAGE.ramExecute;
     for (const address of written) if (address >= ROM_END) this.#coverage[address]! |= COVERAGE.ramWrite;
+    await this.#coverageStarts();
   }
 
   /** Forgets the executed instructions and the written addresses since the last drain: a load or a tool did them, not the CPU. */
   async #discardCoverage(): Promise<void> {
     await this.#zrcp("cpu-code-coverage clear");
     await this.#zrcp("get-visualmem-written-dump");
+    await this.#coverageStarts();
+  }
+
+  /** Keeps where the coverage that ZEsarUX keeps now starts. */
+  async #coverageStarts(): Promise<void> {
+    this.#coverageSince = { tstates: this.#elapsed + (await this.#partialTstates()), runs: this.#runs };
+  }
+
+  /**
+   * The executed addresses since the last drain that only HALT cycles marked.
+   * The session finds them in the CPU history since the last drain. When that
+   * history is too long to read, or when the clock does not tell its length,
+   * none: then the marks stay.
+   */
+  async #haltCyclesOnly(executed: readonly number[]): Promise<Set<number>> {
+    const only = new Set<number>();
+    const fresh = new Set(executed.filter((address) => (this.#coverage[address]! & EXECUTE) === 0));
+    if (fresh.size === 0) return only;
+    const tstates = this.#elapsed + (await this.#partialTstates()) - this.#coverageSince.tstates;
+    if (tstates < 0) return only;
+    const entries = Math.floor(tstates / 4) + (this.#runs - this.#coverageSince.runs + 1) * MAX_REPEATS;
+    if (entries > COVERAGE_HISTORY_MAX) return only;
+    const pcs = await this.#historyPcs(0, entries);
+    // A run of an address after an entry at another address than the one just before it is an execution: that address keeps its mark.
+    const runs = pcRuns(pcs).filter((run) => fresh.has(run.pc));
+    const executes = new Set(runs.filter((run) => run.last + 1 < pcs.length && pcs[run.last + 1] !== ((run.pc - 1) & 0xffff)).map((run) => run.pc));
+    const open = new Set(runs.map((run) => run.pc).filter((address) => !executes.has(address)));
+    if (open.size === 0) return only;
+    const cycles = await this.#haltCycles(pcs, (index) => index, open);
+    const asInstruction = new Set<number>();
+    pcs.forEach((pc, index) => {
+      if (open.has(pc) && !cycles[index]) asInstruction.add(pc);
+    });
+    for (const address of open) if (!asInstruction.has(address)) only.add(address);
+    return only;
+  }
+
+  /** Reads bytes of memory as the CPU sees them now, in blocks of 4096 bytes that it keeps. */
+  #byteReader(): (address: number) => Promise<number> {
+    const blocks = new Map<number, Buffer>();
+    return async (address) => {
+      const start = address - (address % 4096);
+      let block = blocks.get(start);
+      if (block === undefined) {
+        block = Buffer.from(await this.#read(start, 4096), "hex");
+        blocks.set(start, block);
+      }
+      return block[address - start]!;
+    };
   }
 
   async #memmap(params: { action: "clear" | "read" }): Promise<SpectrumOperations["memmap"]["result"]> {
@@ -982,12 +1154,16 @@ export class ZesaruxSession implements SessionHandle {
    * snapshot sets it, and a tape runs on the model of the call or else on the
    * model that the session started with. A file that is not what its type
    * says is refused before the load, and the machine does not change.
+   *
+   * A .zsf that waits in a HALT loads with its PC on the HALT, and the CPU
+   * executes the HALT again: so the CPU history has the HALT before its cycles.
    */
   async #autostart(params: SpectrumOperations["autostart"]["params"], bytes: Buffer): Promise<SpectrumOperations["autostart"]["result"]> {
     const media = checkMedia(params.type, bytes);
     if (this.#run !== undefined) await this.#execution({ action: "pause" });
+    const halted = params.type === "zsf" && zsfHalted(media.bytes);
     const file = join(this.#zesarux.scratch, `media.${params.type}`);
-    writeFileSync(file, media.bytes);
+    writeFileSync(file, halted ? zsfOnHaltInstruction(media.bytes) : media.bytes);
     await this.#drainCoverage();
     if ((SPECTRUM_TAPES as readonly string[]).includes(params.type)) {
       const model = params.model ?? this.#startModel;
@@ -1010,6 +1186,7 @@ export class ZesaruxSession implements SessionHandle {
     await this.#afterLoad();
     this.#stop = {};
     this.#frameEnd = undefined;
+    if (halted) await this.#enterHalt();
     if (media.border !== undefined) await this.#setBorder(media.border);
     return { ...(await this.#execution({ action: "resume" })), model: this.#model };
   }
@@ -1066,7 +1243,7 @@ export class ZesaruxSession implements SessionHandle {
     await this.#drainCoverage();
     const bytes = readFileSync(file);
     const fixMode = saved.im === 1;
-    const halted = fixMode && zsfHalted(bytes);
+    const halted = zsfHalted(bytes);
     let loaded = file;
     if (halted) {
       loaded = join(this.#zesarux.scratch, "restore.zsf");
@@ -1085,22 +1262,26 @@ export class ZesaruxSession implements SessionHandle {
     await this.#afterLoad();
     this.#stop = {};
     this.#frameEnd = undefined;
-    if (fixMode) {
-      await this.#setInterruptMode(1);
-      if (halted) {
-        const { pc, r } = parseRegisters(await this.#zrcp("get-registers"));
-        if ((await this.#read(pc, 1)) !== "76") throw new WireFailure("operation-failed", `The snapshot waits in a HALT, but $${hex4(pc)} holds no HALT instruction.`);
-        await this.#zrcp("cpu-history started no");
-        await this.#zrcp("cpu-step");
-        await this.#zrcp(`set-register R=${r.toString(16)}H`);
-        await this.#zrcp("cpu-history started yes");
-        await this.#zrcp("reset-tstates-partial");
-        await this.#discardCoverage();
-      }
-    }
+    if (fixMode) await this.#setInterruptMode(1);
+    if (halted) await this.#enterHalt();
     const now = parseRegisters(await this.#zrcp("get-registers"));
     if (now.iff1 !== saved.iff1) await this.#zrcp(`set-register IFF1=${saved.iff1 ? 1 : 0}`);
     if (now.iff2 !== saved.iff2) await this.#zrcp(`set-register IFF2=${saved.iff2 ? 1 : 0}`);
+  }
+
+  /**
+   * Executes the HALT instruction at the PC, so that the CPU waits in it as
+   * the loaded snapshot did. R gets its value again, and the clock and the
+   * coverage do not count the step. The CPU history keeps the HALT: the
+   * cycles of the wait then come after it.
+   */
+  async #enterHalt(): Promise<void> {
+    const { pc, r } = parseRegisters(await this.#zrcp("get-registers"));
+    if ((await this.#read(pc, 1)) !== HALT.toString(16)) throw new WireFailure("operation-failed", `The snapshot waits in a HALT, but $${hex4(pc)} holds no HALT instruction.`);
+    await this.#zrcp("cpu-step");
+    await this.#zrcp(`set-register R=${r.toString(16)}H`);
+    await this.#zrcp("reset-tstates-partial");
+    await this.#discardCoverage();
   }
 
   /** The 16 KiB RAM bank `bank` from `offset`, `size` bytes: zone 0 of ZEsarUX is all RAM banks in order. */

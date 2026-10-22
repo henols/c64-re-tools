@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { WireFailure } from "../../protocol/messages.ts";
 import type { ZesaruxProcess } from "./process.ts";
 import { Zrcp } from "./zrcp.ts";
-import { ayOfIoPorts, codeCoverageAddresses, firedStop, keysOf, modelOfMachineName, parseRegisters, SPECTRUM_KEYS, visualmemAddresses, ZesaruxSession } from "./session.ts";
+import { ayOfIoPorts, codeCoverageAddresses, firedStop, historyOpcode, keysOf, modelOfMachineName, parseRegisters, pcRuns, SPECTRUM_KEYS, visualmemAddresses, ZesaruxSession } from "./session.ts";
 
 // The get-registers answer of ZEsarUX 13.0 after set-register IX=04d2H.
 const REGISTERS = "PC=11dc SP=ffff AF=3fa7 BC=00ff HL=b33a DE=ffff IX=04d2 IY=ffff AF'=ffff BC'=ffff HL'=0000 DE'=ffff I=3f R=26  F=S-5--PNC F'=SZ5H3PNC MEMPTR=11dc IM0 IFF-- VPS: 0 MMU=00000000000000000000000000000000";
@@ -325,6 +325,52 @@ test("a tape runs on the model that the session started with, or on the model of
     assert.deepEqual(loads(), ["set-machine 128k", `smartload ${join(zesarux.scratch, "media.tap")}`]);
     await session.handle("execution", { action: "pause" });
     assert.equal(((await session.handle("ula", {})) as { frameTstates: number }).frameTstates, 70_908);
+  } finally {
+    await session.close();
+  }
+});
+
+test("the runs of one address in the CPU history, and the opcode of an extended entry", () => {
+  assert.deepEqual(pcRuns([0x8002, 0x8002, 0x8001, 0x8002]), [
+    { pc: 0x8002, first: 0, last: 1 },
+    { pc: 0x8001, first: 2, last: 2 },
+    { pc: 0x8002, first: 3, last: 3 },
+  ]);
+  assert.equal(historyOpcode("PC=8001 SP=bff0 I=3f R=01 IM1 IFF12 (PC)=7618fc00 (SP)=0000 MMU=8001"), 0x76);
+  assert.equal(historyOpcode("PC=8001"), undefined);
+});
+
+// A HALT at $8001 after EI at $8000, then JR $8000 at $8002: the extended entries give the opcode at the PC.
+const EI = "PC=8000 R=00 (PC)=fb7618fc";
+const HALT_ENTRY = "PC=8001 R=01 (PC)=7618fc00";
+const cycle = (r: number) => `PC=8002 R=${r.toString(16).padStart(2, "0")} (PC)=18fc0000`;
+
+test("cpu_history shows a HALT cycle at the address of the HALT, never as an execution of the byte after it", async () => {
+  // Most recent first: two cycles, the HALT, EI; then the JR at $8002 that ran after an interrupt, and LD A,$76 at $8fff that is no HALT.
+  const history = [cycle(5), cycle(4), HALT_ENTRY, EI, cycle(3), "PC=0052 R=02 (PC)=c9000000", "PC=9001 R=01 (PC)=00000000", "PC=8fff R=00 (PC)=3e760000"];
+  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { history, steps: [cycle(6)], memory: { 0x8001: 0x76, 0x9000: 0x76 } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    assert.deepEqual(((await session.handle("cpuHistory", { count: 8 })) as { pcs: number[] }).pcs, [0x8001, 0x8001, 0x8001, 0x8000, 0x8002, 0x0052, 0x9001, 0x8fff]);
+    // A run of cycles that goes past the entries asked for: the session looks further back for the HALT.
+    await session.handle("execution", { action: "step", count: 1 });
+    assert.deepEqual(((await session.handle("cpuHistory", { count: 2 })) as { pcs: number[] }).pcs, [0x8001, 0x8001]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("the memmap leaves out the execute mark that only HALT cycles made, and keeps it when the byte after the HALT ran", async () => {
+  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { history: [HALT_ENTRY, EI], steps: [cycle(2), cycle(3), cycle(4), "PC=0038 R=05 (PC)=f5000000", "PC=8002 R=06 (PC)=18fc0000"], memory: { 0x8001: 0x76 } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  const executed = async () => ((await session.handle("memmap", { action: "read" })) as { ranges: Array<{ start: number; flags: number }> }).ranges.filter((range) => (range.flags & 4) !== 0).map((range) => range.start);
+  try {
+    await session.handle("memmap", { action: "clear" });
+    await session.handle("execution", { action: "step", count: 3 });
+    assert.deepEqual(await executed(), []);
+    // An interrupt ends the wait, and the JR at $8002 runs.
+    await session.handle("execution", { action: "step", count: 2 });
+    assert.deepEqual(await executed(), [0x8002]);
   } finally {
     await session.close();
   }

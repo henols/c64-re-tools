@@ -135,9 +135,11 @@ test("the spectrum MCP server watches, writes, searches, times, types and keeps 
     // Registers, one step and the history.
     const written = await call("registers", { action: "write", values: { bc: 0x1234, hl2: "$abcd", i: 0x3f } });
     assert.deepEqual([written.bc, written.hl2, written.i], ["$1234", "$abcd", 0x3f]);
-    const before = (await call("registers", { action: "read" })).pc;
+    // The CPU can wait in the HALT here: then the step is a cycle of the HALT, and the history gives the address of the HALT.
+    const before = await call("registers", { action: "read" });
     await call("execution", { action: "step", count: 1 });
-    assert.equal(((await call("cpu_history", { count: 1 })).pcs as string[])[0], before);
+    const stepped = Number.parseInt((before.pc as string).slice(1), 16) - (before.waitsForInterrupt === true ? 1 : 0);
+    assert.equal(((await call("cpu_history", { count: 1 })).pcs as string[])[0], `$${stepped.toString(16).padStart(4, "0")}`);
 
     // Two frames are two frames of t-states.
     await call("timing", { action: "start" });
@@ -243,7 +245,18 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     await call("execution", { action: "advance-frames", count: 1 });
     await call("snapshot", { action: "restore", name: "halted" });
     assert.deepEqual(await call("registers", { action: "read" }), halted);
+    // Each step in the HALT is one wait cycle: 4 t-states, R one more, the same PC. The history shows the cycles at the HALT, and the map does not mark the byte after it.
+    await call("memmap", { action: "clear" });
+    await call("timing", { action: "start" });
     assert.equal((await call("execution", { action: "step", count: 1 })).pc, halted.pc, "the CPU waits in the HALT");
+    await call("execution", { action: "step", count: 4 });
+    const cycled = await call("registers", { action: "read" });
+    const r = halted.r as number;
+    assert.deepEqual([cycled.pc, cycled.r, (await call("timing", { action: "read" })).tstates], [halted.pc, (r & 0x80) | ((r + 5) & 0x7f), 20]);
+    const haltAt = `$${HALT_AT.toString(16)}`;
+    assert.deepEqual((await call("cpu_history", { count: 6 })).pcs, [haltAt, haltAt, haltAt, haltAt, haltAt, haltAt]);
+    const marked = (await call("memmap", { action: "read" })).ranges as Array<{ start: string; flags: number }>;
+    assert.ok(!marked.some((range) => range.start === `$${(HALT_AT + 1).toString(16)}`), JSON.stringify(marked));
     // A pc write ends the HALT: the CPU executes from the new pc, also with the interrupts off.
     await call("snapshot", { action: "save", name: "halted" });
     const waiting = await call("registers", { action: "read" });
