@@ -5,7 +5,7 @@ description: Generates source code from the project knowledge: ACME source for a
 
 # Generate source
 
-Use this script to generate ACME source from the project knowledge, and to export the program as the start of a new program.
+Use this script to generate source from the project knowledge, and to export the program as the start of a new program. The source of a C64 program is ACME source. The source of a ZX Spectrum program is sjasmplus source. See "A ZX Spectrum program".
 Use only the commands of the script. Do not write or edit the generated source in another way.
 
 ```bash
@@ -40,7 +40,7 @@ To get the command list, run the script with no arguments.
 - For a packed program, capture the unpacked program at its entry point first. Then put the capture into the project knowledge.
 - For the loader, the knowledge must have the entry and the entry state of a capture.
 - `--out` is the folder for the source, relative to the project folder, for example `src`.
-- `--entry` is an address where code starts. Give it only when the knowledge does not show the code. The entry of the program, the routines and the code regions of the knowledge are entry points already.
+- `--entry` is an address where code starts. Give it only when the knowledge does not show the code. For a C64 program, the entry of the program, the routines and the code regions of the knowledge are entry points already. For a ZX Spectrum program, see "A ZX Spectrum program".
 - `--space` is the knowledge space of the program. Use the space where the program bytes are in the project knowledge.
 - `--to` is the folder of the new project. Use a new or empty folder beside the project, for example `../game-new`. No project can hold it.
 - `--drop` is a range that becomes free. Get the range of executed code from `unreachableExecuted[].drop` of an earlier export. You can also give a data range.
@@ -74,7 +74,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 |---|---|---|
 | `--out <dir>` | `generate` | The folder for the source files. It is necessary. The script writes over the files of an earlier run. It removes a generated `.asm` file that this run does not write, also in a folder of `--out`. A folder with a generated `main.asm` is the source of another space, and it stays. A run without `--loader` keeps `loader.asm`, the loader program, `start_screen.asm` and `start_screen_stage.asm` of an earlier run. `staleLoader` tells when they are of another knowledge revision. |
 | `--entry <address>` | `generate` | An address where code starts. Give the flag again for more addresses. There is no default. |
-| `--space <space>` | `generate` | The knowledge space: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. The default is `c64`. `--loader` and the platform names apply only to `c64`. The coverage is the coverage of the space. |
+| `--space <space>` | `generate` | The knowledge space. For a C64 program: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. For a ZX Spectrum program: `spectrum`, or `ram0` to `ram7` for the 128K. The default is the main space of the project machine: `c64` or `spectrum`. `--loader` applies only to `c64`. The platform names apply only to `c64` and `spectrum`. The coverage is the coverage of the space. |
 | `--loader` | `generate` | Also write `loader.asm` and the loader program, and `start_screen.asm` when the knowledge has a start screen. A start screen of a captured stage also gives `start_screen_stage.asm`. The script writes the loader program only after the check of the new loader ran. Else the loader program of an earlier run stays. It needs a capture in the knowledge. The default is no loader. |
 | `--analyzer-names` | `generate` | Name an address without a name of the user or the LLM, and without a platform name, with its analyzer name, for example `FUN_17e2`. Without the flag, the source makes its own name, for example `l_17e2`. |
 | `--to <folder>` | `export` | The folder of the new project. It is necessary. The script also writes `<folder>.zip` beside the folder. |
@@ -136,7 +136,7 @@ Do these actions for the findings:
 
 | Finding | Action |
 |---|---|
-| `check.diagnostics` | ACME does not assemble the source. A name in the knowledge can be wrong for ACME. Read the diagnostics. Rename the symbol in the project knowledge. |
+| `check.diagnostics` | The assembler does not assemble the source. A name in the knowledge can be wrong for the assembler. Read the diagnostics. Rename the symbol in the project knowledge. |
 | `check.identical: false` without diagnostics | This is a defect of the script. Give the result to the user. |
 | `operandsAsNumbers` | Read each `reason`. Record the operand expression again, or remove it, in the project knowledge. |
 | `macrosAsInstructions` | Read each `reason`. Correct the macro or the args in the project knowledge, or remove the use. The source stays identical, so this is not a failure. |
@@ -344,15 +344,22 @@ These steps do not work when a segment starts below $0400. They also do not work
 
 ## A ZX Spectrum program
 
-For a ZX Spectrum project, `generate` writes `main.asm` in the syntax of sjasmplus:
+For a ZX Spectrum project, `generate` writes source in the syntax of sjasmplus. The files, the source map and `not_executed.json` are as for a C64 program:
 
-- `ORG` for each segment, a label for each name, and `EQU` for each platform name that the program uses.
-- The instructions of the code regions of the project knowledge. Analyze the program first. Without code regions, the source holds only data, and `body.note` tells this.
+- `main.asm` sets the address of each segment with `ORG`. It includes the files in address order.
+- Each module in the knowledge is one file. Without modules, each segment is one file, `segments/segment_xxxx.asm`.
+- `constants.asm` holds an `EQU` line for each platform name that the source uses. It also holds an `EQU` line for each name of the knowledge at an address where no line of the source starts.
+- The instructions come from the code regions of the project knowledge and from each `--entry`. From an `--entry`, the source follows the instructions to the first jump or return. The entry of the program and the routines are not entry points. Analyze the program first. Without code, the source holds only data, and `body.note` tells this.
 - A target of a jump, a branch or a call without a name gets a name of the source, for example `l_8015`.
+- A platform name, for example `KEY_SCAN` or `ERR_SP`, names only an address that the instruction uses. That address is the target of a jump or a call, or the address of a memory access, for example `ld hl,(ERR_SP)`. An address inside a platform entry of more bytes is `NAME+n`, for example `ld hl,(ERR_SP+1)`. An immediate value stays a number, for example `ld hl,$0000`. When the program holds the address of an immediate value, the value gets the name of the knowledge there.
+- An operand expression of the knowledge is in the source. A low byte is `low (...)`, and a high byte is `high (...)`. When sjasmplus refuses the expression, or the expression gives other bytes, the source has the number. Then `operandsAsNumbers` gives the reason.
+- With coverage, a mark `; not executed` comes before each range of instructions that no run executed. `notExecuted` gives the count, and `not_executed.json` gives all ranges.
 - `db` for the other bytes. A run of 16 or more equal bytes is one `ds` line.
 - Some Z80 instructions have two encodings, and sjasmplus writes only one of them. The script writes such an instruction as `db`, with the instruction as the comment. `body.asBytes` lists their addresses.
 
-The script assembles the source and compares each byte with the program of the project knowledge. `body.check.identical` is `true` when the source gives each byte again. `body.check.segments` gives the first difference of each segment. The source has no patches, switches, macros or loader. The script refuses `--loader`, and it refuses a project knowledge that has patches, switches or macro uses.
+The script assembles the source and compares each byte with the program of the project knowledge. `body.check.identical` is `true` when the source gives each byte again. `body.check.segments` gives the first difference of each segment.
+
+The source of a ZX Spectrum program has no patches, switches, macros, leftover files or loader. Each build has all bytes of the program. The body has no `leftovers`. The script refuses `--loader`. It refuses a project knowledge that has patches, switches or macro uses.
 
 ---
 

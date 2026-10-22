@@ -22,7 +22,7 @@ import { isRefusal, Refusal } from "#src/errors.ts";
 import { PACKAGE } from "#src/package.ts";
 import { BUILD_DIRECTORY, buildName, symbolsPath } from "#src/build-name.ts";
 import { findHandoffs, parseTokenized, textToPetscii } from "#src/c64.ts";
-import { type AddressRange, formatAddress, parseAddress } from "#src/address.ts";
+import { type AddressRange, formatAddress, formatByte, parseAddress } from "#src/address.ts";
 import { coverageSeedKinds } from "#src/cpu/coverage.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
@@ -41,7 +41,7 @@ import { analyze } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, platformNamesOfSpace, romRanges, romUseOfProgram } from "#src/platform.ts";
-import { renderZ80, z80Encoded, z80Instructions, z80ProbeSource } from "./lib/z80-source.ts";
+import { renderZ80, z80Encoded, z80Instructions, z80ProbeSource, type Z80Rendered } from "./lib/z80-source.ts";
 import { ensureLocal, generatedDirectory, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { isoCet } from "#src/time.ts";
 import { zipFiles } from "#src/zip.ts";
@@ -698,7 +698,7 @@ const SOURCE_MAP_FILE = "source-map.json";
  * files write, after the mark line. One entry per line of the file, so a diff
  * of two maps stays short.
  */
-function sourceMapText(rendered: Rendered, space: string, revision: string | null, files: ReadonlyArray<{ name: string }>): string {
+function sourceMapText(rendered: Pick<Rendered, "labels" | "items">, space: string, revision: string | null, files: ReadonlyArray<{ name: string }>): string {
   const labels = rendered.labels.map((label) => JSON.stringify({ address: formatAddress(label.address), name: label.name, file: label.file, line: label.line + 1 }));
   const items = rendered.items.map((item) => JSON.stringify({ start: formatAddress(item.start), end: formatAddress(item.end), file: item.file, line: item.line + 1 }));
   const head = JSON.stringify({ space, revision, files: files.map((file) => file.name) }).slice(0, -1);
@@ -1130,27 +1130,49 @@ async function buildStage(files: Array<{ name: string; text: string }>, laid: La
 /** The first line of each file that generate writes. */
 const GENERATED_LINE = `${GENERATED_MARK}. Do not edit: change the knowledge and generate again.`;
 
-/** The memory that one sjasmplus build of a single source file gives, or its diagnostics. */
-async function buildZ80(name: string, source: string, model: "48k" | "128k"): Promise<{ memory: Buffer; segments: AddressRange[] } | { diagnostics: Diagnostic[] }> {
-  const bytes = Buffer.from(source, "utf8");
-  const { result, attachments } = await assembleZ80({ files: [{ path: name, size: bytes.length }], entrySource: name, includeDirs: [], defines: {}, model }, [bytes], localToolContext());
+/** The memory that one sjasmplus build of source files given as text gives, or its diagnostics. */
+async function buildZ80(files: ReadonlyArray<{ name: string; text: string }>, entry: string, model: "48k" | "128k"): Promise<{ memory: Buffer; segments: AddressRange[] } | { diagnostics: Diagnostic[] }> {
+  const contents = files.map((file) => Buffer.from(file.text, "utf8"));
+  const { result, attachments } = await assembleZ80({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: entry, includeDirs: [], defines: {}, model }, contents, localToolContext());
   return result.assembled ? { memory: attachments![0]!, segments: result.segments! } : { diagnostics: result.diagnostics };
 }
 
 /**
- * The source of a Z80 program: main.asm in the syntax of sjasmplus, checked
- * byte by byte against the program of the knowledge. The patches, switches,
- * macros and loader of retro-source are ACME and C64 work: a Z80 project has none.
+ * not_executed.json: each range of instructions that no run executed, with the
+ * file of the source that holds it and the routine before it, as a report groups them.
+ */
+function notExecutedReport(notExecuted: { instructions: number; ranges: readonly AddressRange[] }, pieces: ReadonlyArray<{ start: number; end: number; file: string }>, symbols: readonly SymbolRow[], revision: string): string {
+  const routines = symbols.filter((symbol) => symbol.kind === "routine").sort((a, b) => a.address - b.address);
+  const placed = notExecuted.ranges.map((range) => {
+    const file = pieces.find((piece) => range.start >= piece.start && range.start <= piece.end)?.file;
+    const routine = routines.filter((symbol) => symbol.address <= range.start).at(-1)?.name;
+    return { start: formatAddress(range.start), end: formatAddress(range.end), ...(file === undefined ? {} : { file }), ...(routine === undefined ? {} : { routine }) };
+  });
+  const files: Record<string, number> = {};
+  for (const range of placed) if (range.file !== undefined) files[range.file] = (files[range.file] ?? 0) + 1;
+  return `${JSON.stringify({ revision, instructions: notExecuted.instructions, files, ranges: placed }, null, 2)}\n`;
+}
+
+/**
+ * The source of a Z80 program in the syntax of sjasmplus, checked byte by byte
+ * against the program of the knowledge: main.asm, constants.asm and a file for
+ * each module, with the source map and not_executed.json, as for the C64. An
+ * operand expression that sjasmplus refuses or assembles to other bytes is
+ * written as its number; then the source is assembled again. The patches,
+ * switches, macros, leftovers and loader of retro-source are ACME and C64 work:
+ * a Z80 project has none.
  */
 async function generateZ80(call: Call, machine: Machine): Promise<{ output: Record<string, unknown>; failed: boolean; removed: string[] }> {
   const out = call.string("out")!;
   const space = call.space;
   if (call.flag("loader")) throw new UsageError(`--loader works only for the C64. The ${machine.name} program starts from its snapshot`);
+  const entries = call.addresses("entry");
   const knowledge = readKnowledge(space, call.flag("analyzer-names"));
   const acmeOnly = [...(knowledge.patches.length === 0 ? [] : ["patches"]), ...(knowledge.switches.length === 0 ? [] : ["switches"]), ...(knowledge.macroUses.length === 0 ? [] : ["macro uses"])];
   if (acmeOnly.length > 0) throw new Refusal("invalid-input", `The knowledge has ${acmeOnly.join(", ")}, which the source of a Z80 program does not write. Remove them from the project knowledge, then generate again.`);
   const image = knowledge.program;
   const model = machine.id === "spectrum128" ? "128k" : "48k";
+  const max = call.count("max-listed")!;
   const input = {
     segments: image.segments,
     byteAt: image.byteAt,
@@ -1159,9 +1181,13 @@ async function generateZ80(call: Call, machine: Machine): Promise<{ output: Reco
     regions: knowledge.regions,
     comments: knowledge.comments,
     platform: platformNamesOfSpace(space),
+    modules: knowledge.modules,
+    operands: knowledge.operands,
+    entries,
+    ...(knowledge.coverage === undefined ? {} : { coverage: knowledge.coverage }),
     header: [
       `Generated by retro-source from knowledge revision ${knowledge.revision}${space === machine.spaces.main ? "" : ` in space ${space}`}, for sjasmplus.`,
-      "Change names, comments and regions in knowledge, then generate again.",
+      "Change names, comments, regions and modules in knowledge, then generate again.",
       ...(image.entry === undefined ? [] : [`The program starts at ${formatAddress(image.entry)}.`]),
     ],
   };
@@ -1169,38 +1195,77 @@ async function generateZ80(call: Call, machine: Machine): Promise<{ output: Reco
   // The probe gives the instructions that sjasmplus encodes as the program has them.
   let encoded = new Set<number>();
   if (instructions.length > 0) {
-    const probe = await buildZ80("probe.asm", z80ProbeSource(instructions), model);
+    const probe = await buildZ80([{ name: "probe.asm", text: z80ProbeSource(instructions) }], "probe.asm", model);
     if ("diagnostics" in probe) throw new WireFailure("operation-failed", `sjasmplus refused the decoded instructions: ${probe.diagnostics.map((item) => item.message).join("; ")}`);
     encoded = z80Encoded(instructions, probe.memory, image.byteAt);
   }
-  const rendered = renderZ80(input, instructions, encoded);
-  const written = [writeReported(`${out}/main.asm`, rendered.text, { what: "--out" })];
-  const built = await buildZ80("main.asm", rendered.text, model);
-  const max = call.count("max-listed")!;
+  // Each file starts with the mark: the source map counts the lines after it.
+  const marked = (rendered: Z80Rendered) => rendered.files.map((file) => ({ name: file.name, text: `${GENERATED_LINE}\n${file.text}` }));
+  const numbers = new Map<number, string>();
+  let rendered = renderZ80(input, instructions, encoded, numbers);
+  let files = marked(rendered);
+  let built = await buildZ80(files, "main.asm", model);
+  // An operand expression that sjasmplus refuses, or that gives other bytes, is written as its number.
+  for (let round = 0; round < ROUNDS && rendered.expressions.length > 0; round++) {
+    const blamed = new Map<number, string>();
+    for (const expression of rendered.expressions) {
+      if ("diagnostics" in built) {
+        const refused = built.diagnostics.find((item) => item.severity === "error" && item.file === expression.file && item.line === expression.line + 1);
+        if (refused !== undefined) blamed.set(expression.address, `sjasmplus refuses the expression: ${refused.message}`);
+        continue;
+      }
+      const memory = built.memory;
+      const first = Array.from({ length: expression.length }, (_, offset) => expression.address + offset).find((address) => memory[address] !== image.byteAt(address));
+      if (first !== undefined) blamed.set(expression.address, `The expression gives other bytes than the program: ${formatByte(memory[first]!)} at ${formatAddress(first)}, not ${formatByte(image.byteAt(first))}.`);
+    }
+    if (blamed.size === 0) break;
+    for (const [address, reason] of blamed) numbers.set(address, reason);
+    rendered = renderZ80(input, instructions, encoded, numbers);
+    files = marked(rendered);
+    built = await buildZ80(files, "main.asm", model);
+  }
+  const removed = removeOldFiles(out, new Set(files.map((file) => file.name)), false);
+  const written = files.map((file) => writeReported(`${out}/${file.name}`, file.text, { what: "--out" }));
+  // The reports go to the local folder: the source folder holds only source files.
+  const reports = generatedDirectory(projectRelative(out));
+  written.push(writeReported(`${reports}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.revision, files)));
+  if (rendered.notExecuted !== undefined) written.push(writeReported(`${reports}/${NOT_EXECUTED_FILE}`, notExecutedReport(rendered.notExecuted, rendered.pieces, knowledge.symbols, knowledge.revision)));
+  const showRange = (range: AddressRange) => ({ start: formatAddress(range.start), end: formatAddress(range.end) });
+  const inData = entriesInData(entries, knowledge.regions);
   const base = {
     out,
     files: written,
+    sourceMap: `${reports}/${SOURCE_MAP_FILE}`,
     revision: knowledge.revision,
     instructions: rendered.instructions,
     dataBytes: rendered.dataBytes,
-    asBytes: listed(rendered.asBytes, max, formatAddress, "a larger --max-listed"),
-    ...(instructions.length === 0 ? { note: "The knowledge has no code regions: the source is db lines only. Run the static analysis of the program first." } : {}),
+    labels: { named: rendered.namedLabels, generated: rendered.generatedLabels },
+    ...(instructions.length === 0 ? { note: "The knowledge has no code regions: the source is db lines only. Run the static analysis of the program first, or give --entry." } : {}),
+    ...(inData.length === 0 ? {} : { entriesInData: inData.map(({ entry, region }) => ({ entry: formatAddress(entry), region: { ...showRange(region), type: region.type }, origin: region.origin })) }),
+    ...(rendered.asBytes.length === 0 ? {} : { asBytes: listed(rendered.asBytes, max, formatAddress, "a larger --max-listed") }),
+    ...(rendered.notExecuted === undefined ? {} : { notExecuted: { instructions: rendered.notExecuted.instructions, ...listed(rendered.notExecuted.ranges, max, showRange, `${reports}/${NOT_EXECUTED_FILE}`) } }),
+    ...(rendered.unusedModules.length === 0 ? {} : { unusedModules: rendered.unusedModules.map((module) => ({ start: formatAddress(module.start), file: module.file })) }),
+    ...(rendered.expressions.length === 0 && rendered.operandsAsNumbers.length === 0 ? {} : { operandExpressions: rendered.expressions.length }),
+    ...(rendered.operandsAsNumbers.length === 0
+      ? {}
+      : { operandsAsNumbers: listed(rendered.operandsAsNumbers, max, (item) => ({ address: formatAddress(item.address), expression: item.expression, reason: item.reason })) }),
   };
-  if ("diagnostics" in built) return { output: { ...base, check: { identical: false, diagnostics: built.diagnostics } }, failed: true, removed: [] };
+  if ("diagnostics" in built) return { output: { ...base, check: { identical: false, diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS) } }, failed: true, removed };
   // Each byte of the program must come from the source.
+  const memory = built.memory;
   const segments = image.segments.map((segment) => {
     let differences = 0;
     let first: string | undefined;
     for (let address = segment.start; address <= segment.end; address++) {
       const filled = built.segments.some((range) => address >= range.start && address <= range.end);
-      if (filled && built.memory[address] === image.byteAt(address)) continue;
+      if (filled && memory[address] === image.byteAt(address)) continue;
       differences++;
       first ??= formatAddress(address);
     }
     return { start: formatAddress(segment.start), end: formatAddress(segment.end), identical: differences === 0, ...(differences === 0 ? {} : { differences, firstDifference: first }) };
   });
   const identical = segments.every((segment) => segment.identical);
-  return { output: { ...base, check: { identical, segments } }, failed: !identical, removed: [] };
+  return { output: { ...base, check: { identical, segments } }, failed: !identical, removed };
 }
 
 async function generate(call: Call): Promise<{ output: Record<string, unknown>; failed: boolean; removed: string[] }> {
@@ -1256,19 +1321,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   written.push(writeReported(`${reports}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.sourceRevision, files)));
   const showRange = (range: AddressRange) => ({ start: formatAddress(range.start), end: formatAddress(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
-  if (rendered.notExecuted !== undefined) {
-    // Each range with the file of the source that holds it and the routine before it, as a report groups them.
-    const routines = knowledge.symbols.filter((symbol) => symbol.kind === "routine").sort((a, b) => a.address - b.address);
-    const placed = rendered.notExecuted.ranges.map((range) => {
-      const file = laid.pieces.find((piece) => range.start >= piece.start && range.start <= piece.end)?.file;
-      const routine = routines.filter((symbol) => symbol.address <= range.start).at(-1)?.name;
-      return { ...showRange(range), ...(file === undefined ? {} : { file }), ...(routine === undefined ? {} : { routine }) };
-    });
-    const files: Record<string, number> = {};
-    for (const range of placed) if (range.file !== undefined) files[range.file] = (files[range.file] ?? 0) + 1;
-    const all = { revision: knowledge.sourceRevision, instructions: rendered.notExecuted.instructions, files, ranges: placed };
-    written.push(writeReported(`${reports}/${NOT_EXECUTED_FILE}`, `${JSON.stringify(all, null, 2)}\n`));
-  }
+  if (rendered.notExecuted !== undefined) written.push(writeReported(`${reports}/${NOT_EXECUTED_FILE}`, notExecutedReport(rendered.notExecuted, laid.pieces, knowledge.symbols, knowledge.sourceRevision)));
   // The leftovers that changed since the earlier run: the default build and the loader now leave out other bytes.
   const added = earlier === undefined ? [] : outside(laid.leftovers, earlier);
   const dropped = earlier === undefined ? [] : outside(earlier, laid.leftovers);
@@ -1815,7 +1868,7 @@ function generateAgain(call: Call, loader = call.flag("loader")): string {
     "--out",
     call.string("out")!,
     ...call.addresses("entry").flatMap((entry) => ["--entry", formatAddress(entry)]),
-    ...(call.space === C64.spaces.main ? [] : ["--space", call.space]),
+    ...(call.space === projectMainSpace() ? [] : ["--space", call.space]),
     ...(loader ? ["--loader"] : []),
     ...(call.flag("analyzer-names") ? ["--analyzer-names"] : []),
     ...(max === OPTIONS["max-listed"].default ? [] : ["--max-listed", String(max)]),
@@ -1898,7 +1951,7 @@ function exportReply(body: Record<string, unknown>): Reply {
 
 await runScript({
   name: "source",
-  summary: "Generates ACME source from the program and the knowledge, and checks with ACME that it assembles to the program byte by byte.",
+  summary: "Generates source from the program and the knowledge: ACME source for the C64, sjasmplus source for the ZX Spectrum. It checks with the assembler that the source assembles to the program byte by byte.",
   names: knowledgeNames,
   mainSpace: projectMainSpace,
   commands: [
@@ -1907,7 +1960,7 @@ await runScript({
       summary: "Writes the source files to --out and checks them. The source map and not_executed.json go to .c64-re-tools/local/generated/<dir>/. result is PASS when every check passes, else FAIL.",
       options: {
         out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "the folder for the source files, relative to the project folder", required: true },
-        entry: { ...OPTIONS.entry, multiple: true, help: "an address where code starts. The entry of the program, the routines and the code regions of the knowledge are entry points too" },
+        entry: { ...OPTIONS.entry, multiple: true, help: "an address where code starts. On the C64, the entry of the program, the routines and the code regions of the knowledge are entry points too. On the ZX Spectrum, the code regions are entry points too, and the source follows each --entry to the first jump or return" },
         space: { ...OPTIONS.space, help: "the knowledge space of the program. On the C64: c64 (the default), drive8, loading, or bank0 to bank255. On the ZX Spectrum: spectrum (the default), or ram0 to ram7. --loader is for c64 only" },
         loader: { kind: "flag", help: "also write loader.asm, and write the loader program to build/<build>_loader.prg (build/clean_loader.prg with the defaults of config.asm), with its symbols in build/symbols/: the loader copies the segments into place, sets the entry state of the knowledge, and jumps to the entry. It is checked in the emulator. The loader leaves out the leftovers. When the check cannot run, the script keeps the loader program of an earlier run" },
         "analyzer-names": { kind: "flag", help: "name an address that has no name of the user or the LLM, and no platform name, with its analyzer name" },

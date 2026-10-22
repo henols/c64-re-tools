@@ -299,30 +299,26 @@ export function entryOutsideImage(entry: number | undefined, segments: readonly 
   return `The entry ${formatAddress(entry)} is in no segment of the image: the image does not hold the program. Capture the program again, so that a segment holds the entry.`;
 }
 
-/** Splits the segments into pieces at module starts and lays out instructions and data. */
-export function layout(input: SourceInput): Layout {
-  const inImage = (address: number) => input.segments.some((segment) => address >= segment.start && address <= segment.end);
-  const regionAt = (address: number) => input.regions.find((region) => address >= region.start && address <= region.end);
-  const isData = (address: number) => {
-    const region = regionAt(address);
-    return region !== undefined && !CODE_TYPES.includes(region.type);
-  };
+/** A file of the source: a module, the part of a segment that no module holds, or a range of leftovers. */
+export type PieceFile = Omit<Piece, "items">;
 
-  for (const module of input.modules) {
+/**
+ * Splits the segments into the files of the source: at each module start, and
+ * around each range of leftovers. Refuses a module with a file name that the
+ * generator writes itself, and two pieces with one file name.
+ */
+export function splitPieces(segments: readonly AddressRange[], known: SourceInput["modules"], leftoverRanges: readonly AddressRange[] = []): { pieces: PieceFile[]; unusedModules: Array<{ start: number; file: string }>; leftovers: AddressRange[] } {
+  const inImage = (address: number) => segments.some((segment) => address >= segment.start && address <= segment.end);
+  for (const module of known) {
     if (isGeneratedFile(module.file)) throw new WireFailure("invalid-input", `The module at ${formatAddress(module.start)} has the file ${module.file}, which the generator writes itself. Give the module another file.`);
   }
-  const modules = [...input.modules].sort((a, b) => a.start - b.start);
+  const modules = [...known].sort((a, b) => a.start - b.start);
   const unusedModules = modules.filter((module) => !inImage(module.start)).map(({ start, file }) => ({ start, file }));
 
-  // A patch starts and ends at an item boundary, so a data run stops there.
-  const patches = [...(input.patches ?? [])].sort((a, b) => a.start - b.start);
-  const macroUses = [...(input.macroUses ?? [])].sort((a, b) => a.start - b.start);
-  const leftovers = (input.leftovers ?? []).filter((range) => input.segments.some((segment) => range.start >= segment.start && range.end <= segment.end));
-  const cuts = new Set([...patches, ...macroUses, ...leftovers].flatMap((range) => [range.start, range.end + 1]));
-
-  const pieces: Piece[] = [];
+  const leftovers = leftoverRanges.filter((range) => segments.some((segment) => range.start >= segment.start && range.end <= segment.end));
+  const pieces: PieceFile[] = [];
   const hex = (address: number) => address.toString(16).padStart(4, "0");
-  for (const segment of input.segments) {
+  for (const segment of segments) {
     const inside = (address: number) => address > segment.start && address <= segment.end;
     // A range of leftovers is one file: a module that starts in it goes on after it.
     const inLeftovers = (address: number) => leftovers.some((range) => address > range.start && address <= range.end);
@@ -333,7 +329,7 @@ export function layout(input: SourceInput): Layout {
       const end = bounds[index + 1]! - 1;
       const segmentTitle = `Segment ${formatAddress(segment.start)}-${formatAddress(segment.end)}`;
       if (leftovers.some((range) => range.start === start)) {
-        pieces.push({ start, end, file: `${LEFTOVER_FOLDER}/leftover_${hex(start)}.asm`, title: `Leftovers ${formatAddress(start)}-${formatAddress(end)}: ${end - start + 1} bytes that nothing uses. Only LEFTOVERS = 1 builds them.`, segmentStart: index === 0, leftover: true, items: [] });
+        pieces.push({ start, end, file: `${LEFTOVER_FOLDER}/leftover_${hex(start)}.asm`, title: `Leftovers ${formatAddress(start)}-${formatAddress(end)}: ${end - start + 1} bytes that nothing uses. Only LEFTOVERS = 1 builds them.`, segmentStart: index === 0, leftover: true });
         continue;
       }
       // A module that leftovers cut goes on in a file of its own after them, in its folder: <module>_xxxx.asm.
@@ -342,7 +338,7 @@ export function layout(input: SourceInput): Layout {
       const title = (text: string | undefined) => text?.replace(/\s*\r?\n\s*/g, " ");
       const file = module?.file ?? (holder === undefined ? `${SEGMENT_FOLDER}/segment_${hex(start)}.asm` : `${holder.file.replace(/\.asm$/i, "")}_${hex(start)}.asm`);
       const named = module === undefined && holder !== undefined ? `${title(holder.title) ?? holder.file}, from ${formatAddress(start)}` : title(module?.title);
-      pieces.push({ start, end, file, title: named ?? segmentTitle, segmentStart: index === 0, leftover: false, items: [] });
+      pieces.push({ start, end, file, title: named ?? segmentTitle, segmentStart: index === 0, leftover: false });
     }
   }
   // In any letter case: the file systems of macOS and Windows ignore it.
@@ -352,6 +348,27 @@ export function layout(input: SourceInput): Layout {
     if (other !== undefined) throw new WireFailure("invalid-input", `The file ${piece.file} is used at ${formatAddress(other)} and at ${formatAddress(piece.start)}. Give the module another file.`);
     files.set(piece.file.toLowerCase(), piece.start);
   }
+  return { pieces, unusedModules, leftovers };
+}
+
+/** Splits the segments into pieces at module starts and lays out instructions and data. */
+export function layout(input: SourceInput): Layout {
+  const inImage = (address: number) => input.segments.some((segment) => address >= segment.start && address <= segment.end);
+  const regionAt = (address: number) => input.regions.find((region) => address >= region.start && address <= region.end);
+  const isData = (address: number) => {
+    const region = regionAt(address);
+    return region !== undefined && !CODE_TYPES.includes(region.type);
+  };
+
+  const split = splitPieces(input.segments, input.modules, input.leftovers);
+  const { unusedModules, leftovers } = split;
+  const modules = [...input.modules].sort((a, b) => a.start - b.start);
+  // A patch starts and ends at an item boundary, so a data run stops there.
+  const patches = [...(input.patches ?? [])].sort((a, b) => a.start - b.start);
+  const macroUses = [...(input.macroUses ?? [])].sort((a, b) => a.start - b.start);
+  const cuts = new Set([...patches, ...macroUses, ...leftovers].flatMap((range) => [range.start, range.end + 1]));
+
+  const pieces: Piece[] = split.pieces.map((piece) => ({ ...piece, items: [] }));
 
   for (const piece of pieces) {
     let address = piece.start;
