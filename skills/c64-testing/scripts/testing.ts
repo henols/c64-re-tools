@@ -107,11 +107,11 @@ async function recordCommand(call: Call): Promise<Reply> {
     ];
     // A recording in the local folder is a work file: git ignores it, so it is no test.
     const keep = projectRelative(out).startsWith(`${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/`)
-      ? `Git ignores ${out}. To keep the recording as a test, record again with --out tests/recordings/<name>.`
-      : `Commit ${out} with the scenarios.`;
+      ? `Git ignores ${out}. To keep the recording as a test and to add its coverage to the project knowledge, record again with --out tests/recordings/<name>.`
+      : `Commit ${out} with the scenarios. Add ${out}/${RECORDING_FILES.coverage} to the project knowledge as coverage.`;
     return reply(
       { result: "PASS", recorded: true, out, ...summary, files },
-      { hint: `${keep} Add ${out}/${RECORDING_FILES.coverage} to the project knowledge as coverage. ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
+      { hint: `${keep} ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
     );
   } finally {
     await core.close();
