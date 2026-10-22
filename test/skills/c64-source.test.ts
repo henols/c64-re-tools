@@ -1664,6 +1664,40 @@ test("with real ACME, generate keeps the generated source of another space in a 
 });
 
 
+test("with real ACME, a release that lacks a segment of the program is identical in its own segments, and lists the rest", { skip: acmeSkip, timeout: 120_000 }, () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
+  projects.push(project);
+  // The program has two segments; the entry $0801 is in neither, so Ghidra does not run.
+  const memory = new Uint8Array(0x10000);
+  memory.set([0x60, 0xea, 0xea, 0xea], 0x1000);
+  memory.set([0x01, 0x02, 0x03, 0x04], 0x2000);
+  mkdirSync(join(project, "unpacked"));
+  writeFileSync(join(project, "unpacked", "image.bin"), memory);
+  writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ entry: "$0801", image: "image.bin", segments: [{ start: "$1000", end: "$1003" }, { start: "$2000", end: "$2003" }] }));
+  // DEMO has only the first segment; BAD has it with another byte.
+  writeFileSync(join(project, "demo.prg"), Uint8Array.from([0x00, 0x10, 0x60, 0xea, 0xea, 0xea]));
+  writeFileSync(join(project, "bad.prg"), Uint8Array.from([0x00, 0x10, 0x60, 0xea, 0xea, 0x00]));
+  const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
+  for (const args of [["image", "unpacked/image.json"], ["release", "ORIGINAL", "--file", "unpacked/image.json", "--base"], ["release", "DEMO", "--file", "demo.prg"]]) assert.equal(knowledge(...args).status, 0, args.join(" "));
+  const generate = () =>
+    spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], {
+      cwd: project,
+      env: { ...process.env, C64RT_HOST: "127.0.0.1:1", C64RT_GHIDRA: join(project, "no-ghidra") },
+      encoding: "utf8",
+    });
+  const first = generate();
+  const json = readEnvelope(first.stdout, first.status).json as { releases: Array<{ label: string; result: string; notInRelease?: Array<{ start: string; end: string }> }> };
+  // The run fails only because the entry is in no segment.
+  assert.equal(first.status, 0, first.stdout);
+  assert.deepEqual(json.releases.map((item) => [item.label, item.result, item.notInRelease]), [["ORIGINAL", "identical", undefined], ["DEMO", "identical", [{ start: "$2000", end: "$2003" }]]]);
+  // A byte that no patch gives is different.
+  assert.equal(knowledge("release", "DEMO", "--file", "bad.prg").status, 0);
+  const second = generate();
+  const failed = readEnvelope(second.stdout, second.status).json as { releases: Array<{ label: string; result: string }> };
+  assert.deepEqual(failed.releases.map((item) => [item.label, item.result]), [["ORIGINAL", "identical"], ["DEMO", "different"]]);
+});
+
+
 test("with real ACME, a stale loader of a knowledge without an entry state gets no --loader action", { skip: acmeSkip, timeout: 120_000 }, () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);

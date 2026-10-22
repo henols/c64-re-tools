@@ -127,7 +127,7 @@ To make the source better, change the project knowledge. Then generate again.
 - The entry is in no segment of the program.
 - A patch is in `patchesNotWritten`.
 - A switch or the default build does not fit.
-- A release does not give its bytes. A release with `layout differs` does not give `FAIL`. But the base release must be `identical`.
+- A release does not give its bytes.
 - The loader is not verified.
 
 `hint` gives the action for each finding. When a change of the project knowledge corrects a finding, `nextAction` is the same `generate` command. Run it after the change. A `PASS` without findings gives a `hint` and no `nextAction`.
@@ -227,12 +227,12 @@ Each item of `switches` has `name`, `kind`, `default`, `base`, `define` and the 
 
 `default` has `in`, `result` and `changedBytes`, as in `switches`. When `default` has `overflow` and the message `turn on one of them`, two alternatives are in the default build. Give one of the switches the default of the base release.
 
-Each item of `releases` has `label`, `base`, `define` and `result`:
+Each item of `releases` has `label`, `base`, `define` and `result`. The check compares the build with each segment of the release. The build compare of the assembler does the same.
 
-- `identical`: the build gives the bytes of the release.
+- `identical`: the build gives the bytes of each segment of the release.
 - `different`: the release has bytes that no patch gives. Compare the release with the program. Then record a switch and a patch for each difference.
-- `layout differs`: the release has other segments than the program. Patches cannot move code. This result does not fail the run.
 - `does not assemble`: read the ACME diagnostics.
+- `notInRelease`: the ranges of the program that the release does not have. The check does not compare them.
 
 The script writes a patch only when its range is complete items of one file. A patch cannot cut an instruction. Its switch name cannot be a name of the source.
 The script writes a macro use only when the use gives the bytes of the program. A label inside the range of a use also keeps the instructions. The macro line has no place for the label.

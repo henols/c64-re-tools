@@ -484,28 +484,27 @@ interface ReleaseCheck {
   label: string;
   base: boolean;
   define: string;
-  result: "identical" | "different" | "layout differs" | "does not assemble";
-  reason?: string;
+  result: "identical" | "different" | "does not assemble";
   segments?: SegmentCheck[];
+  /** The ranges of the program that the release does not have: the check does not compare them. */
+  notInRelease?: Array<{ start: string; end: string }>;
   diagnostics?: Diagnostic[];
 }
 
 /**
- * Builds a release with RELEASE_<label> and compares it with its bytes. A
- * release whose segments are not the segments of the program has moved code,
- * which patches cannot give: it is shown and does not fail the run.
+ * Builds a release with RELEASE_<label> and compares it with its bytes, in
+ * each segment of the release, as the build compare of the assembler does. A
+ * part of the program that the release does not have is listed, not compared.
  */
 async function checkRelease(release: ReleaseRow & { image: Pick<ProgramImage, "segments" | "byteAt"> }, files: Array<{ name: string; text: string }>, program: ProgramImage): Promise<ReleaseCheck> {
   const shown = { label: release.label, base: release.base, define: `--define ${RELEASE_DEFINE}${release.label}=1` };
   const { image } = release;
-  if (JSON.stringify(image.segments) !== JSON.stringify(program.segments)) {
-    const segments = (list: readonly AddressRange[]) => list.map((segment) => `${formatC64Address(segment.start)}-${formatC64Address(segment.end)}`).join(", ");
-    return { ...shown, result: "layout differs", reason: `The release has the segments ${segments(image.segments)}, and the program has ${segments(program.segments)}. Patches change bytes in place; they cannot move code.` };
-  }
+  const missing = program.segments.flatMap((segment) => subtract(segment, [...image.segments])).map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) }));
+  const notInRelease = missing.length === 0 ? {} : { notInRelease: missing };
   const built = await assembleFiles(files, "main.asm", { [`${RELEASE_DEFINE}${release.label}`]: 1 });
-  if (built.program === undefined) return { ...shown, result: "does not assemble", diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
+  if (built.program === undefined) return { ...shown, result: "does not assemble", diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS), ...notInRelease };
   const checked = check(built.program, built.start!, image);
-  return { ...shown, result: checked.identical ? "identical" : "different", ...(checked.identical ? {} : { segments: checked.segments.filter((segment) => segment.result !== "identical") }) };
+  return { ...shown, result: checked.identical ? "identical" : "different", ...(checked.identical ? {} : { segments: checked.segments.filter((segment) => segment.result !== "identical") }), ...notInRelease };
 }
 
 /** Reads RAM in parts. */
@@ -1279,7 +1278,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   const releases: ReleaseCheck[] = [];
   for (const release of knowledge.releases) releases.push(await checkRelease(release, files, image));
   if (releases.length > 0) output.releases = releases;
-  const releasesFailed = releases.some((item) => item.result !== "identical" && (item.base || item.result !== "layout differs"));
+  const releasesFailed = releases.some((item) => item.result !== "identical");
   const sourceFailed = laid.patchesNotWritten.length > 0 || switches.some((item) => item.result !== "fits") || defaultFailed || releasesFailed;
   if (loaderRefused !== undefined) return { output: { ...output, loader: notVerified({ reason: loaderRefused }) }, removed, failed: true };
   if (loader === undefined || loaderMain === undefined || state === undefined) return { output, removed, failed: missingEntry !== undefined || sourceFailed };
@@ -1752,9 +1751,9 @@ function generateReply(call: Call, body: Record<string, unknown>): Reply {
     steps.push("Read the reason of each item in patchesNotWritten, and the result of each switch and of the default build. Correct the patches and the switches in the project knowledge.");
     again = true;
   }
-  const releases = body.releases as Array<{ result: string; base: boolean }> | undefined;
-  if (releases?.some((item) => item.result !== "identical" && (item.base || item.result !== "layout differs")) === true) {
-    steps.push("Read the result of each release. Put back a changed file, or record a switch and a patch in the project knowledge for each difference.");
+  const releases = body.releases as Array<{ result: string }> | undefined;
+  if (releases?.some((item) => item.result !== "identical") === true) {
+    steps.push("Read the result of each release. Record a switch and a patch in the project knowledge for each difference.");
     again = true;
   }
   if ((body.loader as { verified?: boolean } | undefined)?.verified === false) steps.push("The loader is not verified. Read loader.reason, loader.differences and loader.stop.");
