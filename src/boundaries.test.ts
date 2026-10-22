@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["build-name", "c64", "compare", "errors", "graphics", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "zip"].includes(leaf) ? leaf : undefined;
+      return ["build-name", "c64", "c64-keys", "compare", "errors", "graphics", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -49,14 +49,18 @@ const ALLOWED: Record<string, readonly string[]> = {
   // The opt-in trace of a process, for people. Every program may write to it.
   trace: ["time"],
   project: ["c64"],
-  protocol: ["c64"],
+  protocol: ["c64", "c64-keys"],
   // The package name and channel: the npx command in refusals and help texts.
   package: [],
   // Media file signatures and sizes: the host checks a file before VICE gets it, and c64-disk reads it.
   media: [],
-  "host-client": ["protocol", "c64", "project", "trace", "package"],
-  mcp: ["host-client", "protocol", "c64", "trace", "package"],
-  host: ["native", "protocol", "c64", "graphics", "opcodes", "trace", "package", "media"],
+  // The keys of the keyboard matrix: the press of VICE, of the replay core and of the play page.
+  "c64-keys": [],
+  // The modules of a VICE snapshot file, and the changes that press keys in it.
+  vsf: ["media"],
+  "host-client": ["protocol", "c64", "c64-keys", "project", "trace", "package"],
+  mcp: ["host-client", "protocol", "c64", "c64-keys", "trace", "package"],
+  host: ["native", "protocol", "c64", "c64-keys", "graphics", "opcodes", "trace", "package", "media", "vsf"],
   // opcodes: one rule for a name that ACME can take as a label.
   knowledge: ["c64", "project", "time", "opcodes"],
   // The call contract of the skill scripts: the command line, the values, the envelope.
@@ -68,7 +72,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   distribution: ["package"],
   convert: ["knowledge"],
 };
-const SKILL_ALLOWED = ["build-name", "host-client", "native", "knowledge", "project", "c64", "compare", "graphics", "opcodes", "platform", "script", "time", "media", "zip"];
+const SKILL_ALLOWED = ["build-name", "host-client", "native", "knowledge", "project", "c64", "c64-keys", "compare", "graphics", "opcodes", "platform", "script", "time", "media", "vsf", "zip"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

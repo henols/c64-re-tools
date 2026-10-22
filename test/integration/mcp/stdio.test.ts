@@ -20,7 +20,7 @@ import { startMcp, waitFor } from "../../kit.ts";
 const TOOLS = [
   "c64_autostart", "c64_backtrace", "c64_breakpoint", "c64_cia", "c64_cpu_history", "c64_disassemble", "c64_disk_attach", "c64_execution",
   "c64_joystick", "c64_keyboard", "c64_memmap", "c64_memory_compare", "c64_memory_read", "c64_memory_search", "c64_memory_write", "c64_observe",
-  "c64_profile", "c64_program_load", "c64_registers", "c64_reset", "c64_run_until", "c64_screen", "c64_sid", "c64_snapshot",
+  "c64_press", "c64_profile", "c64_program_load", "c64_registers", "c64_reset", "c64_run_until", "c64_screen", "c64_sid", "c64_snapshot",
   "c64_sprite", "c64_timing", "c64_trace", "c64_vicii", "c64_warp", "c64_watchpoint", "c64_window",
 ];
 
@@ -50,12 +50,17 @@ function stub(state: StubState): ViceSessionFactory {
 }
 
 const servers: HostServer[] = [];
+// A test that fails before its close still ends its MCP process, or the run waits for it.
+const clients: Client[] = [];
 after(async () => {
+  await Promise.all(clients.map((client) => client.close()));
   await Promise.all(servers.map((server) => server.close()));
 });
 
 async function mcp(port: number, env: Record<string, string> = {}, cwd?: string): Promise<Client> {
-  return (await startMcp(`127.0.0.1:${port}`, { env, stderr: "ignore", ...(cwd === undefined ? {} : { cwd }) })).client;
+  const { client } = await startMcp(`127.0.0.1:${port}`, { env, stderr: "ignore", ...(cwd === undefined ? {} : { cwd }) });
+  clients.push(client);
+  return client;
 }
 
 /** One call that needs the session: warp mode off. */
@@ -104,6 +109,7 @@ test("after the host comes back, the next call opens a new session; a lost sessi
   const first: StubState = { opened: [], closed: 0 };
   let server = await host(first);
   const client = (await startMcp(`127.0.0.1:${port}`, { stderr: "inherit" })).client;
+  clients.push(client);
   try {
     await waitFor(() => first.opened.length === 1, "the session opened at start");
     await server.close();
