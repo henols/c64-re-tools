@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { formatC64Address } from "../../c64.ts";
+import { formatAddress } from "../../address.ts";
 import { isRefusal } from "../../errors.ts";
 import { EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_HISTORY, MAX_TIMEOUT_FRAMES, POINT_STOP_REASONS, RUN_STATES, SPACES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
 import { Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
@@ -53,7 +53,7 @@ export const c64Execution = defineTool({
     const result = await session.execution(params);
     return {
       state: result.state,
-      ...(result.pc === undefined ? {} : { pc: formatC64Address(result.pc) }),
+      ...(result.pc === undefined ? {} : { pc: formatAddress(result.pc) }),
       ...(result.executed === undefined ? {} : { executed: result.executed }),
       ...(result.advancedFrames === undefined ? {} : { advancedFrames: result.advancedFrames }),
       ...(result.stopReason === undefined ? {} : { stopReason: result.stopReason }),
@@ -114,7 +114,7 @@ export const c64RunUntil = defineTool({
       target = given.cycle === undefined ? { kind: "raster", line: given.line } : { kind: "raster", line: given.line, cycle: given.cycle };
     }
     const result = await session.runUntil({ target, timeoutFrames: input.timeoutFrames });
-    const answer = { ...result, pc: formatC64Address(result.pc) };
+    const answer = { ...result, pc: formatAddress(result.pc) };
     const history = input.history === undefined ? {} : await runHistory(session, input.history, result.space);
     if (input.observe === undefined) return { ...answer, ...history };
     // The observation at the stop: an image of the screen comes with the result as c64_observe gives it.
@@ -127,7 +127,7 @@ export const c64RunUntil = defineTool({
 /** The history at the stop; the run result stays when the session refuses the history. */
 async function runHistory(session: ViceSessionApi, limit: number, space: "c64" | "drive8") {
   try {
-    return { history: (await session.cpuHistory({ limit, space })).entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+    return { history: (await session.cpuHistory({ limit, space })).entries.map((entry) => ({ ...entry, address: formatAddress(entry.address) })) };
   } catch (error) {
     if (isRefusal(error) && error.code === "operation-failed") return { historyMissing: error.message };
     throw error;

@@ -3,7 +3,8 @@
 
 import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
 import { type Comparison, type Condition, type BacktraceFrame, type HistoryEntry, type Instruction, type MemmapRange, type ProfileEntry, type JoystickState, type MemoryView, type RegisterValues, type Registers, type Space } from "../../protocol/vice.ts";
-import { COVERAGE, formatC64Address, formatC64Byte } from "../../c64.ts";
+import { COVERAGE } from "../../c64.ts";
+import { formatAddress, formatByte } from "../../address.ts";
 import type { IndexedFrame } from "../../graphics.ts";
 import { decodeDisplay, decodePalette, visibleFrame } from "./screen.ts";
 import type { TextMonitor } from "./text-monitor.ts";
@@ -55,7 +56,7 @@ export function conditionExpression(condition: Condition, space: Space): string 
   switch (condition.kind) {
     case "register": {
       const prefix = space === "drive8" ? "8:" : "";
-      return `(${prefix}${condition.register.toUpperCase()} ${operator(condition.operator)} ${formatC64Byte(condition.value)})`;
+      return `(${prefix}${condition.register.toUpperCase()} ${operator(condition.operator)} ${formatByte(condition.value)})`;
     }
     case "memory": {
       if (condition.space !== "c64") {
@@ -64,7 +65,7 @@ export function conditionExpression(condition: Condition, space: Space): string 
           "A memory target or a memory condition tests only space c64 memory. For the drive, use a watchpoint in space drive8, or a c64_run_until address target in space drive8.",
         );
       }
-      return `(@${condition.view}:${formatC64Address(condition.address)} ${operator(condition.operator)} ${formatC64Byte(condition.value)})`;
+      return `(@${condition.view}:${formatAddress(condition.address)} ${operator(condition.operator)} ${formatByte(condition.value)})`;
     }
     case "raster": {
       const line = `(RL == $${condition.line.toString(16)})`;

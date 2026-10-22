@@ -9,7 +9,7 @@ import { writeFileSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 
 import { Refusal } from "../errors.ts";
-import { SYMBOL_NAME } from "../c64.ts";
+import { SYMBOL_NAME } from "../address.ts";
 import { describeError, WireFailure } from "../protocol/messages.ts";
 import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaParams, type DxaResult } from "./types.ts";
 import { Workspace } from "./staging.ts";

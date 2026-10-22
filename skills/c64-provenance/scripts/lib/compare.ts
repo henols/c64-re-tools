@@ -7,7 +7,7 @@
 // bytes. It never decides which bytes are original: that needs evidence
 // beyond one comparison.
 
-import { type AddressRange, formatC64Address } from "#src/c64.ts";
+import { type AddressRange, formatAddress } from "#src/address.ts";
 
 export interface Release {
   name: string;
@@ -275,7 +275,7 @@ export type ShiftSuggestion = { release: number; shift: number; matchingSequence
 export function shiftSuggestion(releases: Release[], applied: number[], index: number, found: { shift: number; matches: number }): ShiftSuggestion {
   const outside = (release: Release, by: number) => release.segments.find((segment) => segment.start + by < 0 || segment.end + by > 0xffff);
   const why = (number: number, by: number, segment: AddressRange) =>
-    `release ${number} moved by ${by} puts ${formatC64Address(segment.start)}-${formatC64Address(segment.end)} ${segment.start + by < 0 ? "below $0000" : "past $ffff"}`;
+    `release ${number} moved by ${by} puts ${formatAddress(segment.start)}-${formatAddress(segment.end)} ${segment.start + by < 0 ? "below $0000" : "past $ffff"}`;
   const own = outside(releases[index]!, found.shift);
   if (own === undefined) return { release: index + 1, shift: applied[index]! + found.shift, matchingSequences: found.matches };
   const reasons = [why(index + 1, found.shift, own)];

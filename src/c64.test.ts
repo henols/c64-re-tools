@@ -3,18 +3,19 @@ import { test } from "node:test";
 
 import { Refusal } from "./errors.ts";
 
-import { basicLineText, c64AddressOf, constantExpression, COVERAGE, executedRamCode, findHandoffs, formatC64Address, formatSprite, formatVicii, instructionLength, parseC64Address, parseTokenized, petsciiNameToText, textToPetscii, textToPetsciiName, SPACE_PATTERN, type TokenizedLine, vicBankBase } from "./c64.ts";
+import { basicLineText, constantExpression, COVERAGE, executedRamCode, findHandoffs, formatSprite, formatVicii, instructionLength, parseTokenized, petsciiNameToText, textToPetscii, textToPetsciiName, SPACE_PATTERN, type TokenizedLine, vicBankBase } from "./c64.ts";
+import { addressOf, formatAddress, parseAddress } from "./address.ts";
 
 test("C64 address primitives use canonical four-digit hexadecimal", () => {
-  assert.equal(parseC64Address("$d020"), 0xd020);
-  assert.equal(parseC64Address("$D020"), 0xd020);
-  assert.equal(formatC64Address(0x2a), "$002a");
-  assert.equal(parseC64Address("$fb"), 0xfb);
-  assert.equal(parseC64Address("$0"), 0);
-  assert.equal(c64AddressOf("$c000"), 0xc000);
-  assert.equal(c64AddressOf("c000"), undefined);
-  for (const text of ["d020", "$", "$12345", "$g0", " $d020"]) assert.throws(() => parseC64Address(text), (error: unknown) => error instanceof Refusal && error.code === "invalid-input", text);
-  assert.throws(() => formatC64Address(0x10000), Refusal);
+  assert.equal(parseAddress("$d020"), 0xd020);
+  assert.equal(parseAddress("$D020"), 0xd020);
+  assert.equal(formatAddress(0x2a), "$002a");
+  assert.equal(parseAddress("$fb"), 0xfb);
+  assert.equal(parseAddress("$0"), 0);
+  assert.equal(addressOf("$c000"), 0xc000);
+  assert.equal(addressOf("c000"), undefined);
+  for (const text of ["d020", "$", "$12345", "$g0", " $d020"]) assert.throws(() => parseAddress(text), (error: unknown) => error instanceof Refusal && error.code === "invalid-input", text);
+  assert.throws(() => formatAddress(0x10000), Refusal);
   assert.ok(SPACE_PATTERN.test("bank255") && SPACE_PATTERN.test("drive8") && SPACE_PATTERN.test("loading") && !SPACE_PATTERN.test("bank256") && !SPACE_PATTERN.test("drive9"));
 });
 

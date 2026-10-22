@@ -4,7 +4,7 @@
 // that the runs use: VICE reads its own snapshot format. Two memory files of a
 // run, or two observations of runs (also two of one run), compare as they are.
 
-import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { formatAddress, parseAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { isObject } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
@@ -53,7 +53,7 @@ function cpuValues(registers: Record<string, unknown>): Record<string, number | 
   const values: Record<string, number | boolean> = {};
   for (const [register, value] of Object.entries(registers)) {
     if (typeof value === "number") values[`cpu.${register}`] = value;
-    else if (typeof value === "string" && value.startsWith("$")) values[`cpu.${register}`] = parseC64Address(value);
+    else if (typeof value === "string" && value.startsWith("$")) values[`cpu.${register}`] = parseAddress(value);
     else if (register === "flags" && isObject(value)) for (const [flag, set] of Object.entries(value)) if (typeof set === "boolean") values[`cpu.flags.${flag}`] = set;
   }
   return values;
@@ -105,7 +105,7 @@ async function snapshotState(client: ViceSessionClient, path: string, ntsc: bool
   const colorRam = Buffer.from((await client.ioRead(0xd800, 0x400)).data, "hex").map((value) => value & 0x0f);
   const vic = Buffer.from((await client.ioRead(0xd000, 0x2f)).data, "hex");
   const values: Record<string, number | boolean> = {};
-  vic.forEach((value, index) => (values[`vic.${formatC64Address(0xd000 + index)}`] = value));
+  vic.forEach((value, index) => (values[`vic.${formatAddress(0xd000 + index)}`] = value));
   for (const chip of (await client.cia("both")).chips) {
     for (const field of ["portA", "portB", "ddrA", "ddrB", "timerA", "timerB", "latchA", "latchB", "controlA", "controlB", "interruptMask"] as const) values[`cia${chip.id}.${field}`] = chip[field];
   }
@@ -115,9 +115,9 @@ async function snapshotState(client: ViceSessionClient, path: string, ntsc: bool
   return { memory: { base: 0, bytes: memory }, colorRam, values };
 }
 
-const show = (range: ChangedRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end), ...(range.a === undefined ? {} : { a: range.a, b: range.b }) });
+const show = (range: ChangedRange) => ({ start: formatAddress(range.start), end: formatAddress(range.end), ...(range.a === undefined ? {} : { a: range.a, b: range.b }) });
 /** A changed value as a person reads it: the pc as "$xxxx". */
-const showValue = (item: { name: string; a: number | boolean; b: number | boolean }) => (item.name === "cpu.pc" && typeof item.a === "number" && typeof item.b === "number" ? { name: item.name, a: formatC64Address(item.a), b: formatC64Address(item.b) } : item);
+const showValue = (item: { name: string; a: number | boolean; b: number | boolean }) => (item.name === "cpu.pc" && typeof item.a === "number" && typeof item.b === "number" ? { name: item.name, a: formatAddress(item.a), b: formatAddress(item.b) } : item);
 
 /**
  * How many items two observations have in common, by name: the items that the

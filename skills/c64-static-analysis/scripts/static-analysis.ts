@@ -3,7 +3,8 @@
 // from current knowledge and the coverage of the knowledge, and imports the
 // structural findings into .c64-re-tools/knowledge/.
 
-import { COVERAGE, formatC64Address, prgRange } from "#src/c64.ts";
+import { COVERAGE, prgRange } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
@@ -50,8 +51,8 @@ function withHint(body: Record<string, unknown>, conflicts: number, coverageConf
 function showPitfall(pitfall: Pitfall) {
   return {
     kind: pitfall.kind,
-    at: formatC64Address(pitfall.at),
-    store: formatC64Address(pitfall.store),
+    at: formatAddress(pitfall.at),
+    store: formatAddress(pitfall.store),
     problem: "A read of $D011 gives raster bit 8 in bit 7; the write sets bit 8 of the raster compare. Clear bit 7 (AND #$7F) unless the code wants a compare at line 256 or later.",
   };
 }
@@ -59,14 +60,14 @@ function showPitfall(pitfall: Pitfall) {
 /** A pointer candidate with $ addresses, and the operand writes that would name it. */
 function showPointer(candidate: PointerCandidate) {
   if (candidate.kind === "sprite pointer") {
-    return { kind: candidate.kind, at: formatC64Address(candidate.at), to: formatC64Address(candidate.to), value: `$${candidate.value.toString(16).padStart(2, "0")}`, target: formatC64Address(candidate.target), assumes: "VIC bank 0 and the screen at $0400" };
+    return { kind: candidate.kind, at: formatAddress(candidate.at), to: formatAddress(candidate.to), value: `$${candidate.value.toString(16).padStart(2, "0")}`, target: formatAddress(candidate.target), assumes: "VIC bank 0 and the screen at $0400" };
   }
-  return { kind: candidate.kind, to: formatC64Address(candidate.to), target: formatC64Address(candidate.target), low: formatC64Address(candidate.low), high: formatC64Address(candidate.high) };
+  return { kind: candidate.kind, to: formatAddress(candidate.to), target: formatAddress(candidate.target), low: formatAddress(candidate.low), high: formatAddress(candidate.high) };
 }
 
 /** A macro candidate with $ addresses and its source line. */
 function showMacro(candidate: MacroCandidate) {
-  return { macro: candidate.macro, start: formatC64Address(candidate.start), end: formatC64Address(candidate.end), args: candidate.args, text: `+${candidate.macro} ${candidate.args.join(", ")}` };
+  return { macro: candidate.macro, start: formatAddress(candidate.start), end: formatAddress(candidate.end), args: candidate.args, text: `+${candidate.macro} ${candidate.args.join(", ")}` };
 }
 
 /**
@@ -125,23 +126,23 @@ function macroCandidates(space: string, byteAt: ImageByte, romUse: RomUse, skip:
 function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<string, unknown> {
   if (conflict.category === "code-evidence") {
     return {
-      range: { start: formatC64Address(conflict.start), end: formatC64Address(conflict.end) },
+      range: { start: formatAddress(conflict.start), end: formatAddress(conflict.end) },
       [analyzer]: conflict.finding,
-      ...(conflict.executed === undefined ? {} : { executed: formatC64Address(conflict.executed) }),
-      ...(conflict.symbol === undefined ? {} : { knowledge: { ...conflict.symbol, address: formatC64Address(conflict.symbol.address) } }),
+      ...(conflict.executed === undefined ? {} : { executed: formatAddress(conflict.executed) }),
+      ...(conflict.symbol === undefined ? {} : { knowledge: { ...conflict.symbol, address: formatAddress(conflict.symbol.address) } }),
       problem: conflict.executed !== undefined ? "a run executed code here: the data finding is not imported" : "the knowledge has a code name here: the data finding is not imported",
     };
   }
   if (conflict.category === "symbol") {
     return {
-      at: formatC64Address(conflict.address),
-      knowledge: { name: conflict.current.name, kind: conflict.current.kind, origin: conflict.current.origin, at: formatC64Address(conflict.current.address) },
+      at: formatAddress(conflict.address),
+      knowledge: { name: conflict.current.name, kind: conflict.current.kind, origin: conflict.current.origin, at: formatAddress(conflict.current.address) },
       [analyzer]: conflict.finding,
       problem: conflict.reason === "kind" ? "code and data disagree" : "another address has this name",
     };
   }
   return {
-    range: { start: formatC64Address(conflict.start), end: formatC64Address(conflict.end) },
+    range: { start: formatAddress(conflict.start), end: formatAddress(conflict.end) },
     knowledge: conflict.current,
     [analyzer]: conflict.finding,
     problem: "code and data disagree",
@@ -248,8 +249,8 @@ async function analyze(call: Call): Promise<unknown> {
         conflicts: imported.conflicts.map((conflict) => showConflict(conflict, "heuristic")),
         // Candidates are not knowledge: a larger --max-listed gives more of them.
         candidates: {
-          dop: listed(idioms.candidates.dop, max, formatC64Address, "a larger --max-listed"),
-          selfModified: listed(idioms.candidates.selfModified, max, formatC64Address, "a larger --max-listed"),
+          dop: listed(idioms.candidates.dop, max, formatAddress, "a larger --max-listed"),
+          selfModified: listed(idioms.candidates.selfModified, max, formatAddress, "a larger --max-listed"),
           pointers: listed(pointers, max, showPointer, "a larger --max-listed"),
           pitfalls: listed(pitfalls, max, showPitfall, "a larger --max-listed"),
           macros: {
@@ -258,7 +259,7 @@ async function analyze(call: Call): Promise<unknown> {
             ...(macros.leftOut === 0 ? {} : { leftOut: macros.leftOut }),
             ...(written === undefined ? {} : { revision: written.revision, writes: macros.writes.length }),
             ...(macros.skipped === 0 ? {} : { skipped: macros.skipped }),
-            ...(macros.notCandidates.length === 0 ? {} : { notCandidates: macros.notCandidates.map(formatC64Address) }),
+            ...(macros.notCandidates.length === 0 ? {} : { notCandidates: macros.notCandidates.map(formatAddress) }),
             ...(macros.otherMacros.length === 0 ? {} : { otherMacros: macros.otherMacros }),
           },
         },
@@ -274,7 +275,7 @@ async function analyze(call: Call): Promise<unknown> {
     return {
       coverageSeeds: { entryPoints: fromCoverage.length, used: coverageUsed, romOnlyRanges: fromRom.length, romOnlyUsed: romUsed },
       coverageConflicts: conflicts.map(({ region, executed }) => ({
-        range: { start: formatC64Address(region.start), end: formatC64Address(region.end) },
+        range: { start: formatAddress(region.start), end: formatAddress(region.end) },
         knowledge: { type: region.type, origin: region.origin },
         executed,
         problem: "coverage shows code",
@@ -301,10 +302,10 @@ async function analyze(call: Call): Promise<unknown> {
       ...(space === DEFAULT_SPACE ? {} : { space }),
       ...found,
       ...coverageResult(),
-      coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
+      coverage: result.coverage.map((range) => ({ start: formatAddress(range.start), end: formatAddress(range.end) })),
       ...imported,
-      regions: result.regions.map((region) => ({ start: formatC64Address(region.start), end: formatC64Address(region.end), classification: region.classification })),
-      labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), ALL_NAMES),
+      regions: result.regions.map((region) => ({ start: formatAddress(region.start), end: formatAddress(region.end), classification: region.classification })),
+      labels: listed(result.labels, max, (label) => ({ address: formatAddress(label.address), name: label.name }), ALL_NAMES),
       ...(written === undefined ? {} : { listing: written }),
     };
     return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision });
@@ -332,14 +333,14 @@ async function analyze(call: Call): Promise<unknown> {
     ...(instructions === undefined ? {} : { instructions }),
     ...found,
     ...coverageResult(),
-    ...(coverage === undefined ? {} : { coverageGaps: listed(gaps, max, formatC64Address, "a larger --max-listed") }),
-    coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
+    ...(coverage === undefined ? {} : { coverageGaps: listed(gaps, max, formatAddress, "a larger --max-listed") }),
+    coverage: result.coverage.map((range) => ({ start: formatAddress(range.start), end: formatAddress(range.end) })),
     ...imported,
-    functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), ALL_NAMES),
-    decompilations: result.decompilations.map((item) => ({ entry: formatC64Address(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
+    functions: listed(result.functions, max, (fn) => ({ entry: formatAddress(fn.entry), name: fn.name }), ALL_NAMES),
+    decompilations: result.decompilations.map((item) => ({ entry: formatAddress(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
     ...((result.notDecompiled ?? []).length === 0
       ? {}
-      : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: item.reason })) }),
+      : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatAddress(item.entry), reason: item.reason })) }),
   };
   return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision });
 }

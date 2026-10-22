@@ -4,7 +4,8 @@
 // side, no comparison with another program: an expect step checks the memory
 // and registers against the values that the run file gives.
 
-import { formatC64Address, formatC64Byte, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
+import { formatSprite, formatVicii } from "#src/c64.ts";
+import { formatAddress, formatByte, parseAddress } from "#src/address.ts";
 import { screenText } from "#src/graphics.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
@@ -247,7 +248,7 @@ function checkRunFiles(path: string, run: Run): void {
 
 /** A trace hit with $ addresses, as a person reads it. */
 function showHit(hit: TraceHit) {
-  return { ...hit, pc: formatC64Address(hit.pc), ...(hit.address === undefined ? {} : { address: formatC64Address(hit.address) }) };
+  return { ...hit, pc: formatAddress(hit.pc), ...(hit.address === undefined ? {} : { address: formatAddress(hit.address) }) };
 }
 
 /**
@@ -260,7 +261,7 @@ async function expected(client: ViceSessionClient, step: Extract<RunStep, { expe
     const address = at(item.address);
     if (item.text !== undefined) {
       const actual = screenText(await readMemoryInParts(client, address, item.text.length, item.view ?? "cpu")).join("");
-      if (actual !== item.text) mismatches.push({ address: formatC64Address(address), expected: item.text, actual });
+      if (actual !== item.text) mismatches.push({ address: formatAddress(address), expected: item.text, actual });
       continue;
     }
     const data = Buffer.from(item.data!, "hex");
@@ -268,13 +269,13 @@ async function expected(client: ViceSessionClient, step: Extract<RunStep, { expe
     const actual = await readMemoryInParts(client, address, data.length, item.view ?? "cpu");
     data.forEach((byte, offset) => {
       const bits = mask?.[offset] ?? 0xff;
-      if ((actual[offset]! & bits) !== (byte & bits)) mismatches.push({ address: formatC64Address((address + offset) & 0xffff), expected: formatC64Byte(byte), actual: formatC64Byte(actual[offset]!) });
+      if ((actual[offset]! & bits) !== (byte & bits)) mismatches.push({ address: formatAddress((address + offset) & 0xffff), expected: formatByte(byte), actual: formatByte(actual[offset]!) });
     });
   }
   if (step.registers !== undefined) {
     const registers = await client.registersGet("c64");
     const { pc, flags, ...bytes } = step.registers;
-    if (pc !== undefined && registers.pc !== at(pc)) mismatches.push({ register: "pc", expected: formatC64Address(at(pc)), actual: formatC64Address(registers.pc) });
+    if (pc !== undefined && registers.pc !== at(pc)) mismatches.push({ register: "pc", expected: formatAddress(at(pc)), actual: formatAddress(registers.pc) });
     for (const [name, value] of Object.entries(bytes) as Array<["a" | "x" | "y" | "sp", number]>) if (registers[name] !== value) mismatches.push({ register: name, expected: value, actual: registers[name] });
     for (const [name, value] of Object.entries(flags ?? {}) as Array<[keyof typeof registers.flags, boolean]>) if (registers.flags[name] !== value) mismatches.push({ register: `flags.${name}`, expected: value, actual: registers.flags[name] });
   }
@@ -287,7 +288,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
   checkRunFiles(path, run);
   const symbols = namesOf(run.symbols ?? "none");
   const at = (location: string): number => {
-    if (location.startsWith("$")) return parseC64Address(location);
+    if (location.startsWith("$")) return parseAddress(location);
     const address = symbols.get(location);
     if (address !== undefined) return address;
     if (run.symbols === undefined || run.symbols === "none") {
@@ -362,7 +363,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
         write(`${step.trace}.json`, Buffer.from(`${JSON.stringify({ points: step.points, frames: traced.frames, end: traced.end, hits: traced.hits.map(showHit) }, null, 1)}\n`));
         traces[step.trace] = { file: `${step.trace}.json`, hits: traced.hits.length, frames: traced.frames, end: traced.end };
         if (traced.end !== "frames" && traced.end !== "hits") {
-          reason = `The trace ${step.trace} ended at a ${traced.end} at ${formatC64Address(traced.pc)}.`;
+          reason = `The trace ${step.trace} ended at a ${traced.end} at ${formatAddress(traced.pc)}.`;
           break;
         }
       } else if ("observe" in step) {
@@ -389,7 +390,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
         }
         if (step.registers === true) {
           const registers = await client.registersGet("c64");
-          seen.registers = { ...registers, pc: formatC64Address(registers.pc) };
+          seen.registers = { ...registers, pc: formatAddress(registers.pc) };
         }
         if (step.vicii === true) seen.vicii = formatVicii(await client.vicii());
         if (step.sprites !== undefined) seen.sprites = (await client.sprites(step.sprites)).sprites.map(formatSprite);
@@ -401,7 +402,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
       } else {
         const notReached = await runActionStep(client, step, at);
         if (notReached !== undefined && "runUntil" in step) {
-          reason = `Step ${done + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.`;
+          reason = `Step ${done + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatAddress(notReached.pc)}.`;
           break;
         }
       }
@@ -415,7 +416,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
       steps: run.steps.length,
       done,
       ...(reason === undefined ? {} : { reason }),
-      pc: formatC64Address(pc),
+      pc: formatAddress(pc),
       files: [...files],
       observations,
       ...(expectations.length === 0 ? {} : { expectations, failedExpectations }),

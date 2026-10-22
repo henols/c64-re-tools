@@ -10,7 +10,7 @@
 
 import { basename } from "node:path";
 
-import { type AddressRange, c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { type AddressRange, addressOf, formatAddress, parseAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
 import { readImage } from "#src/host-client/image.ts";
@@ -135,7 +135,7 @@ async function compare(call: Call): Promise<unknown> {
   const range = call.range("range");
   const comparison = compareReleases(releases, range === undefined ? {} : { from: range.start, to: range.end });
   const share = identicalShare(comparison.identicalBytes, comparison.differingBytes);
-  const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const show = (range: AddressRange) => ({ start: formatAddress(range.start), end: formatAddress(range.end) });
   const compared = {
     releases: loaded.map((item) => ({ name: item.release.name, shift: item.shift, segments: item.release.segments.map(show) })),
     common: comparison.common.map(show),
@@ -199,7 +199,7 @@ async function compare(call: Call): Promise<unknown> {
   }
 
   // The next compare: the best suggested shift that the run does not have yet, else --align for two releases.
-  const rangeArgs = range === undefined ? [] : ["--range", `${formatC64Address(range.start)}-${formatC64Address(range.end)}`];
+  const rangeArgs = range === undefined ? [] : ["--range", `${formatAddress(range.start)}-${formatAddress(range.end)}`];
   const runArgs = frames === undefined ? [] : ["--frames", String(frames), ...(stepsFile === undefined ? [] : ["--steps", stepsFile])];
   const best = suggested.find((suggestion) => !("current" in suggestion));
   const hints: string[] = [];
@@ -218,8 +218,8 @@ async function compare(call: Call): Promise<unknown> {
   const body = {
     ...compared,
     differences: comparison.differences.map((difference, index) => ({
-      start: formatC64Address(difference.start),
-      end: formatC64Address(difference.end),
+      start: formatAddress(difference.start),
+      end: formatAddress(difference.end),
       values: Object.fromEntries(Object.entries(difference.values).map(([name, bytes]) => [name, hexBytes(bytes.slice(0, 32)) + (bytes.length > 32 ? " ..." : "")])),
       groups: difference.groups,
       // runtime gives the release's own addresses: with a shift, they are not the addresses of the difference.
@@ -229,7 +229,7 @@ async function compare(call: Call): Promise<unknown> {
             runtime: Object.fromEntries(
               [...runtime].map(([name, accesses]) => {
                 const { start, end, first, changed } = accesses[index]!;
-                return [name, { start: formatC64Address(start), end: formatC64Address(end), first, changed }];
+                return [name, { start: formatAddress(start), end: formatAddress(end), first, changed }];
               }),
             ),
           }),
@@ -248,7 +248,7 @@ async function compare(call: Call): Promise<unknown> {
 function stagesOf(stages: Array<Record<string, unknown>> | undefined, where = "the program in the knowledge"): Array<{ entry: number; wrote: AddressRange[] }> | undefined {
   if (stages === undefined) return undefined;
   const parse = (value: unknown) => {
-    const at = typeof value === "string" ? c64AddressOf(value) : undefined;
+    const at = typeof value === "string" ? addressOf(value) : undefined;
     if (at !== undefined) return at;
     throw new Refusal("invalid-input", `The stages of ${where} are not the stages of a capture.`, { hint: "Capture the unpacked program again, with its stages, and put the capture into the project knowledge." });
   };
@@ -287,7 +287,7 @@ function programEvidence() {
 }
 
 /** The roots of the reachability as a person reads them. */
-const showRoots = (roots: readonly Root[]) => roots.map((root) => ({ address: formatC64Address(root.address), from: root.from }));
+const showRoots = (roots: readonly Root[]) => roots.map((root) => ({ address: formatAddress(root.address), from: root.from }));
 
 const NO_ROOTS = "none: the program in the knowledge has no entry, and the image does not hold the hardware vectors at $fffa-$ffff, so no code region is reachable or unreachable.";
 
@@ -299,7 +299,7 @@ function separateCommand(call: Call): unknown {
   const max = call.count("max-listed")!;
   const { program, stages, coverage, found } = programEvidence();
   const loaded = { entry: program.entry, stages };
-  const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const show = (range: AddressRange) => ({ start: formatAddress(range.start), end: formatAddress(range.end) });
   const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
   const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }) }));
   const outside = { read: found.outside.read.map(show), executed: found.outside.executed.map(show), generated: found.outside.generated.map(show) };
@@ -309,7 +309,7 @@ function separateCommand(call: Call): unknown {
   const bytes = (filter: (range: (typeof found.ranges)[number]) => boolean) => found.ranges.filter(filter).reduce((sum, range) => sum + range.end - range.start + 1, 0);
   const lastStage = loaded.stages === undefined ? undefined : loaded.stages.length - 1;
   const body = {
-    ...(loaded.entry === undefined ? {} : { entry: formatC64Address(loaded.entry) }),
+    ...(loaded.entry === undefined ? {} : { entry: formatAddress(loaded.entry) }),
     ...(lastStage === undefined
       ? { noStages: NO_STAGES }
       : {
@@ -368,24 +368,24 @@ function leftoversCommand(call: Call): unknown {
     minText: min,
   });
   const show = <T extends AddressRange & { stages?: number[]; access?: string[] }>({ start, end, stages: wrote, access, ...rest }: T) => ({
-    start: formatC64Address(start),
-    end: formatC64Address(end),
+    start: formatAddress(start),
+    end: formatAddress(end),
     ...rest,
     ...(wrote === undefined ? {} : { stages: wrote }),
     ...(access === undefined ? {} : { access }),
   });
   const all = {
     text: leftovers.text.map(show),
-    basic: leftovers.basic.map(({ linkedAt, ...rest }) => ({ ...show(rest), linkedAt: formatC64Address(linkedAt) })),
+    basic: leftovers.basic.map(({ linkedAt, ...rest }) => ({ ...show(rest), linkedAt: formatAddress(linkedAt) })),
     fill: leftovers.fill.map(({ pattern, ...rest }) => ({ ...show(rest), pattern: hexBytes(pattern) })),
     residue: leftovers.residue.map((range) => ({ ...show(range), bytes: hexBytes([...program.memory.subarray(range.start, Math.min(range.end, range.start + 15) + 1)]) + (range.end - range.start >= 16 ? " ..." : "") })),
-    copies: leftovers.copies.map(({ copyOf, ...rest }) => ({ ...show(rest), copyOf: formatC64Address(copyOf) })),
+    copies: leftovers.copies.map(({ copyOf, ...rest }) => ({ ...show(rest), copyOf: formatAddress(copyOf) })),
     deadCode: leftovers.deadCode.map(show),
   };
   const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify(all, null, 1)}\n`, { what: "--out" });
   const list = <T>(items: T[]) => listed(items, max, undefined, out ?? "a larger --max-listed, or --out <file>");
   const body = {
-    ...(program.entry === undefined ? {} : { entry: formatC64Address(program.entry) }),
+    ...(program.entry === undefined ? {} : { entry: formatAddress(program.entry) }),
     roots: found.roots.length === 0 ? NO_ROOTS : showRoots(found.roots),
     ...(stages === undefined ? { noStages: NO_STAGES } : { stages: stages.length }),
     ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Put the coverage of runs into the project knowledge." } : {}),
@@ -417,18 +417,18 @@ function routineCommand(call: Call): unknown {
       start = call.parseAddress(given, "<module>");
       const modules = listModules(db);
       const module = modules.find((item) => item.start === start);
-      if (module === undefined) throw new Refusal("not-found", `No module starts at ${formatC64Address(start)}. List the modules of the project knowledge, or give a range <start>-<end>.`);
+      if (module === undefined) throw new Refusal("not-found", `No module starts at ${formatAddress(start)}. List the modules of the project knowledge, or give a range <start>-<end>.`);
       const segment = segmentOf(start);
-      if (segment === undefined) throw new UsageError(`The module at ${formatC64Address(start)} is outside the segments of the program.`, { hint: "Give a range <start>-<end> in one segment of the program." });
+      if (segment === undefined) throw new UsageError(`The module at ${formatAddress(start)} is outside the segments of the program.`, { hint: "Give a range <start>-<end> in one segment of the program." });
       end = (modules.find((item) => item.start > start && item.start <= segment.end)?.start ?? segment.end + 1) - 1;
       title ??= module.title;
     } else {
       ({ start, end } = call.parseRange(given, "<range>"));
-      if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Address(start)}-${formatC64Address(end)} is not inside one segment of the program.`, { hint: "Give a range in one segment of the program." });
+      if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatAddress(start)}-${formatAddress(end)} is not inside one segment of the program.`, { hint: "Give a range in one segment of the program." });
     }
     const range = { start, end };
     const name = call.string("name") ?? listSymbols(db, { start, end: start }, undefined, SEMANTIC_ORIGINS)[0]?.name;
-    if (name === undefined) throw new UsageError(`The knowledge has no user or LLM name at ${formatC64Address(start)}.`, { hint: "Give --name <name>, or name the start of the routine in the project knowledge first." });
+    if (name === undefined) throw new UsageError(`The knowledge has no user or LLM name at ${formatAddress(start)}.`, { hint: "Give --name <name>, or name the start of the routine in the project knowledge first." });
     const { routine, leftOut } = routineFrom({
       name,
       ...(title === undefined ? {} : { title }),
@@ -449,8 +449,8 @@ function routineCommand(call: Call): unknown {
     return {
       routine: routine.name,
       ...written,
-      start: formatC64Address(start),
-      end: formatC64Address(end),
+      start: formatAddress(start),
+      end: formatAddress(end),
       length: routine.bytes.length,
       instructions: routine.instructions.length,
       relocations: routine.relocations.length,
@@ -488,10 +488,10 @@ function matchCommand(call: Call): unknown {
     .flatMap(({ routine, matches: each }) =>
       each.map((match) => ({
         routine: match.routine,
-        start: formatC64Address(match.start),
-        end: formatC64Address(match.start + routine.bytes.length - 1),
+        start: formatAddress(match.start),
+        end: formatAddress(match.start + routine.bytes.length - 1),
         shift: match.shift,
-        differing: match.differing.map((operand) => ({ address: formatC64Address(operand.address), library: show(operand.library, operand.size), program: show(operand.program, operand.size) })),
+        differing: match.differing.map((operand) => ({ address: formatAddress(operand.address), library: show(operand.library, operand.size), program: show(operand.program, operand.size) })),
       })),
     )
     .sort((a, b) => a.start.localeCompare(b.start));
@@ -538,7 +538,7 @@ function matchCommand(call: Call): unknown {
 /** A change of match as a write of the knowledge: its addresses as numbers, in the C64 space. */
 function toOperation(write: BatchWrite): BatchOperation {
   const parsed: Record<string, unknown> = { ...write, space: DEFAULT_SPACE };
-  for (const key of ["address", "start", "end", "from", "to"]) if (typeof write[key] === "string") parsed[key] = parseC64Address(write[key]);
+  for (const key of ["address", "start", "end", "from", "to"]) if (typeof write[key] === "string") parsed[key] = parseAddress(write[key]);
   return parsed as unknown as BatchOperation;
 }
 

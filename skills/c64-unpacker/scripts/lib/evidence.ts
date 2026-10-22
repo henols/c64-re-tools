@@ -1,7 +1,8 @@
 // Local evidence of packing for the c64-unpacker script: where BASIC hands
 // over and how compressed the bytes look. It never names a packer.
 
-import { basicLineText, findHandoffs, formatC64Address, instructionLength, parseTokenized, prgRange } from "#src/c64.ts";
+import { basicLineText, findHandoffs, instructionLength, parseTokenized, prgRange } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 
 /** A 256-byte block above this many bits per byte looks compressed. */
@@ -103,9 +104,9 @@ function startSignals(program: Uint8Array, load: number, end: number, sys: numbe
       const after = instructions.slice(index + 1, index + 9);
       return after.some((next) => INDEXED_STORES.has(next.opcode)) && after.some((next) => BRANCHES.has(next.opcode) && next.operand >= 0x80);
     })
-    .map((instruction) => formatC64Address(instruction.at));
+    .map((instruction) => formatAddress(instruction.at));
   return {
-    start: { at: formatC64Address(sys), ...(jump === undefined ? {} : { jumpsOutside: formatC64Address(jump.operand) }), ...(store === undefined ? {} : { writesOutside: formatC64Address(store.operand) }) },
+    start: { at: formatAddress(sys), ...(jump === undefined ? {} : { jumpsOutside: formatAddress(jump.operand) }), ...(store === undefined ? {} : { writesOutside: formatAddress(store.operand) }) },
     decodeLoops,
   };
 }
@@ -131,9 +132,9 @@ export function inspect(program: Uint8Array): PackingEvidence {
   const packing = byEntropy === "unlikely" && startMoves ? "unclear" : byEntropy;
   const sorted = [...blocks].sort((a, b) => a - b);
   return {
-    loadRange: { start: formatC64Address(load), end: formatC64Address(end) },
+    loadRange: { start: formatAddress(load), end: formatAddress(end) },
     bytes: program.length - 2,
-    basicStart: stub === undefined ? null : stub.address === undefined ? { line: stub.line, sys: null, expression: stub.expression! } : { line: stub.line, sys: formatC64Address(stub.address) },
+    basicStart: stub === undefined ? null : stub.address === undefined ? { line: stub.line, sys: null, expression: stub.expression! } : { line: stub.line, sys: formatAddress(stub.address) },
     entropy: {
       blocks: blocks.length,
       highBlocks: high,

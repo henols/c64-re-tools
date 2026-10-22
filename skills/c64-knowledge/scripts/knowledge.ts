@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
-import { formatC64Address } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { readImage } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
@@ -109,21 +109,21 @@ function oneOf<T extends string>(values: readonly T[], value: string | undefined
 // Output shapes: addresses as $xxxx, nothing internal.
 /** The space of a row, shown only when it is not the C64. */
 const spaceOf = (row: { space: string }) => (row.space === "c64" ? {} : { space: row.space });
-const symbol = (row: SymbolRow) => ({ ...spaceOf(row), address: formatC64Address(row.address), name: row.name, kind: row.kind, origin: row.origin, revision: row.revision });
+const symbol = (row: SymbolRow) => ({ ...spaceOf(row), address: formatAddress(row.address), name: row.name, kind: row.kind, origin: row.origin, revision: row.revision });
 const region = (row: RegionRow) => ({
   ...spaceOf(row),
-  start: formatC64Address(row.start),
-  end: formatC64Address(row.end),
+  start: formatAddress(row.start),
+  end: formatAddress(row.end),
   type: row.type,
   ...(row.element === undefined ? {} : { element: row.element, count: (row.end - row.start + 1) / row.element }),
   origin: row.origin,
   revision: row.revision,
 });
-const comment = (row: CommentRow) => ({ ...spaceOf(row), address: formatC64Address(row.address), placement: row.placement, text: row.text, origin: row.origin, revision: row.revision });
-const module = (row: ModuleRow) => ({ ...spaceOf(row), start: formatC64Address(row.start), file: row.file, ...(row.title === undefined ? {} : { title: row.title }), origin: row.origin, revision: row.revision });
+const comment = (row: CommentRow) => ({ ...spaceOf(row), address: formatAddress(row.address), placement: row.placement, text: row.text, origin: row.origin, revision: row.revision });
+const module = (row: ModuleRow) => ({ ...spaceOf(row), start: formatAddress(row.start), file: row.file, ...(row.title === undefined ? {} : { title: row.title }), origin: row.origin, revision: row.revision });
 const operand = (row: OperandRow) => ({
   ...spaceOf(row),
-  address: formatC64Address(row.address),
+  address: formatAddress(row.address),
   select: row.select,
   ...(row.symbol === undefined ? {} : { symbol: row.symbol }),
   ...(row.offset === 0 ? {} : { offset: row.offset }),
@@ -134,8 +134,8 @@ const operand = (row: OperandRow) => ({
 });
 const patch = (row: PatchRow) => ({
   ...spaceOf(row),
-  start: formatC64Address(row.start),
-  end: formatC64Address(row.end),
+  start: formatAddress(row.start),
+  end: formatAddress(row.end),
   bytes: row.end - row.start + 1,
   switch: row.switch,
   code: row.code,
@@ -152,7 +152,7 @@ const switchRow = (row: SwitchRow, base?: string, patches?: readonly PatchRow[])
   base: baseValue(row, base),
   releases: row.releases,
   ...(row.comment === undefined ? {} : { comment: row.comment }),
-  ...(patches === undefined ? {} : { patches: patches.map((patch) => ({ start: formatC64Address(patch.start), end: formatC64Address(patch.end) })) }),
+  ...(patches === undefined ? {} : { patches: patches.map((patch) => ({ start: formatAddress(patch.start), end: formatAddress(patch.end) })) }),
   origin: row.origin,
   revision: row.revision,
 });
@@ -167,15 +167,15 @@ const release = (row: ReleaseRow) => ({
 });
 const startScreen = (row: StartScreenRow) => ({
   mode: row.mode,
-  screen: formatC64Address(row.screen),
-  ...(row.bitmap === undefined ? {} : { bitmap: formatC64Address(row.bitmap) }),
-  ...(row.charset === undefined ? {} : { charset: formatC64Address(row.charset) }),
-  ...(row.colours === undefined ? {} : { colours: formatC64Address(row.colours) }),
+  screen: formatAddress(row.screen),
+  ...(row.bitmap === undefined ? {} : { bitmap: formatAddress(row.bitmap) }),
+  ...(row.charset === undefined ? {} : { charset: formatAddress(row.charset) }),
+  ...(row.colours === undefined ? {} : { colours: formatAddress(row.colours) }),
   ...(row.colour === undefined ? {} : { colour: row.colour }),
   border: row.border,
   background: row.background,
   ...(row.stage === undefined ? {} : { stage: row.stage }),
-  ...(row.call === undefined ? {} : { call: formatC64Address(row.call) }),
+  ...(row.call === undefined ? {} : { call: formatAddress(row.call) }),
   ...(row.colourRam === true ? { colourRam: true } : {}),
   ...(row.comment === undefined ? {} : { comment: row.comment }),
   origin: row.origin,
@@ -184,30 +184,30 @@ const startScreen = (row: StartScreenRow) => ({
 const macro = (row: MacroRow) => ({ ...spaceOf(row), name: row.name, params: row.params, body: row.body, ...(row.comment === undefined ? {} : { comment: row.comment }), origin: row.origin, revision: row.revision });
 const macroUse = (row: MacroUseRow) => ({
   ...spaceOf(row),
-  start: formatC64Address(row.start),
-  end: formatC64Address(row.end),
+  start: formatAddress(row.start),
+  end: formatAddress(row.end),
   macro: row.macro,
   args: row.args,
   text: `+${row.macro}${row.args.length === 0 ? "" : ` ${row.args.join(", ")}`}`,
   origin: row.origin,
   revision: row.revision,
 });
-const reference = (row: ReferenceRow) => ({ ...spaceOf(row), from: formatC64Address(row.from), to: formatC64Address(row.to), kind: row.kind, origin: row.origin, revision: row.revision });
+const reference = (row: ReferenceRow) => ({ ...spaceOf(row), from: formatAddress(row.from), to: formatAddress(row.to), kind: row.kind, origin: row.origin, revision: row.revision });
 function suppression(row: SuppressionRow) {
   const place =
     row.entity === "symbol"
-      ? { address: formatC64Address(row.start) }
+      ? { address: formatAddress(row.start) }
       : row.entity === "region"
-        ? { start: formatC64Address(row.start), end: formatC64Address(row.end) }
-        : { from: formatC64Address(row.start), to: formatC64Address(row.to!), kind: row.kind! };
+        ? { start: formatAddress(row.start), end: formatAddress(row.end) }
+        : { from: formatAddress(row.start), to: formatAddress(row.to!), kind: row.kind! };
   return { ...spaceOf(row), suppresses: row.entity, ...place, origin: row.origin, revision: row.revision };
 }
 
 /** A row of the program in a revision: memory bytes, the entry, or a coverage range. */
 function programRow(entry: Extract<HistoryEntry, { entity: "memory" | "entry" | "coverage" }>) {
-  if (entry.entity === "memory") return { ...spaceOf(entry.row), start: formatC64Address(entry.row.address), end: formatC64Address(entry.row.address + entry.row.bytes - 1), bytes: entry.row.bytes, origin: entry.row.origin, revision: entry.row.revision };
-  if (entry.entity === "entry") return { ...spaceOf(entry.row), address: formatC64Address(entry.row.address), state: entry.row.state, stages: entry.row.stages, origin: entry.row.origin, revision: entry.row.revision };
-  return { ...spaceOf(entry.row), kind: entry.row.kind, start: formatC64Address(entry.row.start), end: formatC64Address(entry.row.end), origin: entry.row.origin, revision: entry.row.revision };
+  if (entry.entity === "memory") return { ...spaceOf(entry.row), start: formatAddress(entry.row.address), end: formatAddress(entry.row.address + entry.row.bytes - 1), bytes: entry.row.bytes, origin: entry.row.origin, revision: entry.row.revision };
+  if (entry.entity === "entry") return { ...spaceOf(entry.row), address: formatAddress(entry.row.address), state: entry.row.state, stages: entry.row.stages, origin: entry.row.origin, revision: entry.row.revision };
+  return { ...spaceOf(entry.row), kind: entry.row.kind, start: formatAddress(entry.row.start), end: formatAddress(entry.row.end), origin: entry.row.origin, revision: entry.row.revision };
 }
 
 function historyEntry(entry: HistoryEntry) {
@@ -414,7 +414,7 @@ function batchJson(write: BatchOperation): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(write)) {
     if (key === "space" && value === DEFAULT_SPACE) continue;
-    out[key] = ["address", "start", "end", "from", "to"].includes(key) && typeof value === "number" ? formatC64Address(value) : value;
+    out[key] = ["address", "start", "end", "from", "to"].includes(key) && typeof value === "number" ? formatAddress(value) : value;
   }
   return out;
 }
@@ -530,7 +530,7 @@ const READ_COMMANDS: CommandSpec[] = [
     const known = at(db, call.parseAddress(call.subject(0), "<address>"), call.space);
     return {
       ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }),
-      address: formatC64Address(known.address),
+      address: formatAddress(known.address),
       ...(known.symbol === undefined ? {} : { symbol: symbol(known.symbol) }),
       ...(known.analyzerNames.length === 0 ? {} : { analyzerNames: known.analyzerNames.map(symbol) }),
       ...(known.region === undefined ? {} : { region: region(known.region) }),
@@ -605,9 +605,9 @@ const READ_COMMANDS: CommandSpec[] = [
         image === undefined
           ? null
           : {
-              segments: image.segments.map((segment) => ({ start: formatC64Address(segment.start), end: formatC64Address(segment.end) })),
+              segments: image.segments.map((segment) => ({ start: formatAddress(segment.start), end: formatAddress(segment.end) })),
               bytes: image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0),
-              ...(image.entry === undefined ? {} : { entry: formatC64Address(image.entry) }),
+              ...(image.entry === undefined ? {} : { entry: formatAddress(image.entry) }),
               state: image.state !== undefined,
               stages: image.stages?.length ?? 0,
             },
@@ -693,7 +693,7 @@ const READ_COMMANDS: CommandSpec[] = [
       const lines = listing(listingSource(db, call.space), start, end);
       const out = call.string("out");
       if (out !== undefined) return { lines: lines.length, ...writeReported(out, listingText(lines), { what: "--out" }) };
-      return { lines: list(call, lines, (row) => ({ ...row, address: formatC64Address(row.address) }), "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
+      return { lines: list(call, lines, (row) => ({ ...row, address: formatAddress(row.address) }), "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
     },
   ),
 ];
@@ -1167,9 +1167,9 @@ const JOIN: CommandSpec = {
       if (other !== undefined) throw new Refusal("invalid-input", `The owner ranges of ${batch.file} and ${other.file} overlap. Give each address one owner.`);
     }
     const joined = joinBatches(batches);
-    const choice = (item: JoinChoice) => ({ ...item, at: typeof item.at === "number" ? formatC64Address(item.at) : item.at, ...(item.space === DEFAULT_SPACE ? { space: undefined } : {}) });
+    const choice = (item: JoinChoice) => ({ ...item, at: typeof item.at === "number" ? formatAddress(item.at) : item.at, ...(item.space === DEFAULT_SPACE ? { space: undefined } : {}) });
     if (joined.clashes.length > 0) {
-      const clash = (item: JoinClash) => `${item.what} ${item.value} at ${item.places.map((place) => `${formatC64Address(place.address)} (${place.file})`).join(" and ")}${item.space === DEFAULT_SPACE ? "" : ` in ${item.space}`}`;
+      const clash = (item: JoinClash) => `${item.what} ${item.value} at ${item.places.map((place) => `${formatAddress(place.address)} (${place.file})`).join(" and ")}${item.space === DEFAULT_SPACE ? "" : ` in ${item.space}`}`;
       throw new Refusal("conflict", `The batches give one ${joined.clashes.map(clash).join(", one ")}. Nothing was written. Give each name and each module file one address in the batches, then join again.`);
     }
     const shown = { repeated: joined.repeated, choices: joined.choices.map(choice) };

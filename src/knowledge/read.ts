@@ -4,7 +4,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import type { AddressRange } from "../c64.ts";
+import type { AddressRange } from "../address.ts";
 import { Refusal } from "../errors.ts";
 import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SuppressionEntity, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { compareText, NO_REVISION, sqlName, TABLES } from "./text.ts";

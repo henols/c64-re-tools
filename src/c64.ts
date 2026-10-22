@@ -1,54 +1,17 @@
 import { Refusal } from "./errors.ts";
-
-/** A C64 address as text: $ and 1 to 4 hex digits, either case. */
-const ADDRESS_PATTERN = /^\$([0-9a-fA-F]{1,4})$/;
-
-/** The address that the text gives ($ and 1 to 4 hex digits), or undefined. */
-export function c64AddressOf(text: string): number | undefined {
-  const match = ADDRESS_PATTERN.exec(text);
-  return match === null ? undefined : Number.parseInt(match[1]!, 16);
-}
-
-/** Returns the value when it is a C64 address (0-$ffff). Refuses it otherwise. */
-function checkAddress(value: number): number {
-  if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new Refusal("invalid-input", `${value} is not a C64 address: an address is from $0000 to $ffff.`);
-  return value;
-}
-
-/** The address of $ and 1 to 4 hex digits. Refuses other text. */
-export function parseC64Address(text: string): number {
-  const value = c64AddressOf(text);
-  if (value === undefined) throw new Refusal("invalid-input", `${JSON.stringify(text)} is not a C64 address: give $ and 1 to 4 hex digits, for example $c000 or $fb.`);
-  return value;
-}
-
-export function formatC64Address(value: number): string {
-  return `$${checkAddress(value).toString(16).padStart(4, "0")}`;
-}
-
-/** An inclusive span of C64 addresses. */
-export interface AddressRange {
-  start: number;
-  end: number;
-}
+import { formatAddress } from "./address.ts";
 
 /** The knowledge spaces: the C64, the 1541 drive in unit 8, and cartridge banks 0 to 255. */
 export const SPACE_PATTERN = /^(c64|drive8|loading|bank(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$/;
 
 /** VIC-II state with its addresses as $xxxx; the other values stay numbers. */
 export function formatVicii<T extends { screenAddress: number; graphicsAddress: number }>(state: T): Omit<T, "screenAddress" | "graphicsAddress"> & { screenAddress: string; graphicsAddress: string } {
-  return { ...state, screenAddress: formatC64Address(state.screenAddress), graphicsAddress: formatC64Address(state.graphicsAddress) };
+  return { ...state, screenAddress: formatAddress(state.screenAddress), graphicsAddress: formatAddress(state.graphicsAddress) };
 }
 
 /** A sprite with its data address as $xxxx; the other values stay numbers. */
 export function formatSprite<T extends { dataAddress: number }>(sprite: T): Omit<T, "dataAddress"> & { dataAddress: string } {
-  return { ...sprite, dataAddress: formatC64Address(sprite.dataAddress) };
-}
-
-/** A byte as $xx. Refuses a value outside 0-255. */
-export function formatC64Byte(value: number): string {
-  if (!Number.isInteger(value) || value < 0 || value > 0xff) throw new Refusal("invalid-input", `${value} is not a byte: a byte is from 0 to 255.`);
-  return `$${value.toString(16).padStart(2, "0")}`;
+  return { ...sprite, dataAddress: formatAddress(sprite.dataAddress) };
 }
 
 /**
@@ -61,30 +24,6 @@ export function prgRange(prg: Uint8Array): { start: number; end: number; body: U
   if (start + prg.length - 2 > 0x10000) throw new Refusal("invalid-input", "The PRG runs past $ffff.");
   return { start, end: start + prg.length - 3, body: prg.subarray(2) };
 }
-
-/** The tables of addresses: words, or words minus 1 for an RTS dispatch; a split table has all low bytes, then all high bytes. */
-export const POINTER_TABLE_TYPES = ["addresses", "addresses-split", "rts-addresses", "rts-addresses-split"] as const;
-export type PointerTableType = (typeof POINTER_TABLE_TYPES)[number];
-
-/** The entries of a table of addresses in [start, end]: the address of each low and high byte, and the target that the entry names. */
-export function pointerTableEntries(table: { start: number; end: number; type: PointerTableType }, byteAt: (address: number) => number): Array<{ low: number; high: number; target: number }> {
-  const length = table.end - table.start + 1;
-  const split = table.type === "addresses-split" || table.type === "rts-addresses-split";
-  const minus = table.type === "rts-addresses" || table.type === "rts-addresses-split" ? 1 : 0;
-  const count = Math.floor(length / 2);
-  return Array.from({ length: count }, (_, index) => {
-    const low = split ? table.start + index : table.start + 2 * index;
-    const high = split ? table.start + count + index : low + 1;
-    return { low, high, target: ((byteAt(low) | (byteAt(high) << 8)) + minus) & 0xffff };
-  });
-}
-
-/** How 6502 code refers to an address. A pointer is code that builds the address from immediates. */
-export const REFERENCE_KINDS = ["call", "jump", "read", "write", "reference", "pointer"] as const;
-export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
-
-/** A symbol or label name: assembler label syntax, at most 64 characters; a leading dot marks a local label. */
-export const SYMBOL_NAME = /^\.?[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 /** The VIC-II's 16 KiB bank base, from CIA 2 port A bits 0-1 (inverted); undriven lines read high. */
 export function vicBankBase(cia2PortA: number, cia2DdrA = 0xff): number {
@@ -213,10 +152,10 @@ export function parseTokenized(program: Uint8Array): TokenizedProgram {
   if (program.length < 4) return { reason: "The file is too short for a BASIC program." };
   const loadAddress = program[0]! | (program[1]! << 8);
   if (loadAddress < MIN_BASIC_LOAD) {
-    return { reason: `The load address ${formatC64Address(loadAddress)} is below $0400, in the zero page, the stack or the system pages. The file is a memory dump or machine code, not a BASIC program.` };
+    return { reason: `The load address ${formatAddress(loadAddress)} is below $0400, in the zero page, the stack or the system pages. The file is a memory dump or machine code, not a BASIC program.` };
   }
   if (loadAddress + program.length - 2 > 0x10000) {
-    return { reason: `The file holds ${program.length - 2} bytes from ${formatC64Address(loadAddress)}, which runs past $ffff. The file is a memory dump, not a BASIC program.` };
+    return { reason: `The file holds ${program.length - 2} bytes from ${formatAddress(loadAddress)}, which runs past $ffff. The file is a memory dump, not a BASIC program.` };
   }
   const lines: TokenizedLine[] = [];
   let at = 2;

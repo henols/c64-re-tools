@@ -6,7 +6,8 @@
 // snapshot file, which a run can start from. No tool guesses where a load
 // ends: the steps decide.
 
-import { type AddressRange, COVERAGE, formatC64Address } from "#src/c64.ts";
+import { COVERAGE } from "#src/c64.ts";
+import { type AddressRange, formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage } from "#src/host-client/coverage.ts";
@@ -168,13 +169,13 @@ export async function loads(program: string, options: { out: string; steps: Load
         const path = `${options.out}/${step.save}.vsf`;
         const file = writeReported(path, await client.snapshotExport("loads-save"), { what: "--out" });
         await client.snapshot({ action: "remove", name: "loads-save" });
-        saved.push({ save: step.save, file, pc: formatC64Address((await client.registersGet("c64")).pc) });
+        saved.push({ save: step.save, file, pc: formatAddress((await client.registersGet("c64")).pc) });
         continue;
       }
       if (!("capture" in step)) {
         const notReached = await runActionStep(client, step, knowledgeAt());
         if (notReached !== undefined && "runUntil" in step) {
-          const reason = `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.`;
+          const reason = `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatAddress(notReached.pc)}.`;
           return { output: { loaded: false, reason, captures, ...(saved.length === 0 ? {} : { saved }) }, failed: true };
         }
         continue;
@@ -207,14 +208,14 @@ export async function loads(program: string, options: { out: string; steps: Load
       if (options.drive) {
         const ram = Buffer.from((await client.memoryRead({ address: 0x0000, size: DRIVE_RAM, space: "drive8", view: "cpu" })).data, "hex");
         write("drive8.prg", Buffer.concat([Buffer.from([0x00, 0x00]), ram]));
-        drive = { file: "drive8.prg", pc: formatC64Address((await client.registersGet("drive8")).pc), space: "drive8" };
+        drive = { file: "drive8.prg", pc: formatAddress((await client.registersGet("drive8")).pc), space: "drive8" };
       }
-      const showRange = (range: { start: number; end: number }) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+      const showRange = (range: { start: number; end: number }) => ({ start: formatAddress(range.start), end: formatAddress(range.end) });
       write(
         "image.json",
         json({
           capture: step.capture,
-          entry: formatC64Address(registers.pc),
+          entry: formatAddress(registers.pc),
           segments: segments.map((segment, at) => ({ ...showRange(segment), file: files[at] })),
           ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
           vectors,
@@ -232,7 +233,7 @@ export async function loads(program: string, options: { out: string; steps: Load
         out: directory,
         files: written,
         ...(removed.length === 0 ? {} : { removed }),
-        pc: formatC64Address(registers.pc),
+        pc: formatAddress(registers.pc),
         ...(keyWait ? { keyWait: true } : {}),
         segments: segments.map(showRange),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
@@ -246,7 +247,7 @@ export async function loads(program: string, options: { out: string; steps: Load
     }
     if (captures.length > 0 && captures.every((capture) => (capture.segments as unknown[]).length === 0)) {
       const waits = captures.some((capture) => capture.keyWait === true) ? " The C64 waited for a key at READY. or at an INPUT statement, so the load ended or did not start." : "";
-      const reason = `No capture has a segment: the program changed no block of RAM from ${formatC64Address(FIRST_SEGMENT_ADDRESS)} on.${waits}`;
+      const reason = `No capture has a segment: the program changed no block of RAM from ${formatAddress(FIRST_SEGMENT_ADDRESS)} on.${waits}`;
       return { output: { loaded: false, reason, captures, ...(saved.length === 0 ? {} : { saved }) }, failed: true };
     }
     return { output: { loaded: true, captures, ...(saved.length === 0 ? {} : { saved }) }, failed: false };

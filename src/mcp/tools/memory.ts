@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 
-import { formatC64Address } from "../../c64.ts";
+import { formatAddress } from "../../address.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { MAX_COMPARE_DIFFERENCES, MAX_COMPARE_SIZE, MAX_DISASSEMBLE, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_SEARCH_PATTERN, MAX_SEARCH_RESULTS, type RegisterValues } from "../../protocol/vice.ts";
 import { linesText, OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
@@ -42,7 +42,7 @@ export const c64MemoryRead = defineTool({
     if (out === undefined) {
       if (read.size > MAX_MEMORY_READ) throw new WireFailure("invalid-input", `size can be at most ${MAX_MEMORY_READ} without out.`);
       const result = await session.memoryRead(read);
-      return { address: formatC64Address(result.address), size: result.data.length / 2, data: result.data };
+      return { address: formatAddress(result.address), size: result.data.length / 2, data: result.data };
     }
     if (read.address + read.size > 0x10000) throw new WireFailure("invalid-input", "The range must not go past $ffff.");
     const parts: Buffer[] = [];
@@ -50,7 +50,7 @@ export const c64MemoryRead = defineTool({
       const part = await session.memoryRead({ ...read, address: at, size: Math.min(MAX_MEMORY_READ, read.address + read.size - at) });
       parts.push(Buffer.from(part.data, "hex"));
     }
-    return { address: formatC64Address(read.address), size: read.size, ...writeOut(out, Buffer.concat(parts), project) };
+    return { address: formatAddress(read.address), size: read.size, ...writeOut(out, Buffer.concat(parts), project) };
   },
 });
 
@@ -67,7 +67,7 @@ export const c64MemoryWrite = defineTool({
   readOnly: false,
   async run(input, session) {
     const result = await session.memoryWrite(input);
-    return { address: formatC64Address(result.address), bytesWritten: result.bytesWritten };
+    return { address: formatAddress(result.address), bytesWritten: result.bytesWritten };
   },
 });
 
@@ -107,7 +107,7 @@ export const c64Registers = defineTool({
       }
       registers = await session.registersSet(input.space, values);
     }
-    return { ...registers, pc: formatC64Address(registers.pc) };
+    return { ...registers, pc: formatAddress(registers.pc) };
   },
 });
 
@@ -147,7 +147,7 @@ export const c64MemorySearch = defineTool({
     // VICE refuses a range shorter than the pattern. Such a range has no match.
     if (end - input.start + 1 < input.pattern.length) return { matches: [] };
     const result = await session.memorySearch({ ...input, end });
-    const matches = result.matches.map(formatC64Address);
+    const matches = result.matches.map(formatAddress);
     return matches.length >= input.maxResults ? { matches, truncated: true } : { matches };
   },
 });
@@ -206,7 +206,7 @@ export const c64Disassemble = defineTool({
     if (out === undefined) {
       if (request.count > MAX_DISASSEMBLE) throw new WireFailure("invalid-input", `count can be at most ${MAX_DISASSEMBLE} without out.`);
       const result = await session.disassemble(request);
-      return { instructions: result.instructions.map((instruction) => ({ ...instruction, address: formatC64Address(instruction.address) })) };
+      return { instructions: result.instructions.map((instruction) => ({ ...instruction, address: formatAddress(instruction.address) })) };
     }
     const lines: string[] = [];
     let address = request.address;
@@ -221,7 +221,7 @@ export const c64Disassemble = defineTool({
           wrapped = true;
           break;
         }
-        lines.push(`${formatC64Address(instruction.address)}  ${spaced(instruction.bytes).padEnd(9)} ${instruction.text}`);
+        lines.push(`${formatAddress(instruction.address)}  ${spaced(instruction.bytes).padEnd(9)} ${instruction.text}`);
         address = instruction.address + instruction.bytes.length / 2;
       }
     }

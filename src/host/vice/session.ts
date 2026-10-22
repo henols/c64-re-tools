@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { formatC64Address, instructionLength } from "../../c64.ts";
+import { instructionLength } from "../../c64.ts";
+import { formatAddress } from "../../address.ts";
 import { matrixRows } from "../../c64-keys.ts";
 import { encodePng, type IndexedFrame } from "../../graphics.ts";
 import { accessedValue, instructionText, operandAddress } from "../../opcodes.ts";
@@ -663,7 +664,7 @@ export class ViceSession implements ViceSessionHandle {
         await this.#stop();
         throw new WireFailure(
           "limit-exceeded",
-          `The routine did not return within ${this.#untilReturnLimitMs / 1000} seconds. The machine is stopped at ${formatC64Address(await this.#pc())}.`,
+          `The routine did not return within ${this.#untilReturnLimitMs / 1000} seconds. The machine is stopped at ${formatAddress(await this.#pc())}.`,
         );
       }
       return { state: "stopped", pc: stop.pc, ...this.#stepStoppedByPoint() };
@@ -1026,7 +1027,7 @@ export class ViceSession implements ViceSessionHandle {
     if (!(await this.#jamAt(pc))) return;
     throw new WireFailure(
       "operation-failed",
-      `The CPU is jammed by the JAM opcode at ${formatC64Address(this.#jammed ?? pc)}, so ${action} cannot execute an instruction. ` +
+      `The CPU is jammed by the JAM opcode at ${formatAddress(this.#jammed ?? pc)}, so ${action} cannot execute an instruction. ` +
         "The CPU runs again only after c64_reset, a snapshot restore or c64_autostart.",
     );
   }

@@ -4,7 +4,7 @@
 // spelling, ACME writes only one of them: the generator finds those with a
 // probe and writes the others as bytes.
 
-import { formatC64Byte, formatC64Address, SYMBOL_NAME } from "./c64.ts";
+import { formatByte, formatAddress, SYMBOL_NAME } from "./address.ts";
 
 export type Mode = "imp" | "imm" | "zp" | "zpx" | "zpy" | "abs" | "abx" | "aby" | "ind" | "izx" | "izy" | "rel";
 
@@ -151,8 +151,8 @@ export function operandNumber(bytes: readonly number[], pc: number): string {
   const { mode } = OPCODES[bytes[0]!]!;
   const low = bytes[1] ?? 0;
   if (mode === "imp") return "";
-  if (mode === "rel") return formatC64Address((pc + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff);
-  return MODE_LENGTH[mode] === 3 ? formatC64Address(low | ((bytes[2] ?? 0) << 8)) : formatC64Byte(low);
+  if (mode === "rel") return formatAddress((pc + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff);
+  return MODE_LENGTH[mode] === 3 ? formatAddress(low | ((bytes[2] ?? 0) << 8)) : formatByte(low);
 }
 
 /** The text of the instruction in `bytes` at `pc` as the monitor shows it, for example "STA $d011" or "BNE $c002". */

@@ -2,7 +2,7 @@
 // Host Runtime and extracts files into the project. T64 tape files and CRT
 // cartridge files are read locally: no host tool reads them.
 
-import { formatC64Address } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { DISK_BLOCK_BYTES, DISK_IMAGE_TYPES, inspectDisk, MAX_DISK_SECTORS } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
@@ -61,14 +61,14 @@ function tapeDirectory(image: string) {
   const tape = about(image, () => parseT64(readProjectFile(image).bytes));
   return {
     name: tape.name,
-    entries: tape.entries.map((entry) => ({ name: entry.name, start: formatC64Address(entry.start), end: formatC64Address(entry.end), bytes: entry.bytes, ...(entry.fixedSize ? { fixedSize: true } : {}) })),
+    entries: tape.entries.map((entry) => ({ name: entry.name, start: formatAddress(entry.start), end: formatAddress(entry.end), bytes: entry.bytes, ...(entry.fixedSize ? { fixedSize: true } : {}) })),
   };
 }
 
 /** A CRT cartridge file: its header and CHIP packets, each with the PRG file name that crt writes. */
 function cartridge(image: string) {
   const crt = about(image, () => parseCrt(readProjectFile(image).bytes));
-  const chips = crt.chips.map((chip) => ({ bank: chip.bank, address: formatC64Address(chip.address), size: chip.size, space: `bank${chip.bank}`, file: `bank${chip.bank}-${chip.address.toString(16).padStart(4, "0")}.prg` }));
+  const chips = crt.chips.map((chip) => ({ bank: chip.bank, address: formatAddress(chip.address), size: chip.size, space: `bank${chip.bank}`, file: `bank${chip.bank}-${chip.address.toString(16).padStart(4, "0")}.prg` }));
   return { crt, header: { name: crt.name, type: crt.type, typeName: crt.typeName, exrom: crt.exrom, game: crt.game, ...(crt.mode === undefined ? {} : { mode: crt.mode }) }, chips };
 }
 

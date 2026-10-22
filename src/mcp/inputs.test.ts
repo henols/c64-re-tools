@@ -7,7 +7,7 @@ import { test } from "node:test";
 
 import { z } from "zod";
 
-import { c64AddressOf } from "../c64.ts";
+import { addressOf } from "../address.ts";
 import { checkActionSteps, STEP_FIELDS, type ActionStepKind } from "../host-client/steps.ts";
 import { TOOL_INPUTS } from "./inputs.ts";
 import { c64RunUntil } from "./tools/execution.ts";
@@ -33,7 +33,7 @@ test("each step input has the fields of its tool input", () => {
 
 /** A step output with its $ addresses as numbers, as the tool output has them. */
 function asTool(value: unknown, key?: string): unknown {
-  if (typeof value === "string" && (key === "address" || key === "pc")) return c64AddressOf(value);
+  if (typeof value === "string" && (key === "address" || key === "pc")) return addressOf(value);
   if (Array.isArray(value)) return value.map((item) => asTool(item));
   if (typeof value === "object" && value !== null) return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, asTool(item, name)]));
   return value;

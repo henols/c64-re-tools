@@ -1,7 +1,8 @@
 // Coverage flows: the seeds that a coverage map gives a static analysis, for
 // any CPU (the 6502 when none is given).
 
-import { type AddressRange, COVERAGE } from "../c64.ts";
+import { COVERAGE } from "../c64.ts";
+import { type AddressRange } from "../address.ts";
 import type { Cpu } from "../cpu.ts";
 import { MOS6502 } from "./mos6502.ts";
 

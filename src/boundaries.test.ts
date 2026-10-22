@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["build-name", "c64-keys", "c64", "compare", "cpu", "errors", "graphics", "machine", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
+      return ["address", "build-name", "c64-keys", "c64", "compare", "cpu", "errors", "graphics", "machine", "media", "opcodes", "package", "platform", "project", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "cpu", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -31,6 +31,8 @@ function areaOf(path: string): string | undefined {
 const ALLOWED: Record<string, readonly string[]> = {
   // The error codes and the refusal class import nothing.
   errors: [],
+  // Addresses as text, ranges, tables of addresses: every area uses them.
+  address: [],
   c64: [],
   // The name of a build and of its symbols file: c64-assembler and c64-source name a program by what it is.
   "build-name": [],
@@ -107,7 +109,8 @@ function checkTarget(from: string, source: string, target: string): string | und
   if (targetArea === undefined) return `${from}: imports ${target}, which is outside every source area`;
   if (targetArea === source) return undefined;
   // The one list of error codes and the one refusal class: every area reports failures with them.
-  if (targetArea === "errors") return undefined;
+  // The one address format: every area reads and writes addresses with it.
+  if (targetArea === "errors" || targetArea === "address") return undefined;
 
   const allowed = source.startsWith("skill:") ? SKILL_ALLOWED : (ALLOWED[source] ?? []);
   return allowed.includes(targetArea) ? undefined : `${from}: ${source} must not import ${targetArea} (${target})`;

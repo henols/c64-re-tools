@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE, formatC64Address } from "../../src/c64.ts";
+import { COVERAGE } from "../../src/c64.ts";
+import { formatAddress } from "../../src/address.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
 import { separate } from "../../src/knowledge/separate.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
@@ -157,7 +158,7 @@ test("compare --align maps two image.json files, and refuses --shift, and --min-
     memory.set(bytes, 0x1000);
     mkdirSync(join(project, folder), { recursive: true });
     writeFileSync(join(project, folder, "image.bin"), memory);
-    writeFileSync(join(project, folder, "image.json"), JSON.stringify({ image: "image.bin", segments: [{ start: "$1000", end: formatC64Address(0x1000 + bytes.length - 1) }] }));
+    writeFileSync(join(project, folder, "image.json"), JSON.stringify({ image: "image.bin", segments: [{ start: "$1000", end: formatAddress(0x1000 + bytes.length - 1) }] }));
   };
   image("build-a", buildA);
   image("build-b", buildB);

@@ -5,7 +5,7 @@
 
 import { posix } from "node:path";
 
-import { formatC64Address, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
+import { formatAddress, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/address.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
 import { bitmapFrame, charsetFrame, encodePng, PATTERN_PALETTES, scaleFrame, screenText, spriteSheet, type GraphicsMode } from "#src/graphics.ts";
 import { mermaidGraph, ownerOf, routineEdges, routineHeads, type GraphReference, type RoutineHead } from "#src/knowledge/graph.ts";
@@ -48,7 +48,7 @@ const MAX_SPAN = 256;
 /** The kinds of a reference that reads a table: Ghidra gives an indexed read (lda table,x) as "reference". */
 const TABLE_READS: readonly string[] = ["read", "reference", "pointer"];
 
-const hex = (address: number) => formatC64Address(address).toUpperCase();
+const hex = (address: number) => formatAddress(address).toUpperCase();
 const range = (start: number, end: number) => (start === end ? hex(start) : `${hex(start)}-${hex(end)}`);
 const stem = (file: string) => file.replace(/\.asm$/, "");
 

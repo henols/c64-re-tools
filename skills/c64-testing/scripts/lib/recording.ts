@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { isRefusal, Refusal } from "#src/errors.ts";
-import { c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { addressOf, formatAddress, parseAddress } from "#src/address.ts";
 import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, renamedField, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
@@ -209,7 +209,7 @@ export function readRecordFile(path: string): RecordFile {
   const compare = value.checkpoint === undefined ? undefined : { checkpoint: value.checkpoint as string, state: checkState(value.state, fail), ...(pin === undefined ? {} : { pin }) };
   const inputs = checkInputs(value.inputs, fail);
   const coverage = value.coverage ?? "input";
-  if (typeof coverage !== "string" || (!COVERAGE_COMMANDS.has(coverage) && c64AddressOf(coverage) === undefined)) {
+  if (typeof coverage !== "string" || (!COVERAGE_COMMANDS.has(coverage) && addressOf(coverage) === undefined)) {
     fail(`coverage must be "input" (default), "start" or a $ address such as "$1aed", not ${JSON.stringify(coverage)}`);
   }
   if (!Array.isArray(value.steps) || value.steps.length === 0) fail("steps must be a list with at least one step");
@@ -296,7 +296,7 @@ export interface SideAddresses {
 
 function sideAddresses(symbols: Map<string, number>, side: string, move: { code: (address: number) => number; data: (address: number) => number }): SideAddresses {
   const resolve = (location: Location, kind: "code" | "data") => {
-    if (location.startsWith("$")) return move[kind](parseC64Address(location));
+    if (location.startsWith("$")) return move[kind](parseAddress(location));
     const address = symbols.get(location);
     if (address === undefined) throw new Refusal("invalid-input", `the ${side} side has no symbol ${location}`);
     return address;
@@ -329,7 +329,7 @@ export function mover(from: Map<string, number>, to: Map<string, number>): (addr
 export function siteMap(sites: RecordedSite[], from: Map<string, number>, to: Map<string, number>): Array<[number, number]> {
   const move = mover(from, to);
   const moved: Array<[number, number]> = [];
-  for (const pc of new Set(sites.filter((site) => !site.rom).map((site) => parseC64Address(site.site)))) {
+  for (const pc of new Set(sites.filter((site) => !site.rom).map((site) => parseAddress(site.site)))) {
     const target = move(pc);
     if (target !== pc) moved.push([pc, target]);
   }
@@ -342,7 +342,7 @@ async function startProgram(core: C64RunSession, prg: Uint8Array, load: boolean)
   await core.status(`run ${READY_FRAMES * PAL_FRAME_CYCLES}`);
   const start = prg[0]! | (prg[1]! << 8);
   const end = start + prg.length - 2;
-  if (!load && start !== 0x0801) throw new Refusal("invalid-input", `the program loads at ${formatC64Address(start)}, not at $0801 with a BASIC start line: give load true and a registers step that starts it`);
+  if (!load && start !== 0x0801) throw new Refusal("invalid-input", `the program loads at ${formatAddress(start)}, not at $0801 with a BASIC start line: give load true and a registers step that starts it`);
   await core.write(start, prg.subarray(2));
   // The pointers that LOAD sets: the end of the program and of the variables.
   for (const pointer of [0x2d, 0x2f, 0x31, 0xae]) await core.write(pointer, Uint8Array.of(end & 0xff, end >> 8));
@@ -375,8 +375,8 @@ async function runToKey(core: C64RunSession, key: RecordedEvent["key"], until: n
     const status = await core.status(`run ${key.tick + skipped}`);
     return status.word === "halted" ? "halted" : "reached";
   }
-  const site = parseC64Address(key.site);
-  const status = await core.status(`run-reads ${hex(map.get(site) ?? site)} ${hex(parseC64Address(key.addr))} ${key.count} ${until}`);
+  const site = parseAddress(key.site);
+  const status = await core.status(`run-reads ${hex(map.get(site) ?? site)} ${hex(parseAddress(key.addr))} ${key.count} ${until}`);
   return status.word === "halted" ? "halted" : status.word === "reached" ? "reached" : "not-reached";
 }
 
@@ -476,7 +476,7 @@ export async function record(
   await core.command(`record ${reads}`);
   await startProgram(core, prg, file.load ?? false);
   // From READY on: the start of the C64 itself is never in the map.
-  await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hex(parseC64Address(file.coverage))}`);
+  await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hex(parseAddress(file.coverage))}`);
   const events: RecordedEvent[] = [];
   const masks = [0, 0];
   let reason: string | undefined;
@@ -490,7 +490,7 @@ export async function record(
       ? { previous: true }
       : busiest === undefined
         ? { tick: tick + 1 }
-        : { site: formatC64Address(busiest.site), addr: formatC64Address(busiest.addr), count: busiest.count + 1 };
+        : { site: formatAddress(busiest.site), addr: formatAddress(busiest.addr), count: busiest.count + 1 };
     if ((await runToKey(core, key, tick + 600 * PAL_FRAME_CYCLES, new Map(), 0)) !== "reached") return "the program did not read its input again within 600 frames";
     events.push({ ...(step === undefined ? {} : { step }), action, key });
     return doAction(core, action, at);
@@ -654,7 +654,7 @@ export async function replaySide(
       skipped = reached.tick;
       limit += skipped;
       await core.status(`goto ${hex(resume)}`);
-    } else problem = `the rebuild did not come to the wait of its start screen at ${formatC64Address(wait)}`;
+    } else problem = `the rebuild did not come to the wait of its start screen at ${formatAddress(wait)}`;
   }
   for (const event of problem === undefined ? recording.events : []) {
     const what = event.step === undefined ? "the RESTORE of the play" : "step " + event.step;

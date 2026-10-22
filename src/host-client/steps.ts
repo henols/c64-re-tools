@@ -13,7 +13,8 @@
 // The scripts install without packages, so this checker has no zod: the MCP
 // tools keep their zod schemas, and a test checks that both take the same inputs.
 
-import { c64AddressOf, SYMBOL_NAME, textToPetscii } from "../c64.ts";
+import { textToPetscii } from "../c64.ts";
+import { addressOf, SYMBOL_NAME } from "../address.ts";
 import { keyTaps, MAX_PRESS_FRAMES, PRESS_FRAMES, type KeyTap } from "../c64-keys.ts";
 import { isRefusal, Refusal } from "../errors.ts";
 import {
@@ -93,7 +94,7 @@ const isOneOf = <T extends string>(values: readonly T[], value: unknown): value 
 
 /** True for an address of a step or a file: $ and 1 to 4 hex digits, or a name. */
 export function isLocation(value: unknown): value is Location {
-  return typeof value === "string" && (c64AddressOf(value) !== undefined || SYMBOL_NAME.test(value));
+  return typeof value === "string" && (addressOf(value) !== undefined || SYMBOL_NAME.test(value));
 }
 
 /** Checks an address in a file: $ and 1 to 4 hex digits, or a name. */
@@ -334,9 +335,9 @@ export function newStepForm(kind: string, step: Record<string, unknown>): { fiel
     }
     case "registers": {
       if (!isObject(input)) return undefined;
-      const fields = Object.entries(input).flatMap(([name, value]) => ((name === "pc" && typeof value === "number") || (name !== "pc" && name !== "flags" && typeof value === "string" && c64AddressOf(value) !== undefined) ? [`registers.${name} as ${typeof value === "number" ? "a number" : "text"}`] : []));
+      const fields = Object.entries(input).flatMap(([name, value]) => ((name === "pc" && typeof value === "number") || (name !== "pc" && name !== "flags" && typeof value === "string" && addressOf(value) !== undefined) ? [`registers.${name} as ${typeof value === "number" ? "a number" : "text"}`] : []));
       if (fields.length === 0) return undefined;
-      const values = Object.fromEntries(Object.entries(input).map(([name, value]) => [name, name === "pc" ? asAddress(value) : typeof value === "string" ? (c64AddressOf(value) ?? value) : value]));
+      const values = Object.fromEntries(Object.entries(input).map(([name, value]) => [name, name === "pc" ? asAddress(value) : typeof value === "string" ? (addressOf(value) ?? value) : value]));
       return form(fields, values);
     }
     default:

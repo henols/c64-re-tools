@@ -5,7 +5,7 @@
 // The target of an indirect jump comes from the stores of the straight-line
 // code before it, or else from the pointer in the image.
 
-import { SYMBOL_NAME } from "../../c64.ts";
+import { SYMBOL_NAME } from "../../address.ts";
 import type { GhidraInstruction, GhidraResult } from "../types.ts";
 import { PcodeState } from "./pcode.ts";
 import { decode, type Decoded, type Varnode } from "./wasm.ts";

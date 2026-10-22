@@ -9,7 +9,8 @@
 // a run executed, at --keep and at the patches that the export changed: it
 // tells what stays. Without coverage nothing becomes free by itself.
 
-import { type AddressRange, COVERAGE, formatC64Address, pointerTableEntries, POINTER_TABLE_TYPES, type PointerTableType } from "#src/c64.ts";
+import { COVERAGE } from "#src/c64.ts";
+import { type AddressRange, formatAddress, pointerTableEntries, POINTER_TABLE_TYPES, type PointerTableType } from "#src/address.ts";
 import { symbolsPath } from "#src/build-name.ts";
 import { Refusal } from "#src/errors.ts";
 import { NO_FALL_THROUGH, type Root, separate } from "#src/knowledge/separate.ts";
@@ -82,7 +83,7 @@ export interface DropPlan {
 const inside = (address: number, ranges: readonly AddressRange[]) => ranges.some((range) => address >= range.start && address <= range.end);
 const overlaps = (a: AddressRange, b: AddressRange) => a.start <= b.end && b.start <= a.end;
 const within = (a: AddressRange, b: AddressRange) => a.start >= b.start && a.end <= b.end;
-const shown = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
+const shown = (range: AddressRange) => `${formatAddress(range.start)}-${formatAddress(range.end)}`;
 
 /** The blocks of the instructions: a block ends after an instruction that does not run on, and before a gap. An instruction inside the one before stays in its block. */
 export function blocksOf(instructions: ReadonlyMap<number, number>, memory: Uint8Array): AddressRange[] {
@@ -259,7 +260,7 @@ export function planDrops(input: DropInput): DropPlan {
 
   for (const range of [...input.keep, ...input.drop]) {
     for (let address = range.start; address <= range.end; address++) {
-      if (!inImage(address)) throw new Refusal("invalid-input", `${shown(range)} is not in the program: ${formatC64Address(address)} is in no segment.`);
+      if (!inImage(address)) throw new Refusal("invalid-input", `${shown(range)} is not in the program: ${formatAddress(address)} is in no segment.`);
     }
   }
   for (const range of input.drop) {
@@ -313,9 +314,9 @@ export function planDrops(input: DropInput): DropPlan {
   const inStaying = (address: number) => stays.some((block) => address >= block.start && address <= block.end);
   for (const range of input.drop) {
     const into = flows.find((flow) => inStaying(flow.from) && inside(flow.to, [range]));
-    if (into !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)}: the code at ${formatC64Address(into.from)} stays and goes to ${formatC64Address(into.to)}.`);
+    if (into !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)}: the code at ${formatAddress(into.from)} stays and goes to ${formatAddress(into.to)}.`);
     const read = reads.find((item) => inStaying(item.from) && overlaps(item, range));
-    if (read !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)}: the code at ${formatC64Address(read.from)} stays and reads ${shown({ start: Math.max(read.start, range.start), end: Math.min(read.end, range.end) })}.`);
+    if (read !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)}: the code at ${formatAddress(read.from)} stays and reads ${shown({ start: Math.max(read.start, range.start), end: Math.min(read.end, range.end) })}.`);
   }
 
   // Data: a region of a droppable type that no run touched and that nothing that stays names.

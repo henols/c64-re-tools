@@ -16,7 +16,8 @@ import { basename, dirname, join, relative, sep } from "node:path";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { PACKAGE } from "#src/package.ts";
 import { BUILD_DIRECTORY, buildName, symbolsPath } from "#src/build-name.ts";
-import { type AddressRange, findHandoffs, formatC64Address, parseC64Address, parseTokenized, textToPetscii } from "#src/c64.ts";
+import { findHandoffs, parseTokenized, textToPetscii } from "#src/c64.ts";
+import { type AddressRange, formatAddress, parseAddress } from "#src/address.ts";
 import { coverageSeedKinds } from "#src/cpu/coverage.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
@@ -239,9 +240,9 @@ async function probe(laid: Layout): Promise<Set<string>> {
         mode === "imp"
           ? ""
           : mode === "rel"
-            ? formatC64Address((slot + 2 + (item.bytes[1]! < 0x80 ? item.bytes[1]! : item.bytes[1]! - 0x100)) & 0xffff)
+            ? formatAddress((slot + 2 + (item.bytes[1]! < 0x80 ? item.bytes[1]! : item.bytes[1]! - 0x100)) & 0xffff)
             : literalOperand(item.form.opcode, item.bytes.length === 3 ? item.bytes[1]! | (item.bytes[2]! << 8) : item.bytes[1]!);
-      lines.push(`* = ${formatC64Address(slot)}`);
+      lines.push(`* = ${formatAddress(slot)}`);
       lines.push(`        ${instructionWith(item.form.opcode, operand, item.form.suffix)}`);
       lineOf.set(lines.length, item.form.key);
     });
@@ -281,7 +282,7 @@ function usesInErrors(diagnostics: Diagnostic[], lineOf: ReadonlyMap<string, num
 /** The first address where two byte runs differ, as a reason. */
 function firstDifference(start: number, built: (address: number) => number, original: (address: number) => number, end: number): string | undefined {
   for (let address = start; address <= end; address++) {
-    if (built(address) !== original(address)) return `ACME assembles it to other bytes than the image: at ${formatC64Address(address)} it gives $${built(address).toString(16).padStart(2, "0")}, and the image has $${original(address).toString(16).padStart(2, "0")}.`;
+    if (built(address) !== original(address)) return `ACME assembles it to other bytes than the image: at ${formatAddress(address)} it gives $${built(address).toString(16).padStart(2, "0")}, and the image has $${original(address).toString(16).padStart(2, "0")}.`;
   }
   return undefined;
 }
@@ -302,10 +303,10 @@ async function probeUses(laid: Layout, rendered: Rendered, image: ProgramImage):
     const labels = new Map<string, number>();
     for (const [address, name] of laid.names) if (laid.inImage(address)) labels.set(name, address);
     const used = [...new Set(uses.flatMap((use) => use.args.flatMap((arg) => identifiers(arg))))].filter((name) => labels.has(name)).sort();
-    const lines = ["!cpu 6510", '!source "constants.asm"', '!source "macros.asm"', ...used.map((name) => `${name} = ${labels.get(name)! < 0x100 ? `$${labels.get(name)!.toString(16).padStart(2, "0")}` : formatC64Address(labels.get(name)!)}`), `* = ${formatC64Address(PROBE_BASE)}`];
+    const lines = ["!cpu 6510", '!source "constants.asm"', '!source "macros.asm"', ...used.map((name) => `${name} = ${labels.get(name)! < 0x100 ? `$${labels.get(name)!.toString(16).padStart(2, "0")}` : formatAddress(labels.get(name)!)}`), `* = ${formatAddress(PROBE_BASE)}`];
     const lineOf = new Map<string, number>();
     uses.forEach((use, index) => {
-      lines.push(`!pseudopc ${formatC64Address(use.start)} {`, `        +${use.macro}${use.args.length === 0 ? "" : ` ${use.args.join(", ")}`}`);
+      lines.push(`!pseudopc ${formatAddress(use.start)} {`, `        +${use.macro}${use.args.length === 0 ? "" : ` ${use.args.join(", ")}`}`);
       lineOf.set(`probe.asm:${lines.length}`, use.start);
       lines.push(`probe_end_${index}`, "}");
     });
@@ -389,7 +390,7 @@ interface SegmentCheck {
 function check(program: Buffer, start: number, image: Pick<ProgramImage, "segments" | "byteAt">): { identical: boolean; segments: SegmentCheck[] } {
   const end = start + program.length - 3;
   const segments = image.segments.map((segment): SegmentCheck => {
-    const shown = { start: formatC64Address(segment.start), end: formatC64Address(segment.end) };
+    const shown = { start: formatAddress(segment.start), end: formatAddress(segment.end) };
     if (segment.start < start || segment.end > end) return { ...shown, result: "not covered" };
     let differences = 0;
     let first: SegmentCheck["firstDifference"];
@@ -397,7 +398,7 @@ function check(program: Buffer, start: number, image: Pick<ProgramImage, "segmen
       const built = program[2 + address - start]!;
       if (built === image.byteAt(address)) continue;
       differences++;
-      first ??= { address: formatC64Address(address), built, image: image.byteAt(address) };
+      first ??= { address: formatAddress(address), built, image: image.byteAt(address) };
     }
     return differences === 0 ? { ...shown, result: "identical" } : { ...shown, result: "different", differences, firstDifference: first! };
   });
@@ -440,7 +441,7 @@ function compareBuilds(built: Assembled, ranges: readonly AddressRange[], base: 
     const before = at(base.program, base.start);
     if (now === before) continue;
     if (inside(address)) changed++;
-    else outside = { count: (outside?.count ?? 0) + 1, first: outside?.first ?? { address: formatC64Address(address), built: now, base: before } };
+    else outside = { count: (outside?.count ?? 0) + 1, first: outside?.first ?? { address: formatAddress(address), built: now, base: before } };
   }
   return outside === undefined ? { result: "fits", changedBytes: changed } : { result: "changes outside", changedBytes: changed, outside };
 }
@@ -478,7 +479,7 @@ async function checkSwitch(row: SourceSwitch, patches: PatchBlock[], files: Arra
     base: row.base,
     patches: patches.map((patch) => {
       const inside = patch.inner.map((address) => laid.names.get(address)!);
-      return { start: formatC64Address(patch.start), end: formatC64Address(patch.end), bytes: patch.end - patch.start + 1, ...(inside.length === 0 ? {} : { insideNames: inside }) };
+      return { start: formatAddress(patch.start), end: formatAddress(patch.end), bytes: patch.end - patch.start + 1, ...(inside.length === 0 ? {} : { insideNames: inside }) };
     }),
     ...built,
   };
@@ -504,7 +505,7 @@ interface ReleaseCheck {
 async function checkRelease(release: ReleaseRow & { image: Pick<ProgramImage, "segments" | "byteAt"> }, files: Array<{ name: string; text: string }>, program: ProgramImage): Promise<ReleaseCheck> {
   const shown = { label: release.label, base: release.base, define: `--define ${RELEASE_DEFINE}${release.label}=1` };
   const { image } = release;
-  const missing = program.segments.flatMap((segment) => subtract(segment, [...image.segments])).map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) }));
+  const missing = program.segments.flatMap((segment) => subtract(segment, [...image.segments])).map((range) => ({ start: formatAddress(range.start), end: formatAddress(range.end) }));
   const notInRelease = missing.length === 0 ? {} : { notInRelease: missing };
   const built = await assembleFiles(files, "main.asm", { [`${RELEASE_DEFINE}${release.label}`]: 1 });
   if (built.program === undefined) return { ...shown, result: "does not assemble", diagnostics: built.diagnostics.slice(0, MAX_DIAGNOSTICS), ...notInRelease };
@@ -567,17 +568,17 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state:
     const stopped = async (pc: number, copied: boolean, what: string, loaderRan = true): Promise<LoaderRun> => {
       const ram = await readRam(client, 0x0000, 0x10000);
       const port = Buffer.from((await client.memoryRead({ address: 0x0001, size: 1, space: "c64", view: "cpu" })).data, "hex")[0]!;
-      const history = (await client.cpuHistory({ limit: STOP_HISTORY, space: "c64" })).entries.map((entry) => `${formatC64Address(entry.address)}  ${entry.text}`);
+      const history = (await client.cpuHistory({ limit: STOP_HISTORY, space: "c64" })).entries.map((entry) => `${formatAddress(entry.address)}  ${entry.text}`);
       const cause = loaderRan ? stopCause(ram, plan, copierSource, fileByte, copied, expected) : undefined;
       const port01 = `$${port.toString(16).padStart(2, "0")}`;
-      return { verified: false, differences: [`The loader did not get to ${what}; it stopped at ${formatC64Address(pc)}.`], stop: { pc: formatC64Address(pc), port: port01, ...(cause === undefined ? {} : { cause }), history } };
+      return { verified: false, differences: [`The loader did not get to ${what}; it stopped at ${formatAddress(pc)}.`], stop: { pc: formatAddress(pc), port: port01, ...(cause === undefined ? {} : { cause }), history } };
     };
     // The start screen waits for a key or a fire button. Not each VICE can press a key of the keyboard matrix,
     // so the check lets it wait, then sets the PC to the code after the wait.
     let screen: LoaderRun["startScreen"];
     const screenDifferences: string[] = [];
     const showScreen = async (at: { wait: number; continue: number }, wanted: StartScreenPlan, frames: number, copied: boolean, parts: readonly StagePart[] = [], colourRam?: Uint8Array): Promise<LoaderRun | undefined> => {
-      const labels = { wait: formatC64Address(at.wait), continue: formatC64Address(at.continue) };
+      const labels = { wait: formatAddress(at.wait), continue: formatAddress(at.continue) };
       const atWait = await client.runUntil({ target: { kind: "address", address: at.wait, space: "c64" }, timeoutFrames: frames });
       if (!atWait.reached) return await stopped(atWait.pc, copied, `its start screen at ${labels.wait}`, parts.length === 0);
       const held = await client.runUntil({ target: { kind: "address", address: at.continue, space: "c64" }, timeoutFrames: START_SCREEN_FRAMES });
@@ -587,20 +588,20 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state:
       const shown: Array<[number, number]> = [[0x11, wanted.d011], [0x15, 0], [0x16, wanted.d016], [0x18, wanted.d018], [0x20, wanted.border], [0x21, wanted.background]];
       for (const [register, value] of shown) {
         const mask = VIC_DISPLAY_REGISTERS.find((item) => item.register === register)!.mask;
-        if ((vic[register]! & mask) !== (value & mask)) screenDifferences.push(`the start screen has ${formatC64Address(0xd000 + register)} = $${(vic[register]! & mask).toString(16).padStart(2, "0")}, not $${(value & mask).toString(16).padStart(2, "0")}`);
+        if ((vic[register]! & mask) !== (value & mask)) screenDifferences.push(`the start screen has ${formatAddress(0xd000 + register)} = $${(vic[register]! & mask).toString(16).padStart(2, "0")}, not $${(value & mask).toString(16).padStart(2, "0")}`);
       }
       if (bank !== wanted.bank) screenDifferences.push(`the start screen is in VIC bank ${bank}, not ${wanted.bank}`);
       // The bytes of the screen of a stage: the first wrong byte of each part.
       for (const part of parts) {
         const ram = await readRam(client, part.start, part.body.length);
         const wrong = part.body.findIndex((byte, offset) => ram[offset] !== byte);
-        if (wrong >= 0) screenDifferences.push(`the stage has $${ram[wrong]!.toString(16).padStart(2, "0")} at ${formatC64Address(part.start + wrong)}, not $${part.body[wrong]!.toString(16).padStart(2, "0")}`);
+        if (wrong >= 0) screenDifferences.push(`the stage has $${ram[wrong]!.toString(16).padStart(2, "0")} at ${formatAddress(part.start + wrong)}, not $${part.body[wrong]!.toString(16).padStart(2, "0")}`);
       }
       // The colour RAM of a captured stage: the first wrong colour.
       if (colourRam !== undefined) {
         const colours = Buffer.from((await client.ioRead(0xd800, colourRam.length)).data, "hex");
         const wrong = colourRam.findIndex((value, offset) => (colours[offset]! & 0x0f) !== value);
-        if (wrong >= 0) screenDifferences.push(`the colour RAM has ${colours[wrong]! & 0x0f} at ${formatC64Address(0xd800 + wrong)}, not ${colourRam[wrong]}`);
+        if (wrong >= 0) screenDifferences.push(`the colour RAM has ${colours[wrong]! & 0x0f} at ${formatAddress(0xd800 + wrong)}, not ${colourRam[wrong]}`);
       }
       screen = { shown: screenDifferences.length === before, waits: !held.reached, ...labels, ...(run.stage === undefined ? {} : { stage: run.stage.name }) };
       if (held.reached) screenDifferences.push(`the start screen did not wait: it got to ${labels.continue} without a key or a fire button`);
@@ -613,16 +614,16 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state:
       if (stop !== undefined) return stop;
     }
     const copier = await client.runUntil({ target: { kind: "address", address: plan.copier, space: "c64" }, timeoutFrames: run.copierFrames });
-    if (!copier.reached) return await stopped(copier.pc, false, `its copier at ${formatC64Address(plan.copier)}`);
+    if (!copier.reached) return await stopped(copier.pc, false, `its copier at ${formatAddress(plan.copier)}`);
     if (run.startScreen !== undefined && plan.startScreen !== undefined) {
       const stop = await showScreen(run.startScreen, plan.startScreen, LOADER_FRAMES, true);
       if (stop !== undefined) return stop;
     }
     const atJump = await client.runUntil({ target: { kind: "address", address: jump, space: "c64" }, timeoutFrames: LOADER_FRAMES });
-    if (!atJump.reached) return await stopped(atJump.pc, true, `its jump to the entry at ${formatC64Address(jump)}`);
+    if (!atJump.reached) return await stopped(atJump.pc, true, `its jump to the entry at ${formatAddress(jump)}`);
     const memory = await readRam(client, 0x0000, 0x10000);
     if (memory[jump] !== 0x4c || (memory[jump + 1]! | (memory[jump + 2]! << 8)) !== state.pc) {
-      return { verified: false, differences: [`The instruction at ${formatC64Address(jump)} is not JMP ${formatC64Address(state.pc)}.`] };
+      return { verified: false, differences: [`The instruction at ${formatAddress(jump)} is not JMP ${formatAddress(state.pc)}.`] };
     }
     const port = Buffer.from((await client.memoryRead({ address: 0x0000, size: 2, space: "c64", view: "cpu" })).data, "hex");
     const registers = await client.registersGet("c64");
@@ -631,9 +632,9 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state:
     const differ = (what: string, got: number, wanted: number) => got !== wanted && differences.push(`${what} is ${byte(got)}, not ${byte(wanted)}`);
     // The leftovers are not loaded: only the loaded ranges have the bytes of the build.
     for (const part of plan.loaded) {
-      for (let address = Math.max(part.start, 2); address <= part.end; address++) differ(formatC64Address(address), memory[address]!, expected(address));
+      for (let address = Math.max(part.start, 2); address <= part.end; address++) differ(formatAddress(address), memory[address]!, expected(address));
     }
-    for (let address = 2; address < 0x400; address++) if (address !== plan.stackByte) differ(formatC64Address(address), memory[address]!, state.pages[address]!);
+    for (let address = 2; address < 0x400; address++) if (address !== plan.stackByte) differ(formatAddress(address), memory[address]!, state.pages[address]!);
     differ("$00", port[0]!, state.port[0]);
     differ("$01", port[1]!, state.port[1]);
     differ("a", registers.a, state.a);
@@ -645,7 +646,7 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state:
     if (state.vic !== undefined) {
       // The display registers and the raster line: the loader waited for the line, so the jump comes in it or the next one.
       const vic = Buffer.from((await client.ioRead(0xd000, 0x2f)).data, "hex");
-      for (const { register, mask } of VIC_DISPLAY_REGISTERS) differ(formatC64Address(0xd000 + register), vic[register]! & mask, state.vic.registers[register]! & mask);
+      for (const { register, mask } of VIC_DISPLAY_REGISTERS) differ(formatAddress(0xd000 + register), vic[register]! & mask, state.vic.registers[register]! & mask);
       differ("the VIC bank", Buffer.from((await client.ioRead(0xdd00, 1)).data, "hex")[0]! & 0x03, state.vic.bank);
       const line = rasterLine(vic);
       const wanted = rasterLine(state.vic.registers);
@@ -692,8 +693,8 @@ const SOURCE_MAP_FILE = "source-map.json";
  * of two maps stays short.
  */
 function sourceMapText(rendered: Rendered, space: string, revision: string | null, files: ReadonlyArray<{ name: string }>): string {
-  const labels = rendered.labels.map((label) => JSON.stringify({ address: formatC64Address(label.address), name: label.name, file: label.file, line: label.line + 1 }));
-  const items = rendered.items.map((item) => JSON.stringify({ start: formatC64Address(item.start), end: formatC64Address(item.end), file: item.file, line: item.line + 1 }));
+  const labels = rendered.labels.map((label) => JSON.stringify({ address: formatAddress(label.address), name: label.name, file: label.file, line: label.line + 1 }));
+  const items = rendered.items.map((item) => JSON.stringify({ start: formatAddress(item.start), end: formatAddress(item.end), file: item.file, line: item.line + 1 }));
   const head = JSON.stringify({ space, revision, files: files.map((file) => file.name) }).slice(0, -1);
   return `${head},\n"labels": [\n${labels.join(",\n")}\n],\n"items": [\n${items.join(",\n")}\n]}\n`;
 }
@@ -759,7 +760,7 @@ function earlierLeftovers(out: string): AddressRange[] | undefined {
     .filter((name) => /^leftover_[0-9a-f]{4}\.asm$/.test(name))
     .flatMap((name) => {
       const found = LEFTOVER_RANGE.exec(readFileSync(join(directory, name), "utf8"));
-      return found === null ? [] : [{ start: parseC64Address(found[1]!), end: parseC64Address(found[2]!) }];
+      return found === null ? [] : [{ start: parseAddress(found[1]!), end: parseAddress(found[2]!) }];
     });
 }
 
@@ -999,7 +1000,7 @@ async function buildLoader(
   };
   const jump = symbolValue(LOADER_JUMP);
   const wrong = simulate(memory, loader.copies, expected);
-  if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatC64Address(wrong)}. This is a defect of the script.`);
+  if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatAddress(wrong)}. This is a defect of the script.`);
   const startScreen = loader.startScreen === undefined ? undefined : { wait: symbolValue(START_SCREEN_WAIT), continue: symbolValue(START_SCREEN_CONTINUE) };
   return { program, symbols: loaderBuilt.symbols ?? [], jump, copierSource: symbolValue(COPIER_SOURCE), expected, ...(startScreen === undefined ? {} : { startScreen }) };
 }
@@ -1018,15 +1019,15 @@ async function stageBytes(row: StartScreenRow): Promise<{ parts: StagePart[]; co
   if (row.colourRam === true && colourRam === undefined) throw new Refusal("not-found", `The start screen takes its colours from the colour RAM of the capture in ${stage}, and that capture has none. Capture the stage again while it shows the screen, and put it into the project knowledge with image --space ${stage}.`);
   const image = knowledge.program;
   const memory = Uint8Array.from(image.memory);
-  const addresses = knowledge.symbols.map((symbol) => `${symbol.name} = ${formatC64Address(symbol.address)}`);
+  const addresses = knowledge.symbols.map((symbol) => `${symbol.name} = ${formatAddress(symbol.address)}`);
   for (const patch of knowledge.patches) {
     const owner = knowledge.switches.find((item) => item.name === patch.switch);
     if (owner === undefined || owner.default === owner.base) continue;
     const length = patch.end - patch.start + 1;
-    const text = ["!cpu 6510", ...addresses, `* = ${formatC64Address(patch.start)}`, ...patch.code.split(/\r?\n/), `!fill ${length} - (* - ${formatC64Address(patch.start)}), $ea`].join("\n");
+    const text = ["!cpu 6510", ...addresses, `* = ${formatAddress(patch.start)}`, ...patch.code.split(/\r?\n/), `!fill ${length} - (* - ${formatAddress(patch.start)}), $ea`].join("\n");
     const built = await assembleFiles([{ name: "patch.asm", text: `${text}\n` }], "patch.asm");
     if (built.program === undefined || built.start !== patch.start || built.program.length - 2 !== length) {
-      throw new Refusal("invalid-input", `The patch of ${patch.switch} at ${formatC64Address(patch.start)}-${formatC64Address(patch.end)} in ${stage} does not assemble to ${length} bytes: ${built.diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "it is longer than its range"}. Correct the patch in the project knowledge.`);
+      throw new Refusal("invalid-input", `The patch of ${patch.switch} at ${formatAddress(patch.start)}-${formatAddress(patch.end)} in ${stage} does not assemble to ${length} bytes: ${built.diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "it is longer than its range"}. Correct the patch in the project knowledge.`);
     }
     memory.set(built.program.subarray(2), patch.start);
   }
@@ -1034,7 +1035,7 @@ async function stageBytes(row: StartScreenRow): Promise<{ parts: StagePart[]; co
   let ranges = screen;
   if (row.call !== undefined) {
     if (knowledge.coverage === undefined) {
-      throw new Refusal("not-found", `The start screen calls ${formatC64Address(row.call)} of ${stage}, and the knowledge has no coverage in ${stage}. Run the stage with coverage while it calls ${formatC64Address(row.call)} and plays, and put the map into the project knowledge with coverage --space ${stage}. Then generate again.`);
+      throw new Refusal("not-found", `The start screen calls ${formatAddress(row.call)} of ${stage}, and the knowledge has no coverage in ${stage}. Run the stage with coverage while it calls ${formatAddress(row.call)} and plays, and put the map into the project knowledge with coverage --space ${stage}. Then generate again.`);
     }
     // The call is the entry of the stage: what it does not reach and its run did not touch stays out.
     const called = { ...knowledge, program: { ...image, entry: row.call } };
@@ -1116,7 +1117,7 @@ async function buildStage(files: Array<{ name: string; text: string }>, laid: La
   const parts = stageParts(input, plan, built.program, built.label);
   const packed = await packParts(parts, plan.code, 0x37, "the loader and the start screen of the stage", "the show stage", localToolContext());
   const end = 0x0801 + packed.program.length - 3;
-  if (end > 0xcfff) throw new Refusal("invalid-input", `The loader with the start screen of ${row.stage} would end at ${formatC64Address(end)}, after $cfff: loading it would write the I/O area. Capture the stage with less memory, so that its program holds only the start screen and the routine of the call.`);
+  if (end > 0xcfff) throw new Refusal("invalid-input", `The loader with the start screen of ${row.stage} would end at ${formatAddress(end)}, after $cfff: loading it would write the I/O area. Capture the stage with less memory, so that its program holds only the start screen and the routine of the call.`);
   return { program: packed.program, text: `${mark}\n${plan.text}`, symbols: built.symbols, plan, parts: stage, ...(colourRam === undefined ? {} : { colourRam }), packed, wait: built.label(START_SCREEN_WAIT), continue: built.label(START_SCREEN_CONTINUE), screen };
 }
 
@@ -1170,7 +1171,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   // The reports go to the local folder: the source folder holds only source files.
   const reports = generatedDirectory(projectRelative(out));
   written.push(writeReported(`${reports}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.sourceRevision, files)));
-  const showRange = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const showRange = (range: AddressRange) => ({ start: formatAddress(range.start), end: formatAddress(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
   if (rendered.notExecuted !== undefined) {
     // Each range with the file of the source that holds it and the routine before it, as a report groups them.
@@ -1204,22 +1205,22 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     ...(rendered.undecodedBytes === 0 ? {} : { undecodedBytes: rendered.undecodedBytes }),
     // The ROM names that the source leaves out, and the evidence.
     ...(space !== DEFAULT_SPACE || (romUse.basic && romUse.kernal) ? {} : { romNamesLeftOut: { roms: [...(romUse.basic ? [] : ["BASIC"]), ...(romUse.kernal ? [] : ["KERNAL"])], ...(romUse.basic || romUse.kernal ? {} : { systemArea: true }), from: romUse.from } }),
-    ...(missingEntry === undefined ? {} : { entryOutside: { entry: formatC64Address(image.entry!), reason: missingEntry } }),
+    ...(missingEntry === undefined ? {} : { entryOutside: { entry: formatAddress(image.entry!), reason: missingEntry } }),
     ...(dataOnly ? { dataOnly: DATA_ONLY } : {}),
     labels: { named: laid.namedLabels, generated: laid.generatedLabels },
     // An --entry in a data region decodes nothing: the result says so, and a code region in the knowledge changes it.
     ...(inData.length === 0
       ? {}
-      : { entriesInData: inData.map(({ entry, region }) => ({ entry: formatC64Address(entry), region: { ...showRange(region), type: region.type }, origin: region.origin })) }),
+      : { entriesInData: inData.map(({ entry, region }) => ({ entry: formatAddress(entry), region: { ...showRange(region), type: region.type }, origin: region.origin })) }),
     ...(rendered.asBytes.length === 0
       ? {}
-      : { asBytes: listed(rendered.asBytes, max, (item) => ({ address: formatC64Address(item.address), instruction: item.text })) }),
+      : { asBytes: listed(rendered.asBytes, max, (item) => ({ address: formatAddress(item.address), instruction: item.text })) }),
     ...(rendered.notExecuted === undefined
       ? {}
       : {
           notExecuted: { instructions: rendered.notExecuted.instructions, ...listed(rendered.notExecuted.ranges, max, showRange, `${reports}/${NOT_EXECUTED_FILE}`) },
         }),
-    ...(laid.unusedModules.length === 0 ? {} : { unusedModules: laid.unusedModules.map((module) => ({ start: formatC64Address(module.start), file: module.file })) }),
+    ...(laid.unusedModules.length === 0 ? {} : { unusedModules: laid.unusedModules.map((module) => ({ start: formatAddress(module.start), file: module.file })) }),
     // The bytes that nothing uses: in leftover files, which the default build and the loader leave out.
     ...(laid.leftovers.length === 0
       ? knowledge.coverage === undefined && space === DEFAULT_SPACE
@@ -1232,20 +1233,20 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     ...(rendered.operandsAsNumbers.length === 0
       ? {}
       : {
-          operandsAsNumbers: listed(rendered.operandsAsNumbers, max, (item) => ({ address: formatC64Address(item.address), expression: item.expression, reason: item.reason })),
+          operandsAsNumbers: listed(rendered.operandsAsNumbers, max, (item) => ({ address: formatAddress(item.address), expression: item.expression, reason: item.reason })),
         }),
     ...(rendered.uses.length === 0 && rendered.macrosAsInstructions.length === 0 ? {} : { macroUses: rendered.uses.length }),
     // A macro use that the source writes as its instructions does not fail the run: the source stays identical.
     ...(rendered.macrosAsInstructions.length === 0
       ? {}
       : {
-          macrosAsInstructions: listed(rendered.macrosAsInstructions, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), macro: item.macro, reason: item.reason })),
+          macrosAsInstructions: listed(rendered.macrosAsInstructions, max, (item) => ({ start: formatAddress(item.start), end: formatAddress(item.end), macro: item.macro, reason: item.reason })),
         }),
     // A patch that the source cannot write fails the run: the switch would miss a part.
     ...(laid.patchesNotWritten.length === 0
       ? {}
       : {
-          patchesNotWritten: listed(laid.patchesNotWritten, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), switch: item.switch, reason: item.reason })),
+          patchesNotWritten: listed(laid.patchesNotWritten, max, (item) => ({ start: formatAddress(item.start), end: formatAddress(item.end), switch: item.switch, reason: item.reason })),
         }),
   };
   // The loader program is a build: it goes to the build folder. A loader program of an earlier run stays when this run checks no new one.
@@ -1362,16 +1363,16 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
       : {
           stage: {
             space: stageRow!.stage,
-            code: formatC64Address(stage.plan.code),
+            code: formatAddress(stage.plan.code),
             bytes: stage.parts.reduce((sum, part) => sum + part.body.length, 0),
-            stash: stage.plan.stash.map((item) => ({ from: formatC64Address(item.at), to: `${formatC64Address(item.target.start)}-${formatC64Address(item.target.end)}` })),
+            stash: stage.plan.stash.map((item) => ({ from: formatAddress(item.at), to: `${formatAddress(item.target.start)}-${formatAddress(item.target.end)}` })),
             packedBytes: stage.packed.packedBytes,
             unpackedBytes: stage.packed.unpackedBytes,
           },
         }),
-    copies: loader.copies.map((copy) => ({ what: copy.what, to: `${formatC64Address(copy.target.start)}-${formatC64Address(copy.target.end)}` })),
-    copier: formatC64Address(loader.copier),
-    stackByte: formatC64Address(loader.stackByte),
+    copies: loader.copies.map((copy) => ({ what: copy.what, to: `${formatAddress(copy.target.start)}-${formatAddress(copy.target.end)}` })),
+    copier: formatAddress(loader.copier),
+    stackByte: formatAddress(loader.stackByte),
     ...ran,
     // What the loader cannot set as it was at the entry.
     ...(loaderLimits(loader).length === 0 ? {} : { limits: loaderLimits(loader) }),
@@ -1510,7 +1511,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   const given = call.ranges("keep");
   const drop = call.ranges("drop");
   const max = call.count("max-listed")!;
-  const shownRange = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const shownRange = (range: AddressRange) => ({ start: formatAddress(range.start), end: formatAddress(range.end) });
   const fromProject = (path: string) => relative(project, path).split(sep).join("/");
 
   const db = openForRead();
@@ -1547,7 +1548,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   for (const patch of original.laid.patches.values()) {
     const both = patch.alternatives.filter((alternative) => values.get(alternative.switch) !== alternative.base);
     if (both.length > 1) {
-      throw new Refusal("invalid-input", `The switches ${both.map((item) => item.switch).join(" and ")} change ${formatC64Address(patch.start)}-${formatC64Address(patch.end)} in different ways, and the export puts both in. In the project knowledge, give all but one of them the kind change, with the default of the base release. Then export again.`);
+      throw new Refusal("invalid-input", `The switches ${both.map((item) => item.switch).join(" and ")} change ${formatAddress(patch.start)}-${formatAddress(patch.end)} in different ways, and the export puts both in. In the project knowledge, give all but one of them the kind change, with the default of the base release. Then export again.`);
     }
   }
   const withPatches = switchesOf(original.laid);
@@ -1638,9 +1639,9 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
     if ("diagnostics" in loaderBuilt) return { result: "FAIL", stage: "loader", reason: "loader.asm does not assemble. This is a defect of the script.", diagnostics: loaderBuilt.diagnostics };
     baseline = { program: loaderBuilt.program, symbols: loaderBuilt.symbols, entryFile: "loader.asm" };
     loaderOutput = {
-      copies: exported.loader.copies.map((copy) => ({ what: copy.what, to: `${formatC64Address(copy.target.start)}-${formatC64Address(copy.target.end)}` })),
-      copier: formatC64Address(exported.loader.copier),
-      stackByte: formatC64Address(exported.loader.stackByte),
+      copies: exported.loader.copies.map((copy) => ({ what: copy.what, to: `${formatAddress(copy.target.start)}-${formatAddress(copy.target.end)}` })),
+      copier: formatAddress(exported.loader.copier),
+      stackByte: formatAddress(exported.loader.stackByte),
       simulated: true,
       ...(loaderLimits(exported.loader).length === 0 ? {} : { limits: loaderLimits(exported.loader) }),
     };
@@ -1708,13 +1709,13 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
     ...(plan.rooted ? {} : { unrooted: "The knowledge has no entry, the program has no BASIC line with SYS, and the image does not hold the hardware vectors. Thus no code is unreachable, and nothing became free by itself." }),
     ...(knowledge.coverage === undefined ? { noCoverage: "The knowledge has no coverage, so nothing became free by itself. Only --drop makes a range free." } : {}),
     free: { bytes: freeBytes, ...listed(free, max, (range) => ({ ...shownRange(range), bytes: range.end - range.start + 1, what: range.what, label: freeName(range) })) },
-    unreachableExecuted: listed(plan.unreachableExecuted, max, (range) => ({ ...shownRange(range), ...(range.routine === undefined ? {} : { routine: range.routine }), drop: `--drop '${formatC64Address(range.start)}-${formatC64Address(range.end)}'` })),
+    unreachableExecuted: listed(plan.unreachableExecuted, max, (range) => ({ ...shownRange(range), ...(range.routine === undefined ? {} : { routine: range.routine }), drop: `--drop '${formatAddress(range.start)}-${formatAddress(range.end)}'` })),
     knowledge: kept,
     tests: { written: tests.map((test) => test.file), leftOut: listed(testsLeftOut, max, (item) => item) },
     ...(spacesLeftOut.length === 0 ? {} : { spacesLeftOut }),
     ...(stageLeftOut === undefined ? {} : { startScreenLeftOut: `The start screen is of the captured stage in ${stageLeftOut}, and the export has only the space c64.` }),
-    ...(exported.rendered.operandsAsNumbers.length === 0 ? {} : { operandsAsNumbers: listed(exported.rendered.operandsAsNumbers, max, (item) => ({ address: formatC64Address(item.address), expression: item.expression, reason: item.reason })) }),
-    ...(exported.rendered.macrosAsInstructions.length === 0 ? {} : { macrosAsInstructions: listed(exported.rendered.macrosAsInstructions, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), macro: item.macro, reason: item.reason })) }),
+    ...(exported.rendered.operandsAsNumbers.length === 0 ? {} : { operandsAsNumbers: listed(exported.rendered.operandsAsNumbers, max, (item) => ({ address: formatAddress(item.address), expression: item.expression, reason: item.reason })) }),
+    ...(exported.rendered.macrosAsInstructions.length === 0 ? {} : { macrosAsInstructions: listed(exported.rendered.macrosAsInstructions, max, (item) => ({ start: formatAddress(item.start), end: formatAddress(item.end), macro: item.macro, reason: item.reason })) }),
   };
 }
 
@@ -1730,7 +1731,7 @@ function generateAgain(call: Call, loader = call.flag("loader")): string {
     "generate",
     "--out",
     call.string("out")!,
-    ...call.addresses("entry").flatMap((entry) => ["--entry", formatC64Address(entry)]),
+    ...call.addresses("entry").flatMap((entry) => ["--entry", formatAddress(entry)]),
     ...(call.space === DEFAULT_SPACE ? [] : ["--space", call.space]),
     ...(loader ? ["--loader"] : []),
     ...(call.flag("analyzer-names") ? ["--analyzer-names"] : []),

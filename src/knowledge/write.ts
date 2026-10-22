@@ -4,7 +4,8 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
-import { type AddressRange, formatC64Address, instructionLength, SPACE_PATTERN, SYMBOL_NAME } from "../c64.ts";
+import { instructionLength, SPACE_PATTERN } from "../c64.ts";
+import { type AddressRange, formatAddress, SYMBOL_NAME } from "../address.ts";
 import { isoCet } from "../time.ts";
 import { CONFLICT_RULES, conflicts, conflictTable, type Conflict, type ConflictRow } from "./conflicts.ts";
 import { transaction } from "./database.ts";
@@ -341,11 +342,11 @@ function describe(conflict: Conflict): string {
   const place = (entry: ConflictRow) => {
     if (entry.entity === "macro" || entry.entity === "switch") return entry.row.name;
     if (entry.entity === "release") return entry.row.label;
-    if (entry.entity === "start-screen") return formatC64Address(entry.row.screen);
+    if (entry.entity === "start-screen") return formatAddress(entry.row.screen);
     const row = entry.row as { address?: number; start?: number; end?: number; from?: number };
-    if (row.address !== undefined) return formatC64Address(row.address);
-    if (row.from !== undefined && entry.entity === "reference") return formatC64Address(row.from);
-    return row.end === undefined || row.end === row.start ? formatC64Address(row.start!) : `${formatC64Address(row.start!)}-${formatC64Address(row.end)}`;
+    if (row.address !== undefined) return formatAddress(row.address);
+    if (row.from !== undefined && entry.entity === "reference") return formatAddress(row.from);
+    return row.end === undefined || row.end === row.start ? formatAddress(row.start!) : `${formatAddress(row.start!)}-${formatAddress(row.end)}`;
   };
   return `${CONFLICT_RULES[conflict.rule]} in ${conflict.space} (${[...new Set(conflict.rows.map(place))].join(", ")})`;
 }
@@ -448,7 +449,7 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
   if (existing !== undefined && existing.name === request.name && existing.kind === kind && !confirms(existing.origin, origin)) return { current: existing };
   const owner = symbolNamed(db, request.name, space);
   if (owner !== undefined && owner.address !== request.address) {
-    throw new Refusal("conflict", `The name ${request.name} already belongs to ${formatC64Address(owner.address)}. Rename or remove that symbol first.`);
+    throw new Refusal("conflict", `The name ${request.name} already belongs to ${formatAddress(owner.address)}. Rename or remove that symbol first.`);
   }
   if (switchNamed(db, request.name, space) !== undefined) throw new Refusal("conflict", `${request.name} is the name of a switch. Give the symbol another name.`);
   if (request.name === START_SCREEN_SWITCH) throw new Refusal("conflict", `${START_SCREEN_SWITCH} is the switch of the start screen in the generated source. Give the symbol another name.`);
@@ -469,17 +470,17 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
 function removeSymbolStep(db: DatabaseSync, change: Change, origin: Origin, request: AddressRequest): Step<null> {
   const space = spaceOf(request);
   const existing = symbolAt(db, request.address, space);
-  if (existing === undefined) throw new Refusal("not-found", `There is no symbol at ${formatC64Address(request.address)}.`);
+  if (existing === undefined) throw new Refusal("not-found", `There is no symbol at ${formatAddress(request.address)}.`);
   const users = operandsNaming(db, space, existing.name);
   if (users.length > 0) {
     throw new Refusal(
       "conflict",
-      `The operand expressions at ${users.map((row) => formatC64Address(row.address)).join(", ")} use ${existing.name}. Change or remove them first (unoperand), or rename the symbol.`,
+      `The operand expressions at ${users.map((row) => formatAddress(row.address)).join(", ")} use ${existing.name}. Change or remove them first (unoperand), or rename the symbol.`,
     );
   }
   const uses = usesNaming(db, space, existing.name);
   if (uses.length > 0) {
-    throw new Refusal("conflict", `The macro uses at ${uses.map((row) => formatC64Address(row.start)).join(", ")} use ${existing.name}. Change or remove them first (unuse), or rename the symbol.`);
+    throw new Refusal("conflict", `The macro uses at ${uses.map((row) => formatAddress(row.start)).join(", ")} use ${existing.name}. Change or remove them first (unuse), or rename the symbol.`);
   }
   // No suppression: an analyzer name is a second name and never comes back as the name.
   change.close("symbols", "space = ? AND address = ?", space, request.address);
@@ -542,7 +543,7 @@ function classifyStep(db: DatabaseSync, change: Change, origin: Origin, request:
 function unclassifyStep(db: DatabaseSync, change: Change, origin: Origin, request: RangeRequest): Step<null> {
   const space = spaceOf(request);
   if (regionsOverlapping(db, request.start, request.end, space).length === 0) {
-    throw new Refusal("not-found", `No region covers ${formatC64Address(request.start)}-${formatC64Address(request.end)}.`);
+    throw new Refusal("not-found", `No region covers ${formatAddress(request.start)}-${formatAddress(request.end)}.`);
   }
   clearRange(db, change, request.start, request.end, space);
   // Suppress only the parts that no region suppression holds yet, so suppressions never overlap.
@@ -583,7 +584,7 @@ function checkPlacement(request: PlacementRequest): void {
 function uncommentStep(db: DatabaseSync, change: Change, _origin: Origin, request: PlacementRequest): Step<null> {
   const space = spaceOf(request);
   if (!commentsAt(db, request.address, space).some((comment) => comment.placement === request.placement)) {
-    throw new Refusal("not-found", `There is no ${request.placement} comment at ${formatC64Address(request.address)}.`);
+    throw new Refusal("not-found", `There is no ${request.placement} comment at ${formatAddress(request.address)}.`);
   }
   change.close("comments", "space = ? AND address = ? AND placement = ?", space, request.address, request.placement);
   return { current: null };
@@ -612,7 +613,7 @@ function referenceStep(db: DatabaseSync, change: Change, origin: Origin, request
 function unreferenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<null> {
   const space = spaceOf(request);
   if (!referencesFrom(db, request.from, space).some((reference) => reference.to === request.to && reference.kind === request.kind)) {
-    throw new Refusal("not-found", `There is no ${request.kind} reference from ${formatC64Address(request.from)} to ${formatC64Address(request.to)}.`);
+    throw new Refusal("not-found", `There is no ${request.kind} reference from ${formatAddress(request.from)} to ${formatAddress(request.to)}.`);
   }
   change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.from, request.to, request.kind);
   change.insertSuppression({ space, entity: "reference", start: request.from, end: request.from, to: request.to, kind: request.kind, origin: origin as SuppressionRow["origin"] });
@@ -663,7 +664,7 @@ const shown = (value: number, size: number) => (value < 0 ? String(value) : `$${
  * refused only at an operand byte of a known instruction: they can start data.
  */
 function checkInstructionStart(db: DatabaseSync, space: Space, byteAt: (address: number) => number | undefined, address: number, write: "operand" | "module" | "comment"): void {
-  const where = formatC64Address(address);
+  const where = formatAddress(address);
   const code = regionsOverlapping(db, address, address, space).find((region) => CODE_REGION_TYPES.includes(region.type));
   if (code === undefined) {
     if (write !== "operand") return;
@@ -675,14 +676,14 @@ function checkInstructionStart(db: DatabaseSync, space: Space, byteAt: (address:
     const opcode = byteAt(next);
     if (opcode === undefined) {
       if (write !== "operand") return;
-      throw new Refusal("invalid-input", `The code region ${formatC64Address(code.start)}-${formatC64Address(code.end)} has no program byte at ${formatC64Address(next)}, so its instructions up to ${where} are not known. Correct the region (classify), then write the operand.`);
+      throw new Refusal("invalid-input", `The code region ${formatAddress(code.start)}-${formatAddress(code.end)} has no program byte at ${formatAddress(next)}, so its instructions up to ${where} are not known. Correct the region (classify), then write the operand.`);
     }
     start = next;
     next += instructionLength(opcode);
   }
   if (next !== address) {
     const what = write === "operand" ? "" : ` A ${write} is at the start of an instruction, as the listing and the source show it.`;
-    throw new Refusal("invalid-input", `${where} is not the start of an instruction. It is an operand byte of the instruction at ${formatC64Address(start)}, decoded from the start of the code region at ${formatC64Address(code.start)}.${what} Give ${formatC64Address(start)}.`);
+    throw new Refusal("invalid-input", `${where} is not the start of an instruction. It is an operand byte of the instruction at ${formatAddress(start)}, decoded from the start of the code region at ${formatAddress(code.start)}.${what} Give ${formatAddress(start)}.`);
   }
 }
 
@@ -692,7 +693,7 @@ function checkInstructionStart(db: DatabaseSync, space: Space, byteAt: (address:
  * the platform names of the C64 space.
  */
 function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, request: OperandRequest, text: string): number[] {
-  const where = formatC64Address(request.address);
+  const where = formatAddress(request.address);
   const opcode = image.byteAt(request.address);
   if (opcode === undefined) throw new Refusal("invalid-input", `${where} is outside the image.`);
   checkInstructionStart(db, space, (at) => image.byteAt(at), request.address, "operand");
@@ -747,7 +748,7 @@ function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & 
 
 function unoperandStep(db: DatabaseSync, change: Change, _origin: Origin, request: AddressRequest): Step<null> {
   const space = spaceOf(request);
-  if (operandAt(db, request.address, space) === undefined) throw new Refusal("not-found", `There is no operand expression at ${formatC64Address(request.address)}.`);
+  if (operandAt(db, request.address, space) === undefined) throw new Refusal("not-found", `There is no operand expression at ${formatAddress(request.address)}.`);
   change.close("operands", "space = ? AND address = ?", space, request.address);
   change.close('"references"', "space = ? AND from_address = ? AND kind = ?", space, request.address, POINTER_KIND);
   return { current: null };
@@ -777,7 +778,7 @@ function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: M
   checkInstructionStart(db, space, programBytes(db, space), request.start, "module");
   const owner = moduleWithFile(db, request.file, space);
   if (owner !== undefined && owner.start !== request.start) {
-    throw new Refusal("conflict", `The file ${request.file} already belongs to the module at ${formatC64Address(owner.start)}. Give this module another file, or remove that module first.`);
+    throw new Refusal("conflict", `The file ${request.file} already belongs to the module at ${formatAddress(owner.start)}. Give this module another file, or remove that module first.`);
   }
   if (existing !== undefined) change.close("modules", "space = ? AND start_address = ?", space, request.start);
   change.insertModule({ space, start: request.start, file: request.file, ...(title === undefined ? {} : { title }), origin: origin as ModuleRow["origin"] });
@@ -787,7 +788,7 @@ function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: M
 
 function unmoduleStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
   const space = spaceOf(request);
-  if (moduleAt(db, request.start, space) === undefined) throw new Refusal("not-found", `No module starts at ${formatC64Address(request.start)}.`);
+  if (moduleAt(db, request.start, space) === undefined) throw new Refusal("not-found", `No module starts at ${formatAddress(request.start)}.`);
   change.close("modules", "space = ? AND start_address = ?", space, request.start);
   return { current: null };
 }
@@ -823,7 +824,7 @@ function checkCommentText(comment: string | undefined, what: string): void {
 /** Refuses a range with a byte outside the image. */
 function checkInImage(image: OperandImage, start: number, end: number, what: string): void {
   for (let address = start; address <= end; address++) {
-    if (image.byteAt(address) === undefined) throw new Refusal("invalid-input", `${formatC64Address(address)} is outside the image: ${what} is a range of the image.`);
+    if (image.byteAt(address) === undefined) throw new Refusal("invalid-input", `${formatAddress(address)} is outside the image: ${what} is a range of the image.`);
   }
 }
 
@@ -885,7 +886,7 @@ export function leastPatchBytes(code: string): number | undefined {
 
 function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: PatchRequest): Step<PatchRow, PatchRow> {
   const space = spaceOf(request);
-  const range = `${formatC64Address(request.start)}-${formatC64Address(request.end)}`;
+  const range = `${formatAddress(request.start)}-${formatAddress(request.end)}`;
   if (context.image === undefined) throw new Refusal("invalid-input", "A patch is checked against the image, and no image was given.");
   const image = context.image(space);
   checkInImage(image, request.start, request.end, "a patch");
@@ -902,12 +903,12 @@ function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { 
   if (other !== undefined) {
     throw new Refusal(
       "conflict",
-      `The patch ${range} of ${request.switch} overlaps the patch of ${other.switch} at ${formatC64Address(other.start)}-${formatC64Address(other.end)}. Patches of different switches can have the same range, as alternatives; no other overlap is allowed. Change or remove that patch first (unpatch).`,
+      `The patch ${range} of ${request.switch} overlaps the patch of ${other.switch} at ${formatAddress(other.start)}-${formatAddress(other.end)}. Patches of different switches can have the same range, as alternatives; no other overlap is allowed. Change or remove that patch first (unpatch).`,
     );
   }
   const [use] = macroUsesOverlapping(db, request.start, request.end, space);
   if (use !== undefined) {
-    throw new Refusal("conflict", `The patch ${range} overlaps the use of the macro ${use.macro} at ${formatC64Address(use.start)}-${formatC64Address(use.end)}. Remove that use first (unuse).`);
+    throw new Refusal("conflict", `The patch ${range} overlaps the use of the macro ${use.macro} at ${formatAddress(use.start)}-${formatAddress(use.end)}. Remove that use first (unuse).`);
   }
   const find = () => patchesOverlapping(db, request.start, request.start, space).find(mine);
   const existing = find();
@@ -926,8 +927,8 @@ function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { 
 function unpatchStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number; switch?: string }): Step<null> {
   const space = spaceOf(request);
   const found = patchesOverlapping(db, request.start, request.start, space).filter((row) => row.start === request.start && (request.switch === undefined || row.switch === request.switch));
-  if (found.length === 0) throw new Refusal("not-found", `No patch${request.switch === undefined ? "" : ` of ${request.switch}`} starts at ${formatC64Address(request.start)}.`);
-  if (found.length > 1) throw new Refusal("invalid-input", `The patches of ${found.map((row) => row.switch).join(", ")} start at ${formatC64Address(request.start)}. Give the switch of the patch to remove.`);
+  if (found.length === 0) throw new Refusal("not-found", `No patch${request.switch === undefined ? "" : ` of ${request.switch}`} starts at ${formatAddress(request.start)}.`);
+  if (found.length > 1) throw new Refusal("invalid-input", `The patches of ${found.map((row) => row.switch).join(", ")} start at ${formatAddress(request.start)}. Give the switch of the patch to remove.`);
   change.close("patches", "space = ? AND start_address = ? AND switch_name = ?", space, request.start, found[0]!.switch);
   return { current: null };
 }
@@ -955,7 +956,7 @@ function checkAlternatives(db: DatabaseSync, space: Space, changed: readonly Swi
       return owner.default !== baseValue(owner, base);
     });
     if (on.length < 2) continue;
-    const range = `${formatC64Address(patches[0]!.start)}-${formatC64Address(patches[0]!.end)}`;
+    const range = `${formatAddress(patches[0]!.start)}-${formatAddress(patches[0]!.end)}`;
     throw new Refusal(
       "conflict",
       `The switches ${on.map((patch) => patch.switch).join(" and ")} have alternative patches at ${range}, and the default build puts in both of them. Give one of the switches the default of the base release (switch <name> --default).`,
@@ -1001,7 +1002,7 @@ function switchStep(db: DatabaseSync, change: Change, context: ChangeContext & {
   const origin = context.origin as SwitchRow["origin"];
   if (existing !== undefined && existing.kind === request.kind && existing.default === value && listText(existing.releases) === listText(releases) && existing.comment === comment && !confirms(existing.origin, origin)) return { current: existing };
   const symbol = symbolNamed(db, request.name, space);
-  if (symbol !== undefined) throw new Refusal("conflict", `The switch name ${request.name} is the name of the symbol at ${formatC64Address(symbol.address)}. Give the switch another name.`);
+  if (symbol !== undefined) throw new Refusal("conflict", `The switch name ${request.name} is the name of the symbol at ${formatAddress(symbol.address)}. Give the switch another name.`);
   if (space === DEFAULT_SPACE && context.image?.(space).platform.has(request.name)) throw new Refusal("conflict", `The switch name ${request.name} is a C64 platform name. Give the switch another name.`);
   // The patches hold the code of the value that the base release does not have: that value cannot change under them.
   if (existing !== undefined && baseValue(existing, base) !== baseValue({ releases }, base)) {
@@ -1009,7 +1010,7 @@ function switchStep(db: DatabaseSync, change: Change, context: ChangeContext & {
     if (patches.length > 0) {
       throw new Refusal(
         "conflict",
-        `The switch ${request.name} has patches at ${patches.map((row) => formatC64Address(row.start)).join(", ")}, and this write changes whether the base release ${base} has it on. The patches would then hold the wrong state. Remove them first (unpatch), then write them again.`,
+        `The switch ${request.name} has patches at ${patches.map((row) => formatAddress(row.start)).join(", ")}, and this write changes whether the base release ${base} has it on. The patches would then hold the wrong state. Remove them first (unpatch), then write them again.`,
       );
     }
   }
@@ -1024,7 +1025,7 @@ function unswitchStep(db: DatabaseSync, change: Change, _origin: Origin, request
   const space = spaceOf(request);
   if (switchNamed(db, request.name, space) === undefined) throw new Refusal("not-found", `There is no switch ${request.name}.`);
   const patches = listPatches(db, undefined, request.name, undefined, space);
-  if (patches.length > 0) throw new Refusal("conflict", `The switch ${request.name} has patches at ${patches.map((row) => formatC64Address(row.start)).join(", ")}. Remove them first (unpatch).`);
+  if (patches.length > 0) throw new Refusal("conflict", `The switch ${request.name} has patches at ${patches.map((row) => formatAddress(row.start)).join(", ")}. Remove them first (unpatch).`);
   change.close("switches", "space = ? AND name = ?", space, request.name);
   return { current: null };
 }
@@ -1043,7 +1044,7 @@ function checkRelease(request: ReleaseRequest): void {
   }
   for (const [address, bytes] of request.rows ?? []) {
     if (!Number.isInteger(address) || address < 0 || address > 0xffff || !/^(?:[0-9a-f]{2})+$/.test(bytes) || bytes.length > MEMORY_ROW * 2 || address + bytes.length / 2 > 0x10000) {
-      throw new Refusal("invalid-input", `The bytes of a release at ${formatC64Address(address & 0xffff)} are not a memory row.`);
+      throw new Refusal("invalid-input", `The bytes of a release at ${formatAddress(address & 0xffff)} are not a memory row.`);
     }
   }
   checkCommentText(request.comment, "A release comment");
@@ -1068,7 +1069,7 @@ function releaseStep(db: DatabaseSync, change: Change, origin: Origin, request: 
     if (switches.length > 0) throw new Refusal("conflict", `The base release decides the state of the program for the switches ${switches.map((row) => row.name).join(", ")}. Remove them first (unswitch) to change the base release.`);
   }
   const symbol = symbolNamed(db, `${RELEASE_DEFINE}${request.label}`, space);
-  if (symbol !== undefined) throw new Refusal("conflict", `The build of the release defines ${RELEASE_DEFINE}${request.label}, and that is the name of the symbol at ${formatC64Address(symbol.address)}. Give the release another label.`);
+  if (symbol !== undefined) throw new Refusal("conflict", `The build of the release defines ${RELEASE_DEFINE}${request.label}, and that is the name of the symbol at ${formatAddress(symbol.address)}. Give the release another label.`);
   if (existing === undefined || existing.base !== base || existing.comment !== comment || confirms(existing.origin, origin)) {
     if (existing !== undefined) change.close("releases", "space = ? AND label = ?", space, request.label);
     change.insertRelease({ space, label: request.label, base, ...(comment === undefined ? {} : { comment }), origin: origin as ReleaseRow["origin"] });
@@ -1139,26 +1140,26 @@ function checkStartScreen(request: StartScreenRequest): void {
   if (request.mode === "hires" && colourRam) throw new Refusal("invalid-input", "A hires bitmap does not use the colour RAM. Remove --colours and --colour.");
   if (request.mode !== "hires" && !colourRam) throw new Refusal("invalid-input", `A ${request.mode} start screen uses the colour RAM. Give --colours with the address of its 1000 bytes, or --colour with one colour.`);
   const step = (value: number, size: number, what: string) => {
-    if (value % size !== 0) throw new Refusal("invalid-input", `The VIC-II reads the ${what} only at a step of $${size.toString(16)}: ${formatC64Address(value)} is not at one.`);
+    if (value % size !== 0) throw new Refusal("invalid-input", `The VIC-II reads the ${what} only at a step of $${size.toString(16)}: ${formatAddress(value)} is not at one.`);
   };
   step(request.screen, 0x400, "screen");
   if (request.bitmap !== undefined) step(request.bitmap, 0x2000, "bitmap");
   if (request.charset !== undefined) step(request.charset, 0x800, "charset");
   const bank = request.screen >> 14;
   for (const [what, value] of [["bitmap", request.bitmap], ["charset", request.charset]] as const) {
-    if (value !== undefined && value >> 14 !== bank) throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(value)} is not in the VIC bank of the screen (${formatC64Address(bank << 14)}-${formatC64Address((bank << 14) + 0x3fff)}).`);
+    if (value !== undefined && value >> 14 !== bank) throw new Refusal("invalid-input", `The ${what} at ${formatAddress(value)} is not in the VIC bank of the screen (${formatAddress(bank << 14)}-${formatAddress((bank << 14) + 0x3fff)}).`);
   }
   for (const { what, range } of startScreenRanges(request)) {
-    if (range.end > 0xffff) throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(range.start)} goes past $ffff.`);
-    if (range.start < 0x0400) throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(range.start)} is in pages 0-3, where the loader writes the entry state.`);
+    if (range.end > 0xffff) throw new Refusal("invalid-input", `The ${what} at ${formatAddress(range.start)} goes past $ffff.`);
+    if (range.start < 0x0400) throw new Refusal("invalid-input", `The ${what} at ${formatAddress(range.start)} is in pages 0-3, where the loader writes the entry state.`);
     if (what === "colours") {
-      if (range.start <= 0xdfff && range.end >= 0xd000) throw new Refusal("invalid-input", `The colours at ${formatC64Address(range.start)} are in $d000-$dfff, where the loader sees the I/O area. Give the RAM address of the 1000 colour bytes.`);
+      if (range.start <= 0xdfff && range.end >= 0xd000) throw new Refusal("invalid-input", `The colours at ${formatAddress(range.start)} are in $d000-$dfff, where the loader sees the I/O area. Give the RAM address of the 1000 colour bytes.`);
       continue;
     }
     // In VIC banks 0 and 2 the VIC-II reads the character ROM at $1000-$1fff of the bank.
     const relative = range.start & 0x3fff;
     if ((bank & 1) === 0 && relative <= 0x1fff && relative + (range.end - range.start) >= 0x1000) {
-      throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(range.start)} is where the VIC-II reads the character ROM ($1000-$1fff of VIC bank ${bank}). Only a text charset at $1000 or $1800 of the bank uses the ROM font.`);
+      throw new Refusal("invalid-input", `The ${what} at ${formatAddress(range.start)} is where the VIC-II reads the character ROM ($1000-$1fff of VIC bank ${bank}). Only a text charset at $1000 or $1800 of the bank uses the ROM font.`);
     }
   }
   checkCommentText(request.comment, "A start screen comment");
@@ -1176,9 +1177,9 @@ function checkStage(db: DatabaseSync, request: StartScreenRequest): void {
     return true;
   };
   for (const { what, range } of startScreenRanges(request)) {
-    if (!inStage(range)) throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(range.start)}-${formatC64Address(range.end)} is not in the program in ${request.stage}. Capture the stage again, and do not exclude the memory of the start screen.`);
+    if (!inStage(range)) throw new Refusal("invalid-input", `The ${what} at ${formatAddress(range.start)}-${formatAddress(range.end)} is not in the program in ${request.stage}. Capture the stage again, and do not exclude the memory of the start screen.`);
   }
-  if (request.call !== undefined && !inStage({ start: request.call, end: request.call })) throw new Refusal("invalid-input", `The call ${formatC64Address(request.call)} is not in the program in ${request.stage}.`);
+  if (request.call !== undefined && !inStage({ start: request.call, end: request.call })) throw new Refusal("invalid-input", `The call ${formatAddress(request.call)} is not in the program in ${request.stage}.`);
 }
 
 function startScreenStep(db: DatabaseSync, change: Change, origin: Origin, request: StartScreenRequest): Step<StartScreenRow, StartScreenRow> {
@@ -1251,7 +1252,7 @@ function macroStep(db: DatabaseSync, change: Change, origin: Origin, request: Ma
     if (uses.length > 0) {
       throw new Refusal(
         "conflict",
-        `The macro ${request.name} has ${existing.params.length} params, and its uses at ${uses.map((row) => formatC64Address(row.start)).join(", ")} give that many args. Remove the uses first (unuse), or keep the number of params.`,
+        `The macro ${request.name} has ${existing.params.length} params, and its uses at ${uses.map((row) => formatAddress(row.start)).join(", ")} give that many args. Remove the uses first (unuse), or keep the number of params.`,
       );
     }
   }
@@ -1265,7 +1266,7 @@ function unmacroStep(db: DatabaseSync, change: Change, _origin: Origin, request:
   const space = spaceOf(request);
   if (macroNamed(db, request.name, space) === undefined) throw new Refusal("not-found", `There is no macro ${request.name}.`);
   const uses = listMacroUses(db, undefined, request.name, undefined, space);
-  if (uses.length > 0) throw new Refusal("conflict", `The macro ${request.name} has uses at ${uses.map((row) => formatC64Address(row.start)).join(", ")}. Remove them first (unuse).`);
+  if (uses.length > 0) throw new Refusal("conflict", `The macro ${request.name} has uses at ${uses.map((row) => formatAddress(row.start)).join(", ")}. Remove them first (unuse).`);
   change.close("macros", "space = ? AND name = ?", space, request.name);
   return { current: null };
 }
@@ -1298,7 +1299,7 @@ function renameInUses(db: DatabaseSync, change: Change, space: Space, from: stri
 
 function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: MacroUseRequest): Step<MacroUseRow, MacroUseRow> {
   const space = spaceOf(request);
-  const range = `${formatC64Address(request.start)}-${formatC64Address(request.end)}`;
+  const range = `${formatAddress(request.start)}-${formatAddress(request.end)}`;
   if (context.image === undefined) throw new Refusal("invalid-input", "A macro use is checked against the image, and no image was given.");
   const image = context.image(space);
   const macro = macroNamed(db, request.macro, space);
@@ -1320,15 +1321,15 @@ function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { im
   let next = request.start;
   while (next <= request.end) next += instructionLength(image.byteAt(next)!);
   if (next !== request.end + 1) {
-    throw new Refusal("invalid-input", `A macro use is a run of whole instructions, but the instructions from ${formatC64Address(request.start)} end at ${formatC64Address(next - 1)}, not at ${formatC64Address(request.end)}.`);
+    throw new Refusal("invalid-input", `A macro use is a run of whole instructions, but the instructions from ${formatAddress(request.start)} end at ${formatAddress(next - 1)}, not at ${formatAddress(request.end)}.`);
   }
   const [patch] = patchesOverlapping(db, request.start, request.end, space);
   if (patch !== undefined) {
-    throw new Refusal("conflict", `The macro use ${range} overlaps the patch of ${patch.switch} at ${formatC64Address(patch.start)}-${formatC64Address(patch.end)}. Change or remove that patch first (unpatch).`);
+    throw new Refusal("conflict", `The macro use ${range} overlaps the patch of ${patch.switch} at ${formatAddress(patch.start)}-${formatAddress(patch.end)}. Change or remove that patch first (unpatch).`);
   }
   const other = macroUsesOverlapping(db, request.start, request.end, space).find((row) => row.start !== request.start);
   if (other !== undefined) {
-    throw new Refusal("conflict", `The macro use ${range} overlaps the use of ${other.macro} at ${formatC64Address(other.start)}-${formatC64Address(other.end)}. Remove that use first (unuse).`);
+    throw new Refusal("conflict", `The macro use ${range} overlaps the use of ${other.macro} at ${formatAddress(other.start)}-${formatAddress(other.end)}. Remove that use first (unuse).`);
   }
   const existing = macroUsesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start);
   const origin = context.origin as MacroUseRow["origin"];
@@ -1341,7 +1342,7 @@ function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { im
 
 function unuseStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
   const space = spaceOf(request);
-  if (!macroUsesOverlapping(db, request.start, request.start, space).some((row) => row.start === request.start)) throw new Refusal("not-found", `No macro use starts at ${formatC64Address(request.start)}.`);
+  if (!macroUsesOverlapping(db, request.start, request.start, space).some((row) => row.start === request.start)) throw new Refusal("not-found", `No macro use starts at ${formatAddress(request.start)}.`);
   change.close("macro_uses", "space = ? AND start_address = ?", space, request.start);
   return { current: null };
 }

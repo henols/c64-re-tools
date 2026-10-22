@@ -3,7 +3,8 @@
 // the bytes from coverage files, and the references in and out. Nothing here
 // reads files: knowledge.ts gives the lookups.
 
-import { COVERAGE, formatC64Address, formatC64Byte } from "#src/c64.ts";
+import { COVERAGE } from "#src/c64.ts";
+import { formatAddress, formatByte } from "#src/address.ts";
 import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
@@ -69,9 +70,9 @@ function targetName(target: number, source: ListingSource): string | undefined {
 
 /** The operand value of an instruction as an expression: the name of its target where one exists, else the number. Empty for no operand. */
 function operandOf(mode: Mode, address: number, low: number, high: number, source: ListingSource): string {
-  const named = (target: number, digits: 2 | 4) => targetName(target, source) ?? (digits === 2 ? formatC64Byte(target) : formatC64Address(target));
+  const named = (target: number, digits: 2 | 4) => targetName(target, source) ?? (digits === 2 ? formatByte(target) : formatAddress(target));
   if (mode === "imp") return "";
-  if (mode === "imm") return formatC64Byte(low);
+  if (mode === "imm") return formatByte(low);
   if (mode === "rel") return named((address + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff, 4);
   return MODE_LENGTH[mode] === 3 ? named(low | (high << 8), 4) : named(low, 2);
 }
@@ -88,7 +89,7 @@ export function listing(source: ListingSource, start: number, end: number): List
     const inner: string[] = [];
     for (let offset = 1; offset < length; offset++) {
       const found = source.comments(address + offset);
-      for (const text of [...found.line, ...(found.side === undefined ? [] : [found.side])]) inner.push(`${formatC64Address(address + offset)}: ${text}`);
+      for (const text of [...found.line, ...(found.side === undefined ? [] : [found.side])]) inner.push(`${formatAddress(address + offset)}: ${text}`);
     }
     const side = own === undefined && inner.length === 0 ? undefined : [...(own === undefined ? [] : [own]), ...inner].join(" ");
     const references = source.references(address);
@@ -136,7 +137,7 @@ export function listing(source: ListingSource, start: number, end: number): List
       values.push(source.byteAt(at)!);
       at++;
     }
-    if (address >= start) lines.push(line(address, values.length, `!byte ${values.map(formatC64Byte).join(",")}`));
+    if (address >= start) lines.push(line(address, values.length, `!byte ${values.map(formatByte).join(",")}`));
     address = at;
   }
   return lines;
@@ -147,7 +148,7 @@ export function listingText(lines: readonly ListingLine[]): string {
   const out: string[] = [];
   for (const item of lines) {
     for (const comment of item.lineComments ?? []) out.push(`                         ; ${comment}`);
-    const head = `${formatC64Address(item.address)}  ${item.bytes.padEnd(9)} ${(item.access ?? "").padEnd(3)}`;
+    const head = `${formatAddress(item.address)}  ${item.bytes.padEnd(9)} ${(item.access ?? "").padEnd(3)}`;
     const body = (item.label === undefined ? "" : `${item.label} `).padEnd(20) + item.text;
     const notes = [
       ...(item.comment === undefined ? [] : [item.comment]),

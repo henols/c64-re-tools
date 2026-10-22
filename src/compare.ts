@@ -1,7 +1,8 @@
 // The byte check of a program: a PRG against a reference program, for example
 // the program in the knowledge, segment by segment.
 
-import { formatC64Address, formatC64Byte, prgRange } from "./c64.ts";
+import { prgRange } from "./c64.ts";
+import { formatAddress, formatByte } from "./address.ts";
 
 export interface SegmentCheck {
   start: string;
@@ -26,7 +27,7 @@ export function compareBuild(prg: Uint8Array, program: Reference): { identical: 
   const checks = program.segments.map((segment): SegmentCheck => {
     const from = Math.max(segment.start, built.start);
     const to = Math.min(segment.end, built.end);
-    const shown = { start: formatC64Address(segment.start), end: formatC64Address(segment.end) };
+    const shown = { start: formatAddress(segment.start), end: formatAddress(segment.end) };
     if (from > to) return { ...shown, result: "not covered", uncovered: segment.end - segment.start + 1 };
     let differences = 0;
     let first: SegmentCheck["firstDifference"];
@@ -35,7 +36,7 @@ export function compareBuild(prg: Uint8Array, program: Reference): { identical: 
       const referenceByte = program.byteAt(address);
       if (builtByte === referenceByte) continue;
       differences++;
-      first ??= { address: formatC64Address(address), built: formatC64Byte(builtByte), reference: formatC64Byte(referenceByte) };
+      first ??= { address: formatAddress(address), built: formatByte(builtByte), reference: formatByte(referenceByte) };
     }
     const uncovered = segment.end - segment.start + 1 - (to - from + 1);
     return {

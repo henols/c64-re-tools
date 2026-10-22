@@ -8,7 +8,7 @@
 // key or a fire button, stops the interrupts of the stage, sets the CIAs as
 // RUN leaves them, copies the stash back and starts the loader.
 
-import { type AddressRange, formatC64Address, formatC64Byte } from "#src/c64.ts";
+import { type AddressRange, formatAddress, formatByte } from "#src/address.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import type { StartScreenRow } from "#src/knowledge/read.ts";
 import { placePieces, START_SCREEN_FILE, startScreenValues, subtract, type StartScreenPlan } from "./loader.ts";
@@ -71,7 +71,7 @@ const STASH_AREA: AddressRange = { start: 0x0400, end: 0xfff9 };
 /** The free ranges that a refusal names. */
 const SHOWN_FREE = 8;
 
-const show = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
+const show = (range: AddressRange) => `${formatAddress(range.start)}-${formatAddress(range.end)}`;
 const rangeOf = (part: StagePart): AddressRange => ({ start: part.start, end: part.start + part.body.length - 1 });
 
 /** The ranges in address order, with each run of touching or overlapping ranges as one. */
@@ -91,7 +91,7 @@ function byteOf(parts: readonly StagePart[], address: number): number {
     const part = parts[index]!;
     if (address >= part.start && address < part.start + part.body.length) return part.body[address - part.start]!;
   }
-  throw new WireFailure("operation-failed", `No part holds ${formatC64Address(address)}. This is a defect of the script.`);
+  throw new WireFailure("operation-failed", `No part holds ${formatAddress(address)}. This is a defect of the script.`);
 }
 
 /**
@@ -134,7 +134,7 @@ export function planStage(input: StageInput): StagePlan {
 /** The bytes as !byte lines of 16. */
 function byteLines(part: StagePart): string[] {
   const lines: string[] = [];
-  for (let offset = 0; offset < part.body.length; offset += 16) lines.push(`        !byte ${[...part.body.subarray(offset, offset + 16)].map(formatC64Byte).join(",")}`);
+  for (let offset = 0; offset < part.body.length; offset += 16) lines.push(`        !byte ${[...part.body.subarray(offset, offset + 16)].map(formatByte).join(",")}`);
   return lines;
 }
 
@@ -143,16 +143,16 @@ export function stageText(input: StageInput, code: number, stash: StagePlan["sta
   const { row } = input;
   const lines = [
     ...input.header.map((line) => `; ${line}`),
-    `; The show stage of the start screen from ${row.stage}: Exomizer packs it with the loader into the loader program, with --entry '${formatC64Address(code)}'.`,
+    `; The show stage of the start screen from ${row.stage}: Exomizer packs it with the loader into the loader program, with --entry '${formatAddress(code)}'.`,
     "; It shows the start screen, waits for a key or a fire button, copies back the bytes of the loader that the stage covers, and starts the loader.",
     "",
     "!cpu 6510",
     ...input.settings,
     "",
     ...startScreenValues(row, input.plan),
-    ...(row.call === undefined ? [] : [`c64_source_ss_call = ${formatC64Address(row.call)} ; the routine of ${row.stage} that the start screen calls before it waits`]),
+    ...(row.call === undefined ? [] : [`c64_source_ss_call = ${formatAddress(row.call)} ; the routine of ${row.stage} that the start screen calls before it waits`]),
     "",
-    `* = ${formatC64Address(code)}`,
+    `* = ${formatAddress(code)}`,
     STAGE_START,
     "        sei",
     `!zone c64_source_start_screen {`,
@@ -240,12 +240,12 @@ export function stageText(input: StageInput, code: number, stash: StagePlan["sta
     `        adc #${COPY_ENTRY}`,
     "        tax",
     "        jmp .next",
-    `.done   lda #${formatC64Byte(input.innerPort)}`,
+    `.done   lda #${formatByte(input.innerPort)}`,
     "        sta $01",
-    `        jmp ${formatC64Address(input.innerStart)}`,
+    `        jmp ${formatAddress(input.innerStart)}`,
     ".count  !word 0",
     ".table",
-    ...stash.map((item) => `        !word ${item.target.end - item.target.start + 1}, ${formatC64Address(item.at)}, ${formatC64Address(item.target.start)} ; ${show(item.target)} of the loader`),
+    ...stash.map((item) => `        !word ${item.target.end - item.target.start + 1}, ${formatAddress(item.at)}, ${formatAddress(item.target.start)} ; ${show(item.target)} of the loader`),
     "        !word 0",
     "}",
     ...(input.colourRam === undefined ? [] : [`; The colour RAM of the capture of ${row.stage}.`, STAGE_COLOURS, ...byteLines({ start: 0, body: input.colourRam })]),
@@ -253,7 +253,7 @@ export function stageText(input: StageInput, code: number, stash: StagePlan["sta
   ];
   // Each part at its own address: the code is in a free range, so no part overlaps it, and the build never runs past $ffff.
   for (const part of input.stage) {
-    lines.push("", `; ${row.stage} ${show(rangeOf(part))}`, `* = ${formatC64Address(part.start)}`, stageLabel(part.start, "from"), ...byteLines(part), stageLabel(part.start, "end"));
+    lines.push("", `; ${row.stage} ${show(rangeOf(part))}`, `* = ${formatAddress(part.start)}`, stageLabel(part.start, "from"), ...byteLines(part), stageLabel(part.start, "end"));
   }
   return `${lines.join("\n")}\n`;
 }

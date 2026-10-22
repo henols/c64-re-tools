@@ -4,7 +4,8 @@
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
 import { isRefusal, Refusal } from "#src/errors.ts";
-import { c64AddressOf, formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
+import { formatSprite, formatVicii } from "#src/c64.ts";
+import { addressOf, formatAddress, parseAddress } from "#src/address.ts";
 import { MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
 import { ACTION_STEP_KINDS, checkActionStep, checkLocation, isInteger, isObject, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
@@ -305,7 +306,7 @@ export function namesOf(source: string, kinds: "code" | "all" = "all"): Map<stri
     : Object.entries(value as Record<string, unknown>);
   const names = new Map<string, number>();
   for (const [name, address] of entries) {
-    const at = typeof address === "string" ? c64AddressOf(address) : undefined;
+    const at = typeof address === "string" ? addressOf(address) : undefined;
     if (at === undefined) throw new Refusal("invalid-input", `the symbol ${name} in ${source} has no $ address`);
     names.set(name, at);
   }
@@ -349,7 +350,7 @@ class Inconclusive extends Error {}
 export function resolve(location: Location, symbols: Map<string, number>, side: Side): number {
   if (location.startsWith("$")) {
     try {
-      return parseC64Address(location);
+      return parseAddress(location);
     } catch {
       throw new Refusal("invalid-input", `${location} is not $ and 1 to 4 hex digits`);
     }
@@ -454,7 +455,7 @@ async function runStep(client: ViceSessionClient, scenario: Scenario, side: Side
     }
     if (step.registers !== undefined) {
       const registers = await client.registersGet("c64");
-      for (const name of step.registers) observation.registers[name] = name === "pc" ? formatC64Address(registers.pc) : registers[name];
+      for (const name of step.registers) observation.registers[name] = name === "pc" ? formatAddress(registers.pc) : registers[name];
     }
     if (step.vicii) {
       // The raster line changes from one moment to the next; the comparison leaves it out.
@@ -493,7 +494,7 @@ async function runStep(client: ViceSessionClient, scenario: Scenario, side: Side
     const { side: _side, ...action } = step;
     const notReached = await runActionStep(client, action as ActionStep, at);
     if (notReached !== undefined && "runUntil" in step) {
-      throw new Inconclusive(`the ${side} side did not reach the checkpoint before ${step.runUntil.timeoutFrames} frames (it stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)})`);
+      throw new Inconclusive(`the ${side} side did not reach the checkpoint before ${step.runUntil.timeoutFrames} frames (it stopped by ${notReached.stopReason} at ${formatAddress(notReached.pc)})`);
     }
   }
   return checkpoint;
@@ -506,7 +507,7 @@ function differingBytes(item: MemoryItem, other: MemoryItem): DifferingByte[] {
   const hex = (byte: number) => byte.toString(16).padStart(2, "0");
   const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
   const bits = (offset: number) => (item.mask === undefined ? 0xff : item.mask.length === 1 ? item.mask[0]! : item.mask[offset]!);
-  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs((byte & bits(offset)) - (other.bytes[offset]! & bits(offset))) > item.tolerance ? [{ address: formatC64Address(item.address + offset), original: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
+  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs((byte & bits(offset)) - (other.bytes[offset]! & bits(offset))) > item.tolerance ? [{ address: formatAddress(item.address + offset), original: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
 }
 
 /** The most differing bytes of one memory item that a result lists when no --max-listed is given. */
@@ -563,7 +564,7 @@ function writeFailFiles(out: string, original: Map<string, Observation>, rebuild
       const item = left.memory[index]!;
       const other = right.memory[index]!;
       const show = (bytes: number[]) => Buffer.from(bytes).toString("hex");
-      memory.push({ checkpoint: difference.checkpoint, what: difference.what, address: formatC64Address(item.address), original: show(item.bytes), rebuild: show(other.bytes), bytes: differingBytes(item, other) });
+      memory.push({ checkpoint: difference.checkpoint, what: difference.what, address: formatAddress(item.address), original: show(item.bytes), rebuild: show(other.bytes), bytes: differingBytes(item, other) });
     }
   }
   if (memory.length > 0) write("memory.json", Buffer.from(`${JSON.stringify(memory, null, 2)}\n`));

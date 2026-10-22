@@ -8,7 +8,8 @@
 // known to be correct. A search for any repeated sequence was weighed and not
 // chosen: it gives many candidates without a name.
 
-import { formatC64Address, formatC64Byte, instructionLength } from "#src/c64.ts";
+import { instructionLength } from "#src/c64.ts";
+import { formatAddress, formatByte } from "#src/address.ts";
 import type { ImageByte } from "./coverage.ts";
 
 /** A macro of the catalogue: its params and its ACME body, which names a param with a dot. */
@@ -102,7 +103,7 @@ function addressArg(operand: Operand, name: Namer): string {
   const named = name(operand.value);
   // A name of a zero-page address gives the zero-page form: an absolute operand there keeps its number.
   if (named !== undefined && (operand.value >= 0x100 || !operand.absolute)) return named;
-  return operand.absolute ? formatC64Address(operand.value) : formatC64Byte(operand.value);
+  return operand.absolute ? formatAddress(operand.value) : formatByte(operand.value);
 }
 
 /** The memory operand of `instruction` when it is one of the opcodes of the mnemonic. */
@@ -139,7 +140,7 @@ const MATCHERS: Record<string, { count: number; match: (run: Instruction[], name
       const dst = memory(load, "lda");
       const value = immediate(add, IMMEDIATE.adc);
       const ok = clc?.opcode === CLC && value !== undefined && same(dst, memory(store, "sta")) && same(dst, memory(high, "inc"), 1) && skips(branch, BCC, high);
-      return ok ? [addressArg(dst!, name), formatC64Byte(value)] : undefined;
+      return ok ? [addressArg(dst!, name), formatByte(value)] : undefined;
     },
   },
   add16: { count: 7, match: (run, name) => wide(run, name, CLC, IMMEDIATE.adc) },
@@ -154,7 +155,7 @@ const MATCHERS: Record<string, { count: number; match: (run: Instruction[], name
       const value = low | (high << 8);
       // A value of $0100 or more can be the address of a routine or a table, for example an IRQ handler: it gets its name.
       // A smaller value is a number: the name of a zero-page address with that value is not what the code means.
-      return [addressArg(dst!, name), (value >= 0x100 ? name(value) : undefined) ?? formatC64Address(value)];
+      return [addressArg(dst!, name), (value >= 0x100 ? name(value) : undefined) ?? formatAddress(value)];
     },
   },
   mov16: {
@@ -171,7 +172,7 @@ const MATCHERS: Record<string, { count: number; match: (run: Instruction[], name
     match: ([load, compare, branch]) => {
       const line = immediate(load, IMMEDIATE.lda);
       // BNE back to the CMP: 5 bytes back from the end of the BNE.
-      return line !== undefined && compare?.opcode === CMP_ABSOLUTE && compare.value === 0xd012 && branch?.opcode === BNE && branch.value === 0xfb ? [formatC64Byte(line)] : undefined;
+      return line !== undefined && compare?.opcode === CMP_ABSOLUTE && compare.value === 0xd012 && branch?.opcode === BNE && branch.value === 0xfb ? [formatByte(line)] : undefined;
     },
   },
 };
@@ -183,7 +184,7 @@ function wide([carry, loadLow, low, storeLow, loadHigh, high, storeHigh]: Instru
   const highValue = immediate(high, opcode);
   const ok =
     carry?.opcode === carryOpcode && lowValue !== undefined && highValue !== undefined && same(dst, memory(storeLow, "sta")) && same(dst, memory(loadHigh, "lda"), 1) && same(dst, memory(storeHigh, "sta"), 1);
-  return ok ? [addressArg(dst!, name), formatC64Address(lowValue | (highValue << 8))] : undefined;
+  return ok ? [addressArg(dst!, name), formatAddress(lowValue | (highValue << 8))] : undefined;
 }
 
 /** The instruction at `at`, or undefined when a byte of it is outside the range or the image. */

@@ -7,7 +7,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool as McpTool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { formatC64Address } from "../c64.ts";
+import { formatAddress } from "../address.ts";
 import { Byte, TOOL_INPUTS } from "./inputs.ts";
 import { LostBeforeAnswer, type ViceSessionClient } from "../host-client/vice-session.ts";
 import { checkOut } from "../host-client/transfer.ts";
@@ -136,7 +136,7 @@ export const ConditionOutput = z
 
 /** A protocol condition in its result form. */
 export function showCondition(condition: Condition): z.input<typeof ConditionOutput> {
-  return condition.kind === "memory" ? { ...condition, address: formatC64Address(condition.address) } : condition;
+  return condition.kind === "memory" ? { ...condition, address: formatAddress(condition.address) } : condition;
 }
 
 /** Removes keys whose value is undefined, so optional fields stay absent. */

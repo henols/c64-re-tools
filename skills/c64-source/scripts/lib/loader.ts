@@ -16,7 +16,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { type AddressRange, formatC64Address, formatC64Byte, prgRange } from "#src/c64.ts";
+import { prgRange } from "#src/c64.ts";
+import { type AddressRange, formatAddress, formatByte } from "#src/address.ts";
 import { compareBuild, mergedPrograms } from "#src/compare.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState } from "#src/host-client/entry-state.ts";
@@ -177,21 +178,21 @@ export function startScreenPlan(row: StartScreenRow): StartScreenPlan {
 
 /** The lines of loader.asm that give the start screen code its values. */
 export function startScreenValues(row: StartScreenRow, plan: StartScreenPlan): string[] {
-  const value = (name: string, number: number, comment?: string) => `c64_source_ss_${name} = ${formatC64Byte(number)}${comment === undefined ? "" : ` ; ${comment}`}`;
+  const value = (name: string, number: number, comment?: string) => `c64_source_ss_${name} = ${formatByte(number)}${comment === undefined ? "" : ` ; ${comment}`}`;
   const font = row.charset !== undefined && isRomFont(row.charset) ? " (the character ROM)" : "";
-  const what = [`screen ${formatC64Address(row.screen)}`, ...(row.bitmap === undefined ? [] : [`bitmap ${formatC64Address(row.bitmap)}`]), ...(row.charset === undefined ? [] : [`charset ${formatC64Address(row.charset)}${font}`])];
+  const what = [`screen ${formatAddress(row.screen)}`, ...(row.bitmap === undefined ? [] : [`bitmap ${formatAddress(row.bitmap)}`]), ...(row.charset === undefined ? [] : [`charset ${formatAddress(row.charset)}${font}`])];
   return [
     `; The start screen: ${row.mode}, ${what.join(", ")}.${row.comment === undefined ? "" : ` ${row.comment.replace(/\s*\r?\n\s*/g, " ")}`}`,
     value("d011", plan.d011),
     value("d016", plan.d016),
     value("d018", plan.d018),
-    value("bank", 3 - plan.bank, `VIC bank ${formatC64Address(plan.bank << 14)}-${formatC64Address((plan.bank << 14) + 0x3fff)}`),
+    value("bank", 3 - plan.bank, `VIC bank ${formatAddress(plan.bank << 14)}-${formatAddress((plan.bank << 14) + 0x3fff)}`),
     value("border", plan.border),
     value("background", plan.background),
     value("colour_mode", plan.colourMode),
     value("colour", row.colour ?? 0),
     // The colour RAM of a captured stage is in the show code: STAGE_COLOURS in stage.ts.
-    `c64_source_ss_colours = ${row.colourRam === true ? "c64_source_stage_colours" : formatC64Address(row.colours ?? 0)}`,
+    `c64_source_ss_colours = ${row.colourRam === true ? "c64_source_stage_colours" : formatAddress(row.colours ?? 0)}`,
   ];
 }
 
@@ -224,7 +225,7 @@ const COPIER_AREAS: readonly AddressRange[] = [
 ];
 
 const overlaps = (a: AddressRange, b: AddressRange) => a.start <= b.end && b.start <= a.end;
-const show = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
+const show = (range: AddressRange) => `${formatAddress(range.start)}-${formatAddress(range.end)}`;
 
 /** Parts of `range` that no range in `holes` covers. */
 export function subtract(range: AddressRange, holes: AddressRange[]): AddressRange[] {
@@ -279,15 +280,15 @@ export function stopCause(ram: Uint8Array, plan: LoaderPlan, copierSource: numbe
     const got = ram[plan.copier + offset]!;
     const wanted = fileByte(copierSource + offset);
     if (got === wanted) continue;
-    const at = formatC64Address(plan.copier + offset);
-    if (plan.packed !== undefined) return `The copier at ${at} holds ${formatC64Byte(got)}, not ${formatC64Byte(wanted)} of the build of loader.asm: the unpack did not write it.`;
-    const rom = underRom(copierSource + offset) ? `; ${formatC64Address(copierSource + offset)} is under a ROM, so the move read the ROM` : "";
-    return `The copier at ${at} holds ${formatC64Byte(got)}, not ${formatC64Byte(wanted)} from ${formatC64Address(copierSource + offset)} of the loader file${rom}.`;
+    const at = formatAddress(plan.copier + offset);
+    if (plan.packed !== undefined) return `The copier at ${at} holds ${formatByte(got)}, not ${formatByte(wanted)} of the build of loader.asm: the unpack did not write it.`;
+    const rom = underRom(copierSource + offset) ? `; ${formatAddress(copierSource + offset)} is under a ROM, so the move read the ROM` : "";
+    return `The copier at ${at} holds ${formatByte(got)}, not ${formatByte(wanted)} from ${formatAddress(copierSource + offset)} of the loader file${rom}.`;
   }
   if (!copied) return undefined;
   for (const copy of plan.copies) {
     for (let address = copy.target.start; address <= copy.target.end; address++) {
-      if (ram[address] !== expected(address)) return `The copy of ${copy.what} wrote ${formatC64Byte(ram[address]!)} at ${formatC64Address(address)}, not ${formatC64Byte(expected(address))}.`;
+      if (ram[address] !== expected(address)) return `The copy of ${copy.what} wrote ${formatByte(ram[address]!)} at ${formatAddress(address)}, not ${formatByte(expected(address))}.`;
     }
   }
   return undefined;
@@ -368,8 +369,8 @@ interface Op {
  */
 export function ciaSection(state: EntryState): { ops: Op[]; plan: CiaPlan } | undefined {
   if (state.cia === undefined) return undefined;
-  const lda = (value: number): Op => ({ text: `lda #${formatC64Byte(value)}`, bytes: 2, cycles: 2 });
-  const sta = (address: number): Op => ({ text: `sta ${formatC64Address(address)}`, bytes: 3, cycles: 4 });
+  const lda = (value: number): Op => ({ text: `lda #${formatByte(value)}`, bytes: 2, cycles: 2 });
+  const sta = (address: number): Op => ({ text: `sta ${formatAddress(address)}`, bytes: 3, cycles: 4 });
   const limits: string[] = [];
   const timers: CiaTimerPlan[] = [];
   const disable: Op[] = [];
@@ -427,7 +428,7 @@ export function ciaSection(state: EntryState): { ops: Op[]; plan: CiaPlan } | un
       if (mask !== 0) masks.push(lda(0x80 | mask), sta(base + 0x0d));
       touched = true;
     }
-    if (touched) acks.push({ text: `lda ${formatC64Address(base + 0x0d)}`, bytes: 3, cycles: 4 });
+    if (touched) acks.push({ text: `lda ${formatAddress(base + 0x0d)}`, bytes: 3, cycles: 4 });
     const flags = chip.registers[0x0d]! & 0x1f;
     if (flags !== 0) limits.push(`CIA ${id} has the interrupt flags $${flags.toString(16).padStart(2, "0")} at the entry: only an event sets a flag, so the loader cannot.`);
   });
@@ -509,7 +510,7 @@ function byteLines(range: AddressRange, bytes: (address: number) => number): str
   const lines: string[] = [];
   for (let address = range.start; address <= range.end; address += 16) {
     const last = Math.min(range.end, address + 15);
-    lines.push(`        !byte ${Array.from({ length: last - address + 1 }, (_, offset) => formatC64Byte(bytes(address + offset))).join(",")}`);
+    lines.push(`        !byte ${Array.from({ length: last - address + 1 }, (_, offset) => formatByte(bytes(address + offset))).join(",")}`);
   }
   return lines;
 }
@@ -553,7 +554,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   const end = copierImage + codeSize + COPY_ENTRY * plain.length + 2 - 1;
   if (input.packed === true) return planPacked(input, blocks, cia, codeSize, screen, "The start screen of a captured stage shows while the program is still packed.");
   // The end can be past $ffff, which is no address.
-  if (end > LOAD_LIMIT) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader would end ${end > 0xffff ? "past $ffff" : `at ${formatC64Address(end)}`}, after ${formatC64Address(LOAD_LIMIT)}: loading it would write the I/O area.`);
+  if (end > LOAD_LIMIT) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader would end ${end > 0xffff ? "past $ffff" : `at ${formatAddress(end)}`}, after ${formatAddress(LOAD_LIMIT)}: loading it would write the I/O area.`);
   // The CIA part and the start screen take room from the copy table in the copier's pages.
   const maxCopies = Math.max(0, Math.min(TABLE_COPIES, Math.floor((copierBytes - codeSize - 2) / COPY_ENTRY)));
   if (plain.length > maxCopies) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader needs ${plain.length} copies, and its copier can do at most ${maxCopies}.`);
@@ -588,9 +589,9 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     ...(input.macros ? ['!source "macros.asm"'] : []),
     ...(screen === undefined ? [] : ["", ...startScreenValues(input.startScreen!, screen)]),
     "",
-    `* = ${formatC64Address(LOAD)}`,
+    `* = ${formatAddress(LOAD)}`,
   ];
-  lines.push(`        !byte $0b,$08,$0a,$00,$9e,${[...String(STUB)].map((digit) => formatC64Byte(digit.charCodeAt(0))).join(",")},$00,$00,$00 ; 10 SYS ${STUB}`);
+  lines.push(`        !byte $0b,$08,$0a,$00,$9e,${[...String(STUB)].map((digit) => formatByte(digit.charCodeAt(0))).join(",")},$00,$00,$00 ; 10 SYS ${STUB}`);
   lines.push(
     "!zone loader_stub {",
     "        sei",
@@ -599,22 +600,22 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     "        sta $01",
     "        ldx #0",
     `-       lda ${COPIER_SOURCE},x`,
-    `        sta ${formatC64Address(copier)},x`,
-    ...Array.from({ length: copierPages - 1 }, (_, index) => [`        lda ${COPIER_SOURCE}+$${((index + 1) * 0x100).toString(16)},x`, `        sta ${formatC64Address(copier + (index + 1) * 0x100)},x`]).flat(),
+    `        sta ${formatAddress(copier)},x`,
+    ...Array.from({ length: copierPages - 1 }, (_, index) => [`        lda ${COPIER_SOURCE}+$${((index + 1) * 0x100).toString(16)},x`, `        sta ${formatAddress(copier + (index + 1) * 0x100)},x`]).flat(),
     "        inx",
     "        bne -",
-    `        jmp ${formatC64Address(copier)}`,
+    `        jmp ${formatAddress(copier)}`,
     "}",
   );
   // The labels around each block give the copy table its numbers, so a block can change its length.
   for (const block of blocks) {
-    lines.push("", `; ${block.what}`, blockLabel(block.range.start, "from"), `!pseudopc ${formatC64Address(block.pseudo)} {`, blockLabel(block.range.start, "to"));
+    lines.push("", `; ${block.what}`, blockLabel(block.range.start, "from"), `!pseudopc ${formatAddress(block.pseudo)} {`, blockLabel(block.range.start, "to"));
     if (block.files !== undefined) for (const file of block.files) lines.push(`!source "${file}"`);
     else lines.push(...byteLines(block.range, block.bytes));
     lines.push("}", blockLabel(block.range.start, "end"));
   }
-  lines.push("", `; The copier runs at ${formatC64Address(copier)}. The flags pass through ${formatC64Address(stackByte)}, the free stack byte below the stack pointer.`, COPIER_SOURCE, `!pseudopc ${formatC64Address(copier)} {`);
-  lines.push(...copierLines(state, cia, stackByte, input.entryName ?? formatC64Address(input.entry), screen !== undefined));
+  lines.push("", `; The copier runs at ${formatAddress(copier)}. The flags pass through ${formatAddress(stackByte)}, the free stack byte below the stack pointer.`, COPIER_SOURCE, `!pseudopc ${formatAddress(copier)} {`);
+  lines.push(...copierLines(state, cia, stackByte, input.entryName ?? formatAddress(input.entry), screen !== undefined));
   copies.forEach((copy, index) => {
     // A block that starts at $0000 skips $00/$01, which the loader sets last.
     const start = copyBlocks[index]!;
@@ -689,7 +690,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
   const lines: string[] = [
     ...input.header.map((line) => `; ${line}`),
     "; The image is too large for one loader file, so this is the packed form. Exomizer packs the",
-    `; build of main.asm and the build of this file into the loader program, with --entry '${formatC64Address(copier)}' and --exit-memory '$34'.`,
+    `; build of main.asm and the build of this file into the loader program, with --entry '${formatAddress(copier)}' and --exit-memory '$34'.`,
     "; The unpacker of Exomizer uses the zero page and $0334-$03ff, so the copier writes pages $0002-$03ff after the unpack.",
     "",
     "!cpu 6510",
@@ -699,21 +700,21 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
   // The parts in address order: the copier, the pieces of pages 0-3, and the bytes of the image between them.
   const parts: Array<{ range: AddressRange; text: string[] }> = [];
   const copierText = [
-    `; The copier runs at ${formatC64Address(copier)}. The flags pass through ${formatC64Address(stackByte)}, the free stack byte below the stack pointer.`,
-    `* = ${formatC64Address(copier)}`,
+    `; The copier runs at ${formatAddress(copier)}. The flags pass through ${formatAddress(stackByte)}, the free stack byte below the stack pointer.`,
+    `* = ${formatAddress(copier)}`,
     COPIER_SOURCE,
     // The entry by its address: main.asm, which has its label, is not in this build.
-    ...copierLines(state, cia, stackByte, `${formatC64Address(input.entry)}${input.entryName === undefined ? "" : ` ; ${input.entryName} in main.asm`}`, screen !== undefined),
+    ...copierLines(state, cia, stackByte, `${formatAddress(input.entry)}${input.entryName === undefined ? "" : ` ; ${input.entryName} in main.asm`}`, screen !== undefined),
   ];
   for (const copy of copies) {
     const [from, to] = [blockLabel(copy.target.start, "from"), blockLabel(copy.target.start, "end")];
-    copierText.push(`        !word ${to} - ${from}, ${from}, ${formatC64Address(copy.target.start)} : !byte 0 ; ${copy.what}`);
+    copierText.push(`        !word ${to} - ${from}, ${from}, ${formatAddress(copy.target.start)} : !byte 0 ; ${copy.what}`);
   }
   copierText.push("        !word 0", "}");
   parts.push({ range: { start: copier, end: copierEnd }, text: copierText });
   for (const piece of pieces) {
     const range = { start: piece.at, end: piece.at + piece.target.end - piece.target.start };
-    const text = [`; ${piece.what}`, `* = ${formatC64Address(piece.at)}`, blockLabel(piece.target.start, "from"), ...byteLines(piece.target, piece.bytes), blockLabel(piece.target.start, "end")];
+    const text = [`; ${piece.what}`, `* = ${formatAddress(piece.at)}`, blockLabel(piece.target.start, "from"), ...byteLines(piece.target, piece.bytes), blockLabel(piece.target.start, "end")];
     parts.push({ range, text });
   }
   const used = parts.map((part) => part.range);
@@ -721,7 +722,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     const within = { start: Math.max(segment.start, start), end: Math.min(segment.end, end) };
     if (within.start > within.end) continue;
     for (const range of subtract(within, used)) {
-      parts.push({ range, text: [`; The bytes of the image at ${show(range)}, so the build of this file does not change them`, `* = ${formatC64Address(range.start)}`, ...byteLines(range, input.byteAt)] });
+      parts.push({ range, text: [`; The bytes of the image at ${show(range)}, so the build of this file does not change them`, `* = ${formatAddress(range.start)}`, ...byteLines(range, input.byteAt)] });
     }
   }
   parts.sort((a, b) => a.range.start - b.range.start);
@@ -855,7 +856,7 @@ function packedParts(main: Uint8Array, copier: Uint8Array, plan: Pick<LoaderPlan
 export async function packParts(parts: ReadonlyArray<{ start: number; body: Uint8Array }>, entry: number, exitMemory: number, what: string, entryName: string, context: ToolContext): Promise<PackedLoader> {
   const prg = (part: { start: number; body: Uint8Array }) => Buffer.concat([Buffer.from([part.start & 0xff, part.start >> 8]), part.body]);
   const packed = await pack({ programs: parts.map(prg), entry, exitMemory }, context);
-  if (packed.entry !== entry) throw new WireFailure("operation-failed", `The unpack in the emulator of Exomizer jumps to ${formatC64Address(packed.entry)}, not to ${entryName} at ${formatC64Address(entry)}.`);
+  if (packed.entry !== entry) throw new WireFailure("operation-failed", `The unpack in the emulator of Exomizer jumps to ${formatAddress(packed.entry)}, not to ${entryName} at ${formatAddress(entry)}.`);
   const reference = mergedPrograms(parts);
   const wrong = compareBuild(packed.unpacked, reference).segments.find((segment) => segment.result !== "identical");
   if (wrong !== undefined) {
@@ -934,17 +935,17 @@ function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stac
     // The CIA part runs after the raster wait: the wait ends its whole lines earlier, so the entry comes in its line.
     ...vicLines(state, Math.floor((cia?.ops.reduce((sum, op) => sum + op.cycles, 0) ?? 0) / LINE_CYCLES)),
     ...(cia === undefined ? [] : cia.ops.map((op) => `        ${op.text}`)),
-    `        lda #${formatC64Byte(port0)}`,
+    `        lda #${formatByte(port0)}`,
     "        sta $00",
-    `        lda #${formatC64Byte(port1)}`,
+    `        lda #${formatByte(port1)}`,
     "        sta $01",
-    `        ldx #${formatC64Byte((state.sp - 1) & 0xff)}`,
+    `        ldx #${formatByte((state.sp - 1) & 0xff)}`,
     "        txs",
-    `        lda #${formatC64Byte(state.flags)}`,
-    `        sta ${formatC64Address(stackByte)}`,
-    `        lda #${formatC64Byte(state.a)}`,
-    `        ldx #${formatC64Byte(state.x)}`,
-    `        ldy #${formatC64Byte(state.y)}`,
+    `        lda #${formatByte(state.flags)}`,
+    `        sta ${formatAddress(stackByte)}`,
+    `        lda #${formatByte(state.a)}`,
+    `        ldx #${formatByte(state.x)}`,
+    `        ldy #${formatByte(state.y)}`,
     "        plp",
     // A global label: the check of the loader stops here, before an interrupt can run.
     `${LOADER_JUMP} jmp ${jumpTarget}`,
@@ -954,8 +955,8 @@ function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stac
     ...(state.vic === undefined
       ? []
       : [
-          `.vicreg !byte ${VIC_DISPLAY_REGISTERS.map((item) => formatC64Byte(item.register)).join(",")}`,
-          `.vicval !byte ${VIC_DISPLAY_REGISTERS.map((item) => formatC64Byte(state.vic!.registers[item.register]!)).join(",")}`,
+          `.vicreg !byte ${VIC_DISPLAY_REGISTERS.map((item) => formatByte(item.register)).join(",")}`,
+          `.vicval !byte ${VIC_DISPLAY_REGISTERS.map((item) => formatByte(state.vic!.registers[item.register]!)).join(",")}`,
         ]),
     ".table",
   ];
@@ -972,7 +973,7 @@ function vicLines(state: EntryState, earlier: number): string[] {
   return [
     "        lda #$35",
     "        sta $01",
-    `        ldx #${formatC64Byte(VIC_DISPLAY_REGISTERS.length - 1)}`,
+    `        ldx #${formatByte(VIC_DISPLAY_REGISTERS.length - 1)}`,
     ".vic    ldy .vicreg,x",
     "        lda .vicval,x",
     "        sta $d000,y",
@@ -980,14 +981,14 @@ function vicLines(state: EntryState, earlier: number): string[] {
     "        bpl .vic",
     "        lda $dd00",
     "        and #$fc",
-    `        ora #${formatC64Byte(state.vic.bank)}`,
+    `        ora #${formatByte(state.vic.bank)}`,
     "        sta $dd00",
     `.raster lda $d012`,
-    `        cmp #${formatC64Byte(line & 0xff)}`,
+    `        cmp #${formatByte(line & 0xff)}`,
     "        bne .raster",
     "        lda $d011",
     "        and #$80",
-    `        cmp #${formatC64Byte((line >> 1) & 0x80)}`,
+    `        cmp #${formatByte((line >> 1) & 0x80)}`,
     "        bne .raster",
   ];
 }

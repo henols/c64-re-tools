@@ -3,7 +3,8 @@
 
 import { z } from "zod";
 
-import { formatC64Address, formatSprite, formatVicii } from "../../c64.ts";
+import { formatSprite, formatVicii } from "../../c64.ts";
+import { formatAddress } from "../../address.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, type ObserveParams } from "../../protocol/vice.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
@@ -252,16 +253,16 @@ export const c64Observe = defineTool({
     if (Object.keys(params).length === 0) throw new WireFailure("invalid-input", "Ask for at least one observation.");
     const observed = await session.observe(params);
     const result: Record<string, unknown> = {};
-    if (observed.registers !== undefined) result.registers = { ...observed.registers, pc: formatC64Address(observed.registers.pc) };
-    if (observed.memory !== undefined) result.memory = observed.memory.map((range) => ({ ...range, address: formatC64Address(range.address) }));
+    if (observed.registers !== undefined) result.registers = { ...observed.registers, pc: formatAddress(observed.registers.pc) };
+    if (observed.memory !== undefined) result.memory = observed.memory.map((range) => ({ ...range, address: formatAddress(range.address) }));
     if (observed.vicii !== undefined) {
       result.vicii = {
         ...observed.vicii,
-        screenAddress: formatC64Address(observed.vicii.screenAddress),
-        graphicsAddress: formatC64Address(observed.vicii.graphicsAddress),
+        screenAddress: formatAddress(observed.vicii.screenAddress),
+        graphicsAddress: formatAddress(observed.vicii.graphicsAddress),
       };
     }
-    if (observed.sprites !== undefined) result.sprites = observed.sprites.map((sprite) => ({ ...sprite, dataAddress: formatC64Address(sprite.dataAddress) }));
+    if (observed.sprites !== undefined) result.sprites = observed.sprites.map((sprite) => ({ ...sprite, dataAddress: formatAddress(sprite.dataAddress) }));
     if (observed.cia !== undefined) result.cia = observed.cia;
     if (observed.sid !== undefined) result.sid = observed.sid;
     if (observed.timing !== undefined) result.timing = observed.timing;

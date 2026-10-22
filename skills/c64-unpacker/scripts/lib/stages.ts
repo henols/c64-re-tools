@@ -8,7 +8,8 @@
 // to the stage, is the stage's own code too: a packer hands off by JMP,
 // RTS or RTI and never runs its own code again.
 
-import { type AddressRange, COVERAGE } from "#src/c64.ts";
+import { COVERAGE } from "#src/c64.ts";
+import { type AddressRange } from "#src/address.ts";
 import { writtenBlocks } from "#src/host-client/coverage.ts";
 
 const contains = (range: AddressRange, address: number) => address >= range.start && address <= range.end;

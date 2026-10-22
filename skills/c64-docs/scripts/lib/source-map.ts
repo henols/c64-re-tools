@@ -4,7 +4,7 @@
 
 import { posix } from "node:path";
 
-import { parseC64Address } from "#src/c64.ts";
+import { parseAddress } from "#src/address.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import type { Space } from "#src/knowledge/schema.ts";
@@ -56,9 +56,9 @@ export function readSourceMap(directory: string, root?: string): SourceMap {
     return fail((error as Error).message);
   }
   if (!Array.isArray(raw.labels) || !Array.isArray(raw.items) || !Array.isArray(raw.files)) fail("it has no labels, items or files");
-  const labels = (raw.labels as Array<Record<string, unknown>>).map((label) => ({ address: parseC64Address(String(label.address)), name: String(label.name), file: String(label.file), line: Number(label.line) }));
+  const labels = (raw.labels as Array<Record<string, unknown>>).map((label) => ({ address: parseAddress(String(label.address)), name: String(label.name), file: String(label.file), line: Number(label.line) }));
   const items = (raw.items as Array<Record<string, unknown>>)
-    .map((item) => ({ start: parseC64Address(String(item.start)), end: parseC64Address(String(item.end)), file: String(item.file), line: Number(item.line) }))
+    .map((item) => ({ start: parseAddress(String(item.start)), end: parseAddress(String(item.end)), file: String(item.file), line: Number(item.line) }))
     .sort((a, b) => a.start - b.start);
   const byName = new Map(labels.map((label) => [label.name, label]));
   return {

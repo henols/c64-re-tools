@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { formatC64Address } from "../c64.ts";
+import { formatAddress } from "../address.ts";
 import { Refusal } from "../errors.ts";
 import { openForWrite, transaction } from "./database.ts";
 import { memoryRows, releaseImage, setImage } from "./program.ts";
@@ -828,7 +828,7 @@ test("a module and a comment start at an instruction: an operand byte of a code 
   assert.throws(() => applyBatch(db, llm, [{ op: "module", start: 0x1bc3, file: "mid_module.asm" }]), /^Refusal: Write 1: \$1bc3 is not the start of an instruction/);
   assert.equal(currentRevision(db), before, "a refused write leaves no revision");
   // At an instruction, in data, and where the knowledge has no program, they are written.
-  for (const address of [0x1bc2, 0x1bc4, 0x1bc9, 0x2000]) assert.notEqual(setComment(db, llm, { address, placement: "side", text: "here" }).revision, null, formatC64Address(address));
+  for (const address of [0x1bc2, 0x1bc4, 0x1bc9, 0x2000]) assert.notEqual(setComment(db, llm, { address, placement: "side", text: "here" }).revision, null, formatAddress(address));
   assert.notEqual(setModule(db, llm, { start: 0x1bc4, file: "store.asm" }).revision, null);
   assert.notEqual(setModule(db, llm, { start: 0x1bca, file: "table.asm" }).revision, null);
 });

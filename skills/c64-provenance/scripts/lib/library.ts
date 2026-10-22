@@ -10,7 +10,8 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
 import { writeRefusal, type Written } from "#src/host-client/transfer.ts";
-import { formatC64Address, instructionLength } from "#src/c64.ts";
+import { instructionLength } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
 import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, OPERAND_SELECTS, type OperandSelect, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
@@ -101,7 +102,7 @@ export interface LeftOut {
  */
 export function routineFrom(source: RoutineSource): { routine: Routine; leftOut: LeftOut[] } {
   const { start, end } = source;
-  const where = (address: number) => formatC64Address(address);
+  const where = (address: number) => formatAddress(address);
   if (!ROUTINE_NAME.test(source.name)) throw new Refusal("invalid-input", `A routine name is a letter or underscore, then letters, digits or underscores (at most 64), not ${source.name}.`);
   const length = end - start + 1;
   if (length < MIN_ROUTINE) throw new Refusal("invalid-input", `${where(start)}-${where(end)} has ${length} bytes. A routine has at least ${MIN_ROUTINE}, because shorter byte sequences occur by chance.`);
@@ -220,7 +221,7 @@ export function routineText(routine: Routine): string {
   const list = (items: readonly unknown[]) => (items.length === 0 ? "[]" : `[\n${items.map((item) => `    ${JSON.stringify(item)}`).join(",\n")}\n  ]`);
   field("name", JSON.stringify(routine.name));
   if (routine.title !== undefined) field("title", JSON.stringify(routine.title));
-  field("from", JSON.stringify({ program: routine.from.program, image: routine.from.image, start: formatC64Address(routine.from.start) }));
+  field("from", JSON.stringify({ program: routine.from.program, image: routine.from.image, start: formatAddress(routine.from.start) }));
   field("length", String(routine.bytes.length));
   const hex = Buffer.from(routine.bytes).toString("hex");
   field("bytes", list(Array.from({ length: Math.ceil(hex.length / (2 * BYTES_PER_LINE)) }, (_, index) => hex.slice(index * 2 * BYTES_PER_LINE, (index + 1) * 2 * BYTES_PER_LINE))));
@@ -508,7 +509,7 @@ const semantic = (row: { origin: string }) => isSemantic(row.origin);
  * fitting copy for each of two different neighbour shifts, no copy is named.
  */
 function chooseCopies(found: ReadonlyArray<{ routine: Routine; matches: Match[] }>): Array<{ chosen?: Match; leftOut: Skipped[] }> {
-  const show = formatC64Address;
+  const show = formatAddress;
   const unique = found.filter(({ matches }) => matches.length === 1);
   return found.map(({ routine, matches }) => {
     if (matches.length <= 1) return { ...(matches[0] === undefined ? {} : { chosen: matches[0] }), leftOut: [] };
@@ -543,10 +544,10 @@ function movedComment(text: string, routine: Routine, shift: number): { text: st
   const moved = text.replace(COMMENT_ADDRESS, (whole, digits: string) => {
     const value = Number.parseInt(digits, 16);
     if (value < first || value > last) {
-      outside.add(formatC64Address(value));
+      outside.add(formatAddress(value));
       return whole;
     }
-    const shown = formatC64Address(value + shift);
+    const shown = formatAddress(value + shift);
     return /[A-F]/.test(digits) ? shown.toUpperCase() : shown;
   });
   return { text: moved, outside: [...outside] };
@@ -568,7 +569,7 @@ export function suggest(found: ReadonlyArray<{ routine: Routine; matches: Match[
   const leftOut: Skipped[] = [];
   const check: Check[] = [];
   let known = 0;
-  const show = formatC64Address;
+  const show = formatAddress;
   /** The names that are at their place after the changes: written here or known. */
   const placed = new Map<string, number>();
   const symbolsHere = new Map<number, string>();

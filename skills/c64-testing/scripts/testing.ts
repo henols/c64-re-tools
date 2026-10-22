@@ -4,7 +4,8 @@
 // compare the rebuild with it; diff shows what changed between two states;
 // checklist gives the Markdown list for a human tester.
 
-import { COVERAGE, formatC64Address } from "#src/c64.ts";
+import { COVERAGE } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
@@ -96,7 +97,7 @@ async function recordCommand(call: Call): Promise<Reply> {
       // The instructions in the coverage map: 0 when the coverage never started.
       executed: outcome.coverage.reduce((count, byte) => count + ((byte & COVERAGE.ramExecute) === 0 ? 0 : 1), 0),
       // The frame and the instruction where the map starts: the code before them has no marks.
-      coverageFrom: outcome.coverageFrom === undefined ? null : { frame: Math.floor(outcome.coverageFrom.tick / PAL_FRAME_CYCLES), pc: formatC64Address(outcome.coverageFrom.pc) },
+      coverageFrom: outcome.coverageFrom === undefined ? null : { frame: Math.floor(outcome.coverageFrom.tick / PAL_FRAME_CYCLES), pc: formatAddress(outcome.coverageFrom.pc) },
     };
     if (outcome.reason === CANCELLED) return reply({ result: "FAIL", recorded: false, reason: outcome.reason, ...summary }, { hint: "Ask the user what to do. Do not make a scripted recording in place of the session of the user." });
     if (outcome.reason !== undefined) return reply({ result: "FAIL", recorded: false, reason: outcome.reason, ...summary }, { hint: "reason names the step that did not complete. Change that step, then record again." });

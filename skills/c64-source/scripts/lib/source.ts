@@ -15,7 +15,8 @@
 // loads it.
 
 import { CONFIG_FILE, configValues } from "#src/build-name.ts";
-import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
+import { COVERAGE } from "#src/c64.ts";
+import { type AddressRange, formatAddress, formatByte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/address.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
 import { type CommentPlacement, isAnalyzer, isGeneratedFile, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, SEGMENT_FOLDER, RELEASE_DEFINE, START_SCREEN_SWITCH, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
@@ -184,7 +185,7 @@ function decodedStores(pieces: readonly Piece[], input: SourceInput, isRegister:
       if (!isRegister(target)) continue;
       try {
         const text = decodedText(input.decode(target, input.byteAt(load.address + 1)));
-        if (text !== "") found.push({ address: store.address, placement: "side", text: `${formatC64Address(target)}: ${text}` });
+        if (text !== "") found.push({ address: store.address, placement: "side", text: `${formatAddress(target)}: ${text}` });
       } catch {
         // No decoder for this register.
       }
@@ -266,7 +267,7 @@ export interface Layout {
 }
 
 /** ACME reads leading zeros as a 16-bit value, so a zero-page name gets two digits. */
-const constantValue = (address: number) => (address < 0x100 ? formatC64Byte(address) : formatC64Address(address));
+const constantValue = (address: number) => (address < 0x100 ? formatByte(address) : formatAddress(address));
 const signed = (byte: number) => (byte < 0x80 ? byte : byte - 0x100);
 
 function operandValue(address: number, opcode: number, byteAt: (address: number) => number): number | undefined {
@@ -293,7 +294,7 @@ export function entriesInData<R extends { start: number; end: number; type: Regi
 /** Why an image without its entry fails: the image does not hold the program. Undefined when the entry is in a segment, or the image has no entry. */
 export function entryOutsideImage(entry: number | undefined, segments: readonly AddressRange[]): string | undefined {
   if (entry === undefined || segments.some((segment) => entry >= segment.start && entry <= segment.end)) return undefined;
-  return `The entry ${formatC64Address(entry)} is in no segment of the image: the image does not hold the program. Capture the program again, so that a segment holds the entry.`;
+  return `The entry ${formatAddress(entry)} is in no segment of the image: the image does not hold the program. Capture the program again, so that a segment holds the entry.`;
 }
 
 /** Splits the segments into pieces at module starts and lays out instructions and data. */
@@ -306,7 +307,7 @@ export function layout(input: SourceInput): Layout {
   };
 
   for (const module of input.modules) {
-    if (isGeneratedFile(module.file)) throw new WireFailure("invalid-input", `The module at ${formatC64Address(module.start)} has the file ${module.file}, which the generator writes itself. Give the module another file.`);
+    if (isGeneratedFile(module.file)) throw new WireFailure("invalid-input", `The module at ${formatAddress(module.start)} has the file ${module.file}, which the generator writes itself. Give the module another file.`);
   }
   const modules = [...input.modules].sort((a, b) => a.start - b.start);
   const unusedModules = modules.filter((module) => !inImage(module.start)).map(({ start, file }) => ({ start, file }));
@@ -328,9 +329,9 @@ export function layout(input: SourceInput): Layout {
     for (let index = 0; index + 1 < bounds.length; index++) {
       const start = bounds[index]!;
       const end = bounds[index + 1]! - 1;
-      const segmentTitle = `Segment ${formatC64Address(segment.start)}-${formatC64Address(segment.end)}`;
+      const segmentTitle = `Segment ${formatAddress(segment.start)}-${formatAddress(segment.end)}`;
       if (leftovers.some((range) => range.start === start)) {
-        pieces.push({ start, end, file: `${LEFTOVER_FOLDER}/leftover_${hex(start)}.asm`, title: `Leftovers ${formatC64Address(start)}-${formatC64Address(end)}: ${end - start + 1} bytes that nothing uses. Only LEFTOVERS = 1 builds them.`, segmentStart: index === 0, leftover: true, items: [] });
+        pieces.push({ start, end, file: `${LEFTOVER_FOLDER}/leftover_${hex(start)}.asm`, title: `Leftovers ${formatAddress(start)}-${formatAddress(end)}: ${end - start + 1} bytes that nothing uses. Only LEFTOVERS = 1 builds them.`, segmentStart: index === 0, leftover: true, items: [] });
         continue;
       }
       // A module that leftovers cut goes on in a file of its own after them, in its folder: <module>_xxxx.asm.
@@ -338,7 +339,7 @@ export function layout(input: SourceInput): Layout {
       const holder = module ?? modules.filter((row) => row.start >= segment.start && row.start < start).at(-1);
       const title = (text: string | undefined) => text?.replace(/\s*\r?\n\s*/g, " ");
       const file = module?.file ?? (holder === undefined ? `${SEGMENT_FOLDER}/segment_${hex(start)}.asm` : `${holder.file.replace(/\.asm$/i, "")}_${hex(start)}.asm`);
-      const named = module === undefined && holder !== undefined ? `${title(holder.title) ?? holder.file}, from ${formatC64Address(start)}` : title(module?.title);
+      const named = module === undefined && holder !== undefined ? `${title(holder.title) ?? holder.file}, from ${formatAddress(start)}` : title(module?.title);
       pieces.push({ start, end, file, title: named ?? segmentTitle, segmentStart: index === 0, leftover: false, items: [] });
     }
   }
@@ -346,7 +347,7 @@ export function layout(input: SourceInput): Layout {
   const files = new Map<string, number>();
   for (const piece of pieces) {
     const other = files.get(piece.file.toLowerCase());
-    if (other !== undefined) throw new WireFailure("invalid-input", `The file ${piece.file} is used at ${formatC64Address(other)} and at ${formatC64Address(piece.start)}. Give the module another file.`);
+    if (other !== undefined) throw new WireFailure("invalid-input", `The file ${piece.file} is used at ${formatAddress(other)} and at ${formatAddress(piece.start)}. Give the module another file.`);
     files.set(piece.file.toLowerCase(), piece.start);
   }
 
@@ -554,7 +555,7 @@ export function layout(input: SourceInput): Layout {
       if (inside === undefined) continue;
       accepted.delete(candidate);
       changed = true;
-      macrosAsInstructions.push({ start: candidate.use.start, end: candidate.use.end, macro: candidate.use.macro, reason: `The source has a label at ${formatC64Address(inside)}, inside the use.` });
+      macrosAsInstructions.push({ start: candidate.use.start, end: candidate.use.end, macro: candidate.use.macro, reason: `The source has a label at ${formatAddress(inside)}, inside the use.` });
       for (const item of candidate.items) {
         inUse.delete(item.address);
         if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address)) useOperand(item);
@@ -570,7 +571,7 @@ export function layout(input: SourceInput): Layout {
     const known = symbols.get(address);
     if (known !== undefined) {
       const problem = labelProblem(known);
-      if (problem !== undefined) throw new WireFailure("invalid-input", `The symbol ${known} at ${formatC64Address(address)}: ${problem} Rename the symbol in the project knowledge.`);
+      if (problem !== undefined) throw new WireFailure("invalid-input", `The symbol ${known} at ${formatAddress(address)}: ${problem} Rename the symbol in the project knowledge.`);
       names.set(address, known);
       if (inImage(address)) namedLabels++;
       continue;
@@ -602,7 +603,7 @@ export function layout(input: SourceInput): Layout {
     }
     const known = blocks.get(patch.start);
     if (known !== undefined) {
-      if (known.end !== patch.end) refuse(`The range overlaps the patch of ${known.alternatives[0]!.switch} at ${formatC64Address(known.start)}-${formatC64Address(known.end)}: alternatives have the same range.`);
+      if (known.end !== patch.end) refuse(`The range overlaps the patch of ${known.alternatives[0]!.switch} at ${formatAddress(known.start)}-${formatAddress(known.end)}: alternatives have the same range.`);
       else known.alternatives.push({ switch: patch.switch, code: patch.code, ...(patch.comment === undefined ? {} : { comment: patch.comment }), base: owner.base });
       continue;
     }
@@ -612,14 +613,14 @@ export function layout(input: SourceInput): Layout {
       continue;
     }
     if (patch.end > piece.end) {
-      refuse(`The range runs past the end of the file ${piece.file} at ${formatC64Address(piece.end)}: a patch is in one file.`);
+      refuse(`The range runs past the end of the file ${piece.file} at ${formatAddress(piece.end)}: a patch is in one file.`);
       continue;
     }
     const starts = new Set(piece.items.map((item) => (item.kind === "instruction" ? item.address : item.start)));
     const ends = new Set(piece.items.map((item) => (item.kind === "instruction" ? item.address + item.length - 1 : item.end)));
     if (!starts.has(patch.start) || !ends.has(patch.end)) {
       const cut = piece.items.find((item) => item.kind === "instruction" && ((patch.start > item.address && patch.start < item.address + item.length) || (patch.end >= item.address && patch.end < item.address + item.length - 1)));
-      refuse(cut === undefined ? "The range does not start and end at an item of the source." : `The range cuts the instruction at ${formatC64Address((cut as InstructionItem).address)}.`);
+      refuse(cut === undefined ? "The range does not start and end at an item of the source." : `The range cuts the instruction at ${formatAddress((cut as InstructionItem).address)}.`);
       continue;
     }
     if (sourceNames.has(patch.switch)) {
@@ -721,7 +722,7 @@ export function formOf(layout: Pick<Layout, "inImage" | "byteAt">, item: Instruc
 /** The plain number of an operand: what the probe assembles, and what a comment shows. */
 export function literalOperand(opcode: number, value: number): string {
   const { mode } = OPCODES[opcode]!;
-  return MODE_LENGTH[mode] === 3 || mode === "rel" ? formatC64Address(value) : formatC64Byte(value);
+  return MODE_LENGTH[mode] === 3 || mode === "rel" ? formatAddress(value) : formatByte(value);
 }
 
 /** One instruction of each form, for the probe: the form, and the instruction bytes. */
@@ -773,9 +774,9 @@ function cellsOf(item: DataItem, layout: Layout, breaks: Set<number>): Cell[] {
   const { byteAt } = layout;
   const cells: Cell[] = [];
   const name = (address: number) => layout.names.get(address);
-  const expression = (target: number) => name(target) ?? formatC64Address(target);
-  const rtsExpression = (target: number) => (name(target) === undefined ? formatC64Address((target - 1) & 0xffff) : `${name(target)}-1`);
-  const byteCell = (address: number, text = formatC64Byte(byteAt(address))): Cell => ({ address, length: 1, directive: "!byte", text });
+  const expression = (target: number) => name(target) ?? formatAddress(target);
+  const rtsExpression = (target: number) => (name(target) === undefined ? formatAddress((target - 1) & 0xffff) : `${name(target)}-1`);
+  const byteCell = (address: number, text = formatByte(byteAt(address))): Cell => ({ address, length: 1, directive: "!byte", text });
 
   if (item.region !== undefined && POINTER_TYPES.includes(item.type)) {
     const rts = item.type === "rts-addresses" || item.type === "rts-addresses-split";
@@ -810,7 +811,7 @@ function cellsOf(item: DataItem, layout: Layout, breaks: Set<number>): Cell[] {
       const offset = address - (item.region?.start ?? item.start);
       const last = odd && address === item.region!.end;
       if (offset % 2 === 0 && !last && address + 1 <= item.end && !breaks.has(address + 1)) {
-        cells.push({ address, length: 2, directive: "!word", text: formatC64Address(byteAt(address) | (byteAt(address + 1) << 8)) });
+        cells.push({ address, length: 2, directive: "!word", text: formatAddress(byteAt(address) | (byteAt(address + 1) << 8)) });
         address++;
       } else cells.push(byteCell(address));
     }
@@ -835,12 +836,12 @@ function cellsOf(item: DataItem, layout: Layout, breaks: Set<number>): Cell[] {
       let end = address;
       while (end + 1 <= item.end && byteAt(end + 1) === value && !breaks.has(end + 1)) end++;
       if (end - address + 1 >= MIN_FILL) {
-        cells.push({ address, length: end - address + 1, directive: "!fill", text: `${end - address + 1}, ${formatC64Byte(value)}` });
+        cells.push({ address, length: end - address + 1, directive: "!fill", text: `${end - address + 1}, ${formatByte(value)}` });
         address = end;
         continue;
       }
     }
-    cells.push(byteCell(address, binary ? `%${value.toString(2).padStart(8, "0")}` : formatC64Byte(value)));
+    cells.push(byteCell(address, binary ? `%${value.toString(2).padStart(8, "0")}` : formatByte(value)));
   }
   return cells;
 }
@@ -897,7 +898,7 @@ function describeConstant(layout: Layout, address: number, name: string): string
   const mirrorOf = layout.describe?.(address).mirrorOf;
   if (mirrorOf === undefined) return undefined;
   const register = layout.platform.find((row) => row.address === mirrorOf);
-  return `Mirror of ${formatC64Address(mirrorOf)}${register === undefined ? "" : ` (${register.name})`}.`;
+  return `Mirror of ${formatAddress(mirrorOf)}${register === undefined ? "" : ` (${register.name})`}.`;
 }
 
 /** How the source uses a constant, for example "Used: read 4, written 1." */
@@ -954,7 +955,7 @@ export function configText(layout: Pick<Layout, "switches" | "patches" | "startS
     if (rows.length === 0) continue;
     out.push("", `; ${group.title}`);
     for (const row of rows) {
-      const ranges = (patches.get(row.name) ?? []).map((patch) => `${formatC64Address(patch.start)}-${formatC64Address(patch.end)}`);
+      const ranges = (patches.get(row.name) ?? []).map((patch) => `${formatAddress(patch.start)}-${formatAddress(patch.end)}`);
       const parts = [
         row.releases.length === 0 ? "on in no release" : `on in ${row.releases.join(", ")}`,
         ranges.length === 0 ? "no patch" : ranges.join(", "),
@@ -1028,7 +1029,7 @@ function constantsText(layout: Layout): { text: string; labels: SourceLabel[] } 
     const next = describe?.(row.address).area;
     if (next !== undefined && next.start !== area?.start) {
       area = next;
-      out.push("", `; ${area.name[0]!.toUpperCase()}${area.name.slice(1)} ${formatC64Address(area.start)}-${formatC64Address(area.end)}`);
+      out.push("", `; ${area.name[0]!.toUpperCase()}${area.name.slice(1)} ${formatAddress(area.start)}-${formatAddress(area.end)}`);
       if (area.meaning !== undefined) out.push(`; ${area.meaning}`);
     }
     const line = `${row.name.padEnd(nameColumn)} = ${row.value.padEnd(valueColumn)}`;
@@ -1107,7 +1108,7 @@ const patchCondition = (alternative: PatchAlternative) => (alternative.base === 
  */
 function patchOpening(patch: PatchBlock): string[] {
   const bytes = patch.end - patch.start + 1;
-  const range = `${formatC64Address(patch.start)}-${formatC64Address(patch.end)}`;
+  const range = `${formatAddress(patch.start)}-${formatAddress(patch.end)}`;
   const out = [`!zone patch_${patch.alternatives[0]!.switch}_${patch.start.toString(16).padStart(4, "0")} {`, ".patch_start"];
   patch.alternatives.forEach((first, index) => {
     for (const second of patch.alternatives.slice(index + 1)) {
@@ -1122,7 +1123,7 @@ function patchOpening(patch: PatchBlock): string[] {
       `${INDENT}; ${alternative.switch} ${state}: ${bytes} byte${bytes === 1 ? "" : "s"} at ${range}, NOP after the code`,
       ...comment,
       ...(alternative.code === "" ? [] : alternative.code.split(/\r?\n/)),
-      `${INDENT}!if * - .patch_start > ${bytes} { !error "The patch ${alternative.switch} at ${formatC64Address(patch.start)} has ", * - .patch_start, " bytes; the range has ${bytes}." } else { !fill ${bytes} - (* - .patch_start), $ea }`,
+      `${INDENT}!if * - .patch_start > ${bytes} { !error "The patch ${alternative.switch} at ${formatAddress(patch.start)} has ", * - .patch_start, " bytes; the range has ${bytes}." } else { !fill ${bytes} - (* - .patch_start), $ea }`,
     );
   });
   out.push("} else {");
@@ -1178,7 +1179,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
   const notExecuted = { instructions: 0, ranges: [] as AddressRange[] };
 
   for (const piece of layout.pieces) {
-    const out: string[] = [`; ${piece.title}`, `; ${formatC64Address(piece.start)}-${formatC64Address(piece.end)}`, ""];
+    const out: string[] = [`; ${piece.title}`, `; ${formatAddress(piece.start)}-${formatAddress(piece.end)}`, ""];
     /** True while the instructions before have not executed: they form one range. */
     let running = false;
     /** The line of the mark of the open range of instructions that did not execute. */
@@ -1199,7 +1200,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         }
         // The mark gives the range, so a reader finds it in the full list.
         const range = notExecuted.ranges.at(-1)!;
-        out[markLine] = `; not executed ${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
+        out[markLine] = `; not executed ${formatAddress(range.start)}-${formatAddress(range.end)}`;
         notExecuted.instructions += count;
       }
       running = !executed;
@@ -1268,8 +1269,8 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
             result.labels.push({ address: inside, name: label, file: piece.file, line: out.length });
           }
           // A comment at an operand byte (knowledge of an older version) shows with its address, as in the listing of c64-knowledge.
-          for (const text of lineComments.get(inside) ?? []) sides.push(`${formatC64Address(inside)}: ${text}`);
-          if (sideComments.has(inside)) sides.push(`${formatC64Address(inside)}: ${sideComments.get(inside)!}`);
+          for (const text of lineComments.get(inside) ?? []) sides.push(`${formatAddress(inside)}: ${text}`);
+          if (sideComments.has(inside)) sides.push(`${formatAddress(inside)}: ${sideComments.get(inside)!}`);
         }
         const form = formOf(layout, item);
         const { mode } = OPCODES[item.opcode]!;
@@ -1286,7 +1287,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         if (written !== undefined && numbers.has(item.address)) asNumber(written, numbers.get(item.address)!);
         if (unwritten.has(item.address)) sides.unshift(`= ${unwritten.get(item.address)!}`);
         if (asBytes.has(form.key)) {
-          const bytes = Array.from({ length: item.length }, (_, offset) => formatC64Byte(layout.byteAt(item.address + offset)));
+          const bytes = Array.from({ length: item.length }, (_, offset) => formatByte(layout.byteAt(item.address + offset)));
           out.push(withSide(`${INDENT}!byte ${bytes.join(",")}`, [literal, ...sides].join(" ")));
           result.asBytes.push({ address: item.address, text: literal });
         } else if (written !== undefined) {
@@ -1330,7 +1331,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
   }
   const main = [...header.map((line) => `; ${line}`), "", "!cpu 6510", ...(hasSwitchFile(layout) ? ['!source "switches.asm"'] : []), '!source "constants.asm"', ...(layout.macros.length > 0 ? ['!source "macros.asm"'] : [])];
   for (const piece of layout.pieces) {
-    if (piece.segmentStart) main.push("", `* = ${formatC64Address(piece.start)}`);
+    if (piece.segmentStart) main.push("", `* = ${formatAddress(piece.start)}`);
     // Without the leftovers, the build skips their bytes: the addresses after them stay.
     main.push(piece.leftover ? `!if ${LEFTOVERS_SWITCH} { !source "${piece.file}" } else { !skip ${piece.end - piece.start + 1} }` : `!source "${piece.file}"`);
   }

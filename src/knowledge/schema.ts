@@ -4,7 +4,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { REFERENCE_KINDS, type ReferenceKind } from "../c64.ts";
+import { REFERENCE_KINDS, type ReferenceKind } from "../address.ts";
 import { OPERAND_SELECTS } from "./expression.ts";
 
 /** heuristic: 6502 idioms that the static analysis finds by pattern; an analyzer origin. */

@@ -6,7 +6,8 @@
 // its bytes from the separation. Evidence only: nothing here decides what a
 // leftover is or who made it.
 
-import { type AddressRange, basicLineText } from "#src/c64.ts";
+import { basicLineText } from "#src/c64.ts";
+import { type AddressRange } from "#src/address.ts";
 import { MNEMONICS } from "#src/opcodes.ts";
 import type { Access, Separation } from "#src/knowledge/separate.ts";
 

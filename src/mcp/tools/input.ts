@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { formatC64Address } from "../../c64.ts";
+import { formatAddress } from "../../address.ts";
 import { keyTaps, MAX_PRESS_TAPS, MAX_TAP_KEYS, PRESS_FRAMES, type KeyTap } from "../../c64-keys.ts";
 import { JOYSTICK_DIRECTIONS, MAX_KEYBOARD_BYTES, POINT_STOP_REASONS, RUN_STATES, SPACES } from "../../protocol/vice.ts";
 import { keyboardBytes } from "../../host-client/steps.ts";
@@ -58,7 +58,7 @@ export const c64Press = defineTool({
   async run(input, session) {
     // The schema checked the keys: keyTaps gives taps here.
     const { pc, ...result } = await session.press(keyTaps(input.keys) as KeyTap[], input.frames);
-    return { ...result, ...(pc === undefined ? {} : { pc: formatC64Address(pc) }) };
+    return { ...result, ...(pc === undefined ? {} : { pc: formatAddress(pc) }) };
   },
 });
 

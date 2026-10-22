@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { formatC64Address } from "../c64.ts";
+import { formatAddress } from "../address.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { EXOMIZER, findTool } from "./discover.ts";
 import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
@@ -61,7 +61,7 @@ const PROBLEM = /error|warning|can't|cannot|overlap/i;
 
 export async function pack(params: PackParams, context: ToolContext): Promise<Packed> {
   if (params.programs.length === 0) throw new WireFailure("invalid-input", "Give at least one PRG to pack.");
-  if (params.entry < MIN_ENTRY) throw new WireFailure("invalid-input", `The entry ${formatC64Address(params.entry)} is below $0400. The unpacker of Exomizer runs there. Give an entry at $0400 or above.`);
+  if (params.entry < MIN_ENTRY) throw new WireFailure("invalid-input", `The entry ${formatAddress(params.entry)} is below $0400. The unpacker of Exomizer runs there. Give an entry at $0400 or above.`);
   const executable = findTool(EXOMIZER, context.env);
   const workspace = Workspace.create(context.supervisor);
   try {

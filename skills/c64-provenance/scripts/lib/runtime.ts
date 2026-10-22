@@ -4,7 +4,8 @@
 // Watchpoints and range breakpoints stop the run at an access; the coverage
 // map then tells which range and which access it was.
 
-import { type AddressRange, COVERAGE, formatC64Address, instructionLength } from "#src/c64.ts";
+import { COVERAGE, instructionLength } from "#src/c64.ts";
+import { type AddressRange, formatAddress } from "#src/address.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { startAtEntry, type EntryState } from "#src/host-client/entry-state.ts";
@@ -163,4 +164,4 @@ export async function watchRelease(
   return { started: true, accesses };
 }
 
-export const showRange = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
+export const showRange = (range: AddressRange) => `${formatAddress(range.start)}-${formatAddress(range.end)}`;

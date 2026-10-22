@@ -4,7 +4,8 @@
 import { posix } from "node:path";
 
 import { isRefusal, Refusal } from "../errors.ts";
-import { formatC64Address, prgRange } from "../c64.ts";
+import { prgRange } from "../c64.ts";
+import { formatAddress } from "../address.ts";
 import { readEntryState, type EntryState } from "./entry-state.ts";
 import { readProjectFile } from "./transfer.ts";
 
@@ -98,8 +99,8 @@ export function readImage(path: string): Image {
     .map((segment, index) => ({ start: address(segment.start, `segment ${index + 1} start`), end: address(segment.end, `segment ${index + 1} end`) }))
     .sort((a, b) => a.start - b.start);
   segments.forEach((segment, index) => {
-    if (segment.end < segment.start) fail(`the segment at ${formatC64Address(segment.start)} ends before it starts`);
-    if (index > 0 && segment.start <= segments[index - 1]!.end) fail(`the segments at ${formatC64Address(segments[index - 1]!.start)} and ${formatC64Address(segment.start)} overlap`);
+    if (segment.end < segment.start) fail(`the segment at ${formatAddress(segment.start)} ends before it starts`);
+    if (index > 0 && segment.start <= segments[index - 1]!.end) fail(`the segments at ${formatAddress(segments[index - 1]!.start)} and ${formatAddress(segment.start)} overlap`);
   });
   const directory = posix.dirname(path);
   const memory = readProjectFile(posix.join(directory, manifest.image as string)).bytes;

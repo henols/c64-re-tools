@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { formatC64Address } from "../../c64.ts";
+import { formatAddress } from "../../address.ts";
 import { RESET_MODES, RUN_STATES, WINDOW_ACTIONS } from "../../protocol/vice.ts";
 import { AddressOutput, defineTool } from "../server.ts";
 
@@ -47,7 +47,7 @@ export const c64Reset = defineTool({
   readOnly: false,
   async run(input, session) {
     const result = await session.reset(input);
-    return result.pc === undefined ? { state: result.state } : { state: result.state, pc: formatC64Address(result.pc) };
+    return result.pc === undefined ? { state: result.state } : { state: result.state, pc: formatAddress(result.pc) };
   },
 });
 

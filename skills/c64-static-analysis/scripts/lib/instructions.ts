@@ -2,7 +2,8 @@
 // the addressing mode, the operand in 6502 syntax, the flow target and,
 // with a coverage file, whether the instruction ran.
 
-import { COVERAGE, formatC64Address } from "#src/c64.ts";
+import { COVERAGE } from "#src/c64.ts";
+import { formatAddress } from "#src/address.ts";
 import { OPCODES, type Mode as OpcodeMode } from "#src/opcodes.ts";
 import type { GhidraInstruction } from "#src/native/types.ts";
 
@@ -47,7 +48,7 @@ export function modeOf(opcode: number): Mode {
 /** The operand in 6502 syntax, from the instruction bytes; empty for implied. */
 export function operandText(mode: Mode, bytes: Uint8Array, target: number | undefined): string {
   const byte = `$${(bytes[1] ?? 0).toString(16).padStart(2, "0")}`;
-  const word = formatC64Address((bytes[1] ?? 0) | ((bytes[2] ?? 0) << 8));
+  const word = formatAddress((bytes[1] ?? 0) | ((bytes[2] ?? 0) << 8));
   switch (mode) {
     case "implied":
       return "";
@@ -74,7 +75,7 @@ export function operandText(mode: Mode, bytes: Uint8Array, target: number | unde
     case "(indirect),y":
       return `(${byte}),y`;
     case "relative":
-      return target === undefined ? byte : formatC64Address(target);
+      return target === undefined ? byte : formatAddress(target);
   }
 }
 
@@ -95,12 +96,12 @@ export function instructionList(instructions: GhidraInstruction[], coverage?: Ui
     const mode = modeOf(bytes[0]!);
     const [target] = instruction.flows;
     return {
-      address: formatC64Address(instruction.address),
+      address: formatAddress(instruction.address),
       bytes: (instruction.bytes.match(/../g) ?? []).join(" "),
       mnemonic: instruction.mnemonic,
       mode,
       operand: operandText(mode, bytes, target),
-      ...(target === undefined ? {} : { target: formatC64Address(target) }),
+      ...(target === undefined ? {} : { target: formatAddress(target) }),
       ...(coverage === undefined ? {} : { executed: (coverage[instruction.address]! & COVERAGE.ramExecute) !== 0 }),
     };
   });

@@ -6,7 +6,7 @@ import { extname } from "node:path";
 
 import { z } from "zod";
 
-import { formatC64Address } from "../../c64.ts";
+import { formatAddress } from "../../address.ts";
 import { refuseNotPrg } from "../../host-client/image.ts";
 import { projectFolder, readProjectFile } from "../../host-client/transfer.ts";
 import { WireFailure } from "../../protocol/messages.ts";
@@ -76,7 +76,7 @@ export const c64ProgramLoad = defineTool({
     refuseNotPrg(input.path, extname(input.path).slice(1).toLowerCase(), "Use c64_autostart, or c64_disk_attach for a disk image");
     const root = projectFolder(input.project);
     const result = await session.programLoad(input.address === undefined ? { path: input.path, root } : { path: input.path, address: input.address, root });
-    return { state: result.state, loadAddress: formatC64Address(result.loadAddress), size: result.size };
+    return { state: result.state, loadAddress: formatAddress(result.loadAddress), size: result.size };
   },
 });
 
