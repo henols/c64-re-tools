@@ -85,7 +85,7 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 
 | Stage | Work | Exit check |
 |---|---|---|
-| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these criteria: identical source, a verified loader, passed test scenarios and passed replays of the recordings. Also offer a list of the code that no run executed, and documentation of the flows, tables, formats and graphics. | The user gave the criteria. |
+| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these criteria: a base release that is identical to the original, and a passed replay of the default build. Also offer a replay of each recording, test scenarios and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. | The user gave the criteria. |
 | 2. Get | List the disk image. Extract the start file into `original/`. | The start file is in the project. |
 | 3. Start | Find the SYS address of the BASIC start. | You have the entry address. |
 | 4. Unpack | Examine the program for a packer. Trace it and find its stages. Capture a packed program into `.c64-re-tools/local/`. When a segment is the data of a cracktro and the program does not read it, capture again and exclude that range. Put the capture, or the PRG of a program without a packer, into the project knowledge. | The program in the project knowledge has the segments and the entry. |
@@ -94,11 +94,17 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 7. Name | If the workspace has a routine library, match the program against it. Write the names of the matches to the project knowledge. Then name each routine in the scope and give it a comment. Find the platform addresses in the memory map of the C64. Record the modules. Put the modules of one part of the program in one folder, for example `music/`, `irq/` or `graphics/`. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
 | 8. Releases and switches | Record the original file, or the capture of it, as the base release in the project knowledge. The project knowledge keeps the bytes of each release. Record each other release. Compare the releases. Find the leftovers. Record a switch for each copy protection, trainer, cheat, crack change and correction. Record a patch for each range of a switch. Record each leftover as a region with a comment. | The project knowledge lists each switch. Each difference between the releases is in a patch, or the answer gives it as an exception. |
 | 9. Generate | Generate the source from the project knowledge into `src`. For an unpacked program, also generate the loader. | The result of the generation is PASS. A release whose code is at other addresses is a version with a project of its own, or an exception in the answer. See "Versions of one program". |
-| 10. Build and test | Build the base release into `build/`, and compare it with the original. Build the default build. Run the test scenarios in `tests/`. Replay each recording on the rebuild. For each replay, give the checkpoint routine, the state and the random state with the names of stage 7. | The criteria of stage 1 are true. |
+| 10. Build and test | Build the base release into `build/`, and compare it with the original. Build the default build. Replay one recording on the default build. For each replay, give the checkpoint routine, the state and the random state with the names of stage 7. Then do only the tests that the next paragraph gives. | The criteria of stage 1 are true. |
 | 11. Document | When the criteria ask for documentation, generate it into `README.md` and `docs/`. For versions in a group folder, also write the shared pages of the group folder. Then link the pages. | The link check of the documentation gives PASS. |
 | 12. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
 
 In stage 5, make the recordings before you change the program. A recording needs no names, and its coverage gives the analysis of stage 6 more code. If you cannot get to a part of the program, ask the user how to get to it. Do stages 7 to 9 again until the source is clear. Each generation writes the source again.
+
+In stage 10, a base release that is identical to the original proves the source. Do not test the base release more. The default build is different from the base release only in its patches, its leftovers and its loader. Thus test only these differences:
+
+- When a patch of the default build changes code that a run executed, replay each recording of the part that has that code. A copy protection check is an example.
+- Write a test scenario only for a test that a replay cannot do. Examples are a program that loads more files from a disk, and a criterion of the user.
+- Do the other tests of stage 1 only when the user selected them.
 
 After stage 7, save each routine that other programs can have to the routine library of the workspace. Examples are a music driver, a decruncher and a loader. Ask the user before you make a library.
 
@@ -108,7 +114,7 @@ After stage 7, save each routine that other programs can have to the routine lib
 - the files of the program in `original/`, as the user gave them
 - the generated source
 - the built program and the loader
-- the test scenarios
+- the test scenarios, if you wrote them
 - the recordings in `tests/recordings/`
 - the documentation in `README.md` and `docs/`, when the criteria ask for it
 - the runs in `runs/` that the knowledge gives as evidence
