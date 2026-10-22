@@ -413,6 +413,7 @@ Data becomes free only when all of these are true:
 - No run read, wrote or executed a byte of it.
 - No code that stays reads it or names it. No table that stays has an entry in it.
 - It is not in the BASIC line that starts the program, and not at $fffa-$ffff.
+- No `charset`, `sprite`, `bitmap` or `screen` region has a byte of it. For example, `unused` bytes in a bitmap stay.
 
 The coverage does not show the reads of the VIC-II. Thus `charset`, `sprite`, `bitmap` and `screen` data stay, unless `--drop` names them. The bytes of the start screen always stay. Bytes without a region also stay.
 

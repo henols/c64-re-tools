@@ -134,6 +134,9 @@ const REGIONS: Array<{ start: number; end: number; type: RegionType }> = [
 test("a table that kept code reads keeps its entries, and untouched data that nothing names becomes free, except graphics data", () => {
   const plan = planDrops(input(TABLE, { coverage: covered([0x1000, 0x1002, 0x1005]), regions: REGIONS }));
   assert.deepEqual(plan.free, [{ start: 0x100c, end: 0x100f, what: "data" }]);
+  // Unused bytes inside a bitmap stay: the VIC-II shows them, and the coverage does not.
+  const inBitmap = planDrops(input(TABLE, { coverage: covered([0x1000, 0x1002, 0x1005]), regions: [...REGIONS, { start: 0x1008, end: 0x100f, type: "bitmap" }] }));
+  assert.deepEqual(inBitmap.free, []);
 });
 
 test("an indexed read of table-1 reaches the table and stops at its end; without regions it reaches 256 bytes", () => {

@@ -1846,7 +1846,7 @@ await runScript({
         drop: { ...OPTIONS.range, multiple: true, help: "a range that becomes free: code that the entry does not reach (see unreachableExecuted), or data. Nothing that stays may go to it or read it" },
         "max-listed": OPTIONS["max-listed"],
       },
-      notes: "Fixes, trainers and cheats are in, protection and crack changes are out, and a change keeps its default. Code becomes free only when no run executed it and nothing reaches it; data only when no run touched it and nothing names it. Charset, sprite, bitmap and screen data stay unless --drop names them. Addresses do not move: a free range is $00 with a label free_xxxx. The export needs coverage in the knowledge to make ranges free by itself.",
+      notes: "Fixes, trainers and cheats are in, protection and crack changes are out, and a change keeps its default. Code becomes free only when no run executed it and nothing reaches it; data only when no run touched it and nothing names it. Charset, sprite, bitmap and screen data, and data in them, stay unless --drop names them. Addresses do not move: a free range is $00 with a label free_xxxx. The export needs coverage in the knowledge to make ranges free by itself.",
       run: async (call) => exportReply(await exportProject(call)),
     },
   ],

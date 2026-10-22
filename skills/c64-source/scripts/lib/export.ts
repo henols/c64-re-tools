@@ -23,6 +23,9 @@ import { OPCODES } from "#src/opcodes.ts";
  */
 export const DROPPABLE_DATA: readonly RegionType[] = ["bytes", "words", ...POINTER_TABLE_TYPES, "petscii", "workspace", "unused"];
 
+/** The data that the VIC-II reads: a region of another type that overlaps it stays too, for example unused bytes in a bitmap. */
+const VIC_DATA: readonly RegionType[] = ["charset", "sprite", "bitmap", "screen"];
+
 /** Regions of code: their bytes are the blocks of the decoded instructions. */
 const CODE_TYPES: readonly RegionType[] = ["code", "jumps", "dual-use"];
 
@@ -323,6 +326,7 @@ export function planDrops(input: DropInput): DropPlan {
   const units = automatic
     ? regions.filter((region) => {
         if (!DROPPABLE_DATA.includes(region.type) || gone.some((range) => overlaps(range, region))) return false;
+        if (regions.some((other) => VIC_DATA.includes(other.type) && overlaps(other, region))) return false;
         if ([...input.keep, ...input.changed, VECTORS, ...(input.basic === undefined ? [] : [input.basic])].some((range) => overlaps(range, region))) return false;
         for (let address = region.start; address <= region.end; address++) if (touched(address)) return false;
         return true;
