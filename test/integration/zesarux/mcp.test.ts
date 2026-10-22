@@ -334,22 +334,14 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     assert.equal(flags(0x9200), 0, "the write of the tool is not in the map");
     assert.ok(ranges.every((range) => (range.flags & (1 | 8)) === 0), "no reads");
 
-    // DI and HALT: the wait never ends. After 100 frames the history has only the wait: the map cannot check the mark after the HALT, and names it.
+    // DI and HALT: the wait never ends. One read after 100 frames, more than the CPU history keeps, has no mark after the HALT, and names no address.
     await call("memory_write", { address: "$9100", data: "f376" });
     await call("registers", { action: "write", values: { pc: "$9100" } });
     await call("memmap", { action: "clear" });
     await call("execution", { action: "advance-frames", count: 100 });
     const long = await call("memmap", { action: "read" });
-    assert.deepEqual(long.uncheckedAfterHalt, ["$9102"]);
-    assert.equal(flagsAt(long.ranges as Array<{ start: string; end: string; flags: number }>, 0x9102), 4);
-    // A read after each run of 50 frames checks the mark: the map has no mark after the HALT, and names no address.
-    await call("memmap", { action: "clear" });
-    for (let run = 0; run < 2; run++) {
-      await call("execution", { action: "advance-frames", count: 50 });
-      const short = await call("memmap", { action: "read" });
-      assert.equal(short.uncheckedAfterHalt, undefined);
-      assert.equal(flagsAt(short.ranges as Array<{ start: string; end: string; flags: number }>, 0x9102), 0, JSON.stringify(short.ranges));
-    }
+    assert.equal(long.uncheckedAfterHalt, undefined);
+    assert.equal(flagsAt(long.ranges as Array<{ start: string; end: string; flags: number }>, 0x9102), 0, JSON.stringify(long.ranges));
 
     // Refusals: the ROM takes no write, and both text and keys.
     assert.match(await refusal("memory_write", { address: "$0000", data: "00" }), /ROM/);
@@ -581,6 +573,46 @@ test("the instruction after a $76 that is no HALT is an execution after a pc wri
     assert.equal((await call("autostart", { path: "wait.z80" })).state, "running");
     await new Promise((resolve) => setTimeout(resolve, 300));
     assert.deepEqual([(await call("execution", { action: "pause" })).waitsForInterrupt, { ...(await call("registers", { action: "read" })), r: 0 }], [true, { ...waiting, r: 0 }]);
+  } finally {
+    await client.close();
+    await host.stop();
+  }
+});
+
+test("a breakpoint at the PC of a snapshot stops the first run before its first instruction, and one memmap read after a long run keeps a mark after a HALT that only the start of the run executed", { skip, timeout: 180_000 }, async () => {
+  const host = await startHost({ ...process.env, C64RT_ZESARUX: zesarux! });
+  const { client } = await startMcp(host.address, { args: ["--machine", "spectrum"], cwd: project });
+  try {
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
+      assert.notEqual(result.isError, true, `${name}: ${(result.content[0] as { text: string }).text}`);
+      return json(result);
+    };
+    const start = `$${COUNTER_START.toString(16)}`;
+    const point = ((await call("breakpoint", { action: "add", address: start })).points as Array<{ id: number }>)[0]!.id;
+    await call("timing", { action: "start" });
+    const loaded = await call("autostart", { path: "counter.z80" });
+    assert.deepEqual([loaded.state, loaded.pc, loaded.stopReason, loaded.pointId], ["stopped", start, "breakpoint", point]);
+    assert.equal((await call("timing", { action: "read" })).tstates, 0);
+    await call("breakpoint", { action: "remove", id: point });
+
+    // EI ; LD B,10 ; HALT ; DJNZ $9403 ; HALT ; JR $9406: the DJNZ after the first HALT runs only in the first 10 frames.
+    await call("memory_write", { address: "$9400", data: "fb060a7610fd7618fd" });
+    await call("registers", { action: "write", values: { pc: "$9400", im: 1 } });
+    await call("memmap", { action: "clear" });
+    await call("execution", { action: "advance-frames", count: 150 });
+    const map = await call("memmap", { action: "read" });
+    const ranges = map.ranges as Array<{ start: string; end: string; flags: number }>;
+    assert.deepEqual([map.uncheckedAfterHalt, flagsAt(ranges, 0x9404) & 4, flagsAt(ranges, 0x9407) & 4], [undefined, 4, 4]);
+
+    // A restore in the HALT wait: a breakpoint at the $76 stops the first run in the wait.
+    assert.equal((await call("run_until", { address: "$9406" })).reached, true);
+    assert.equal((await call("execution", { action: "step", count: 1 })).waitsForInterrupt, true);
+    await call("snapshot", { action: "save", name: "wait" });
+    const halt = ((await call("breakpoint", { action: "add", address: "$9406" })).points as Array<{ id: number }>)[0]!.id;
+    await call("snapshot", { action: "restore", name: "wait" });
+    const stopped = await call("execution", { action: "advance-frames", count: 1 });
+    assert.deepEqual([stopped.pc, stopped.stopReason, stopped.pointId, stopped.waitsForInterrupt], ["$9407", "breakpoint", halt, true]);
   } finally {
     await client.close();
     await host.stop();

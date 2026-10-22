@@ -39,6 +39,18 @@
 // instruction is about to execute after the interrupt. A run that stops at a
 // breakpoint or a target while the CPU waits in the HALT before it goes on.
 //
+// ZEsarUX examines the breakpoints after each pass of its CPU loop, and a
+// pass executes an instruction (unless it waits for the real time at the end
+// of a frame). So a point at the PC where a run starts does not fire before
+// that instruction. The session stops such a run itself, with no command
+// that runs the CPU: run_until to the PC of now, and the first run after a
+// load or a restore of a snapshot with a breakpoint at its PC (#loadStart).
+//
+// The CPU history keeps the last 1000000 entries, about 50 frames. The
+// session examines the marks after a HALT while the history still has the
+// entries of the coverage window: a long run stops when #checkLeft tells it
+// for a check of the coverage, and then goes on.
+//
 // The coverage comes from ZEsarUX's code coverage (the address of each
 // executed instruction) and its visual memory of written addresses. The
 // visual memory of reads is no CPU evidence: the CPU history reads the bytes
@@ -362,6 +374,23 @@ export class ZesaruxSession implements SessionHandle {
    * and the entry before it (the last wait cycle) has R lastR.
    */
   #haltEnds: HaltEnd[] = [];
+  /**
+   * The PC of a snapshot that a load or a restore gave, until the CPU runs
+   * or steps: the first run stops at once at a breakpoint there, before the
+   * first instruction. When the CPU waits in a HALT, a breakpoint at the
+   * HALT stops it so.
+   */
+  #loadStart: number | undefined;
+  /**
+   * The executed addresses since the last drain that a checkpoint found
+   * true: no HALT opcode was before them. The next drain takes their marks
+   * with no examination, as a drain at the checkpoint did.
+   */
+  readonly #decided = new Set<number>();
+  /** The most entries that the CPU history keeps: undefined until the session asks ZEsarUX. */
+  #historyMaxValue: number | undefined;
+  /** True when the CPU history was full at the last question: it stays full until a load empties it. */
+  #historyFull = false;
   /** The keys that are down, and the Kempston joystick: the nine values of set-ui-io-ports. */
   readonly #rows = new Array<number>(8).fill(0xff);
   #joystick = 0;
@@ -502,7 +531,9 @@ export class ZesaruxSession implements SessionHandle {
 
   /** Adds the partial t-state counter of ZEsarUX to the clock of the session and sets the counter to zero. */
   async #settleClock(): Promise<void> {
-    this.#elapsed += await this.#partialTstates();
+    const partial = await this.#partialTstates();
+    if (partial === 0) return;
+    this.#elapsed += partial;
     await this.#zrcp("reset-tstates-partial");
   }
 
@@ -562,16 +593,28 @@ export class ZesaruxSession implements SessionHandle {
   async #runFor(frames: number): Promise<SpectrumStop> {
     await this.#settleClock();
     const now = this.#elapsed;
+    const early = await this.#stopsAtOnce(this.#target);
+    if (early !== undefined) return early;
     const start = this.#frameEnd !== undefined && this.#frameEnd.stoppedAt === now ? this.#frameEnd.planned : now;
     const planned = start + frames * FRAME_TSTATES[this.#model];
     this.#frameEnd = undefined;
-    await this.#zrcp(`set-breakpoint ${FRAMES_SLOT} TSTATESP>=${planned - now}`);
     try {
       await this.#stepMode();
       const limitMs = frames * FRAME_MS * RUN_SLACK + RUN_EXTRA_MS;
       const deadline = performance.now() + limitMs;
-      // A stop in the HALT wait before a breakpoint or the target is no stop: the run goes on, and the frame breakpoint stays as it is.
+      // The frame slot ends a part of the run: the end of the frames, or a drain of the coverage after which the run goes on.
+      let part: { tstates: number; last: boolean } | undefined;
       for (;;) {
+        if (part === undefined) {
+          await this.#settleClock();
+          const left = planned - this.#elapsed;
+          // After a drain the CPU can be at the end of the frames already.
+          if (left <= 0) return this.#framesEnd(planned, (await this.#cpu()).pc);
+          const check = await this.#checkLeft();
+          part = { tstates: Math.min(left, check), last: left <= check };
+          await this.#zrcp(`set-breakpoint ${FRAMES_SLOT} TSTATESP>=${part.tstates}`);
+        }
+        // A stop in the HALT wait before a breakpoint or the target is no stop: the run goes on, and the frame slot stays as it is.
         const running = this.#runCommand();
         let timer: ReturnType<typeof setTimeout> | undefined;
         const late = new Promise<undefined>((resolve) => {
@@ -590,16 +633,81 @@ export class ZesaruxSession implements SessionHandle {
         }
         const stop = this.#stopOf(this.#ran(output));
         if (await this.#inHaltWait(stop)) continue;
-        this.#stop = stop;
         if (stop.reason === "frames") {
+          if (part.last) return this.#framesEnd(planned, stop.pc);
           await this.#settleClock();
-          this.#frameEnd = { planned, stoppedAt: this.#elapsed };
+          await this.#checkpoint();
+          part = undefined;
+          continue;
         }
+        this.#stop = stop;
         return this.#shownStopAt(stop.pc);
       }
     } finally {
       if (this.#lost === undefined) await this.#zrcp(`set-breakpoint ${FRAMES_SLOT}`);
     }
+  }
+
+  /** The stop at `pc` at the end of a run of frames that was planned to end at session time `planned`. */
+  async #framesEnd(planned: number, pc: number): Promise<SpectrumStop> {
+    await this.#settleClock();
+    this.#frameEnd = { planned, stoppedAt: this.#elapsed };
+    this.#stop = { pc, reason: "frames" };
+    return this.#shownStopAt(pc);
+  }
+
+  /**
+   * The t-states that the CPU can run before the session drains the
+   * coverage: the CPU history must still have the entries of the coverage
+   * window then. When the window is that long already, the session drains
+   * the coverage first.
+   */
+  async #checkLeft(): Promise<number> {
+    // Each entry takes at least 4 t-states; the copies at the stops and at the ends of the frames need the rest. A run part is one frame or more.
+    const check = Math.max(FRAME_TSTATES[this.#model], Math.floor((await this.#historyMax()) * 0.8) * 4);
+    const age = this.#elapsed + (await this.#partialTstates()) - this.#coverageSince.tstates;
+    if (age < check && age >= 0) return check - age;
+    await this.#checkpoint();
+    return check;
+  }
+
+  /** The most entries that the CPU history keeps (1000000 when ZEsarUX does not tell it). */
+  async #historyMax(): Promise<number> {
+    if (this.#historyMaxValue === undefined) {
+      const max = Number(await this.#zrcp("cpu-history get-max-size"));
+      this.#historyMaxValue = Number.isInteger(max) && max > 0 ? max : 1_000_000;
+    }
+    return this.#historyMaxValue;
+  }
+
+  /**
+   * The stop of a run that ends before the CPU executes an instruction, or
+   * undefined: a run_until target at the PC of now, and the first run after
+   * a load or a restore at a breakpoint at the PC of the snapshot (#loadStart).
+   * In a HALT wait, the instruction at the PC is not about to execute: then
+   * a target there does not stop at once, and a breakpoint at the HALT does.
+   */
+  async #stopsAtOnce(target?: number): Promise<SpectrumStop | undefined> {
+    const start = this.#loadStart;
+    this.#loadStart = undefined;
+    if (target === undefined && start === undefined) return undefined;
+    const pc = (await this.#cpu()).pc;
+    if (target !== pc && start !== pc) return undefined;
+    const halted = await this.#halted();
+    let stop: SpectrumStop["stopReason"] | undefined;
+    let pointId: number | undefined;
+    if (target === pc && !halted) stop = "target";
+    else if (start === pc) {
+      const at = halted ? (pc - 1) & 0xffff : pc;
+      const point = [...this.#points.values()].find((item) => item.kind === "breakpoint" && item.enabled && item.start === at);
+      if (point !== undefined) {
+        stop = "breakpoint";
+        pointId = point.id;
+      }
+    }
+    if (stop === undefined) return undefined;
+    this.#stop = { pc, reason: stop, ...(pointId === undefined ? {} : { pointId }) };
+    return { state: "stopped", pc, ...this.#shownStop(), ...(halted ? { waitsForInterrupt: true } : {}) };
   }
 
   /**
@@ -616,6 +724,7 @@ export class ZesaruxSession implements SessionHandle {
   /** One ZRCP run command: it answers when the CPU stops. */
   async #runCommand(): Promise<string> {
     this.#runs++;
+    this.#loadStart = undefined;
     this.#partial = undefined;
     this.#inRun = true;
     try {
@@ -667,10 +776,14 @@ export class ZesaruxSession implements SessionHandle {
     if (params.action === "resume") {
       this.#requireStopped();
       await this.#settleClock();
+      const early = await this.#stopsAtOnce();
+      if (early !== undefined) return early;
       await this.#stepMode();
       this.#stop = {};
       this.#frameEnd = undefined;
       this.#pausing = false;
+      // The frame slot stops the run for a drain of the coverage.
+      await this.#zrcp(`set-breakpoint ${FRAMES_SLOT} TSTATESP>=${await this.#checkLeft()}`);
       // The run command answers when a breakpoint fires or pause sends data. Its first line tells that it runs.
       const running = this.#runCommand();
       const first = await Promise.race([running, new Promise<undefined>((resolve) => setTimeout(resolve, 100))]);
@@ -678,14 +791,25 @@ export class ZesaruxSession implements SessionHandle {
       this.#state = "running";
       // The stop of the run, and true when a breakpoint or a watchpoint stopped it.
       const ended = (async (): Promise<{ stop: RunEnd; fired: boolean }> => {
-        let output = await running;
-        for (;;) {
-          const stop = this.#stopOf(output);
-          if (this.#pausing || !/Breakpoint fired/.test(output)) return { stop, fired: false };
-          if (!(await this.#inHaltWait(stop))) return { stop, fired: true };
-          // A stop in the HALT wait before a breakpoint is no stop: the run goes on, unless pause came in the meantime.
-          if (this.#pausing) return { stop: { pc: stop.pc }, fired: false };
-          output = await this.#runCommand();
+        try {
+          let output = await running;
+          for (;;) {
+            const stop = this.#stopOf(output);
+            if (this.#pausing || !/Breakpoint fired/.test(output)) return { stop: stop.reason === "frames" ? { pc: stop.pc } : stop, fired: false };
+            if (stop.reason === "frames") {
+              // A stop for a drain of the coverage is no stop: the run goes on.
+              await this.#settleClock();
+              await this.#checkpoint();
+              await this.#zrcp(`set-breakpoint ${FRAMES_SLOT} TSTATESP>=${await this.#checkLeft()}`);
+            } else if (!(await this.#inHaltWait(stop))) {
+              return { stop, fired: true };
+            }
+            // A stop in the HALT wait before a breakpoint is no stop: the run goes on, unless pause came in the meantime.
+            if (this.#pausing) return { stop: { pc: stop.pc }, fired: false };
+            output = await this.#runCommand();
+          }
+        } finally {
+          if (this.#lost === undefined && !this.#zesarux.zrcp.closed) await this.#zrcp(`set-breakpoint ${FRAMES_SLOT}`).catch(() => "");
         }
       })();
       const run: Promise<RunEnd | Error> = ended.then(
@@ -704,6 +828,7 @@ export class ZesaruxSession implements SessionHandle {
     }
     this.#requireStopped();
     if (params.action === "step") {
+      this.#loadStart = undefined;
       let output = "";
       for (let index = 0; index < (params.count ?? 1); index++) output = await this.#zrcp("cpu-step");
       const pc = this.#seen(parseRegisters(output)).pc;
@@ -736,6 +861,7 @@ export class ZesaruxSession implements SessionHandle {
     this.#stop = {};
     this.#frameEnd = undefined;
     this.#imOne = false;
+    this.#loadStart = undefined;
     const pc = parseRegisters(await this.#zrcp("get-registers")).pc;
     if (params.run) return this.#execution({ action: "resume" });
     return { state: "stopped", pc };
@@ -785,6 +911,8 @@ export class ZesaruxSession implements SessionHandle {
    */
   async #afterLoad(): Promise<void> {
     this.#imOne = false;
+    this.#loadStart = undefined;
+    this.#historyFull = false;
     await this.#zrcp("enable-breakpoints");
     await this.#zrcp("cpu-history enabled yes");
     await this.#zrcp("cpu-history started yes");
@@ -1278,11 +1406,34 @@ export class ZesaruxSession implements SessionHandle {
       else this.#uncheckedAfterHalt.delete(address);
     }
     for (const address of written) if (address >= ROM_END) this.#coverage[address]! |= COVERAGE.ramWrite;
+    this.#decided.clear();
+    await this.#coverageStarts();
+  }
+
+  /**
+   * Ends the window for the examination of the marks after a HALT while the
+   * CPU history still has its entries: a long run does this each
+   * time that #checkLeft gives. When no new mark is after a HALT opcode, the
+   * marks are true, and a new window starts with no drain (a drain takes
+   * more ZRCP commands). Else it drains the coverage.
+   */
+  async #checkpoint(): Promise<void> {
+    const executed = codeCoverageAddresses(await this.#zrcp("cpu-code-coverage get"));
+    const byteAt = this.#byteReader();
+    const fresh = executed.filter((address) => !this.#decided.has(address) && ((this.#coverage[address]! & EXECUTE) === 0 || this.#uncheckedAfterHalt.has(address)));
+    for (const address of fresh) {
+      if ((await byteAt((address - 1) & 0xffff)) === HALT) {
+        await this.#drainCoverage();
+        return;
+      }
+    }
+    for (const address of fresh) this.#decided.add(address);
     await this.#coverageStarts();
   }
 
   /** Forgets the executed instructions and the written addresses since the last drain: a load or a tool did them, not the CPU. */
   async #discardCoverage(): Promise<void> {
+    this.#decided.clear();
     await this.#zrcp("cpu-code-coverage clear");
     await this.#zrcp("get-visualmem-written-dump");
     await this.#coverageStarts();
@@ -1290,8 +1441,10 @@ export class ZesaruxSession implements SessionHandle {
 
   /** Keeps where the coverage that ZEsarUX keeps now starts. */
   async #coverageStarts(): Promise<void> {
-    const historySize = Number(await this.#zrcp("cpu-history get-size"));
-    this.#coverageSince = { tstates: this.#elapsed + (await this.#partialTstates()), runs: this.#runs, ...(Number.isInteger(historySize) ? { historySize } : {}) };
+    // The size of a full history tells nothing about the window, and the question takes a ZRCP command with output.
+    const historySize = this.#historyFull ? Number.NaN : Number(await this.#zrcp("cpu-history get-size"));
+    if (Number.isInteger(historySize) && historySize >= (await this.#historyMax())) this.#historyFull = true;
+    this.#coverageSince = { tstates: this.#elapsed + (await this.#partialTstates()), runs: this.#runs, ...(Number.isInteger(historySize) && !this.#historyFull ? { historySize } : {}) };
   }
 
   /**
@@ -1310,7 +1463,7 @@ export class ZesaruxSession implements SessionHandle {
     const byteAt = this.#byteReader();
     const open = new Set<number>();
     for (const address of executed) {
-      if ((this.#coverage[address]! & EXECUTE) !== 0 && !this.#uncheckedAfterHalt.has(address)) continue;
+      if (this.#decided.has(address) || ((this.#coverage[address]! & EXECUTE) !== 0 && !this.#uncheckedAfterHalt.has(address))) continue;
       if ((await byteAt((address - 1) & 0xffff)) === HALT) open.add(address);
     }
     if (open.size === 0) return { only, unchecked };
@@ -1543,6 +1696,7 @@ export class ZesaruxSession implements SessionHandle {
     this.#stop = {};
     this.#frameEnd = undefined;
     if (media.border !== undefined) await this.#setBorder(media.border);
+    if (!(SPECTRUM_TAPES as readonly string[]).includes(params.type)) this.#loadStart = (await this.#cpu()).pc;
     if (params.run === false) return { ...(await this.#shownStopAt(parseRegisters(await this.#zrcp("get-registers")).pc)), model: this.#model };
     return { ...(await this.#execution({ action: "resume" })), model: this.#model };
   }
@@ -1603,6 +1757,7 @@ export class ZesaruxSession implements SessionHandle {
     await this.#zrcp(`snapshot-save ${backup}`);
     try {
       await this.#loadSnapshot(file, saved);
+      this.#loadStart = (await this.#cpu()).pc;
     } catch (error) {
       if (this.#lost === undefined) {
         this.#log(`the restore failed, so the Spectrum session loads the state of before it again: ${error instanceof Error ? error.message : String(error)}`);

@@ -468,9 +468,9 @@ test("one read checks a mark after a HALT over a long window: a real execution o
 });
 
 test("the memmap names a mark after a HALT when the full history has no real execution and no start of the wait, until a check or a clear", async () => {
-  // The history keeps 4 entries: a run of 20 frames fills it with wait cycles.
+  // The history keeps 4 entries: each run fills it with wait cycles. The session drains the coverage after each frame then, as the history keeps less than one frame.
   const wait = [cycle(4), cycle(3), cycle(2), cycle(1)];
-  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { ran: ["8002"], historyMax: 4, runs: [wait, wait, wait], steps: [IRQ, REAL], memory: { 0x8001: 0x76 } });
+  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { ran: ["8002"], historyMax: 4, runs: new Array<string[]>(60).fill(wait), steps: [IRQ, REAL], memory: { 0x8001: 0x76 } });
   const session = await ZesaruxSession.open(zesarux, "spectrum48");
   try {
     await session.handle("memmap", { action: "clear" });
@@ -531,6 +531,98 @@ test("autostart with run false loads a snapshot and runs no instruction: the CPU
     assert.equal(((await session.handle("status", {})) as { state: string }).state, "stopped");
     // Without run false, the snapshot runs.
     assert.equal(((await session.handle("autostart", { type: "zsf" }, [ZSF])) as { state: string }).state, "running");
+  } finally {
+    await session.close();
+  }
+});
+
+test("a breakpoint at the PC of a loaded snapshot stops the first run before the first instruction, after an autostart and a restore; in a HALT wait a breakpoint at the HALT does", async () => {
+  // The PC of the stand-in is $11dc.
+  const { zesarux, commands, cpu } = await standInZesarux("ZX Spectrum 48k", { memory: { 0x11db: 0x76 } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  const runs = () => commands.filter((command) => command === "run" || command === "cpu-step").length;
+  try {
+    const id = ((await session.handle("breakpoint", { action: "add", address: 0x11dc })) as { points: Array<{ id: number }> }).points[0]!.id;
+    await session.handle("timing", { action: "start" });
+    commands.length = 0;
+    assert.deepEqual(await session.handle("autostart", { type: "zsf" }, [ZSF]), { state: "stopped", pc: 0x11dc, stopReason: "breakpoint", pointId: id, model: "48k" });
+    assert.equal(runs(), 0, commands.join("\n"));
+    assert.deepEqual(await session.handle("execution", { action: "pause" }), { state: "stopped", pc: 0x11dc, stopReason: "breakpoint", pointId: id });
+    assert.equal(((await session.handle("timing", { action: "read" })) as { tstates: number }).tstates, 0);
+    // The next run executes the instruction at the breakpoint.
+    assert.equal(((await session.handle("execution", { action: "advance-frames", count: 1 })) as { stopReason: string }).stopReason, "frames");
+    assert.equal(runs(), 1);
+    await session.handle("snapshot", { action: "save", name: "start" });
+    commands.length = 0;
+    await session.handle("snapshot", { action: "restore", name: "start" });
+    assert.deepEqual(await session.handle("execution", { action: "advance-frames", count: 1 }), { state: "stopped", pc: 0x11dc, stopReason: "breakpoint", pointId: id });
+    assert.equal(runs(), 0, commands.join("\n"));
+    // A snapshot in a HALT wait: the instruction at the PC is not about to execute, so the run goes on; a breakpoint at the HALT stops it with the wait.
+    cpu.halted = true;
+    await session.handle("snapshot", { action: "save", name: "wait" });
+    await session.handle("snapshot", { action: "restore", name: "wait" });
+    assert.equal(((await session.handle("execution", { action: "advance-frames", count: 1 })) as { stopReason: string }).stopReason, "frames");
+    await session.handle("breakpoint", { action: "remove", id });
+    const halt = ((await session.handle("breakpoint", { action: "add", address: 0x11db })) as { points: Array<{ id: number }> }).points[0]!.id;
+    await session.handle("snapshot", { action: "restore", name: "wait" });
+    commands.length = 0;
+    assert.deepEqual(await session.handle("execution", { action: "resume" }), { state: "stopped", pc: 0x11dc, stopReason: "breakpoint", pointId: halt, waitsForInterrupt: true });
+    assert.equal(runs(), 0, commands.join("\n"));
+    // A tape starts from the ROM: the run goes on.
+    await session.handle("breakpoint", { action: "add", address: 0x11dc });
+    assert.equal(((await session.handle("autostart", { type: "tap" }, [tapeOf("")])) as { state: string }).state, "running");
+    await session.handle("execution", { action: "pause" });
+  } finally {
+    await session.close();
+  }
+});
+
+test("run_until to the PC of now stops at once with no t-states; in a HALT wait it runs to the instruction after the wait", async () => {
+  const { zesarux, commands, cpu } = await standInZesarux("ZX Spectrum 48k", { fires: ["PC=11DCH"], memory: { 0x11db: 0x76 } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    await session.handle("timing", { action: "start" });
+    commands.length = 0;
+    assert.deepEqual(await session.handle("runUntil", { address: 0x11dc, timeoutFrames: 5 }), { state: "stopped", pc: 0x11dc, stopReason: "target", reached: true });
+    assert.ok(!commands.includes("run"), commands.join("\n"));
+    assert.equal(((await session.handle("timing", { action: "read" })) as { tstates: number }).tstates, 0);
+    cpu.halted = true;
+    assert.equal(((await session.handle("runUntil", { address: 0x11dc, timeoutFrames: 5 })) as { reached: boolean }).reached, true);
+    assert.ok(commands.includes("run"), commands.join("\n"));
+  } finally {
+    await session.close();
+  }
+});
+
+test("a long run drains the coverage while the CPU history still has the window: one read keeps a mark after a HALT whose real execution only an early part of the run has", async () => {
+  // The history keeps 4 entries, less than one frame: a run part is one frame. Only the second frame executes the byte after the HALT.
+  const wait = [cycle(4), cycle(3), cycle(2), cycle(1)];
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k", { ran: ["8002"], historyMax: 4, runs: [wait, [REAL, RET, IRQ, cycle(1)], wait, wait], memory: { 0x8001: 0x76 } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    await session.handle("memmap", { action: "clear" });
+    commands.length = 0;
+    assert.deepEqual(await session.handle("execution", { action: "advance-frames", count: 4 }), { state: "stopped", pc: 0x11dc, stopReason: "frames" });
+    // Each part ends one frame later than the last, and the run ends where one run of 4 frames ends.
+    assert.deepEqual(commands.filter((command) => command.startsWith("set-breakpoint 100 ")), new Array(4).fill(`set-breakpoint 100 TSTATESP>=${69_888}`));
+    const read = (await session.handle("memmap", { action: "read" })) as MemmapRead;
+    assert.deepEqual([read.uncheckedAfterHalt, marked(read, 0x8002)], [undefined, true]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("a resume drains the coverage at each part of the history too, and pause ends it with stopReason pause", async () => {
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k", { ran: ["8002"], historyMax: 4, memory: { 0x8001: 0x76 } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    commands.length = 0;
+    assert.deepEqual(await session.handle("execution", { action: "resume" }), { state: "running" });
+    for (let wait = 0; wait < 50 && commands.filter((command) => command === "run").length < 3; wait++) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(await session.handle("execution", { action: "pause" }), { state: "stopped", pc: 0x11dc, stopReason: "pause" });
+    const runs = commands.flatMap((command, index) => (command === "run" ? [index] : []));
+    assert.ok(runs.length >= 3 && commands.slice(runs[0], runs[1]).includes("cpu-code-coverage get"), commands.join("\n"));
+    assert.equal(commands.filter((command) => command.startsWith("set-breakpoint 100")).at(-1), "set-breakpoint 100");
   } finally {
     await session.close();
   }
