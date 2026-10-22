@@ -1177,6 +1177,10 @@ export class ZesaruxSession implements SessionHandle {
    *
    * A .zsf that waits in a HALT loads with its PC on the HALT, and the CPU
    * executes the HALT again: so the CPU history has the HALT before its cycles.
+   *
+   * smartload in step mode executes nothing. The clock of the session does
+   * not count the load. With run false (a snapshot only), the CPU stays
+   * stopped at the PC of the snapshot.
    */
   async #autostart(params: SpectrumOperations["autostart"]["params"], bytes: Buffer): Promise<SpectrumOperations["autostart"]["result"]> {
     const media = checkMedia(params.type, bytes);
@@ -1184,6 +1188,7 @@ export class ZesaruxSession implements SessionHandle {
     const halted = params.type === "zsf" && zsfHalted(media.bytes);
     const file = join(this.#zesarux.scratch, `media.${params.type}`);
     writeFileSync(file, halted ? zsfOnHaltInstruction(media.bytes) : media.bytes);
+    await this.#settleClock();
     await this.#drainCoverage();
     if ((SPECTRUM_TAPES as readonly string[]).includes(params.type)) {
       const model = params.model ?? this.#startModel;
@@ -1201,6 +1206,7 @@ export class ZesaruxSession implements SessionHandle {
     if (answer.startsWith("Error")) throw new WireFailure("media-error", `ZEsarUX did not load the file: ${answer.split("\n")[0]}`);
     await this.#stepMode();
     await this.#followMachine();
+    await this.#zrcp("reset-tstates-partial");
     // The load wrote the memory, not the CPU.
     await this.#discardCoverage();
     await this.#afterLoad();
@@ -1208,6 +1214,7 @@ export class ZesaruxSession implements SessionHandle {
     this.#frameEnd = undefined;
     if (halted) await this.#enterHalt();
     if (media.border !== undefined) await this.#setBorder(media.border);
+    if (params.run === false) return { ...(await this.#shownStopAt(parseRegisters(await this.#zrcp("get-registers")).pc)), model: this.#model };
     return { ...(await this.#execution({ action: "resume" })), model: this.#model };
   }
 

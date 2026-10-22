@@ -141,9 +141,11 @@ export interface SpectrumOperations {
   /**
    * A tape runs on `model`, else on the model that the session started with.
    * A snapshot sets its own model and takes no `model`. The result gives the
-   * model after the load.
+   * model after the load. With `run` false (a snapshot only), the CPU
+   * executes nothing after the load: it stays stopped at the PC of the
+   * snapshot, and the clock of the session counts from there.
    */
-  autostart: { params: { type: SpectrumMediaType; model?: SpectrumModelName }; result: SpectrumStop & { model: SpectrumModelName } };
+  autostart: { params: { type: SpectrumMediaType; model?: SpectrumModelName; run?: boolean }; result: SpectrumStop & { model: SpectrumModelName } };
   programLoad: { params: { address: number }; result: { address: number; size: number } };
   snapshot: { params: { action: "save" | "restore" | "remove"; name: string } | { action: "list" }; result: { names: string[] } };
   snapshotExport: { params: Record<string, never>; result: { bytes: number } };
@@ -304,13 +306,18 @@ export function validateSpectrumParams<O extends SpectrumOperation>(op: O, param
     case "joystick":
       onlyFields(params, ["up", "down", "left", "right", "fire"]);
       return as({ up: bool(params.up, "up"), down: bool(params.down, "down"), left: bool(params.left, "left"), right: bool(params.right, "right"), fire: bool(params.fire, "fire") });
-    case "autostart":
-      onlyFields(params, ["type", "model"]);
+    case "autostart": {
+      onlyFields(params, ["type", "model", "run"]);
       if (!isOneOf(SPECTRUM_MEDIA, params.type)) invalid("type must be tap, tzx, z80, sna or zsf");
-      if (params.model === undefined) return as({ type: params.type });
+      if (params.run !== undefined && typeof params.run !== "boolean") invalid("run must be true or false");
+      const tape = isOneOf(SPECTRUM_TAPES, params.type);
+      if (params.run === false && tape) invalid(`run false is only for a snapshot (.z80, .sna, .zsf). A .${params.type} tape loads only while the CPU runs: give no run.`);
+      const run = params.run === false ? { run: false } : {};
+      if (params.model === undefined) return as({ type: params.type, ...run });
       if (!isOneOf(SPECTRUM_MODELS, params.model)) invalid("model must be 48k or 128k");
-      if (!isOneOf(SPECTRUM_TAPES, params.type)) invalid(`model is only for a tape (.tap, .tzx). A .${params.type} snapshot sets its own model: give no model.`);
+      if (!tape) invalid(`model is only for a tape (.tap, .tzx). A .${params.type} snapshot sets its own model: give no model.`);
       return as({ type: params.type, model: params.model });
+    }
     case "programLoad":
       onlyFields(params, ["address"]);
       return as({ address: address(params.address, "address") });

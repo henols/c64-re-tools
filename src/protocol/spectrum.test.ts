@@ -50,3 +50,10 @@ test("autostart takes a model for a tape only: a snapshot sets its own model", (
   assert.throws(() => validateSpectrumParams("autostart", { type: "z80", model: "48k" }), refused(/model is only for a tape.*\.z80 snapshot sets its own model/));
   assert.throws(() => validateSpectrumParams("autostart", { type: "tap", model: "+3" }), refused(/model must be 48k or 128k/));
 });
+
+test("autostart takes run false for a snapshot only: a tape loads only while the CPU runs", () => {
+  assert.deepEqual(validateSpectrumParams("autostart", { type: "z80", run: false }), { type: "z80", run: false });
+  assert.deepEqual(validateSpectrumParams("autostart", { type: "z80", run: true }), { type: "z80" });
+  assert.throws(() => validateSpectrumParams("autostart", { type: "tzx", run: false }), refused(/run false is only for a snapshot.*\.tzx tape loads only while the CPU runs/));
+  assert.throws(() => validateSpectrumParams("autostart", { type: "sna", run: 0 }), refused(/run must be true or false/));
+});

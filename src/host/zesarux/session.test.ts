@@ -125,7 +125,7 @@ async function standInZesarux(
     const [command = "", ...rest] = line.split(" ");
     const argument = rest.join(" ");
     if (command === "get-current-machine") return machine;
-    if (command === "smartload") {
+    if (command === "smartload" && argument.endsWith(".tap")) {
       const tape = readFileSync(argument);
       machine = tape.subarray(3, tape.length - 1).toString("latin1") || machine;
     }
@@ -420,3 +420,24 @@ test("the memmap names each mark after a HALT that it could not check, until a c
   }
 });
 
+/** A .zsf as ZEsarUX writes it, with a machine block and no HALT. */
+const ZSF = Buffer.from([...Buffer.from("ZSF ZEsarUX Snapshot File.", "latin1"), 1, 0, 1, 0, 0, 0, 1]);
+
+test("autostart with run false loads a snapshot and runs no instruction: the CPU stays at the PC of the snapshot, and the clock counts from there", async () => {
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k");
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    await session.handle("execution", { action: "advance-frames", count: 1 });
+    const before = ((await session.handle("timing", { action: "read" })) as { tstates: number }).tstates;
+    commands.length = 0;
+    assert.deepEqual(await session.handle("autostart", { type: "zsf", run: false }, [ZSF]), { state: "stopped", pc: 0x11dc, model: "48k" });
+    const load = commands.findIndex((command) => command.startsWith("smartload "));
+    assert.ok(load >= 0 && !commands.slice(load).some((command) => command === "run" || command === "cpu-step"), commands.join("\n"));
+    assert.equal(((await session.handle("timing", { action: "read" })) as { tstates: number }).tstates, before);
+    assert.equal(((await session.handle("status", {})) as { state: string }).state, "stopped");
+    // Without run false, the snapshot runs.
+    assert.equal(((await session.handle("autostart", { type: "zsf" }, [ZSF])) as { state: string }).state, "running");
+  } finally {
+    await session.close();
+  }
+});

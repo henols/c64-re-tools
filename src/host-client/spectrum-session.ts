@@ -102,15 +102,18 @@ export class SpectrumSessionClient extends HostSession {
     return attachments[0]!;
   }
 
-  /** Loads a project tape or snapshot and runs it; a tape runs on `model` when it is given. `root` is the project folder; it stays on this side. */
-  async autostart(params: { path: string; root?: string; model?: Params<"autostart">["model"] }): Promise<Result<"autostart">> {
+  /**
+   * Loads a project tape or snapshot and runs it; a tape runs on `model` when it is given. With `run` false
+   * (a snapshot only), the CPU stays stopped at the PC of the snapshot. `root` is the project folder; it stays on this side.
+   */
+  async autostart(params: { path: string; root?: string; model?: Params<"autostart">["model"]; run?: boolean }): Promise<Result<"autostart">> {
     const file = readProjectFile(params.path, params.root === undefined ? { what: "path" } : { root: params.root, what: "path" });
-    return this.autostartBytes({ type: file.type as Params<"autostart">["type"], bytes: file.bytes, ...(params.model === undefined ? {} : { model: params.model }) });
+    return this.autostartBytes({ type: file.type as Params<"autostart">["type"], bytes: file.bytes, ...(params.model === undefined ? {} : { model: params.model }), ...(params.run === undefined ? {} : { run: params.run }) });
   }
 
   /** Loads the bytes of a tape or snapshot of the given type and runs them, as autostart does with a file. */
-  autostartBytes(params: { type: Params<"autostart">["type"]; bytes: Uint8Array; model?: Params<"autostart">["model"] }): Promise<Result<"autostart">> {
-    return this.#call("autostart", { type: params.type, ...(params.model === undefined ? {} : { model: params.model }) }, [params.bytes]);
+  autostartBytes(params: { type: Params<"autostart">["type"]; bytes: Uint8Array; model?: Params<"autostart">["model"]; run?: boolean }): Promise<Result<"autostart">> {
+    return this.#call("autostart", { type: params.type, ...(params.model === undefined ? {} : { model: params.model }), ...(params.run === undefined ? {} : { run: params.run }) }, [params.bytes]);
   }
 
   /** Puts the bytes of a project file into memory at `address`. */

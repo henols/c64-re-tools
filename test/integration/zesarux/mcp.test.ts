@@ -11,6 +11,7 @@ import { after, test } from "node:test";
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+import { SpectrumSessionClient } from "../../../src/host-client/spectrum-session.ts";
 import { readZ80, writeZ80 } from "../../../src/spectrum.ts";
 import { COUNT, COUNTER_START, FRAMES_SEEN, HALT_AT, keyboardCounterRam, keyboardCounterSnapshot, PRESSES } from "../../fixtures/z80/keyboard-counter.ts";
 import { startMcp } from "../../kit.ts";
@@ -59,10 +60,10 @@ after(async () => {
 });
 
 const json = (result: CallToolResult) => JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
-
 /** The flags of an address in the ranges of a memmap read. */
 const flagsAt = (ranges: Array<{ start: string; end: string; flags: number }>, address: number) =>
   ranges.find((range) => Number.parseInt(range.start.slice(1), 16) <= address && Number.parseInt(range.end.slice(1), 16) >= address)?.flags ?? 0;
+
 test("the spectrum MCP server runs, stops, steps and reads a Spectrum on ZEsarUX", { skip, timeout: 120_000 }, async () => {
   const host = await startHost({ ...process.env, C64RT_ZESARUX: zesarux! });
   const { client } = await startMcp(host.address, { args: ["--machine", "spectrum"], cwd: project });
@@ -306,7 +307,6 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     assert.equal(flags(0x9200), 0, "the write of the tool is not in the map");
     assert.ok(ranges.every((range) => (range.flags & (1 | 8)) === 0), "no reads");
 
-    // Refusals: the ROM takes no write, and both text and keys.
     // DI and HALT: the wait never ends. After 20 frames the map cannot check the mark after the HALT, and names it.
     await call("memory_write", { address: "$9100", data: "f376" });
     await call("registers", { action: "write", values: { pc: "$9100" } });
@@ -324,6 +324,7 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
       assert.equal(flagsAt(short.ranges as Array<{ start: string; end: string; flags: number }>, 0x9102), 0, JSON.stringify(short.ranges));
     }
 
+    // Refusals: the ROM takes no write, and both text and keys.
     assert.match(await refusal("memory_write", { address: "$0000", data: "00" }), /ROM/);
     assert.match(await refusal("program_load", { path: "bytes.bin", address: "$0100" }), /ROM/);
     assert.match(await refusal("keyboard", { text: "a", keys: ["a"] }), /not both/);
@@ -413,6 +414,31 @@ test("a 48K session that loads a 128K snapshot runs as a 128K: autostart and ula
     assert.equal((await call("autostart", { path: "counter128.z80" })).model, "128k");
   } finally {
     await client.close();
+    await host.stop();
+  }
+});
+
+test("autostart with run false of the session client keeps the CPU at the PC of the snapshot, and no t-states pass", { skip, timeout: 120_000 }, async () => {
+  const host = await startHost({ ...process.env, C64RT_ZESARUX: zesarux! });
+  const session = await SpectrumSessionClient.open({ machine: "spectrum48", env: { ...process.env, C64RT_HOST: host.address } });
+  try {
+    await session.timing({ action: "start" });
+    assert.deepEqual(await session.autostartBytes({ type: "z80", bytes: keyboardCounterSnapshot(), run: false }), { state: "stopped", pc: COUNTER_START, model: "48k" });
+    assert.equal((await session.timing({ action: "read" })).tstates, 0);
+    // The CPU stays stopped also after some real time.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal((await session.registersGet()).pc, COUNTER_START);
+    assert.equal((await session.timing({ action: "read" })).tstates, 0);
+    // The frames count from the PC of the snapshot.
+    assert.equal((await session.execution({ action: "advance-frames", count: 1 })).stopReason, "frames");
+    assert.ok(Math.abs((await session.timing({ action: "read" })).tstates - 69_888) < 32);
+    const refused = await session.autostartBytes({ type: "tap", bytes: Uint8Array.from([0]), run: false }).then(
+      () => "",
+      (error: unknown) => String(error),
+    );
+    assert.match(refused, /run false is only for a snapshot/);
+  } finally {
+    await session.close();
     await host.stop();
   }
 });
