@@ -226,14 +226,16 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     assert.ok(((await call("timing", { action: "read" })).tstates as number) > 1000, "the CPU ran");
 
     // A restore keeps IM 1, turns no point off, and timed runs go on.
-    assert.equal((await call("registers", { action: "read" })).im, 1);
+    const saved = await call("registers", { action: "read" });
+    assert.equal(saved.im, 1);
     await call("snapshot", { action: "save", name: "im1" });
+    // The IM instruction of a write takes 8 t-states: timing counts them, and R increases by 2.
+    await call("timing", { action: "start" });
     await call("registers", { action: "write", values: { im: 2 } });
-    assert.equal((await call("registers", { action: "read" })).im, 2);
-    const before = await call("registers", { action: "read" });
+    const written = await call("registers", { action: "read" });
+    assert.deepEqual([written.im, written.r, (await call("timing", { action: "read" })).tstates], [2, ((saved.r as number) & 0x80) | (((saved.r as number) + 2) & 0x7f), 8]);
     assert.deepEqual((await call("snapshot", { action: "restore", name: "im1" })).names, ["im1"]);
-    const restored = await call("registers", { action: "read" });
-    assert.deepEqual(restored, { ...before, im: 1 });
+    assert.deepEqual(await call("registers", { action: "read" }), saved);
     const again = await call("execution", { action: "advance-frames", count: 3 });
     assert.deepEqual([again.stopReason, again.pointId], ["breakpoint", id]);
     assert.deepEqual((await call("breakpoint", { action: "remove", id })).points, []);
@@ -254,6 +256,11 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     await call("execution", { action: "advance-frames", count: 1 });
     await call("snapshot", { action: "restore", name: "halted" });
     assert.deepEqual(await call("registers", { action: "read" }), halted);
+    // The restore starts the frame at its first t-state: the interrupt comes after one frame, and IM 1 takes 13 t-states to $0038.
+    await call("timing", { action: "start" });
+    assert.equal((await call("run_until", { address: "$0038", timeoutFrames: 2 })).reached, true);
+    assert.equal((await call("timing", { action: "read" })).tstates, 69_888 + 13);
+    await call("snapshot", { action: "restore", name: "halted" });
     // A breakpoint and a target on the byte after the HALT do not stop in the wait: they stop after the interrupt, before JP.
     const afterHalt = `$${(HALT_AT + 1).toString(16)}`;
     const woken = (await call("breakpoint", { action: "add", address: afterHalt })) as { points: Array<{ id: number }> };
@@ -274,14 +281,18 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     const r = halted.r as number;
     assert.deepEqual([cycled.pc, cycled.r, (await call("timing", { action: "read" })).tstates], [halted.pc, (r & 0x80) | ((r + 5) & 0x7f), 20]);
     const haltAt = `$${HALT_AT.toString(16)}`;
-    assert.deepEqual((await call("cpu_history", { count: 6 })).pcs, [haltAt, haltAt, haltAt, haltAt, haltAt, haltAt]);
+    // A load empties the history: it has only the five cycles.
+    assert.deepEqual((await call("cpu_history", { count: 6 })).pcs, [haltAt, haltAt, haltAt, haltAt, haltAt]);
     const marked = (await call("memmap", { action: "read" })).ranges as Array<{ start: string; end: string; flags: number }>;
     assert.equal(flagsAt(marked, HALT_AT + 1), 0, JSON.stringify(marked));
     // A pc write ends the HALT: the CPU executes from the new pc, also with the interrupts off.
     await call("snapshot", { action: "save", name: "halted" });
     const waiting = await call("registers", { action: "read" });
+    // The NMI that ends the wait takes 15 t-states: timing counts them, and R increases by 2.
+    await call("timing", { action: "start" });
     const moved = await call("registers", { action: "write", values: { pc: "$801f", iff1: false, iff2: false } });
-    assert.deepEqual([moved.pc, moved.waitsForInterrupt, moved.sp, moved.r], ["$801f", false, waiting.sp, waiting.r]);
+    const r2 = ((waiting.r as number) & 0x80) | (((waiting.r as number) + 2) & 0x7f);
+    assert.deepEqual([moved.pc, moved.waitsForInterrupt, moved.sp, moved.r, (await call("timing", { action: "read" })).tstates], ["$801f", false, waiting.sp, r2, 15]);
     assert.equal((await call("execution", { action: "step", count: 1 })).pc, "$8022");
     await call("snapshot", { action: "restore", name: "halted" });
     assert.match(await refusal("registers", { action: "write", values: { im: 2 } }), /Write pc in the same call/);

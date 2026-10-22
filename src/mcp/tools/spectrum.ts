@@ -220,8 +220,8 @@ const registersTool = defineTool<z.ZodObject, z.ZodObject, Session>({
   description:
     "Read or write the Z80 registers. The result gives each 16-bit register as $ and four hex digits. It gives i, r and im as numbers, and iff1 and iff2 as true or false. " +
     `Action write sets the registers in values: ${Z80_WRITABLE.join(", ")}. af2 to hl2 are the other set, AF' to HL'. A 16-bit value is $ and 1 to 4 hex digits, or a number. ` +
-    "waitsForInterrupt true: the CPU executed opcode $76 and waits for an interrupt. Then pc is the address after the $76, and cpu_history gives the address of the $76. The CPU executes the byte at pc only after the interrupt. A write of pc ends the wait: the CPU then executes from the new pc. To end the wait, the CPU accepts one NMI: 15 t-states pass in the frame. " +
-    "To set im, the CPU runs one IM instruction: 8 t-states pass in the frame. When the CPU waits for an interrupt, write pc in the same call as im. The CPU must be stopped.",
+    "waitsForInterrupt true: the CPU executed opcode $76 and waits for an interrupt. Then pc is the address after the $76, and cpu_history gives the address of the $76. The CPU executes the byte at pc only after the interrupt. A write of pc ends the wait: the CPU then executes from the new pc. To end the wait, the CPU accepts one NMI: 15 t-states pass, timing counts them, and R increases by 2. " +
+    "To set im, the CPU runs one IM instruction: 8 t-states pass, timing counts them, and R increases by 2. When the CPU waits for an interrupt, write pc in the same call as im. The CPU must be stopped.",
   inputSchema: z.object({ action: z.enum(["read", "write"]), values: RegisterValues.optional() }).strict(),
   outputSchema: REGISTERS,
   readOnly: false,

@@ -110,12 +110,15 @@ function tapeOf(text: string): Buffer {
  * the CPU history and its address to the code coverage; a run adds the
  * addresses of `ran` to the code coverage only, and the next entries of
  * `runs` to the CPU history. The history keeps at most `historyMax`
- * entries. Each command is kept.
+ * entries. `cpu` holds the get-registers answer and the HALT state: a
+ * snapshot-load takes the HALT state of the file, a step after generate-nmi
+ * ends the HALT at $0066, a step at $5b00 runs a two-byte instruction, and a snapshot-load of a file whose name has
+ * "broken" in it fails. Each command is kept.
  */
 async function standInZesarux(
   machine: string,
-  options: { fires?: string[]; overshoot?: number; ioPorts?: string; history?: string[]; steps?: string[]; ran?: string[]; runs?: string[][]; historyMax?: number; memory?: Record<number, number> } = {},
-): Promise<{ zesarux: ZesaruxProcess; commands: string[] }> {
+  options: { fires?: string[]; overshoot?: number; ioPorts?: string; history?: string[]; steps?: string[]; ran?: string[]; runs?: string[][]; historyMax?: number; memory?: Record<number, number>; halted?: boolean } = {},
+): Promise<{ zesarux: ZesaruxProcess; commands: string[]; cpu: { registers: string; halted: boolean } }> {
   // The CPU history, the most recent entry first: a step adds one entry.
   const historyMax = options.historyMax ?? 1_000_000;
   const history = [...(options.history ?? [])];
@@ -124,7 +127,10 @@ async function standInZesarux(
     history.length = Math.min(history.length, historyMax);
   };
   const runs = [...(options.runs ?? [])];
-  let halted = false;
+  const cpu = { registers: REGISTERS, halted: options.halted ?? false };
+  let nmi = false;
+  // A step at the tool site of the session runs its two-byte instruction.
+  let toolSite = false;
   const steps = [...(options.steps ?? [])];
   const coverage = new Set<string>();
   const commands: string[] = [];
@@ -140,19 +146,35 @@ async function standInZesarux(
       machine = tape.subarray(3, tape.length - 1).toString("latin1") || machine;
     }
     if (command === "set-machine") machine = SET_MACHINE[argument] ?? machine;
-    if (command === "get-registers") return REGISTERS;
+    if (command === "get-registers") return cpu.registers;
+    if (command === "generate-nmi") nmi = true;
+    if (command === "set-register") toolSite = argument === "PC=5b00H";
+    if (command === "snapshot-load") {
+      if (argument.includes("broken")) return "Error. The snapshot is broken";
+      cpu.halted = readFileSync(argument).at(-1) === 1;
+    }
     if (command === "read-memory") {
       const start = Number.parseInt(rest[0]!, 16);
       return Array.from({ length: Number(rest[1]) }, (_, offset) => (options.memory?.[start + offset] ?? 0).toString(16).padStart(2, "0")).join("");
     }
     if (command === "evaluate") return String(partial);
     if (command === "reset-tstates-partial") partial = 0;
+    if (command === "cpu-step" && nmi) {
+      nmi = false;
+      cpu.halted = false;
+      partial += 15;
+      return cpu.registers.replace(/PC=[0-9a-f]{4}/, "PC=0066");
+    }
+    if (command === "cpu-step" && toolSite) {
+      partial += 8;
+      return cpu.registers.replace(/PC=[0-9a-f]{4}/, "PC=5b02");
+    }
     if (command === "cpu-step") {
       partial += 4;
       const entry = steps.shift() ?? `PC=a000 R=${history.length}`;
       record([entry]);
       coverage.add(entry.slice(3, 7));
-      return REGISTERS;
+      return cpu.registers;
     }
     if (command === "cpu-history" && rest[0] === "get-size") return String(history.length);
     if (command === "cpu-history" && rest[0] === "get-max-size") return String(historyMax);
@@ -162,15 +184,15 @@ async function standInZesarux(
     if (command === "cpu-code-coverage" && rest[0] === "clear") coverage.clear();
     if (command === "get-io-ports") return options.ioPorts ?? "Spectrum FE port: 07\nSpectrum 7FFD port: 10\nSelected register: 0";
     if (line.startsWith("set-breakpoint 100")) frames = rest[1];
-    if (command === "snapshot-save") writeFileSync(argument, Buffer.from([...Buffer.from("ZSF ZEsarUX Snapshot File.", "latin1"), 43, 0, 1, 0, 0, 0, halted ? 1 : 0]));
+    if (command === "snapshot-save") writeFileSync(argument, Buffer.from([...Buffer.from("ZSF ZEsarUX Snapshot File.", "latin1"), 43, 0, 1, 0, 0, 0, cpu.halted ? 1 : 0]));
     if (command === "run") {
       for (const address of options.ran ?? []) coverage.add(address);
       record(runs.shift() ?? []);
       const next = fires.shift();
-      halted = next?.endsWith(" (halt)") === true;
+      cpu.halted = next?.endsWith(" (halt)") === true;
       const fired = next?.replace(" (halt)", "") ?? frames;
       if (fired === frames && frames !== undefined) partial = Number(frames.split(">=")[1]) + (options.overshoot ?? 0);
-      return `Running until a breakpoint, key press or data sent, menu opening or other event\n${REGISTERS}${fired === undefined ? "" : `\nBreakpoint fired: ${fired}`}`;
+      return `Running until a breakpoint, key press or data sent, menu opening or other event\n${cpu.registers}${fired === undefined ? "" : `\nBreakpoint fired: ${fired}`}`;
     }
     return "";
   };
@@ -206,7 +228,7 @@ async function standInZesarux(
       rmSync(scratch, { recursive: true, force: true });
     },
   };
-  return { zesarux, commands };
+  return { zesarux, commands, cpu };
 }
 
 test("the session takes its model from the machine that a load gives: a 128K snapshot in a 48K session runs 128K frames", async () => {
@@ -506,6 +528,80 @@ test("autostart with run false loads a snapshot and runs no instruction: the CPU
     assert.equal(((await session.handle("status", {})) as { state: string }).state, "stopped");
     // Without run false, the snapshot runs.
     assert.equal(((await session.handle("autostart", { type: "zsf" }, [ZSF])) as { state: string }).state, "running");
+  } finally {
+    await session.close();
+  }
+});
+
+test("the CPU waits in a HALT also when a write changed the byte before the PC: registers tell it, a snapshot of it restores as saved, and a pc write ends the wait", async () => {
+  // The byte before the PC $11dc is $00: a memory write replaced the HALT in the wait.
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k", { halted: true });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    assert.equal(((await session.handle("registersGet", {})) as { waitsForInterrupt: boolean }).waitsForInterrupt, true);
+    await session.handle("snapshot", { action: "save", name: "wait" });
+    commands.length = 0;
+    assert.deepEqual(await session.handle("snapshot", { action: "restore", name: "wait" }), { names: ["wait"] });
+    // ZEsarUX loads the .zsf as it is, and the CPU executes nothing after the load.
+    const load = commands.findIndex((command) => command.startsWith("snapshot-load "));
+    assert.equal(commands[load], `snapshot-load ${join(zesarux.scratch, "snapshots", "wait.zsf")}`);
+    assert.ok(!commands.slice(load).some((command) => command === "cpu-step" || command.startsWith("write-memory ")), commands.join("\n"));
+    assert.equal(((await session.handle("registersGet", {})) as { waitsForInterrupt: boolean }).waitsForInterrupt, true);
+    commands.length = 0;
+    assert.equal(((await session.handle("registersSet", { values: { pc: 0x8000 } })) as { waitsForInterrupt: boolean }).waitsForInterrupt, false);
+    assert.ok(commands.includes("generate-nmi"), commands.join("\n"));
+  } finally {
+    await session.close();
+  }
+});
+
+test("a restore that fails loads the state of before the call again", async () => {
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k");
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    await session.handle("snapshot", { action: "save", name: "broken" });
+    commands.length = 0;
+    await assert.rejects(session.handle("snapshot", { action: "restore", name: "broken" }), (error) => error instanceof WireFailure && error.code === "operation-failed" && /did not load the snapshot/.test(error.message));
+    const loads = commands.filter((command) => command.startsWith("snapshot-load ")).map((command) => command.split("/").at(-1));
+    assert.deepEqual(loads, ["broken.zsf", "before-restore.zsf"]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("a restore gives IM 1 from the IM 0 that the .zsf loads, and runs no IM instruction: the frame starts at its first t-state", async () => {
+  const { zesarux, commands, cpu } = await standInZesarux("ZX Spectrum 48k");
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  const im = async () => ((await session.handle("registersGet", {})) as { im: number }).im;
+  try {
+    cpu.registers = REGISTERS.replace("IM0", "IM1");
+    await session.handle("snapshot", { action: "save", name: "one" });
+    cpu.registers = REGISTERS;
+    commands.length = 0;
+    await session.handle("snapshot", { action: "restore", name: "one" });
+    assert.ok(!commands.some((command) => command === "cpu-step" || command.startsWith("write-memory ")), commands.join("\n"));
+    assert.equal(await im(), 1);
+    // A mode other than 0 in ZEsarUX ends it: the program ran an IM instruction.
+    cpu.registers = REGISTERS.replace("IM0", "IM2");
+    assert.equal(await im(), 2);
+    cpu.registers = REGISTERS;
+    assert.equal(await im(), 0);
+  } finally {
+    await session.close();
+  }
+});
+
+test("a register write that runs an instruction counts its t-states on the clock and keeps its change of R", async () => {
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k", { halted: true });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  const read = async () => ((await session.handle("timing", { action: "read" })) as { tstates: number }).tstates;
+  try {
+    await session.handle("timing", { action: "start" });
+    commands.length = 0;
+    // The pc write ends the HALT with an NMI (15 t-states), and the IM instruction takes 8 t-states.
+    await session.handle("registersSet", { values: { pc: 0x8000, im: 0 } });
+    assert.equal(await read(), 23);
+    assert.ok(!commands.some((command) => command.startsWith("set-register R=")), commands.join("\n"));
   } finally {
     await session.close();
   }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { zsfHalted, zsfOnHaltInstruction } from "./zsf.ts";
+import { zsfHalted } from "./zsf.ts";
 
 /** A .zsf as ZEsarUX 13.0 writes it: the magic, the machine block, the Z80 registers (PC $8024) and the HALT block. */
 function zsf(halted: boolean): Uint8Array {
@@ -15,18 +15,4 @@ test("the HALT block of a .zsf tells whether the CPU waited in a HALT", () => {
   assert.equal(zsfHalted(zsf(true)), true);
   assert.equal(zsfHalted(zsf(false)), false);
   assert.throws(() => zsfHalted(Uint8Array.from([1, 2, 3])), /not a ZEsarUX snapshot file/);
-});
-
-test("a halted .zsf becomes one that is not halted, with the PC on the HALT instruction", () => {
-  const file = zsf(true);
-  const patched = zsfOnHaltInstruction(file);
-  assert.equal(zsfHalted(patched), false);
-  const pc = (bytes: Uint8Array) => {
-    const at = 26 + 7 + 6 + 24;
-    return bytes[at]! | (bytes[at + 1]! << 8);
-  };
-  assert.equal(pc(file), 0x8024);
-  assert.equal(pc(patched), 0x8023);
-  assert.equal(zsfHalted(file), true, "the input stays unchanged");
-  assert.deepEqual(zsfOnHaltInstruction(zsf(false)), zsf(false));
 });

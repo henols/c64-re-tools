@@ -73,7 +73,7 @@ import { writeZ80, type SpectrumSnapshot } from "../../spectrum.ts";
 import type { MachineBackend, SessionHandle } from "../server.ts";
 import { checkMedia } from "./media.ts";
 import { launchZesarux, type ZesaruxProcess } from "./process.ts";
-import { zsfHalted, zsfOnHaltInstruction } from "./zsf.ts";
+import { zsfHalted } from "./zsf.ts";
 
 const FRAME_TSTATES = { "48k": 69_888, "128k": 70_908 } as const;
 type Model = keyof typeof FRAME_TSTATES;
@@ -468,7 +468,7 @@ export class ZesaruxSession implements SessionHandle {
 
   /** The stop that the end of a run command gives: its PC and why it stopped. */
   #stopOf(output: string): RunEnd {
-    const pc = parseRegisters(output).pc;
+    const pc = this.#seen(parseRegisters(output)).pc;
     const fired = /Breakpoint fired: (.*)/.exec(output)?.[1]?.trim();
     return { pc, ...firedStop(fired, [...this.#points.values()], this.#target) };
   }
@@ -593,12 +593,12 @@ export class ZesaruxSession implements SessionHandle {
    * run goes on to the execution of the instruction after the interrupt.
    */
   async #inHaltWait(stop: { pc: number; reason?: SpectrumStopReason }): Promise<boolean> {
-    return (stop.reason === "breakpoint" || stop.reason === "target") && (await this.#haltedAt(stop.pc));
+    return (stop.reason === "breakpoint" || stop.reason === "target") && (await this.#halted());
   }
 
   /** The stop result at a PC: the reason of the last stop, and halted when the CPU waits in a HALT. */
   async #shownStopAt(pc: number): Promise<SpectrumStop> {
-    return { state: "stopped", pc, ...this.#shownStop(), ...((await this.#haltedAt(pc)) ? { waitsForInterrupt: true } : {}) };
+    return { state: "stopped", pc, ...this.#shownStop(), ...((await this.#halted()) ? { waitsForInterrupt: true } : {}) };
   }
 
   async #status(): Promise<SpectrumOperations["status"]["result"]> {
@@ -671,7 +671,7 @@ export class ZesaruxSession implements SessionHandle {
         output = await this.#zrcp("cpu-step");
         this.#repeats!.newer++;
       }
-      const pc = parseRegisters(output).pc;
+      const pc = this.#seen(parseRegisters(output)).pc;
       this.#stop = { pc, reason: "steps" };
       return this.#shownStopAt(pc);
     }
@@ -700,6 +700,7 @@ export class ZesaruxSession implements SessionHandle {
     await this.#zrcp("reset-cpu");
     this.#stop = {};
     this.#frameEnd = undefined;
+    this.#imOne = false;
     const pc = parseRegisters(await this.#zrcp("get-registers")).pc;
     if (params.run) return this.#execution({ action: "resume" });
     return { state: "stopped", pc };
@@ -749,6 +750,7 @@ export class ZesaruxSession implements SessionHandle {
    */
   async #afterLoad(): Promise<void> {
     this.#repeats = undefined;
+    this.#imOne = false;
     await this.#zrcp("enable-breakpoints");
     await this.#zrcp("cpu-history enabled yes");
     await this.#zrcp("cpu-history started yes");
@@ -844,18 +846,40 @@ export class ZesaruxSession implements SessionHandle {
 
   async #registers(): Promise<Z80RegisterState> {
     this.#requireStopped();
-    const registers = parseRegisters(await this.#zrcp("get-registers"));
-    return { ...registers, waitsForInterrupt: await this.#haltedAt(registers.pc) };
+    return { ...(await this.#cpu()), waitsForInterrupt: await this.#halted() };
+  }
+
+  /** The registers of the CPU now, with the interrupt mode that the session knows. */
+  async #cpu(): Promise<Z80RegisterValues> {
+    return this.#seen(parseRegisters(await this.#zrcp("get-registers")));
+  }
+
+  /**
+   * True while ZEsarUX runs IM 0 for a CPU in IM 1. A restored .zsf keeps
+   * only IM 2 or not, so ZEsarUX loads IM 1 as IM 0. ZEsarUX runs both modes
+   * in the same way on the Spectrum (RST $38, the same t-states), so the
+   * session does not run an IM 1 instruction, which moves the frame: it only
+   * gives the mode. A mode other than 0 in ZEsarUX ends this.
+   */
+  #imOne = false;
+
+  /** The registers that ZEsarUX gives, with IM 1 for its IM 0 while #imOne is true. */
+  #seen(registers: Z80RegisterValues): Z80RegisterValues {
+    if (registers.im !== 0) this.#imOne = false;
+    return this.#imOne ? { ...registers, im: 1 } : registers;
   }
 
   /**
    * Writes registers. A pc write while the CPU waits in a HALT ends the HALT
-   * first: else the CPU waits at the new PC and executes nothing.
+   * first: else the CPU waits at the new PC and executes nothing. The
+   * instructions that the session runs for a write (the NMI that ends the
+   * HALT, the IM instruction) count on the clock and change R, as the frame
+   * moves by their t-states.
    */
   async #setRegisters(params: SpectrumOperations["registersSet"]["params"]): Promise<Z80RegisterState> {
     this.#requireStopped();
     const { im, ...values } = params.values;
-    const halted = await this.#haltedAt(parseRegisters(await this.#zrcp("get-registers")).pc);
+    const halted = await this.#halted();
     if (halted && values.pc !== undefined) await this.#endHalt();
     if (im !== undefined) {
       if (halted && values.pc === undefined) {
@@ -872,12 +896,13 @@ export class ZesaruxSession implements SessionHandle {
   }
 
   /**
-   * True when the CPU waits in a HALT. ZEsarUX then keeps the PC after the
-   * HALT instruction, so only a PC after an opcode $76 can be halted. The HALT
-   * block of a .zsf of now tells it.
+   * True when the CPU waits in a HALT: the HALT block of a .zsf of now tells
+   * it. ZEsarUX then keeps the PC after the HALT instruction, but the byte
+   * before the PC is not always $76: a write of a tool can change it in the
+   * wait, and the CPU still waits. A snapshot-save takes about 1 ms, and a
+   * command with output, such as read-memory, about 40 ms (ZEsarUX 13.0).
    */
-  async #haltedAt(pc: number): Promise<boolean> {
-    if ((await this.#read((pc - 1) & 0xffff, 1)) !== HALT.toString(16)) return false;
+  async #halted(): Promise<boolean> {
     const file = join(this.#zesarux.scratch, "state.zsf");
     await this.#zrcp(`snapshot-save ${file}`);
     try {
@@ -889,14 +914,20 @@ export class ZesaruxSession implements SessionHandle {
 
   /**
    * Does work that the session needs and that is not part of the program:
-   * with the interrupts off, out of the CPU history, and not on the clock of
-   * the session (its t-states pass in the frame). After it, the bytes in kept,
-   * the PC, SP, AF, R and the flip-flops get their values again, and what it
-   * executed and wrote is not in the coverage.
+   * with the interrupts off and out of the CPU history. After it, the bytes
+   * in kept, the PC, SP, AF and the flip-flops get their values again, and
+   * what it executed and wrote is not in the coverage. Its t-states pass in
+   * the frame. With counted false (a load), R gets its value again and the
+   * clock of the session does not count the t-states. With counted true (a
+   * register write), the clock counts them and R keeps the change of the
+   * work, as the frame moved: the stopwatch and the frame then agree. A run
+   * of frames after it counts from the end of the last run, as when the CPU
+   * did not run.
    */
-  async #aside<T>(kept: ReadonlyArray<{ address: number; data: string }>, work: () => Promise<T>): Promise<T> {
+  async #aside<T>(kept: ReadonlyArray<{ address: number; data: string }>, work: () => Promise<T>, counted = false): Promise<T> {
     const before = parseRegisters(await this.#zrcp("get-registers"));
     await this.#settleClock();
+    const settled = this.#elapsed;
     await this.#drainCoverage();
     await this.#zrcp("cpu-history started no");
     try {
@@ -908,53 +939,67 @@ export class ZesaruxSession implements SessionHandle {
       await this.#zrcp(`set-register PC=${hex4(before.pc)}H`);
       await this.#zrcp(`set-register SP=${hex4(before.sp)}H`);
       await this.#zrcp(`set-register AF=${hex4(before.af)}H`);
-      await this.#zrcp(`set-register R=${before.r.toString(16)}H`);
+      if (!counted) await this.#zrcp(`set-register R=${before.r.toString(16)}H`);
       await this.#zrcp(`set-register IFF1=${before.iff1 ? 1 : 0}`);
       await this.#zrcp(`set-register IFF2=${before.iff2 ? 1 : 0}`);
       await this.#zrcp("cpu-history started yes");
-      await this.#zrcp("reset-tstates-partial");
+      if (counted && this.#lost === undefined) {
+        await this.#settleClock();
+        if (this.#frameEnd?.stoppedAt === settled) this.#frameEnd.stoppedAt = this.#elapsed;
+      } else {
+        await this.#zrcp("reset-tstates-partial");
+      }
       await this.#discardCoverage();
     }
   }
 
   /** Runs one instruction of the session at TOOL_SITE, aside from the program. `setup` is a ZRCP command before it. The CPU must not wait in a HALT. */
-  async #runAside(opcodes: number[], what: string, setup?: string): Promise<Z80RegisterValues> {
+  async #runAside(opcodes: number[], what: string, options: { setup?: string; counted?: boolean } = {}): Promise<Z80RegisterValues> {
     const kept = [{ address: TOOL_SITE, data: await this.#read(TOOL_SITE, opcodes.length) }];
-    return this.#aside(kept, async () => {
-      await this.#zrcp(`write-memory ${hex4(TOOL_SITE)}H ${opcodes.join(" ")}`);
-      if (setup !== undefined) await this.#zrcp(setup);
-      await this.#zrcp(`set-register PC=${hex4(TOOL_SITE)}H`);
-      const after = parseRegisters(await this.#zrcp("cpu-step"));
-      if (after.pc !== TOOL_SITE + opcodes.length) throw new WireFailure("operation-failed", `ZEsarUX did not run ${what}: the PC is $${hex4(after.pc)}.`);
-      return after;
-    });
+    return this.#aside(
+      kept,
+      async () => {
+        await this.#zrcp(`write-memory ${hex4(TOOL_SITE)}H ${opcodes.join(" ")}`);
+        if (options.setup !== undefined) await this.#zrcp(options.setup);
+        await this.#zrcp(`set-register PC=${hex4(TOOL_SITE)}H`);
+        const after = parseRegisters(await this.#zrcp("cpu-step"));
+        if (after.pc !== TOOL_SITE + opcodes.length) throw new WireFailure("operation-failed", `ZEsarUX did not run ${what}: the PC is $${hex4(after.pc)}.`);
+        return after;
+      },
+      options.counted,
+    );
   }
 
-  /** Sets the interrupt mode: set-register does not take IM, so the CPU runs one IM instruction aside (8 t-states). */
+  /** Sets the interrupt mode of a register write: set-register does not take IM, so the CPU runs one IM instruction aside (8 t-states, R 2 more). */
   async #setInterruptMode(im: number): Promise<void> {
-    const after = await this.#runAside([0xed, IM_OPCODES[im]!], `the IM ${im} instruction`);
+    this.#imOne = false;
+    const after = await this.#runAside([0xed, IM_OPCODES[im]!], `the IM ${im} instruction`, { counted: true });
     if (after.im !== im) throw new WireFailure("operation-failed", `ZEsarUX did not run the IM ${im} instruction: the mode is ${after.im}.`);
   }
 
   /** Sets the border colour as an OUT to port $fe does, with bits 3 and 4 (MIC, EAR) at 0: the CPU runs one OUT (n),A aside (11 t-states). */
   async #setBorder(border: number): Promise<void> {
-    await this.#runAside([OUT_N_A, 0xfe], "the OUT instruction that sets the border", `set-register AF=${hex4((border & 7) << 8)}H`);
+    await this.#runAside([OUT_N_A, 0xfe], "the OUT instruction that sets the border", { setup: `set-register AF=${hex4((border & 7) << 8)}H` });
   }
 
   /**
-   * Ends a HALT. ZRCP has no command for it, so the session gives an NMI,
-   * which ends the HALT, aside from the program (15 t-states). The two stack
-   * bytes that the NMI writes get their values again.
+   * Ends a HALT for a pc write. ZRCP has no command for it, so the session
+   * gives an NMI, which ends the HALT, aside from the program (15 t-states,
+   * R 2 more). The two stack bytes that the NMI writes get their values again.
    */
   async #endHalt(): Promise<void> {
     const { sp } = parseRegisters(await this.#zrcp("get-registers"));
     const kept: Array<{ address: number; data: string }> = [];
     for (const address of [(sp - 2) & 0xffff, (sp - 1) & 0xffff]) kept.push({ address, data: await this.#read(address, 1) });
-    await this.#aside(kept, async () => {
-      await this.#zrcp("generate-nmi");
-      const after = parseRegisters(await this.#zrcp("cpu-step"));
-      if (after.pc !== NMI_ADDRESS) throw new WireFailure("operation-failed", `ZEsarUX did not end the HALT: after an NMI the PC is $${hex4(after.pc)}, not $${hex4(NMI_ADDRESS)}.`);
-    });
+    await this.#aside(
+      kept,
+      async () => {
+        await this.#zrcp("generate-nmi");
+        const after = parseRegisters(await this.#zrcp("cpu-step"));
+        if (after.pc !== NMI_ADDRESS) throw new WireFailure("operation-failed", `ZEsarUX did not end the HALT: after an NMI the PC is $${hex4(after.pc)}, not $${hex4(NMI_ADDRESS)}.`);
+      },
+      true,
+    );
   }
 
   async #disassemble(params: SpectrumOperations["disassemble"]["params"]): Promise<SpectrumOperations["disassemble"]["result"]> {
@@ -1308,8 +1353,8 @@ export class ZesaruxSession implements SessionHandle {
    * model that the session started with. A file that is not what its type
    * says is refused before the load, and the machine does not change.
    *
-   * A .zsf that waits in a HALT loads with its PC on the HALT, and the CPU
-   * executes the HALT again: so the CPU history has the HALT before its cycles.
+   * A .zsf loads as it is, also in a HALT wait. A load empties the CPU
+   * history.
    *
    * smartload in step mode executes nothing. The clock of the session does
    * not count the load. With run false (a snapshot only), the CPU stays
@@ -1318,9 +1363,8 @@ export class ZesaruxSession implements SessionHandle {
   async #autostart(params: SpectrumOperations["autostart"]["params"], bytes: Buffer): Promise<SpectrumOperations["autostart"]["result"]> {
     const media = checkMedia(params.type, bytes);
     if (this.#run !== undefined) await this.#execution({ action: "pause" });
-    const halted = params.type === "zsf" && zsfHalted(media.bytes);
     const file = join(this.#zesarux.scratch, `media.${params.type}`);
-    writeFileSync(file, halted ? zsfOnHaltInstruction(media.bytes) : media.bytes);
+    writeFileSync(file, media.bytes);
     await this.#settleClock();
     await this.#drainCoverage();
     if ((SPECTRUM_TAPES as readonly string[]).includes(params.type)) {
@@ -1345,7 +1389,6 @@ export class ZesaruxSession implements SessionHandle {
     await this.#afterLoad();
     this.#stop = {};
     this.#frameEnd = undefined;
-    if (halted) await this.#enterHalt();
     if (media.border !== undefined) await this.#setBorder(media.border);
     if (params.run === false) return { ...(await this.#shownStopAt(parseRegisters(await this.#zrcp("get-registers")).pc)), model: this.#model };
     return { ...(await this.#execution({ action: "resume" })), model: this.#model };
@@ -1376,7 +1419,7 @@ export class ZesaruxSession implements SessionHandle {
     if (params.action === "save") {
       mkdirSync(this.#snapshots, { recursive: true });
       // ZEsarUX's own .zsf keeps the HALT state; its .z80 writer gets E wrong (13.0). The .zsf does not keep IM 1 and IFF2 apart.
-      const registers = parseRegisters(await this.#zrcp("get-registers"));
+      const registers = await this.#cpu();
       await this.#zrcp(`snapshot-save ${file}`);
       writeFileSync(sidecar, JSON.stringify({ im: registers.im, iff1: registers.iff1, iff2: registers.iff2 } satisfies InterruptState));
       return { names: this.#snapshotNames() };
@@ -1392,28 +1435,36 @@ export class ZesaruxSession implements SessionHandle {
   }
 
   /**
-   * Loads a named snapshot. The clock of the session does not count the load.
-   * The .zsf loads IM 1 as IM 0: then the CPU runs one IM 1 instruction. When
-   * the CPU waited in a HALT, it loads the file without the HALT and with the
-   * PC on the HALT instruction, runs the IM instruction, and then steps the
-   * HALT instruction, so that it waits in the HALT again.
+   * Loads a named snapshot. The clock of the session does not count the
+   * load. ZEsarUX loads the .zsf as it is, with the HALT state, and starts
+   * the frame from its first t-state: the session runs no instruction after
+   * the load, so the frame stays there. The .zsf loads IM 1 as IM 0, and the
+   * session then gives IM 1 (#imOne). A restore that fails loads the state
+   * of before the call again.
    */
   async #restore(file: string, saved: InterruptState): Promise<void> {
     await this.#settleClock();
     await this.#drainCoverage();
-    const bytes = readFileSync(file);
-    const fixMode = saved.im === 1;
-    const halted = zsfHalted(bytes);
-    let loaded = file;
-    if (halted) {
-      loaded = join(this.#zesarux.scratch, "restore.zsf");
-      writeFileSync(loaded, zsfOnHaltInstruction(bytes));
-    }
+    const backup = join(this.#zesarux.scratch, "before-restore.zsf");
+    const before = await this.#cpu();
+    await this.#zrcp(`snapshot-save ${backup}`);
     try {
-      await this.#zrcp(`snapshot-load ${loaded}`);
+      await this.#loadSnapshot(file, saved);
+    } catch (error) {
+      if (this.#lost === undefined) {
+        this.#log(`the restore failed, so the Spectrum session loads the state of before it again: ${error instanceof Error ? error.message : String(error)}`);
+        await this.#loadSnapshot(backup, { im: before.im, iff1: before.iff1, iff2: before.iff2 }).catch((again: unknown) => this.#log(`the Spectrum session could not load the state of before the restore: ${again instanceof Error ? again.message : String(again)}`));
+      }
+      throw error;
     } finally {
-      if (halted) rmSync(loaded, { force: true });
+      rmSync(backup, { force: true });
     }
+  }
+
+  /** Loads a .zsf of the session and gives the CPU the interrupt state that the .zsf does not keep. */
+  async #loadSnapshot(file: string, saved: InterruptState): Promise<void> {
+    const answer = await this.#zrcp(`snapshot-load ${file}`);
+    if (answer.startsWith("Error")) throw new WireFailure("operation-failed", `ZEsarUX did not load the snapshot: ${answer.split("\n")[0]}`);
     await this.#stepMode();
     // A snapshot of the session can be of the other model: the session follows it.
     await this.#followMachine();
@@ -1422,26 +1473,10 @@ export class ZesaruxSession implements SessionHandle {
     await this.#afterLoad();
     this.#stop = {};
     this.#frameEnd = undefined;
-    if (fixMode) await this.#setInterruptMode(1);
-    if (halted) await this.#enterHalt();
     const now = parseRegisters(await this.#zrcp("get-registers"));
+    this.#imOne = saved.im === 1 && now.im === 0;
     if (now.iff1 !== saved.iff1) await this.#zrcp(`set-register IFF1=${saved.iff1 ? 1 : 0}`);
     if (now.iff2 !== saved.iff2) await this.#zrcp(`set-register IFF2=${saved.iff2 ? 1 : 0}`);
-  }
-
-  /**
-   * Executes the HALT instruction at the PC, so that the CPU waits in it as
-   * the loaded snapshot did. R gets its value again, and the clock and the
-   * coverage do not count the step. The CPU history keeps the HALT: the
-   * cycles of the wait then come after it.
-   */
-  async #enterHalt(): Promise<void> {
-    const { pc, r } = parseRegisters(await this.#zrcp("get-registers"));
-    if ((await this.#read(pc, 1)) !== HALT.toString(16)) throw new WireFailure("operation-failed", `The snapshot waits in a HALT, but $${hex4(pc)} holds no HALT instruction.`);
-    await this.#zrcp("cpu-step");
-    await this.#zrcp(`set-register R=${r.toString(16)}H`);
-    await this.#zrcp("reset-tstates-partial");
-    await this.#discardCoverage();
   }
 
   /** The 16 KiB RAM bank `bank` from `offset`, `size` bytes: zone 0 of ZEsarUX is all RAM banks in order. */
@@ -1468,7 +1503,7 @@ export class ZesaruxSession implements SessionHandle {
   /** The machine state as a version 3 .z80: registers, border, paging, AY and every RAM bank. */
   async #export(reply: Buffer[]): Promise<{ bytes: number }> {
     this.#requireStopped();
-    const registers = parseRegisters(await this.#zrcp("get-registers"));
+    const registers = await this.#cpu();
     const ula = await this.#ula();
     const banks = await Promise.all(Array.from({ length: 8 }, async (_, bank) => (this.#model === "48k" && ![5, 2, 0].includes(bank) ? new Uint8Array(0x4000) : new Uint8Array(await this.#bank(bank, 0, 0x4000)))));
     const snapshot: SpectrumSnapshot = {
