@@ -26,7 +26,7 @@ import { SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformNamesOfSpace, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
-import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.ts";
+import { dxaFindings, ghidraFindings, outsideRom, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList, z80InstructionList } from "./lib/instructions.ts";
 import { findZ80Idioms } from "./lib/z80-idioms.ts";
@@ -200,6 +200,19 @@ async function analyze(call: Call): Promise<unknown> {
     reader?.close();
     throw new UsageError(`--analyzer dxa reads only 6502 code, and the ${machine.name} has a Z80. Use --analyzer ghidra`);
   }
+  if (applyMacros && !machine.macros) {
+    reader?.close();
+    throw new UsageError(`--apply-macros writes macros, and the generated source of the ${machine.name} has no macros. Remove --apply-macros`);
+  }
+  // The ROM of the machine is not the program: no entry point there, and the analyzer does not decode it.
+  const rom = space === machine.spaces.main ? machine.rom : [];
+  const romOf = (address: number) => rom.find((range) => address >= range.start && address <= range.end);
+  for (const entry of entries) {
+    const range = romOf(entry);
+    if (range === undefined) continue;
+    reader?.close();
+    throw new UsageError(`--entry ${formatAddress(entry)} is in the ROM of the ${machine.name} (${formatAddress(range.start)}-${formatAddress(range.end)}). The knowledge holds the program, not the ROM: give an entry point of the program`);
+  }
   // A coverage map is of the C64 CPU: VICE keeps none for the drive.
   const covered = space === mainSpaceOf(reader) ? programCoverage(reader) : undefined;
   const coverage = covered?.map;
@@ -226,13 +239,14 @@ async function analyze(call: Call): Promise<unknown> {
   const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, inProgram, machine.cpu);
   // The Z80 idioms follow the code from every seed and the entry of the program.
   const restarts = z80 ? findZ80Idioms(inProgram, { start: loaded.start, end: loaded.end }, [...known, ...kinds.routines, ...kinds.codeStarts, ...(program.entry === undefined ? [] : [program.entry])]) : undefined;
-  const ordered = [...new Set([...known, ...(idioms?.entryPoints ?? []), ...kinds.routines])];
+  const ordered = [...new Set([...known, ...(idioms?.entryPoints ?? []), ...kinds.routines])].filter((entry) => romOf(entry) === undefined);
   seeds.entryPoints = ordered.slice(0, GHIDRA_LIMITS.entryPoints).sort((a, b) => a - b);
   const codeStarts = [...new Set([...kinds.codeStarts, ...(restarts?.codeStarts ?? [])])].filter((entry) => !seeds.entryPoints.includes(entry)).slice(0, GHIDRA_LIMITS.codeStarts);
   // Idiom tables and the RAM under ROM that the runs never used are data for this run too; semantic data ranges come first.
   // A range with an entry point of the knowledge or --entry in it is left out: that code stays code.
-  const fromRom = coverage === undefined ? [] : romOnlyRanges(coverage, byteAt).filter((range) => !known.some((entry) => entry >= range.start && entry <= range.end));
-  const dataRanges = [...seeds.dataRanges];
+  // The RAM under a ROM that the program can switch out: a Z80 machine has none.
+  const fromRom = coverage === undefined || z80 ? [] : romOnlyRanges(coverage, byteAt).filter((range) => !known.some((entry) => entry >= range.start && entry <= range.end));
+  const dataRanges = [...rom, ...seeds.dataRanges];
   for (const range of [...(idioms ?? restarts)!.dataRanges, ...fromRom]) if (!dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start)) dataRanges.push(range);
   seeds.dataRanges = dataRanges.slice(0, GHIDRA_LIMITS.dataRanges);
   const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
@@ -258,8 +272,7 @@ async function analyze(call: Call): Promise<unknown> {
     // The macro candidates read the code regions after both imports.
     const macros = macroCandidates(space, byteAt, romUseOfProgram(coverage, program.state), skip);
     // With --apply-macros, the candidates and their macros are a third revision of the LLM.
-    const platformNamed = new Map(platform.map((entry) => [entry.name, entry.address]));
-    const written = applyMacros && macros.writes.length > 0 ? withWrite((db) => applyBatch(db, { origin: "llm", description: "Macro candidates in the program", image: operandImages(db, platformNamed) }, macros.writes)) : undefined;
+    const written = applyMacros && macros.writes.length > 0 ? withWrite((db) => applyBatch(db, { origin: "llm", description: "Macro candidates in the program", image: operandImages(db) }, macros.writes)) : undefined;
     // Platform pitfalls are C64 facts: drive code and banks get none. Pitfalls and pointers read the code regions after both imports.
     const codeDb = openForRead();
     const code = listRegions(codeDb, undefined, "code", undefined, space);
@@ -301,7 +314,7 @@ async function analyze(call: Call): Promise<unknown> {
     const conflicts = coverageConflicts(db, coverage);
     db?.close();
     return {
-      coverageSeeds: { entryPoints: fromCoverage.length, used: coverageUsed, romOnlyRanges: fromRom.length, romOnlyUsed: romUsed },
+      coverageSeeds: { entryPoints: fromCoverage.length, used: coverageUsed, ...(z80 ? {} : { romOnlyRanges: fromRom.length, romOnlyUsed: romUsed }) },
       coverageConflicts: conflicts.map(({ region, executed }) => ({
         range: { start: formatAddress(region.start), end: formatAddress(region.end) },
         knowledge: { type: region.type, origin: region.origin },
@@ -342,7 +355,7 @@ async function analyze(call: Call): Promise<unknown> {
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext(), machine);
   // Executed instruction starts that Ghidra did not decode: the instruction list and the source miss them.
   const decoded = new Set(result.instructions.map((instruction) => instruction.address));
-  const imported = record({ ...ghidraFindings(result, machine.cpu.id), space, ...executed }, revision, "Ghidra analysis of the program", runProvenance(bytes, result.toolVersion));
+  const imported = record({ ...outsideRom(ghidraFindings(result, machine.cpu.id), rom), space, ...executed }, revision, "Ghidra analysis of the program", runProvenance(bytes, result.toolVersion));
   const found = idiomsResult();
   // A start inside a dual-use region is a known overlap, for example the second instruction of a BIT skip: one list cannot hold both.
   // Read after the idioms, which write those regions.
@@ -381,7 +394,7 @@ await runScript({
   commands: [
     {
       name: "analyze",
-      summary: "Runs the analyzer over the program in the knowledge and imports what it finds as one revision, then the 6502 idioms as a second one.",
+      summary: "Runs the analyzer over the program in the knowledge and imports what it finds as one revision, then the idioms of the CPU as a second one.",
       options: {
         analyzer: { kind: "choice", value: "<dxa|ghidra>", choices: ["dxa", "ghidra"], default: "ghidra", help: "dxa (a fast first pass) or ghidra (deeper, the default)" },
         entry: { ...OPTIONS.entry, multiple: true, help: "an entry point of the program" },

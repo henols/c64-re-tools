@@ -1,7 +1,9 @@
 // Knowledge seeds for an analyzer, and the mapping of a Ghidra result to the
 // common normalized findings.
 
+import type { AddressRange } from "#src/address.ts";
 import type { Cpu } from "#src/cpu.ts";
+import { subtract } from "#src/knowledge/write.ts";
 import { mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import type { DatabaseSync } from "node:sqlite";
 
@@ -97,6 +99,23 @@ export function ghidraFindings(result: GhidraResult, cpu: Cpu["id"] = "6502"): N
     symbols: result.functions.map((fn) => ({ address: fn.entry, name: nameOf(fn), kind: kindOf(fn) })),
     regions: result.regions.map((region) => ({ start: region.start, end: region.end, type: region.classification === "code" ? ("code" as const) : ("bytes" as const) })),
     references: result.references.filter((reference) => !guessed(reference)).map((reference) => ({ from: reference.from, to: reference.to, kind: reference.type })),
+  };
+}
+
+/**
+ * The findings without the ROM of the machine: the knowledge holds the
+ * program, not the ROM. Regions lose their part in the ROM, and names and
+ * references that start in the ROM go. A reference from the program into the
+ * ROM stays: it is a fact of the program.
+ */
+export function outsideRom(findings: NormalizedFindings, rom: readonly AddressRange[]): NormalizedFindings {
+  if (rom.length === 0) return findings;
+  const inRom = (address: number) => rom.some((range) => address >= range.start && address <= range.end);
+  return {
+    ...findings,
+    symbols: findings.symbols.filter((symbol) => !inRom(symbol.address)),
+    regions: findings.regions.flatMap((region) => subtract({ start: region.start, end: region.end }, [...rom]).map((piece) => ({ ...region, ...piece }))),
+    references: findings.references.filter((reference) => !inRom(reference.from)),
   };
 }
 

@@ -5,7 +5,7 @@ description: Finds the structure of a C64 or ZX Spectrum program with DXA or Ghi
 
 # Static analysis
 
-Use this script to find the code, the data, the routines and the references of a C64 program without running it.
+Use this script to find the code, the data, the routines and the references of a C64 or ZX Spectrum program without running it.
 Use only the commands of the script. Do not disassemble or decompile the program in another way.
 
 ```bash
@@ -50,7 +50,7 @@ To get the command list, run the script with no arguments.
 - Each region that is not code in the project knowledge stays data. Each `data` or `variable` symbol also keeps its region as data. If the region holds an entry point or executed code, only the byte of the symbol stays data.
 - If an analyzer decodes data as code, classify the region as data in the project knowledge. Then run `analyze` again.
 - The facts of an analyzer are not entry points or data for the next analysis. Thus a new analysis can correct them.
-- With coverage, the analysis keeps as data the RAM under ROM that the runs did not read or execute. A call into the KERNAL thus does not decode the RAM under it. If the program has code there, give its address with `--entry`.
+- On the C64, with coverage, the analysis keeps as data the RAM under ROM that the runs did not read or execute. A call into the KERNAL thus does not decode the RAM under it. If the program has code there, give its address with `--entry`.
 - Ghidra does not follow BRK. If the program removes the KERNAL and uses the BRK vector, give the target of the vector with `--entry`.
 - `--decompile` takes the address of a routine. Get it from `functions` of an earlier Ghidra result, or from the routines in the project knowledge.
 
@@ -83,11 +83,11 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--analyzer <dxa\|ghidra>` | `analyze` | The analyzer. `dxa` gives a fast first pass. `ghidra` gives a deeper pass. The default is `ghidra`. |
 | `--entry <address>` | `analyze` | An entry point of the program. Give it again for more entry points. There is no default. |
 | `--decompile <address>` | `analyze` | Ghidra only. Decompile the routine at this address. Give it again for more routines, at most 32. There is no default. |
-| `--space <space>` | `analyze` | The knowledge space of the program: `drive8` for 1541 drive code, or `bank0` to `bank255` for a cartridge bank. The analysis reads the entry points from that space and writes the findings into it. The default is `c64`. |
+| `--space <space>` | `analyze` | The knowledge space of the program. On the C64: `drive8` for 1541 drive code, or `bank0` to `bank255` for a cartridge bank. On the ZX Spectrum 128K: `ram0` to `ram7` for a RAM bank. The analysis reads the entry points from that space and writes the findings into it. The default is the space of the CPU of the project machine: `c64` or `spectrum`. |
 | `--max-listed <n>` | `analyze` | List at most `n` items in each list. `0` lists no items. The counts stay complete. The default is 50. |
 | `--out-listing <file>` | `analyze` | DXA only. Write the disassembly listing to this project file. There is no default. |
 | `--out-instructions <file>` | `analyze` | Ghidra only. Write each instruction to this project file as JSON. There is no default. |
-| `--apply-macros` | `analyze` | Write the macro candidates and their macros to the project knowledge as one revision of the LLM. Off by default. |
+| `--apply-macros` | `analyze` | C64 only. Write the macro candidates and their macros to the project knowledge as one revision of the LLM. Off by default. |
 | `--skip <address>` | `analyze` | With `--apply-macros`: the start of a macro candidate that is not correct. The run does not write it. Give one `--skip` for each such candidate. |
 
 ---
@@ -96,18 +96,18 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 ### `analyze`
 
-Runs DXA or Ghidra over the program in the project knowledge. The script records the findings in the project knowledge as one revision. Then it records the 6502 idioms as a second revision. When the findings do not change the knowledge, the script records no revision for them.
+Runs DXA or Ghidra over the program in the project knowledge. The script records the findings in the project knowledge as one revision. Then it records the idioms of the CPU as a second revision. When the findings do not change the knowledge, the script records no revision for them.
 
 The script records only structure: code and data regions, analyzer names, and the references from Ghidra. It does not record the listing or the decompiled code. Do not record the listing, the decompiled code or the function list as comments in the project knowledge.
 
 `body` holds these fields for both analyzers:
 
-- `analyzer`: `dxa` or `ghidra`. `space` is in `body` only for a space that is not `c64`.
+- `analyzer`: `dxa` or `ghidra`. `space` is in `body` only for a space that is not the space of the CPU.
 - `revision`: the revision of the findings, or `null` when the knowledge did not change.
 - `coverage`: the ranges that the analyzer examined.
 - `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `references.inData` counts the references that the script did not record, because they start in a data region of the user, the LLM or a heuristic. The analyzer decoded these data bytes as code. `symbols.retired` counts the old symbols of the analyzer that became analyzer names.
 - `conflicts`: each place where the analyzer and the project knowledge disagree. `problem` tells the disagreement.
-- `coverageSeeds`: only with coverage. `entryPoints` and `used` give how many entry points the coverage gave, and how many the analysis used. `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
+- `coverageSeeds`: only with coverage. `entryPoints` and `used` give how many entry points the coverage gave, and how many the analysis used. On the C64, `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
 - `coverageConflicts`: only with coverage. Each analyzer data region where the coverage shows executed code.
 - `idioms`: the 6502 idioms that the script found by pattern. The counts are `rtsTables`, `jumpTables`, `bitSkips` and `cartridgeHeaders`. `revision`, `changes` and `conflicts` are for the idioms, as above. `candidates` holds what the script did not record.
 
@@ -166,7 +166,7 @@ The script does not record the candidates. Examine each candidate and decide.
   4. Record a `jump` reference from the JMP to each real target in the project knowledge. Record each target as a routine.
 - `coverageGaps` has starts. Normally its count is 0. Each start is not in `--out-instructions` and not in the generated source. Examine the code at the start. Overlapped instructions and self-modified code can cause a gap. A start in a `dual-use` region is a known overlap, for example a BIT skip, and is not in the list.
 - `coverageSeeds.used` is smaller than `coverageSeeds.entryPoints`. The analysis did not use all entry points of the coverage. Give the important entry points with `--entry`, or record them as routines in the project knowledge. These come first.
-- `romOnlyUsed` is smaller than `romOnlyRanges`. The analysis did not keep all RAM under ROM as data. Classify the RAM under ROM that is not code as data in the project knowledge.
+- On the C64, `romOnlyUsed` is smaller than `romOnlyRanges`. The analysis did not keep all RAM under ROM as data. Classify the RAM under ROM that is not code as data in the project knowledge.
 - `notDecompiled` has a routine. The `reason` tells why the decompiler did not decompile it. Read the instructions of that routine in the file of `--out-instructions`.
 
 #### Failures
@@ -183,6 +183,9 @@ The script does not record the candidates. Examine each candidate and decide.
 The project machine gives the CPU. A ZX Spectrum program has a Z80.
 
 - Use Ghidra. The script refuses `--analyzer dxa`, because DXA reads only 6502 code.
+- The ROM at `$0000`-`$3fff` is not the program. The script refuses an `--entry` in the ROM. The analysis does not decode the ROM, and it records no region or name there. A call from the program into the ROM stays a reference.
+- The script refuses `--apply-macros`, because the generated source of the ZX Spectrum has no macros.
+- `coverageSeeds` has no `romOnlyRanges` and no `romOnlyUsed`.
 - The PC of the snapshot in the project knowledge is an entry point. The USR address of the BASIC loader is also an entry point.
 - After `RST $08`, the next byte is an error code. After `RST $28`, the bytes up to `$38` (end-calc) are calculator literals. The script writes these bytes as `heuristic` regions of type `bytes`. The code after end-calc is a code start. `idioms` counts them in `errorRestarts` and `calculatorRestarts`.
 - The candidates (pitfalls, macros and pointers) are for 6502 code. A Z80 program gets no candidates.
@@ -194,7 +197,7 @@ The project machine gives the CPU. A ZX Spectrum program has a Z80.
 
 1. Read the project knowledge of the program.
 2. Put each coverage map of the program into the project knowledge.
-3. Run `analyze --analyzer dxa` for a first pass. Read the listing for a quick view of the code.
+3. On the C64, run `analyze --analyzer dxa` for a first pass. Read the listing for a quick view of the code. On the ZX Spectrum, do not do this step.
 4. Find the important routines. Give them names in the project knowledge.
 5. Run `analyze` with Ghidra. Give the entry points with `--entry`. Give `--decompile` for the routines that you must understand.
 6. Do the action for each `hint`. Examine the candidates.
