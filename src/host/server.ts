@@ -364,7 +364,7 @@ class Connection {
     this.#toolAbort.abort();
     const session = this.#session ?? (await this.#starting);
     this.#session = undefined;
-    if (session !== undefined) this.#log("the client is gone; stopping its VICE session");
+    if (session !== undefined) this.#log(`the client is gone; stopping its ${this.#backend?.emulator ?? "emulator"} session`);
     try {
       await session?.close();
     } catch (error) {
