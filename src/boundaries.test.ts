@@ -72,7 +72,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   distribution: ["package"],
   convert: ["knowledge"],
 };
-const SKILL_ALLOWED = ["build-name", "host-client", "native", "knowledge", "project", "c64", "c64-keys", "compare", "graphics", "opcodes", "platform", "script", "time", "media", "vsf", "zip"];
+const SKILL_ALLOWED = ["build-name", "host-client", "native", "knowledge", "project", "c64", "c64-keys", "compare", "graphics", "opcodes", "package", "platform", "script", "time", "media", "vsf", "zip"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

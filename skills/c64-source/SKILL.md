@@ -119,7 +119,7 @@ To make the source better, change the project knowledge. Then generate again.
 - `patchesNotWritten`: each patch that the source does not have, with its range, `switch` and `reason`.
 - `switches`, `default`, `releases`: the checks of the switches. See "Switches and releases".
 - `loader`: the check of the loader. See "The loader".
-- `staleLoader`: a run without `--loader` kept `loader.asm` and the loader program of another knowledge revision. `files` gives the files. `revision` gives the revision of `loader.asm`. Without `revision`, `loader.asm` does not give one. `noEntryState: true` tells that the knowledge has no entry state for a new loader. A change in a space that the loader does not hold does not make the loader stale. The loader holds space `c64` and the space of the stage of the start screen.
+- `staleLoader`: a run without `--loader` kept `loader.asm` and the loader program of another knowledge revision, or of another version of the toolkit. `files` gives the files. `revision` gives the revision of `loader.asm`, and `version` its toolkit version. Without `revision`, `loader.asm` does not give one. `noEntryState: true` tells that the knowledge has no entry state for a new loader. A change in a space that the loader does not hold does not make the loader stale. The loader holds space `c64` and the space of the stage of the start screen.
 
 `result` is `FAIL` for each of these:
 
@@ -201,7 +201,7 @@ A leftover is a range of the program that nothing uses: unused code, old copies 
 - `main.asm` builds a leftover file only when `LEFTOVERS` is 1. When it is 0, the build skips the bytes. Thus the addresses after the range do not change.
 - `config.asm` has `LEFTOVERS = 0`. Thus the default build is the clean program, without the leftovers.
 - Each release has `LEFTOVERS = 1`. Thus the build of a release gives the bytes of the release.
-- The loader program never has the leftovers. The loader does not copy them, and the memory there keeps the bytes that were in it before.
+- The loader program never has the leftovers. The plain form does not copy them, and the memory there keeps the bytes that were in it before. The packed form unpacks the build of `main.asm` in one piece, so the leftovers are $00.
 - Without coverage, no range is a leftover. Put the coverage of the runs into the project knowledge. Then generate again.
 - When `leftovers.changed` has ranges, the default build and the loader program now leave out other bytes. A test that observes the `added` bytes on the loader program gets other values there. Fill the `added` ranges in the test of the leftovers. In a test that compares them, exclude them with the reason that they are leftovers.
 - A leftover can be wrong when the coverage does not show a use. For example, the VIC-II reads a range, or the program reads a range before it writes it. Then a test of the loader program fails. Record the region in the project knowledge, or put the coverage of more runs into it. Do not change the source.
