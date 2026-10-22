@@ -11,13 +11,14 @@ import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { formatAddress } from "../../src/address.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/retro-provenance/scripts/lib/compare.ts";
 import { separate } from "../../src/knowledge/separate.ts";
-import { executesInto } from "../../skills/retro-provenance/scripts/lib/runtime.ts";
+import { executesInto, watchSpectrum } from "../../skills/retro-provenance/scripts/lib/runtime.ts";
+import type { SpectrumSessionClient } from "../../src/host-client/spectrum-session.ts";
 import { MOS6502 } from "../../src/cpu/mos6502.ts";
 import { Z80 } from "../../src/cpu/z80.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
 import { importCoverage, importImage, importSnapshot } from "../fixtures/program.ts";
 import { COUNTER_START, keyboardCounterRam, keyboardCounterSnapshot, z80Snapshot } from "../fixtures/z80/keyboard-counter.ts";
-import { writeZ80 } from "../../src/spectrum.ts";
+import { readZ80, writeZ80 } from "../../src/spectrum.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-"));
 const programs: string[] = [];
@@ -498,4 +499,43 @@ test("compare in a ZX Spectrum project takes the ZX Spectrum steps and refuses a
   assert.equal(run.status, 2, run.stdout);
   assert.equal(run.json.error.code, "invalid-input");
   assert.match(run.json.error.message, /^--steps steps\.json: step 1: type is a step for a C64 program\. A ZX Spectrum step is \{ "frames": 50 \}/);
+});
+
+test("a ZX Spectrum run loads the release stopped at its entry, then sets the points, clears the map and starts the clock: a step acts at its own frame", async () => {
+  const FRAME = 69888;
+  let tstates = 0;
+  const calls: string[] = [];
+  const pressedAt: number[] = [];
+  const client = {
+    reset: async () => (calls.push("reset"), {}),
+    autostartBytes: async (params: { run?: boolean }) => (calls.push(`autostart run:${params.run}`), { state: "stopped", model: "48k" }),
+    watchpoint: async (params: { action: string }) => (calls.push(`watchpoint ${params.action}`), { points: [{ id: 1 }] }),
+    memmap: async (params: { action: string }) => (calls.push(`memmap ${params.action}`), { ranges: [] }),
+    ula: async () => (calls.push("ula"), { frameTstates: FRAME }),
+    timing: async (params: { action: string }) => {
+      calls.push(`timing ${params.action}`);
+      if (params.action === "start") tstates = 0;
+      return { tstates };
+    },
+    execution: async (params: { action: string; count?: number }) => {
+      calls.push(`execution ${params.action}`);
+      tstates += (params.count ?? 0) * FRAME;
+      return { state: "stopped", stopReason: "frames" };
+    },
+    keys: async (params: { frames: number }) => {
+      calls.push("keys");
+      pressedAt.push(tstates / FRAME);
+      tstates += params.frames * FRAME;
+      return { state: "stopped", stopReason: "frames" };
+    },
+    joystick: async () => ({}),
+    memoryRead: async (params: { size: number }) => ({ data: "00".repeat(params.size) }),
+  } as unknown as SpectrumSessionClient;
+  const snapshot = readZ80(keyboardCounterSnapshot());
+  const watched = await watchSpectrum(client, Z80, { kind: "snapshot", snapshot }, [{ start: 0x9000, end: 0x9000 }], () => 0, { frames: 20, steps: [{ frames: 50 }, { press: ["space"], frames: 5 }] });
+  assert.deepEqual(watched, { started: true, accesses: [{ first: "none", changed: false }] });
+  // Nothing runs before the clock starts: frame 0 of the steps is the entry state of the snapshot.
+  assert.deepEqual(calls.slice(0, calls.indexOf("timing start") + 1), ["reset", "autostart run:false", "watchpoint add", "memmap clear", "ula", "timing start"]);
+  assert.equal(calls.indexOf("execution pause"), -1);
+  assert.deepEqual(pressedAt, [50]);
 });

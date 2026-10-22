@@ -217,16 +217,14 @@ export async function watchSpectrumRelease(machine: Machine, how: SnapshotStart,
  * range is a read. An execution in a range that no watchpoint stops shows in
  * the coverage at the next stop or at the end.
  */
-async function watchSpectrum(client: SpectrumSessionClient, cpu: Cpu, how: SnapshotStart, ranges: AddressRange[], release: (address: number) => number, run: { frames: number; steps: ZxStep[] }): Promise<Watched> {
+export async function watchSpectrum(client: SpectrumSessionClient, cpu: Cpu, how: SnapshotStart, ranges: AddressRange[], release: (address: number) => number, run: { frames: number; steps: ZxStep[] }): Promise<Watched> {
   await client.reset({ run: false });
-  await client.memmap({ action: "clear" });
-  // The points are set before the load, and the load keeps them: the first instructions of the program are watched too.
+  // The load stops at the entry state and runs nothing. The points, the map and the clock start there, so frame 0 of the steps is the entry.
+  await client.autostartBytes({ type: "z80", bytes: writeZ80(how.snapshot), run: false });
   const first: FirstAccess[] = ranges.map(() => "none");
   const points = new Map<number, number>();
   for (const [index, range] of ranges.entries()) points.set(index, (await client.watchpoint({ action: "add", start: range.start, end: range.end, access: "both" })).points[0]!.id);
-  await client.autostartBytes({ type: "z80", bytes: writeZ80(how.snapshot) });
-  // The load runs the program at once: a watchpoint can stop it before the pause.
-  const started = await client.execution({ action: "pause" });
+  await client.memmap({ action: "clear" });
   const frameTstates = (await client.ula()).frameTstates;
   await client.timing({ action: "start" });
 
@@ -252,8 +250,6 @@ async function watchSpectrum(client: SpectrumSessionClient, cpu: Cpu, how: Snaps
       points.delete(index);
     }
   };
-  if (started.stopReason === "watchpoint") await settle(started);
-
   // A stop before the end of the frames settles at least one range, so the stops are bounded; the guard ends a run that stops without an access.
   let guard = 4 * ranges.length + 16;
   /** The t-states from the start of the run to the end of the frames of the steps so far. */
