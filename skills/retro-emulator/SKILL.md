@@ -67,7 +67,8 @@ To keep a coverage run:
 1. Clear the memory map with `memmap` action `clear`.
 2. Run the part of the program that you want to keep.
 3. Read the map with `memmap` action `read` and `out`, for example to `.c64-re-tools/local/attract.bin`.
-4. Add the file to the coverage of the project knowledge.
+4. If the result gives `uncheckedAfterHalt`, the execute mark of each address in it can be false. Do not add the file. Do the coverage run again as the `memmap` description tells.
+5. Add the file to the coverage of the project knowledge.
 
 The map of each server has the flags that its `memmap` description gives. On the `spectrum` server, the map has no reads, and its addresses are CPU addresses.
 

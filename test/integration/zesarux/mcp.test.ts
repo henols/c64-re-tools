@@ -60,6 +60,9 @@ after(async () => {
 
 const json = (result: CallToolResult) => JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
 
+/** The flags of an address in the ranges of a memmap read. */
+const flagsAt = (ranges: Array<{ start: string; end: string; flags: number }>, address: number) =>
+  ranges.find((range) => Number.parseInt(range.start.slice(1), 16) <= address && Number.parseInt(range.end.slice(1), 16) >= address)?.flags ?? 0;
 test("the spectrum MCP server runs, stops, steps and reads a Spectrum on ZEsarUX", { skip, timeout: 120_000 }, async () => {
   const host = await startHost({ ...process.env, C64RT_ZESARUX: zesarux! });
   const { client } = await startMcp(host.address, { args: ["--machine", "spectrum"], cwd: project });
@@ -88,8 +91,8 @@ test("the spectrum MCP server runs, stops, steps and reads a Spectrum on ZEsarUX
     assert.deepEqual(listing.instructions.map((item) => item.text), ["ld hl,$9000", "inc (hl)", "ld a,(hl)"]);
     const reached = json(await call("run_until", { address: "$8023", timeoutFrames: 5 }));
     assert.deepEqual([reached.reached, reached.pc], [true, "$8023"]);
-    const ranges = (json(await call("memmap", { action: "read" })).ranges as Array<{ start: string; flags: number }>).filter((range) => range.start === "$8000" || range.start === "$8030");
-    assert.ok(ranges.every((range) => (range.flags & 4) !== 0) && ranges.length === 2, JSON.stringify(ranges));
+    const ranges = json(await call("memmap", { action: "read" })).ranges as Array<{ start: string; end: string; flags: number }>;
+    assert.ok([0x8000, 0x8030].every((address) => (flagsAt(ranges, address) & 4) !== 0), JSON.stringify(ranges));
     const screen = await call("screen");
     assert.equal((screen.content[1] as { mimeType: string }).mimeType, "image/png");
     await call("snapshot", { action: "export", out: "state.z80" });
@@ -255,8 +258,8 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     assert.deepEqual([cycled.pc, cycled.r, (await call("timing", { action: "read" })).tstates], [halted.pc, (r & 0x80) | ((r + 5) & 0x7f), 20]);
     const haltAt = `$${HALT_AT.toString(16)}`;
     assert.deepEqual((await call("cpu_history", { count: 6 })).pcs, [haltAt, haltAt, haltAt, haltAt, haltAt, haltAt]);
-    const marked = (await call("memmap", { action: "read" })).ranges as Array<{ start: string; flags: number }>;
-    assert.ok(!marked.some((range) => range.start === `$${(HALT_AT + 1).toString(16)}`), JSON.stringify(marked));
+    const marked = (await call("memmap", { action: "read" })).ranges as Array<{ start: string; end: string; flags: number }>;
+    assert.equal(flagsAt(marked, HALT_AT + 1), 0, JSON.stringify(marked));
     // A pc write ends the HALT: the CPU executes from the new pc, also with the interrupts off.
     await call("snapshot", { action: "save", name: "halted" });
     const waiting = await call("registers", { action: "read" });
@@ -291,7 +294,10 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     await call("registers", { action: "write", values: { pc: "$8000" } });
     await call("execution", { action: "advance-frames", count: 2 });
     const ranges = (await call("memmap", { action: "read" })).ranges as Array<{ start: string; end: string; flags: number }>;
-    const flags = (address: number) => ranges.find((range) => Number.parseInt(range.start.slice(1), 16) <= address && Number.parseInt(range.end.slice(1), 16) >= address)?.flags ?? 0;
+    const flags = (address: number) => flagsAt(ranges, address);
+    // Adjacent addresses with the same flags are one range: the ROM interrupt handler at $0038 is one range of instruction starts.
+    assert.ok(ranges.every((range, index) => index === 0 || ranges[index - 1]!.flags !== range.flags || Number.parseInt(ranges[index - 1]!.end.slice(1), 16) + 1 < Number.parseInt(range.start.slice(1), 16)), JSON.stringify(ranges));
+    assert.ok(ranges.some((range) => range.start === "$0038" && range.end !== "$0038" && range.flags === 16), JSON.stringify(ranges));
     assert.equal(flags(0x8008), 4, "IM 1 ran");
     assert.equal(flags(0x8009), 0, "the second byte of IM 1 is no instruction");
     assert.equal(flags(0x8018), 4, "IN A,(C) ran");
@@ -301,6 +307,23 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     assert.ok(ranges.every((range) => (range.flags & (1 | 8)) === 0), "no reads");
 
     // Refusals: the ROM takes no write, and both text and keys.
+    // DI and HALT: the wait never ends. After 20 frames the map cannot check the mark after the HALT, and names it.
+    await call("memory_write", { address: "$9100", data: "f376" });
+    await call("registers", { action: "write", values: { pc: "$9100" } });
+    await call("memmap", { action: "clear" });
+    await call("execution", { action: "advance-frames", count: 20 });
+    const long = await call("memmap", { action: "read" });
+    assert.deepEqual(long.uncheckedAfterHalt, ["$9102"]);
+    assert.equal(flagsAt(long.ranges as Array<{ start: string; end: string; flags: number }>, 0x9102), 4);
+    // A read after each run of 10 frames checks the mark: the map has no mark after the HALT, and names no address.
+    await call("memmap", { action: "clear" });
+    for (let run = 0; run < 2; run++) {
+      await call("execution", { action: "advance-frames", count: 10 });
+      const short = await call("memmap", { action: "read" });
+      assert.equal(short.uncheckedAfterHalt, undefined);
+      assert.equal(flagsAt(short.ranges as Array<{ start: string; end: string; flags: number }>, 0x9102), 0, JSON.stringify(short.ranges));
+    }
+
     assert.match(await refusal("memory_write", { address: "$0000", data: "00" }), /ROM/);
     assert.match(await refusal("program_load", { path: "bytes.bin", address: "$0100" }), /ROM/);
     assert.match(await refusal("keyboard", { text: "a", keys: ["a"] }), /not both/);

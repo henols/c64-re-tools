@@ -26,7 +26,9 @@
 // history and in the code coverage as an execution of the byte after the HALT.
 // The session tells these cycles apart in the history: the history shows them
 // at the address of the HALT, and the coverage leaves out a mark that only
-// they made.
+// they made. When the history since the last drain of the coverage is too long
+// to read, the session cannot tell them apart: it keeps the mark, and memmap
+// gives its address in uncheckedAfterHalt.
 //
 // The coverage comes from ZEsarUX's code coverage (the address of each
 // executed instruction) and its visual memory of written addresses. The
@@ -293,6 +295,8 @@ export class ZesaruxSession implements SessionHandle {
   #lost: string | undefined;
   /** The coverage of the session: one COVERAGE byte per address. */
   readonly #coverage = new Uint8Array(0x10000);
+  /** The addresses after a HALT opcode whose execute mark the session could not check: HALT cycles alone can have made it. */
+  readonly #uncheckedAfterHalt = new Set<number>();
   /** The keys that are down, and the Kempston joystick: the nine values of set-ui-io-ports. */
   readonly #rows = new Array<number>(8).fill(0xff);
   #joystick = 0;
@@ -1006,8 +1010,13 @@ export class ZesaruxSession implements SessionHandle {
     const executed = codeCoverageAddresses(await this.#zrcp("cpu-code-coverage get"));
     await this.#zrcp("cpu-code-coverage clear");
     const written = visualmemAddresses(await this.#zrcp("get-visualmem-written-dump"));
-    const cyclesOnly = await this.#haltCyclesOnly(executed);
-    for (const address of executed) if (!cyclesOnly.has(address)) this.#coverage[address]! |= address < ROM_END ? COVERAGE.romExecute : COVERAGE.ramExecute;
+    const { only, unchecked } = await this.#haltCyclesOnly(executed);
+    for (const address of executed) {
+      if (only.has(address)) continue;
+      this.#coverage[address]! |= address < ROM_END ? COVERAGE.romExecute : COVERAGE.ramExecute;
+      if (unchecked.has(address)) this.#uncheckedAfterHalt.add(address);
+      else this.#uncheckedAfterHalt.delete(address);
+    }
     for (const address of written) if (address >= ROM_END) this.#coverage[address]! |= COVERAGE.ramWrite;
     await this.#coverageStarts();
   }
@@ -1025,32 +1034,40 @@ export class ZesaruxSession implements SessionHandle {
   }
 
   /**
-   * The executed addresses since the last drain that only HALT cycles marked.
-   * The session finds them in the CPU history since the last drain. When that
-   * history is too long to read, or when the clock does not tell its length,
-   * none: then the marks stay.
+   * The executed addresses since the last drain that only HALT cycles marked
+   * (only), and the addresses after a HALT opcode that the session could not
+   * check (unchecked). The session examines the addresses with no execute mark
+   * and the addresses that it could not check before. It finds the HALT
+   * cycles in the CPU history since the last drain. When that history is too
+   * long to read, or when the clock does not tell its length, the session
+   * checks none: then each mark stays, and each examined address after a HALT
+   * opcode in memory now is unchecked.
    */
-  async #haltCyclesOnly(executed: readonly number[]): Promise<Set<number>> {
+  async #haltCyclesOnly(executed: readonly number[]): Promise<{ only: Set<number>; unchecked: Set<number> }> {
     const only = new Set<number>();
-    const fresh = new Set(executed.filter((address) => (this.#coverage[address]! & EXECUTE) === 0));
-    if (fresh.size === 0) return only;
+    const unchecked = new Set<number>();
+    const fresh = new Set(executed.filter((address) => (this.#coverage[address]! & EXECUTE) === 0 || this.#uncheckedAfterHalt.has(address)));
+    if (fresh.size === 0) return { only, unchecked };
     const tstates = this.#elapsed + (await this.#partialTstates()) - this.#coverageSince.tstates;
-    if (tstates < 0) return only;
     const entries = Math.floor(tstates / 4) + (this.#runs - this.#coverageSince.runs + 1) * MAX_REPEATS;
-    if (entries > COVERAGE_HISTORY_MAX) return only;
+    if (tstates < 0 || entries > COVERAGE_HISTORY_MAX) {
+      const byteAt = this.#byteReader();
+      for (const address of fresh) if ((await byteAt((address - 1) & 0xffff)) === HALT) unchecked.add(address);
+      return { only, unchecked };
+    }
     const pcs = await this.#historyPcs(0, entries);
     // A run of an address after an entry at another address than the one just before it is an execution: that address keeps its mark.
     const runs = pcRuns(pcs).filter((run) => fresh.has(run.pc));
     const executes = new Set(runs.filter((run) => run.last + 1 < pcs.length && pcs[run.last + 1] !== ((run.pc - 1) & 0xffff)).map((run) => run.pc));
     const open = new Set(runs.map((run) => run.pc).filter((address) => !executes.has(address)));
-    if (open.size === 0) return only;
+    if (open.size === 0) return { only, unchecked };
     const cycles = await this.#haltCycles(pcs, (index) => index, open);
     const asInstruction = new Set<number>();
     pcs.forEach((pc, index) => {
       if (open.has(pc) && !cycles[index]) asInstruction.add(pc);
     });
     for (const address of open) if (!asInstruction.has(address)) only.add(address);
-    return only;
+    return { only, unchecked };
   }
 
   /** Reads bytes of memory as the CPU sees them now, in blocks of 4096 bytes that it keeps. */
@@ -1072,17 +1089,20 @@ export class ZesaruxSession implements SessionHandle {
     await this.#drainCoverage();
     if (params.action === "clear") {
       this.#coverage.fill(0);
+      this.#uncheckedAfterHalt.clear();
       return { cleared: true };
     }
+    // Adjacent addresses with the same flags join into one range.
     const ranges: Array<{ start: number; end: number; flags: number }> = [];
     for (let address = 0; address < 0x10000; address++) {
       const flags = this.#coverage[address]!;
       if (flags === 0) continue;
       const last = ranges.at(-1);
-      if (last !== undefined && last.end === address - 1 && last.flags === flags && (flags & (COVERAGE.ramExecute | COVERAGE.romExecute)) === 0) last.end = address;
+      if (last !== undefined && last.end === address - 1 && last.flags === flags) last.end = address;
       else ranges.push({ start: address, end: address, flags });
     }
-    return { ranges };
+    const unchecked = [...this.#uncheckedAfterHalt].sort((a, b) => a - b);
+    return { ranges, ...(unchecked.length === 0 ? {} : { uncheckedAfterHalt: unchecked }) };
   }
 
   // ---- Screen, input ----

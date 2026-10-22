@@ -27,6 +27,7 @@ function fakeSession(calls: Array<[string, unknown]> = []) {
         if (name === "keys") return { state: "stopped", pc: 0x8023, stopReason: "frames" };
         if (name === "execution") return { state: "stopped", pc: 0x8024, stopReason: "steps", waitsForInterrupt: true };
         if (name === "memoryRead") return { address: 0, data: "00".repeat((params as { size: number }).size) };
+        if (name === "memmap") return { ranges: [{ start: 0x8000, end: 0x8002, flags: 4 }], uncheckedAfterHalt: [0x8002] };
         return {};
       },
     },
@@ -76,4 +77,10 @@ test("a stop and the registers tell when the CPU waits for an interrupt after op
   assert.equal(tool("execution").outputSchema.safeParse(stopped).success, true);
   const registers = (await tool("registers").run({ action: "read" }, fakeSession())) as Record<string, unknown>;
   assert.equal(registers.waitsForInterrupt, false);
+});
+
+test("memmap gives the addresses after a HALT that it could not check, as addresses", async () => {
+  const result = (await tool("memmap").run({ action: "read" }, fakeSession())) as Record<string, unknown>;
+  assert.deepEqual(result, { ranges: [{ start: "$8000", end: "$8002", flags: 4 }], uncheckedAfterHalt: ["$8002"] });
+  assert.equal(tool("memmap").outputSchema.safeParse(result).success, true);
 });

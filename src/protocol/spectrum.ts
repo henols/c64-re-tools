@@ -128,7 +128,12 @@ export interface SpectrumOperations {
   registersSet: { params: { values: Partial<Record<Z80Writable, number>> }; result: Z80RegisterState };
   disassemble: { params: { address: number; count: number }; result: { instructions: SpectrumInstruction[] } };
   cpuHistory: { params: { count: number }; result: { pcs: number[] } };
-  memmap: { params: { action: "clear" | "read" }; result: { cleared?: boolean; ranges?: Array<{ start: number; end: number; flags: number }> } };
+  /**
+   * Adjacent addresses with the same flags are one range. uncheckedAfterHalt
+   * gives the addresses after a HALT opcode whose execute mark the session
+   * could not check: HALT cycles alone can have made the mark.
+   */
+  memmap: { params: { action: "clear" | "read" }; result: { cleared?: boolean; ranges?: Array<{ start: number; end: number; flags: number }>; uncheckedAfterHalt?: number[] } };
   screen: { params: Record<string, never>; result: { width: number; height: number } };
   keyboard: { params: { text: string }; result: SpectrumStop & { typed: number } };
   keys: { params: { keys: string[]; frames: number }; result: SpectrumStop };

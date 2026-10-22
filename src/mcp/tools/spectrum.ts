@@ -76,7 +76,8 @@ const execution = defineTool<z.ZodObject, z.ZodObject, Session>({
     "When the CPU did not run after the last advance-frames, the frames count from the end of that run, not from its stop. Thus advance-frames 1 and then 11 stops at the same place as advance-frames 12. " +
     "The same calls from the same state stop at the same place. A frame takes about 20 ms of real time. " +
     "A breakpoint or a watchpoint stops a run before its end: stopReason and pointId tell which. pause after such a stop gives that stop again. " +
-    "waitsForInterrupt true: the CPU executed opcode $76 and waits for an interrupt. Then each step is one wait cycle: 4 t-states pass, R increases by 1, and the PC does not change. " +
+    "waitsForInterrupt true: the CPU executed opcode $76 and waits for an interrupt. Then pc is the address after the $76, and cpu_history gives the address of the $76. The CPU executes the byte at pc only after the interrupt. " +
+    "Each step in the wait is one wait cycle: 4 t-states pass, R increases by 1, and the PC does not change. " +
     "While the CPU runs, only execution action pause, reset and autostart work.",
   inputSchema: z.object({ action: z.enum(["pause", "resume", "step", "advance-frames"]), count: z.number().int().min(1).max(SPECTRUM_MAX_STEPS).optional().describe("instructions for step, frames for advance-frames") }).strict(),
   outputSchema: StopOutput,
@@ -217,7 +218,7 @@ const registersTool = defineTool<z.ZodObject, z.ZodObject, Session>({
   description:
     "Read or write the Z80 registers. The result gives each 16-bit register as $ and four hex digits. It gives i, r and im as numbers, and iff1 and iff2 as true or false. " +
     `Action write sets the registers in values: ${Z80_WRITABLE.join(", ")}. af2 to hl2 are the other set, AF' to HL'. A 16-bit value is $ and 1 to 4 hex digits, or a number. ` +
-    "waitsForInterrupt true: the CPU executed opcode $76 and waits for an interrupt. A write of pc ends the wait: the CPU then executes from the new pc. To end the wait, the CPU accepts one NMI: 15 t-states pass in the frame. " +
+    "waitsForInterrupt true: the CPU executed opcode $76 and waits for an interrupt. Then pc is the address after the $76, and cpu_history gives the address of the $76. The CPU executes the byte at pc only after the interrupt. A write of pc ends the wait: the CPU then executes from the new pc. To end the wait, the CPU accepts one NMI: 15 t-states pass in the frame. " +
     "To set im, the CPU runs one IM instruction: 8 t-states pass in the frame. When the CPU waits for an interrupt, write pc in the same call as im. The CPU must be stopped.",
   inputSchema: z.object({ action: z.enum(["read", "write"]), values: RegisterValues.optional() }).strict(),
   outputSchema: REGISTERS,
@@ -260,26 +261,28 @@ const memmap = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "memmap",
   title: "Spectrum coverage map",
   description:
-    "Which memory the CPU executed and wrote since the session started or since the last clear. Action read gives ranges with the flags of the coverage byte: 2 RAM write, 4 RAM execute, 16 ROM execute. " +
+    "Which memory the CPU executed and wrote since the session started or since the last clear. Action read gives ranges with the flags of the coverage byte: 2 RAM write, 4 RAM execute, 16 ROM execute. Adjacent addresses with the same flags are one range. " +
     "With out, it writes the 65536-byte map, which the coverage of the project knowledge takes. Only the first byte of an instruction has the execute flag. " +
     "The map has no reads: this emulator does not tell a read of the CPU from a read of its debugger. Writes of the tools and of a load are not in the map. " +
     "The addresses are those of the CPU. On the 128K, a range at $c000-$ffff does not tell the RAM bank. " +
     "While the CPU waits after opcode $76, the emulator marks the next byte as executed at each wait cycle. The map removes such a mark when the CPU did not execute that byte. " +
-    "When more than 10 frames ran since the last read or clear, the map can keep such a mark. To examine the byte after opcode $76, clear the map, run 10 frames or less, and read the map. The CPU must be stopped.",
+    "The map can do this only when 10 frames or less ran since the last read or clear. Else the map keeps the mark, and uncheckedAfterHalt gives the address: its execute mark can be false. " +
+    "To get a map with no such address, clear the map, and then read the map after each run of 10 frames or less. The CPU must be stopped.",
   inputSchema: z.object({ action: z.enum(["read", "clear"]), out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
-  outputSchema: z.object({ cleared: z.boolean().optional(), ranges: z.array(z.object({ start: AddressOutput, end: AddressOutput, flags: z.number().int() })).optional(), ...WrittenOutput }),
+  outputSchema: z.object({ cleared: z.boolean().optional(), ranges: z.array(z.object({ start: AddressOutput, end: AddressOutput, flags: z.number().int() })).optional(), uncheckedAfterHalt: z.array(AddressOutput).optional(), ...WrittenOutput }),
   readOnly: false,
   async run(input, session) {
     const { action, out, project } = input as { action: "read" | "clear"; out?: string; project?: string };
     const result = await session.memmap({ action });
     if (action === "clear") return { cleared: true };
     const ranges = result.ranges ?? [];
+    const unchecked = result.uncheckedAfterHalt === undefined ? {} : { uncheckedAfterHalt: result.uncheckedAfterHalt.map(formatAddress) };
     if (out !== undefined) {
       const map = new Uint8Array(0x10000);
       for (const range of ranges) map.fill(range.flags, range.start, range.end + 1);
-      return { ...writeOut(out, map, project) };
+      return { ...writeOut(out, map, project), ...unchecked };
     }
-    return { ranges: ranges.map((range) => ({ start: formatAddress(range.start), end: formatAddress(range.end), flags: range.flags })) };
+    return { ranges: ranges.map((range) => ({ start: formatAddress(range.start), end: formatAddress(range.end), flags: range.flags })), ...unchecked };
   },
 });
 
