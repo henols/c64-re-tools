@@ -152,7 +152,9 @@ const MATCHERS: Record<string, { count: number; match: (run: Instruction[], name
       const dst = memory(storeLow, "sta");
       if (low === undefined || high === undefined || !same(dst, memory(storeHigh, "sta"), 1)) return undefined;
       const value = low | (high << 8);
-      return [addressArg(dst!, name), name(value) ?? formatC64Address(value)];
+      // A value of $0100 or more can be the address of a routine or a table, for example an IRQ handler: it gets its name.
+      // A smaller value is a number: the name of a zero-page address with that value is not what the code means.
+      return [addressArg(dst!, name), (value >= 0x100 ? name(value) : undefined) ?? formatC64Address(value)];
     },
   },
   mov16: {
