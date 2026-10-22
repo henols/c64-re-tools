@@ -528,7 +528,11 @@ export function layout(input: SourceInput): Layout {
     expressions.push({ address: operand.address, text: expression, kind: mode === "imm" ? "address" : useKind(item!.opcode) });
   }
   // The names of expressions and macro args come first: a platform name there names the register for the plain operands too.
-  for (const { text: expression, kind } of expressions) for (const name of identifiers(expression)) useName(name, kind);
+  // An expression inside a written use names nothing: the macro line names only its args.
+  const useExpression = ({ text, kind }: { text: string; kind: UseKind }) => {
+    for (const name of identifiers(text)) useName(name, kind);
+  };
+  for (const expression of expressions) if (!inUse.has(expression.address)) useExpression(expression);
   for (const candidate of candidates) for (const arg of candidate.use.args) for (const name of identifiers(arg)) useName(name, "macro argument");
   // An instruction with an expression names what the expression names, not its plain target.
   const written = new Set(expressions.map((expression) => expression.address));
@@ -557,7 +561,9 @@ export function layout(input: SourceInput): Layout {
       macrosAsInstructions.push({ start: candidate.use.start, end: candidate.use.end, macro: candidate.use.macro, reason: `The source has a label at ${formatC64Address(inside)}, inside the use.` });
       for (const item of candidate.items) {
         inUse.delete(item.address);
-        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address)) useOperand(item);
+        const expression = expressions.find((each) => each.address === item.address);
+        if (expression !== undefined) useExpression(expression);
+        else if (takesAddress(OPCODES[item.opcode]!.mode)) useOperand(item);
       }
     }
   }

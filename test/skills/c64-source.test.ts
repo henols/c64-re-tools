@@ -1447,6 +1447,9 @@ test("a macro use is one +name args line, and macros.asm holds the macros", () =
   assert.deepEqual(rendered.macroLines, new Map([["inc16", { first: 4, last: 9 }]]));
   assert.match(textOf(rendered, "main.asm"), /!source "constants\.asm"\n!source "macros\.asm"\n/);
   assert.match(textOf(rendered, "constants.asm"), /^ptr = \$fb ; Used: macro argument 2\.$/m);
+  // An operand expression inside a written use counts for no name: the macro line names only its args.
+  const withOperand = render(layout(macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }], { operands: [{ address: 0x1004, select: "value", symbol: "ptr", offset: 1 }] })), new Set(), []);
+  assert.match(textOf(withOperand, "constants.asm"), /^ptr = \$fb ; Used: macro argument 1\.$/m);
   assert.equal(rendered.instructions, 7);
   assert.deepEqual(rendered.uses.map((use) => [use.start, use.line]), [[0x1000, 5], [0x1006, 6]]);
   const without = render(layout(macroInput([], { macros: [] })), new Set(), []);
