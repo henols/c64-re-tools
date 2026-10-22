@@ -119,7 +119,7 @@ To make the source better, change the project knowledge. Then generate again.
 - `patchesNotWritten`: each patch that the source does not have, with its range, `switch` and `reason`.
 - `switches`, `default`, `releases`: the checks of the switches. See "Switches and releases".
 - `loader`: the check of the loader. See "The loader".
-- `staleLoader`: a run without `--loader` kept `loader.asm` and the loader program of another knowledge revision. `files` gives the files. `revision` gives the revision of `loader.asm`. Without `revision`, `loader.asm` does not give one. `noEntryState: true` tells that the knowledge has no entry state for a new loader.
+- `staleLoader`: a run without `--loader` kept `loader.asm` and the loader program of another knowledge revision. `files` gives the files. `revision` gives the revision of `loader.asm`. Without `revision`, `loader.asm` does not give one. `noEntryState: true` tells that the knowledge has no entry state for a new loader. A change in a space that the loader does not hold does not make the loader stale. The loader holds space `c64` and the space of the stage of the start screen.
 
 `result` is `FAIL` for each of these:
 

@@ -1643,6 +1643,16 @@ test("with real ACME, a run without --loader says when the loader that it keeps 
     const again = generate();
     assert.equal((readEnvelope(again.stdout, again.status).json as { staleLoader?: unknown }).staleLoader, undefined, text);
   }
+  // A change in another space is not in the loader: the loader stays of this revision.
+  writeFileSync(join(project, "src", "loader.asm"), loaderOf(json.revision));
+  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "rename", "$0500", "drive_loop", "--space", "drive8"], { cwd: project }).status, 0);
+  const other = generate();
+  assert.equal((readEnvelope(other.stdout, other.status).json as { staleLoader?: unknown }).staleLoader, undefined, "a change in drive8");
+  // A change in the space of the loader is.
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "rename", "$1001", "after_rts"], { cwd: project }).status, 0);
+  const own = generate();
+  assert.deepEqual((readEnvelope(own.stdout, own.status).json as { staleLoader?: { revision: string } }).staleLoader?.revision, json.revision);
 });
 
 test("with real ACME, generate keeps the generated source of another space in a folder of --out, and removes an old module file in a folder", { skip: acmeSkip, timeout: 120_000 }, () => {

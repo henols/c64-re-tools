@@ -7,7 +7,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { AddressRange } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SuppressionEntity, type SwitchKind, type SymbolKind } from "./schema.ts";
-import { NO_REVISION } from "./text.ts";
+import { compareText, NO_REVISION, sqlName, TABLES } from "./text.ts";
 
 export interface SymbolRow {
   space: Space;
@@ -350,6 +350,21 @@ export function toMacroUse(row: Raw): MacroUseRow {
 export function currentRevision(db: DatabaseSync | undefined): string {
   if (db === undefined) return "0";
   return (db.prepare("SELECT max(id) AS id FROM revisions").get() as { id: string | null }).id ?? "0";
+}
+
+/**
+ * The newest revision that changed a row in one of `spaces`, or the revision
+ * of no knowledge when none did. A change in another space does not change it.
+ */
+export function spacesRevision(db: DatabaseSync | undefined, spaces: readonly Space[]): string {
+  if (db === undefined || spaces.length === 0) return NO_REVISION;
+  const marks = spaces.map(() => "?").join(", ");
+  let newest = NO_REVISION;
+  for (const spec of TABLES) {
+    const row = db.prepare(`SELECT max(valid_from_revision) AS added, max(valid_to_revision) AS closed FROM ${sqlName(spec.table)} WHERE space IN (${marks})`).get(...spaces) as { added: string | null; closed: string | null };
+    for (const id of [row.added, row.closed]) if (id !== null && compareText(id, newest) > 0) newest = id;
+  }
+  return newest;
 }
 
 /** One import of a coverage map: its project path, its SHA-256, the space it went into and the revision. */
