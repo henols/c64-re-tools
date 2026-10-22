@@ -95,6 +95,7 @@ const runUntil = defineTool<z.ZodObject, z.ZodObject, Session>({
   description:
     "Run until the CPU comes to the instruction at an address, then stop. reached true and stopReason target: the CPU stopped at the address. " +
     "reached false and stopReason timeout: the address did not run in timeoutFrames frames. A breakpoint or a watchpoint can stop the run first: then reached is false and stopReason and pointId tell which. " +
+    "When the CPU is at the address already, the run stops at once: reached is true, and no t-states pass. To stop the next time that the CPU comes to the address, step one instruction first. " +
     "When the address is the byte after opcode $76, the run does not stop while the CPU waits for an interrupt after the $76. It stops when the CPU is about to execute the instruction at the address, after the interrupt.",
   inputSchema: z.object({ address: AddressInput, timeoutFrames: z.number().int().min(1).max(SPECTRUM_MAX_FRAMES).default(250) }).strict(),
   outputSchema: StopOutput.extend({ reached: z.boolean() }),
