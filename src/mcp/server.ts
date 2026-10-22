@@ -291,10 +291,11 @@ const INSTRUCTIONS: Partial<Record<Family, string>> = {
 
 INSTRUCTIONS.spectrum =
   "These tools control one live ZX Spectrum emulator that belongs to this session. " +
-  "An address is a dollar sign and 1 to 4 hex digits, for example $8000. A result gives four hex digits. " +
-  "An error is {\"error\": {\"code\", \"message\"}}. Memory data is lowercase hex without separators. " +
-  "The CPU is a Z80. The ROM is at $0000-$3fff, the screen at $4000-$5aff with its attributes, and the system variables from $5c00. " +
-  "A run (resume, advance-frames, run_until, keyboard) holds the machine: while the CPU runs, only execution, reset and autostart work. " +
+  "An address is a dollar sign and 1 to 4 hex digits, for example $8000. A result gives an address and a 16-bit register value as four hex digits. " +
+  "An error is {\"error\": {\"code\", \"message\"}}. The message tells what is wrong and what to do. Memory data is lowercase hex without separators. " +
+  "I, R, the interrupt mode and the other values are decimal numbers. " +
+  "The CPU is a Z80. The ROM is at $0000-$3fff, the screen at $4000-$5aff with its attributes, and the system variables from $5c00. Tool ula gives the model and the t-states of a frame. " +
+  "A run (resume, advance-frames, run_until, keyboard) holds the machine: while the CPU runs, only execution action pause, reset and autostart work. A frame takes about 20 ms of real time. " +
   "Keys are keys of the keyboard matrix that the program reads from port $fe. Use advance-frames for time: it stops at the same emulated time on every run.";
 
 /** The families whose MCP server has tools in this build. */

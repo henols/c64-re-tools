@@ -37,3 +37,9 @@ test("ranges, counts and registers stay in their limits", () => {
   assert.throws(() => validateSpectrumParams("autostart", { type: "prg" }), refused(/tap, tzx, z80, sna or zsf/));
   assert.throws(() => validateSpectrumParams("snapshot", { action: "save", name: "../x" }), refused(/name must be/));
 });
+
+test("a register write takes the interrupt mode and the flip-flops", () => {
+  assert.deepEqual(validateSpectrumParams("registersSet", { values: { im: 1, iff1: 1, iff2: 0 } }), { values: { im: 1, iff1: 1, iff2: 0 } });
+  assert.throws(() => validateSpectrumParams("registersSet", { values: { im: 3 } }), refused(/im must be 0 to 2/));
+  assert.throws(() => validateSpectrumParams("registersSet", { values: { iff1: 2 } }), refused(/iff1 must be 0 to 1/));
+});

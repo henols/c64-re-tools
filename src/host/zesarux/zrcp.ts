@@ -3,10 +3,17 @@
 // or "command@cpu-step> " in step mode). One command runs at a time. A run
 // command answers only when the CPU stops: a breakpoint, or data that the
 // client sends (pause sends one line feed for that).
+//
+// A command that gets no answer in time fails with machine-unavailable. Its
+// answer can still come later: the client drops it, so that the next answer
+// goes to the next command.
 
 import { Socket } from "node:net";
 
-const PROMPT = /command(@cpu-step)?> $/;
+import { WireFailure } from "../../protocol/messages.ts";
+
+const PROMPT = /command(@cpu-step)?> /;
+const RESTART = "Restart the c64-re-tools MCP server: that starts a new emulator.";
 
 export class Zrcp {
   readonly #socket: Socket;
@@ -14,6 +21,8 @@ export class Zrcp {
   #waiting: { resolve: (text: string) => void; reject: (error: Error) => void; timer: NodeJS.Timeout | undefined } | undefined;
   #queue: Promise<unknown> = Promise.resolve();
   #closed: Error | undefined;
+  /** The answers of commands that timed out: they still come, and nobody waits for them. */
+  #stale = 0;
 
   private constructor(socket: Socket) {
     this.#socket = socket;
@@ -31,15 +40,23 @@ export class Zrcp {
         waiting.reject(this.#closed);
       }
     };
-    socket.on("error", end);
-    socket.on("close", () => end(new Error("the ZRCP connection closed")));
+    const lost = () => end(new WireFailure("machine-unavailable", `ZEsarUX closed its remote connection. ${RESTART}`));
+    socket.on("error", lost);
+    socket.on("close", lost);
   }
 
   #deliver(): void {
-    const prompt = PROMPT.exec(this.#buffer);
-    if (prompt === null || this.#waiting === undefined) return;
+    for (;;) {
+      const prompt = PROMPT.exec(this.#buffer);
+      if (prompt === null) return;
+      if (this.#stale === 0) break;
+      this.#stale--;
+      this.#buffer = this.#buffer.slice(prompt.index + prompt[0].length);
+    }
+    const prompt = PROMPT.exec(this.#buffer)!;
+    if (this.#waiting === undefined) return;
     const text = this.#buffer.slice(0, prompt.index);
-    this.#buffer = "";
+    this.#buffer = this.#buffer.slice(prompt.index + prompt[0].length);
     const waiting = this.#waiting;
     this.#waiting = undefined;
     clearTimeout(waiting.timer);
@@ -69,24 +86,25 @@ export class Zrcp {
     }
   }
 
-  /** The text up to the next prompt; without a timeout it waits until the prompt comes or the connection closes. */
-  #wait(timeoutMs: number | undefined): Promise<string> {
+  /** The text up to the next prompt; with "none" it waits until the prompt comes or the connection closes. */
+  #wait(timeoutMs: number | "none"): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       if (this.#closed !== undefined) return reject(this.#closed);
       const timer =
-        timeoutMs === undefined
+        timeoutMs === "none"
           ? undefined
           : setTimeout(() => {
               this.#waiting = undefined;
-              reject(new Error(`ZEsarUX gave no ZRCP prompt in ${timeoutMs} ms`));
+              this.#stale++;
+              reject(new WireFailure("machine-unavailable", `ZEsarUX gave no answer in ${Math.round(timeoutMs / 1000)} s. Wait a few seconds and do the operation again. If it fails again, restart the c64-re-tools MCP server: that starts a new emulator.`));
             }, timeoutMs);
       this.#waiting = { resolve, reject, timer };
       this.#deliver();
     });
   }
 
-  /** Sends one command line and gives its output, without the prompt. `timeoutMs` undefined waits until it answers. */
-  command(text: string, timeoutMs: number | undefined = 10_000): Promise<string> {
+  /** Sends one command line and gives its output, without the prompt. `timeoutMs` "none" waits until it answers. */
+  command(text: string, timeoutMs: number | "none" = 10_000): Promise<string> {
     const run = this.#queue.then(() => {
       const answer = this.#wait(timeoutMs);
       this.#socket.write(`${text}\n`);

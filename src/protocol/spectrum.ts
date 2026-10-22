@@ -38,9 +38,16 @@ export interface Z80RegisterValues {
   iff2: boolean;
 }
 
-/** The register names that registersSet takes: the 16-bit pairs and I and R. */
-export const Z80_WRITABLE = ["pc", "sp", "af", "bc", "de", "hl", "ix", "iy", "af2", "bc2", "de2", "hl2", "i", "r"] as const;
+/** The register names that registersSet takes: the 16-bit pairs, I and R, the interrupt mode (0-2) and the interrupt flip-flops (0 or 1). */
+export const Z80_WRITABLE = ["pc", "sp", "af", "bc", "de", "hl", "ix", "iy", "af2", "bc2", "de2", "hl2", "i", "r", "im", "iff1", "iff2"] as const;
 export type Z80Writable = (typeof Z80_WRITABLE)[number];
+
+/** The highest value that registersSet takes for a register. */
+export function z80WritableMax(register: Z80Writable): number {
+  if (register === "im") return 2;
+  if (register === "iff1" || register === "iff2") return 1;
+  return register === "i" || register === "r" ? 0xff : 0xffff;
+}
 
 export interface SpectrumStatus {
   state: SpectrumRunState;
@@ -77,6 +84,9 @@ export interface SpectrumInstruction {
 }
 
 export interface SpectrumUla {
+  model: "48k" | "128k";
+  /** The t-states of one frame: 69888 on the 48K, 70908 on the 128K. */
+  frameTstates: number;
   border: number;
   /** The last value written to port $7ffd (128K); undefined on the 48K. */
   port7ffd?: number;
@@ -105,7 +115,7 @@ export interface SpectrumOperations {
   cpuHistory: { params: { count: number }; result: { pcs: number[] } };
   memmap: { params: { action: "clear" | "read" }; result: { cleared?: boolean; ranges?: Array<{ start: number; end: number; flags: number }> } };
   screen: { params: Record<string, never>; result: { width: number; height: number } };
-  keyboard: { params: { text: string }; result: { typed: number } };
+  keyboard: { params: { text: string }; result: SpectrumStop & { typed: number } };
   keys: { params: { keys: string[]; frames: number }; result: SpectrumStop };
   joystick: { params: { up: boolean; down: boolean; left: boolean; right: boolean; fire: boolean }; result: { set: boolean } };
   autostart: { params: { type: "tap" | "tzx" | "z80" | "sna" | "zsf" }; result: SpectrumStop };
@@ -238,7 +248,7 @@ export function validateSpectrumParams<O extends SpectrumOperation>(op: O, param
       if (!isObject(params.values) || Object.keys(params.values).length === 0) invalid("values must name at least one register");
       for (const [register, value] of Object.entries(params.values)) {
         if (!isOneOf(Z80_WRITABLE, register)) invalid(`${register} is not a register that a write takes: ${Z80_WRITABLE.join(", ")}`);
-        const max = register === "i" || register === "r" ? 0xff : 0xffff;
+        const max = z80WritableMax(register);
         if (!isInteger(value, 0, max)) invalid(`${register} must be 0 to ${max}`);
       }
       return as({ values: params.values });

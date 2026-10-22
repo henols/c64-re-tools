@@ -22,26 +22,30 @@ const Point = z.object({ id: z.number().int(), kind: z.enum(["breakpoint", "watc
 const stop = (value: SpectrumStop) => ({ state: value.state, ...(value.pc === undefined ? {} : { pc: formatAddress(value.pc) }), ...(value.stopReason === undefined ? {} : { stopReason: value.stopReason }), ...(value.pointId === undefined ? {} : { pointId: value.pointId }) });
 const point = (value: { id: number; kind: "breakpoint" | "watchpoint"; start: number; end: number; access?: "read" | "write" | "both"; enabled: boolean }) => ({ ...value, start: formatAddress(value.start), end: formatAddress(value.end) });
 
+/** The 16-bit registers: a result gives each as $ and four hex digits. */
+const PAIRS = ["pc", "sp", "af", "bc", "de", "hl", "ix", "iy", "af2", "bc2", "de2", "hl2"] as const;
+const Word = z.string().regex(/^\$[0-9a-f]{4}$/).describe("$ and four hex digits");
 const REGISTERS = z.object({
-  pc: AddressOutput,
-  sp: AddressOutput,
-  af: z.number().int(),
-  bc: z.number().int(),
-  de: z.number().int(),
-  hl: z.number().int(),
-  ix: z.number().int(),
-  iy: z.number().int(),
-  af2: z.number().int(),
-  bc2: z.number().int(),
-  de2: z.number().int(),
-  hl2: z.number().int(),
+  ...Object.fromEntries(PAIRS.map((pair) => [pair, Word])),
   i: z.number().int(),
   r: z.number().int(),
   im: z.number().int(),
   iff1: z.boolean(),
   iff2: z.boolean(),
 });
-const registers = (value: Z80RegisterValues) => ({ ...value, pc: formatAddress(value.pc), sp: formatAddress(value.sp) });
+const registers = (value: Z80RegisterValues) => ({ ...value, ...Object.fromEntries(PAIRS.map((pair) => [pair, formatAddress(value[pair])])) });
+/** A 16-bit register value to write: $ and 1 to 4 hex digits, or a number. */
+const WordInput = z.union([z.number().int().min(0).max(0xffff), AddressInput]);
+const RegisterValues = z
+  .object({
+    ...Object.fromEntries(PAIRS.map((pair) => [pair, WordInput.optional()])),
+    i: z.number().int().min(0).max(0xff).optional(),
+    r: z.number().int().min(0).max(0xff).optional(),
+    im: z.number().int().min(0).max(2).optional(),
+    iff1: z.boolean().optional(),
+    iff2: z.boolean().optional(),
+  })
+  .strict();
 
 const reset = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "reset",
@@ -60,8 +64,10 @@ const execution = defineTool<z.ZodObject, z.ZodObject, Session>({
   title: "Stop, run or step the Z80",
   description:
     "Control the Z80. pause stops it. resume lets it run until a breakpoint or a watchpoint stops it, or until pause. step executes count instructions. " +
-    `advance-frames runs count frames of 69888 t-states (48K) or 70908 t-states (128K), up to ${SPECTRUM_MAX_FRAMES}, and stops at the same emulated time on every run. ` +
-    "A breakpoint or a watchpoint stops a run before its end: stopReason and pointId tell which. While the CPU runs, only execution, reset and autostart work.",
+    `advance-frames runs count frames of 69888 t-states (48K) or 70908 t-states (128K), up to ${SPECTRUM_MAX_FRAMES}, and stops at the same emulated time on every run. The default count is 1. ` +
+    "A frame takes about 20 ms of real time. " +
+    "A breakpoint or a watchpoint stops a run before its end: stopReason and pointId tell which. pause after such a stop gives that stop again. " +
+    "While the CPU runs, only execution action pause, reset and autostart work.",
   inputSchema: z.object({ action: z.enum(["pause", "resume", "step", "advance-frames"]), count: z.number().int().min(1).max(SPECTRUM_MAX_STEPS).optional().describe("instructions for step, frames for advance-frames") }).strict(),
   outputSchema: StopOutput,
   readOnly: false,
@@ -75,7 +81,9 @@ const execution = defineTool<z.ZodObject, z.ZodObject, Session>({
 const runUntil = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "run_until",
   title: "Run the Spectrum to an address",
-  description: "Run until the CPU fetches the instruction at an address, then stop. reached false and stopReason timeout: the address did not run in timeoutFrames frames. A breakpoint or a watchpoint can stop the run first.",
+  description:
+    "Run until the CPU comes to the instruction at an address, then stop. reached true and stopReason target: the CPU stopped at the address. " +
+    "reached false and stopReason timeout: the address did not run in timeoutFrames frames. A breakpoint or a watchpoint can stop the run first: then reached is false and stopReason and pointId tell which.",
   inputSchema: z.object({ address: AddressInput, timeoutFrames: z.number().int().min(1).max(SPECTRUM_MAX_FRAMES).default(250) }).strict(),
   outputSchema: StopOutput.extend({ reached: z.boolean() }),
   readOnly: false,
@@ -88,7 +96,9 @@ const runUntil = defineTool<z.ZodObject, z.ZodObject, Session>({
 const breakpoint = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "breakpoint",
   title: "Spectrum breakpoints",
-  description: "Add, remove or list breakpoints. A breakpoint stops the CPU before the instruction at its address. Each has an id. Up to 90.",
+  description:
+    "Add, remove or list breakpoints. A breakpoint stops the CPU before the instruction at its address. Each has an id. Up to 90. " +
+    "add gives the new breakpoint. remove and list give the breakpoints that the session has after the action.",
   inputSchema: z.object({ action: z.enum(["add", "remove", "list"]), address: AddressInput.optional(), id: z.number().int().min(1).optional() }).strict(),
   outputSchema: z.object({ points: z.array(Point) }),
   readOnly: false,
@@ -107,7 +117,8 @@ const watchpoint = defineTool<z.ZodObject, z.ZodObject, Session>({
   title: "Spectrum watchpoints",
   description:
     "Add, remove or list watchpoints. A watchpoint stops the CPU after an instruction that reads or writes memory from start to end. The PC is then after that instruction. " +
-    "A write stops the CPU only when its address is not the address of the write before it: a loop that writes only that address stops one time.",
+    "A write stops the CPU only when its address is not the address of the previous write. Thus a loop that writes only one address stops one time. " +
+    "add gives the new watchpoint. remove and list give the watchpoints that the session has after the action.",
   inputSchema: z.object({ action: z.enum(["add", "remove", "list"]), start: AddressInput.optional(), end: AddressInput.optional(), access: z.enum(["read", "write", "both"]).optional(), id: z.number().int().min(1).optional() }).strict(),
   outputSchema: z.object({ points: z.array(Point) }),
   readOnly: false,
@@ -125,7 +136,7 @@ const memoryRead = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "memory_read",
   title: "Read Spectrum memory",
   description:
-    `Read 1 to ${SPECTRUM_MAX_MEMORY_READ} bytes as the CPU sees them now: the ROM at $0000-$3fff, then RAM (on the 128K, the paged RAM bank at $c000). ` +
+    `Read 1 to ${SPECTRUM_MAX_MEMORY_READ} bytes as the CPU sees them now. The ROM is at $0000-$3fff, and RAM follows it. On the 128K, the paged RAM bank is at $c000. ` +
     "With out, it reads up to 65536 bytes and writes them as raw bytes to that project file. The CPU must be stopped.",
   inputSchema: z.object({ address: AddressInput, size: z.number().int().min(1).max(0x10000), out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({ address: AddressOutput, size: z.number().int(), data: HexData.optional(), ...WrittenOutput }),
@@ -145,7 +156,7 @@ const memoryRead = defineTool<z.ZodObject, z.ZodObject, Session>({
 const memoryWrite = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "memory_write",
   title: "Write Spectrum memory",
-  description: `Write 1 to ${SPECTRUM_MAX_MEMORY_WRITE} bytes from an address. A write to the ROM at $0000-$3fff has no effect. First stop the CPU with execution action pause.`,
+  description: `Write 1 to ${SPECTRUM_MAX_MEMORY_WRITE} bytes from an address of the RAM, $4000 to $ffff. The tool refuses an address in the ROM at $0000-$3fff, because a write does not change the ROM. First stop the CPU with execution action pause.`,
   inputSchema: z.object({ address: AddressInput, data: HexData.min(2) }).strict(),
   outputSchema: z.object({ address: AddressOutput, bytesWritten: z.number().int() }),
   readOnly: false,
@@ -159,7 +170,18 @@ const memorySearch = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "memory_search",
   title: "Search Spectrum memory",
   description: "Find a byte pattern of 1 to 256 bytes from start to end. ?? in the pattern matches any byte. Gives at most maxResults matches. The CPU must be stopped.",
-  inputSchema: z.object({ start: AddressInput, end: AddressInput, pattern: z.string().regex(/^(?:[0-9a-f]{2}|\?\?){1,256}$/).describe("hex bytes, ?? for any byte"), maxResults: z.number().int().min(1).max(1000).default(100) }).strict(),
+  inputSchema: z
+    .object({
+      start: AddressInput,
+      end: AddressInput,
+      pattern: z
+        .string()
+        .regex(/^(?:[0-9a-fA-F]{2}|\?\?){1,256}$/, "must be 1 to 256 bytes: two hex digits or ?? for each byte, no separators, for example dbfe??20")
+        .transform((value) => value.toLowerCase())
+        .describe("hex bytes, ?? for any byte"),
+      maxResults: z.number().int().min(1).max(1000).default(100),
+    })
+    .strict(),
   outputSchema: z.object({ matches: z.array(AddressOutput), truncated: z.boolean() }),
   readOnly: true,
   async run(input, session) {
@@ -182,15 +204,19 @@ const memorySearch = defineTool<z.ZodObject, z.ZodObject, Session>({
 const registersTool = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "registers",
   title: "Z80 registers",
-  description: `Read or write the Z80 registers. Action write sets the registers in values: ${Z80_WRITABLE.join(", ")} (af2 to hl2 are the other set, AF' to HL'). The CPU must be stopped.`,
-  inputSchema: z.object({ action: z.enum(["read", "write"]), values: z.partialRecord(z.enum(Z80_WRITABLE), z.number().int().min(0).max(0xffff)).optional() }).strict(),
+  description:
+    "Read or write the Z80 registers. The result gives each 16-bit register as $ and four hex digits. It gives i, r and im as numbers, and iff1 and iff2 as true or false. " +
+    `Action write sets the registers in values: ${Z80_WRITABLE.join(", ")}. af2 to hl2 are the other set, AF' to HL'. A 16-bit value is $ and 1 to 4 hex digits, or a number. ` +
+    "To set im, the CPU runs one IM instruction: 8 t-states pass in the frame. The CPU must be stopped. When you set im, the CPU must not wait for an interrupt after opcode $76.",
+  inputSchema: z.object({ action: z.enum(["read", "write"]), values: RegisterValues.optional() }).strict(),
   outputSchema: REGISTERS,
   readOnly: false,
   async run(input, session) {
-    const { action, values } = input as { action: "read" | "write"; values?: Record<string, number> };
+    const { action, values } = input as { action: "read" | "write"; values?: Record<string, number | boolean | undefined> };
     if (action === "read") return registers(await session.registersGet());
-    if (values === undefined) throw new WireFailure("invalid-input", "Action write needs values.");
-    return registers(await session.registersSet({ values }));
+    const given = Object.entries(values ?? {}).filter(([, value]) => value !== undefined);
+    if (given.length === 0) throw new WireFailure("invalid-input", "Action write needs values with at least one register.");
+    return registers(await session.registersSet({ values: Object.fromEntries(given.map(([register, value]) => [register, typeof value === "boolean" ? Number(value) : value])) }));
   },
 });
 
@@ -223,9 +249,10 @@ const memmap = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "memmap",
   title: "Spectrum coverage map",
   description:
-    "Which memory the CPU executed, read and wrote since the session started or the last clear. Action read gives ranges with the flags of the coverage byte (1 RAM read, 2 RAM write, 4 RAM execute, 8 ROM read, 16 ROM execute); " +
-    "with out it writes the 65536-byte map, which coverage of the retro-knowledge skill takes. Only the first byte of an instruction gets execute. " +
-    "The addresses are those of the CPU: on the 128K a range at $c000-$ffff does not tell the RAM bank. The CPU must be stopped.",
+    "Which memory the CPU executed and wrote since the session started or since the last clear. Action read gives ranges with the flags of the coverage byte: 2 RAM write, 4 RAM execute, 16 ROM execute. " +
+    "With out, it writes the 65536-byte map, which the coverage of the project knowledge takes. Only the first byte of an instruction has the execute flag. " +
+    "The map has no reads: this emulator does not tell a read of the CPU from a read of its debugger. Writes of the tools and of a load are not in the map. " +
+    "The addresses are those of the CPU. On the 128K, a range at $c000-$ffff does not tell the RAM bank. The CPU must be stopped.",
   inputSchema: z.object({ action: z.enum(["read", "clear"]), out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({ cleared: z.boolean().optional(), ranges: z.array(z.object({ start: AddressOutput, end: AddressOutput, flags: z.number().int() })).optional(), ...WrittenOutput }),
   readOnly: false,
@@ -277,14 +304,19 @@ const keyboard = defineTool<z.ZodObject, z.ZodObject, Session>({
   description:
     `Press keys of the keyboard matrix. With text, type up to ${SPECTRUM_MAX_TEXT} characters one by one: each key stays down 3 frames, then up 3 frames. ` +
     "A capital letter presses CAPS SHIFT too, and a sign presses SYMBOL SHIFT with its key. In BASIC the ROM shows a keyword for a letter in K mode. " +
-    "With keys, hold those keys down together for frames frames, then release them: a key is a-z, 0-9, space, enter, caps or symbol. The CPU runs during the keys and stops after them. The CPU must be stopped first.",
+    "With keys, hold those keys down together for frames frames, then release them: a key is a-z, 0-9, space, enter, caps or symbol. Give text or keys, not both. " +
+    "The CPU runs during the keys and stops after them. A breakpoint or a watchpoint stops the keys first: with text, typed tells how many characters went in. The CPU must be stopped first.",
   inputSchema: z.object({ text: z.string().min(1).max(SPECTRUM_MAX_TEXT).optional(), keys: z.array(z.string()).min(1).max(8).optional(), frames: z.number().int().min(1).max(SPECTRUM_MAX_FRAMES).default(3) }).strict(),
   outputSchema: z.object({ typed: z.number().int().optional(), ...StopOutput.partial().shape }),
   readOnly: false,
   async run(input, session) {
     const { text, keys, frames } = input as { text?: string; keys?: string[]; frames: number };
-    if ((text === undefined) === (keys === undefined)) throw new WireFailure("invalid-input", "Give text or keys.");
-    if (text !== undefined) return session.keyboard({ text });
+    if (text !== undefined && keys !== undefined) throw new WireFailure("invalid-input", "Give text or keys, not both: text types characters one by one, keys holds keys down together.");
+    if (text === undefined && keys === undefined) throw new WireFailure("invalid-input", "Give text or keys: text types characters one by one, keys holds keys down together.");
+    if (text !== undefined) {
+      const typed = await session.keyboard({ text });
+      return { ...stop(typed), typed: typed.typed };
+    }
     return stop(await session.keys({ keys: keys!, frames }));
   },
 });
@@ -304,7 +336,8 @@ const joystick = defineTool<z.ZodObject, z.ZodObject, Session>({
 const autostart = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "autostart",
   title: "Load and start a Spectrum program",
-  description: "Load a project file and start it as a user does: a tape (.tap, .tzx) loads with LOAD \"\", a snapshot (.z80, .sna, .zsf) continues at its PC. The CPU runs after it. Stop the CPU with execution action pause before you read memory.",
+  description:
+    "Load a project file and start it as a user does. A tape (.tap, .tzx) loads with LOAD \"\". A snapshot (.z80, .sna, .zsf) continues at its PC. The CPU runs after it. Stop the CPU with execution action pause before you read memory.",
   inputSchema: z.object({ path: z.string().min(1).describe("the file, relative to the project folder"), project: ProjectInput.optional() }).strict(),
   outputSchema: StopOutput,
   readOnly: false,
@@ -319,7 +352,7 @@ const autostart = defineTool<z.ZodObject, z.ZodObject, Session>({
 const programLoad = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "program_load",
   title: "Put bytes into Spectrum memory",
-  description: "Put the bytes of a project file into memory from an address, with no start. The CPU must be stopped.",
+  description: "Put the bytes of a project file into the RAM from an address, $4000 to $ffff, with no start. The tool refuses an address in the ROM at $0000-$3fff. The CPU must be stopped.",
   inputSchema: z.object({ path: z.string().min(1), address: AddressInput, project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({ address: AddressOutput, size: z.number().int() }),
   readOnly: false,
@@ -334,7 +367,9 @@ const snapshot = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "snapshot",
   title: "Spectrum snapshots",
   description:
-    "Save, restore, remove or list named snapshots of the machine in this session. Action export writes the machine as a version 3 .z80 file to out: the knowledge takes it as the program, and other emulators load it. The CPU must be stopped.",
+    "Save, restore, remove or list named snapshots of the machine in this session. Each of these actions gives the names of the snapshots that the session keeps after the action. " +
+    "A restore starts the frame from its first t-state. " +
+    "Action export writes the machine as a version 3 .z80 file to out. The name in out must end in .z80. The knowledge takes the file as the program, and other emulators load it. The CPU must be stopped.",
   inputSchema: z.object({ action: z.enum(["save", "restore", "remove", "list", "export"]), name: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/).optional(), out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({ names: z.array(z.string()).optional(), ...WrittenOutput }),
   readOnly: false,
@@ -342,6 +377,7 @@ const snapshot = defineTool<z.ZodObject, z.ZodObject, Session>({
     const { action, name, out, project } = input as { action: "save" | "restore" | "remove" | "list" | "export"; name?: string; out?: string; project?: string };
     if (action === "export") {
       if (out === undefined) throw new WireFailure("invalid-input", "Action export needs out.");
+      if (!out.toLowerCase().endsWith(".z80")) throw new WireFailure("invalid-input", `Action export writes a .z80 file: give out with the extension .z80, not ${out}.`);
       return { ...writeOut(out, await session.snapshotExport(), project) };
     }
     if (action === "list") return session.snapshot({ action });
@@ -353,9 +389,10 @@ const snapshot = defineTool<z.ZodObject, z.ZodObject, Session>({
 const ula = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "ula",
   title: "Spectrum ULA and paging",
-  description: "Get the border colour, and on the 128K the paging of port $7ffd: the RAM bank at $c000, the screen bank (5 or 7), the ROM and the paging lock.",
+  description:
+    "Get the model (48k or 128k), the t-states of one frame (frameTstates) and the border colour. On the 128K, it also gets the paging of port $7ffd. The paging is the RAM bank at $c000, the screen bank (5 or 7), the ROM and the lock.",
   inputSchema: z.object({}).strict(),
-  outputSchema: z.object({ border: z.number().int(), port7ffd: z.number().int().optional(), pagedBank: z.number().int().optional(), screenBank: z.number().int().optional(), rom: z.number().int().optional(), pagingLocked: z.boolean().optional() }),
+  outputSchema: z.object({ model: z.enum(["48k", "128k"]), frameTstates: z.number().int(), border: z.number().int(), port7ffd: z.number().int().optional(), pagedBank: z.number().int().optional(), screenBank: z.number().int().optional(), rom: z.number().int().optional(), pagingLocked: z.boolean().optional() }),
   readOnly: true,
   async run(_input, session) {
     return { ...(await session.ula()) };
@@ -365,7 +402,7 @@ const ula = defineTool<z.ZodObject, z.ZodObject, Session>({
 const ay = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "ay",
   title: "Spectrum AY sound chip",
-  description: "Get the 16 registers of the AY-3-8912 sound chip of the 128K and the selected register: tone periods, noise, mixer, volumes and envelope.",
+  description: "Get the 16 registers of the AY-3-8912 sound chip of the 128K and the selected register: tone periods, noise, mixer, volumes and envelope. The 48K has no AY: on the 48K the tool refuses.",
   inputSchema: z.object({}).strict(),
   outputSchema: z.object({ selected: z.number().int(), registers: z.array(z.number().int()) }),
   readOnly: true,

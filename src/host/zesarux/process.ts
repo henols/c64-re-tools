@@ -45,7 +45,8 @@ export async function launchZesarux(options: { supervisor: ProcessSupervisor; ma
   const port = await freePort();
   const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-zesarux-"));
   const releaseScratch = options.supervisor.ownPath(scratch);
-  const argv = [binary, "--noconfigfile", "--machine", machine, "--vo", "null", "--ao", "null", "--nowelcomemessage", "--quickexit", "--enable-remoteprotocol", "--remoteprotocol-port", String(port)];
+  // The emulated joystick is a Kempston on port $1f: the default (Cursor&Shift) also presses CAPS SHIFT and the cursor keys, and the Kempston port then reads $ff.
+  const argv = [binary, "--noconfigfile", "--machine", machine, "--vo", "null", "--ao", "null", "--joystickemulated", "Kempston", "--nowelcomemessage", "--quickexit", "--enable-remoteprotocol", "--remoteprotocol-port", String(port)];
   // HOME is the scratch folder too: nothing of ZEsarUX's lands in the user's home.
   const child = options.supervisor.spawn(argv, { cwd: scratch, env: { ...env, HOME: scratch }, stdio: ["ignore", "pipe", "pipe"] });
   const launched = performance.now();
