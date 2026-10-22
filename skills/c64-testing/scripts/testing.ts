@@ -14,6 +14,7 @@ import { C64RunSession, PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
+import { LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative } from "#src/project.ts";
 import { OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type Reply } from "#src/script.ts";
 import { diffFiles } from "./lib/diff-files.ts";
 import { CANCELLED, play } from "./lib/play.ts";
@@ -104,9 +105,13 @@ async function recordCommand(call: Call): Promise<Reply> {
       writeReported(`${out}/${RECORDING_FILES.reads}`, outcome.reads, { what: "--out" }),
       writeReported(`${out}/${RECORDING_FILES.coverage}`, outcome.coverage, { what: "--out" }),
     ];
+    // A recording in the local folder is a work file: git ignores it, so it is no test.
+    const keep = projectRelative(out).startsWith(`${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/`)
+      ? `Git ignores ${out}. To keep the recording as a test, record again with --out tests/recordings/<name>.`
+      : `Commit ${out} with the scenarios.`;
     return reply(
       { result: "PASS", recorded: true, out, ...summary, files },
-      { hint: `Commit ${out} with the scenarios. Add ${out}/${RECORDING_FILES.coverage} to the project knowledge as coverage. ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
+      { hint: `${keep} Add ${out}/${RECORDING_FILES.coverage} to the project knowledge as coverage. ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
     );
   } finally {
     await core.close();

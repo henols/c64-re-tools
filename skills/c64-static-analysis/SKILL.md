@@ -96,7 +96,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 ### `analyze`
 
-Runs DXA or Ghidra over the program in the project knowledge. The script records the findings in the project knowledge as one revision. Then it records the 6502 idioms as a second revision.
+Runs DXA or Ghidra over the program in the project knowledge. The script records the findings in the project knowledge as one revision. Then it records the 6502 idioms as a second revision. When the findings do not change the knowledge, the script records no revision for them.
 
 The script records only structure: code and data regions, analyzer names, and the references from Ghidra. It does not record the listing or the decompiled code. Do not record the listing, the decompiled code or the function list as comments in the project knowledge.
 
