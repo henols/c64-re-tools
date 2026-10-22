@@ -249,6 +249,17 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     await call("execution", { action: "advance-frames", count: 1 });
     await call("snapshot", { action: "restore", name: "halted" });
     assert.deepEqual(await call("registers", { action: "read" }), halted);
+    // A breakpoint and a target on the byte after the HALT do not stop in the wait: they stop after the interrupt, before JP.
+    const afterHalt = `$${(HALT_AT + 1).toString(16)}`;
+    const woken = (await call("breakpoint", { action: "add", address: afterHalt })) as { points: Array<{ id: number }> };
+    const woke = await call("execution", { action: "advance-frames", count: 2 });
+    assert.deepEqual([woke.stopReason, woke.pc, woke.waitsForInterrupt], ["breakpoint", afterHalt, undefined]);
+    assert.notEqual(((await call("cpu_history", { count: 1 })).pcs as string[])[0], `$${HALT_AT.toString(16)}`, "the interrupt handler ran");
+    await call("breakpoint", { action: "remove", id: woken.points[0]!.id });
+    await call("snapshot", { action: "restore", name: "halted" });
+    const target = await call("run_until", { address: afterHalt, timeoutFrames: 2 });
+    assert.deepEqual([target.reached, target.stopReason, target.waitsForInterrupt], [true, "target", undefined]);
+    await call("snapshot", { action: "restore", name: "halted" });
     // Each step in the HALT is one wait cycle: 4 t-states, R one more, the same PC. The history shows the cycles at the HALT, and the map does not mark the byte after it.
     await call("memmap", { action: "clear" });
     await call("timing", { action: "start" });

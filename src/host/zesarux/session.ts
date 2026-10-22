@@ -30,6 +30,13 @@
 // to read, the session cannot tell them apart: it keeps the mark, and memmap
 // gives its address in uncheckedAfterHalt.
 //
+// The PC of a halted CPU is the address after the HALT, so a PC breakpoint
+// there is true in each wait cycle. ZEsarUX fires a breakpoint only when its
+// condition changes from false to true: thus it fires one time when the HALT
+// starts (or when the point is set in the wait), and again when the
+// instruction is about to execute after the interrupt. A run that stops at a
+// breakpoint or a target while the CPU waits in the HALT before it goes on.
+//
 // The coverage comes from ZEsarUX's code coverage (the address of each
 // executed instruction) and its visual memory of written addresses. The
 // visual memory of reads is no CPU evidence: the CPU history reads the bytes
@@ -234,6 +241,13 @@ export function visualmemAddresses(text: string): number[] {
   return addresses;
 }
 
+/** Where a run stopped, and why: no reason when pause or other data ended it. */
+interface RunEnd {
+  pc: number;
+  reason?: SpectrumStopReason;
+  pointId?: number;
+}
+
 interface Point extends SpectrumPoint {
   /** The ZRCP breakpoint slot of a breakpoint. */
   slot?: number;
@@ -283,8 +297,8 @@ export class ZesaruxSession implements SessionHandle {
   readonly #log: (line: string) => void;
   #queue: Promise<unknown> = Promise.resolve();
   #state: SpectrumRunState = "stopped";
-  /** The run of a resume: its output, or the error that ended it. */
-  #run: Promise<string | Error> | undefined;
+  /** The run of a resume: its stop, or the error that ended it. */
+  #run: Promise<RunEnd | Error> | undefined;
   #stop: { reason?: SpectrumStopReason; pointId?: number; pc?: number } = {};
   readonly #points = new Map<number, Point>();
   #nextId = 1;
@@ -348,7 +362,8 @@ export class ZesaruxSession implements SessionHandle {
   }
 
   async close(): Promise<void> {
-    if (this.#run !== undefined) this.#zesarux.zrcp.interrupt();
+    this.#pausing = true;
+    if (this.#inRun) this.#zesarux.zrcp.interrupt();
     await this.#zesarux.stop();
     this.#log("Spectrum session closed");
   }
@@ -441,7 +456,7 @@ export class ZesaruxSession implements SessionHandle {
   }
 
   /** The stop that the end of a run command gives: its PC and why it stopped. */
-  #stopOf(output: string): { pc: number; reason?: SpectrumStopReason; pointId?: number } {
+  #stopOf(output: string): RunEnd {
     const pc = parseRegisters(output).pc;
     const fired = /Breakpoint fired: (.*)/.exec(output)?.[1]?.trim();
     return { pc, ...firedStop(fired, [...this.#points.values()], this.#target) };
@@ -471,7 +486,7 @@ export class ZesaruxSession implements SessionHandle {
   }
 
   /** Waits for the answer of a run that pause or a stop interrupted. No answer: ZEsarUX is lost. */
-  async #stopAnswer(running: Promise<string>): Promise<string> {
+  async #stopAnswer<T>(running: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<undefined>((resolve) => {
       timer = setTimeout(() => resolve(undefined), STOP_ANSWER_MS);
@@ -502,33 +517,35 @@ export class ZesaruxSession implements SessionHandle {
     await this.#zrcp(`set-breakpoint ${FRAMES_SLOT} TSTATESP>=${planned - now}`);
     try {
       await this.#stepMode();
-      this.#repeats = undefined;
-      this.#runs++;
-      this.#partial = undefined;
-      const running = this.#zesarux.zrcp.command("run", "none");
       const limitMs = frames * FRAME_MS * RUN_SLACK + RUN_EXTRA_MS;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const late = new Promise<undefined>((resolve) => {
-        timer = setTimeout(() => resolve(undefined), limitMs);
-      });
-      let output = await Promise.race([running, late]).finally(() => clearTimeout(timer));
-      if (output === undefined) {
-        this.#zesarux.zrcp.interrupt();
-        output = this.#ran(await this.#stopAnswer(running));
-        const pc = parseRegisters(output).pc;
-        this.#stop = { pc, reason: "pause" };
-        throw new WireFailure(
-          "operation-failed",
-          `The emulator ran too slowly: the run of ${frames} frames did not end in ${Math.round(limitMs / 1000)} s, so the session stopped it at $${hex4(pc)}. The machine state is valid. Do the run again, or give fewer frames.`,
-        );
+      const deadline = performance.now() + limitMs;
+      // A stop in the HALT wait before a breakpoint or the target is no stop: the run goes on, and the frame breakpoint stays as it is.
+      for (;;) {
+        const running = this.#runCommand();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const late = new Promise<undefined>((resolve) => {
+          timer = setTimeout(() => resolve(undefined), Math.max(0, deadline - performance.now()));
+        });
+        let output = await Promise.race([running, late]).finally(() => clearTimeout(timer));
+        if (output === undefined) {
+          this.#zesarux.zrcp.interrupt();
+          output = this.#ran(await this.#stopAnswer(running));
+          const pc = parseRegisters(output).pc;
+          this.#stop = { pc, reason: "pause" };
+          throw new WireFailure(
+            "operation-failed",
+            `The emulator ran too slowly: the run of ${frames} frames did not end in ${Math.round(limitMs / 1000)} s, so the session stopped it at $${hex4(pc)}. The machine state is valid. Do the run again, or give fewer frames.`,
+          );
+        }
+        const stop = this.#stopOf(this.#ran(output));
+        if (await this.#inHaltWait(stop)) continue;
+        this.#stop = stop;
+        if (stop.reason === "frames") {
+          await this.#settleClock();
+          this.#frameEnd = { planned, stoppedAt: this.#elapsed };
+        }
+        return this.#shownStopAt(stop.pc);
       }
-      const stop = this.#stopOf(this.#ran(output));
-      this.#stop = stop;
-      if (stop.reason === "frames") {
-        await this.#settleClock();
-        this.#frameEnd = { planned, stoppedAt: this.#elapsed };
-      }
-      return this.#shownStopAt(stop.pc);
     } finally {
       if (this.#lost === undefined) await this.#zrcp(`set-breakpoint ${FRAMES_SLOT}`);
     }
@@ -539,6 +556,34 @@ export class ZesaruxSession implements SessionHandle {
    * session time where the CPU stopped. A load, a restore and a reset forget it.
    */
   #frameEnd: { planned: number; stoppedAt: number } | undefined;
+
+  /** True while a run command of the session runs in ZEsarUX: only then does a line feed stop it. */
+  #inRun = false;
+  /** Set by pause: the run of a resume does not go on after its current run command. */
+  #pausing = false;
+
+  /** One ZRCP run command: it answers when the CPU stops. */
+  async #runCommand(): Promise<string> {
+    this.#repeats = undefined;
+    this.#runs++;
+    this.#partial = undefined;
+    this.#inRun = true;
+    try {
+      return await this.#zesarux.zrcp.command("run", "none");
+    } finally {
+      this.#inRun = false;
+    }
+  }
+
+  /**
+   * True when a run stopped at a PC breakpoint or at the target while the CPU
+   * waits in the HALT just before that PC: the instruction there did not run.
+   * ZEsarUX does not fire that point again until the PC changes, so a new
+   * run goes on to the execution of the instruction after the interrupt.
+   */
+  async #inHaltWait(stop: { pc: number; reason?: SpectrumStopReason }): Promise<boolean> {
+    return (stop.reason === "breakpoint" || stop.reason === "target") && (await this.#haltedAt(stop.pc));
+  }
 
   /** The stop result at a PC: the reason of the last stop, and halted when the CPU waits in a HALT. */
   async #shownStopAt(pc: number): Promise<SpectrumStop> {
@@ -559,12 +604,13 @@ export class ZesaruxSession implements SessionHandle {
     if (params.action === "pause") {
       // No run, or a breakpoint or a watchpoint ended it: the CPU stopped already, for the reason of that stop.
       if (this.#run === undefined) return this.#shownStopAt(parseRegisters(await this.#zrcp("get-registers")).pc);
-      this.#zesarux.zrcp.interrupt();
+      // Between two run commands (after a stop in a HALT wait) no command runs: the run ends without data.
+      this.#pausing = true;
+      if (this.#inRun) this.#zesarux.zrcp.interrupt();
       const run = this.#run;
-      const output = await this.#stopAnswer(run.then((value) => (value instanceof Error ? Promise.reject(value) : value)));
+      const stop = await this.#stopAnswer(run.then((value) => (value instanceof Error ? Promise.reject(value) : value)));
       this.#run = undefined;
       this.#state = "stopped";
-      const stop = this.#stopOf(output);
       this.#stop = { ...stop, reason: stop.reason ?? "pause" };
       return this.#shownStopAt(stop.pc);
     }
@@ -574,22 +620,32 @@ export class ZesaruxSession implements SessionHandle {
       await this.#stepMode();
       this.#stop = {};
       this.#frameEnd = undefined;
+      this.#pausing = false;
       // The run command answers when a breakpoint fires or pause sends data. Its first line tells that it runs.
-      this.#repeats = undefined;
-      this.#runs++;
-      this.#partial = undefined;
-      const running = this.#zesarux.zrcp.command("run", "none");
+      const running = this.#runCommand();
       const first = await Promise.race([running, new Promise<undefined>((resolve) => setTimeout(resolve, 100))]);
       if (first !== undefined && !first.startsWith("Running until")) throw new WireFailure("operation-failed", `ZEsarUX did not run: ${first.split("\n")[0]}`);
       this.#state = "running";
-      const run: Promise<string | Error> = running.then(
-        (output) => {
-          if (this.#run === run && /Breakpoint fired/.test(output)) {
+      // The stop of the run, and true when a breakpoint or a watchpoint stopped it.
+      const ended = (async (): Promise<{ stop: RunEnd; fired: boolean }> => {
+        let output = await running;
+        for (;;) {
+          const stop = this.#stopOf(output);
+          if (this.#pausing || !/Breakpoint fired/.test(output)) return { stop, fired: false };
+          if (!(await this.#inHaltWait(stop))) return { stop, fired: true };
+          // A stop in the HALT wait before a breakpoint is no stop: the run goes on, unless pause came in the meantime.
+          if (this.#pausing) return { stop: { pc: stop.pc }, fired: false };
+          output = await this.#runCommand();
+        }
+      })();
+      const run: Promise<RunEnd | Error> = ended.then(
+        ({ stop, fired }) => {
+          if (fired && this.#run === run) {
             this.#run = undefined;
             this.#state = "stopped";
-            this.#stop = this.#stopOf(output);
+            this.#stop = stop;
           }
-          return output;
+          return stop;
         },
         (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
       );

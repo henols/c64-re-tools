@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -104,17 +104,27 @@ function tapeOf(text: string): Buffer {
  * A stand-in ZEsarUX on a ZRCP port: smartload runs the machine that the
  * text in its tape names (an empty text keeps the machine, as a real tape
  * does), set-machine the machine of its name. A run ends at the frame
- * breakpoint, a few t-states after it, or at the next stop in `fires`. A step
- * adds the next entry of `steps` to the CPU history and its address to the
- * code coverage; a run adds the addresses of `ran` to the code coverage only.
- * Each command is kept.
+ * breakpoint, a few t-states after it, or at the next stop in `fires`. A fire
+ * that ends in " (halt)" stops the CPU in a HALT wait: then snapshot-save
+ * writes a .zsf with the HALT state. A step adds the next entry of `steps` to
+ * the CPU history and its address to the code coverage; a run adds the
+ * addresses of `ran` to the code coverage only, and the next entries of
+ * `runs` to the CPU history. The history keeps at most `historyMax`
+ * entries. Each command is kept.
  */
 async function standInZesarux(
   machine: string,
-  options: { fires?: string[]; overshoot?: number; ioPorts?: string; history?: string[]; steps?: string[]; ran?: string[]; memory?: Record<number, number> } = {},
+  options: { fires?: string[]; overshoot?: number; ioPorts?: string; history?: string[]; steps?: string[]; ran?: string[]; runs?: string[][]; historyMax?: number; memory?: Record<number, number> } = {},
 ): Promise<{ zesarux: ZesaruxProcess; commands: string[] }> {
   // The CPU history, the most recent entry first: a step adds one entry.
+  const historyMax = options.historyMax ?? 1_000_000;
   const history = [...(options.history ?? [])];
+  const record = (entries: string[]) => {
+    history.unshift(...entries);
+    history.length = Math.min(history.length, historyMax);
+  };
+  const runs = [...(options.runs ?? [])];
+  let halted = false;
   const steps = [...(options.steps ?? [])];
   const coverage = new Set<string>();
   const commands: string[] = [];
@@ -140,19 +150,25 @@ async function standInZesarux(
     if (command === "cpu-step") {
       partial += 4;
       const entry = steps.shift() ?? `PC=a000 R=${history.length}`;
-      history.unshift(entry);
+      record([entry]);
       coverage.add(entry.slice(3, 7));
       return REGISTERS;
     }
+    if (command === "cpu-history" && rest[0] === "get-size") return String(history.length);
+    if (command === "cpu-history" && rest[0] === "get-max-size") return String(historyMax);
     if (command === "cpu-history" && rest[0] === "get-pc") return history.slice(Number(rest[1]), Number(rest[1]) + Number(rest[2])).map((entry) => entry.slice(3, 7)).join(" ");
     if (command === "cpu-history" && rest[0] === "get-extended") return history[Number(rest[1])] ?? "";
     if (command === "cpu-code-coverage" && rest[0] === "get") return [...coverage].join(" ");
     if (command === "cpu-code-coverage" && rest[0] === "clear") coverage.clear();
     if (command === "get-io-ports") return options.ioPorts ?? "Spectrum FE port: 07\nSpectrum 7FFD port: 10\nSelected register: 0";
     if (line.startsWith("set-breakpoint 100")) frames = rest[1];
+    if (command === "snapshot-save") writeFileSync(argument, Buffer.from([...Buffer.from("ZSF ZEsarUX Snapshot File.", "latin1"), 43, 0, 1, 0, 0, 0, halted ? 1 : 0]));
     if (command === "run") {
       for (const address of options.ran ?? []) coverage.add(address);
-      const fired = fires.shift() ?? frames;
+      record(runs.shift() ?? []);
+      const next = fires.shift();
+      halted = next?.endsWith(" (halt)") === true;
+      const fired = next?.replace(" (halt)", "") ?? frames;
       if (fired === frames && frames !== undefined) partial = Number(frames.split(">=")[1]) + (options.overshoot ?? 0);
       return `Running until a breakpoint, key press or data sent, menu opening or other event\n${REGISTERS}${fired === undefined ? "" : `\nBreakpoint fired: ${fired}`}`;
     }
@@ -415,6 +431,28 @@ test("the memmap names each mark after a HALT that it could not check, until a c
     assert.deepEqual(((await session.handle("memmap", { action: "read" })) as Read).uncheckedAfterHalt, [0x8002]);
     await session.handle("memmap", { action: "clear" });
     assert.equal(((await session.handle("memmap", { action: "read" })) as Read).uncheckedAfterHalt, undefined);
+  } finally {
+    await session.close();
+  }
+});
+
+test("a breakpoint or a run_until target after a HALT stops only when the instruction is about to execute, not in the wait: the run goes on with the same frames", async () => {
+  // $11dc is the PC of every stop of the stand-in, after a HALT at $11db. The first stop of each call comes in the wait.
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k", { fires: ["PC=11DCH (halt)", "PC=11DCH", "PC=11DCH (halt)", "PC=11DCH", "PC=11DCH (halt)", "PC=11DCH"], memory: { 0x11db: 0x76 } });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    const added = (await session.handle("breakpoint", { action: "add", address: 0x11dc })) as { points: Array<{ id: number }> };
+    commands.length = 0;
+    assert.deepEqual(await session.handle("execution", { action: "advance-frames", count: 3 }), { state: "stopped", pc: 0x11dc, stopReason: "breakpoint", pointId: added.points[0]!.id });
+    assert.equal(commands.filter((command) => command === "run").length, 2);
+    assert.deepEqual(commands.filter((command) => command.startsWith("set-breakpoint 100 ")), [`set-breakpoint 100 TSTATESP>=${3 * 69_888}`], "the frames of the call stay as they are");
+    await session.handle("breakpoint", { action: "remove", id: added.points[0]!.id });
+    assert.deepEqual(await session.handle("runUntil", { address: 0x11dc, timeoutFrames: 5 }), { state: "stopped", pc: 0x11dc, stopReason: "target", reached: true });
+    // A resume goes on after the stop in the wait, too.
+    await session.handle("breakpoint", { action: "add", address: 0x11dc });
+    assert.deepEqual(await session.handle("execution", { action: "resume" }), { state: "running" });
+    for (let wait = 0; wait < 50 && ((await session.handle("status", {})) as { state: string }).state === "running"; wait++) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(await session.handle("status", {}), { state: "stopped", pc: 0x11dc, stopReason: "breakpoint", pointId: 2, model: "48k" });
   } finally {
     await session.close();
   }

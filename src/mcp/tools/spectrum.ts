@@ -94,7 +94,8 @@ const runUntil = defineTool<z.ZodObject, z.ZodObject, Session>({
   title: "Run the Spectrum to an address",
   description:
     "Run until the CPU comes to the instruction at an address, then stop. reached true and stopReason target: the CPU stopped at the address. " +
-    "reached false and stopReason timeout: the address did not run in timeoutFrames frames. A breakpoint or a watchpoint can stop the run first: then reached is false and stopReason and pointId tell which.",
+    "reached false and stopReason timeout: the address did not run in timeoutFrames frames. A breakpoint or a watchpoint can stop the run first: then reached is false and stopReason and pointId tell which. " +
+    "When the address is the byte after opcode $76, the run does not stop while the CPU waits for an interrupt after the $76. It stops when the CPU is about to execute the instruction at the address, after the interrupt.",
   inputSchema: z.object({ address: AddressInput, timeoutFrames: z.number().int().min(1).max(SPECTRUM_MAX_FRAMES).default(250) }).strict(),
   outputSchema: StopOutput.extend({ reached: z.boolean() }),
   readOnly: false,
@@ -109,6 +110,7 @@ const breakpoint = defineTool<z.ZodObject, z.ZodObject, Session>({
   title: "Spectrum breakpoints",
   description:
     "Add, remove or list breakpoints. A breakpoint stops the CPU before the instruction at its address. Each has an id. Up to 90. " +
+    "A breakpoint on the byte after opcode $76 does not stop the CPU while it waits for an interrupt after the $76. It stops the CPU when the CPU is about to execute the instruction at the address, after the interrupt. " +
     "add gives the new breakpoint. remove and list give the breakpoints that the session has after the action.",
   inputSchema: z.object({ action: z.enum(["add", "remove", "list"]), address: AddressInput.optional(), id: z.number().int().min(1).optional() }).strict(),
   outputSchema: z.object({ points: z.array(Point) }),
