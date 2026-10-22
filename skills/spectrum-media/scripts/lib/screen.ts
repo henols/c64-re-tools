@@ -22,7 +22,7 @@ export function snapshotOf(path: string, what: string): SpectrumSnapshot {
  * A snapshot takes no border of the call.
  */
 export function screenOf(path: string, border: number | undefined): { screen: Uint8Array; border: number } {
-  const file = readProjectFile(path, { what: "<file>" });
+  const file = readProjectFile(path);
   if (file.type === "z80" || file.type === "sna") {
     if (border !== undefined) throw new UsageError("--border works only with a .scr file: a snapshot gives its own border. Remove --border");
     const snapshot = snapshotOf(path, "<file>");

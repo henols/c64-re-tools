@@ -224,7 +224,7 @@ export function readProgramFile(path: string, machine: Machine): ProgramFile {
 
 /** Reads a .z80 or .sna snapshot of the project as the program at its PC. */
 export function readSnapshotImage(path: string): SnapshotImage {
-  const file = readProjectFile(path, { what: "<file>" });
+  const file = readProjectFile(path);
   const snapshot = file.type === "z80" ? readZ80(file.bytes) : file.type === "sna" ? readSna(file.bytes) : undefined;
   if (snapshot === undefined) throw new Refusal("invalid-input", `${path} is no ZX Spectrum snapshot: give a .z80 or a .sna file.`);
   return snapshotImage(snapshot);

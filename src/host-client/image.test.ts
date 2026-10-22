@@ -99,4 +99,5 @@ test("a Spectrum project takes a snapshot as its program and refuses a tape with
   }
   assert.throws(() => readProgramFile("block1.bin", MACHINES.spectrum48), { code: "invalid-input", message: /block1\.bin is no snapshot\. A program of the ZX Spectrum 48K comes into the knowledge as a \.z80 or \.sna snapshot/ });
   assert.throws(() => readProgramFile("game.tzx", MACHINES.c64), { code: "invalid-input", message: /is a ZX Spectrum tape/ });
+  assert.throws(() => readProgramFile("missing.z80", MACHINES.spectrum48), { code: "not-found", message: /^There is no file at missing\.z80 in the project folder\.$/ });
 });
