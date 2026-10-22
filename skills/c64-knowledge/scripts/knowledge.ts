@@ -271,8 +271,10 @@ function listingSource(db: DatabaseSync | undefined, space: string): ListingSour
   const coverage = programCoverage(db, space)?.map;
   const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
   const platform = new Map(space === DEFAULT_SPACE ? platformNames().map((entry) => [entry.address, entry.name]) : []);
+  const entries = space === DEFAULT_SPACE ? platformNames().filter((entry) => entry.end > entry.address) : [];
   return {
     byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined),
+    entryStart: (at) => (inside(at) ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),
     // A user or LLM name, else the platform name; an analyzer name in symbols (knowledge from an older version) gives way to it.
     nameOf: (at) => {
       const own = symbolAt(db, at, space);

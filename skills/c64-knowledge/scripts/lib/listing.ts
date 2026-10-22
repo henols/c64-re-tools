@@ -11,6 +11,8 @@ export interface ListingSource {
   byteAt: (address: number) => number | undefined;
   /** The name of an address: a symbol, else a platform name. */
   nameOf: (address: number) => string | undefined;
+  /** The start of the platform entry of more bytes that holds an address outside the image (NMINV for its high byte), or undefined. */
+  entryStart?: (address: number) => number | undefined;
   /** The analyzer names of an address, for reference. */
   secondNames: (address: number) => string[];
   /** The knowledge regions, in address order. */
@@ -52,9 +54,22 @@ function accessOf(coverage: Uint8Array | undefined, start: number, length: numbe
   return text === "" ? "-" : text;
 }
 
+/**
+ * The name of an operand target, as c64-source writes it: its own name, else
+ * name+offset inside a named data region, or inside a platform entry of more bytes.
+ */
+function targetName(target: number, source: ListingSource): string | undefined {
+  const own = source.nameOf(target);
+  if (own !== undefined) return own;
+  const region = source.regions.find((row) => target > row.start && target <= row.end && !CODE.has(row.type) && row.type !== "dual-use");
+  const start = region?.start ?? source.entryStart?.(target);
+  const name = start === undefined ? undefined : source.nameOf(start);
+  return name === undefined ? undefined : `${name}+${target - start!}`;
+}
+
 /** The operand value of an instruction as an expression: the name of its target where one exists, else the number. Empty for no operand. */
-function operandOf(mode: Mode, address: number, low: number, high: number, nameOf: ListingSource["nameOf"]): string {
-  const named = (target: number, digits: 2 | 4) => nameOf(target) ?? (digits === 2 ? formatC64Byte(target) : formatC64Address(target));
+function operandOf(mode: Mode, address: number, low: number, high: number, source: ListingSource): string {
+  const named = (target: number, digits: 2 | 4) => targetName(target, source) ?? (digits === 2 ? formatC64Byte(target) : formatC64Address(target));
   if (mode === "imp") return "";
   if (mode === "imm") return formatC64Byte(low);
   if (mode === "rel") return named((address + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff, 4);
@@ -108,7 +123,7 @@ export function listing(source: ListingSource, start: number, end: number): List
       const bytes = Array.from({ length: length - 1 }, (_, offset) => source.byteAt(address + 1 + offset));
       if (address + length - 1 <= region.end && bytes.every((value) => value !== undefined)) {
         // The operand expression of the knowledge in the syntax of the addressing mode, as c64-source writes it.
-        const operand = source.operand(address) ?? operandOf(opcode.mode, address, bytes[0] ?? 0, bytes[1] ?? 0, source.nameOf);
+        const operand = source.operand(address) ?? operandOf(opcode.mode, address, bytes[0] ?? 0, bytes[1] ?? 0, source);
         if (address >= start) lines.push(line(address, length, instructionWith(byte, operand)));
         address += length;
         continue;

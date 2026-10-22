@@ -582,6 +582,25 @@ test("listing writes an operand expression in the syntax of the addressing mode,
   );
 });
 
+test("listing names an address inside a named data region or a platform entry as name+offset, as c64-source does", () => {
+  // $4000 LDA $432F, $4003 STA $0319, $4006 LDA $4100: a two-byte table at $432E, the high byte of NMINV, and a code region.
+  const bytes = new Map([0xad, 0x2f, 0x43, 0x8d, 0x19, 0x03, 0xad, 0x00, 0x41, 0x00, 0x00].map((value, offset) => [0x4000 + offset, value]));
+  for (const address of [0x432e, 0x432f, 0x4100, 0x4101]) bytes.set(address, 0);
+  const names = new Map([[0x432e, "fireball_active"], [0x0318, "NMINV"], [0x4100, "main"]]);
+  const source: ListingSource = {
+    byteAt: (address) => bytes.get(address),
+    nameOf: (address) => names.get(address),
+    entryStart: (address) => (address === 0x0319 ? 0x0318 : undefined),
+    secondNames: () => [],
+    regions: [{ start: 0x4000, end: 0x4008, type: "code" }, { start: 0x4100, end: 0x4101, type: "code" }, { start: 0x432e, end: 0x432f, type: "bytes" }],
+    comments: () => ({ line: [] }),
+    operand: () => undefined,
+    references: () => ({ in: 0, out: 0 }),
+  };
+  assert.deepEqual(listing(source, 0x4000, 0x4008).map((line) => line.text), ["lda fireball_active+1", "sta NMINV+1", "lda main"]);
+});
+
+
 test("listing shows a comment at an operand byte (knowledge of an older version) with its address, as c64-source does", () => {
   // $1bc9 LDA $0104, $1bcc RTS; a side comment at $1bc9 and one at the operand byte $1bca.
   const bytes = new Map([0xad, 0x04, 0x01, 0x60].map((value, offset) => [0x1bc9 + offset, value]));
