@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { filledSegments, parseSjasmplusDiagnostics, parseSjasmplusSymbols, wrapperSource } from "./sjasmplus.ts";
+import { deviceDiagnostics, filledSegments, parseSjasmplusDiagnostics, parseSjasmplusSymbols, wrapperSource } from "./sjasmplus.ts";
 
 test("the wrapper sets the device, fills the memory with the marker, includes the entry source and saves the memory", () => {
   const text = wrapperSource({ files: [], entrySource: "src/main.asm", includeDirs: [], defines: {}, model: "128k" }, 0xaa, "C:\\tmp\\memory.bin");
@@ -31,4 +31,24 @@ test("sjasmplus diagnostics and symbols are read; a line of the wrapper has no l
     { name: "LIMIT", kind: "constant", value: 0x10, used: true },
     { name: "count", kind: "address", address: 0x8030, used: true },
   ]);
+});
+
+test("a DEVICE line of a source file is an error at its line: the build sets the device", () => {
+  const files = [
+    { path: "main.asm", size: 0 },
+    { path: "lib/setup.asm", size: 0 },
+    { path: "data.bin", size: 0 },
+  ];
+  const contents = [
+    Buffer.from("; DEVICE ZXSPECTRUM48 in a comment\n\tld a,device_flag\ndevice_flag EQU 1\n"),
+    Buffer.from("\torg $8000\nstart\t.device zxspectrum128\n  DEVICE NONE // the old form\n"),
+    Buffer.from([0x00, 0x0a, 0x20, 0x64, 0x65, 0x76, 0x69, 0x63, 0x65, 0x20]),
+  ];
+  assert.deepEqual(
+    deviceDiagnostics({ files }, contents).map((item) => [item.file, item.line]),
+    [
+      ["lib/setup.asm", 2],
+      ["lib/setup.asm", 3],
+    ],
+  );
 });

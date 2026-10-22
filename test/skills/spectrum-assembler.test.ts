@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -86,4 +86,12 @@ test("a build of the counter is the program of the snapshot, and a change shows 
   assert.deepEqual([bad.status, bad.json.result, bad.json.assembled], [0, "FAIL", false]);
   assert.match(String(bad.envelope.hint), /Correct the source at the file and the line of each diagnostic/);
   assert.deepEqual(bad.json.diagnostics, [{ severity: "error", file: "bad.asm", line: 2, message: "Unrecognized instruction: foo bar" }]);
+});
+
+test("a source that sets DEVICE is refused with a diagnostic at its line", { skip, timeout: 120_000 }, () => {
+  writeFileSync(join(project, "src", "device.asm"), "; DEVICE in a comment is no problem\n        DEVICE ZXSPECTRUM48\n        org $8000\n        ret\n");
+  const built = run("spectrum-assembler", "assembler.ts", "build", "src", "device.asm", "--out", ".c64-re-tools/local/device.bin");
+  assert.deepEqual([built.status, built.json.result, built.json.assembled], [0, "FAIL", false]);
+  assert.deepEqual(built.json.diagnostics, [{ severity: "error", file: "device.asm", line: 2, message: "The source must not set DEVICE: the build sets the device of the model (--model). Remove this line." }]);
+  assert.equal(existsSync(join(project, ".c64-re-tools/local/device.bin")), false);
 });

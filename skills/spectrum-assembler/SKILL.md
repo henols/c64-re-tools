@@ -39,7 +39,7 @@ To get the command list, run the script with no arguments.
 - `<entry>` is the main source file, relative to the source root.
 - An include folder is a path relative to the source root.
 - The source sets its addresses with `ORG`.
-- The source must not have `DEVICE`. The build sets the device of the model.
+- The source must not have `DEVICE`. The build sets the device of the model. The script refuses a `DEVICE` line: `assembled` is `false`, and a diagnostic gives the file and the line. Remove the line, and give `--model` for the 128K.
 - The target CPU is the Z80. Do not give C64 source to this script.
 - `--out` is the path of the program file, relative to the project folder. The file holds the bytes from the first address to the last address that the build fills. A gap between two `ORG` areas holds zeros. The file has no header.
 - Before you use `--compare`, put the program bytes into the project knowledge.

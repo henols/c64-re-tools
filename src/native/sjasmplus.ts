@@ -7,7 +7,7 @@
 // byte, includes the entry source and saves the 64 KiB. It assembles two times,
 // with two markers: an address that holds the same byte in both is a byte of
 // the program. So the entry source sets its addresses with ORG and has no
-// DEVICE of its own.
+// DEVICE of its own: the adapter refuses a DEVICE line with a diagnostic.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -68,6 +68,30 @@ export function wrapperSource(params: SjasmplusParams, marker: number, memory: s
   ].join("\n");
 }
 
+/** A DEVICE directive: after a label or indented, with or without its dot, in any letter case. */
+const DEVICE_LINE = /^(?:[^\s;]+\s+|\s+)?\.?device(?:\s|$)/i;
+
+/**
+ * The DEVICE lines of the source files. The build sets the device of the model
+ * and reads the program from its memory: another DEVICE gives the memory of
+ * another device. A file with a NUL byte is binary data, not source.
+ */
+export function deviceDiagnostics(params: Pick<SjasmplusParams, "files">, contents: readonly Buffer[]): Diagnostic[] {
+  const found: Diagnostic[] = [];
+  params.files.forEach((file, index) => {
+    const bytes = contents[index];
+    if (bytes === undefined || bytes.includes(0)) return;
+    bytes
+      .toString("latin1")
+      .split(/\r?\n/)
+      .forEach((text, line) => {
+        const code = text.replace(/;.*$|\/\/.*$/, "");
+        if (DEVICE_LINE.test(code)) found.push({ severity: "error", file: file.path, line: line + 1, message: "The source must not set DEVICE: the build sets the device of the model (--model). Remove this line." });
+      });
+  });
+  return found;
+}
+
 /** The argv for one run; every value comes from the request that checkSjasmplusParams accepted. */
 export function sjasmplusArguments(executable: string, params: SjasmplusParams, wrapper: string, symbols: string): string[] {
   const argv = [executable, "--nologo", "--msg=war", `--sym=${symbols}`];
@@ -122,6 +146,8 @@ export function filledSegments(first: Uint8Array, second: Uint8Array): Array<{ s
 
 export async function assemble(params: SjasmplusParams, files: Buffer[], context: ToolContext): Promise<{ result: SjasmplusResult; attachments?: Buffer[] }> {
   checkSjasmplusParams(params);
+  const devices = deviceDiagnostics(params, files);
+  if (devices.length > 0) return { result: { assembled: false, diagnostics: devices } };
   const executable = findTool(SJASMPLUS, context.env);
   const workspace = Workspace.create(context.supervisor);
   try {
