@@ -197,6 +197,11 @@ test("the spectrum MCP server runs long, keeps the interrupt mode over a restore
     assert.deepEqual([again.stopReason, again.pointId], ["breakpoint", id]);
     assert.deepEqual((await call("breakpoint", { action: "remove", id })).points, []);
     assert.equal((await call("execution", { action: "advance-frames", count: 2 })).stopReason, "frames");
+    // The CPU history records after the load too, and advance-frames without count runs one frame.
+    assert.equal(((await call("cpu_history", { count: 4 })).pcs as string[]).length, 4);
+    await call("timing", { action: "start" });
+    assert.equal((await call("execution", { action: "advance-frames" })).stopReason, "frames");
+    assert.ok(Math.abs(((await call("timing", { action: "read" })).tstates as number) - 69_888) < 32);
 
     // A restore of a CPU that waits in a HALT: IM 1 again, and the CPU still waits for the interrupt.
     await call("run_until", { address: `$${HALT_AT.toString(16)}`, timeoutFrames: 2 });
