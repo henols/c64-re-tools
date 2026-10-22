@@ -6,6 +6,7 @@
 import { posix } from "node:path";
 
 import { formatC64Address, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
+import { IO_RAM } from "#src/host-client/coverage.ts";
 import { bitmapFrame, charsetFrame, encodePng, PATTERN_PALETTES, scaleFrame, screenText, spriteSheet, type GraphicsMode } from "#src/graphics.ts";
 import { mermaidGraph, ownerOf, routineEdges, routineHeads, type GraphReference, type RoutineHead } from "#src/knowledge/graph.ts";
 import type { CommentRow, ModuleRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
@@ -133,10 +134,17 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     return entries.has(named.name) ? entryOfName(page, named.name, shown) : codeOfName(page, named.name).replace(`\`${named.name}\``, `\`${shown}\``);
   };
   const capped = (items: string[]) => (items.length <= MAX_LISTED ? items.join(", ") : `${items.slice(0, MAX_LISTED).join(", ")} and ${items.length - MAX_LISTED} more`);
+  /**
+   * The references that use the data at their target. An access to the I/O area inside the image is the
+   * register, as the source writes it: it uses no data of the RAM under it, unless the knowledge names that
+   * address. So the code of the SID and the CIAs is no reader of the sprites in RAM at $d400 or $dc00.
+   */
+  const named = new Set(input.symbols.map((symbol) => symbol.address));
+  const dataReferences = input.references.filter((reference) => !(reference.to >= IO_RAM.start && reference.to <= IO_RAM.end && input.image?.inImage(reference.to) === true && !named.has(reference.to)));
   /** The routines that read or write a range, each linked to its entry. */
   const ownersOf = (page: string, start: number, end: number, kind: string) =>
     capped(
-      [...new Set(input.references.filter((reference) => reference.kind === kind && reference.to >= start && reference.to <= end).map((reference) => ownerAt(reference.from)?.name ?? hex(reference.from)))].map((name) =>
+      [...new Set(dataReferences.filter((reference) => reference.kind === kind && reference.to >= start && reference.to <= end).map((reference) => ownerAt(reference.from)?.name ?? hex(reference.from)))].map((name) =>
         entries.has(name) ? entryOfName(page, name, name) : `\`${name}\``,
       ),
     );
@@ -204,7 +212,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       .filter((comment) => comment.address === address)
       .sort((a, b) => (a.placement === b.placement ? 0 : a.placement === "line" ? -1 : 1))
       .map((comment) => comment.text.replace(/\s*\r?\n\s*/g, " ").trim());
-  const incoming = (entry: Entry) => input.references.filter((reference) => reference.to >= entry.address && reference.to <= entry.spanEnd);
+  const incoming = (entry: Entry) => dataReferences.filter((reference) => reference.to >= entry.address && reference.to <= entry.spanEnd);
   const outgoing = (head: RoutineHead) => input.references.filter((reference) => ownerAt(reference.from)?.address === head.address);
   const entryText = (page: string, entry: Entry): string[] => {
     const lines = ["", `<a id="${entry.name}"></a>`, `### ${codeOfName(page, entry.name)} \`${entry.spanEnd > entry.address ? range(entry.address, entry.spanEnd) : hex(entry.address)}\``, "", `*${entry.kind}*`];
