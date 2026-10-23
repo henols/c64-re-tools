@@ -124,7 +124,7 @@ const breakpoint = defineTool<z.ZodObject, z.ZodObject, Session>({
   description:
     "Add, remove or list breakpoints. A breakpoint stops the CPU before the instruction at its address. Each has an id. Up to 90. " +
     "After a load or a restore of a snapshot, a breakpoint at its PC stops the first run before the first instruction. No t-states pass. " +
-    "When the CPU of the snapshot waits after opcode $76, a breakpoint at the $76 stops the first run in the wait: waitsForInterrupt is true. " +
+    "A restore and a load of a .zsf keep the wait for an interrupt after opcode $76. Then a breakpoint at the $76 stops the first run in the wait: waitsForInterrupt is true. A .z80 and a .sna do not keep the wait: after their load, waitsForInterrupt is false. " +
     "A breakpoint on the byte after opcode $76 does not stop the CPU while it waits for an interrupt after the $76. It stops the CPU when the CPU is about to execute the instruction at the address, after the interrupt. " +
     "add gives the new breakpoint. remove and list give the breakpoints that the session has after the action.",
   inputSchema: z.object({ action: z.enum(["add", "remove", "list"]), address: AddressInput.optional(), id: z.number().int().min(1).optional() }).strict(),
@@ -371,7 +371,9 @@ const autostart = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "autostart",
   title: "Load and start a Spectrum program",
   description:
-    "Load a project file and start it as a user does. A tape (.tap, .tzx) loads with LOAD \"\". A snapshot (.z80, .sna, .zsf) continues at its PC, with its border colour. As after a restore, the first interrupt comes at the end of the first frame. The CPU runs after it. Stop the CPU with execution action pause before you read memory. " +
+    "Load a project file and start it as a user does. A tape (.tap, .tzx) loads with LOAD \"\". A snapshot (.z80, .sna, .zsf) continues at its PC, with its border colour. As after a restore, the frame starts at its first t-state, and the first interrupt comes at the end of the first frame. The CPU runs after the load. " +
+    "When a breakpoint is at the PC of the snapshot, the CPU does not run. Then the result is that stop: stopReason is breakpoint, and no t-states pass. The next run starts with the instruction at that PC. " +
+    "When the CPU runs, stop it with execution action pause before you read memory. " +
     "The tool refuses a file whose contents do not agree with its extension. Then the machine does not change. " +
     "A snapshot sets the model: for example, a 128K snapshot changes a 48K to a 128K. The tool refuses model with a snapshot. " +
     "A tape runs on the model in model. Without model, a tape runs on the model that the session started with, also after a snapshot of the other model. " +
