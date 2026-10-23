@@ -203,6 +203,28 @@ export function snapshotOfImage(image: Pick<SnapshotImage, "machine" | "main" | 
   return { model, registers: state.registers, border: state.border, port7ffd, banks };
 }
 
+/**
+ * The program in the knowledge of a ZX Spectrum project as a snapshot image:
+ * `program` is the program in the main space of the knowledge, with its entry
+ * state, and `space` gives the program in another space of the knowledge, or
+ * undefined. Each RAM bank space of the machine (ram0 to ram7 on the 128K)
+ * that the knowledge holds is a bank. Undefined when the program has no entry
+ * state.
+ */
+export function knowledgeSnapshot(
+  machine: Machine,
+  program: { segments: Array<{ start: number; end: number }>; byteAt: (address: number) => number; entry?: number; state?: Record<string, unknown> },
+  space: (name: string) => { byteAt: (address: number) => number } | undefined,
+): SnapshotImage | undefined {
+  if (program.state === undefined) return undefined;
+  const banks = Array.from({ length: 8 }, (_, bank) => bank).flatMap((bank) => {
+    if (!machine.spaces.pattern.test(`ram${bank}`)) return [];
+    const held = space(`ram${bank}`);
+    return held === undefined ? [] : [{ bank, byteAt: held.byteAt }];
+  });
+  return { machine: machine.id as SnapshotImage["machine"], main: { segments: program.segments, byteAt: program.byteAt, entry: program.entry ?? 0, state: program.state }, banks };
+}
+
 /** The program in a file: a snapshot of the ZX Spectrum, or an image.json or a PRG of the C64. */
 export type ProgramFile = { snapshot: SnapshotImage } | { image: Image };
 

@@ -16,7 +16,7 @@ import { basename } from "node:path";
 import { type AddressRange, addressOf, formatAddress, parseAddress, POINTER_TABLE_TYPES } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
-import { readProgramFile, snapshotOfImage, type SnapshotImage } from "#src/host-client/image.ts";
+import { knowledgeSnapshot, readProgramFile, snapshotOfImage, type SnapshotImage } from "#src/host-client/image.ts";
 import { readActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
@@ -95,13 +95,7 @@ function readRelease(name: string, shift: number, machine: Machine): LoadedRelea
         // The Z80 state starts the snapshot, not a C64 entry state.
         const { state: _state, ...bytes } = program;
         image = bytes;
-        const banks = Array.from({ length: 8 }, (_, bank) => bank)
-          .filter((bank) => machine.spaces.pattern.test(`ram${bank}`))
-          .flatMap((bank) => {
-            const held = programImage(db, `ram${bank}`);
-            return held === undefined ? [] : [{ bank, byteAt: held.byteAt }];
-          });
-        if (program.state !== undefined) snapshot = { machine: machine.id as SnapshotImage["machine"], main: { ...program, entry: program.entry ?? 0, state: program.state }, banks };
+        snapshot = knowledgeSnapshot(machine, program, (space) => programImage(db, space));
       } else image = { ...program, ...(program.state === undefined ? {} : { state: parseEntryState(program.state, "the entry state of the knowledge") }) } as typeof image;
     } finally {
       db?.close();

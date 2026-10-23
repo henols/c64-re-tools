@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { encodePng, SPECTRUM_PALETTE, spectrumScreenFrame } from "#src/graphics.ts";
-import { snapshotOfImage } from "#src/host-client/image.ts";
+import { knowledgeSnapshot, snapshotOfImage } from "#src/host-client/image.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import { checkZxSteps, ZX_STEP_FORMS, type ZxScreenStep, type ZxStep } from "#src/host-client/zx-steps.ts";
 import { openForRead } from "#src/knowledge/database.ts";
@@ -102,20 +102,15 @@ export function readZxRecordFile(path: string): ZxRecordFile {
 }
 
 /** The snapshot of the program in the project knowledge: its bytes, the paged banks of a 128K, and its entry state. */
-function knowledgeSnapshot() {
+function snapshotOfKnowledge() {
   const db = openForRead();
   try {
     const machine = machineOf(db);
-    const program = requireProgram(db, machine.spaces.main);
-    if (program.state === undefined) {
+    const image = knowledgeSnapshot(machine, requireProgram(db, machine.spaces.main), (space) => programImage(db, space));
+    if (image === undefined) {
       throw new Refusal("not-found", 'The project knowledge has no entry state of the program, so it has no snapshot for "program": "knowledge". Put the .z80 snapshot of the program into the project knowledge, or give a .z80 or .sna file as program.');
     }
-    const banks = Array.from({ length: 8 }, (_, bank) => bank).flatMap((bank) => {
-      if (!machine.spaces.pattern.test(`ram${bank}`)) return [];
-      const held = programImage(db, `ram${bank}`);
-      return held === undefined ? [] : [{ bank, byteAt: held.byteAt }];
-    });
-    return snapshotOfImage({ machine: machine.id as "spectrum48" | "spectrum128", main: { segments: program.segments, byteAt: program.byteAt, entry: program.entry ?? 0, state: program.state }, banks }, "the entry state of the knowledge");
+    return snapshotOfImage(image, "the entry state of the knowledge");
   } finally {
     db?.close();
   }
@@ -124,7 +119,7 @@ function knowledgeSnapshot() {
 /** The snapshot of the program as a .z80 that zxrun loads, and its model. */
 function programSnapshot(path: string): { bytes: Uint8Array; model: ZxModel } {
   let snapshot;
-  if (path === "knowledge") snapshot = knowledgeSnapshot();
+  if (path === "knowledge") snapshot = snapshotOfKnowledge();
   else {
     const file = readProjectFile(path, { what: "program" });
     snapshot = file.type === "z80" ? readZ80(file.bytes) : readSna(file.bytes);

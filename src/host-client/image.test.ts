@@ -6,7 +6,7 @@ import { after, before, test } from "node:test";
 
 import { MACHINES } from "../machine.ts";
 import { writeZ80, type SpectrumSnapshot } from "../spectrum.ts";
-import { readImage, readPrg, readProgramFile, snapshotImage } from "./image.ts";
+import { knowledgeSnapshot, readImage, readPrg, readProgramFile, snapshotImage, snapshotOfImage } from "./image.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-image-"));
 const cwd = process.cwd();
@@ -84,6 +84,33 @@ test("a 128K snapshot gives the CPU view with the paged bank, the paging in the 
   assert.equal(image.main.state.port7ffd, "$13");
   // Banks 5, 2 and the paged bank 3 are in the CPU view; of the others only bank 1 holds data.
   assert.deepEqual(image.banks.map((bank) => [bank.bank, bank.byteAt(0xc000)]), [[1, 0xc9]]);
+});
+
+test("the snapshot of the knowledge is the 128K snapshot that went into it, with its paging and the banks of the machine, and none without an entry state", () => {
+  const banks = Array.from({ length: 8 }, () => new Uint8Array(0x4000));
+  banks[1]![0] = 0xc9;
+  banks[3]![0x10] = 0x55;
+  banks[4]![0x3fff] = 0xaa;
+  banks[5]![0] = 0x3e;
+  const original = spectrumSnapshot("128k", 0x13, banks);
+  // The knowledge as a snapshot import writes it: the CPU view in the main space, each other bank that holds data in its ram<n> space.
+  const written = snapshotImage(original);
+  const spaces = new Map<string, { byteAt: (address: number) => number }>(written.banks.map((bank) => [`ram${bank.bank}`, bank]));
+  const asked: string[] = [];
+  const space = (name: string) => {
+    asked.push(name);
+    return spaces.get(name);
+  };
+  const image = knowledgeSnapshot(MACHINES.spectrum128, written.main, space)!;
+  assert.deepEqual([image.machine, image.main.entry, image.banks.map((bank) => bank.bank)], ["spectrum128", 0x8000, [1, 4]]);
+  assert.deepEqual(asked, ["ram0", "ram1", "ram2", "ram3", "ram4", "ram5", "ram6", "ram7"]);
+  assert.deepEqual(snapshotOfImage(image, "the knowledge"), original);
+  // The 48K has no bank spaces, and a program without an entry state has no snapshot.
+  asked.length = 0;
+  assert.deepEqual(knowledgeSnapshot(MACHINES.spectrum48, written.main, space)!.banks, []);
+  assert.deepEqual(asked, []);
+  const { state: _state, ...stateless } = written.main;
+  assert.equal(knowledgeSnapshot(MACHINES.spectrum128, stateless, space), undefined);
 });
 
 test("a Spectrum project takes a snapshot as its program and refuses a tape with the way to a snapshot; a .tzx is a Spectrum tape in a C64 project too", () => {
