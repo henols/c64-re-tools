@@ -143,8 +143,8 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--value <symbol>` | `operand` | The operand is the symbol plus the offset. |
 | `--expr <text>` | `operand` | The operand is this expression. |
 | `--offset <n>` | `operand` | With `--lo`, `--hi` or `--value`: a whole number to add, for example `1` or `'$1000'`. Write a negative offset as `--offset=-1`. The default is 0. |
-| `--code <text>` | `patch` | The ACME code of the patch. |
-| `--code-file <file>` | `patch` | A project file with the ACME code of the patch. |
+| `--code <text>` | `patch` | The code of the patch, in the syntax of ACME. C64 only. |
+| `--code-file <file>` | `patch` | A project file with the code of the patch, in the syntax of ACME. C64 only. |
 | `--nop` | `patch` | The patch is NOP only. |
 | `--comment <text>` | `patch`, `switch`, `release`, `macro`, `start-screen` | A comment for the row. A `patch`, `switch`, `macro` or `start-screen` write without `--comment` keeps the comment that the row has. |
 | `--default <0\|1>` | `switch` | The value in the default build. See the section of `switch`. |
@@ -265,7 +265,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 - Each line has `address`, `bytes`, `text`, `referencesIn` and `referencesOut`. It can also have `label`, `analyzerNames`, `lineComments` and `comment`. `lineComments` are the line comments before the line. `comment` is the side comment.
 - `text` is the instruction with the names of its target. An operand expression of the knowledge replaces the operand.
 - On the ZX Spectrum, a platform name names only an operand that is an address. That is the target of a jump or a call, or a memory access in brackets. An immediate value, for example `ld hl,$0000`, shows as a number or as a symbol of the knowledge. If the value is an address of the platform, write an operand expression with the platform name.
-- When the knowledge has coverage, `access` tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line, or `-` for none. An `r` on code can come from a read of the 6502 that the program does not do, for example the byte after an RTS or the opcode at the PC when an interrupt starts.
+- When the knowledge has coverage, `access` tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line, or `-` for none. On the C64, an `r` on code can come from a read of the 6502 that the program does not do. Examples are the byte after an RTS and the opcode at the PC when an interrupt starts. On the ZX Spectrum, only the coverage of a recorded session has reads. The reads of the bytes of the instruction are not in it. Thus an `r` on Z80 code is a read of the program, for example a copy, a checksum, or code that reads its own operand.
 - With `--out`, the body has `lines` as a number, and `out`, `bytes` and `sha256` of the text file.
 - If the knowledge has no program in the space, the script refuses. Put the program in with `image` first.
 - If the space is not a space of the project machine, the script refuses. Give a space of the machine, or remove `--space`.
@@ -505,7 +505,11 @@ A switch has a kind, a default, and the releases that have it on. The generated 
 
 ### `patch <range> <switch>`
 
-A patch is ACME code for a range of the program. The code is the bytes of the switch in the state that the base release does not have. Examples:
+A patch is code for a range of the program, in the syntax of ACME, the assembler of the C64 source. The code is the bytes of the switch in the state that the base release does not have.
+
+- Only the generated source of the C64 has patches and switches. The generated source of the ZX Spectrum refuses a project knowledge that has patches or switches. In a ZX Spectrum project, do not record a patch or a switch.
+
+Examples:
 
 - The base release has a copy protection. The switch `PROTECTION` names the base release. The code is the program without the protection, for example NOP in place of the `JSR` to the check.
 - The base release has the protection already removed, and another release has it. The code is the bytes of the protection from that release. When no release has these bytes, write in a comment that the crack removed the protection.
