@@ -344,15 +344,22 @@ export interface TapeHeader {
 }
 
 export interface TapeBlock {
-  /** The kind of block: a standard data block (TAP, TZX $10), a turbo block (TZX $11, $14), or another TZX block. */
+  /**
+   * The kind of block: a standard data block (TAP, TZX $10), a turbo block
+   * (TZX $11), a pure-data block (TZX $14), or another TZX block.
+   */
   kind: "standard" | "turbo" | "pure-data" | "other";
   /** The TZX block id; none in a TAP file. */
   id?: number;
-  /** The bytes of a data block: the flag byte, the data and the checksum. */
+  /**
+   * The bytes of a data block. A standard or turbo block has the ROM framing:
+   * the flag byte, the data and the checksum. A pure-data block has no
+   * framing that the tape tells: its own loader decides what its bytes are.
+   */
   bytes?: Uint8Array;
-  /** The flag byte: $00 for a header, $ff for data in the ROM format. */
+  /** The flag byte of a block with the ROM framing: $00 for a header, $ff for data. */
   flag?: number;
-  /** True when the XOR of every byte of a data block is 0. */
+  /** True when the XOR of every byte of a block with the ROM framing is 0. */
   checksumOk?: boolean;
   header?: TapeHeader;
   /** What a TZX block that holds no data says, for example a text description. */
@@ -363,7 +370,8 @@ const HEADER_TYPES = ["program", "number-array", "character-array", "code"] as c
 
 function dataBlock(kind: TapeBlock["kind"], bytes: Uint8Array, id?: number): TapeBlock {
   const block: TapeBlock = { kind, bytes, ...(id === undefined ? {} : { id }) };
-  if (bytes.length === 0) return block;
+  // A pure-data block has no pilot and no sync: only the own loader of the program reads it, so its first byte is no flag.
+  if (bytes.length === 0 || kind === "pure-data") return block;
   block.flag = bytes[0]!;
   block.checksumOk = bytes.reduce((xor, byte) => xor ^ byte, 0) === 0;
   if (block.flag === 0 && bytes.length === 19) {

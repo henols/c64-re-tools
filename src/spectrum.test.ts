@@ -129,6 +129,8 @@ test("a TZX file gives its data blocks, turbo and pure data too, and the text of
   assert.equal(blocks[0]!.text, "A loader");
   assert.equal(blocks[1]!.header?.name, "game");
   assert.deepEqual([...blocks[2]!.bytes!], turbo);
+  // A pure-data block has no ROM framing that the tape tells: all its bytes, and no flag and no checksum.
+  assert.deepEqual([[...blocks[4]!.bytes!], blocks[4]!.flag, blocks[4]!.checksumOk], [data, undefined, undefined]);
   assert.throws(() => readTzx(tzx.subarray(0, tzx.length - 2)), Refusal);
   assert.throws(() => readTzx(Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])), Refusal);
 });

@@ -22,7 +22,12 @@ const showBlock = (block: TapeBlock, index: number) => ({
   block: index,
   kind: block.kind,
   ...(block.id === undefined ? {} : { id: formatByte(block.id) }),
-  ...(block.flag === undefined ? {} : { flag: formatByte(block.flag), length: block.bytes!.length - 2, checksumOk: block.checksumOk }),
+  // A pure-data block gives the length of all its bytes: the own loader decides on a flag byte and a checksum.
+  ...(block.flag !== undefined
+    ? { flag: formatByte(block.flag), length: block.bytes!.length - 2, checksumOk: block.checksumOk }
+    : block.kind === "pure-data"
+      ? { length: block.bytes!.length }
+      : {}),
   ...(block.header === undefined
     ? {}
     : {
@@ -74,7 +79,7 @@ await runScript({
     },
     {
       name: "read",
-      summary: "Writes the data of one block, without its flag byte and its checksum.",
+      summary: "Writes the data of one block, without its flag byte and its checksum. Of a pure-data block, it writes all the bytes.",
       subjects: [
         { name: "<tape>", help: "a .tap or .tzx file, relative to the project folder" },
         { name: "<block>", help: "the number of the block, as blocks gives it" },
@@ -83,9 +88,10 @@ await runScript({
       run: (call) => {
         const blocks = tapeBlocks(call.subject(0));
         const index = call.parseNumber(call.subject(1), "<block>", 0, Math.max(0, blocks.length - 1));
-        const bytes = blocks[index]!.bytes;
-        if (bytes === undefined || bytes.length < 2) throw new UsageError(`Block ${index} holds no data: it is a ${blocks[index]!.kind} block. Give a block that blocks shows with a flag`);
-        const body = { block: index, ...writeReported(call.string("out")!, bytes.subarray(1, -1), { what: "--out" }) };
+        const { bytes, kind } = blocks[index]!;
+        const pure = kind === "pure-data";
+        if (bytes === undefined || bytes.length < (pure ? 1 : 2)) throw new UsageError(`Block ${index} holds no data: it is a ${kind} block. Give a block that blocks shows with a length`);
+        const body = { block: index, ...writeReported(call.string("out")!, pure ? bytes : bytes.subarray(1, -1), { what: "--out" }) };
         const header = blocks[index - 1]?.header;
         if (header?.type === "code") return reply(body, { hint: `The header in block ${index - 1} gives the load address ${formatAddress(header.param1)}. Disassemble the data at that address.` });
         if (header?.type === "program") return reply(body, { hint: "The header in block " + String(index - 1) + " tells that the data is a BASIC program. List its BASIC." });

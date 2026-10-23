@@ -84,7 +84,8 @@ Each flag applies only to the commands in the table. On another command, the scr
   - `turbo`: the TZX block `$11`, with other timings.
   - `pure-data`: the TZX block `$14`.
   - `other`: a TZX block without data. This block has `id`, the TZX block ID. A description block also has `text`.
-- `flag`, `length` and `checksumOk`, for a block with data. `length` does not include the flag byte and the checksum.
+- `flag`, `length` and `checksumOk`, for a `standard` or `turbo` block with data. `length` does not include the flag byte and the checksum.
+- `length` only, for a `pure-data` block. `length` is the number of all the bytes of the block. A `pure-data` block has no flag byte and no checksum that the tape tells. The own loader of the game decides what its bytes are. Thus `blocks` gives no `flag` and no `checksumOk` for it.
 - `header`, for a ROM header block: the `type`, the `name` and the `length` of the next file.
   - A `program` header also gives `autostart` and `programLength`. `autostart` is the line that the header starts, or `null`.
   - A `code` header also gives `address`, the load address of the file.
@@ -105,7 +106,7 @@ Do not record the block list in the project knowledge.
 
 ### `read <tape> <block>`
 
-Writes the data of one block at `--out`, without its flag byte and its checksum.
+Writes the data of one block at `--out`, without its flag byte and its checksum. For a `pure-data` block, it writes all the bytes of the block.
 
 `body` holds `block` and the written file as `out`, `bytes` and `sha256`.
 
@@ -115,7 +116,7 @@ When the load address of a file is a durable fact, record it in the project know
 
 Failure:
 
-- `invalid-input` with "holds no data": the block has no data, for example a TZX block of the kind `other`. Give a block that `blocks` shows with a `flag`.
+- `invalid-input` with "holds no data": the block has no data, for example a TZX block of the kind `other`. Give a block that `blocks` shows with a `length`.
 
 ---
 
