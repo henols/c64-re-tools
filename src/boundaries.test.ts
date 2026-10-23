@@ -46,8 +46,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   cpu: ["opcodes"],
   // The assembler of a machine: the rules for patch code and macro bodies in its syntax.
   assembler: ["opcodes"],
-  // ZX Spectrum media and snapshots: TAP and TZX blocks, .z80 and .sna.
-  spectrum: [],
+  // ZX Spectrum media and snapshots: TAP and TZX blocks, .z80 and .sna. machine: the models and their frame timing.
+  spectrum: ["machine"],
   // A machine: its CPU, its spaces, its assembler and its Ghidra language.
   machine: ["cpu", "assembler"],
   // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images.

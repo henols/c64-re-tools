@@ -35,6 +35,33 @@ test("a version 3 .z80 keeps every register, the border, the paging and the RAM 
   }
 });
 
+test("a .z80 gives the model of its hardware mode in each version, and refuses a machine that is no 48K or 128K", () => {
+  const v3 = writeZ80(snapshot("128k"));
+  // The same snapshot as a version 2 file: 23 bytes of extra header, and the +2 (12), a mode of other emulators.
+  const v2 = Uint8Array.from([...v3.subarray(0, 30), 23, 0, ...v3.subarray(32, 55), ...v3.subarray(86)]);
+  v2[34] = 12;
+  const plus2 = readZ80(v2);
+  assert.deepEqual([plus2.model, plus2.port7ffd, plus2.registers.pc], ["128k", 0x13, 0x8000]);
+  for (const bank of usedBanks(plus2)) assert.deepEqual(plus2.banks[bank], snapshot("128k").banks[bank], `bank ${bank}`);
+  // Mode 3: a 128K in version 2, a 48K with an MGT interface in version 3.
+  v2[34] = 3;
+  assert.equal(readZ80(v2).model, "128k");
+  const pentagon = Uint8Array.from(v3);
+  pentagon[34] = 9;
+  assert.throws(() => readZ80(pentagon), (error: Refusal) => error instanceof Refusal && /for a Pentagon 128K, not for a ZX Spectrum 48K or 128K/.test(error.message));
+  pentagon[34] = 200;
+  assert.throws(() => readZ80(pentagon), /hardware mode 200/);
+});
+
+test("a written .z80 marks $0000-$3fff as ROM and gives the T-state counter of the first t-state of the frame", () => {
+  for (const [model, low] of [["48k", 17_471], ["128k", 17_726]] as const) {
+    const written = writeZ80(snapshot(model));
+    assert.deepEqual([written[61], written[62]], [0xff, 0xff], model);
+    // The high counter is 3 just after the interrupt; the low counter counts down from a quarter frame less 1.
+    assert.deepEqual([written[55]! | (written[56]! << 8), written[57]], [low, 3], model);
+  }
+});
+
 test("a version 1 .z80 without compression gives its PC, its stack and its code at $8000", () => {
   // The 30-byte header: PC $8000, SP $ff00, IY $5c3a, IM 1, border 7, then 48 KiB of RAM from $4000.
   const head = new Uint8Array(30);

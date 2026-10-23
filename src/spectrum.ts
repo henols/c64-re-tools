@@ -5,8 +5,9 @@
 // 128K with bank 0 paged in.
 
 import { Refusal } from "./errors.ts";
+import { SPECTRUM_TIMING, type SpectrumModel } from "./machine.ts";
 
-export type SpectrumModel = "48k" | "128k";
+export type { SpectrumModel };
 
 export interface Z80Registers {
   af: number;
@@ -112,8 +113,19 @@ function decompress(data: Uint8Array, size: number, endMarker: boolean): Uint8Ar
   return out;
 }
 
-/** The 128K hardware modes of a version 2 and a version 3 .z80. */
-const MODE_128K = { 2: [3, 4], 3: [4, 5, 6, 7, 12, 13] } as const;
+/**
+ * The hardware modes (byte 34) of a version 2 and a version 3 .z80, after the
+ * World of Spectrum z80format page: the modes with the RAM pages of the 48K
+ * (8, 4 and 5), and those with the 8 RAM pages 3-10 of the 128K. Mode 3 is a
+ * 128K in version 2 and a 48K with an MGT interface in version 3. The modes of
+ * other emulators (7, 8 and 12, 13: the +3, the +2 and the +2A) can come in
+ * either version. The +2A and the +3 keep the pages of the 128K; the emulator
+ * refuses them by name when it runs them.
+ */
+const MODE_48K = { 2: [0, 1], 3: [0, 1, 3] } as const;
+const MODE_128K = { 2: [3, 4, 7, 8, 12, 13], 3: [4, 5, 6, 7, 8, 12, 13] } as const;
+/** The other hardware modes: their memory is not that of a 48K or a 128K. */
+const OTHER_HARDWARE: Record<number, string> = { 2: "a SamRam", 9: "a Pentagon 128K", 10: "a Scorpion 256K", 11: "a Didaktik-Kompakt", 14: "a TC2048", 15: "a TC2068", 128: "a TS2068" };
 
 /** Reads a .z80 snapshot of version 1, 2 or 3, of a 48K or a 128K. */
 export function readZ80(bytes: Uint8Array): SpectrumSnapshot {
@@ -156,6 +168,10 @@ export function readZ80(bytes: Uint8Array): SpectrumSnapshot {
   registers.pc = word(bytes, 32);
   const mode = bytes[34]!;
   const is128k = (MODE_128K[version] as readonly number[]).includes(mode);
+  if (!is128k && !(MODE_48K[version] as readonly number[]).includes(mode)) {
+    const machine = OTHER_HARDWARE[mode] ?? `hardware mode ${mode}`;
+    throw new Refusal("invalid-input", `The version ${version} .z80 file is for ${machine}, not for a ZX Spectrum 48K or 128K. Save the snapshot again on a 48K or a 128K.`);
+  }
   const snapshot: SpectrumSnapshot = { model: is128k ? "128k" : "48k", registers, border, port7ffd: is128k ? bytes[35]! : 0, banks };
   if (is128k) snapshot.ay = { registers: [...bytes.subarray(39, 55)], selected: bytes[38]! };
   let at = 32 + extra;
@@ -210,6 +226,14 @@ export function writeZ80(snapshot: SpectrumSnapshot): Uint8Array {
   header[33] = r.pc >> 8;
   header[34] = snapshot.model === "128k" ? 4 : 0;
   header[35] = snapshot.model === "128k" ? snapshot.port7ffd : 0;
+  // The T-state counter at the first t-state of the frame: the high counter is 3 just after the interrupt, the low counter counts down from a quarter frame less 1.
+  const quarter = SPECTRUM_TIMING[snapshot.model].frameTstates / 4;
+  header[55] = (quarter - 1) & 0xff;
+  header[56] = (quarter - 1) >> 8;
+  header[57] = 3;
+  // $0000-$3fff is ROM.
+  header[61] = 0xff;
+  header[62] = 0xff;
   // Bit 2: the AY is in use. A 128K always has it, and some readers (ZEsarUX) load the AY registers only with this bit.
   header[37] = snapshot.model === "128k" ? 4 : 0;
   if (snapshot.ay !== undefined) {
