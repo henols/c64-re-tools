@@ -112,6 +112,43 @@ test("an instruction that sjasmplus encodes in another way is db with its text, 
   assert.match(rendered.operandsAsNumbers[0]!.reason, /gives other bytes than the program/);
 });
 
+test("a table of addresses is dw lines of the names of its targets, an RTS table is name-1, and a split or cut entry is db lines of low and high", { skip, timeout: 120_000 }, async () => {
+  // $8000 ret ; $8001 ld a,$01 ; ret ; $8004 ret
+  const memory = new Uint8Array(0x10000);
+  memory.set([0xc9, 0x3e, 0x01, 0xc9, 0xc9], 0x8000);
+  // $8010 addresses: $8000 $8001 $8004 $028e ; $8018 rts-addresses: $7fff $8003 ; $801c addresses-split: lo $00 $04, hi $80 $80 ; $8020 addresses: $8000 (a comment at its high byte) $8002
+  memory.set([0x00, 0x80, 0x01, 0x80, 0x04, 0x80, 0x8e, 0x02, 0xff, 0x7f, 0x03, 0x80, 0x00, 0x04, 0x80, 0x80, 0x00, 0x80, 0x02, 0x80], 0x8010);
+  const input: Z80SourceInput = {
+    segments: [{ start: 0x8000, end: 0x8023 }],
+    byteAt: (address) => memory[address]!,
+    cpu: Z80,
+    symbols: [{ address: 0x8000, name: "first" }, { address: 0x8004, name: "third" }],
+    regions: [
+      { start: 0x8000, end: 0x8004, type: "code" },
+      { start: 0x8010, end: 0x8017, type: "addresses" },
+      { start: 0x8018, end: 0x801b, type: "rts-addresses" },
+      { start: 0x801c, end: 0x801f, type: "addresses-split" },
+      { start: 0x8020, end: 0x8023, type: "addresses" },
+    ],
+    comments: [{ address: 0x8021, placement: "side", text: "The high byte." }],
+    platform: platformNamesOfSpace(MACHINES.spectrum48, "spectrum"),
+    header: [],
+  };
+  const { rendered, built } = await z80Source(input, z80Instructions(input), "48k", { mark: "; the mark", rounds: 6 });
+  assert.ok(!("diagnostics" in built), JSON.stringify(built));
+  assert.deepEqual([...built.memory.subarray(0x8000, 0x8024)], [...memory.subarray(0x8000, 0x8024)]);
+  const source = rendered.files.find((item) => item.name === "segments/segment_8000.asm")!.text;
+  for (const line of [
+    "l_8001:\n\tld a,$01\n",
+    "\tdw first,l_8001,third,KEY_SCAN\n",
+    "\tdw first-1,third-1\n",
+    "\tdb low first,low third,high first,high third\n",
+    "\tdb low first\n\tdb high first\t; The high byte.\n\tdw $8002\n",
+  ])
+    assert.ok(source.includes(line), `${line}\n${source}`);
+  assert.match(rendered.files.find((item) => item.name === "constants.asm")!.text, /^KEY_SCAN\tEQU \$028e\t; /m);
+});
+
 test("the source of a snapshot gives all its bytes again with the operand expressions, the modules and the marks of the code that no run executed, and the documentation links to it", { skip, timeout: 300_000 }, () => {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-z80-source-"));
   mkdirSync(join(root, ".c64-re-tools", "local"), { recursive: true });

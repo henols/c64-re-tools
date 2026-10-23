@@ -354,6 +354,8 @@ For a ZX Spectrum project, `generate` writes source in the syntax of sjasmplus. 
 - A platform name, for example `KEY_SCAN` or `ERR_SP`, names only an address that the instruction uses. That address is the target of a jump or a call, or the address of a memory access, for example `ld hl,(ERR_SP)`. An address inside a platform entry of more bytes is `NAME+n`, for example `ld hl,(ERR_SP+1)`. An immediate value stays a number, for example `ld hl,$0000`. When the program holds the address of an immediate value, the value gets the name of the knowledge there.
 - An operand expression of the knowledge is in the source. A low byte is `low (...)`, and a high byte is `high (...)`. When sjasmplus refuses the expression, or the expression gives other bytes, the source has the number. Then `operandsAsNumbers` gives the reason.
 - With coverage, a mark `; not executed` comes before each range of instructions that no run executed. `notExecuted` gives the count, and `not_executed.json` gives all ranges.
+- A table of addresses is `dw` lines with the name of each target, for example `dw room_update_00,room_update_01`. A target without a name gets a name of the source, for example `l_d824`. Thus a change can move a routine, and the table gives its new address.
+- An entry of an `rts-addresses` table is `name-1`. A split table is `db` lines of `low name` and `high name`. When a label or a comment is at the high byte of an entry, that entry is two `db` lines.
 - `db` for the other bytes. A run of 16 or more equal bytes is one `ds` line.
 - Some Z80 instructions have two encodings, and sjasmplus writes only one of them. The script writes such an instruction as `db`, with the instruction as the comment. `body.asBytes` lists their addresses.
 

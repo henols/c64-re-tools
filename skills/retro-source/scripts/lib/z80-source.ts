@@ -6,7 +6,10 @@
 // no line starts. The instructions of the code regions (and of the flows from
 // --entry) are written as the Z80 decoder gives them, with names in place of
 // their addresses and the operand expressions of the knowledge; the other bytes
-// are db and ds lines, with the comments of the knowledge.
+// are db and ds lines, with the comments of the knowledge. A table of
+// addresses is dw lines of the names of its targets (name-1 for an RTS table);
+// a split table, or an entry that a label or a comment cuts, is db lines of
+// low and high of the names.
 //
 // A platform name names only an operand that is an address: the target of a
 // jump, a branch or a call, or a memory access (nn). An immediate value (ld
@@ -19,7 +22,7 @@
 // whose bytes the probe does not give again is written as db, with its text in
 // the comment, so the source gives the bytes of the program again.
 
-import { type AddressRange, formatAddress, formatByte } from "#src/address.ts";
+import { type AddressRange, formatAddress, formatByte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/address.ts";
 import { labelProblem, type Cpu, type Instruction } from "#src/cpu.ts";
 import { COVERAGE } from "#src/cpu/coverage.ts";
 import { operandIsAddress } from "#src/cpu/z80.ts";
@@ -65,6 +68,7 @@ export interface Z80Instruction {
 }
 
 const DATA_PER_LINE = 16;
+const WORDS_PER_LINE = 8;
 /** A run of this many equal bytes or more is one ds line. */
 const MIN_RUN = 16;
 /** The region type whose bytes the source decodes as instructions. */
@@ -284,10 +288,32 @@ export function renderZ80(input: Z80SourceInput, instructions: readonly Z80Instr
     taken.add(name);
     generated.add(target);
   }
+  // The entries of the tables of addresses, by the address of each byte. A target in the image gets a name of the source, as l_8015, unless an instruction holds it or it is inside a named data region.
+  const pointerPart = new Map<number, { pair: { low: number; high: number; target: number }; high: boolean; split: boolean; rts: boolean; table: number }>();
+  for (const region of input.regions) {
+    if (!(POINTER_TABLE_TYPES as readonly string[]).includes(region.type)) continue;
+    const type = region.type as PointerTableType;
+    const split = type === "addresses-split" || type === "rts-addresses-split";
+    const rts = type === "rts-addresses" || type === "rts-addresses-split";
+    for (const pair of pointerTableEntries({ start: region.start, end: region.end, type }, input.byteAt)) {
+      if (!inImage(pair.low) || !inImage(pair.high)) continue;
+      pointerPart.set(pair.low, { pair, high: false, split, rts, table: region.start });
+      pointerPart.set(pair.high, { pair, high: true, split, rts, table: region.start });
+    }
+  }
+  const insideInstruction = new Set(instructions.flatMap((instruction) => Array.from({ length: instruction.length - 1 }, (_, offset) => instruction.address + offset + 1)));
+  const tableStart = (address: number) => input.regions.find((region) => !NOT_TABLES.includes(region.type) && address > region.start && address <= region.end && labelAt.has(region.start))?.start;
+  for (const target of [...new Set([...pointerPart.values()].map((part) => part.pair.target))].sort((a, b) => a - b)) {
+    if (labelAt.has(target) || !inImage(target) || insideInstruction.has(target) || tableStart(target) !== undefined) continue;
+    const name = `l_${target.toString(16).padStart(4, "0")}`;
+    if (taken.has(name)) continue;
+    labelAt.set(target, name);
+    taken.add(name);
+    generated.add(target);
+  }
   // A platform name only where the knowledge has no name: of the address, or the same name elsewhere.
   const platformAt = new Map([...platformByName.values()].filter((entry) => !labelAt.has(entry.address) && !taken.has(entry.name)).map((entry) => [entry.address, entry]));
   const usedPlatform = new Set<string>();
-  const tableStart = (address: number) => input.regions.find((region) => !NOT_TABLES.includes(region.type) && address > region.start && address <= region.end && labelAt.has(region.start))?.start;
   /**
    * The name of an operand target. An address that the instruction uses gets its
    * own name, else name+offset inside a named data region or a platform entry of
@@ -367,6 +393,19 @@ export function renderZ80(input: Z80SourceInput, instructions: readonly Z80Instr
     };
     /** True when a data line or run can go on at the address: no label, instruction or comment starts there. */
     const free = (next: number) => !labelAt.has(next) && !at.has(next) && !lineComments.has(next) && !sideComments.has(next);
+    /** True when a db line or a ds run of plain bytes can go on at the address: it is free and no entry of a table of addresses. */
+    const plain = (next: number) => free(next) && !pointerPart.has(next);
+    /** The entry of a table of addresses at the address, as the text of its target. */
+    const pointerText = (part: NonNullable<ReturnType<typeof pointerPart.get>>) => {
+      const name = nameOf(part.pair.target, true);
+      if (!part.rts) return name ?? formatAddress(part.pair.target);
+      return name === undefined ? formatAddress((part.pair.target - 1) & 0xffff) : `${name}-1`;
+    };
+    /** True when a dw writes the entry that starts at the address: a whole entry of a table that is not split, in the piece, with no label or comment at its high byte. */
+    const whole = (next: number) => {
+      const part = pointerPart.get(next);
+      return part !== undefined && !part.split && !part.high && part.pair.high === next + 1 && next + 1 <= piece.end && free(next + 1);
+    };
     /** True when MIN_RUN equal bytes start at the address, inside the piece. */
     const startsRun = (address: number) => {
       if (address + MIN_RUN - 1 > piece.end) return false;
@@ -413,8 +452,25 @@ export function renderZ80(input: Z80SourceInput, instructions: readonly Z80Instr
         address = last + 1;
         continue;
       }
+      if (pointerPart.has(address)) {
+        // The entries of a table of addresses: dw lines of names, else db lines of low and high of the names. A line holds one table.
+        const words = whole(address);
+        const table = pointerPart.get(address)!.table;
+        const values: string[] = [];
+        let next = address;
+        while (next <= piece.end && values.length < (words ? WORDS_PER_LINE : DATA_PER_LINE) && (next === address || free(next)) && pointerPart.get(next)?.table === table && whole(next) === words) {
+          const part = pointerPart.get(next)!;
+          const target = pointerText(part);
+          values.push(words ? target : `${part.high ? "high" : "low"} ${/^[$A-Za-z_.0-9]+$/.test(target) ? target : `(${target})`}`);
+          next += words ? 2 : 1;
+        }
+        emit(address, next - 1, `${words ? "dw" : "db"} ${values.join(",")}`, []);
+        result.dataBytes += next - address;
+        address = next;
+        continue;
+      }
       let run = address + 1;
-      while (run <= piece.end && free(run) && input.byteAt(run) === input.byteAt(address)) run++;
+      while (run <= piece.end && plain(run) && input.byteAt(run) === input.byteAt(address)) run++;
       if (run - address >= MIN_RUN) {
         emit(address, run - 1, `ds ${run - address},${formatByte(input.byteAt(address))}`, []);
         result.dataBytes += run - address;
@@ -424,7 +480,7 @@ export function renderZ80(input: Z80SourceInput, instructions: readonly Z80Instr
       // Bytes up to the next label, instruction, run, piece end or the end of the line.
       const values: string[] = [];
       let next = address;
-      while (next <= piece.end && values.length < DATA_PER_LINE && (next === address || (free(next) && !startsRun(next)))) {
+      while (next <= piece.end && values.length < DATA_PER_LINE && (next === address || (plain(next) && !startsRun(next)))) {
         values.push(formatByte(input.byteAt(next)));
         next++;
       }
