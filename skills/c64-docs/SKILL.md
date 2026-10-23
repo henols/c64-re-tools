@@ -114,7 +114,7 @@ The reference has these pages:
 - `index.md`: each file of the source, with its range, its title, the count of routines and the count of names.
 - `modules/<file>.md`: a call graph of the file, its data regions with their readers and writers, and an entry for each name. An entry has the comment, the callers and the table that holds the name. For a routine, it also has the calls, the jumps, the reads and the writes.
 - `tables.md`: each table of addresses, jumps and words, entry by entry, with its target. An RTS table holds each target minus 1. The page gives the target.
-- `memory-map.md`: each region in address order. Then each variable outside the program, with its comment and the routines that read it and write it.
+- `memory-map.md`: each region in address order. Then each variable outside the program, with its comment and the routines that read it and write it. A platform name, for example a chip register, has a routine only where the source line uses that name. `(indexed)` after a routine tells that the line adds X or Y to the address. That access can also go to the addresses after it, which can have no row.
 - `graphics.md`: each `sprite`, `bitmap`, `charset` and `screen` region. The project knowledge has no graphics mode. Thus a sprite, a bitmap or a charset shows in hires and in multicolour. A charset shows 16 characters in each row. A screen shows as text.
 
 In a call graph, a solid arrow is a call, a thick arrow is a table entry, and a dotted arrow is a jump. A table entry goes from each routine that reads the table to each target in code. A table of data addresses gives no arrow.

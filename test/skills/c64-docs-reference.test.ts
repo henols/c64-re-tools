@@ -103,3 +103,52 @@ test("a platform name in the memory map covers only its register: RANDOM is no w
   assert.doesNotMatch(rowOf("RANDOM"), /fill_color/);
   assert.match(rowOf("SP0Y"), /^\| `\$D001` \|.*move_sprites/);
 });
+
+test("a platform name has a reader where the source line names it: an indexed use says so, and lda $d000,x with the character ROM in is no SP0X reader", () => {
+  const items = [
+    { start: 0x1000, end: 0x1002, file: "game.asm", line: 2 },
+    { start: 0x1010, end: 0x1012, file: "game.asm", line: 4 },
+    { start: 0x1020, end: 0x1022, file: "game.asm", line: 6 },
+  ];
+  const text = ["read_fire", "        lda CIAPRA,x ; X = 1 reads port B", "copy_font", "        lda $d000,x", "place_sprite", "        sta SP0X"];
+  const labels = [
+    { address: 0x1000, name: "read_fire", file: "game.asm", line: 1 },
+    { address: 0x1010, name: "copy_font", file: "game.asm", line: 3 },
+    { address: 0x1020, name: "place_sprite", file: "game.asm", line: 5 },
+    { address: 0xd000, name: "SP0X", file: "constants.asm", line: 1 },
+    { address: 0xdc00, name: "CIAPRA", file: "constants.asm", line: 2 },
+  ];
+  const map: SourceMap = {
+    directory: "src",
+    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
+    space: "c64",
+    revision: "1",
+    files: ["constants.asm", "game.asm"],
+    labels,
+    labelOf: (name) => labels.find((label) => label.name === name),
+    lineOf: (address) => items.find((item) => address >= item.start && address <= item.end),
+    pathOf: (file) => `src/${file}`,
+    textOf: (line) => (line.file === "game.asm" ? text[line.line - 1]?.replace(/;.*$/, "") : undefined),
+  };
+  const { files } = buildReference({
+    out: "docs/reference",
+    map,
+    revision: "1",
+    symbols: ["read_fire", "copy_font", "place_sprite"].map((name, index) => ({ ...row, address: 0x1000 + index * 0x10, name, kind: "routine" })),
+    regions: [{ ...row, start: 0x1000, end: 0x1022, type: "code" }],
+    comments: [],
+    references: [
+      { ...row, from: 0x1000, to: 0xdc00, kind: "read" },
+      { ...row, from: 0x1010, to: 0xd000, kind: "read" },
+      { ...row, from: 0x1020, to: 0xd000, kind: "write" },
+    ],
+    modules: [],
+    image: { byteAt: () => 0, inImage: (address: number) => address >= 0x1000 && address <= 0x1022 },
+  } as never);
+  const memoryMap = files.find((file) => file.path === "docs/reference/memory-map.md")!.bytes.toString("utf8");
+  const rowOf = (name: string) => memoryMap.split("\n").find((line) => line.includes(`id="${name}"`))!;
+  assert.match(rowOf("CIAPRA"), /read_fire.*\(indexed\)/, "the index can reach the registers after CIAPRA");
+  assert.doesNotMatch(rowOf("SP0X"), /copy_font/, "the source does not name SP0X there");
+  assert.match(rowOf("SP0X"), /place_sprite/);
+  assert.doesNotMatch(rowOf("SP0X"), /\(indexed\)/);
+});

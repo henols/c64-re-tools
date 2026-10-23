@@ -32,6 +32,8 @@ export interface SourceMap {
   lineOf: (address: number) => SourceLine | undefined;
   /** The project path of a source file. */
   pathOf: (file: string) => string;
+  /** The text of a source line, without its comment; undefined when the file or the line is not there. */
+  textOf?: (line: SourceLine) => string | undefined;
 }
 
 /** Reads the source map of the source in `directory` of the project `root`. A missing map is a refusal with the remedy. */
@@ -61,6 +63,7 @@ export function readSourceMap(directory: string, root?: string): SourceMap {
     .map((item) => ({ start: parseC64Address(String(item.start)), end: parseC64Address(String(item.end)), file: String(item.file), line: Number(item.line) }))
     .sort((a, b) => a.start - b.start);
   const byName = new Map(labels.map((label) => [label.name, label]));
+  const texts = new Map<string, string[] | undefined>();
   return {
     directory,
     mapPath: path,
@@ -82,5 +85,16 @@ export function readSourceMap(directory: string, root?: string): SourceMap {
       return undefined;
     },
     pathOf: (file) => posix.join(directory, file),
+    textOf: (line) => {
+      if (!texts.has(line.file)) {
+        try {
+          texts.set(line.file, readProjectFile(posix.join(directory, line.file), root === undefined ? {} : { root }).bytes.toString("utf8").split(/\r?\n/));
+        } catch {
+          texts.set(line.file, undefined);
+        }
+      }
+      const text = texts.get(line.file)?.[line.line - 1];
+      return text?.replace(/;.*$/, "");
+    },
   };
 }

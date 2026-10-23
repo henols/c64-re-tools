@@ -145,12 +145,34 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
    */
   const named = new Set(input.symbols.map((symbol) => symbol.address));
   const dataReferences = input.references.filter((reference) => !(reference.to >= IO_RAM.start && reference.to <= IO_RAM.end && input.image?.inImage(reference.to) === true && !named.has(reference.to)));
-  /** The routines that read or write a range, each linked to its entry. */
-  const ownersOf = (page: string, start: number, end: number, kind: string) =>
+  /**
+   * How the source line of a reference uses a platform name, as the source writes it: "named", "indexed"
+   * (name,x or name,y: the index can reach the registers after it), or undefined when the line does not
+   * name it, for example lda $d000,x with the character ROM in. "named" when the source text is not there.
+   */
+  const platformUse = (reference: ReferenceRow, name: string): "named" | "indexed" | undefined => {
+    const line = map.lineOf(reference.from);
+    const text = line === undefined ? undefined : map.textOf?.(line);
+    if (text === undefined) return "named";
+    const use = new RegExp(`(?<![\\w.])${name}(?!\\w)([^,)]*,\\s*[xXyY]\\b)?`).exec(text);
+    return use === null ? undefined : use[1] === undefined ? "named" : "indexed";
+  };
+  /** The routines that read or write a range, each linked to its entry. `platform` is the platform name of the range. */
+  const ownersOf = (page: string, start: number, end: number, kind: string, platform?: string) =>
     capped(
-      [...new Set(dataReferences.filter((reference) => reference.kind === kind && reference.to >= start && reference.to <= end).map((reference) => ownerAt(reference.from)?.name ?? hex(reference.from)))].map((name) =>
-        entries.has(name) ? entryOfName(page, name, name) : `\`${name}\``,
-      ),
+      [
+        ...new Set(
+          dataReferences
+            .filter((reference) => reference.kind === kind && reference.to >= start && reference.to <= end)
+            .flatMap((reference) => {
+              const use = platform === undefined ? "named" : platformUse(reference, platform);
+              if (use === undefined) return [];
+              const name = ownerAt(reference.from)?.name ?? hex(reference.from);
+              const shown = entries.has(name) ? entryOfName(page, name, name) : `\`${name}\``;
+              return [use === "indexed" ? `${shown} (indexed)` : shown];
+            }),
+        ),
+      ],
     );
 
   // --- The routine graph ----------------------------------------------------
@@ -381,7 +403,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       lines.push("", "## Variables outside the program", "", "| Address | Name | Comment | Read by | Written by |", "|---|---|---|---|---|");
       for (const entry of outside) {
         const at = `\`${entry.spanEnd > entry.address ? range(entry.address, entry.spanEnd) : hex(entry.address)}\``;
-        const owners = (kind: string) => ownersOf(page, entry.address, entry.spanEnd, kind);
+        const owners = (kind: string) => ownersOf(page, entry.address, entry.spanEnd, kind, entry.kind === "platform" ? entry.name : undefined);
         lines.push(`| ${at} | <a id="${entry.name}"></a>${codeOfName(page, entry.name)} | ${commentLines(entry.address).join(" ").replace(/\|/g, "\\|")} | ${owners("read")} | ${owners("write")} |`);
       }
       counts.entries += outside.length;
