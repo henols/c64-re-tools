@@ -603,6 +603,26 @@ test("a breakpoint at the PC of a snapshot stops the first run before its first 
     assert.equal((await call("timing", { action: "read" })).tstates, 0);
     await call("breakpoint", { action: "remove", id: point });
 
+    // An autostart and a restore start the frame at its first t-state: the first interrupt comes at the same t-state after both, on the 48K and on the 128K.
+    // The CPU takes it at the end of the HALT cycle (4 t-states) in which the frame ends, and IM 1 takes 13 t-states to $0038.
+    for (const [file, frame] of [["counter.z80", 69_888], ["counter128.z80", 70_908]] as const) {
+      const firstInterrupt = async () => {
+        await call("timing", { action: "start" });
+        assert.equal((await call("run_until", { address: "$0038", timeoutFrames: 2 })).reached, true);
+        return (await call("timing", { action: "read" })).tstates as number;
+      };
+      const at = ((await call("breakpoint", { action: "add", address: start })).points as Array<{ id: number }>)[0]!.id;
+      assert.equal((await call("autostart", { path: file })).stopReason, "breakpoint");
+      await call("breakpoint", { action: "remove", id: at });
+      await call("snapshot", { action: "save", name: "loaded" });
+      const loaded = await firstInterrupt();
+      await call("snapshot", { action: "restore", name: "loaded" });
+      assert.deepEqual([file, await firstInterrupt()], [file, loaded]);
+      assert.ok(loaded - frame - 13 >= 0 && loaded - frame - 13 < 4, `${file}: the first interrupt at ${loaded}`);
+    }
+    await call("autostart", { path: "counter.z80" });
+    await call("execution", { action: "pause" });
+
     // EI ; LD B,10 ; HALT ; DJNZ $9403 ; HALT ; JR $9406: the DJNZ after the first HALT runs only in the first 10 frames.
     await call("memory_write", { address: "$9400", data: "fb060a7610fd7618fd" });
     await call("registers", { action: "write", values: { pc: "$9400", im: 1 } });

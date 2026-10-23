@@ -536,6 +536,21 @@ test("autostart with run false loads a snapshot and runs no instruction: the CPU
   }
 });
 
+test("autostart of a .z80 writes its border to port $fe before the load and runs no instruction after it, so the frame starts at its first t-state as after a restore", async () => {
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k");
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    const file = Buffer.from(writeZ80({ model: "48k", registers: { ...parseRegisters(REGISTERS), im: 1 }, border: 5, port7ffd: 0, banks: Array.from({ length: 8 }, () => new Uint8Array(0x4000)) }));
+    commands.length = 0;
+    await session.handle("autostart", { type: "z80", run: false }, [file]);
+    const load = commands.findIndex((command) => command.startsWith("smartload "));
+    assert.equal(commands[load - 1], "write-port FEH 5", commands.join("\n"));
+    assert.ok(!commands.slice(load).some((command) => ["run", "cpu-step"].includes(command) || command.startsWith("write-port ")), commands.join("\n"));
+  } finally {
+    await session.close();
+  }
+});
+
 test("a breakpoint at the PC of a loaded snapshot stops the first run before the first instruction, after an autostart and a restore; in a HALT wait a breakpoint at the HALT does", async () => {
   // The PC of the stand-in is $11dc.
   const { zesarux, commands, cpu } = await standInZesarux("ZX Spectrum 48k", { memory: { 0x11db: 0x76 } });

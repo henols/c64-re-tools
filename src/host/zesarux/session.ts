@@ -116,10 +116,9 @@ const RUN_SLACK = 10;
 const RUN_EXTRA_MS = 60_000;
 /** How long the end of a stopped run can take before the session counts ZEsarUX as lost. */
 const STOP_ANSWER_MS = 10_000;
-/** A RAM address on the 48K and the 128K where the session runs one instruction of its own: IM to set the interrupt mode, OUT to set the border. */
+/** A RAM address on the 48K and the 128K where the session runs one instruction of its own: IM to set the interrupt mode. */
 const TOOL_SITE = 0x5b00;
 const IM_OPCODES = [0x46, 0x56, 0x5e];
-const OUT_N_A = 0xd3;
 const HALT = 0x76;
 /** The NMI start address of the Z80. */
 const NMI_ADDRESS = 0x66;
@@ -1124,14 +1123,13 @@ export class ZesaruxSession implements SessionHandle {
     }
   }
 
-  /** Runs one instruction of the session at TOOL_SITE, aside from the program. `setup` is a ZRCP command before it. The CPU must not wait in a HALT. */
-  async #runAside(opcodes: number[], what: string, options: { setup?: string; counted?: boolean } = {}): Promise<Z80RegisterValues> {
+  /** Runs one instruction of the session at TOOL_SITE, aside from the program. The CPU must not wait in a HALT. */
+  async #runAside(opcodes: number[], what: string, options: { counted?: boolean } = {}): Promise<Z80RegisterValues> {
     const kept = [{ address: TOOL_SITE, data: await this.#read(TOOL_SITE, opcodes.length) }];
     return this.#aside(
       kept,
       async () => {
         await this.#zrcp(`write-memory ${hex4(TOOL_SITE)}H ${opcodes.join(" ")}`);
-        if (options.setup !== undefined) await this.#zrcp(options.setup);
         await this.#zrcp(`set-register PC=${hex4(TOOL_SITE)}H`);
         const after = parseRegisters(await this.#zrcp("cpu-step"));
         if (after.pc !== TOOL_SITE + opcodes.length) throw new WireFailure("operation-failed", `ZEsarUX did not run ${what}: the PC is $${hex4(after.pc)}.`);
@@ -1146,11 +1144,6 @@ export class ZesaruxSession implements SessionHandle {
     this.#imOne = false;
     const after = await this.#runAside([0xed, IM_OPCODES[im]!], `the IM ${im} instruction`, { counted: true });
     if (after.im !== im) throw new WireFailure("operation-failed", `ZEsarUX did not run the IM ${im} instruction: the mode is ${after.im}.`);
-  }
-
-  /** Sets the border colour as an OUT to port $fe does, with bits 3 and 4 (MIC, EAR) at 0: the CPU runs one OUT (n),A aside (11 t-states). */
-  async #setBorder(border: number): Promise<void> {
-    await this.#runAside([OUT_N_A, 0xfe], "the OUT instruction that sets the border", { setup: `set-register AF=${hex4((border & 7) << 8)}H` });
   }
 
   /**
@@ -1662,6 +1655,14 @@ export class ZesaruxSession implements SessionHandle {
    * A .zsf loads as it is, also in a HALT wait. A load empties the CPU
    * history.
    *
+   * The load starts the frame at its first t-state, as a restore does, and
+   * the session runs no instruction after it. The load sets the border of a
+   * .z80 or .sna, but the FE port of get-io-ports shows it only after a write
+   * to port $fe: the session writes the border to the port before the load
+   * (with bits 3 and 4, MIC and EAR, at 0), because a write after the load
+   * takes 4 t-states and moves the frame. A write before the load keeps the
+   * frame, also when the load changes the machine.
+   *
    * smartload in step mode executes nothing. The clock of the session does
    * not count the load. With run false (a snapshot only), the CPU stays
    * stopped at the PC of the snapshot.
@@ -1680,13 +1681,18 @@ export class ZesaruxSession implements SessionHandle {
         await this.#setMachine(model);
       }
     }
+    const fe = media.border === undefined ? undefined : await this.#fePort();
+    if (media.border !== undefined) await this.#zrcp(`write-port FEH ${media.border & 7}`);
     // smartload works only in step mode; after a change of the machine the first try can fail.
     let answer = await this.#zrcp(`smartload ${file}`);
     if (answer.startsWith("Error")) {
       await this.#stepMode();
       answer = await this.#zrcp(`smartload ${file}`);
     }
-    if (answer.startsWith("Error")) throw new WireFailure("media-error", `ZEsarUX did not load the file: ${answer.split("\n")[0]}`);
+    if (answer.startsWith("Error")) {
+      if (fe !== undefined) await this.#zrcp(`write-port FEH ${fe}`);
+      throw new WireFailure("media-error", `ZEsarUX did not load the file: ${answer.split("\n")[0]}`);
+    }
     await this.#stepMode();
     await this.#followMachine();
     await this.#zrcp("reset-tstates-partial");
@@ -1695,7 +1701,6 @@ export class ZesaruxSession implements SessionHandle {
     await this.#afterLoad();
     this.#stop = {};
     this.#frameEnd = undefined;
-    if (media.border !== undefined) await this.#setBorder(media.border);
     if (!(SPECTRUM_TAPES as readonly string[]).includes(params.type)) this.#loadStart = (await this.#cpu()).pc;
     if (params.run === false) return { ...(await this.#shownStopAt(parseRegisters(await this.#zrcp("get-registers")).pc)), model: this.#model };
     return { ...(await this.#execution({ action: "resume" })), model: this.#model };
@@ -1845,9 +1850,14 @@ export class ZesaruxSession implements SessionHandle {
     return { tstates: this.#elapsed - this.#clockBase };
   }
 
+  /** The last value written to port $fe, as get-io-ports shows it. */
+  async #fePort(): Promise<number> {
+    return fePortOf(await this.#zrcp("get-io-ports"));
+  }
+
   async #ula(): Promise<SpectrumOperations["ula"]["result"]> {
     const ports = await this.#zrcp("get-io-ports");
-    const fe = Number.parseInt(/Spectrum FE port: ([0-9a-f]+)/i.exec(ports)?.[1] ?? "0", 16);
+    const fe = fePortOf(ports);
     const model = { model: this.#model, frameTstates: FRAME_TSTATES[this.#model] };
     if (this.#model === "48k") return { ...model, border: fe & 7 };
     const port = Number.parseInt(/Spectrum 7FFD port: ([0-9a-f]+)/i.exec(ports)?.[1] ?? "0", 16);
@@ -1860,6 +1870,11 @@ export class ZesaruxSession implements SessionHandle {
     }
     return ayOfIoPorts(await this.#zrcp("get-io-ports"));
   }
+}
+
+/** The FE port in a get-io-ports answer. */
+function fePortOf(ports: string): number {
+  return Number.parseInt(/Spectrum FE port: ([0-9a-f]+)/i.exec(ports)?.[1] ?? "0", 16);
 }
 
 /** The ZX Spectrum 48K and 128K on ZEsarUX. */
