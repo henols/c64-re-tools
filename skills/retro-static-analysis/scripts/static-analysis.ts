@@ -25,7 +25,7 @@ import { currentRevision, listMacros, listMacroUses, listPatches, listReferences
 import { SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformNamesOfSpace, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
-import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, tableEntries, type ImageByte } from "./lib/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, tableEntries, writtenCode, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, ghidraFindings, machineRom, outsideRom, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList, z80InstructionList } from "./lib/instructions.ts";
@@ -42,10 +42,14 @@ const ALL_NAMES = "a larger --max-listed. The project knowledge has all of them 
  * analyzer data over executed code to classify, and macro candidates to write.
  * The envelope adds the sentence for a cut list.
  */
-function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }) {
+function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, written: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }) {
   const hints: string[] = [];
   if (conflicts > 0) hints.push("The analysis and the project knowledge disagree at each place in conflicts. Find the correct answer in the emulator. Then correct the project knowledge.");
   if (coverageConflicts > 0) hints.push("The coverage shows executed code in each range of coverageConflicts. Classify each range as code, or as dual-use when its bytes are also data, in the project knowledge.");
+  if (written > 0)
+    hints.push(
+      "The analysis made code in each range of writtenCode, but the runs wrote these bytes and never executed them. Examine the code region or the routine of the project knowledge that leads there: from gives the jumps and calls into the range. Correct the project knowledge, then run the analysis again.",
+    );
   if (typeof macros.revision === "string") hints.push("The project knowledge has the macro candidates now. Generate the source again.");
   else if (!macros.applied && macros.candidates > 0) hints.push("Examine idioms.candidates.macros. To write them to the project knowledge, run the analysis again with --apply-macros.");
   if (hints.length === 0) return body;
@@ -300,10 +304,11 @@ async function analyze(call: Call): Promise<unknown> {
     };
   };
   /** The coverage part of a result: its seeds, and the analyzer data that it shows to be code. */
-  const coverageResult = () => {
+  const coverageResult = (): Partial<{ coverageSeeds: Record<string, number>; coverageConflicts: Array<Record<string, unknown>>; writtenCode: ReturnType<typeof listed> }> => {
     if (coverage === undefined) return {};
     const db = openForRead();
     const conflicts = coverageConflicts(db, coverage);
+    const written = writtenCode(db, coverage, inProgram, machine.cpu, space);
     db?.close();
     return {
       coverageSeeds: { entryPoints: fromCoverage.length, used: coverageUsed, ...(z80 ? {} : { romOnlyRanges: fromRom.length, romOnlyUsed: romUsed }) },
@@ -313,6 +318,19 @@ async function analyze(call: Call): Promise<unknown> {
         executed,
         problem: "coverage shows code",
       })),
+      // Analyzer code that only a wrong code region or routine of the knowledge reaches: the runs wrote these bytes as data.
+      ...(written.length === 0
+        ? {}
+        : {
+            writtenCode: listed(written, max, ({ region, instructions, written: starts, from }) => ({
+              range: { start: formatAddress(region.start), end: formatAddress(region.end) },
+              knowledge: { type: region.type, origin: region.origin },
+              instructions,
+              written: starts,
+              from: from.map(formatAddress),
+              problem: "coverage shows written data that no run executed",
+            })),
+          }),
     };
   };
   if (analyzer === "dxa") {
@@ -341,7 +359,7 @@ async function analyze(call: Call): Promise<unknown> {
       labels: listed(result.labels, max, (label) => ({ address: formatAddress(label.address), name: label.name }), ALL_NAMES),
       ...(written === undefined ? {} : { listing: written }),
     };
-    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, ("candidates" in found.idioms ? { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision } : { candidates: 0, applied: false, revision: undefined }));
+    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, body.writtenCode?.count ?? 0, ("candidates" in found.idioms ? { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision } : { candidates: 0, applied: false, revision: undefined }));
   }
 
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext(), machine);
@@ -377,7 +395,7 @@ async function analyze(call: Call): Promise<unknown> {
       ? {}
       : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatAddress(item.entry), reason: item.reason })) }),
   };
-  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, ("candidates" in found.idioms ? { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision } : { candidates: 0, applied: false, revision: undefined }));
+  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, body.writtenCode?.count ?? 0, ("candidates" in found.idioms ? { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision } : { candidates: 0, applied: false, revision: undefined }));
 }
 
 await runScript({

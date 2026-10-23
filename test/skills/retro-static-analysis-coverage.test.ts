@@ -1,5 +1,5 @@
 // Coverage as static-analysis evidence: the seeds it gives, the check
-// it makes, and a DXA run that finds the code that only a vector reaches.
+// it makes, the check of analyzer code in bytes that the runs only wrote, and a DXA run that finds the code that only a vector reaches.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -9,12 +9,13 @@ import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { COVERAGE } from "../../src/cpu/coverage.ts";
+import { MOS6502 } from "../../src/cpu/mos6502.ts";
 import { openForRead, openForWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
 import { classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, tableEntries } from "../../skills/retro-static-analysis/scripts/lib/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, tableEntries, writtenCode } from "../../skills/retro-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importCoverage, importImage, importPrg } from "../fixtures/program.ts";
 import { readEnvelope } from "../kit.ts";
@@ -92,6 +93,50 @@ test("code regions and JMP tables are entry points, and analyzer data over execu
   importFindings(db, { analyzer: "dxa", coverage: [{ start: 0x5000, end: 0x50ff }], authoritative: { symbols: true, regions: true, references: true }, symbols: [], regions: [{ start: 0x5000, end: 0x50ff, type: "bytes" }], references: [] });
   const conflicts = coverageConflicts(db, mapWith([0x5010, 0x5012, 0x4000]));
   assert.deepEqual(conflicts.map(({ region, executed }) => [region.start, region.end, region.origin, executed]), [[0x5000, 0x50ff, "dxa", 2]], "the user's code region is no conflict");
+  db.close();
+});
+
+test("analyzer code in bytes that the runs wrote and never executed is written code, with the jump or call outside the code that no run executed that leads there", () => {
+  const db = openForWrite(fresh());
+  const image = new Uint8Array(0x10000);
+  // $5000 LDA #$00 / STA $0400 / RTS: a run wrote $5001 (an operand byte) and $5002 (an instruction start), and executed none of it.
+  image.set([0xa9, 0x00, 0x8d, 0x00, 0x04, 0x60], 0x5000);
+  // $6000 LDA #$00 / RTS: executed code that changes its own operand.
+  image.set([0xa9, 0x00, 0x60], 0x6000);
+  // $7000 JMP $5000: no run executed it, and the run did not write it. The user's code at $4000 calls it.
+  image.set([0x4c, 0x00, 0x50], 0x7000);
+  image.set([0x20, 0x00, 0x70], 0x4000);
+  image.set([0x60], 0x4100);
+  classifyRegion(db, { origin: "user" }, { start: 0x4000, end: 0x4002, type: "code" });
+  classifyRegion(db, { origin: "user" }, { start: 0x4100, end: 0x4100, type: "code" });
+  importFindings(db, {
+    analyzer: "ghidra",
+    coverage: [{ start: 0x4000, end: 0x7fff }],
+    authoritative: { symbols: true, regions: true, references: true },
+    symbols: [],
+    regions: [
+      { start: 0x5000, end: 0x5005, type: "code" },
+      { start: 0x6000, end: 0x6002, type: "code" },
+      { start: 0x7000, end: 0x7002, type: "code" },
+    ],
+    references: [
+      { from: 0x4000, to: 0x7000, kind: "call" },
+      { from: 0x7000, to: 0x5000, kind: "jump" },
+    ],
+  });
+  const map = new Uint8Array(0x10000);
+  map[0x5001] = COVERAGE.ramRead | COVERAGE.ramWrite;
+  map[0x5002] = COVERAGE.ramRead | COVERAGE.ramWrite;
+  map[0x6000] = COVERAGE.ramExecute;
+  map[0x6001] = COVERAGE.ramWrite;
+  map[0x4000] = COVERAGE.ramExecute;
+  map[0x4100] = COVERAGE.ramWrite;
+  const found = writtenCode(db, map, imageReader(image, "flat64k"), MOS6502);
+  assert.deepEqual(
+    found.map(({ region, instructions, written, from }) => [region.start, region.end, region.origin, instructions, written, from]),
+    [[0x5000, 0x5005, "ghidra", 3, 1, [0x4000]]],
+    "executed code, code that no run wrote and the user's code are no written code",
+  );
   db.close();
 });
 

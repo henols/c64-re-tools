@@ -1,6 +1,7 @@
 // Runtime evidence for static analysis: the coverage as entry points,
 // user/LLM code regions, JMP tables and tables of code addresses as entry
-// points, and the check that shows analyzer data over executed code.
+// points, the check that shows analyzer data over executed code, and the check
+// that shows analyzer code over bytes that the runs wrote and never executed.
 
 import { mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import type { DatabaseSync } from "node:sqlite";
@@ -10,7 +11,8 @@ import { coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges } fro
 
 export { coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges };
 import { POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/address.ts";
-import { listRegions, listSymbols, type RegionRow } from "#src/knowledge/read.ts";
+import type { Cpu } from "#src/cpu.ts";
+import { listReferences, listRegions, listSymbols, type RegionRow } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, isAnalyzer, isSemantic, SEMANTIC_ORIGINS, type Space } from "#src/knowledge/schema.ts";
 
 /** The byte at an address of the analyzed image, or undefined outside it. */
@@ -79,4 +81,58 @@ export function coverageConflicts(db: DatabaseSync | undefined, map: Uint8Array)
     if (executed > 0) conflicts.push({ region, executed });
   }
   return conflicts;
+}
+
+/**
+ * Analyzer code regions in bytes that the runs wrote and never executed: no
+ * byte of the region executed, and the coverage marks at least one of its
+ * instruction starts as written. Such bytes are data that the program writes,
+ * for example packed data or a buffer, and a wrong code region or routine of
+ * the knowledge can lead the analyzer there. `from` gives the jumps and calls
+ * that lead there: back through the analyzer code that no run executed, to the
+ * first instruction outside it.
+ */
+export function writtenCode(db: DatabaseSync | undefined, map: Uint8Array, image: ImageByte, cpu: Cpu, space: Space = mainSpaceOf(db)): Array<{ region: RegionRow; instructions: number; written: number; from: number[] }> {
+  const found: Array<{ region: RegionRow; instructions: number; written: number }> = [];
+  const notExecuted = listRegions(db, undefined, "code", undefined, space).filter((region) => {
+    if (!isAnalyzer(region.origin)) return false;
+    for (let address = region.start; address <= region.end; address++) if ((map[address]! & COVERAGE.ramExecute) !== 0) return false;
+    return true;
+  });
+  for (const region of notExecuted) {
+    let instructions = 0;
+    let written = 0;
+    for (let address = region.start; address <= region.end; ) {
+      const length = cpu.decode(image, address)?.length;
+      if (length === undefined) {
+        address++;
+        continue;
+      }
+      instructions++;
+      if ((map[address]! & COVERAGE.ramWrite) !== 0) written++;
+      address += length;
+    }
+    if (written > 0) found.push({ region, instructions, written });
+  }
+  const leads = listReferences(db, undefined, undefined, undefined, space).filter((reference) => reference.kind === "call" || reference.kind === "jump");
+  const regionOf = (address: number) => notExecuted.find((region) => address >= region.start && address <= region.end);
+  /** The jumps and calls that lead into the region, back through the analyzer code that no run executed. */
+  const rootsOf = (start: RegionRow): number[] => {
+    const roots = new Set<number>();
+    const seen = new Set([start]);
+    for (const queue = [start]; queue.length > 0; ) {
+      const region = queue.shift()!;
+      for (const reference of leads) {
+        if (reference.to < region.start || reference.to > region.end) continue;
+        const before = regionOf(reference.from);
+        if (before === undefined) roots.add(reference.from);
+        else if (!seen.has(before)) {
+          seen.add(before);
+          queue.push(before);
+        }
+      }
+    }
+    return [...roots].sort((a, b) => a - b);
+  };
+  return found.map((item) => ({ ...item, from: rootsOf(item.region) }));
 }

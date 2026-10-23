@@ -114,6 +114,7 @@ The script records only structure: code and data regions, analyzer names, and th
 - `conflicts`: each place where the analyzer and the project knowledge disagree. `problem` tells the disagreement.
 - `coverageSeeds`: only with coverage. `entryPoints` and `used` give how many entry points the coverage gave, and how many the analysis used. On the C64, `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
 - `coverageConflicts`: only with coverage. Each analyzer data region where the coverage shows executed code.
+- `writtenCode`: only with coverage. Each analyzer code region where the runs wrote bytes and executed no byte. `instructions` counts its instructions, and `written` counts the instruction starts that the runs wrote. `from` gives the jumps and calls that lead to the region. These are outside the analyzer code that no run executed. Such a region is usually data, for example packed data or a buffer.
 - `idioms`: the 6502 idioms that the script found by pattern. The counts are `rtsTables`, `jumpTables`, `bitSkips` and `cartridgeHeaders`. `revision`, `changes` and `conflicts` are for the idioms, as above. `candidates` holds what the script did not record.
 
 DXA also gives:
@@ -134,6 +135,7 @@ The `hint` gives each of these cases:
 
 - `conflicts` is not empty. Find the correct answer in the emulator. Then correct the project knowledge.
 - `coverageConflicts` is not empty. Classify each range as code in the project knowledge, or as `dual-use` when its bytes are also data. For many ranges, write all classifications in one batch of changes.
+- `writtenCode` is not empty. Examine the code at each address of `from`. A code region or a routine of the project knowledge that is not code can be the cause. Correct the project knowledge, then do the analysis again.
 - `idioms.candidates.macros` has candidates, and the run had no `--apply-macros`. Examine the candidates. To write the correct candidates to the project knowledge, run the analysis again with `--apply-macros`. Give `--skip` with the start of each candidate that is not correct. Then generate the source again.
 - A list is cut. Give a larger `--max-listed`. The project knowledge has all `labels` and `functions` as analyzer names.
 
