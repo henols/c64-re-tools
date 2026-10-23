@@ -300,7 +300,7 @@ INSTRUCTIONS.spectrum =
   "Keys are keys of the keyboard matrix that the program reads from port $fe. Use advance-frames for time: the same calls from the same state stop at the same emulated time. " +
   "Runs of advance-frames one after the other stop where one run of all their frames stops. " +
   "During the picture lines, code and data in contended memory run slower. Contended memory is $4000-$7fff, and on the 128K $c000-$ffff when port $7ffd pages in RAM bank 1, 3, 5 or 7. " +
-  "An IN from port $fe also waits. The ZX Spectrum memory map gives the numbers: list timing. " +
+  "An IN from port $fe also waits. The description of tool ula gives the numbers. " +
   "In interrupt mode 2, the I register selects a vector table of 257 bytes. Programs fill it with one byte value, because the low byte of the vector is not known.";
 
 /** The families whose MCP server has tools in this build. */

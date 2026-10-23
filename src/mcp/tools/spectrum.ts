@@ -15,11 +15,13 @@ import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressOutput, defineTool, HexData, requireFields, ToolOutput } from "../server.ts";
 
 const FRAMES_TEXT = `${SPECTRUM_TIMING["48k"].frameTstates} t-states (48K) or ${SPECTRUM_TIMING["128k"].frameTstates} t-states (128K)`;
-/** Where the code runs slower: the contended memory and the ULA port, with the numbers in the timing list of the memory map. */
+/** Where the code runs slower: the contended memory and the ULA port, with the numbers of the machine timing. */
 const CONTENTION_TEXT =
   "During the 192 picture lines of each frame, the ULA makes the CPU wait. The CPU waits when it reads an opcode or data, or writes data, in $4000-$7fff. " +
   "On the 128K, it also waits in $c000-$ffff when port $7ffd pages in RAM bank 1, 3, 5 or 7. An IN from port $fe also waits. " +
-  "Thus code and data in that memory run slower than in $8000-$bfff. The ZX Spectrum memory map gives the numbers: list timing.";
+  "Thus code and data in that memory run slower than in $8000-$bfff. " +
+  "The waits start " + SPECTRUM_TIMING["48k"].contentionStart + " t-states (48K) or " + SPECTRUM_TIMING["128k"].contentionStart + " t-states (128K) after the start of the frame. " +
+  "In each picture line, they are 6, 5, 4, 3, 2, 1, 0 and 0 t-states for each group of 8 t-states, over 128 t-states.";
 
 type Session = Pick<SpectrumSessionClient, Exclude<keyof SpectrumSessionClient, "closed" | "lost" | "answered" | "unreportedLoss" | "close" | "request">>;
 
