@@ -3,9 +3,9 @@ name: retro-testing
 description: Tests if a rebuilt or changed C64 or ZX Spectrum program behaves as the original, or if a program has the expected values. It runs a scenario on the original and on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. Use it when you must show that a rebuild or a correction keeps the behavior of the original. Use it to do many steps on one program and keep the screens, coverage maps, traces and snapshots as files. Use it to test a new program or a correction with expected values. Use it to record a play session of the original and replay it on each rebuild. Use it to find what changed between two machine states, and to make a checklist for a human playtest. It does not find the cause of a difference. It does not build the program.
 ---
 
-# C64 testing
+# Program testing
 
-Use this script to test a rebuild or a changed C64 program against the original, or against expected values.
+Use this script to test a rebuild or a changed program of the C64 or the ZX Spectrum against the original, or against expected values.
 Use only the commands of the script. Do not compare machine states or replay play sessions in another way.
 
 ```bash
@@ -20,6 +20,8 @@ To get the command list, run the script with no arguments.
 ---
 
 ## Select the command
+
+The table gives the commands for a C64 program. For a ZX Spectrum program, see the section "A ZX Spectrum program".
 
 | Goal | Command |
 |---|---|
@@ -38,16 +40,17 @@ To get the command list, run the script with no arguments.
 
 ## Programs, files and names
 
-- The original program and the rebuild are PRG files in the project. The script refuses a disk, tape or cartridge image. Extract the program file from the image first.
-- The original gets its names from the project knowledge. Give `"symbols": "knowledge"` for the original.
-- The rebuild gets its names from the symbol file of its build. Build the rebuild with a symbol file that has all symbols, also the constants that the source does not use.
+- C64: the original program and the rebuild are PRG files in the project. The script refuses a disk, tape or cartridge image. Extract the program file from the image first.
+- ZX Spectrum: the original program is a `.z80` or `.sna` snapshot, or the snapshot of the program in the project knowledge. The rebuild is the binary file of its build.
+- C64: the original gets its names from the project knowledge. Give `"symbols": "knowledge"` for the original.
+- C64: the rebuild gets its names from the symbol file of its build. Build the rebuild with a symbol file that has all symbols, also the constants that the source does not use.
 - You write the scenario file, the run file and the record file. Their formats are in the files of the section "Reference".
 - A file in `tests/` is a scenario or a run file with expected values. Give a scenario to `test` and a run file to `run`. `test` refuses a run file.
 - `<recording>` is the `--out` folder of `record`.
-- `--checkpoint` is a routine that the program executes one time in each pass of its game logic, for example the main loop. Do not use an interrupt handler. Get the name from the project knowledge.
-- `--state` and `--pin` take a name or a `$` address, with `:size` for more than one byte, for example `room:2`. Use the names that the project knowledge has at the time of the replay.
-- The joystick port of `--joystick` is the port that the program reads. Port 2 is `$DC00`, and port 1 is `$DC01`. Find the port in the code or in the project knowledge. If you do not know the port, use 2.
-- `diff` takes two states of one kind. A state is a snapshot file (`.vsf`), a memory file (`.bin`) of a run, or an observation of a run (`results.json:<name>`). A `save` step of a run writes a snapshot file. A snapshot save in the emulator also writes one.
+- C64: `--checkpoint` is a routine that the program executes one time in each pass of its game logic, for example the main loop. Do not use an interrupt handler. Get the name from the project knowledge.
+- C64: `--state` and `--pin` take a name or a `$` address, with `:size` for more than one byte, for example `room:2`. Use the names that the project knowledge has at the time of the replay.
+- C64: the joystick port of `--joystick` is the port that the program reads. Port 2 is `$DC00`, and port 1 is `$DC01`. Find the port in the code or in the project knowledge. If you do not know the port, use 2.
+- `diff` takes two states of one kind. A state is a C64 snapshot file (`.vsf`), a memory file (`.bin`), or an observation of a run (`results.json:<name>`). A `save` step of a run writes a snapshot file. A snapshot save in the emulator also writes one.
 
 ### Paths and the project folder
 
@@ -77,19 +80,19 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--max-listed <n>` | `test` | List at most n differing bytes of each memory item. The default is 50. The count is always in the body. |
 | `--out <dir>` | `run` | The folder for the files of the steps and `results.json`. Required. |
 | `--out <dir>` | `record` | The recording folder, for example `tests/recordings/<name>`. Required. |
-| `--play` | `record` | A person plays after the steps. Off by default. |
-| `--joystick <1\|2>` | `record` | With `--play`: the joystick port at the start. The default is 2. |
-| `--http-port <n>` | `record` | With `--play`: the port of the page. The default is 6465. |
-| `--checkpoint <routine>` | `replay` | The routine of the checkpoints. Each entry of the routine is a checkpoint. The default is the comparison of the record file. |
-| `--state <item>` | `replay` | A memory item to compare at each checkpoint. Give it again for each item. |
-| `--pin <item>` | `replay` | Random state in RAM. At each checkpoint, the rebuild gets the values of the original there. Give it again for each item. |
+| `--play` | `record` | C64: a person plays after the steps. Off by default. |
+| `--joystick <1\|2>` | `record` | C64: with `--play`, the joystick port at the start. The default is 2. |
+| `--http-port <n>` | `record` | C64: with `--play`, the port of the page. The default is 6465. |
+| `--checkpoint <routine>` | `replay` | C64: the routine of the checkpoints. Each entry of the routine is a checkpoint. The default is the comparison of the record file. |
+| `--state <item>` | `replay` | C64: a memory item to compare at each checkpoint. Give it again for each item. |
+| `--pin <item>` | `replay` | C64: random state in RAM. At each checkpoint, the rebuild gets the values of the original there. Give it again for each item. |
 | `--rebuild <file>` | `replay` | The rebuild to compare with the original: a PRG, or for a ZX Spectrum program the bytes of its build. Without it, the script replays only on the original. |
 | `--rebuild-at <address>` | `replay` | ZX Spectrum only: the address of the first byte of `--rebuild`. The build gives it in its range. |
-| `--symbols <file>` | `replay` | The symbol file of the rebuild. The default is the symbols of the recording. |
-| `--out <dir>` | `replay` | With a FAIL, write the RAM of each side at the first different checkpoint into this folder. For a ZX Spectrum program, write the RAM of each side at the end. |
+| `--symbols <file>` | `replay` | C64: the symbol file of the rebuild. The default is the symbols of the recording. |
+| `--out <dir>` | `replay` | With a FAIL, write the RAM of each side at the first different checkpoint into this folder. For a ZX Spectrum program, write the screens of each side, and with a FAIL the RAM of each side at the end. |
 | `--gap <n>` | `diff` | Join changed ranges across at most n equal bytes. The default is 0. |
 | `--max-listed <n>` | `diff` | List at most n items of each list. The default is 50. |
-| `--ntsc` | `diff` | The snapshot files are of an NTSC machine. The default is PAL. |
+| `--ntsc` | `diff` | C64: the snapshot files are of an NTSC machine. The default is PAL. |
 | `--address <address>` | `diff` | The address of the first byte of a memory file of less than 64 KiB. The default is `$0000`. |
 | `--out <file>` | `diff` | Also write all ranges and all changed registers to this file. |
 | `--item <text>` | `checklist` | A line for this program. Give it again for each line. |
@@ -97,6 +100,8 @@ Each flag applies only to the commands in the table. On another command, the scr
 ---
 
 ## Compare and run
+
+`test` and `run` are for a C64 program.
 
 ### `test <scenario.json>`
 
@@ -182,11 +187,11 @@ A recording keeps a session of the original program, for example a play through 
 - Commit the recording folder with the scenarios. Do not put a recording into the project knowledge. Do not put test results, screenshots or playtest results into it.
 - A finding that a recording shows can go into the project knowledge. Give the `recording.json` of the recording as its test evidence.
 - The C64 of a recording has no disk drive. For a program that loads more files from a disk, use a scenario with `test`.
-- The emulator cannot examine the C64 of a recording or a replay.
+- The emulator cannot examine the machine of a recording or a replay.
 
-A replay is deterministic. The same recording gives the same session, to the cycle. The n-th read of an input at each instruction gets the value of the n-th read in the recording. Thus a rebuild with different timing gets the same input, also the same random values from the SID.
+A replay is deterministic. The same recording gives the same session, to the cycle. The n-th read of an input at each instruction gets the value of the n-th read in the recording. Thus a rebuild with different timing gets the same input. On the C64, it also gets the same random values from the SID.
 
-Control each source of random numbers:
+On the C64, control each source of random numbers:
 
 - A program that reads a seed from the SID gets the recorded value. You do not need to do more.
 - A program that reads a seed from the raster line or a CIA timer: add the address to `inputs` of the record file. Do this only when the program does not wait in a loop on that address.
@@ -194,7 +199,7 @@ Control each source of random numbers:
 
 ### `record <record.json>`
 
-The script does the steps of the record file on the original program. Then it writes the recording folder into `--out`: `recording.json`, `reads.txt` and `coverage.bin`. The program must be a PRG file.
+The script does the steps of the record file on the original program. Then it writes the recording folder into `--out`: `recording.json`, `reads.txt` and `coverage.bin`. For a C64 program, the program must be a PRG file.
 
 For a C64 program, `body` holds:
 
@@ -261,24 +266,29 @@ In a ZX Spectrum project, `record` and `replay` run the snapshot of the program.
 
 Record:
 
-- The record file gives `program`: the `.z80` or `.sna` snapshot of the program, for example the snapshot in the project knowledge. The steps are `frames`, `press` and `joystick` (the Kempston joystick). See references/recording-format.md.
+- The record file gives `program`: `"knowledge"` for the snapshot of the program in the project knowledge, or a `.z80` or `.sna` snapshot file. Use `"knowledge"`: then each clone of the project can record the session again. See references/recording-format.md.
+- The steps are `frames`, `press`, `joystick` (the Kempston joystick) and `screen`. A `screen` step writes a picture of the screen at that point into the recording folder, for example `{ "screen": "title" }` writes `title.png`.
+- Put a `screen` step after each part of the session that you planned, for example after the start of the game. Look at each picture after `record`: it shows if the session did what you planned. A PASS of `record` and `replay` shows only that the session repeats.
 - The script refuses a key or a step of a C64 record file. It also refuses steps that run no frame.
 - The recording keeps each read of the keyboard and of the Kempston port. The recording folder also holds `program.z80`. `recording.json` keeps the SHA-256 of `program.z80`.
 - The coverage map starts at the PC of the snapshot.
-- The body of `record` holds `result`, `recorded`, `out`, `files`, `name`, `frames`, `inputSites` and `executed`. It has no `events` and no `coverageFrom`.
-- `PASS`: `hint` tells you to commit the folder and to add its `coverage.bin` to the project knowledge as coverage. `nextAction` replays the recording on the original.
+- The body of `record` holds `result`, `recorded`, `out`, `files`, `name`, `frames`, `inputSites`, `screens` and `executed`. Each item of `screens` has the `name` and the `frame` of a picture. The body has no `events` and no `coverageFrom`.
+- `PASS`: `hint` tells you to look at the pictures, to commit the folder and to add its `coverage.bin` to the project knowledge as coverage. `nextAction` replays the recording on the original.
 
 Replay:
 
 - `replay` replays the recording on the snapshot. The original must end at the tick and with the RAM of the recording.
+- At each `screen` step, `replay` makes the picture again on each side and compares it with the picture of the recording. A different picture of the rebuild is a FAIL.
 - For a rebuild, give the bytes of its build with `--rebuild`, and the address of their first byte with `--rebuild-at`. The script puts the bytes over the snapshot. The rebuild must end at the same tick and with the same RAM as the original.
 - The script refuses a tape, a snapshot or a program file as `--rebuild`. Give the binary file of the build.
 - The body of `replay` holds `result`, `recording`, `sides`, and `reason` with a FAIL or an INCONCLUSIVE. It has no `side` and no `firstDifference`.
-- `sides` gives the end `ticks` and the RAM `hash` of each side, and `problem` for a side that does not end as recorded.
+- `sides` gives the end `ticks` and the RAM `hash` of each side, and `problem` for a side that does not end as recorded. With `screen` steps, `sides` also gives `screens`: the `name` of each picture, and `same` (`true` when it is the picture of the recording).
+- With `--out`, the script writes the picture of each `screen` step of each side into the folder, for example `original-title.png` and `rebuild-title.png`. Without `--rebuild`, `--out` needs a recording with a `screen` step.
 - A `FAIL` with a different RAM also gives `memory`. `memory.changedBytes` is the number of changed bytes of the RAM at the end. Each range in `memory.listed` has `start` and `end`. A range of 16 bytes or fewer also has the bytes `original` and `rebuild`. On a 128K, each range has its `bank`, and its addresses are in `$c000-$ffff`.
 - With `--out` and a FAIL, the script writes the RAM of each side at the end into the folder. These are `original.bin` and `rebuild.bin` from `$4000`. On a 128K, the script writes a pair of files for each changed bank. `nextAction` compares the first pair with `diff`.
 - `INCONCLUSIVE` with "does not reproduce": the original does not end as recorded. Record the session again.
 - `INCONCLUSIVE` with "is not the program of the recording": `program.z80` in the recording folder changed. Record the session again.
+- `invalid-input` with "a recording of an older version of the toolkit": the recording has another timing of the ZX Spectrum. Record the session again.
 - `--checkpoint`, `--state`, `--pin`, `--symbols` and `--play` are for a C64 program.
 
 ---
@@ -312,6 +322,8 @@ Give the checklist to the human tester. Do not put the results of the playtest i
 ---
 
 ## Workflow
+
+This is the workflow of `test` for a C64 program.
 
 1. Write the scenario file. Start the steps with a frame count, for example `{ "frames": 150 }`. Each side starts at the reset vector, and the C64 needs these frames to start.
 2. Use symbol names, for example `player_x`, not `$` addresses. Each side finds the name in its own symbols. Use a `$` address only when both programs use the same address.

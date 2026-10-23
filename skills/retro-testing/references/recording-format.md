@@ -2,9 +2,11 @@
 
 This file gives the format of a record file and of a recording folder. For the commands, see the sections ``### `record <record.json>` `` and ``### `replay <recording>` `` of `SKILL.md`.
 
+The sections "Record file", "Steps", "Play" and "Recording folder" are for a C64 program. The section "A ZX Spectrum program" gives the record file and the recording folder of a ZX Spectrum program.
+
 ## Record file
 
-A record file is one JSON object in a project file.
+A record file of a C64 program is one JSON object in a project file.
 
 ```json
 {
@@ -34,7 +36,7 @@ A record file is one JSON object in a project file.
 
 ## Steps
 
-The steps have the form of the steps of a scenario. Two steps behave differently:
+The steps of a C64 record file have the form of the steps of a scenario. Two steps behave differently:
 
 - `type` puts at most 10 keys into the keyboard queue of the KERNAL. It is an event: a replay does it again.
 - `press` pushes keys of the keyboard matrix. It is input.
@@ -111,7 +113,7 @@ The page sends input only between Start and End. The input of the page goes into
 
 ## Recording folder
 
-`record` writes these files into the `--out` folder:
+For a C64 program, `record` writes these files into the `--out` folder:
 
 | File | Content |
 |---|---|
@@ -128,27 +130,41 @@ A site is the address of the instruction that reads. The values are hex. `<from>
 In a ZX Spectrum project, the record file is:
 
 ```json
-{ "name": "start", "program": "original/game.z80", "steps": [
+{ "name": "start", "program": "knowledge", "steps": [
   { "frames": 50 },
+  { "screen": "title" },
   { "press": ["space"], "frames": 5 },
   { "joystick": { "right": true, "fire": true } },
   { "frames": 100 },
-  { "joystick": null }
+  { "joystick": null },
+  { "screen": "game" }
 ] }
 ```
 
-- `program`: a `.z80` or `.sna` snapshot, relative to the project folder. The run starts at the PC of the snapshot.
+- `program`: `knowledge`, or a `.z80` or `.sna` snapshot file, relative to the project folder. `knowledge` is the snapshot of the program in the project knowledge: its bytes and its entry state. The run starts at the PC of the snapshot.
+- Use `knowledge`, because git keeps the project knowledge. A snapshot file in `.c64-re-tools/local/` is not in a clone of the project, and then the clone cannot record the session again.
 - `frames`: the CPU runs that number of frames.
 - `press`: the keys stay down for `frames` frames (default 3), then come up. A key is a-z, 0-9, `space`, `enter`, `caps` (CAPS SHIFT) or `symbol` (SYMBOL SHIFT). Give `caps` with a letter for a capital.
 - `joystick`: the Kempston joystick from now on: `up`, `down`, `left`, `right` and `fire`, each `true` or `false`. `null` releases it. `port` and `direction` are the C64 form, and the script refuses them.
+- `screen`: a picture of the screen at this point, the file `<name>.png` in the recording folder. The name has 1 to 64 letters, digits, `-` and `_`. Each `screen` step has its own name. The picture is 320 x 256 pixels: the 256 x 192 pixels of the screen with the border around them.
 
 The file has only `name`, `program` and `steps`. The script refuses each other key, for example `checkpoint`, `state` or `inputs`. It refuses each other step, for example `type`, `write` or `runUntil`. The steps must have at least one `frames` or `press` step.
 
-The inputs are the keyboard (each port `$xxFE`) and the Kempston port (`$xx1F`). The recording folder holds `recording.json` (the machine, the SHA-256 of `program.z80`, the steps, the end tick, the RAM hash and the input sites), `reads.txt`, `coverage.bin` and `program.z80`.
+The inputs are the keyboard (each port `$xxFE`) and the Kempston port (`$xx1F`). The recording folder holds these files:
+
+| File | Content |
+|---|---|
+| `recording.json` | The machine, the SHA-256 of `program.z80`, the steps, the end tick, the RAM hash and the input sites. `screens` gives the `name`, the `tick` and the SHA-256 of each picture. |
+| `reads.txt` | The reads of the inputs, in the format of the C64 recording folder. |
+| `coverage.bin` | The coverage map of the session. |
+| `program.z80` | The snapshot of the program at the start of the session. |
+| `<name>.png` | The picture of each `screen` step. |
+
+A replay makes the picture of each `screen` step again at the same tick, and compares it with the picture of the recording.
 
 ## Replay
 
-`replay` replays the recording on the original program first. The session must end with the recorded cycles and state hash. Else the result is INCONCLUSIVE. With `--rebuild`, `replay` then replays the recording on the rebuild. At each checkpoint, the rebuild first gets the pinned values of the original. Then the script compares the state. The cycles can be different.
+This section is for a C64 program. `replay` replays the recording on the original program first. The session must end with the recorded cycles and state hash. Else the result is INCONCLUSIVE. With `--rebuild`, `replay` then replays the recording on the rebuild. At each checkpoint, the rebuild first gets the pinned values of the original. Then the script compares the state. The cycles can be different.
 
 A recording without names (`symbols` is `none`) takes the names of the project knowledge at the time of the replay.
 
