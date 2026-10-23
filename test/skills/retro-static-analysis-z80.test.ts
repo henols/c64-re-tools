@@ -12,9 +12,10 @@ import { after, test } from "node:test";
 import { machineRom, outsideRom } from "../../skills/retro-static-analysis/scripts/lib/findings.ts";
 import { findZ80Idioms } from "../../skills/retro-static-analysis/scripts/lib/z80-idioms.ts";
 import { COVERAGE } from "../../src/cpu/coverage.ts";
-import { openForRead } from "../../src/knowledge/database.ts";
+import { openForRead, openForWrite } from "../../src/knowledge/database.ts";
 import { listAnalyzerNames, listReferences, listRegions, listSymbols, referencesFrom } from "../../src/knowledge/read.ts";
 import { MACHINES } from "../../src/machine.ts";
+import { classifyRegion } from "../../src/knowledge/write.ts";
 import { importCoverage, importSnapshot } from "../fixtures/program.ts";
 import { keyboardCounterRam, z80Snapshot } from "../fixtures/z80/keyboard-counter.ts";
 import { readEnvelope } from "../kit.ts";
@@ -68,19 +69,26 @@ test("the analysis of a Spectrum program refuses DXA, macros and an entry in the
     },
     [{ start: 0x0000, end: 0x3fff }],
   );
-  assert.deepEqual([kept.symbols, kept.regions, kept.references], [
+  assert.deepEqual([kept.coverage, kept.symbols, kept.regions, kept.references], [
+    [{ start: 0x4000, end: 0xffff }],
     [{ address: 0x8027, name: "FUN_8027", kind: "routine" }],
     [{ start: 0x4000, end: 0x4010, type: "code" }],
     [{ from: 0x8027, to: 0x028e, kind: "call" }],
   ]);
 });
 
-test("Ghidra's Z80 language finds the routines of the counter and its calls, and decodes nothing in the ROM that a run read and the program calls", { timeout: 600_000 }, () => {
+test("Ghidra's Z80 language finds the routines of the counter and its calls and of a table of code addresses, and decodes nothing in the ROM that a run read and the program calls", { timeout: 600_000 }, () => {
   // The counter, and at $8027 CALL KEY_SCAN ($028e) before COUNT.
   const ram = keyboardCounterRam();
   ram.set([0xcd, 0x8e, 0x02], 0x8027 - 0x4000);
   ram.fill(0, 0x802a - 0x4000, 0x8030 - 0x4000);
+  // A table of code addresses at $9100: the executed entry $8000, and a RET at $9000 that only the table reaches.
+  ram[0x9000 - 0x4000] = 0xc9;
+  ram.set([0x00, 0x80, 0x00, 0x90], 0x9100 - 0x4000);
   importSnapshot(project, z80Snapshot(ram, { pc: 0x8000, sp: 0xff00, iy: 0x5c3a, im: 1, border: 7 }));
+  const writer = openForWrite(project);
+  classifyRegion(writer, { origin: "llm" }, { start: 0x9100, end: 0x9103, type: "addresses" });
+  writer.close();
   // A run executed the counter and read and executed the ROM.
   const map = new Uint8Array(0x10000);
   map.fill(COVERAGE.romRead | COVERAGE.romExecute, 0x0038, 0x0100);
@@ -92,8 +100,9 @@ test("Ghidra's Z80 language finds the routines of the counter and its calls, and
   assert.equal(child.status, 0, JSON.stringify(analyzed));
   assert.ok(existsSync(join(project, ".c64-re-tools", "local", "instructions.json")));
   const functions = (analyzed.functions as { listed: Array<{ entry: string }> }).listed.map((fn) => fn.entry);
-  for (const entry of ["$8000", "$8027", "$8030"]) assert.ok(functions.includes(entry), functions.join(", "));
+  for (const entry of ["$8000", "$8027", "$8030", "$9000"]) assert.ok(functions.includes(entry), functions.join(", "));
   assert.ok(!functions.includes("$028e"), functions.join(", "));
+  assert.deepEqual(analyzed.coverage, [{ start: "$4000", end: "$ffff" }]);
   assert.deepEqual(Object.keys(analyzed.coverageSeeds as object), ["entryPoints", "used"]);
   assert.deepEqual(analyzed.idioms, { ...(analyzed.idioms as object), errorRestarts: 0, calculatorRestarts: 0 });
 

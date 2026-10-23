@@ -12,9 +12,9 @@ import { COVERAGE } from "../../src/cpu/coverage.ts";
 import { openForRead, openForWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
-import { classifyRegion } from "../../src/knowledge/write.ts";
+import { classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges } from "../../skills/retro-static-analysis/scripts/lib/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, tableEntries } from "../../skills/retro-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importCoverage, importImage, importPrg } from "../fixtures/program.ts";
 import { readEnvelope } from "../kit.ts";
@@ -92,6 +92,26 @@ test("code regions and JMP tables are entry points, and analyzer data over execu
   importFindings(db, { analyzer: "dxa", coverage: [{ start: 0x5000, end: 0x50ff }], authoritative: { symbols: true, regions: true, references: true }, symbols: [], regions: [{ start: 0x5000, end: 0x50ff, type: "bytes" }], references: [] });
   const conflicts = coverageConflicts(db, mapWith([0x5010, 0x5012, 0x4000]));
   assert.deepEqual(conflicts.map(({ region, executed }) => [region.start, region.end, region.origin, executed]), [[0x5000, 0x50ff, "dxa", 2]], "the user's code region is no conflict");
+  db.close();
+});
+
+test("the targets of a table of code addresses are entry points: an RTS table, or a table with an executed or a named code target", () => {
+  const db = openForWrite(fresh());
+  const image = new Uint8Array(0x10000);
+  const words = (at: number, values: number[]) => values.forEach((value, index) => image.set([value & 0xff, value >> 8], at + 2 * index));
+  const table = (start: number, values: number[], type: "addresses" | "rts-addresses" = "addresses") => {
+    words(start, values);
+    classifyRegion(db, { origin: "llm" }, { start, end: start + 2 * values.length - 1, type });
+  };
+  table(0x6000, [0x3000, 0x3100, 0x3200, 0xf000]); // a run executed $3000; $3200 is data of the user; $f000 is outside the program
+  table(0x6010, [0x7000, 0x7100]); // no evidence: a table of data addresses
+  table(0x6020, [0x34ff, 0x35ff], "rts-addresses"); // an RTS table: the targets are $3500 and $3600
+  table(0x6030, [0x3700, 0x3800]); // the LLM named $3800 as a routine
+  classifyRegion(db, { origin: "user" }, { start: 0x3200, end: 0x32ff, type: "bytes" });
+  renameSymbol(db, { origin: "llm" }, { address: 0x3800, name: "handler", kind: "routine" });
+  const inProgram = (address: number) => (address < 0xf000 ? image[address] : undefined);
+  assert.deepEqual(tableEntries(db, inProgram, undefined, (address) => address === 0x3000).sort((a, b) => a - b), [0x3000, 0x3100, 0x3500, 0x3600, 0x3700, 0x3800]);
+  assert.deepEqual(tableEntries(db, inProgram).sort((a, b) => a - b), [0x3500, 0x3600, 0x3700, 0x3800], "without the run");
   db.close();
 });
 

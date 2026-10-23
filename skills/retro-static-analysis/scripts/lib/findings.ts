@@ -123,7 +123,7 @@ export function machineRom(machine: Machine, request: { analyzer: string; applyM
 
 /**
  * The findings without the ROM of the machine: the knowledge holds the
- * program, not the ROM. Regions lose their part in the ROM, and names and
+ * program, not the ROM. The coverage and the regions lose their part in the ROM, and names and
  * references that start in the ROM go. A reference from the program into the
  * ROM stays: it is a fact of the program.
  */
@@ -132,6 +132,7 @@ export function outsideRom(findings: NormalizedFindings, rom: readonly AddressRa
   const inRom = (address: number) => rom.some((range) => address >= range.start && address <= range.end);
   return {
     ...findings,
+    coverage: findings.coverage.flatMap((range) => subtract({ start: range.start, end: range.end }, [...rom])),
     symbols: findings.symbols.filter((symbol) => !inRom(symbol.address)),
     regions: findings.regions.flatMap((region) => subtract({ start: region.start, end: region.end }, [...rom]).map((piece) => ({ ...region, ...piece }))),
     references: findings.references.filter((reference) => !inRom(reference.from)),

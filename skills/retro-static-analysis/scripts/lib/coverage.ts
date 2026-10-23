@@ -1,6 +1,6 @@
 // Runtime evidence for static analysis: the coverage as entry points,
-// user/LLM code regions and JMP tables as entry points, and the check that
-// shows analyzer data over executed code.
+// user/LLM code regions, JMP tables and tables of code addresses as entry
+// points, and the check that shows analyzer data over executed code.
 
 import { mainSpaceOf } from "#src/knowledge/project-machine.ts";
 import type { DatabaseSync } from "node:sqlite";
@@ -9,8 +9,9 @@ import { COVERAGE } from "#src/cpu/coverage.ts";
 import { coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges } from "#src/cpu/coverage.ts";
 
 export { coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges };
-import { listRegions, type RegionRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, isAnalyzer, isSemantic, type Space } from "#src/knowledge/schema.ts";
+import { POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/address.ts";
+import { listRegions, listSymbols, type RegionRow } from "#src/knowledge/read.ts";
+import { CODE_REGION_TYPES, isAnalyzer, isSemantic, SEMANTIC_ORIGINS, type Space } from "#src/knowledge/schema.ts";
 
 /** The byte at an address of the analyzed image, or undefined outside it. */
 export type ImageByte = (address: number) => number | undefined;
@@ -33,6 +34,37 @@ export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, spac
       const high = image(at + 2);
       if (image(at) === 0x4c && low !== undefined && high !== undefined) entries.push(low | (high << 8));
     }
+  }
+  return entries;
+}
+
+/**
+ * The targets of each table of addresses of the user or the LLM that holds
+ * code addresses: entry points, for the code that only the table reaches. An
+ * RTS table holds code addresses. Another table holds them when a run
+ * executed one of its targets, or when the user or the LLM has a routine, a
+ * label or a code region at one of them; a table of data addresses has none of
+ * these. `image` gives the bytes of the program: a table with a byte outside
+ * it gives nothing, and a target outside it, in a data region of the user or
+ * the LLM or at their data or variable symbol is no entry point.
+ */
+export function tableEntries(db: DatabaseSync | undefined, image: ImageByte, space: Space = mainSpaceOf(db), executed: (address: number) => boolean = () => false): number[] {
+  const regions = listRegions(db, undefined, undefined, undefined, space).filter((row) => isSemantic(row.origin));
+  const symbols = listSymbols(db, undefined, undefined, [...SEMANTIC_ORIGINS], space);
+  const holds = (address: number, code: boolean) =>
+    regions.some((row) => row.start <= address && address <= row.end && (code ? CODE_REGION_TYPES.includes(row.type) : !CODE_REGION_TYPES.includes(row.type) && row.type !== "dual-use"));
+  const named = (address: number, kinds: readonly string[]) => symbols.some((symbol) => symbol.address === address && kinds.includes(symbol.kind));
+  const code = (address: number) => executed(address) || named(address, ["routine", "label"]) || holds(address, true);
+  const entries: number[] = [];
+  for (const table of regions) {
+    if (!(POINTER_TABLE_TYPES as readonly string[]).includes(table.type)) continue;
+    let whole = true;
+    for (let address = table.start; address <= table.end && whole; address++) whole = image(address) !== undefined;
+    if (!whole) continue;
+    const targets = pointerTableEntries({ start: table.start, end: table.end, type: table.type as PointerTableType }, (address) => image(address)!)
+      .map((entry) => entry.target)
+      .filter((target) => image(target) !== undefined && !holds(target, false) && !named(target, ["data", "variable"]));
+    if (table.type.startsWith("rts-") || targets.some(code)) entries.push(...targets);
   }
   return entries;
 }

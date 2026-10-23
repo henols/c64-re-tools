@@ -25,7 +25,7 @@ import { currentRevision, listMacros, listMacroUses, listPatches, listReferences
 import { SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformNamesOfSpace, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
-import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, tableEntries, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, ghidraFindings, machineRom, outsideRom, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList, z80InstructionList } from "./lib/instructions.ts";
@@ -220,13 +220,13 @@ async function analyze(call: Call): Promise<unknown> {
 
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries, space, executed.executed);
-  // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound:
+  // Knowledge routines and --entry first, then code regions, JMP tables and tables of code addresses, then idioms, then coverage, up to the seed bound:
   // at most GHIDRA_LIMITS.entryPoints (1024) entry points for both analyzers, and for Ghidra at most
   // GHIDRA_LIMITS.codeStarts (8192) coverage flow starts that are code in a routine. coverageSeeds gives what was used.
   const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, inProgram, machine.cpu);
   // A Spectrum snapshot gives its PC as the entry of the program: it is a seed too.
   const snapshotEntry = z80 && program.entry !== undefined ? [program.entry] : [];
-  const known = [...new Set([...seeds.entryPoints, ...snapshotEntry, ...codeEntries(reader, byteAt, space)])];
+  const known = [...new Set([...seeds.entryPoints, ...snapshotEntry, ...codeEntries(reader, byteAt, space), ...tableEntries(reader, inProgram, space, executed.executed)])];
   // Ghidra takes the coverage as code starts without a function; DXA has one list.
   const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, inProgram, machine.cpu);
   // The Z80 idioms follow the code from every seed and the entry of the program.
@@ -347,7 +347,9 @@ async function analyze(call: Call): Promise<unknown> {
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext(), machine);
   // Executed instruction starts that Ghidra did not decode: the instruction list and the source miss them.
   const decoded = new Set(result.instructions.map((instruction) => instruction.address));
-  const imported = record({ ...outsideRom(ghidraFindings(result, machine.cpu.id), rom), space, ...executed }, revision, "Ghidra analysis of the program", runProvenance(bytes, result.toolVersion));
+  // The findings and the coverage without the ROM: the analysis did not examine the ROM for the knowledge.
+  const findings = outsideRom(ghidraFindings(result, machine.cpu.id), rom);
+  const imported = record({ ...findings, space, ...executed }, revision, "Ghidra analysis of the program", runProvenance(bytes, result.toolVersion));
   const found = idiomsResult();
   // A start inside a dual-use region is a known overlap, for example the second instruction of a BIT skip: one list cannot hold both.
   // Read after the idioms, which write those regions.
@@ -367,7 +369,7 @@ async function analyze(call: Call): Promise<unknown> {
     ...found,
     ...coverageResult(),
     ...(coverage === undefined ? {} : { coverageGaps: listed(gaps, max, formatAddress, "a larger --max-listed") }),
-    coverage: result.coverage.map((range) => ({ start: formatAddress(range.start), end: formatAddress(range.end) })),
+    coverage: findings.coverage.map((range) => ({ start: formatAddress(range.start), end: formatAddress(range.end) })),
     ...imported,
     functions: listed(result.functions, max, (fn) => ({ entry: formatAddress(fn.entry), name: fn.name }), ALL_NAMES),
     decompilations: result.decompilations.map((item) => ({ entry: formatAddress(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
@@ -398,7 +400,7 @@ await runScript({
         "apply-macros": { kind: "flag", help: "write the macro candidates (the macros and their uses) to the project knowledge as one revision of the LLM" },
         skip: { kind: "address", value: "<address>", multiple: true, help: "with --apply-macros: the start of a macro candidate that is not correct. The run does not write it" },
       },
-      notes: "The program and the coverage come from the project knowledge: put them into the project knowledge first. The executed code of the coverage gives entry points. Routine symbols in the knowledge are entry points too. Ghidra needs at least one entry point. DXA finds the SYS of a BASIC start by itself.",
+      notes: "The program and the coverage come from the project knowledge: put them into the project knowledge first. The executed code of the coverage gives entry points. Routine symbols in the knowledge and the targets of its tables of code addresses are entry points too. Ghidra needs at least one entry point. DXA finds the SYS of a BASIC start by itself.",
       run: analyze,
     },
   ],

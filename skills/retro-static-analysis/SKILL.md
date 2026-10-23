@@ -46,6 +46,11 @@ To get the command list, run the script with no arguments.
   - An address in `functions` of an earlier Ghidra result.
 - Ghidra needs at least one entry point. DXA finds the SYS address of a BASIC start without help.
 - Each routine, each `code` region and each entry of a `jumps` table in the project knowledge is also an entry point. Each name in the project knowledge is a label in the listing and in the decompiled code.
+- The targets of a table of code addresses in the project knowledge are also entry points. Thus the analysis finds the code that only the table reaches, for example a handler for each room. These tables hold code addresses:
+  - An `rts-addresses` or an `rts-addresses-split` table.
+  - An `addresses` or an `addresses-split` table with at least one target that is code. A run executed that target, or the project knowledge has a routine, a label or a `code` region there.
+- A target outside the program, in a data region or at a `data` or `variable` symbol is not an entry point. Thus a table of data addresses gives no entry points. Classify a table as `addresses` only when all its values are the same type of address.
+- A table gives no references. To get a reference to the table, find the instruction that loads the address of the table. In the project knowledge, write its operand as the name of the table. On the ZX Spectrum, this instruction is for example `ld hl,$d7ac`.
 - The two start vectors of a `CBM80` header at `$8000` are entry points without help.
 - Each region that is not code in the project knowledge stays data. Each `data` or `variable` symbol also keeps its region as data. If the region holds an entry point or executed code, only the byte of the symbol stays data.
 - If an analyzer decodes data as code, classify the region as data in the project knowledge. Then run `analyze` again.
@@ -104,7 +109,7 @@ The script records only structure: code and data regions, analyzer names, and th
 
 - `analyzer`: `dxa` or `ghidra`. `space` is in `body` only for a space that is not the space of the CPU.
 - `revision`: the revision of the findings, or `null` when the knowledge did not change.
-- `coverage`: the ranges that the analyzer examined.
+- `coverage`: the ranges that the analyzer examined. The ROM of the machine is not in these ranges.
 - `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `references.inData` counts the references that the script did not record, because they start in a data region of the user, the LLM or a heuristic. The analyzer decoded these data bytes as code. `symbols.retired` counts the old symbols of the analyzer that became analyzer names.
 - `conflicts`: each place where the analyzer and the project knowledge disagree. `problem` tells the disagreement.
 - `coverageSeeds`: only with coverage. `entryPoints` and `used` give how many entry points the coverage gave, and how many the analysis used. On the C64, `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
@@ -183,7 +188,7 @@ The script does not record the candidates. Examine each candidate and decide.
 The project machine gives the CPU. A ZX Spectrum program has a Z80.
 
 - Use Ghidra. The script refuses `--analyzer dxa`, because DXA reads only 6502 code.
-- The ROM at `$0000`-`$3fff` is not the program. The script refuses an `--entry` in the ROM. The analysis does not decode the ROM, and it records no region or name there. A call from the program into the ROM stays a reference.
+- The ROM at `$0000`-`$3fff` is not the program. The script refuses an `--entry` in the ROM. The analysis does not decode the ROM, and it records no region or name there. A call from the program into the ROM stays a reference. `coverage` is `$4000`-`$ffff`.
 - The script refuses `--apply-macros`, because the generated source of the ZX Spectrum has no macros.
 - `coverageSeeds` has no `romOnlyRanges` and no `romOnlyUsed`.
 - The PC of the snapshot in the project knowledge is an entry point. The USR address of the BASIC loader is also an entry point.
