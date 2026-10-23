@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { COVERAGE } from "../cpu/coverage.ts";
 import { separate } from "./separate.ts";
 
 /** A chain of `count` routines of JSR next / RTS from $1000: each one calls the next. */
@@ -33,4 +34,28 @@ test("5000 regions in a call chain are all reached in less than a second", () =>
   const found = separate({ ...input, entry: 0x1000 });
   assert.ok(performance.now() - started < 1000, `it took ${performance.now() - started} ms`);
   assert.ok(found.codeRegions.every((region) => region.reachable === true));
+});
+
+test("the targets of a table of addresses that a run read are roots, and a reference into a table goes on to its targets", () => {
+  const input = chain(4);
+  input.references = [];
+  // A table at $1020 of the routines at $1008 and $100c, and one at $1024 of $1004 and $0000 (no code).
+  input.memory.set([0x08, 0x10, 0x0c, 0x10], 0x1020);
+  input.memory.set([0x04, 0x10, 0x00, 0x00], 0x1024);
+  input.segments = [{ start: 0x1000, end: 0x1027 }];
+  const tables = [
+    { start: 0x1020, end: 0x1023, type: "addresses" },
+    { start: 0x1024, end: 0x1027, type: "addresses" },
+  ];
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x1000] = COVERAGE.ramExecute;
+  assert.deepEqual(separate({ ...input, entry: 0x1000, tables, coverage }).codeRegions.map((region) => region.reachable), [true, false, false, false], "no run read a table");
+  coverage[0x1022] = COVERAGE.ramRead;
+  const read = separate({ ...input, entry: 0x1000, tables, coverage });
+  assert.deepEqual(read.codeRegions.map((region) => region.reachable), [true, false, true, true]);
+  assert.deepEqual(read.roots.slice(1), [{ address: 0x1008, from: "table entry" }, { address: 0x100c, from: "table entry" }]);
+  // The code at $1000 refers to the second table: its code target is reached through the reference, and $0000 is no root.
+  const referred = separate({ ...input, entry: 0x1000, tables, references: [{ from: 0x1000, to: 0x1024, kind: "pointer" }] });
+  assert.deepEqual(referred.codeRegions.map((region) => region.reachable), [true, true, false, false]);
+  assert.deepEqual(referred.roots, [{ address: 0x1000, from: "entry" }]);
 });

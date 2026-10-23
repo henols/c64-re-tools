@@ -13,7 +13,7 @@ import { projectMachine, projectMainSpace } from "#src/knowledge/names.ts";
 import { machineOf } from "#src/knowledge/project-machine.ts";
 import { basename } from "node:path";
 
-import { type AddressRange, addressOf, formatAddress, parseAddress } from "#src/address.ts";
+import { type AddressRange, addressOf, formatAddress, parseAddress, POINTER_TABLE_TYPES } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
 import { readProgramFile, snapshotOfImage, type SnapshotImage } from "#src/host-client/image.ts";
@@ -347,12 +347,14 @@ function programEvidence() {
   let program: ReturnType<typeof requireProgram>;
   let coverage: Uint8Array | undefined;
   let regions: ReturnType<typeof listRegions>;
+  let tables: ReturnType<typeof listRegions>;
   let references: ReturnType<typeof listReferences>;
   try {
     machine = machineOf(db);
     program = requireProgram(db);
     coverage = programCoverage(db)?.map;
     regions = listRegions(db).filter((region) => CODE_REGION_TYPES.includes(region.type));
+    tables = listRegions(db).filter((region) => (POINTER_TABLE_TYPES as readonly string[]).includes(region.type));
     references = listReferences(db);
   } finally {
     db?.close();
@@ -365,6 +367,7 @@ function programEvidence() {
     ...(stages === undefined ? {} : { stages }),
     ...(coverage === undefined ? {} : { coverage }),
     codeRegions: regions,
+    tables,
     references,
     cpu: machine.cpu,
     // The outside ranges leave out the ROM that the CPU always sees; the C64 can switch its ROMs out, and pages 0-3 are its system area.
@@ -413,7 +416,7 @@ function separateCommand(call: Call): unknown {
         }),
     ...(coverage === undefined ? {} : { bytesByAccess: Object.fromEntries((["executed", "read", "written", "read-written", "untouched"] as const).map((access) => [access, bytes((range) => range.access === access)])) }),
     ranges: list(ranges),
-    // The roots of the reachability: the entry and the hardware vectors in the image.
+    // The roots of the reachability: the entry, the hardware vectors in the image and the entries of the tables that a run read.
     roots: roots.length === 0 ? noRoots(machine) : roots,
     // total counts every code region; unreachable is a list like the others.
     codeRegions: {

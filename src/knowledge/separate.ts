@@ -1,15 +1,15 @@
 // Evidence from one release: for each range of the image, the unpack
 // stage that wrote it and the access class from coverage; for each code
-// region of knowledge, whether call and jump references or the run on from
-// its last instruction reach it from a root (the entry, and the NMI, RESET
-// and IRQ vectors at $fffa-$ffff when the image holds them); and what the program reads
-// or executes outside the image. Evidence only: nothing here decides what is
-// original.
+// region of knowledge, whether call and jump references, the run on from
+// its last instruction or a table of addresses reach it from a root (the
+// entry, and the NMI, RESET and IRQ vectors at $fffa-$ffff when the image
+// holds them); and what the program reads or executes outside the image.
+// Evidence only: nothing here decides what is original.
 
 import { COVERAGE, executedRamCode } from "../cpu/coverage.ts";
 import type { Cpu } from "../cpu.ts";
 import { MOS6502 } from "../cpu/mos6502.ts";
-import { type AddressRange } from "../address.ts";
+import { type AddressRange, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "../address.ts";
 
 export type Access = "executed" | "read" | "written" | "read-written" | "untouched";
 
@@ -24,6 +24,12 @@ export interface SeparationInput {
   coverage?: Uint8Array;
   codeRegions: Array<AddressRange & { type: string }>;
   references: Array<{ from: number; to: number; kind: string }>;
+  /**
+   * The tables of addresses of the knowledge. A run that read a table makes
+   * each target in a code region a root ("table entry"); a reference into a
+   * table goes on from the code region that holds its source to each target.
+   */
+  tables?: Array<AddressRange & { type: string }>;
   /** More roots after the entry and the hardware vectors, for example code that a run executed. */
   roots?: Root[];
   /** The CPU of the program: the 6502 when none is given. */
@@ -54,7 +60,7 @@ export interface Root {
 }
 
 export interface Separation {
-  /** The roots of the reachability, in the order entry, NMI, RESET, IRQ, then the roots of the input. */
+  /** The roots of the reachability, in the order entry, NMI, RESET, IRQ, the roots of the input, then the table entries. */
   roots: Root[];
   ranges: EvidenceRange[];
   codeRegions: CodeRegionEvidence[];
@@ -160,6 +166,18 @@ export function separate(input: SeparationInput): Separation {
   });
   const holding = (address: number) => (address >= 0 && address <= 0xffff ? owner[address]! : -1);
   const roots = [...reachabilityRoots(input.segments, input.memory, input.entry, cpu), ...(input.roots ?? [])];
+  // A table of addresses: its targets are code that a dispatch through the table reaches.
+  const tableFlows: Array<{ from: number; to: number }> = [];
+  for (const table of input.tables ?? []) {
+    if (!(POINTER_TABLE_TYPES as readonly string[]).includes(table.type) || !input.segments.some((segment) => table.start >= segment.start && table.end <= segment.end)) continue;
+    const targets = pointerTableEntries({ start: table.start, end: table.end, type: table.type as PointerTableType }, (address) => input.memory[address]!)
+      .map((entry) => entry.target)
+      .filter((target) => holding(target) >= 0);
+    let read = false;
+    for (let address = table.start; address <= table.end && !read && input.coverage !== undefined; address++) read = (input.coverage[address]! & COVERAGE.ramRead) !== 0;
+    if (read) for (const target of targets) if (!roots.some((root) => root.address === target)) roots.push({ address: target, from: "table entry" });
+    for (const reference of input.references) if (reference.to >= table.start && reference.to <= table.end) for (const target of targets) tableFlows.push({ from: reference.from, to: target });
+  }
   // The CPU runs the bytes after the region as instructions: through bytes of no code region (a dual-use
   // instruction, for example) into the next code region, unless one of them does not run on.
   const runOn = (from: number): number | undefined => {
@@ -178,7 +196,7 @@ export function separate(input: SeparationInput): Separation {
   });
   // From the regions that hold a root, through call and jump references and the run on, to every region they reach.
   const next = regions.map((): number[] => []);
-  for (const flow of [...input.references.filter((reference) => reference.kind === "call" || reference.kind === "jump"), ...runsOn]) {
+  for (const flow of [...input.references.filter((reference) => reference.kind === "call" || reference.kind === "jump"), ...runsOn, ...tableFlows]) {
     const from = holding(flow.from);
     const to = holding(flow.to);
     if (from >= 0 && to >= 0) next[from]!.push(to);

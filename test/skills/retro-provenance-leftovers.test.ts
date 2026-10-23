@@ -280,3 +280,32 @@ test("separate in a ZX Spectrum project decodes with the Z80 and leaves the ROM 
   assert.deepEqual([result.codeRegions.total, result.codeRegions.unreachable.count], [2, 0]);
   assert.equal(result.outside.read.count, 0);
 });
+
+test("in a ZX Spectrum project, the handlers of a table of addresses that a run read are no dead code", () => {
+  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-leftovers-zx-table-"));
+  roots.push(root);
+  const ram = new Uint8Array(0xc000);
+  // $8000 RET (the entry); the handlers $8010 and $8020 are RET; the table at $8100 holds them.
+  ram[0x8000 - 0x4000] = 0xc9;
+  ram[0x8010 - 0x4000] = 0xc9;
+  ram[0x8020 - 0x4000] = 0xc9;
+  ram.set([0x10, 0x80, 0x20, 0x80], 0x8100 - 0x4000);
+  importSnapshot(root, z80Snapshot(ram, { pc: 0x8000, sp: 0xff00, iy: 0x5c3a, im: 1, border: 7 }));
+  withWrite((db) => applyBatch(db, { origin: "llm" }, [
+    { op: "classify", start: 0x8000, end: 0x8000, type: "code" },
+    { op: "classify", start: 0x8010, end: 0x8010, type: "code" },
+    { op: "classify", start: 0x8020, end: 0x8020, type: "code" },
+    { op: "classify", start: 0x8100, end: 0x8103, type: "addresses" },
+  ]), root);
+  // The run executed the entry and read the first entry of the table.
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x8000] = COVERAGE.ramExecute;
+  coverage[0x8100] = COVERAGE.ramRead;
+  coverage[0x8101] = COVERAGE.ramRead;
+  importCoverage(root, { "cov.bin": coverage });
+  const run = script(provenance, ["leftovers"], root);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const result = run.json as { roots: unknown; deadCode: { count: number } };
+  assert.deepEqual(result.roots, [{ address: "$8000", from: "entry" }, { address: "$8010", from: "table entry" }, { address: "$8020", from: "table entry" }]);
+  assert.equal(result.deadCode.count, 0);
+});

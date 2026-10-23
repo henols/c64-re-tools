@@ -178,10 +178,10 @@ Gives evidence from the program in the project knowledge, its stages and its cov
   - `stage` is the last unpack stage that wrote the range. The last stage is the program. An earlier stage is a depacker, an intro or a loader.
   - `access` is `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs.
   - On the C64, a `read` byte right after executed code, or at a return address, can be a dummy read of the 6502. The program does not use it.
-  - On the ZX Spectrum, the coverage has no reads. Thus a byte that the program only reads is `untouched`.
-- `roots`: the addresses where the reachability starts, each with `address` and `from`. The roots are the entry, and on the C64 the NMI, RESET and IRQ vectors at `$fffa`-`$ffff` when the program holds them. A text in place of the list tells why no code region is reachable.
+  - On the ZX Spectrum, only the coverage of a recorded session has reads. The memory map of the emulator has no reads. Without a recorded session, a byte that the program only reads is `untouched`.
+- `roots`: the addresses where the reachability starts, each with `address` and `from`. The roots are the entry, and on the C64 the NMI, RESET and IRQ vectors at `$fffa`-`$ffff` when the program holds them. A table of addresses is a region of type `addresses`, `rts-addresses` or their split forms. When a run read such a table, each target of it in a code region is also a root. Its `from` is `table entry`. A text in place of the list tells why no code region is reachable.
 - `codeRegions.total`: the number of code regions in the project knowledge.
-- `codeRegions.unreachable`: the code regions that no chain of call and jump references reaches from a root. The CPU also continues into the next code region when the last instruction of a region does not stop the flow. On the C64, these instructions stop the flow: RTS, RTI, JMP, BRK and JAM. On the ZX Spectrum, these instructions stop the flow: JP, JR and RET without a condition, `JP (HL)`, RETI and RETN.
+- `codeRegions.unreachable`: the code regions that no chain of call and jump references reaches from a root. The CPU also continues into the next code region when the last instruction of a region does not stop the flow. On the C64, these instructions stop the flow: RTS, RTI, JMP, BRK and JAM. On the ZX Spectrum, these instructions stop the flow: JP, JR and RET without a condition, `JP (HL)`, RETI and RETN. A reference into a table of addresses reaches each target of the table from the code region of the reference.
 - `outside`: only with coverage. `read` and `executed` give the RAM outside the program that the program used but did not write. The ROM of the ZX Spectrum and the pages `$0000-$03ff` of the C64 are not in `outside`. A loader or an earlier stage put these bytes there. `generated` gives the code that the program wrote outside its segments. A `generated` range can have gaps of two bytes or less: these are operand bytes.
 - `out`, `bytes` and `sha256`: the file of `--out`. It holds the roots, and all ranges, code regions and outside ranges.
 
@@ -231,6 +231,7 @@ Traps:
 
 - No coverage: `residue` is empty. Put the coverage of runs that use many parts of the program into the project knowledge.
 - No code regions: `deadCode` is empty, and `residue` can include code. Analyze the program for its code regions first.
+- A routine that only a table of addresses reaches is in `deadCode` when no run read the table and no reference goes into the table. A routine name does not make the routine reachable. Classify the table in the project knowledge. If no run read the table, find the instruction that loads the address of the table. In the project knowledge, write its operand as the name of the table. Then do `leftovers` again.
 - Error `not-found`: the project knowledge has no program. Put the program into the project knowledge.
 
 ---
