@@ -429,7 +429,7 @@ test("docs.ts link in a group folder: a label names the project of a name, the p
   assert.match(outProblems[1]!.message, /there is no \.\.\/v2\/MISSING\.md\.$/);
 });
 
-test("the reference draws the graphics formats of the C64 only: a region of another machine gets no image", () => {
+test("the reference draws the graphics of the machine: a ZX Spectrum screen with its attributes, and no C64 format", () => {
   const map: SourceMap = {
     directory: "src",
     mapPath: ".c64-re-tools/local/generated/src/source-map.json",
@@ -446,17 +446,32 @@ test("the reference draws the graphics formats of the C64 only: a region of anot
     map,
     revision: "r1",
     symbols: [{ space: "spectrum", address: 0x4000, name: "screen", kind: "label" as const, origin: "user" as const, revision: "r1" }],
-    regions: [{ space: "spectrum", start: 0x4000, end: 0x57ff, type: "bitmap" as const, origin: "user" as const, revision: "r1" }],
+    regions: [
+      { space: "spectrum", start: 0x4000, end: 0x57ff, type: "bitmap" as const, origin: "user" as const, revision: "r1" },
+      { space: "spectrum", start: 0x9000, end: 0x903f, type: "sprite" as const, origin: "user" as const, revision: "r1" },
+    ],
     comments: [],
     references: [],
     modules: [],
-    image: { byteAt: () => 0xaa, inImage: (address: number) => address >= 0x4000 },
+    // The pixels $aa; the attributes at $5800 are $2a: PAPER 5 and INK 2.
+    image: { byteAt: (address: number) => (address >= 0x5800 && address <= 0x5aff ? 0x2a : 0xaa), inImage: (address: number) => address >= 0x4000 },
   };
   const page = (files: Array<{ path: string; bytes: Buffer }>) => files.find((file) => file.path === "docs/reference/graphics.md")!.bytes.toString("utf8");
-  const spectrum = buildReference({ ...input, otherMachine: "ZX Spectrum 48K" });
-  assert.equal(spectrum.counts.images, 0);
-  assert.match(page(spectrum.files), /The reference draws only the graphics formats of the C64, and the program is a program of the ZX Spectrum 48K\. Thus the regions have no images\./);
-  assert.ok(!spectrum.files.some((file) => file.path.endsWith(".png")));
+  const spectrum = buildReference({ ...input, family: "spectrum" });
+  // The display file shows as the screen; a sprite of the ZX Spectrum has no format of the machine.
+  assert.equal(spectrum.counts.images, 1);
+  const text = page(spectrum.files);
+  assert.doesNotMatch(text, /multicolour/);
+  assert.match(text, /A sprite, a screen region and a bitmap of another size have no image/);
+  const png = readPng(spectrum.files.find((file) => file.path === "docs/reference/images/screen.png")!.bytes);
+  assert.deepEqual([png.width, png.height], [320, 256]);
+  // The first two pixels of the picture, after the border of 32 pixels: INK 2 (red) and PAPER 5 (cyan).
+  const at = (x: number, y: number) => png.palette[png.pixels[y * png.width + x]!];
+  assert.deepEqual([at(32, 32), at(33, 32), at(0, 0)], [[0xd7, 0, 0], [0, 0xd7, 0xd7], [0, 0, 0]]);
+  // A copy of the pixels at another address has no attributes of the machine: it shows in pattern colours.
+  const copy = buildReference({ ...input, family: "spectrum", regions: [{ ...input.regions[0]!, start: 0x8000, end: 0x97ff }], image: { byteAt: () => 0xaa, inImage: () => true } });
+  const patterned = readPng(copy.files.find((file) => file.path.endsWith(".png"))!.bytes);
+  assert.deepEqual([patterned.palette[patterned.pixels[32 * 320 + 32]!], patterned.palette[patterned.pixels[32 * 320 + 33]!]], [[0xd7, 0xd7, 0xd7], [0, 0, 0]]);
   const c64 = buildReference(input);
-  assert.equal(c64.counts.images, 2);
+  assert.equal(c64.counts.images, 4);
 });

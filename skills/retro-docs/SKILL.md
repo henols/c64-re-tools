@@ -116,7 +116,9 @@ The reference has these pages:
 - `modules/<file>.md`: a call graph of the file, its data regions with their readers and writers, and an entry for each name. An entry has the comment, the callers and the table that holds the name. For a routine, it also has the calls, the jumps, the reads and the writes.
 - `tables.md`: each table of addresses, jumps and words, entry by entry, with its target. An RTS table holds each target minus 1. The page gives the target.
 - `memory-map.md`: each region in address order. Then each variable outside the program, with its comment and the routines that read it and write it.
-- `graphics.md`: each `sprite`, `bitmap`, `charset` and `screen` region. The project knowledge has no graphics mode. Thus a sprite, a bitmap or a charset shows in hires and in multicolour. A charset shows 16 characters in each row. A screen shows as text. The page draws only the graphics formats of the C64. For a program of another machine, the page lists the regions without images.
+- `graphics.md`: each `sprite`, `bitmap`, `charset` and `screen` region. A charset shows 16 characters in each row.
+  - C64: the project knowledge has no graphics mode. Thus a sprite, a bitmap or a charset shows in hires and in multicolour. A screen shows as text.
+  - ZX Spectrum: a bitmap of 6144 bytes shows as a ZX Spectrum screen. At `$4000`, it has the colours of the attributes after it. At another address, it has pattern colours. A bitmap of 6912 bytes has its attributes after the pixels. A charset shows in pattern colours. A sprite, a screen region and a bitmap of another size have no image, because the program sets their format.
 
 In a call graph, a solid arrow is a call, a thick arrow is a table entry, and a dotted arrow is a jump. A table entry goes from each routine that reads the table to each target in code. A table of data addresses gives no arrow.
 

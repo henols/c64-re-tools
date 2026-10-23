@@ -36,6 +36,7 @@ Do the specialist work of each task as that task tells. Do not do it in another 
 These rules apply to each rebuild:
 
 - Do not keep a cracktro. A capture of a packed program starts at the last stage, so the code of a cracktro is not in the program. When the capture has data of a cracktro that the program does not read, capture again and exclude that range.
+- A ZX Spectrum rebuild has no loader and no start screen. Its build starts from the snapshot. Do not record a start screen for it. The next three rules apply only to a C64 program.
 - Keep the start screen of the program, for example the loading picture of the publisher. Keep its bytes in the capture, and record the start screen in the project knowledge. The loader of the rebuild then shows it and waits for a key or a fire button. Do not keep a screen of a crack, for example a picture, an intro or a credit screen of a crack group.
 - When the start screen is only in a stage of the loading, capture that stage while it shows the screen. Put the capture into the project knowledge in the space `loading`. Then record the start screen of that stage. Keep its tune: record the routine that starts the tune as the call of the start screen.
 - A release can change the start screen, for example with the text of a crack. Then stop and ask the user how to deal with it. Do not decide alone.
@@ -117,14 +118,14 @@ For a ZX Spectrum program, these stages change. The other stages stay the same.
 |---|---|
 | 2. Get | List the blocks of the tape. Keep the tape in `original/`. |
 | 3. Start | List the BASIC loader of the tape. Read the USR address, the CLEAR address and the CODE files. A game with its own loader has `turbo` or `pure-data` blocks, or blocks without a header. |
-| 4. Load and capture | Load the tape in the emulator of the ZX Spectrum, and run it until the entry of the machine code. For a game with its own loader, find the entry with breakpoints. Write the machine state as a snapshot into `.c64-re-tools/local/`. Put the snapshot into the project knowledge. |
+| 4. Load and capture | Load the tape in the emulator of the ZX Spectrum, and run it until the entry of the machine code. For a game with its own loader, find the entry with breakpoints. Write the machine state as a snapshot into `.c64-re-tools/local/`. Put the snapshot into the project knowledge. Do not record a start screen. |
 | 5. Run | Record the program from its snapshot with frames, keys and joystick steps. A ZX Spectrum recording has no play session of the user. Put the coverage of each recording into the project knowledge. |
 | 6. Analyze | Analyze the program statically with Ghidra. DXA reads only 6502 code. |
 | 7. Name | Do this stage as for a C64 program, but find the platform addresses in the memory map of the ZX Spectrum. |
 | 8. Releases and switches | The releases, the switches and the patches are not for a ZX Spectrum program. Give them as an exception. Find the leftovers. Record each leftover as a region with a comment. The source keeps them, and each build has them. |
 | 9. Generate | Generate the source from the project knowledge into `src`. The source is for sjasmplus. `main.asm` includes a file for each module. There is no loader: the snapshot is the start. |
 | 10. Build and test | Build `main.asm` into `build/`, and compare it with the program. Replay each recording on the rebuild. Give the build and the first address of its range. |
-| 11. Document | Do this stage as for a C64 program. The graphics page of the reference has no images, because the reference draws only the graphics formats of the C64. |
+| 11. Document | Do this stage as for a C64 program. The graphics page of the reference shows a bitmap of a full screen and a charset in the format of the ZX Spectrum. A sprite has no image. |
 
 ### Deliverables of a full rebuild
 
