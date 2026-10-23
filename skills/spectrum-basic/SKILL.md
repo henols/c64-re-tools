@@ -1,6 +1,6 @@
 ---
 name: spectrum-basic
-description: Lists the Sinclair BASIC of a ZX Spectrum tape, snapshot or program file. It reads TAP, TZX, .z80 and .sna files. It finds where the BASIC gives control to machine code with USR. It also finds CLEAR, which sets the top of BASIC, and LOAD "" CODE, which loads the next file. It shows a number that the program keeps hidden behind other digits. Use it on the loader of a game. Use it to find the address where the machine code starts. It does not run the program, and it does not disassemble machine code.
+description: Lists the Sinclair BASIC of a ZX Spectrum tape, snapshot or program file. It reads TAP, TZX, .z80 and .sna files. It finds where the BASIC gives control to machine code with USR or with the error return at ERR_SP. It also finds CLEAR, which sets the top of BASIC, and LOAD "" CODE, which loads the next file. It shows a number that the program keeps hidden behind other digits. Use it on the loader of a game. Use it to find the address where the machine code starts. It does not run the program, and it does not disassemble machine code.
 ---
 
 # ZX Spectrum BASIC
@@ -88,7 +88,9 @@ The kinds of handoff:
 - `clear`: CLEAR puts the top of BASIC (RAMTOP) at `address`. Usually the machine code is above that address.
 - `load-code`: the program loads the next file with LOAD "" CODE. `address` is the load address when the text gives it. Else the header of the file gives the address.
 - `load-screen`: the program loads the next file with LOAD "" SCREEN$.
-- `err-sp`: the program writes the error return at `ERR_SP` (23613 and 23614) with POKE. An error or the end of the BASIC then starts machine code at an address that the program puts there.
+- `err-sp`: the program changes the error return of BASIC with POKE. An error or the end of the BASIC then starts machine code. The POKE writes `ERR_SP` (23613 and 23614), or the 2 bytes that `ERR_SP` points to. An example of the second form is `POKE (PEEK 23613+256*PEEK 23614),PEEK 23627`. For the second form, these fields can also show:
+  - `address`: the new error return, when the program gives its 2 bytes as numbers.
+  - `from`: the address of the 2 bytes that the program copies into the error return with PEEK. `fromName` is the name of the system variable at that address, for example `VARS`. The machine code starts at the address that these 2 bytes hold when the POKE runs.
 
 On a tape, compare the `usr` address with `body.code`. The CODE file that loads to that address holds the machine code.
 
@@ -98,7 +100,7 @@ A program on a tape without its data block has `problem` and no listing. Then th
 
 - A `usr` address: disassemble the machine code at that address. `hint` also names the CODE file that loads to that address.
 - A computed address: find the address in the emulator at run time. Do not guess the address.
-- An `err-sp` handoff: load the program in the emulator, and stop at the first instruction after the BASIC. That is the entry of the machine code.
+- An `err-sp` handoff: load the program in the emulator, and stop at the first instruction after the BASIC. That is the entry of the machine code. When the handoff has `address`, disassemble the machine code at that address. When `fromName` is `VARS`, the machine code is in the variables of the program: disassemble them.
 - No `usr` handoff: the BASIC has no USR. It can start machine code in another way, for example with a POKE of the error return at `ERR_SP` (23613 and 23614). Look in the listing for a POKE, a hidden number and a LOAD of another file. Do not make up a handoff.
 - `hiddenBytes`: disassemble the bytes after the last line.
 - A program without its data block: load the tape in the emulator, and stop at the entry of the machine code.

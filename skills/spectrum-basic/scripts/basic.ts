@@ -1,10 +1,12 @@
 // The spectrum-basic script: lists the Sinclair BASIC of a project file (a tape,
 // a snapshot or the bytes of a program) and reports what the BASIC hands over
-// to machine code: USR, CLEAR and LOAD "" CODE. Local decoding; nothing is stored.
+// to machine code: USR, CLEAR, LOAD "" CODE and the error return at ERR_SP.
+// Local decoding; nothing is stored.
 
 import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
+import { SPECTRUM_SYSTEM } from "#src/platform/spectrum.ts";
 import { reply, runScript } from "#src/script.ts";
 import {
   cpuRam,
@@ -24,7 +26,17 @@ const PROG = 0x5c53;
 const VARS = 0x5c4b;
 const E_LINE = 0x5c59;
 
-const handoff = (item: SinclairHandoff) => ("address" in item && item.address !== undefined ? { ...item, address: formatAddress(item.address) } : item);
+/** A handoff with its addresses as text, and the name of the system variable whose word the error return gets. */
+function handoff(item: SinclairHandoff) {
+  const shown: Record<string, unknown> = { ...item };
+  if ("address" in item && item.address !== undefined) shown.address = formatAddress(item.address);
+  if ("from" in item && item.from !== undefined) {
+    shown.from = formatAddress(item.from);
+    const variable = SPECTRUM_SYSTEM.find((entry) => entry.start === item.from && entry.end === item.from + 1);
+    if (variable !== undefined) shown.fromName = variable.name;
+  }
+  return shown as { kind: SinclairHandoff["kind"]; line: number; address?: string; from?: string; fromName?: string; computed?: true };
+}
 
 /**
  * The listing of a program, its handoffs and the size of its variables:
@@ -78,12 +90,21 @@ function answer(body: { programs: Array<Partial<Listed>>; code?: Array<{ block: 
   const hints: string[] = [];
   const handoffs = body.programs.flatMap((item) => item.handoffs ?? []);
   const usr = handoffs.filter((item) => item.kind === "usr");
-  const known = usr.flatMap((item) => ("address" in item && item.address !== undefined ? [item.address] : []));
-  const computed = usr.filter((item) => "computed" in item).map((item) => item.line);
+  const errorReturns = handoffs.filter((item) => item.kind === "err-sp");
+  const known = [...usr, ...errorReturns].flatMap((item) => (item.address !== undefined ? [item.address] : []));
+  const computed = usr.filter((item) => item.computed === true).map((item) => item.line);
   const missing = body.programs.filter((item) => item.problem !== undefined).map((item) => item.block);
-  const errorReturn = handoffs.filter((item) => item.kind === "err-sp").map((item) => item.line);
-  if (errorReturn.length > 0) {
-    hints.push(`Line ${errorReturn.join(", ")} changes the error return at ERR_SP: an error or the end of the BASIC then starts machine code. Load the program in the emulator and stop at the first instruction after the BASIC to find the entry.`);
+  if (errorReturns.length > 0) {
+    hints.push(`Line ${errorReturns.map((item) => item.line).join(", ")} changes the error return at ERR_SP: an error or the end of the BASIC then starts machine code.`);
+    for (const item of body.programs) {
+      for (const found of (item.handoffs ?? []).filter((each) => each.kind === "err-sp" && each.from !== undefined)) {
+        const named = found.fromName === undefined ? `the word at ${found.from}` : `${found.fromName} (${found.from})`;
+        hints.push(`Line ${found.line} copies ${named} into the error return, so the machine code starts at the address in ${named} when the POKE runs.`);
+        // VARS points to the variables after the program: these bytes then hold the machine code.
+        if (found.from === formatAddress(VARS) && (item.variableBytes ?? 0) > 0) hints.push(`VARS is the address of the variables of the program, so disassemble the ${item.variableBytes} bytes of the variables.`);
+      }
+    }
+    if (errorReturns.some((item) => item.address === undefined)) hints.push("Load the program in the emulator and stop at the first instruction after the BASIC to find the entry.");
   } else if (body.programs.every((item) => item.problem === undefined) && usr.length === 0) {
     hints.push("The BASIC has no USR. It can start machine code in another way, for example with a POKE of the error return at ERR_SP (23613 and 23614). Look in the listing for a POKE, a hidden number and a LOAD of another file.");
   }
@@ -104,7 +125,7 @@ function answer(body: { programs: Array<Partial<Listed>>; code?: Array<{ block: 
 
 await runScript({
   name: "basic",
-  summary: "Lists the Sinclair BASIC of a tape, a snapshot or a program, and reports its handoffs to machine code: USR, CLEAR and LOAD \"\" CODE.",
+  summary: "Lists the Sinclair BASIC of a tape, a snapshot or a program, and reports its handoffs to machine code: USR, CLEAR, LOAD \"\" CODE and the error return at ERR_SP.",
   commands: [
     {
       name: "list",

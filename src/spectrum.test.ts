@@ -201,6 +201,41 @@ test("a hidden number shows as PRINT shows it, and a POKE of ERR_SP is a handoff
   assert.deepEqual(findSinclairHandoffs(parsed.lines), [{ kind: "err-sp", line: 10 }]);
 });
 
+test("a POKE of the error return that ERR_SP points to is a handoff with the word that the program copies there", () => {
+  const float = (value: number) => {
+    const exponent = Math.floor(Math.log2(value)) + 1;
+    const mantissa = Math.round((value / 2 ** exponent) * 2 ** 32);
+    return [exponent + 128, (mantissa >>> 24) & 0x7f, (mantissa >>> 16) & 0xff, (mantissa >>> 8) & 0xff, mantissa & 0xff];
+  };
+  // A number in the text with another hidden value, after {INK 7}, as the loader of Bruce Lee keeps it.
+  const hiddenBehind = (digits: string, value: number) => [0x10, 7, ...text(digits), 0x0e, ...float(value)];
+  // ( PEEK 23633{=23613.1}+256* PEEK 23634{=23614.2})
+  const errorReturn = [0x28, 0xbe, ...hiddenBehind("23633", 23613.1), 0x2b, ...literal("256"), 0x2a, 0xbe, ...hiddenBehind("23634", 23614.2), 0x29];
+  const program = Uint8Array.from([
+    // 10 POKE (PEEK 23613+256*PEEK 23614), PEEK 23627: POKE (PEEK 23613+256*PEEK 23614)+1, PEEK 23628
+    ...basicLine(10, [0xf4, ...errorReturn, 0x2c, 0xbe, ...hiddenBehind("23647", 23627.3), 0x3a, 0xf4, ...errorReturn, 0x2b, ...literal("1"), 0x2c, 0xbe, ...hiddenBehind("23648", 23628.3)]),
+  ]);
+  const parsed = parseSinclairBasic(program);
+  assert.ok("lines" in parsed, JSON.stringify(parsed));
+  // The program copies VARS ($5c4b) into the error return.
+  assert.deepEqual(findSinclairHandoffs(parsed.lines), [{ kind: "err-sp", line: 10, from: 0x5c4b }]);
+  // Two numbers give the address itself, over two lines: 20 POKE (...), 0 / 30 POKE (...)+1, 96.
+  const constant = parseSinclairBasic(Uint8Array.from([
+    ...basicLine(20, [0xf4, ...errorReturn, 0x2c, ...literal("0")]),
+    ...basicLine(30, [0xf4, ...errorReturn, 0x2b, ...literal("1"), 0x2c, ...literal("96")]),
+  ]));
+  assert.ok("lines" in constant);
+  assert.deepEqual(findSinclairHandoffs(constant.lines), [{ kind: "err-sp", line: 20, address: 0x6000 }]);
+  // A value that the BASIC calculates from a variable gives only the line.
+  const variable = parseSinclairBasic(Uint8Array.from(basicLine(40, [0xf4, ...errorReturn, 0x2c, 0x61])));
+  assert.ok("lines" in variable);
+  assert.deepEqual(findSinclairHandoffs(variable.lines), [{ kind: "err-sp", line: 40 }]);
+  // A POKE of another address that the program reads with PEEK is no handoff: PEEK 23641+256*PEEK 23642 is E_LINE.
+  const other = parseSinclairBasic(Uint8Array.from(basicLine(50, [0xf4, 0x28, 0xbe, ...literal("23641"), 0x2b, ...literal("256"), 0x2a, 0xbe, ...literal("23642"), 0x29, 0x2c, ...literal("0")])));
+  assert.ok("lines" in other);
+  assert.deepEqual(findSinclairHandoffs(other.lines), []);
+});
+
 test("the 5-byte numbers: the small integer form and the floating point form", () => {
   assert.equal(sinclairNumber(Uint8Array.of(0, 0, 0x39, 0x30, 0)), 12345);
   assert.equal(sinclairNumber(Uint8Array.of(0, 0xff, 0xff, 0xff, 0)), -1);

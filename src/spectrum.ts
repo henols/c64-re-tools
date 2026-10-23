@@ -563,6 +563,7 @@ const TOKEN_LOAD = 0xef;
 const TOKEN_CODE = 0xaf;
 const TOKEN_SCREEN = 0xaa;
 const TOKEN_POKE = 0xf4;
+const TOKEN_PEEK = 0xbe;
 /** ERR_SP: the address on the machine stack of the error return of BASIC, two bytes. */
 const ERR_SP = 0x5c3d;
 
@@ -661,15 +662,18 @@ export function sinclairLineText(line: SinclairLine, model: SpectrumModel = "48k
  * What a program hands over to machine code or memory: USR with a value that
  * the text gives (a number, or VAL with a string of digits), USR with another
  * argument, CLEAR with a value (the top of BASIC), and LOAD "" CODE or SCREEN$
- * (with the address when the text gives one), and a POKE of ERR_SP (23613 or
- * 23614): the error return of BASIC then goes to an address that the program
- * puts there, so an error or the end of the BASIC starts machine code. Not in
- * strings or REM.
+ * (with the address when the text gives one), and a change of the error
+ * return of BASIC: a POKE of ERR_SP (23613 or 23614), or a POKE of the two
+ * bytes on the machine stack that ERR_SP points to (PEEK 23613+256*PEEK 23614).
+ * An error or the end of the BASIC then starts machine code. For the second
+ * form, `address` is the new error return when the program gives both bytes
+ * as numbers, and `from` the address of the word that the program copies
+ * there with PEEK from and PEEK (from+1), for example VARS. Not in strings or REM.
  */
 export type SinclairHandoff =
   | { kind: "usr"; line: number; address: number }
   | { kind: "usr"; line: number; computed: true }
-  | { kind: "err-sp"; line: number }
+  | { kind: "err-sp"; line: number; address?: number; from?: number }
   | { kind: "clear"; line: number; address: number }
   | { kind: "load-code"; line: number; address?: number }
   | { kind: "load-screen"; line: number };
@@ -692,9 +696,147 @@ function constantArgument(bytes: Uint8Array, at: number): number | undefined {
   return sinclairNumber(bytes.subarray(at + 1, at + 6));
 }
 
+/**
+ * A value of a BASIC expression that is known without a run: a constant and a
+ * sum of PEEKs of constant addresses, each with its factor. PEEK 23613+256*PEEK
+ * 23614 is the constant 0 and the PEEKs {23613: 1, 23614: 256}.
+ */
+interface Linear {
+  constant: number;
+  peeks: Map<number, number>;
+}
+
+const scaled = (value: Linear, factor: number): Linear => ({ constant: value.constant * factor, peeks: new Map([...value.peeks].map(([at, times]) => [at, times * factor])) });
+
+function added(left: Linear, right: Linear): Linear {
+  const peeks = new Map(left.peeks);
+  for (const [at, times] of right.peeks) peeks.set(at, (peeks.get(at) ?? 0) + times);
+  for (const [at, times] of peeks) if (times === 0) peeks.delete(at);
+  return { constant: left.constant + right.constant, peeks };
+}
+
+/**
+ * The expression that starts at `start`, with the priorities of the ROM: a
+ * function such as PEEK takes the next operand only, then * and /, then + and
+ * -. Spaces and colour codes between the items do not count. A number gives
+ * its hidden 5-byte value; PEEK rounds its address, as FIND-INT2 does. The
+ * value is undefined when the expression holds something else, for example a
+ * variable, or a product of two PEEKs.
+ */
+function sinclairExpression(bytes: Uint8Array, start: number): { value: Linear | undefined; end: number } {
+  let at = start;
+  const skip = () => {
+    for (;;) {
+      const byte = bytes[at];
+      const control = byte === undefined ? undefined : CONTROL_CODES[byte];
+      if (byte === 0x20) at++;
+      else if (control !== undefined) at += 1 + control[1];
+      else return;
+    }
+  };
+  const number = (): Linear | undefined => {
+    while (at < bytes.length && bytes[at] !== NUMBER_MARK && /[0-9.eE+-]/.test(String.fromCharCode(bytes[at]!))) at++;
+    if (bytes[at] !== NUMBER_MARK || at + 6 > bytes.length) return undefined;
+    const value = sinclairNumber(bytes.subarray(at + 1, at + 6));
+    at += 6;
+    return { constant: value, peeks: new Map() };
+  };
+  const operand = (): Linear | undefined => {
+    skip();
+    const byte = bytes[at];
+    if (byte === undefined) return undefined;
+    if (byte === 0x2d) {
+      at++;
+      const value = operand();
+      return value === undefined ? undefined : scaled(value, -1);
+    }
+    if (byte === 0x28) {
+      at++;
+      const value = sum();
+      skip();
+      if (value === undefined || bytes[at] !== 0x29) return undefined;
+      at++;
+      return value;
+    }
+    if (byte === TOKEN_PEEK) {
+      at++;
+      const value = operand();
+      if (value === undefined || value.peeks.size > 0) return undefined;
+      return { constant: 0, peeks: new Map([[Math.round(value.constant), 1]]) };
+    }
+    if (byte === TOKEN_VAL) {
+      at++;
+      skip();
+      if (bytes[at] !== 0x22) return undefined;
+      const close = bytes.indexOf(0x22, at + 1);
+      if (close < 0) return undefined;
+      const text = String.fromCharCode(...bytes.subarray(at + 1, close)).trim();
+      at = close + 1;
+      const value = Number(text);
+      return text === "" || !Number.isFinite(value) ? undefined : { constant: value, peeks: new Map() };
+    }
+    if (byte === TOKEN_BIN) {
+      at++;
+      skip();
+      return number();
+    }
+    if ((byte >= 0x30 && byte <= 0x39) || byte === 0x2e) return number();
+    return undefined;
+  };
+  const product = (): Linear | undefined => {
+    let value = operand();
+    for (;;) {
+      skip();
+      const operator = bytes[at];
+      if (value === undefined || (operator !== 0x2a && operator !== 0x2f)) return value;
+      at++;
+      const right = operand();
+      if (right === undefined) return undefined;
+      if (operator === 0x2a) value = value.peeks.size === 0 ? scaled(right, value.constant) : right.peeks.size === 0 ? scaled(value, right.constant) : undefined;
+      else value = right.peeks.size === 0 && right.constant !== 0 ? scaled(value, 1 / right.constant) : undefined;
+    }
+  };
+  const sum = (): Linear | undefined => {
+    let value = product();
+    for (;;) {
+      skip();
+      const operator = bytes[at];
+      if (value === undefined || (operator !== 0x2b && operator !== 0x2d)) return value;
+      at++;
+      const right = product();
+      if (right === undefined) return undefined;
+      value = added(value, operator === 0x2b ? right : scaled(right, -1));
+    }
+  };
+  const value = sum();
+  return { value, end: at };
+}
+
+/** The byte of the error return that a POKE address writes: 0 or 1 for PEEK 23613+256*PEEK 23614 (+1), else undefined. */
+function errorReturnByte(value: Linear): number | undefined {
+  if (value.peeks.size !== 2 || value.peeks.get(ERR_SP) !== 1 || value.peeks.get(ERR_SP + 1) !== 256) return undefined;
+  const offset = Math.round(value.constant);
+  return offset === 0 || offset === 1 ? offset : undefined;
+}
+
+/** A POKE value: a byte (POKE rounds it, as FIND-INT1 does), a PEEK of an address, or unknown. */
+type PokedByte = { byte: number } | { peek: number } | undefined;
+
+function pokedByte(value: Linear | undefined): PokedByte {
+  if (value === undefined) return undefined;
+  if (value.peeks.size === 0) {
+    const byte = Math.round(value.constant);
+    return byte >= 0 && byte <= 0xff ? { byte } : undefined;
+  }
+  const [only] = value.peeks;
+  return value.peeks.size === 1 && only![1] === 1 && Math.round(value.constant) === 0 ? { peek: only![0] } : undefined;
+}
+
 export function findSinclairHandoffs(lines: SinclairLine[]): SinclairHandoff[] {
   const handoffs: SinclairHandoff[] = [];
   const address = (value: number | undefined) => (value !== undefined && Math.trunc(value) >= 0 && Math.trunc(value) <= 0xffff ? Math.trunc(value) : undefined);
+  // The writes of the two bytes of the error return, and the handoff that they make.
+  let errorReturn: { handoff: { kind: "err-sp"; line: number; address?: number; from?: number }; bytes: PokedByte[] } | undefined;
   for (const { number, bytes } of lines) {
     let quoted = false;
     for (let at = 0; at < bytes.length; at++) {
@@ -711,8 +853,18 @@ export function findSinclairHandoffs(lines: SinclairLine[]): SinclairHandoff[] {
         handoffs.push(value === undefined ? { kind: "usr", line: number, computed: true } : { kind: "usr", line: number, address: value });
       } else if (byte === TOKEN_POKE) {
         // POKE rounds its address, as FIND-INT2 of the ROM does.
-        const value = constantArgument(bytes, at + 1);
-        if (value !== undefined && (Math.round(value) === ERR_SP || Math.round(value) === ERR_SP + 1)) handoffs.push({ kind: "err-sp", line: number });
+        const target = sinclairExpression(bytes, at + 1);
+        const written = target.value?.peeks.size === 0 ? Math.round(target.value.constant) : undefined;
+        const half = target.value === undefined ? undefined : errorReturnByte(target.value);
+        if (written === ERR_SP || written === ERR_SP + 1) handoffs.push({ kind: "err-sp", line: number });
+        else if (half !== undefined) {
+          if (errorReturn === undefined) {
+            errorReturn = { handoff: { kind: "err-sp", line: number }, bytes: [undefined, undefined] };
+            handoffs.push(errorReturn.handoff);
+          }
+          // The expression ends after its spaces and colour codes, so the comma follows it.
+          errorReturn.bytes[half] = bytes[target.end] === 0x2c ? pokedByte(sinclairExpression(bytes, target.end + 1).value) : undefined;
+        }
       } else if (byte === TOKEN_CLEAR) {
         const value = address(constantArgument(bytes, at + 1));
         if (value !== undefined) handoffs.push({ kind: "clear", line: number, address: value });
@@ -729,6 +881,11 @@ export function findSinclairHandoffs(lines: SinclairLine[]): SinclairHandoff[] {
         }
       }
     }
+  }
+  if (errorReturn !== undefined) {
+    const [low, high] = errorReturn.bytes;
+    if (low !== undefined && high !== undefined && "byte" in low && "byte" in high) errorReturn.handoff.address = low.byte | (high.byte << 8);
+    else if (low !== undefined && high !== undefined && "peek" in low && "peek" in high && high.peek === low.peek + 1) errorReturn.handoff.from = low.peek;
   }
   return handoffs;
 }

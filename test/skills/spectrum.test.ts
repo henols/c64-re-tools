@@ -42,6 +42,13 @@ writeFileSync(join(project, "game.tap"), Uint8Array.from(loaderBlocks));
 const pokeLine = basicLine(10, [0xf4, ...literal("23613"), 0x2c, ...literal("0")]);
 const hidden = [...pokeLine, 0xf3, 0x31, 0x00, 0x80, 0x61, 0, 0, 1, 0, 0];
 writeFileSync(join(project, "basic.tap"), Uint8Array.from([...loaderBlocks, ...header(0, "hidden", hidden.length, 10, pokeLine.length + 4), ...tapBlock(0xff, hidden)]));
+// 10 POKE (PEEK 23613+256*PEEK 23614),PEEK 23627: POKE (PEEK 23613+256*PEEK 23614)+1,PEEK 23628: the end of the BASIC starts the code in the 3 bytes of variables.
+const errorReturn = [0x28, 0xbe, ...literal("23613"), 0x2b, ...literal("256"), 0x2a, 0xbe, ...literal("23614"), 0x29];
+const varsLine = basicLine(10, [0xf4, ...errorReturn, 0x2c, 0xbe, ...literal("23627"), 0x3a, 0xf4, ...errorReturn, 0x2b, ...literal("1"), 0x2c, 0xbe, ...literal("23628")]);
+const varsProgram = [...varsLine, 0xf3, 0x18, 0xfe];
+writeFileSync(join(project, "vars.tap"), Uint8Array.from([...header(0, "vars", varsProgram.length, 10, varsLine.length), ...tapBlock(0xff, varsProgram)]));
+// A TZX with a pure-data block of 4 bytes: the own loader of the program decides what they are.
+writeFileSync(join(project, "pure.tzx"), Uint8Array.from([...text("ZXTape!"), 0x1a, 1, 20, 0x14, ...new Array(7).fill(0), 4, 0, 0, 0xff, 1, 2, 3]));
 writeFileSync(join(project, "counter.z80"), keyboardCounterSnapshot());
 const screen = new Uint8Array(6912);
 screen[0] = 0xff;
@@ -75,6 +82,22 @@ test("spectrum-basic lists the programs of a tape with the bytes after the last 
   // The hint names the USR address with its CODE file, and the hidden bytes.
   assert.match(envelope.hint!, /\$61a8.*block 2/);
   assert.match(envelope.hint!, new RegExp(`offset ${pokeLine.length}`));
+});
+
+test("spectrum-basic gives the word that the BASIC copies into the error return at ERR_SP, with its name", () => {
+  const { status, result, envelope } = run("spectrum-basic", "basic.ts", "list", "vars.tap");
+  assert.equal(status, 0);
+  const [item] = (result as { programs: Array<{ handoffs: unknown[]; variableBytes: number }> }).programs;
+  assert.deepEqual([item!.handoffs, item!.variableBytes], [[{ kind: "err-sp", line: 10, from: "$5c4b", fromName: "VARS" }], 3]);
+  assert.match(envelope.hint!, /copies VARS \(\$5c4b\) into the error return/);
+  assert.match(envelope.hint!, /disassemble the 3 bytes of the variables/);
+});
+
+test("spectrum-media gives a pure-data block its length without a flag and a checksum, and read writes all its bytes", () => {
+  const listing = run("spectrum-media", "media.ts", "blocks", "pure.tzx");
+  assert.deepEqual((listing.result as { blocks: unknown[] }).blocks, [{ block: 0, kind: "pure-data", id: "$14", length: 4 }]);
+  assert.equal(run("spectrum-media", "media.ts", "read", "pure.tzx", "0", "--out", ".c64-re-tools/local/pure.bin").status, 0);
+  assert.deepEqual([...readFileSync(join(project, ".c64-re-tools/local/pure.bin"))], [0xff, 1, 2, 3]);
 });
 
 test("spectrum-media lists the blocks, writes the data of a block, gives a snapshot and draws a screen", () => {
