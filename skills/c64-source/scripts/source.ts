@@ -1219,7 +1219,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     ...(rendered.notExecuted === undefined
       ? {}
       : {
-          notExecuted: { instructions: rendered.notExecuted.instructions, ...listed(rendered.notExecuted.ranges, max, showRange, `${reports}/${NOT_EXECUTED_FILE}`) },
+          notExecuted: { instructions: rendered.notExecuted.instructions, ...listed(rendered.notExecuted.ranges, max, showRange, `a larger --max-listed, or read ${reports}/${NOT_EXECUTED_FILE}`) },
         }),
     ...(laid.unusedModules.length === 0 ? {} : { unusedModules: laid.unusedModules.map((module) => ({ start: formatC64Address(module.start), file: module.file })) }),
     // The bytes that nothing uses: in leftover files, which the default build and the loader leave out.
@@ -1705,7 +1705,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
     to: fromProject(to),
     zip: zipWritten,
     source: { project: basename(project), revision: knowledge.revision },
-    files: listed(files.map((file) => ({ ...file, out: fromProject(join(to, file.out)) })), max, (file) => file, "the folder of the new project"),
+    files: listed(files.map((file) => ({ ...file, out: fromProject(join(to, file.out)) })), max, (file) => file, "a larger --max-listed, or list the folder of the new project"),
     switches,
     check: exportCheck,
     ...(loaderOutput === undefined ? {} : { loader: loaderOutput }),

@@ -251,7 +251,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 - `body.lines` has `count` and `listed`. `listed` holds one line for each instruction of a code region, and one `!byte` line for other bytes.
 - Each line has `address`, `bytes`, `text`, `referencesIn` and `referencesOut`. It can also have `label`, `analyzerNames`, `lineComments` and `comment`. `lineComments` are the line comments before the line. `comment` is the side comment.
 - `text` is the instruction with the names of its target. An operand expression of the knowledge replaces the operand.
-- `access` is there when the knowledge has coverage. It tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line. `-` tells that no run did. An `r` on code can come from a read of the 6502 that the program does not do. Examples are the byte after an RTS and the opcode after a branch that the CPU takes. Another example is the opcode at the PC when an interrupt starts.
+- `access` is there when the knowledge has coverage. It tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line. `-` tells that no run did. An `r` on code can come from a read of the 6502 that the program does not do. Examples are the third byte of a JSR and the opcode after a branch that the CPU takes. Another example is the opcode at the PC when an interrupt starts. An indexed read (`lda table,x`) that crosses a page also reads the byte $100 below its target. A read watchpoint does not stop at these reads.
 - With `--out`, the body has `lines` as a number, and `out`, `bytes` and `sha256` of the text file.
 - If the knowledge has no program in the space, the script refuses. Put the program in with `image` first.
 - Use `listing` in place of your own disassembler.
@@ -540,7 +540,7 @@ A macro writes a run of instructions as one line of the source, for example `+in
 ### `coverage <map>...`
 
 - `<map>` is a 64 KiB coverage map of a run. Write each map in `.c64-re-tools/local/`.
-- `body` holds `revision`, `imported`, `known` and `ranges`. `imported` lists the new maps. `known` lists the maps that the space has already.
+- `body` holds `revision`, `imported`, `known` and `ranges`. `imported` lists the new maps. `known` lists the maps that the space has already. `ranges` counts the new ranges of accesses that no earlier map has. When `ranges` is 0, the source and the reference do not change.
 - `coverage` joins the maps. It keeps each address that a run executed, read or wrote. It also keeps each address that one run wrote and executed: self-modified code.
 - `coverage` puts each map into the space of `--space`. You can add the same map to each space.
 - `--evidence coverage:<map>` names a map by its path at the import. It refers to the last import of that map into the space of the write.

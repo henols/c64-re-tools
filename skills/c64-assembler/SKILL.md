@@ -136,7 +136,7 @@ Assembles the source and writes the program to `--out`, or to `build/<name>.prg`
 
 Do as the result tells:
 
-- `result` is `PASS`: the program is at `out`. To run or debug the program, load the file at `out` into the emulator.
+- `result` is `PASS`: the program is at `out`. To run or debug the program, load the file at `out` into the emulator. A generated source with a loader is different: the build of `main.asm` does not set the entry state, and it can hold bytes for $d000-$dfff. Load the loader program in its place.
 - `result` is `FAIL` and `assembled` is `false`: the source has errors, and the script wrote no program. `hint` tells you to correct the source. Correct the source at the file and the line of each diagnostic. Then run `build` again.
 - `result` is `FAIL` and `assembled` is `true`: the program is not identical to the reference. The script wrote the program. Read the first difference of each segment in `compare.segments`. Without `--release`, read the section "Switches" first.
 - `hint` tells that `symbols` is cut: give a larger `--max-listed`, or read the symbols file for the full list.

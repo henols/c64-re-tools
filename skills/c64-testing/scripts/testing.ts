@@ -105,13 +105,15 @@ async function recordCommand(call: Call): Promise<Reply> {
       writeReported(`${out}/${RECORDING_FILES.reads}`, outcome.reads, { what: "--out" }),
       writeReported(`${out}/${RECORDING_FILES.coverage}`, outcome.coverage, { what: "--out" }),
     ];
-    // A recording in the local folder is a work file: git ignores it, so it is no test.
-    const keep = projectRelative(out).startsWith(`${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/`)
+    // A recording in the local folder is a work file: git ignores it, so it is no test. A record file there is not kept either.
+    const local = (path: string) => projectRelative(path).startsWith(`${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/`);
+    const keep = local(out)
       ? `Git ignores ${out}. To keep the recording as a test and to add its coverage to the project knowledge, record again with --out tests/recordings/<name>.`
       : `Commit ${out} with the scenarios. Add ${out}/${RECORDING_FILES.coverage} to the project knowledge as coverage.`;
+    const recordFile = local(call.subject(0)) ? ` Git also ignores the record file ${call.subject(0)}. To record again later, keep a copy in a folder that git keeps, for example tests/record/.` : "";
     return reply(
       { result: "PASS", recorded: true, out, ...summary, files },
-      { hint: `${keep} ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
+      { hint: `${keep}${recordFile} ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
     );
   } finally {
     await core.close();

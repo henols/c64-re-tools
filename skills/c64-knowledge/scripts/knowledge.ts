@@ -1069,7 +1069,15 @@ const WRITE_COMMANDS: CommandSpec[] = [
       const maps = call.subjects.map((path) => ({ bytes: readProjectFile(path).bytes, name: knowledgePath(path, "<map>") }));
       return (db) => {
         const { revision, current } = addCoverage(db, context, { space: call.space, maps });
-        return { revision, ...spaceOf(current), imported: current.imported, known: current.known, ranges: current.ranges };
+        const body = { revision, ...spaceOf(current), imported: current.imported, known: current.known, ranges: current.ranges };
+        // ranges counts the accesses that no earlier map had: only they change the source and the reference.
+        const hint =
+          revision === null
+            ? "The knowledge has each map already. Nothing changed."
+            : current.ranges === 0
+              ? "The maps add no access that the knowledge did not have. The knowledge keeps them as evidence. The source and the reference do not change."
+              : `The maps add ${current.ranges} ranges of accesses. They can change the leftovers and the code that no run executed. Generate the source again, then the reference.`;
+        return reply(body, { hint });
       };
     },
   ),
