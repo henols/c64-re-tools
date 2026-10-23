@@ -13,7 +13,7 @@ import { COVERAGE } from "../../../src/cpu/coverage.ts";
 import { findTool, ZXRUN } from "../../../src/native/discover.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { ZX_FRAME_CYCLES, ZxRunSession } from "../../../src/native/zxrun.ts";
-import { CONTENTION_CASES, contentionSnapshot } from "../../fixtures/z80/contention.ts";
+import { busyLoopSnapshot, CONTENTION_CASES, contentionSnapshot } from "../../fixtures/z80/contention.ts";
 
 let skip: string | false = false;
 try {
@@ -61,6 +61,18 @@ test("contended memory delays the CPU as in ZEsarUX: fetches, reads, writes, I/O
     }
   });
   assert.deepEqual(rows, []);
+});
+
+test("a busy loop with interrupts off runs 30 cycles a pass over many frames: an internal cycle at the end of a frame waits for no ULA", { skip, timeout: 60_000 }, async () => {
+  const { bytes, mark, ticks } = busyLoopSnapshot(60_000);
+  const file = join(scratch, "busy.z80");
+  writeFileSync(file, bytes);
+  await withCore(async (core) => {
+    await core.init("48k");
+    await core.loadZ80(file);
+    const reached = await core.status(`run-pc ${mark.toString(16)} ${2 * ticks}`);
+    assert.deepEqual([reached.word, reached.tick], ["reached", ticks]);
+  });
 });
 
 test("a 128K snapshot gives the paging, and the coverage of $c000-$ffff goes to the bank that was paged in", { skip, timeout: 60_000 }, async () => {

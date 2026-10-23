@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 
 import { WireFailure } from "../protocol/messages.ts";
 import { ProcessSupervisor } from "./processes.ts";
-import { parseZxStatus, ZxRunSession } from "./zxrun.ts";
+import { parseZxStatus, ZXRUN_PROTOCOL, ZxRunSession } from "./zxrun.ts";
 
 const skip = process.platform === "win32" ? "the stand-in zxrun is a shell script" : false;
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-zxrun-"));
@@ -24,7 +24,7 @@ function standInCore(name: string, options: { protocol?: number; roms?: boolean 
       "#!/bin/sh",
       "while read cmd rest; do",
       '  case "$cmd" in',
-      `    version) echo "ok zxrun protocol=${options.protocol ?? 2} chips=test" ;;`,
+      `    version) echo "ok zxrun protocol=${options.protocol ?? ZXRUN_PROTOCOL} chips=test" ;;`,
       `    init|load-z80) ${init} ;;`,
       "    quit) exit 0 ;;",
       '    *) echo "err unknown $cmd" ;;',
@@ -62,7 +62,7 @@ test("a zxrun session loads a snapshot and refuses a missing core, another proto
   assert.equal(run.supervisor.size, 0);
   const refused = (pattern: RegExp) => (error: unknown) => error instanceof WireFailure && error.code === "installation-incomplete" && pattern.test(error.message);
   await assert.rejects(ZxRunSession.open(context({})), refused(/zxrun is not installed on this machine/));
-  await assert.rejects(ZxRunSession.open(context({ C64RT_ZXRUN: standInCore("zxrun-1", { protocol: 1 }) })), refused(/protocol 1; c64-re-tools needs protocol 2/));
+  await assert.rejects(ZxRunSession.open(context({ C64RT_ZXRUN: standInCore("zxrun-old", { protocol: ZXRUN_PROTOCOL - 1 }) })), refused(new RegExp(`protocol ${ZXRUN_PROTOCOL - 1}; c64-re-tools needs protocol ${ZXRUN_PROTOCOL}`)));
   const noRom = await ZxRunSession.open(context({ C64RT_ZXRUN: standInCore("zxrun-no-rom", { roms: false }) }));
   try {
     await assert.rejects(noRom.init("128k"), refused(/no ROM .*48\.rom and 128\.rom\. The dev container of c64-re-tools installs it/));

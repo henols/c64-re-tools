@@ -13,7 +13,7 @@ import { launchZesarux } from "../../../src/host/zesarux/process.ts";
 import { findTool, ZXRUN } from "../../../src/native/discover.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { ZX_FRAME_CYCLES, ZxRunSession } from "../../../src/native/zxrun.ts";
-import { CONTENTION_CASES, contentionSnapshot } from "../../fixtures/z80/contention.ts";
+import { busyLoopSnapshot, CONTENTION_CASES, contentionSnapshot } from "../../fixtures/z80/contention.ts";
 
 const zesarux = process.env.C64RT_LIVE_ZESARUX;
 let noZxrun: string | false = false;
@@ -65,4 +65,41 @@ test("zxrun and ZEsarUX reach each mark at the same frame cycle, with the delays
     await supervisor.stopAll();
   }
   assert.deepEqual(rows, []);
+});
+
+test("zxrun and ZEsarUX run a busy loop with interrupts off for many frames in the same t-states", { skip, timeout: 600_000 }, async () => {
+  const { bytes, mark, ticks } = busyLoopSnapshot(60_000);
+  const file = join(scratch, "busy.z80");
+  writeFileSync(file, bytes);
+  const supervisor = new ProcessSupervisor();
+  const context = { supervisor, signal: new AbortController().signal, env: process.env };
+  try {
+    const core = await ZxRunSession.open(context);
+    let replayed: number;
+    try {
+      await core.init("48k");
+      await core.loadZ80(file);
+      replayed = (await core.status(`run-pc ${mark.toString(16)} ${2 * ticks}`)).tick;
+    } finally {
+      await core.close();
+    }
+    const emulator = await launchZesarux({ supervisor, machine: "spectrum48", env: { ...process.env, C64RT_ZESARUX: zesarux! } });
+    let live: number;
+    try {
+      const zrcp = (text: string, timeoutMs?: number) => emulator.zrcp.command(text, timeoutMs);
+      await zrcp("enter-cpu-step");
+      await zrcp("enable-breakpoints");
+      await zrcp(`set-breakpoint 1 PC=${mark.toString(16)}H`);
+      await zrcp(`smartload ${file}`);
+      await zrcp("enter-cpu-step");
+      await zrcp("reset-tstates-partial");
+      await zrcp("run", 60_000);
+      live = Number.parseInt(await zrcp("evaluate TSTATESP"), 10);
+    } finally {
+      await emulator.stop();
+    }
+    assert.deepEqual([replayed, live], [ticks, ticks]);
+  } finally {
+    await supervisor.stopAll();
+  }
 });

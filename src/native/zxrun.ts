@@ -8,7 +8,7 @@ import { LineCoreSession, openLineCore, statusFields } from "./line-core.ts";
 import type { ToolContext } from "./run.ts";
 
 /** The command protocol that this module speaks; zxrun --version and version name it. */
-export const ZXRUN_PROTOCOL = 2;
+export const ZXRUN_PROTOCOL = 3;
 
 /** CPU cycles in one frame: 312 lines of 224 cycles on the 48K, 311 lines of 228 cycles on the 128K. */
 export const ZX_FRAME_CYCLES = { "48k": 69_888, "128k": 70_908 } as const;

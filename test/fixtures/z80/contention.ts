@@ -81,3 +81,18 @@ export function contentionSnapshot(item: ContentionCase): { bytes: Uint8Array; m
   });
   return { bytes, mark };
 }
+
+/**
+ * A busy loop with interrupts off in uncontended memory for many frames: DI ;
+ * LD BC,count ; d: DEC BC ; LD A,B ; OR C ; NOP ; JR NZ,d ; mark: JR mark. Each
+ * pass is 30 cycles and no cycle waits, so the CPU reaches the mark at the tick
+ * 4 + 10 + 30 * count - 5 after the DI. A frame is no multiple of 30 cycles, so
+ * the passes start at each frame position.
+ */
+export function busyLoopSnapshot(count: number): { bytes: Uint8Array; mark: number; ticks: number } {
+  const base = 0x9000;
+  const code = [0xf3, 0x01, count & 0xff, count >> 8, 0x0b, 0x78, 0xb1, 0x00, 0x20, 0xfa, 0x18, 0xfe];
+  const ram = new Uint8Array(0xc000);
+  ram.set(code, base - 0x4000);
+  return { bytes: z80Snapshot(ram, { pc: base, sp: 0x8ff0, iy: 0x5c3a, im: 1, border: 7 }), mark: base + 10, ticks: 4 + 10 + 30 * count - 5 };
+}

@@ -30,7 +30,7 @@
 #include "chips/clk.h"
 #include "systems/zx.h"
 
-#define ZXRUN_PROTOCOL 2
+#define ZXRUN_PROTOCOL 3
 #define ROM_48 "48.rom"
 // The two 128K ROMs in one file: ROM 0 (the 128 editor), then ROM 1 (48 BASIC).
 #define ROM_128 "128.rom"
@@ -192,7 +192,7 @@ static void cover(uint16_t addr, int start, int read) {
 static int frame_t;          // the cycle of the frame that the next tick runs, in the count of ZEsarUX
 static uint32_t frame_seen;  // sys.blink_counter: it counts the frame interrupts
 static int rest;             // the ticks of the current machine cycle after its access
-static int idle_count, idle_from; // the empty steps since the last access, and the first one's frame cycle
+static int idle_count;       // the empty steps since the last access
 static uint16_t last_addr;   // the address of the last access
 
 static void contention_reset(void) {
@@ -207,11 +207,12 @@ static int contended(uint16_t addr) {
 
 // The first contended cycle of the frame: 14336 on the 48K and 14362 on the
 // 128K in this count, measured against ZEsarUX 13.0 (the usual reference counts
-// one cycle less: 14335 and 14361).
+// one cycle less: 14335 and 14361). A cycle before the frame (t < 0) is a cycle
+// at the end of the frame before.
 static int ula_delay(int t) {
     static const int pattern[8] = { 6, 5, 4, 3, 2, 1, 0, 0 };
     const int frame = is128 ? 70908 : 69888, period = is128 ? 228 : 224, first = is128 ? 14362 : 14336;
-    t %= frame;
+    t = ((t % frame) + frame) % frame;
     if (t < first) return 0;
     const int line = (t - first) / period, at = (t - first) % period;
     return line < 192 && at < 128 ? pattern[at & 7] : 0;
@@ -241,9 +242,13 @@ static void stall(int count) {
 
 // The frame cycle after the empty steps before an access, of which the last
 // t1 steps belong to the access's own cycle: each internal cycle waits for the ULA.
+// The empty steps ran one tick each, just before this one: the first one ran at
+// frame_t - idle_count, which is below 0 when a frame started after it. (A
+// frame cycle that a step kept from the frame before would make the stall at
+// the access a whole frame too long.)
 static int after_internal(int t1) {
     if (idle_count == 0) return frame_t;
-    int v = idle_from;
+    int v = frame_t - idle_count;
     for (int i = 0; i < idle_count - t1; i++) v += (contended(last_addr) ? ula_delay(v) : 0) + 1;
     return v;
 }
@@ -293,7 +298,7 @@ static void contend(void) {
         rest = 0;
     } else {
         if (rest > 0) rest--;
-        else { if (idle_count++ == 0) idle_from = frame_t; }
+        else idle_count++;
         return;
     }
     if (next & (Z80_MREQ | Z80_IORQ)) last_addr = addr;
