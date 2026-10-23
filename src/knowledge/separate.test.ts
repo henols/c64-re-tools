@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { COVERAGE } from "../cpu/coverage.ts";
-import { separate } from "./separate.ts";
+import { separate, tableReach } from "./separate.ts";
 
 /** A chain of `count` routines of JSR next / RTS from $1000: each one calls the next. */
 function chain(count: number) {
@@ -58,4 +58,29 @@ test("the targets of a table of addresses that a run read are roots, and a refer
   const referred = separate({ ...input, entry: 0x1000, tables, references: [{ from: 0x1000, to: 0x1024, kind: "pointer" }] });
   assert.deepEqual(referred.codeRegions.map((region) => region.reachable), [true, true, false, false]);
   assert.deepEqual(referred.roots, [{ address: 0x1000, from: "entry" }]);
+});
+
+test("tableReach: a use that overlaps a table goes to each target, a table of jumps has a target each three bytes, and a table outside one segment leads nowhere", () => {
+  const memory = new Uint8Array(0x10000);
+  memory.set([0x00, 0x20, 0x10, 0x20], 0x1000);
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x1001] = COVERAGE.ramRead;
+  const segments = [{ start: 0x1000, end: 0x10ff }];
+  const tables = [
+    { start: 0x1000, end: 0x1003, type: "addresses" },
+    { start: 0x1010, end: 0x1018, type: "jumps" },
+    { start: 0x1020, end: 0x1021, type: "bytes" },
+    { start: 0x10fe, end: 0x1101, type: "addresses" },
+  ];
+  // An indexed read of table-1 starts before the table and ends inside it. The use at $10a0 is only in the bytes and in the table across the segment end.
+  const uses = [{ from: 0x1080, start: 0x0fff, end: 0x1000 }, { from: 0x1090, start: 0x1013, end: 0x1013 }, { from: 0x10a0, start: 0x1020, end: 0x1100 }];
+  assert.deepEqual(tableReach({ tables, uses, segments, memory, coverage }), {
+    roots: [{ address: 0x2000, from: "table entry" }, { address: 0x2010, from: "table entry" }],
+    flows: [
+      { from: 0x1080, to: 0x2000 }, { from: 0x1080, to: 0x2010 },
+      { from: 0x1090, to: 0x1010 }, { from: 0x1090, to: 0x1013 }, { from: 0x1090, to: 0x1016 },
+    ],
+  });
+  // Without a read in the coverage, no target is a root.
+  assert.deepEqual(tableReach({ tables, uses: [], segments, memory }), { roots: [], flows: [] });
 });

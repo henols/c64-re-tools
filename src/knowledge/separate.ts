@@ -25,9 +25,10 @@ export interface SeparationInput {
   codeRegions: Array<AddressRange & { type: string }>;
   references: Array<{ from: number; to: number; kind: string }>;
   /**
-   * The tables of addresses of the knowledge. A run that read a table makes
-   * each target in a code region a root ("table entry"); a reference into a
-   * table goes on from the code region that holds its source to each target.
+   * The tables of addresses (and of jumps) of the knowledge, as tableReach
+   * takes them: each target in a code region of a table that a run read is a
+   * root, and a reference into a table goes on from the code region that holds
+   * its source to each target.
    */
   tables?: Array<AddressRange & { type: string }>;
   /** More roots after the entry and the hardware vectors, for example code that a run executed. */
@@ -84,6 +85,42 @@ export function reachabilityRoots(segments: readonly AddressRange[], memory: Uin
   const inImage = (address: number) => segments.some((segment) => address >= segment.start && address <= segment.end);
   const vectors = cpu.vectors.filter((vector) => inImage(vector.at) && inImage(vector.at + 1)).map((vector): Root => ({ address: memory[vector.at]! | (memory[vector.at + 1]! << 8), from: vector.from }));
   return [...(entry === undefined ? [] : [{ address: entry, from: "entry" as const }]), ...vectors];
+}
+
+/** True for a region type that tableReach follows: a table of addresses, or a table of jumps. */
+export const isTableType = (type: string): boolean => type === "jumps" || (POINTER_TABLE_TYPES as readonly string[]).includes(type);
+
+/** The targets of a table: the address that each entry of a table of addresses names, or each jump of a table of jumps (one each three bytes). */
+export function tableTargets(table: AddressRange & { type: string }, memory: Uint8Array): number[] {
+  if (table.type === "jumps") return Array.from({ length: Math.floor((table.end - table.start + 1) / 3) }, (_, index) => table.start + 3 * index);
+  return pointerTableEntries({ start: table.start, end: table.end, type: table.type as PointerTableType }, (address) => memory[address]!).map((entry) => entry.target);
+}
+
+/** Code at `from` that reads, names or goes to the addresses start-end. */
+export interface Use {
+  from: number;
+  start: number;
+  end: number;
+}
+
+/**
+ * Where the tables lead: a run that read a table (a RAM read in the coverage)
+ * makes each target a root ("table entry"), and each use of a table goes on
+ * from its code to each target, as a dispatch through the table does. A table
+ * that is not a table type, or that is not inside one segment, leads nowhere.
+ */
+export function tableReach(input: { tables: ReadonlyArray<AddressRange & { type: string }>; uses: readonly Use[]; segments: readonly AddressRange[]; memory: Uint8Array; coverage?: Uint8Array }): { roots: Root[]; flows: Array<{ from: number; to: number }> } {
+  const roots: Root[] = [];
+  const flows: Array<{ from: number; to: number }> = [];
+  for (const table of input.tables) {
+    if (!isTableType(table.type) || !input.segments.some((segment) => table.start >= segment.start && table.end <= segment.end)) continue;
+    const targets = tableTargets(table, input.memory);
+    let read = false;
+    for (let address = table.start; address <= table.end && !read && input.coverage !== undefined; address++) read = (input.coverage[address]! & COVERAGE.ramRead) !== 0;
+    if (read) for (const target of targets) if (!roots.some((root) => root.address === target)) roots.push({ address: target, from: "table entry" });
+    for (const use of input.uses) if (use.start <= table.end && table.start <= use.end) for (const target of targets) flows.push({ from: use.from, to: target });
+  }
+  return { roots, flows };
 }
 
 /** BRK, JMP, RTI, RTS, JMP (indirect) and the JAM opcodes: the CPU does not run on to the next instruction after them. */
@@ -166,18 +203,15 @@ export function separate(input: SeparationInput): Separation {
   });
   const holding = (address: number) => (address >= 0 && address <= 0xffff ? owner[address]! : -1);
   const roots = [...reachabilityRoots(input.segments, input.memory, input.entry, cpu), ...(input.roots ?? [])];
-  // A table of addresses: its targets are code that a dispatch through the table reaches.
-  const tableFlows: Array<{ from: number; to: number }> = [];
-  for (const table of input.tables ?? []) {
-    if (!(POINTER_TABLE_TYPES as readonly string[]).includes(table.type) || !input.segments.some((segment) => table.start >= segment.start && table.end <= segment.end)) continue;
-    const targets = pointerTableEntries({ start: table.start, end: table.end, type: table.type as PointerTableType }, (address) => input.memory[address]!)
-      .map((entry) => entry.target)
-      .filter((target) => holding(target) >= 0);
-    let read = false;
-    for (let address = table.start; address <= table.end && !read && input.coverage !== undefined; address++) read = (input.coverage[address]! & COVERAGE.ramRead) !== 0;
-    if (read) for (const target of targets) if (!roots.some((root) => root.address === target)) roots.push({ address: target, from: "table entry" });
-    for (const reference of input.references) if (reference.to >= table.start && reference.to <= table.end) for (const target of targets) tableFlows.push({ from: reference.from, to: target });
-  }
+  // A table: its targets are code that a dispatch through the table reaches.
+  const tables = tableReach({
+    tables: input.tables ?? [],
+    uses: input.references.map((reference) => ({ from: reference.from, start: reference.to, end: reference.to })),
+    segments: input.segments,
+    memory: input.memory,
+    ...(input.coverage === undefined ? {} : { coverage: input.coverage }),
+  });
+  for (const root of tables.roots) if (holding(root.address) >= 0 && !roots.some((other) => other.address === root.address)) roots.push(root);
   // The CPU runs the bytes after the region as instructions: through bytes of no code region (a dual-use
   // instruction, for example) into the next code region, unless one of them does not run on.
   const runOn = (from: number): number | undefined => {
@@ -196,7 +230,7 @@ export function separate(input: SeparationInput): Separation {
   });
   // From the regions that hold a root, through call and jump references and the run on, to every region they reach.
   const next = regions.map((): number[] => []);
-  for (const flow of [...input.references.filter((reference) => reference.kind === "call" || reference.kind === "jump"), ...runsOn, ...tableFlows]) {
+  for (const flow of [...input.references.filter((reference) => reference.kind === "call" || reference.kind === "jump"), ...runsOn, ...tables.flows]) {
     const from = holding(flow.from);
     const to = holding(flow.to);
     if (from >= 0 && to >= 0) next[from]!.push(to);

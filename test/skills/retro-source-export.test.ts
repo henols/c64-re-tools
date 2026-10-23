@@ -136,6 +136,26 @@ test("a table that kept code reads keeps its entries, and untouched data that no
   assert.deepEqual(plan.free, [{ start: 0x100c, end: 0x100f, what: "data" }]);
 });
 
+test("only a run that read a table makes its targets roots: a table that dead code names, or that a run only wrote, keeps no code", () => {
+  // $1000 start: RTS. $1001 dead: LDA table,X; RTS. $1008 table: $100c and $100d. $100c one: RTS. $100d two: RTS.
+  const dead = program([[0x1000, [0x60]], [0x1001, [0xbd, 0x08, 0x10]], [0x1004, [0x60]], [0x100c, [0x60]], [0x100d, [0x60]]], [[0x1008, [0x0c, 0x10, 0x0d, 0x10]]]);
+  const regions: Array<{ start: number; end: number; type: RegionType }> = [{ start: 0x1008, end: 0x100b, type: "addresses" }];
+  const references = [{ from: 0x1001, to: 0x1008, kind: "read" }];
+  assert.deepEqual(planDrops(input(dead, { coverage: covered([0x1000]), regions, references })).free, [
+    { start: 0x1001, end: 0x1004, what: "code" },
+    { start: 0x1008, end: 0x100d, what: "code and data" },
+  ]);
+  const wrote = covered([0x1000]);
+  wrote[0x1008]! |= 1 << 1;
+  assert.deepEqual(planDrops(input(dead, { coverage: wrote, regions })).free, [
+    { start: 0x1001, end: 0x1004, what: "code" },
+    { start: 0x100c, end: 0x100d, what: "code" },
+  ]);
+  const read = covered([0x1000]);
+  read[0x1009]! |= READ;
+  assert.deepEqual(planDrops(input(dead, { coverage: read, regions })).free, [{ start: 0x1001, end: 0x1004, what: "code" }]);
+});
+
 test("an indexed read of table-1 reaches the table and stops at its end; without regions it reaches 256 bytes", () => {
   const minus = program([[0x1000, [0xbd, 0x0b, 0x10]], [0x1003, [0x60]]], [[0x100c, [1, 2, 3, 4]], [0x1010, [5, 6, 7, 8]]]);
   const ran = covered([0x1000, 0x1003]);

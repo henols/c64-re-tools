@@ -10,10 +10,10 @@
 // tells what stays. Without coverage nothing becomes free by itself.
 
 import { COVERAGE } from "#src/cpu/coverage.ts";
-import { type AddressRange, formatAddress, pointerTableEntries, POINTER_TABLE_TYPES, type PointerTableType } from "#src/address.ts";
+import { type AddressRange, formatAddress, POINTER_TABLE_TYPES } from "#src/address.ts";
 import { symbolsPath } from "#src/build-name.ts";
 import { Refusal } from "#src/errors.ts";
-import { NO_FALL_THROUGH, type Root, separate } from "#src/knowledge/separate.ts";
+import { isTableType, NO_FALL_THROUGH, type Root, separate, tableReach, tableTargets } from "#src/knowledge/separate.ts";
 import type { RegionType } from "#src/knowledge/schema.ts";
 import { OPCODES } from "#src/opcodes.ts";
 
@@ -228,14 +228,6 @@ function flowsOf(input: DropInput, inImage: (address: number) => boolean, indexe
   return { flows, reads };
 }
 
-/** The entries of a table of addresses or of jumps. */
-function tableTargets(table: { start: number; end: number; type: RegionType }, memory: Uint8Array): number[] {
-  if (table.type === "jumps") return Array.from({ length: Math.floor((table.end - table.start + 1) / 3) }, (_, index) => table.start + 3 * index);
-  return pointerTableEntries(table as { start: number; end: number; type: PointerTableType }, (address) => memory[address]!).map((entry) => entry.target);
-}
-
-const isTable = (type: RegionType) => type === "jumps" || (POINTER_TABLE_TYPES as readonly string[]).includes(type);
-
 /**
  * The free ranges of the baked image, the code that a run executed and the
  * entry does not reach, and the refusals of --drop and --keep.
@@ -274,17 +266,12 @@ export function planDrops(input: DropInput): DropPlan {
     if (cutData !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)} cuts the ${cutData.type} region ${shown(cutData)}. Give a range that holds all of it, or none of it.`);
   }
 
-  // Tables that a run read or that the knowledge names: their entries can be the only way to code, so they are roots.
-  const tables = regions.filter((region) => isTable(region.type));
-  const tableUsers = (table: AddressRange) => reads.filter((read) => read.start <= table.end && table.start <= read.end).map((read) => read.from);
-  const tableRoots: Root[] = [];
-  for (const table of tables) {
-    const targets = tableTargets(table, input.memory);
-    let read = false;
-    for (let address = table.start; address <= table.end && !read; address++) read = touched(address);
-    if (read || input.references.some((reference) => reference.to >= table.start && reference.to <= table.end)) for (const target of targets) tableRoots.push({ address: target, from: "table entry" });
-    for (const from of tableUsers(table)) for (const target of targets) flows.push({ from, to: target });
-  }
+  // The entries of a table can be the only way to code: the targets of a table that a run read are roots, and code that reads, names or goes into a table goes on to its targets.
+  const tables = regions.filter((region) => isTableType(region.type));
+  const uses = [...reads, ...flows.map((flow) => ({ from: flow.from, start: flow.to, end: flow.to }))];
+  const reach = tableReach({ tables, uses, segments: input.segments, memory: input.memory, ...(input.coverage === undefined ? {} : { coverage: input.coverage }) });
+  const tableRoots: Root[] = reach.roots;
+  flows.push(...reach.flows);
 
   const asRegions = (list: readonly AddressRange[]) => list.map((block) => ({ ...block, type: "code" }));
   const references = flows.map((flow) => ({ ...flow, kind: "jump" }));
@@ -338,7 +325,7 @@ export function planDrops(input: DropInput): DropPlan {
     for (const [index, unit] of units.entries()) {
       if (!dropped.has(index)) continue;
       const named = reads.some((read) => read.start <= unit.end && unit.start <= read.end && keeps(read.from));
-      const entry = units.some((table, other) => !dropped.has(other) && isTable(table.type) && tableTargets(table, input.memory).some((target) => target >= unit.start && target <= unit.end));
+      const entry = units.some((table, other) => !dropped.has(other) && isTableType(table.type) && tableTargets(table, input.memory).some((target) => target >= unit.start && target <= unit.end));
       const fromTable = tables.some((table) => unitAt(table.start) < 0 && tableTargets(table, input.memory).some((target) => target >= unit.start && target <= unit.end));
       if (named || entry || fromTable) {
         dropped.delete(index);
@@ -349,7 +336,7 @@ export function planDrops(input: DropInput): DropPlan {
   const droppedData = units.filter((_, index) => dropped.has(index));
 
   const pieces = [
-    ...input.drop.map((range) => ({ ...range, code: blocks.some((block) => within(block, range)), data: !blocks.some((block) => within(block, range)) || regions.some((region) => within(region, range) && !isTable(region.type) && region.type !== "code") })),
+    ...input.drop.map((range) => ({ ...range, code: blocks.some((block) => within(block, range)), data: !blocks.some((block) => within(block, range)) || regions.some((region) => within(region, range) && !isTableType(region.type) && region.type !== "code") })),
     ...droppedCode.map((range) => ({ ...range, code: true, data: false })),
     ...droppedData.map((range) => ({ ...range, code: false, data: true })),
   ].sort((a, b) => a.start - b.start);
