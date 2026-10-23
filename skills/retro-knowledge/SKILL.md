@@ -415,7 +415,10 @@ An operand expression tells the generated source how to write the operand of one
 
 ### `release <label>`
 
-A rebuild keeps all of the program in the source: unused bytes, dead code, old copies and leftovers of the development. The default build and the loader do not have the leftovers. The build of a release has them. It keeps a copy protection, a trainer and a cheat in the source. A switch puts each of them in or out of the build. A start screen of the program stays too: record it with `start-screen`. Only a cracktro and the other screens of a crack are not in the rebuild.
+A rebuild keeps all of the program in the source: unused bytes, dead code, old copies and leftovers of the development. It keeps a copy protection, a trainer and a cheat in the source. Only a cracktro and the other screens of a crack are not in the rebuild.
+
+- On the C64, the default build and the loader do not have the leftovers. The build of a release has them. A switch puts a copy protection, a trainer or a cheat in or out of the build. A start screen of the program stays too: record it with `start-screen`.
+- On the ZX Spectrum, the source has no switches. Each build has all bytes of the program, also the leftovers. A ZX Spectrum rebuild has no start screen.
 
 Do not write a file of the rebuild by hand, for example a boot file, a packed picture or a script that changes bytes. Record each change in the knowledge, and generate the source.
 
@@ -576,7 +579,7 @@ A macro writes a run of instructions as one line of the source, for example `+in
 
 ### `coverage <map>...`
 
-- `<map>` is a 64 KiB coverage map of a run. Write each map in `.c64-re-tools/local/`.
+- `<map>` is a 64 KiB coverage map of a run, in a folder of the project. Write a map of your own in `.c64-re-tools/local/`. A recording has its map in its folder, for example `tests/recordings/menu/coverage.bin`. Add that map from its folder.
 - `body` holds `revision`, `imported`, `known` and `ranges`. `imported` lists the new maps. `known` lists the maps that the space has already.
 - `coverage` joins the maps. It keeps each address that a run executed, read or wrote. It also keeps each address that one run wrote and executed: self-modified code.
 - `coverage` puts each map into the space of `--space`. You can add the same map to each space.
@@ -671,7 +674,7 @@ Put the program into the knowledge:
 1. For a packed program, capture the unpacked program into `.c64-re-tools/local/`. Then run `image` with its `image.json`.
 2. For a program without a packer, drive code or a cartridge bank, run `image` with the PRG.
    For a ZX Spectrum program, run `image` with the snapshot at the entry of its machine code.
-3. Write the coverage map of each run into `.c64-re-tools/local/`. Then run `coverage` with the maps.
+3. Write the coverage map of each run into `.c64-re-tools/local/`, or use the map in the folder of a recording. Then run `coverage` with the maps.
 4. Run `program` to see the segments, the entry and the coverage maps.
 
 Write knowledge only after interpretation:
