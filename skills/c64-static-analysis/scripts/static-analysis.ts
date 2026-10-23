@@ -36,11 +36,13 @@ const ALL_NAMES = "a larger --max-listed. The project knowledge has all of them 
  * analyzer data over executed code to classify, and macro candidates to write.
  * The envelope adds the sentence for a cut list.
  */
-function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }, version: { now: string | undefined; last: string | undefined; revision: string | null }) {
+function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }, version: { now: string | undefined; last: string | undefined; revision: string | null }, retiredReferences: number) {
   const hints: string[] = [];
   if (version.revision !== null && version.now !== undefined && version.last !== undefined && version.now !== version.last) {
     hints.push(`The last analysis of this program used ${version.last}. Thus a change in revision ${version.revision} can come from the new analyzer version, and not from the program or the project knowledge.`);
   }
+  // A leftover is data that no reference reads: a retired reference can make one.
+  if (retiredReferences > 0) hints.push("The analysis retired references. A data range that only a retired reference used can be a leftover now. Generate the source again, and examine the leftovers that changed.");
   if (conflicts > 0) hints.push("The analysis and the project knowledge disagree at each place in conflicts. Find the correct answer in the emulator. Then correct the project knowledge.");
   if (coverageConflicts > 0) hints.push("The coverage shows executed code in each range of coverageConflicts. Classify each range as code, or as dual-use when its bytes are also data, in the project knowledge.");
   if (typeof macros.revision === "string") hints.push("The project knowledge has the macro candidates now. Generate the source again.");
@@ -313,7 +315,7 @@ async function analyze(call: Call): Promise<unknown> {
       labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), ALL_NAMES),
       ...(written === undefined ? {} : { listing: written }),
     };
-    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision });
+    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired);
   }
 
   const { result } = await analyzeWithDecompiler({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
@@ -348,7 +350,7 @@ async function analyze(call: Call): Promise<unknown> {
       ? {}
       : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: item.reason })) }),
   };
-  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision });
+  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired);
 }
 
 await runScript({

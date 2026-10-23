@@ -131,6 +131,7 @@ The `hint` gives each of these cases:
 - `coverageConflicts` is not empty. Classify each range as code in the project knowledge, or as `dual-use` when its bytes are also data. For many ranges, write all classifications in one batch of changes.
 - `idioms.candidates.macros` has candidates, and the run had no `--apply-macros`. Examine the candidates. To write the correct candidates to the project knowledge, run the analysis again with `--apply-macros`. Give `--skip` with the start of each candidate that is not correct. Then generate the source again.
 - The last analysis of the same program bytes used another analyzer version. Thus a change in `revision` can come from the new analyzer, and not from the program or the project knowledge.
+- `changes.references.retired` is more than 0. A data range that only a retired reference used can be a leftover now. Generate the source again, and examine the leftovers that changed.
 - A list is cut. Give a larger `--max-listed`. The project knowledge has all `labels` and `functions` as analyzer names.
 
 There is no `nextAction`.
