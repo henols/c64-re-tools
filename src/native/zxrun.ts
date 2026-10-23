@@ -36,6 +36,12 @@ export interface ZxStatus {
   model: ZxModel;
   /** The last write to port $7ffd on the 128K (0 on the 48K): the paged bank in bits 0-2. */
   port7ffd: number;
+  /** The RAM bank that the ULA shows, as bank-dump numbers it: 0 ($4000) on the 48K, 5 or 7 on the 128K. */
+  screen: number;
+  /** The border colour, 0-7. */
+  border: number;
+  /** The FLASH cells show ink and paper swapped. */
+  flash: boolean;
   /** FNV-1a of the RAM: 3 banks on the 48K, 8 on the 128K. */
   hash: string;
   /** The word after "ok", if any: "reached" or "not-reached" for run-pc and run-reads. */
@@ -63,6 +69,9 @@ export function parseZxStatus(answer: string): ZxStatus {
     cycle: Number(fields.get("cycle")),
     model: fields.get("model") === "128k" ? "128k" : "48k",
     port7ffd: hex("port7ffd"),
+    screen: Number(fields.get("screen")),
+    border: Number(fields.get("border")),
+    flash: fields.get("flash") === "1",
     hash: fields.get("hash") ?? "",
     ...(word === undefined ? {} : { word }),
   };

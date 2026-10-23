@@ -16,7 +16,7 @@ import { C64RunSession, PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { ZX_FRAME_CYCLES, ZxRunSession } from "#src/native/zxrun.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { machineOf } from "#src/knowledge/project-machine.ts";
-import { checkZxReplayOptions, readZxRebuild, readZxRecordFile, refuseOtherMachine, readZxRecording, ZX_RECORDING_FILES, zxProgramProblem, zxRamDifferences, zxRamParts, zxRecord, zxReplay, zxVerdict, type ZxReplaySide } from "./lib/zx-recording.ts";
+import { checkZxReplayOptions, checkZxReplayOut, readZxRebuild, readZxRecordFile, refuseOtherMachine, readZxRecording, ZX_RECORDING_FILES, zxProgramProblem, zxRamDifferences, zxRamParts, zxRecord, zxReplay, zxScreenFile, zxVerdict, type ZxReplaySide } from "./lib/zx-recording.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
@@ -95,14 +95,17 @@ async function zxRecordCommand(call: Call): Promise<Record<string, unknown>> {
       writeReported(`${out}/${ZX_RECORDING_FILES.reads}`, outcome.reads, { what: "--out" }),
       writeReported(`${out}/${ZX_RECORDING_FILES.coverage}`, outcome.coverage, { what: "--out" }),
       writeReported(`${out}/${ZX_RECORDING_FILES.program}`, outcome.program, { what: "--out" }),
+      ...outcome.pictures.map((picture) => writeReported(`${out}/${zxScreenFile(picture.name)}`, picture.png, { what: "--out" })),
     ];
+    const frame = ZX_FRAME_CYCLES[outcome.recording.machine === "spectrum128" ? "128k" : "48k"];
     return {
       result: "PASS",
       recorded: true,
       out,
       name: file.name,
-      frames: Math.round(outcome.recording.ticks / ZX_FRAME_CYCLES[outcome.recording.machine === "spectrum128" ? "128k" : "48k"]),
+      frames: Math.round(outcome.recording.ticks / frame),
       inputSites: outcome.recording.sites.length,
+      screens: outcome.recording.screens.map((screen) => ({ name: screen.name, frame: Math.round(screen.tick / frame) })),
       executed: outcome.coverage.reduce((count, byte) => count + ((byte & COVERAGE.ramExecute) === 0 ? 0 : 1), 0),
       files,
     };
@@ -125,9 +128,10 @@ async function zxReplayCommand(call: Call): Promise<Reply | Record<string, unkno
   const rebuildPath = call.string("rebuild");
   const at = call.address("rebuild-at");
   const out = call.string("out");
-  checkZxReplayOptions({ c64Options: ["checkpoint", "state", "pin", "symbols"].filter((option) => call.strings(option).length > 0), rebuild: rebuildPath, at, out });
+  checkZxReplayOptions({ c64Options: ["checkpoint", "state", "pin", "symbols"].filter((option) => call.strings(option).length > 0), rebuild: rebuildPath, at });
   const folder = recordingFolder(call.subject(0));
   const recording = readZxRecording(folder);
+  checkZxReplayOut(out, rebuildPath, recording);
   // The rebuild is checked before the replay core starts.
   const rebuild = rebuildPath === undefined ? undefined : readZxRebuild(rebuildPath, at!);
   const changed = zxProgramProblem(folder, recording);
@@ -135,16 +139,20 @@ async function zxReplayCommand(call: Call): Promise<Reply | Record<string, unkno
     return reply({ result: "INCONCLUSIVE", recording: folder, reason: changed, sides: [] }, { hint: "The program file of the recording changed, so the recording is no reference. Record the session again." });
   }
   const context = localToolContext();
-  const sides: Array<{ side: "original" | "rebuild"; problem?: string; ticks: number; hash: string }> = [];
+  const sides: Array<{ side: "original" | "rebuild"; problem?: string; ticks: number; hash: string; screens?: Array<{ name: string; same: boolean }> }> = [];
   const ends: ZxReplaySide[] = [];
+  // With --out, the screens of each side go into the folder, on each result.
+  const files: Written[] = [];
   for (const side of rebuild === undefined ? (["original"] as const) : (["original", "rebuild"] as const)) {
     const core = await ZxRunSession.open(context);
     const workspace = Workspace.create(context.supervisor, "c64-re-tools-replay-");
     try {
       const outcome = await zxReplay(core, folder, recording, workspace, side === "rebuild" ? rebuild : undefined);
       const problem = zxVerdict(recording, outcome);
-      sides.push({ side, ticks: outcome.ticks, hash: outcome.hash, ...(problem === undefined ? {} : { problem }) });
+      const screens = outcome.screens.map((screen) => ({ name: screen.name, same: screen.same }));
+      sides.push({ side, ticks: outcome.ticks, hash: outcome.hash, ...(screens.length === 0 ? {} : { screens }), ...(problem === undefined ? {} : { problem }) });
       ends.push(outcome);
+      if (out !== undefined) for (const screen of outcome.screens) files.push(writeReported(`${out}/${side}-${zxScreenFile(screen.name)}`, screen.png, { what: "--out" }));
     } finally {
       await core.close();
       workspace.remove();
@@ -152,16 +160,15 @@ async function zxReplayCommand(call: Call): Promise<Reply | Record<string, unkno
     // An original that does not end as recorded makes the recording no reference: the rebuild does not run.
     if (sides[0]!.problem !== undefined) {
       return reply(
-        { result: "INCONCLUSIVE", recording: folder, reason: `the recording does not reproduce on the original: ${sides[0]!.problem}`, sides },
+        { result: "INCONCLUSIVE", recording: folder, reason: `the recording does not reproduce on the original: ${sides[0]!.problem}`, sides, ...(out === undefined ? {} : { files }) },
         { hint: "The original does not end with the tick and the RAM of the recording, so the recording is no reference. Record the session again." },
       );
     }
   }
   const rebuilt = sides[1];
-  if (rebuilt?.problem === undefined) return { result: "PASS", recording: folder, sides };
+  if (rebuilt?.problem === undefined) return { result: "PASS", recording: folder, sides, ...(out === undefined ? {} : { files }) };
   const parts = zxRamParts(ends[0]!.banks, ends[1]!.banks).filter((part) => !Buffer.from(part.original).equals(Buffer.from(part.rebuild)));
   const differences = zxRamDifferences(parts);
-  const files: Written[] = [];
   if (out !== undefined) {
     for (const part of parts) {
       const suffix = part.bank === undefined ? "" : `-ram${part.bank}`;
@@ -196,8 +203,10 @@ async function zxReplayCommand(call: Call): Promise<Reply | Record<string, unkno
 async function recordCommand(call: Call): Promise<Reply> {
   if (spectrumProject()) {
     const out = call.string("out")!;
-    return reply(await zxRecordCommand(call), {
-      hint: `Commit ${out} with the scenarios. Add ${out}/${ZX_RECORDING_FILES.coverage} to the project knowledge as coverage. To make sure that the recording replays, run nextAction. Give --rebuild and --rebuild-at to compare a rebuild.`,
+    const body = await zxRecordCommand(call);
+    const look = (body.screens as unknown[]).length > 0 ? "Look at the screens (the .png files in files) first: they show if the session did what you planned. Then commit" : "Commit";
+    return reply(body, {
+      hint: `${look} ${out} with the scenarios. Add ${out}/${ZX_RECORDING_FILES.coverage} to the project knowledge as coverage. To make sure that the recording replays, run nextAction. Give --rebuild and --rebuild-at to compare a rebuild.`,
       nextAction: call.next("replay", out),
     });
   }
@@ -302,7 +311,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "record",
-    summary: "Plays the steps of a record file on the original, and writes the session as a recording folder: recording.json, reads.txt and coverage.bin. result is FAIL when the session did not complete.",
+    summary: "Plays the steps of a record file on the original, and writes the session as a recording folder: recording.json, reads.txt and coverage.bin. ZX Spectrum: also program.z80, and a PNG of the screen for each screen step. result is FAIL when the session did not complete.",
     subjects: [{ name: "<record.json>", help: "a record file, relative to the project folder. See references/recording-format.md" }],
     options: {
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the recording folder, for example tests/recordings/<name>" },
@@ -323,7 +332,7 @@ const COMMANDS: CommandSpec[] = [
       rebuild: { kind: "path", value: "<file>", help: "the rebuild to compare with the original: a PRG, or for a ZX Spectrum program the bytes of its build, with --rebuild-at" },
       "rebuild-at": { kind: "address", value: "<address>", help: "ZX Spectrum: the address of the first byte of --rebuild, as the range of its build gives it" },
       symbols: { ...OPTIONS.symbols, help: "the names of the rebuild: the symbol file of its build (default: the symbols of the recording)" },
-      out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder. ZX Spectrum: the RAM of both sides at the end" },
+      out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder. ZX Spectrum: the screens of each side, and with a FAIL the RAM of both sides at the end" },
     },
     notes: "A recording without names takes the names of the knowledge for the original. A $ address is an address of the original: on the rebuild it moves with the name before it.",
     run: async (call) => {

@@ -16,7 +16,8 @@ import { MACHINES } from "../../src/machine.ts";
 import { findTool, ZXRUN } from "../../src/native/discover.ts";
 import { diffFiles } from "../../skills/retro-testing/scripts/lib/diff-files.ts";
 import { recordingFolder } from "../../skills/retro-testing/scripts/lib/recording.ts";
-import { checkZxReplayOptions, readZxRebuild, readZxRecordFile, readZxRecording, refuseOtherMachine, zxProgramProblem, zxRamDifferences, zxRamParts } from "../../skills/retro-testing/scripts/lib/zx-recording.ts";
+import { checkZxSteps } from "../../src/host-client/zx-steps.ts";
+import { checkZxReplayOptions, checkZxReplayOut, readZxRebuild, readZxRecordFile, readZxRecording, refuseOtherMachine, zxProgramProblem, zxRamDifferences, zxRamParts, type ZxRecording } from "../../skills/retro-testing/scripts/lib/zx-recording.ts";
 import { importSnapshot } from "../fixtures/program.ts";
 import { COUNT, keyboardCounterCode, keyboardCounterSnapshot, PRESSES } from "../fixtures/z80/keyboard-counter.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
@@ -67,20 +68,27 @@ test("a ZX Spectrum record file refuses the keys and steps of the C64 form by na
     ["joystick only", { steps: [{ joystick: { right: true } }] }, /the steps run no frame\. Give a frames or a press step/],
     ["type step", { steps: [{ type: { mode: "text", text: "x" } }] }, /step 1: type is a step for a C64 program/],
     ["extra step key", { steps: [{ frames: 5, press: ["space"], fire: true }] }, /step 1: fire is not a key of this step/],
+    ["screen path", { steps: [{ frames: 5 }, { screen: "../title" }] }, /step 2: screen must be a file name without \.png/],
+    ["screen twice", { steps: [{ screen: "a" }, { frames: 5 }, { screen: "a" }] }, /step 3: the screen a comes two times/],
+    ["screen only", { steps: [{ screen: "a" }] }, /the steps run no frame/],
+    ["program", { program: "game.tzx", steps: [{ frames: 5 }] }, /program must be "knowledge" \(the snapshot of the program in the project knowledge\), or a \.z80 or \.sna snapshot/],
   ];
   for (const [name, fields, message] of cases) {
     writeFileSync("bad.json", JSON.stringify({ name: "bad", program: "counter.z80", ...(fields as object) }));
     assert.throws(() => readZxRecordFile("bad.json"), { code: "invalid-input", message }, name);
   }
+  writeFileSync("good.json", JSON.stringify({ name: "good", program: "knowledge", steps: [{ frames: 5 }, { screen: "title" }] }));
+  assert.deepEqual(readZxRecordFile("good.json"), { name: "good", program: "knowledge", steps: [{ frames: 5 }, { screen: "title" }] });
+  // The steps of a release compare have no screen step.
+  assert.throws(() => checkZxSteps([{ screen: "title" }], (what) => assert.fail(what)), /step 1: the step is not frames, press or joystick/);
 });
 
 test("replay refuses a file in place of a recording folder, C64 options, a missing --rebuild, a tape or a snapshot as a rebuild, and finds a changed program", () => {
   writeFileSync("record.json", "{}");
   assert.throws(() => recordingFolder("record.json"), { code: "invalid-input", message: /record\.json is a file, not a recording folder\. Give the --out folder that record wrote/ });
-  const options = { c64Options: [], rebuild: undefined, at: undefined, out: undefined };
+  const options = { c64Options: [], rebuild: undefined, at: undefined };
   assert.throws(() => checkZxReplayOptions({ ...options, c64Options: ["checkpoint"] }), { code: "invalid-input", message: /^--checkpoint is for a C64 program/ });
   assert.throws(() => checkZxReplayOptions({ ...options, rebuild: "build.bin" }), { code: "invalid-input", message: /give --rebuild and --rebuild-at together/ });
-  assert.throws(() => checkZxReplayOptions({ ...options, out: ".c64-re-tools/local/out" }), { code: "invalid-input", message: /--rebuild is missing/ });
 
   writeFileSync("game.tzx", "ZXTape!\x1a\x01\x14");
   writeFileSync(local("tape.bin"), "ZXTape!\x1a\x01\x14");
@@ -95,7 +103,14 @@ test("replay refuses a file in place of a recording folder, C64 options, a missi
   mkdirSync(folder, { recursive: true });
   writeFileSync(join(folder, "program.z80"), keyboardCounterSnapshot());
   writeFileSync(join(folder, "recording.json"), JSON.stringify({ format: 1, machine: "spectrum48", name: "fake", program: "counter.z80", sha256: "0".repeat(64), inputs: "xxfe,xx1f", steps: [{ frames: 1 }], ticks: 69888, hash: "00000000", sites: [] }));
+  assert.throws(() => readZxRecording(folder), { code: "invalid-input", message: /is a recording of an older version of the toolkit, with another timing of the ZX Spectrum\. Record the session again/ });
+  const recording = { format: 2, machine: "spectrum48", name: "fake", program: "counter.z80", sha256: "0".repeat(64), inputs: "xxfe,xx1f", steps: [{ frames: 1 }], ticks: 69888, hash: "00000000", sites: [], screens: [] };
+  writeFileSync(join(folder, "recording.json"), JSON.stringify(recording));
   assert.match(zxProgramProblem(folder, readZxRecording(folder))!, /program\.z80 is not the program of the recording \(its SHA-256 changed\)/);
+  // --out writes the screens, and the RAM of a rebuild: a recording without screens needs --rebuild for it.
+  assert.throws(() => checkZxReplayOut(".c64-re-tools/local/out", undefined, recording as ZxRecording), { code: "invalid-input", message: /This recording has no screen step, and --rebuild is missing/ });
+  checkZxReplayOut(".c64-re-tools/local/out", undefined, { ...recording, screens: [{ name: "a", tick: 1, sha256: "0" }] } as ZxRecording);
+  checkZxReplayOut(".c64-re-tools/local/out", "build.bin", recording as ZxRecording);
 });
 
 test("a recording of key presses replays on the original and on a rebuild, and a changed rebuild fails with the changed RAM", { skip, timeout: 300_000 }, () => {
@@ -145,6 +160,44 @@ test("a recording of key presses replays on the original and on a rebuild, and a
   const tampered = testing("replay", "tests/recordings/counter");
   assert.deepEqual([tampered.json.result, tampered.json.sides], ["INCONCLUSIVE", []]);
   assert.match(tampered.json.reason as string, /is not the program of the recording/);
+});
+
+test("a record file of the snapshot in the knowledge writes a picture of each screen step, and a replay makes each picture again and compares it", { skip, timeout: 300_000 }, () => {
+  importSnapshot(project, keyboardCounterSnapshot());
+  const steps = [{ frames: 10 }, { screen: "start" }, { press: ["space"], frames: 5 }, { frames: 10 }, { screen: "counted" }, { frames: 10 }];
+  writeFileSync(join(project, "screens.json"), JSON.stringify({ name: "screens", program: "knowledge", steps }));
+  const recorded = testing("record", "screens.json", "--out", "tests/recordings/screens");
+  assert.equal(recorded.status, 0, JSON.stringify(recorded.json));
+  assert.deepEqual([recorded.json.result, recorded.json.screens], ["PASS", [{ name: "start", frame: 10 }, { name: "counted", frame: 25 }]]);
+  assert.match(recorded.envelope.hint!, /^Look at the screens/);
+  const png = (name: string) => readFileSync(join(project, "tests/recordings/screens", `${name}.png`));
+  // A PNG of 320 x 256 pixels: the 256 x 192 picture in a border of 32 pixels.
+  assert.deepEqual([png("start").readUInt32BE(16), png("start").readUInt32BE(20)], [320, 256]);
+  // The count of the presses shows in the border, so the two pictures are different.
+  assert.notDeepEqual(png("start"), png("counted"));
+  const recording = JSON.parse(readFileSync(join(project, "tests/recordings/screens/recording.json"), "utf8")) as ZxRecording;
+  assert.deepEqual(recording.screens.map((screen) => [screen.name, screen.tick, screen.sha256]), [
+    ["start", 10 * 69_888, createHash("sha256").update(png("start")).digest("hex")],
+    ["counted", 25 * 69_888, createHash("sha256").update(png("counted")).digest("hex")],
+  ]);
+
+  const replayed = testing("replay", "tests/recordings/screens", "--out", ".c64-re-tools/local/screens");
+  assert.equal(replayed.json.result, "PASS", JSON.stringify(replayed.json));
+  assert.deepEqual((replayed.json.sides as Array<{ screens: unknown }>)[0]!.screens, [{ name: "start", same: true }, { name: "counted", same: true }]);
+  assert.deepEqual(readFileSync(local("screens/original-counted.png")), png("counted"));
+
+  // A rebuild that counts no press: the border of the second picture is different.
+  const changed = Uint8Array.from(keyboardCounterCode);
+  changed[COUNT - 0x8000 + 3] = 0x00;
+  writeFileSync(local("changed.bin"), changed);
+  const failed = testing("replay", "tests/recordings/screens", "--rebuild", ".c64-re-tools/local/changed.bin", "--rebuild-at", "$8000", "--out", ".c64-re-tools/local/screens-fail");
+  assert.equal(failed.json.result, "FAIL");
+  assert.match(failed.json.reason as string, /the screen counted at tick 1747200 is not the screen of the recording/);
+  assert.deepEqual((failed.json.sides as Array<{ screens: unknown }>)[1]!.screens, [{ name: "start", same: true }, { name: "counted", same: false }]);
+  assert.deepEqual(
+    (failed.json.files as Array<{ out: string }>).map((file) => file.out).filter((out) => out.endsWith(".png")),
+    ["original-start.png", "original-counted.png", "rebuild-start.png", "rebuild-counted.png"].map((name) => `.c64-re-tools/local/screens-fail/${name}`),
+  );
 });
 
 test("the changed RAM of a 128K names each bank at $c000, and the 48K RAM starts at $4000", () => {

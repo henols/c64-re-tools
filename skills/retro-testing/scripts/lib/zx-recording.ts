@@ -1,6 +1,9 @@
 // Record and replay of a ZX Spectrum program in the replay core zxrun. A record
-// file gives the program as a snapshot (.z80 or .sna) and the steps: frames,
-// keys of the keyboard and the Kempston joystick. The recording holds each read
+// file gives the program as a snapshot (.z80 or .sna, or "knowledge": the
+// snapshot of the program in the project knowledge) and the steps: frames,
+// keys of the keyboard, the Kempston joystick and pictures of the screen. A
+// screen step writes <name>.png into the recording folder; a replay makes the
+// picture again at the same tick and compares it. The recording holds each read
 // of the keyboard port (each even port, the ULA) and of the Kempston port $1F
 // by its site, so a replay gives the program the same inputs at the same reads.
 // A replay on the original must end at the recorded tick with the recorded RAM;
@@ -12,8 +15,13 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 import { formatAddress } from "#src/address.ts";
 import { Refusal } from "#src/errors.ts";
+import { encodePng, SPECTRUM_PALETTE, spectrumScreenFrame } from "#src/graphics.ts";
+import { snapshotOfImage } from "#src/host-client/image.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
-import { checkZxSteps, ZX_STEP_FORMS, type ZxStep } from "#src/host-client/zx-steps.ts";
+import { checkZxSteps, ZX_STEP_FORMS, type ZxScreenStep, type ZxStep } from "#src/host-client/zx-steps.ts";
+import { openForRead } from "#src/knowledge/database.ts";
+import { programImage, requireProgram } from "#src/knowledge/program.ts";
+import { machineOf } from "#src/knowledge/project-machine.ts";
 import type { Machine } from "#src/machine.ts";
 import { UsageError } from "#src/script.ts";
 import { ZX_FRAME_CYCLES, type ZxModel, type ZxRunSession } from "#src/native/zxrun.ts";
@@ -30,10 +38,13 @@ export const ZX_INPUTS = "xxfe,xx1f";
 const KEY_CODES: Record<string, number> = { space: 0x20, enter: 0x0d, symbol: 0x0f, caps: 0x0e };
 for (const char of "abcdefghijklmnopqrstuvwxyz0123456789") KEY_CODES[char] = char.charCodeAt(0);
 
+export type ZxRecordStep = ZxStep | ZxScreenStep;
+
 export interface ZxRecordFile {
   name: string;
+  /** A .z80 or .sna file of the project, or "knowledge". */
   program: string;
-  steps: ZxStep[];
+  steps: ZxRecordStep[];
 }
 
 /** The keys of a record file of a C64 program: a ZX Spectrum record file has none of them. */
@@ -50,13 +61,18 @@ export function refuseOtherMachine(command: string, machine: Machine): void {
 /**
  * Checks the options of a ZX Spectrum replay before the recording is read:
  * `c64Options` names the C64 options that the call gives; --rebuild and
- * --rebuild-at come together; --out needs --rebuild.
+ * --rebuild-at come together.
  */
-export function checkZxReplayOptions(options: { c64Options: readonly string[]; rebuild: string | undefined; at: number | undefined; out: string | undefined }): void {
+export function checkZxReplayOptions(options: { c64Options: readonly string[]; rebuild: string | undefined; at: number | undefined }): void {
   const [c64] = options.c64Options;
-  if (c64 !== undefined) throw new UsageError(`--${c64} is for a C64 program. A ZX Spectrum replay compares the tick and the RAM at the end`);
+  if (c64 !== undefined) throw new UsageError(`--${c64} is for a C64 program. A ZX Spectrum replay compares the screens, the tick and the RAM at the end`);
   if ((options.rebuild === undefined) !== (options.at === undefined)) throw new UsageError("give --rebuild and --rebuild-at together: the bytes of the rebuild and the address of their first byte");
-  if (options.out !== undefined && options.rebuild === undefined) throw new UsageError("--out writes the RAM of the original and the rebuild, and --rebuild is missing. Give --rebuild and --rebuild-at too, or leave out --out.");
+}
+
+/** --out writes the screens of each side, and the RAM of both sides of a rebuild: without screens and without --rebuild it has nothing to write. */
+export function checkZxReplayOut(out: string | undefined, rebuild: string | undefined, recording: ZxRecording): void {
+  if (out === undefined || rebuild !== undefined || recording.screens.length > 0) return;
+  throw new UsageError("--out writes the screens of the recording and the RAM of the original and the rebuild. This recording has no screen step, and --rebuild is missing. Give --rebuild and --rebuild-at too, or leave out --out.");
 }
 
 /** Reads and checks a record file of a ZX Spectrum program. A key or a step of the C64 form is refused by name. */
@@ -78,34 +94,80 @@ export function readZxRecordFile(path: string): ZxRecordFile {
     fail(`${key} is not a key of a ZX Spectrum record file. It has only name, program and steps`);
   }
   if (typeof file.name !== "string" || file.name === "") fail("name must be a text");
-  if (typeof file.program !== "string" || !/\.(z80|sna)$/i.test(file.program)) fail("program must be a .z80 or .sna snapshot of the program, relative to the project folder");
-  const steps = checkZxSteps(file.steps, fail);
+  if (typeof file.program !== "string" || (file.program !== "knowledge" && !/\.(z80|sna)$/i.test(file.program))) fail('program must be "knowledge" (the snapshot of the program in the project knowledge), or a .z80 or .sna snapshot of the program, relative to the project folder');
+  const steps = checkZxSteps(file.steps, fail, { screen: true });
   // A joystick step only sets the input: without frames, the session has no time and records nothing.
   if (!steps.some((step) => "frames" in step)) fail(`the steps run no frame. Give a frames or a press step, for example ${ZX_STEP_FORMS}`);
   return { name: file.name as string, program: file.program as string, steps };
 }
 
+/** The snapshot of the program in the project knowledge: its bytes, the paged banks of a 128K, and its entry state. */
+function knowledgeSnapshot() {
+  const db = openForRead();
+  try {
+    const machine = machineOf(db);
+    const program = requireProgram(db, machine.spaces.main);
+    if (program.state === undefined) {
+      throw new Refusal("not-found", 'The project knowledge has no entry state of the program, so it has no snapshot for "program": "knowledge". Put the .z80 snapshot of the program into the project knowledge, or give a .z80 or .sna file as program.');
+    }
+    const banks = Array.from({ length: 8 }, (_, bank) => bank).flatMap((bank) => {
+      if (!machine.spaces.pattern.test(`ram${bank}`)) return [];
+      const held = programImage(db, `ram${bank}`);
+      return held === undefined ? [] : [{ bank, byteAt: held.byteAt }];
+    });
+    return snapshotOfImage({ machine: machine.id as "spectrum48" | "spectrum128", main: { segments: program.segments, byteAt: program.byteAt, entry: program.entry ?? 0, state: program.state }, banks }, "the entry state of the knowledge");
+  } finally {
+    db?.close();
+  }
+}
+
 /** The snapshot of the program as a .z80 that zxrun loads, and its model. */
 function programSnapshot(path: string): { bytes: Uint8Array; model: ZxModel } {
-  const file = readProjectFile(path, { what: "program" });
-  const snapshot = file.type === "z80" ? readZ80(file.bytes) : readSna(file.bytes);
+  let snapshot;
+  if (path === "knowledge") snapshot = knowledgeSnapshot();
+  else {
+    const file = readProjectFile(path, { what: "program" });
+    snapshot = file.type === "z80" ? readZ80(file.bytes) : readSna(file.bytes);
+  }
   // A .sna becomes a .z80; a .z80 is written again, so zxrun loads one format.
   return { bytes: writeZ80(snapshot), model: snapshot.model };
 }
 
+/** The screen that the ULA shows now, as a PNG: the bitmap and the attributes of the shown bank, with the border. */
+async function screenPng(core: ZxRunSession, workspace: Workspace): Promise<Buffer> {
+  const state = await core.status("status");
+  const file = workspace.path("screen.bin");
+  await core.command(`bank-dump ${state.screen} ${file}`);
+  return encodePng(spectrumScreenFrame(readFileSync(file), state.border, state.flash), SPECTRUM_PALETTE);
+}
+
+/** The format of a recording folder of a ZX Spectrum program. 2: the timing of zxrun protocol 3, and the screens. */
+export const ZX_RECORDING_FORMAT = 2;
+
 export interface ZxRecording {
-  format: 1;
+  format: typeof ZX_RECORDING_FORMAT;
   machine: "spectrum48" | "spectrum128";
   name: string;
   program: string;
   /** The SHA-256 of program.z80 in the recording folder. */
   sha256: string;
   inputs: string;
-  steps: ZxStep[];
+  steps: ZxRecordStep[];
   ticks: number;
   hash: string;
   sites: Array<{ site: string; port: string; reads: number; rom: boolean }>;
+  /** Each screen step: <name>.png of the recording folder, the tick of the picture and the SHA-256 of the PNG. */
+  screens: ZxScreen[];
 }
+
+export interface ZxScreen {
+  name: string;
+  tick: number;
+  sha256: string;
+}
+
+/** The file of a screen in the recording folder. */
+export const zxScreenFile = (name: string) => `${name}.png`;
 
 export const ZX_RECORDING_FILES = { recording: "recording.json", reads: "reads.txt", coverage: "coverage.bin", program: "program.z80" } as const;
 
@@ -126,7 +188,7 @@ function parseSites(answer: string): { unknown: number; sites: Array<{ site: num
 }
 
 /** Plays the steps on the snapshot and gives the recording, the reads and the coverage. */
-export async function zxRecord(core: ZxRunSession, file: ZxRecordFile, workspace: Workspace): Promise<{ recording: ZxRecording; reads: Buffer; coverage: Buffer; program: Uint8Array }> {
+export async function zxRecord(core: ZxRunSession, file: ZxRecordFile, workspace: Workspace): Promise<{ recording: ZxRecording; reads: Buffer; coverage: Buffer; program: Uint8Array; pictures: Array<{ name: string; png: Buffer }> }> {
   const { bytes, model } = programSnapshot(file.program);
   const frame = ZX_FRAME_CYCLES[model];
   const program = workspace.path("program.z80");
@@ -138,7 +200,15 @@ export async function zxRecord(core: ZxRunSession, file: ZxRecordFile, workspace
   const reads = workspace.path("reads.txt");
   await core.command(`record ${reads}`);
   let tick = 0;
+  const screens: ZxScreen[] = [];
+  const pictures: Array<{ name: string; png: Buffer }> = [];
   for (const step of file.steps) {
+    if ("screen" in step) {
+      const png = await screenPng(core, workspace);
+      screens.push({ name: step.screen, tick, sha256: sha256(png) });
+      pictures.push({ name: step.screen, png });
+      continue;
+    }
     if ("joystick" in step) {
       const { right, left, down, up, fire } = step.joystick;
       await core.command(`joy ${((right ? 1 : 0) | (left ? 2 : 0) | (down ? 4 : 0) | (up ? 8 : 0) | (fire ? 0x10 : 0)).toString(16)}`);
@@ -155,7 +225,7 @@ export async function zxRecord(core: ZxRunSession, file: ZxRecordFile, workspace
   await core.command(`coverage ${coverage}`);
   const end = await core.status("status");
   const recording: ZxRecording = {
-    format: 1,
+    format: ZX_RECORDING_FORMAT,
     machine: model === "128k" ? "spectrum128" : "spectrum48",
     name: file.name,
     program: file.program,
@@ -165,8 +235,9 @@ export async function zxRecord(core: ZxRunSession, file: ZxRecordFile, workspace
     ticks: end.tick,
     hash: end.hash,
     sites: sites.sites.map((site) => ({ site: formatAddress(site.site), port: formatAddress(site.port), reads: site.reads, rom: site.rom })),
+    screens,
   };
-  return { recording, reads: readFileSync(reads), coverage: readFileSync(coverage), program: bytes };
+  return { recording, reads: readFileSync(reads), coverage: readFileSync(coverage), program: bytes, pictures };
 }
 
 /** Reads the recording folder that zxRecord wrote. */
@@ -179,8 +250,11 @@ export function readZxRecording(folder: string): ZxRecording {
     if (error instanceof Refusal || (error as { code?: string }).code !== undefined) throw error;
     throw new Refusal("invalid-input", `recording ${path}: ${(error as Error).message}`);
   }
-  if (recording.format !== 1 || (recording.machine !== "spectrum48" && recording.machine !== "spectrum128") || typeof recording.ticks !== "number" || typeof recording.hash !== "string") {
+  if ((recording.machine !== "spectrum48" && recording.machine !== "spectrum128") || typeof recording.ticks !== "number" || typeof recording.hash !== "string") {
     throw new Refusal("invalid-input", `${folder} has no recording of a ZX Spectrum program. Record the session with record.`);
+  }
+  if (recording.format !== ZX_RECORDING_FORMAT || !Array.isArray(recording.screens)) {
+    throw new Refusal("invalid-input", `${folder} is a recording of an older version of the toolkit, with another timing of the ZX Spectrum. Record the session again.`);
   }
   if (typeof recording.sha256 !== "string") throw new Refusal("invalid-input", `recording ${path}: sha256 is missing. Record the session again.`);
   return recording as ZxRecording;
@@ -216,6 +290,8 @@ export interface ZxReplaySide {
   missedReads: number;
   /** The RAM banks at the end, 16 KiB each: 0-2 at $4000, $8000 and $c000 on the 48K, banks 0-7 on the 128K. */
   banks: Uint8Array[];
+  /** The picture of each screen of the recording, and if it is the recorded picture. */
+  screens: Array<{ name: string; png: Buffer; same: boolean }>;
 }
 
 /** Replays the recording on the snapshot of the recording folder, with the bytes of a rebuild over it when given. */
@@ -229,6 +305,12 @@ export async function zxReplay(core: ZxRunSession, folder: string, recording: Zx
   if (rebuild !== undefined) await core.write(rebuild.at, rebuild.bytes);
   await core.command(`inputs ${recording.inputs}`);
   await core.command(`replay ${reads}`);
+  const screens: ZxReplaySide["screens"] = [];
+  for (const screen of recording.screens) {
+    await core.status(`run ${screen.tick}`);
+    const png = await screenPng(core, workspace);
+    screens.push({ name: screen.name, png, same: sha256(png) === screen.sha256 });
+  }
   const end = await core.status(`run ${recording.ticks}`);
   const sites = parseSites(await core.command("sites"));
   const banks: Uint8Array[] = [];
@@ -237,13 +319,15 @@ export async function zxReplay(core: ZxRunSession, folder: string, recording: Zx
     await core.command(`bank-dump ${bank} ${file}`);
     banks.push(readFileSync(file));
   }
-  return { ticks: end.tick, hash: end.hash, unknownReads: sites.unknown, missedReads: sites.sites.reduce((sum, site) => sum + (site.misses ?? 0), 0), banks };
+  return { ticks: end.tick, hash: end.hash, unknownReads: sites.unknown, missedReads: sites.sites.reduce((sum, site) => sum + (site.misses ?? 0), 0), banks, screens };
 }
 
 /** The verdict of one side: SAME, or the reason why it is not. */
 export function zxVerdict(recording: ZxRecording, side: Omit<ZxReplaySide, "banks">): string | undefined {
   if (side.unknownReads > 0) return `${side.unknownReads} reads of an input at a site that the recording does not have: the program took another path`;
   if (side.missedReads > 0) return `${side.missedReads} reads of an input after the recording of its site ended`;
+  const screen = side.screens.find((item) => !item.same);
+  if (screen !== undefined) return `the screen ${screen.name} at tick ${recording.screens.find((item) => item.name === screen.name)!.tick} is not the screen of the recording`;
   if (side.ticks !== recording.ticks) return `the replay ended at tick ${side.ticks}, not ${recording.ticks}`;
   if (side.hash !== recording.hash) return `the RAM at the end is not the RAM of the recording (hash ${side.hash}, not ${recording.hash})`;
   return undefined;

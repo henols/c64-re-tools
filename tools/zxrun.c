@@ -358,10 +358,13 @@ static uint32_t state_hash(void) {
 
 static void status(const char* prefix) {
     const int sync = at_sync();
-    printf("%s tick=%llu sync=%d pc=%04x af=%04x bc=%04x de=%04x hl=%04x ix=%04x iy=%04x sp=%04x im=%u iff=%d line=%d cycle=%d frame=%d model=%s port7ffd=%02x hash=%08x\n", prefix,
+    // screen: the RAM bank that the ULA shows (bank-dump numbers); border: the colour of the last OUT to the
+    // ULA; flash: 1 when the FLASH cells show ink and paper swapped.
+    printf("%s tick=%llu sync=%d pc=%04x af=%04x bc=%04x de=%04x hl=%04x ix=%04x iy=%04x sp=%04x im=%u iff=%d line=%d cycle=%d frame=%d model=%s port7ffd=%02x screen=%d border=%d flash=%d hash=%08x\n", prefix,
         (unsigned long long)ticks, sync, sync ? Z80_GET_ADDR(pins) : 0xFFFF,
         sys.cpu.af, sys.cpu.bc, sys.cpu.de, sys.cpu.hl, sys.cpu.ix, sys.cpu.iy, sys.cpu.sp, sys.cpu.im, sys.cpu.iff1 ? 1 : 0,
-        sys.scanline_y, sys.scanline_period - sys.scanline_counter, frame_t, is128 ? "128k" : "48k", is128 ? sys.last_mem_config : 0, state_hash());
+        sys.scanline_y, sys.scanline_period - sys.scanline_counter, frame_t, is128 ? "128k" : "48k", is128 ? sys.last_mem_config : 0,
+        sys.display_ram_bank, sys.border_color & 7, (sys.blink_counter & 0x10) ? 1 : 0, state_hash());
 }
 
 // The ROM folder: the argument, C64RT_ZX_ROMS, or ../share/c64-re-tools/roms next to the program.

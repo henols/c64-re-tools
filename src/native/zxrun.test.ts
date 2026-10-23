@@ -12,7 +12,7 @@ const skip = process.platform === "win32" ? "the stand-in zxrun is a shell scrip
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-zxrun-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-const STATE = "tick=0 sync=1 pc=8000 af=0044 bc=7ffe de=0000 hl=9002 ix=9000 iy=5c3a sp=8ff0 im=1 iff=1 line=12 cycle=34 model=128k port7ffd=13 hash=0123abcd";
+const STATE = "tick=0 sync=1 pc=8000 af=0044 bc=7ffe de=0000 hl=9002 ix=9000 iy=5c3a sp=8ff0 im=1 iff=1 line=12 cycle=34 model=128k port7ffd=1b screen=7 border=2 flash=1 hash=0123abcd";
 
 /** A stand-in zxrun: answers version, init, load-z80 and quit; protocol and ROM as given. */
 function standInCore(name: string, options: { protocol?: number; roms?: boolean } = {}): string {
@@ -44,8 +44,8 @@ function context(env: NodeJS.ProcessEnv) {
 test("a zxrun status answer gives the Z80 state and the word after ok", () => {
   const state = parseZxStatus(`ok reached ${STATE}`);
   assert.deepEqual(
-    [state.tick, state.sync, state.pc, state.af, state.iy, state.im, state.iff, state.line, state.cycle, state.model, state.port7ffd, state.hash, state.word],
-    [0, true, 0x8000, 0x44, 0x5c3a, 1, true, 12, 34, "128k", 0x13, "0123abcd", "reached"],
+    [state.tick, state.sync, state.pc, state.af, state.iy, state.im, state.iff, state.line, state.cycle, state.model, state.port7ffd, state.screen, state.border, state.flash, state.hash, state.word],
+    [0, true, 0x8000, 0x44, 0x5c3a, 1, true, 12, 34, "128k", 0x1b, 7, 2, true, "0123abcd", "reached"],
   );
   assert.throws(() => parseZxStatus("ok"), /no machine state/);
 });

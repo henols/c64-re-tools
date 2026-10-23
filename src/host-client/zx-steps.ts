@@ -1,12 +1,19 @@
 // The steps of a ZX Spectrum run: frames, keys of the keyboard that stay down
 // for some frames, and the Kempston joystick. A record file of a replay and the
 // --steps file of a release compare give them in this form; a step of the C64
-// form is refused by name.
+// form is refused by name. A record file also takes a screen step: a picture of
+// the screen at that point of the session.
 
 import { Refusal } from "../errors.ts";
 import { readProjectFile } from "./transfer.ts";
 
 export type ZxStep = { frames: number } | { press: string[]; frames: number } | { joystick: { up: boolean; down: boolean; left: boolean; right: boolean; fire: boolean } };
+
+/** A step of a record file: a picture of the screen, the file <name>.png of the recording folder. */
+export type ZxScreenStep = { screen: string };
+
+/** The name of a screen step: a file name without its .png. */
+export const ZX_SCREEN_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /** The keys of the keyboard, by the names that a press step gives. */
 export const ZX_KEYS: readonly string[] = [..."abcdefghijklmnopqrstuvwxyz0123456789", "space", "enter", "caps", "symbol"];
@@ -24,10 +31,13 @@ export const ZX_STEP_FORMS = '{ "frames": 50 }, { "press": ["space"], "frames": 
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** Checks a list of ZX Spectrum steps. `fail` refuses with the place in its message. */
-export function checkZxSteps(value: unknown, fail: (what: string) => never): ZxStep[] {
+/** Checks a list of ZX Spectrum steps. `fail` refuses with the place in its message. With `screen`, a screen step is a step too. */
+export function checkZxSteps(value: unknown, fail: (what: string) => never): ZxStep[];
+export function checkZxSteps(value: unknown, fail: (what: string) => never, options: { screen: true }): Array<ZxStep | ZxScreenStep>;
+export function checkZxSteps(value: unknown, fail: (what: string) => never, options: { screen?: boolean } = {}): Array<ZxStep | ZxScreenStep> {
   if (!Array.isArray(value) || value.length === 0) return fail("steps must be a list of at least one step");
-  return value.map((item, index): ZxStep => {
+  const screens = new Set<string>();
+  return value.map((item, index): ZxStep | ZxScreenStep => {
     const at = `step ${index + 1}`;
     const step = isObject(item) ? item : fail(`${at} is not an object`);
     const only = (...keys: string[]) => {
@@ -59,8 +69,16 @@ export function checkZxSteps(value: unknown, fail: (what: string) => never): ZxS
       only("frames");
       return { frames: frames(step.frames) };
     }
+    if ("screen" in step && options.screen === true) {
+      only("screen");
+      const name = typeof step.screen === "string" && ZX_SCREEN_NAME.test(step.screen) ? step.screen : fail(`${at}: screen must be a file name without .png: 1 to 64 letters, digits, - and _, for example "title"`);
+      if (screens.has(name)) fail(`${at}: the screen ${name} comes two times. Give each screen step its own name`);
+      screens.add(name);
+      return { screen: name };
+    }
     const c64 = Object.keys(step).find((key) => C64_STEPS.includes(key));
-    return fail(`${at}: ${c64 === undefined ? "the step is not frames, press or joystick" : `${c64} is a step for a C64 program`}. A ZX Spectrum step is ${ZX_STEP_FORMS}`);
+    const kinds = options.screen === true ? "frames, press, joystick or screen" : "frames, press or joystick";
+    return fail(`${at}: ${c64 === undefined ? `the step is not ${kinds}` : `${c64} is a step for a C64 program`}. A ZX Spectrum step is ${ZX_STEP_FORMS}${options.screen === true ? ' or { "screen": "title" }' : ""}`);
   });
 }
 
