@@ -8,12 +8,12 @@ import { REFERENCE_KINDS, type ReferenceKind } from "../c64.ts";
 import { OPERAND_SELECTS } from "./expression.ts";
 
 /** heuristic: 6502 idioms that the static analysis finds by pattern; an analyzer origin. */
-export const ORIGINS = ["user", "llm", "dxa", "ghidra", "heuristic"] as const;
+export const ORIGINS = ["user", "llm", "dxa", "decompiler", "heuristic"] as const;
 export type Origin = (typeof ORIGINS)[number];
 /** The origins of semantic knowledge: what the user or the LLM decided. It wins over analyzer facts. */
 export const SEMANTIC_ORIGINS = ["user", "llm"] as const satisfies readonly Origin[];
 /** The analyzers: their facts and names give way to semantic knowledge. */
-export const ANALYZERS = ["dxa", "ghidra", "heuristic"] as const satisfies readonly Origin[];
+export const ANALYZERS = ["dxa", "decompiler", "heuristic"] as const satisfies readonly Origin[];
 export type Analyzer = (typeof ANALYZERS)[number];
 export const isSemantic = (origin: string | undefined): boolean => (SEMANTIC_ORIGINS as readonly (string | undefined)[]).includes(origin);
 export const isAnalyzer = (origin: string | undefined): boolean => (ANALYZERS as readonly (string | undefined)[]).includes(origin);
@@ -176,7 +176,7 @@ function createSchema(db: DatabaseSync): void {
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         name                TEXT NOT NULL CHECK (length(name) > 0),
         kind                TEXT NOT NULL CHECK (kind IN (${list(SYMBOL_KINDS)})),
-        origin              TEXT NOT NULL CHECK (origin IN ('dxa', 'ghidra', 'heuristic')),
+        origin              TEXT NOT NULL CHECK (origin IN ('dxa', 'decompiler', 'heuristic')),
         valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
         valid_to_revision   TEXT REFERENCES revisions (id)
       );

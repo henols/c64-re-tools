@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { isRefusal } from "../errors.ts";
-import { checkDxaResult, checkGhidraResult, imageRange, seedsInside } from "./types.ts";
+import { checkDxaResult, checkDecompilerResult, imageRange, seedsInside } from "./types.ts";
 
 test("an analyzer image is a PRG at its load address or 64 KiB from $0000", () => {
   assert.deepEqual({ ...imageRange("prg", Buffer.from([0x01, 0x08, 0x60, 0x00])), body: undefined }, { start: 0x0801, end: 0x0802, body: undefined });
@@ -40,7 +40,7 @@ test("the seeds of an analysis are the entry points inside its range and the dat
   });
 });
 
-test("a Ghidra result must be complete and consistent", () => {
+test("a decompiler result must be complete and consistent", () => {
   const result = {
     coverage: [{ start: 0x0801, end: 0x0827 }],
     functions: [{ entry: 0x080d, name: "FUN_080d", nameSource: "generated" }],
@@ -53,8 +53,8 @@ test("a Ghidra result must be complete and consistent", () => {
     instructions: [],
     completeness: { functions: true, regions: true, references: true },
   };
-  assert.deepEqual(checkGhidraResult(result), result);
-  assert.deepEqual(checkGhidraResult({ ...result, toolVersion: "Ghidra 12.1.3" }), { ...result, toolVersion: "Ghidra 12.1.3" });
+  assert.deepEqual(checkDecompilerResult(result), result);
+  assert.deepEqual(checkDecompilerResult({ ...result, toolVersion: "ghidra-decompiler 2.1.0" }), { ...result, toolVersion: "ghidra-decompiler 2.1.0" });
   for (const bad of [
     { ...result, functions: [{ entry: 0x0900, name: "FUN_0900", nameSource: "generated" }] },
     { ...result, regions: [result.regions[1], result.regions[0]] },
@@ -64,11 +64,11 @@ test("a Ghidra result must be complete and consistent", () => {
     { ...result, decompilations: [{ entry: 0x080d, text: "x".repeat(16_001), truncated: true }] },
     { ...result, completeness: undefined },
     { ...result, toolVersion: "" },
-    { ...result, toolVersion: "Ghidra 12.1.3\nmore" },
+    { ...result, toolVersion: "ghidra-decompiler 2.1.0\nmore" },
     { ...result, toolVersion: "x".repeat(201) },
     { ...result, toolVersion: 12 },
   ]) {
-    assert.throws(() => checkGhidraResult(bad), Error, JSON.stringify(bad).slice(0, 80));
+    assert.throws(() => checkDecompilerResult(bad), Error, JSON.stringify(bad).slice(0, 80));
   }
 });
 

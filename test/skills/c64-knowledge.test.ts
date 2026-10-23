@@ -124,7 +124,7 @@ test("evidence names a project file with its SHA-256, and --origin filters the r
   assert.deepEqual(items(knowledge(root, "symbols", "--origin", "semantic").json.symbols).length, 2);
   const robot = knowledge(root, "symbols", "--origin", "robot");
   assert.equal(robot.status, 2);
-  assert.match((robot.json.error as { message: string }).message, /^--origin cannot be "robot"\. Give one of user, llm, dxa, ghidra, heuristic, semantic or analyzer, or a comma list of them\. semantic is user and llm\. analyzer is dxa, ghidra and heuristic\. To get the usage, run knowledge\.ts symbols --help\.$/);
+  assert.match((robot.json.error as { message: string }).message, /^--origin cannot be "robot"\. Give one of user, llm, dxa, decompiler, heuristic, semantic or analyzer, or a comma list of them\. semantic is user and llm\. analyzer is dxa, decompiler and heuristic\. To get the usage, run knowledge\.ts symbols --help\.$/);
 });
 
 test("image puts a capture into the knowledge, and coverage joins maps that are evidence by their path", () => {

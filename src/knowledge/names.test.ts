@@ -37,7 +37,7 @@ before(() => {
     { address: 0x0b00, name: "split" },
     { address: 0x0810, name: "dxa_main" },
   ]);
-  analyzer("ghidra", [
+  analyzer("decompiler", [
     { address: 0x0a00, name: "shared" },
     { address: 0x0c00, name: "split" },
     { address: 0x0d00, name: "main_loop" },
@@ -51,11 +51,11 @@ after(() => {
 const refused = (code: string, pattern: RegExp) => (error: unknown) => error instanceof Refusal && error.code === code && pattern.test(error.message);
 
 test("a symbol comes first, then an analyzer name that the analyzers give to one address", () => {
-  assert.equal(addressOfName(db, "main_loop"), 0x0810, "the symbol wins over the Ghidra name");
+  assert.equal(addressOfName(db, "main_loop"), 0x0810, "the symbol wins over the name");
   assert.equal(addressOfName(db, "l0900"), 0x0900);
   assert.equal(addressOfName(db, "shared"), 0x0a00, "two analyzers, one address");
   assert.equal(addressOfName(db, "drive_loop", "drive8"), 0x0300);
-  assert.throws(() => addressOfName(db, "split"), refused("invalid-input", /the analyzers give split to \$0b00 \(dxa\) and \$0c00 \(ghidra\)\. Give the address/));
+  assert.throws(() => addressOfName(db, "split"), refused("invalid-input", /the analyzers give split to \$0b00 \(dxa\) and \$0c00 \(decompiler\)\. Give the address/));
   assert.throws(() => addressOfName(db, "nothing"), refused("not-found", /^nothing is not a name in the knowledge\. Give a \$ address, or a symbol or an analyzer name of the project knowledge\.$/));
   assert.throws(() => addressOfName(db, "main_loop", "drive8"), refused("not-found", /^main_loop is not a name in the knowledge in drive8\. Give a \$ address, or a symbol or an analyzer name of the project knowledge in drive8\.$/));
   assert.throws(() => addressOfName(undefined, "main_loop"), refused("not-found", /main_loop/), "no knowledge: no names");

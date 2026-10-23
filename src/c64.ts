@@ -511,7 +511,7 @@ const BRANCHES = new Set([0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xf0]);
 const NO_FALL = new Set([0x00, 0x40, 0x4c, 0x60, 0x6c]);
 
 /**
- * The coverage flow starts split for Ghidra. A start is a code start, a
+ * The coverage flow starts split for the decompiler. A start is a code start, a
  * place in a routine, when it follows an executed JSR, or when an executed
  * branch or JMP from outside its own flow reaches it (the loop of a routine
  * that jumps back to its own start does not count). Any other start, for

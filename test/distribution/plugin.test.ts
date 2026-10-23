@@ -62,7 +62,7 @@ test("the plugin holds every skill with its scripts, their src/ modules, referen
   assert.equal(testing.resources!.find((resource) => resource.path === "package.json")!.content, SKILL_PACKAGE);
 
   const analysis = plugin.skills!.find((skill) => skill.name === "c64-static-analysis")!.resources!.map((resource) => resource.path);
-  for (const path of ["src/native/watchdog.ts", "src/native/ghidra/c64rt-wasm.ts"]) assert.ok(analysis.includes(path), path);
+  for (const path of ["src/native/watchdog.ts", "src/native/decompiler/c64rt-wasm.ts"]) assert.ok(analysis.includes(path), path);
 
   for (const skill of plugin.skills!) {
     assert.ok(skill.description.length > 40, skill.name);

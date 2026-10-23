@@ -1,5 +1,5 @@
 // The c64-source script: generates ACME source from the program and the
-// knowledge and Ghidra's instructions, which it runs itself, and checks
+// knowledge and the decompiler's instructions, which it runs itself, and checks
 // with ACME that the build of the base release assembles to the program byte
 // by byte. With --loader it also writes a loader that recreates the entry
 // state, simulates it, and checks it in the emulator. The default build may
@@ -30,9 +30,9 @@ import { ANALYZER_NAME_ORDER, baseValue, currentRevision, currentStartScreen, so
 import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { subtract, write } from "#src/knowledge/write.ts";
 import { assemble, symbolsFileText } from "#src/native/acme.ts";
-import { analyze } from "#src/native/ghidra/analyze.ts";
+import { analyze } from "#src/native/decompiler/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
-import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
+import { DECOMPILER_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, romRanges, romUseOfProgram } from "#src/platform.ts";
 import { ensureLocal, generatedDirectory, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { isoCet } from "#src/time.ts";
@@ -128,7 +128,7 @@ type SourceKnowledge = ReturnType<typeof readKnowledge>;
 
 /**
  * The names of the user and the LLM, and for each address without one the
- * first analyzer name in the order heuristic, Ghidra, DXA. An analyzer
+ * first analyzer name in the order heuristic, decompiler, DXA. An analyzer
  * name that another address has already is left out. The analyzer names keep
  * their origin, so a platform name still wins over them.
  */
@@ -156,11 +156,11 @@ function romOf(image: ProgramImage, knowledge: Pick<SourceKnowledge, "routines" 
 }
 
 /**
- * Ghidra's instruction starts and lengths inside the image, seeded from the
+ * The decompiler's instruction starts and lengths inside the image, seeded from the
  * entry, from knowledge of any origin, and from the coverage: a run's flow
  * starts, also after a JSR, so code that an analyzer does not reach by itself
  * is in the source. A program without a seed has no known code: it is data
- * only, and Ghidra does not run.
+ * only, and the decompiler does not run.
  */
 async function decode(image: ProgramImage, knowledge: Pick<SourceKnowledge, "routines" | "regions">, entries: number[], coverage: Uint8Array | undefined): Promise<{ instructions: Map<number, number>; dataOnly: boolean }> {
   const inImage = (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end);
@@ -185,9 +185,9 @@ async function decode(image: ProgramImage, knowledge: Pick<SourceKnowledge, "rou
   const { result } = await analyze(
     {
       imageKind: analyzedBytes(image).kind,
-      entryPoints: entryPoints.slice(0, GHIDRA_LIMITS.entryPoints),
-      codeStarts: flows.codeStarts.filter((address) => !seeds.has(address)).slice(0, GHIDRA_LIMITS.codeStarts),
-      dataRanges: dataRanges.slice(0, GHIDRA_LIMITS.dataRanges),
+      entryPoints: entryPoints.slice(0, DECOMPILER_LIMITS.entryPoints),
+      codeStarts: flows.codeStarts.filter((address) => !seeds.has(address)).slice(0, DECOMPILER_LIMITS.codeStarts),
+      dataRanges: dataRanges.slice(0, DECOMPILER_LIMITS.dataRanges),
       labels: [],
       decompile: [],
     },
@@ -814,22 +814,22 @@ function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boole
   return removed;
 }
 
-/** The instructions that Ghidra decoded, and whether the program has known code. */
+/** The instructions that the decompiler decoded, and whether the program has known code. */
 type DecodedProgram = Awaited<ReturnType<typeof decode>>;
 
 /** How buildSource makes and checks the source of a knowledge. */
 interface SourceOptions {
   space: Space;
-  /** More entry points for Ghidra. */
+  /** More entry points for the decompiler. */
   entries: number[];
   header: string[];
   /** The first line of each file, or none. */
   mark?: string;
   /** The switch values of the build that must give the program. */
   values: ReadonlyMap<string, number>;
-  /** The instructions of an earlier decode: then Ghidra does not run again. */
+  /** The instructions of an earlier decode: then the decompiler does not run again. */
   decoded?: DecodedProgram;
-  /** Mark the code that no run executed. Without the marks, the coverage only gives the seeds of Ghidra and the ROM use. */
+  /** Mark the code that no run executed. Without the marks, the coverage only gives the seeds of the decompiler and the ROM use. */
   notExecutedMarks: boolean;
   /** With an entry state, the loader is planned too. */
   state?: EntryState;

@@ -1,6 +1,6 @@
 // An unknown C64 artifact goes through the whole chain with the real skill
 // scripts and the Host Runtime from this checkout:
-//   disk → BASIC → packing → DXA → knowledge → seeded Ghidra →
+//   disk → BASIC → packing → DXA → knowledge → seeded decompiler →
 //   reconstructed source → ACME → c64-testing PASS.
 // Needs real VICE (C64RT_LIVE_VICE), DXA, ACME, c1541 and petcat.
 

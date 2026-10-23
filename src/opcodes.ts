@@ -1,5 +1,5 @@
 // The ACME spelling of each 6510 opcode: the mnemonic and the addressing
-// mode, undocumented opcodes included. Ghidra gives the instruction
+// mode, undocumented opcodes included. The decompiler gives the instruction
 // boundaries; this table gives the text. Where several opcodes share one
 // spelling, ACME writes only one of them: the generator finds those with a
 // probe and writes the others as bytes.

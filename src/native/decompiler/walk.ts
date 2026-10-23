@@ -6,7 +6,7 @@
 // code before it, or else from the pointer in the image.
 
 import { SYMBOL_NAME } from "../../c64.ts";
-import type { GhidraInstruction, GhidraResult } from "../types.ts";
+import type { DecompilerInstruction, DecompilerResult } from "../types.ts";
 import { PcodeState } from "./pcode.ts";
 import { decode, type Decoded, type Varnode } from "./wasm.ts";
 
@@ -39,7 +39,7 @@ function operandValue(bytes: readonly number[]): number | undefined {
 }
 
 /** Decodes [start, end] from the seeds; the image bytes are already loaded at start. */
-export function walk(image: Uint8Array, start: number, end: number, seeds: WalkSeeds): Omit<GhidraResult, "decompilations" | "completeness" | "toolVersion"> {
+export function walk(image: Uint8Array, start: number, end: number, seeds: WalkSeeds): Omit<DecompilerResult, "decompilations" | "completeness" | "toolVersion"> {
   const isData = new Uint8Array(0x10000);
   for (const range of seeds.dataRanges) isData.fill(1, range.start, range.end + 1);
   const imageByte = (address: number) => (address >= start && address <= end ? image[address - start] : undefined);
@@ -147,7 +147,7 @@ export function walk(image: Uint8Array, start: number, end: number, seeds: WalkS
   const labels = new Map(seeds.labels.map((label) => [label.address, label.name]));
   const sorted = [...instructions.keys()].sort((a, b) => a - b);
   const seen = new Set<string>();
-  const references: GhidraResult["references"] = [];
+  const references: DecompilerResult["references"] = [];
   for (const from of sorted) {
     for (const { to, type } of instructions.get(from)!.references) {
       const id = `${from}:${to}:${type}`;
@@ -167,7 +167,7 @@ export function walk(image: Uint8Array, start: number, end: number, seeds: WalkS
       }),
     regions: regions(start, end, (address) => (owner[address] !== -1 ? "code" : isData[address] ? "data" : undefined)),
     references,
-    instructions: sorted.map((address): GhidraInstruction => {
+    instructions: sorted.map((address): DecompilerInstruction => {
       const { decoded, flows } = instructions.get(address)!;
       return { address, bytes: decoded.bytes.map((byte) => byte.toString(16).padStart(2, "0")).join(""), mnemonic: decoded.mnemonic.toLowerCase(), operands: decoded.operands, flows };
     }),
@@ -190,8 +190,8 @@ function indirectTarget(address: number, decoded: Decoded, instructions: Map<num
   return exit.kind === "indirect" && exit.next !== undefined && exit.next !== 0 ? exit.next : undefined;
 }
 
-function regions(start: number, end: number, kind: (address: number) => "code" | "data" | undefined): GhidraResult["regions"] {
-  const result: GhidraResult["regions"] = [];
+function regions(start: number, end: number, kind: (address: number) => "code" | "data" | undefined): DecompilerResult["regions"] {
+  const result: DecompilerResult["regions"] = [];
   for (let address = start; address <= end; address++) {
     const classification = kind(address);
     if (classification === undefined) continue;

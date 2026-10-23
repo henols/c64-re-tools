@@ -299,7 +299,7 @@ function listingSource(db: DatabaseSync | undefined, space: string): ListingSour
 /** Every value of --origin, for the message of a wrong one. */
 const ORIGIN_VALUES = `one of ${ORIGINS.join(", ")}, semantic or analyzer, or a comma list of them. semantic is ${SEMANTIC_ORIGINS.join(" and ")}. analyzer is ${ANALYZERS.slice(0, -1).join(", ")} and ${ANALYZERS.at(-1)}`;
 
-/** --origin for reads: one origin, semantic (user and llm), analyzer (dxa, ghidra and heuristic), or a comma list. */
+/** --origin for reads: one origin, semantic (user and llm), analyzer (dxa, decompiler and heuristic), or a comma list. */
 function originFilter(value: string): Origin[] {
   const origins = new Set<Origin>();
   for (const part of value.split(",")) {
@@ -558,7 +558,7 @@ const READ_COMMANDS: CommandSpec[] = [
     },
   ),
   readCommand(
-    { name: "symbols", summary: "The symbols, or with --analyzer the second names that DXA, Ghidra and the idioms gave.", options: { ...FILTER, kind: SYMBOL_KIND, analyzer: { kind: "flag", help: "the analyzer names in place of the symbols" }, ...LIST } },
+    { name: "symbols", summary: "The symbols, or with --analyzer the second names that DXA, the decompiler and the idioms gave.", options: { ...FILTER, kind: SYMBOL_KIND, analyzer: { kind: "flag", help: "the analyzer names in place of the symbols" }, ...LIST } },
     (db, call) => {
       const kind = call.string("kind") as (typeof SYMBOL_KINDS)[number] | undefined;
       if (call.flag("analyzer")) return { analyzerNames: list(call, listAnalyzerNames(db, rangeOf(call), kind, originsOf(call), call.space), symbol, RANGE_REST) };

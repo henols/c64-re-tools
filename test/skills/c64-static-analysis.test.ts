@@ -1,4 +1,4 @@
-// The c64-static-analysis script with Ghidra and real DXA, which it runs
+// The c64-static-analysis script with the decompiler and real DXA, which it runs
 // itself.
 
 import assert from "node:assert/strict";
@@ -41,25 +41,25 @@ async function analyze(...args: string[]): Promise<{ status: number | null; json
   return { status, ...readEnvelope(stdout, status) };
 }
 
-test("an analysis imports Ghidra's structure into knowledge and reports it", { timeout: 600_000 }, async () => {
+test("an analysis imports the decompiler's structure into knowledge and reports it", { timeout: 600_000 }, async () => {
   const { status, json } = await analyze("--entry", "$080d", "--decompile", "$0818", "--max-listed", "1");
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.coverage, [{ start: "$0801", end: "$0827" }]);
   assert.equal(json.revision, nthIn(project, 2));
   assert.deepEqual((json.changes as { names: unknown }).names, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
   assert.deepEqual(json.conflicts, []);
-  // The rest of the list is in the knowledge as the analyzer names of Ghidra.
+  // The rest of the list is in the knowledge as the analyzer names of the decompiler.
   assert.deepEqual(json.functions, { count: 2, listed: [{ entry: "$080d", name: "FUN_080d" }], rest: "a larger --max-listed. The project knowledge has all of them as analyzer names" });
   assert.equal((json.decompilations as Array<{ entry: string }>)[0]?.entry, "$0818");
 
   const db = openForRead(project);
   assert.equal(symbolAt(db, ROUTINE), undefined, "an analyzer name is no symbol");
-  assert.equal(analyzerNamesAt(db, ROUTINE)[0]?.origin, "ghidra");
+  assert.equal(analyzerNamesAt(db, ROUTINE)[0]?.origin, "decompiler");
   assert.deepEqual(regionsOverlapping(db, 0, 0xffff).map((region) => [region.start, region.end, region.type, region.origin]), [
-    [MAIN, 0x0815, "code", "ghidra"],
-    [ROUTINE, 0x0823, "code", "ghidra"],
-    // LDA $0824 makes Ghidra define the byte it reads.
-    [TABLE_START, TABLE_START, "bytes", "ghidra"],
+    [MAIN, 0x0815, "code", "decompiler"],
+    [ROUTINE, 0x0823, "code", "decompiler"],
+    // LDA $0824 makes the decompiler define the byte it reads.
+    [TABLE_START, TABLE_START, "bytes", "decompiler"],
   ]);
   assert.ok(listReferences(db).some((reference) => reference.from === 0x081d && reference.to === TABLE_START && reference.kind === "read"));
   db?.close();
@@ -82,7 +82,7 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
   assert.equal(labels.listed.length, labels.count, "a short list is not cut");
   assert.equal(labels.rest, undefined);
   const db = openForRead(project);
-  // DXA's own facts sit beside Ghidra's from the test above; it does not replace them.
+  // DXA's own facts sit beside the decompiler's from the test above; it does not replace them.
   assert.ok(regionsOverlapping(db, 0x0801, 0x080c).some((region) => region.origin === "dxa" && region.type === "bytes"));
   db?.close();
 });

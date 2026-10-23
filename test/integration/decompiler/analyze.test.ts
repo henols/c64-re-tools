@@ -1,20 +1,20 @@
-// The Ghidra analysis of a known program: functions, regions, references
+// The analysis of a known program: functions, regions, references
 // and decompiled code.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { analyze } from "../../../src/native/ghidra/analyze.ts";
+import { analyze } from "../../../src/native/decompiler/analyze.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import type { GhidraParams } from "../../../src/native/types.ts";
+import type { DecompilerParams } from "../../../src/native/types.ts";
 import { WireFailure } from "../../../src/protocol/messages.ts";
 import { analysisSubjectPrg, MAIN, MAIN_LOOP, RESULT, ROUTINE, TABLE_END, TABLE_START } from "../../fixtures/prg/analysis-subject.ts";
 
 const supervisor = new ProcessSupervisor();
 supervisor.installExitGuard();
-const run = (params: GhidraParams) => analyze(params, Buffer.from(analysisSubjectPrg), { supervisor, signal: new AbortController().signal });
+const run = (params: DecompilerParams) => analyze(params, Buffer.from(analysisSubjectPrg), { supervisor, signal: new AbortController().signal });
 
-const seeds = (overrides: Partial<GhidraParams> = {}): GhidraParams => ({
+const seeds = (overrides: Partial<DecompilerParams> = {}): DecompilerParams => ({
   imageKind: "prg",
   entryPoints: [MAIN],
   dataRanges: [{ start: TABLE_START, end: TABLE_END }],
@@ -26,7 +26,7 @@ const seeds = (overrides: Partial<GhidraParams> = {}): GhidraParams => ({
   ...overrides,
 });
 
-test("Ghidra finds the functions, regions and references of a known program", async () => {
+test("the decompiler finds the functions, regions and references of a known program", async () => {
   const { result } = await run(seeds());
   assert.deepEqual(result.coverage, [{ start: 0x0801, end: 0x0827 }]);
   assert.deepEqual(result.functions, [
@@ -60,7 +60,7 @@ test("decompiled code uses the seed name and drops the decimal path of ADC", asy
   assert.doesNotMatch(decompiled.text, /\bD\b|0x60|0xa0/, "no decimal adjustment is left");
 });
 
-test("a run without an entry point in the program is refused before Ghidra starts", async () => {
+test("a run without an entry point in the program is refused before the decompiler starts", async () => {
   await assert.rejects(
     run(seeds({ entryPoints: [0xe000] })),
     (error: unknown) => error instanceof WireFailure && error.code === "invalid-input",

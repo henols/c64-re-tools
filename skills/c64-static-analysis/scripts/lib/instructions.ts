@@ -1,10 +1,10 @@
-// The structured instruction list: Ghidra's decoded instructions with
+// The structured instruction list: the decompiler's decoded instructions with
 // the addressing mode, the operand in 6502 syntax, the flow target and,
 // with a coverage file, whether the instruction ran.
 
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { OPCODES, type Mode as OpcodeMode } from "#src/opcodes.ts";
-import type { GhidraInstruction } from "#src/native/types.ts";
+import type { DecompilerInstruction } from "#src/native/types.ts";
 
 export type Mode =
   | "implied"
@@ -88,8 +88,8 @@ export interface ListedInstruction {
   executed?: boolean;
 }
 
-/** Ghidra's instructions as the list that --out-instructions writes. */
-export function instructionList(instructions: GhidraInstruction[], coverage?: Uint8Array): ListedInstruction[] {
+/** The decompiler's instructions as the list that --out-instructions writes. */
+export function instructionList(instructions: DecompilerInstruction[], coverage?: Uint8Array): ListedInstruction[] {
   return instructions.map((instruction) => {
     const bytes = Buffer.from(instruction.bytes, "hex");
     const mode = modeOf(bytes[0]!);

@@ -2,7 +2,7 @@
 // language, as a WebAssembly module without imports. The module holds one
 // program image. Each call returns the length of a JSON text that out_ptr
 // points to: the result, or {"error": "..."}. The analysis itself is
-// TypeScript (src/native/ghidra/); this module only decodes and decompiles.
+// TypeScript (src/native/decompiler/); this module only decodes and decompiles.
 
 use std::cell::RefCell;
 use std::fmt::Write;
@@ -61,10 +61,10 @@ pub extern "C" fn load(image: *mut u8, length: usize, base: u32) -> u32 {
     let bytes = unsafe { take(image, length) };
     let mut registry = LanguageRegistry::new();
     registry.add_static_directory(&[
-        ("c64rt_6510.ldefs", include_bytes!("../../../src/native/ghidra/language/c64rt_6510.ldefs")),
-        ("c64rt_6510.sla", include_bytes!("../../../src/native/ghidra/language/c64rt_6510.sla")),
-        ("c64rt_6510.pspec", include_bytes!("../../../src/native/ghidra/language/c64rt_6510.pspec")),
-        ("c64rt_6510.cspec", include_bytes!("../../../src/native/ghidra/language/c64rt_6510.cspec")),
+        ("c64rt_6510.ldefs", include_bytes!("../../../src/native/decompiler/language/c64rt_6510.ldefs")),
+        ("c64rt_6510.sla", include_bytes!("../../../src/native/decompiler/language/c64rt_6510.sla")),
+        ("c64rt_6510.pspec", include_bytes!("../../../src/native/decompiler/language/c64rt_6510.pspec")),
+        ("c64rt_6510.cspec", include_bytes!("../../../src/native/decompiler/language/c64rt_6510.cspec")),
     ]);
     set_global_language_registry(registry);
     match Program::from_raw_bytes(bytes, LANGUAGE, u64::from(base)) {

@@ -1,4 +1,4 @@
-// The structured instruction list: Ghidra's decode with the mode, the
+// The structured instruction list: the decompiler's decode with the mode, the
 // operand in 6502 syntax, the target, and whether the coverage saw it run.
 
 import assert from "node:assert/strict";
@@ -56,7 +56,7 @@ test("the list writes operands in 6502 syntax, the flow target, and executed fro
   ]);
 });
 
-test("analyze --out-instructions writes Ghidra's instructions to a project file", { timeout: 120_000 }, () => {
+test("analyze --out-instructions writes the decompiler's instructions to a project file", { timeout: 120_000 }, () => {
   importPrg(project, vectoredPrg);
   const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--entry", "$080d", "--out-instructions", "analysis/instructions.json"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
@@ -64,7 +64,7 @@ test("analyze --out-instructions writes Ghidra's instructions to a project file"
   assert.equal(json.instructions.out, "analysis/instructions.json", run.stdout);
   const list = JSON.parse(readFileSync(join(project, "analysis", "instructions.json"), "utf8")) as Array<{ address: string; mnemonic: string; mode: string; operand: string }>;
   assert.equal(list.length, json.instructions.count);
-  // Ghidra follows LDA #$20 / STA $0300 / LDA #$08 / STA $0301 and finds the target of the indirect jump.
+  // The decompiler follows LDA #$20 / STA $0300 / LDA #$08 / STA $0301 and finds the target of the indirect jump.
   assert.deepEqual(list.find((instruction) => instruction.address === "$0817"), { address: "$0817", bytes: "6c 00 03", mnemonic: "jmp", mode: "(indirect)", operand: "($0300)", target: "$0820" });
   assert.deepEqual(list.find((instruction) => instruction.address === "$080d"), { address: "$080d", bytes: "a9 20", mnemonic: "lda", mode: "immediate", operand: "#$20" });
 });

@@ -4,7 +4,7 @@
 
 
 Let an AI agent work on Commodore 64 programs. The agent drives a real VICE
-emulator and runs ACME, DXA, Ghidra and Exomizer. Use it to build new C64 apps and games,
+emulator and runs ACME, DXA, a decompiler and Exomizer. Use it to build new C64 apps and games,
 and to reverse engineer old ones.
 
 It works with Claude Code, Codex, pi, opencode, Gemini, Copilot, Cursor and
@@ -32,7 +32,7 @@ Ask for what you want in plain words. The agent picks the skill for each step.
 
 - Read D64, D71, D81, G64, T64 and CRT images, list BASIC and find the SYS address.
 - Find packers and capture the unpacked program from the emulator.
-- Analyse the code with DXA and Ghidra. The toolkit brings Ghidra's decoder and decompiler with its own NMOS 6510 language, with all 256 opcodes: nothing to install.
+- Analyse the code with DXA and the built-in decompiler: a port of Ghidra's SLEIGH decoder and decompiler with its own NMOS 6510 language, with all 256 opcodes. Nothing to install.
 - Keep names, regions and comments as text in the project, ready for git.
 - Compare releases, and find routines that several programs share.
 - Generate ACME source that rebuilds the program byte for byte, and its documentation.
@@ -43,7 +43,7 @@ Ask for what you want in plain words. The agent picks the skill for each step.
 
 VICE and the Host Runtime run on your computer, where VICE can open a window.
 The agent runs in a dev container in your project. It reaches VICE through an
-MCP server, and it runs ACME, DXA, Ghidra, Exomizer and c64run through its skills.
+MCP server, and it runs ACME, DXA, the decompiler, Exomizer and c64run through its skills.
 
 ## Install
 

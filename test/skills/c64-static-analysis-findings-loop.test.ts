@@ -1,8 +1,8 @@
-// The iterative loop through the real skill scripts with Ghidra, which the
+// The iterative loop through the real skill scripts with the decompiler, which the
 // script runs itself:
-//   Ghidra import → semantic rename → Ghidra seeded from knowledge →
+//   decompiler import → semantic rename → decompiler seeded from knowledge →
 //   the same importer, history and conflicts kept, echoed seeds not owned.
-// The language checks are in src/native/ghidra/language.test.ts.
+// The language checks are in src/native/decompiler/language.test.ts.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -47,25 +47,25 @@ function read<T>(work: (db: ReturnType<typeof openForRead>) => T): T {
   }
 }
 
-test("Ghidra findings, a semantic rename and a seeded re-run go through one importer", { timeout: 120_000 }, async () => {
-  // 1. The program goes into the knowledge; the first Ghidra pass makes generated names, regions and references Ghidra knowledge.
+test("decompiler findings, a semantic rename and a seeded re-run go through one importer", { timeout: 120_000 }, async () => {
+  // 1. The program goes into the knowledge; the first decompiler pass makes generated names, regions and references decompiler knowledge.
   importPrg(project, analysisSubjectPrg);
   const first = await analyze("--entry", "$080d");
   assert.equal(first.revision, nthIn(project, 2), JSON.stringify(first));
-  assert.deepEqual(read((db) => analyzerNamesAt(db, 0x0818)), [{ space: "c64", address: 0x0818, name: "FUN_0818", kind: "routine", origin: "ghidra", revision: nthIn(project, 2) }]);
+  assert.deepEqual(read((db) => analyzerNamesAt(db, 0x0818)), [{ space: "c64", address: 0x0818, name: "FUN_0818", kind: "routine", origin: "decompiler", revision: nthIn(project, 2) }]);
 
   // 2. Semantic work: the LLM names the routine; the user marks $080d as data (wrong on purpose).
   withWrite((db) => renameSymbol(db, { origin: "llm", description: "stores the result", expectedRevision: nthIn(project, 2) }, { address: 0x0818, name: "init_result", kind: "routine" }), project);
   withWrite((db) => renameSymbol(db, { origin: "user", expectedRevision: nthIn(project, 3) }, { address: 0x080d, name: "start_table", kind: "variable" }), project);
 
-  // 3. Seeded re-run: Ghidra gets the semantic names; nothing changes owner, the contradiction is reported.
+  // 3. Seeded re-run: the decompiler gets the semantic names; nothing changes owner, the contradiction is reported.
   const second = await analyze("--entry", "$080d", "--decompile", "$080d");
   assert.equal(second.revision, null, JSON.stringify(second));
   assert.deepEqual(second.conflicts, [
     {
       at: "$080d",
       knowledge: { name: "start_table", kind: "variable", origin: "user", at: "$080d" },
-      ghidra: { name: "start_table", kind: "routine" },
+      decompiler: { name: "start_table", kind: "routine" },
       problem: "code and data disagree",
     },
   ]);
@@ -75,17 +75,17 @@ test("Ghidra findings, a semantic rename and a seeded re-run go through one impo
   // 4. Knowledge after the loop: semantic names stay with their owners, history is complete.
   read((db) => {
     assert.deepEqual(symbolAt(db, 0x0818), { space: "c64", address: 0x0818, name: "init_result", kind: "routine", origin: "llm", revision: nthIn(project, 3) });
-    assert.deepEqual(analyzerNamesAt(db, 0x0818).map((row) => row.name), ["FUN_0818"], "Ghidra's own name stays a second name");
+    assert.deepEqual(analyzerNamesAt(db, 0x0818).map((row) => row.name), ["FUN_0818"], "the decompiler's own name stays a second name");
     assert.deepEqual(
       historyAt(db, 0x0818).flatMap((entry) => (entry.entity === "symbol" || entry.entity === "analyzer-name" ? [[entry.entity, entry.row.name, entry.row.origin]] : [])),
       [
-        ["analyzer-name", "FUN_0818", "ghidra"],
+        ["analyzer-name", "FUN_0818", "decompiler"],
         ["symbol", "init_result", "llm"],
       ],
     );
     assert.deepEqual(revisions(db).map((entry) => [entry.id, entry.origin]).reverse(), [
       [nthIn(project, 1), "user"],
-      [nthIn(project, 2), "ghidra"],
+      [nthIn(project, 2), "decompiler"],
       [nthIn(project, 3), "llm"],
       [nthIn(project, 4), "user"],
     ]);

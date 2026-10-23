@@ -167,7 +167,7 @@ Do these actions for the findings:
 #### Names in the source
 
 - A label or a constant gets the name of the address in the knowledge.
-- Without a knowledge name, it gets the platform name, for example `EXTCOL` or `CHROUT`. A platform name wins over an analyzer name (`dxa`, `ghidra` or `heuristic`), for example `EXTCOL` over `ld020`. A `user` or `llm` name wins over a platform name.
+- Without a knowledge name, it gets the platform name, for example `EXTCOL` or `CHROUT`. A platform name wins over an analyzer name (`dxa`, `decompiler` or `heuristic`), for example `EXTCOL` over `ld020`. A `user` or `llm` name wins over a platform name.
 - An address in the program without a name gets `l_xxxx`.
 - A read or a write in the I/O area `$d000-$dfff` uses the register, also when the program has RAM there. For example, `lda $dd0e` is `lda CI2CRA` and `sta $d012` is `sta RASTER`. `constants.asm` has these names. An address without a platform name stays a number, for example `sta $d800,x`. The data label of the RAM stays at its data. A `user` or `llm` name of the address wins over the register.
 - A platform name in an operand expression of the knowledge stays in the source. When the program has the address, `constants.asm` has the name, and the RAM there keeps its label.

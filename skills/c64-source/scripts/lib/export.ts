@@ -247,7 +247,7 @@ export function planDrops(input: DropInput): DropPlan {
   const touched = (address: number) => input.coverage !== undefined && input.coverage[address] !== 0;
   const executed = (address: number) => input.coverage !== undefined && (input.coverage[address]! & COVERAGE.ramExecute) !== 0;
   const regions = input.regions.flatMap((region) => input.segments.filter((segment) => overlaps(region, segment)).map((segment) => ({ start: Math.max(region.start, segment.start), end: Math.min(region.end, segment.end), type: region.type })));
-  // The source writes a data region as data, also where Ghidra decoded instructions in it: those are no code.
+  // The source writes a data region as data, also where the decompiler decoded instructions in it: those are no code.
   const instructions = new Map([...input.instructions].filter(([start, length]) => !regions.some((region) => !CODE_TYPES.includes(region.type) && start <= region.end && region.start <= start + length - 1)));
   const blocks = blocksOf(instructions, input.memory);
   // An indexed operand reads in the region that holds it, and in the next region when it is the last byte (table-1,x).

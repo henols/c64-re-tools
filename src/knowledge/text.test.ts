@@ -73,7 +73,7 @@ function fullProject(): { folder: string; db: DatabaseSync } {
   const run = new Uint8Array(0x10000);
   run[0x8000] = COVERAGE.ramExecute | COVERAGE.ramWrite;
   addCoverage(db, { origin: "user" }, { maps: [{ name: "local/run.bin", bytes: run }] });
-  importFindings(db, { analyzer: "ghidra", coverage: [{ start: 0xa000, end: 0xa0ff }], authoritative: { symbols: true, regions: true, references: true }, symbols: [{ address: 0xa000, name: "FUN_a000", kind: "routine" }], regions: [], references: [] });
+  importFindings(db, { analyzer: "decompiler", coverage: [{ start: 0xa000, end: 0xa0ff }], authoritative: { symbols: true, regions: true, references: true }, symbols: [{ address: 0xa000, name: "FUN_a000", kind: "routine" }], regions: [], references: [] });
   return { folder, db };
 }
 

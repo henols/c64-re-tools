@@ -46,7 +46,7 @@ const MAX_LISTED = 40;
 const MAX_EDGES = 60;
 /** A name outside the image covers the addresses that references use up to the next name, at most this many. */
 const MAX_SPAN = 256;
-/** The kinds of a reference that reads a table: Ghidra gives an indexed read (lda table,x) as "reference". */
+/** The kinds of a reference that reads a table: the decompiler gives an indexed read (lda table,x) as "reference". */
 const TABLE_READS: readonly string[] = ["read", "reference", "pointer"];
 
 const hex = (address: number) => formatC64Address(address).toUpperCase();

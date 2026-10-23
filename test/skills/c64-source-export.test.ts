@@ -87,7 +87,7 @@ test("--drop is refused for code that the entry reaches, for code that kept code
   assert.throws(() => planDrops(input(BASE, { coverage: RAN, drop: [{ start: 0x100c, end: 0x100e }], keep: [{ start: 0x100e, end: 0x100e }] })), /overlaps --keep/);
 });
 
-test("instructions that Ghidra decoded in a data region are data, not dead code", () => {
+test("instructions that the decompiler decoded in a data region are data, not dead code", () => {
   const plan = planDrops(input(BASE, { coverage: RAN, regions: [{ start: 0x100c, end: 0x100e, type: "bytes" }] }));
   // The region is data, so the data rules decide: untouched bytes that nothing names become free as data. A charset stays.
   assert.deepEqual(plan.free, [{ start: 0x100c, end: 0x100e, what: "data" }]);

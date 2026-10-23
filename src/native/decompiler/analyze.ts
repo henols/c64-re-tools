@@ -1,10 +1,10 @@
-// The Ghidra analysis: the Ghidra SLEIGH decoder and decompiler with the NMOS
+// The decompiler analysis: the Ghidra SLEIGH decoder and decompiler with the NMOS
 // 6510 language, in this process as a WebAssembly module. Knowledge seeds go
 // in, the structural result comes out, and the result is checked completely
 // before the script imports it.
 
 import { describeError, WireFailure } from "../../protocol/messages.ts";
-import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, seedsInside, type GhidraParams, type GhidraResult } from "../types.ts";
+import { checkDecompilerResult, checkRequestBounds, DECOMPILER_LIMITS, imageRange, seedsInside, type DecompilerParams, type DecompilerResult } from "../types.ts";
 import type { ToolContext } from "../run.ts";
 import { walk } from "./walk.ts";
 import { decompile, loadImage, setName, SLEIGH_VERSION } from "./wasm.ts";
@@ -13,10 +13,10 @@ import { decompile, loadImage, setName, SLEIGH_VERSION } from "./wasm.ts";
 const MAX_REASON = 1000;
 
 export async function analyze(
-  params: GhidraParams,
+  params: DecompilerParams,
   image: Buffer,
   context: ToolContext,
-): Promise<{ result: GhidraResult }> {
+): Promise<{ result: DecompilerResult }> {
   checkRequestBounds(params);
   const { start, end, body } = imageRange(params.imageKind, image);
 
@@ -32,25 +32,25 @@ export async function analyze(
     loadImage(body, start);
     walked = walk(body, start, end, { entryPoints, codeStarts, dataRanges, labels: params.labels });
   } catch (error) {
-    context.log?.(`The Ghidra decoder failed: ${describeError(error)}`);
-    throw new WireFailure("operation-failed", `The Ghidra decoder failed: ${describeError(error)}. Nothing was imported.`);
+    context.log?.(`The decoder failed: ${describeError(error)}`);
+    throw new WireFailure("operation-failed", `The decoder failed: ${describeError(error)}. Nothing was imported.`);
   }
   const { decompilations, notDecompiled } = decompileRoutines(params, walked.functions, body, start, context);
 
-  let result: GhidraResult;
+  let result: DecompilerResult;
   try {
-    result = checkGhidraResult({ ...walked, decompilations, notDecompiled, completeness: { functions: true, regions: true, references: true }, toolVersion: SLEIGH_VERSION });
+    result = checkDecompilerResult({ ...walked, decompilations, notDecompiled, completeness: { functions: true, regions: true, references: true }, toolVersion: SLEIGH_VERSION });
   } catch (error) {
-    context.log?.(`Ghidra result rejected: ${describeError(error)}`);
-    throw new WireFailure("operation-failed", `Ghidra returned an incomplete or inconsistent result. Nothing was imported. The check found: ${describeError(error)}.`);
+    context.log?.(`Decompiler result rejected: ${describeError(error)}`);
+    throw new WireFailure("operation-failed", `The decompiler returned an incomplete or inconsistent result. Nothing was imported. The check found: ${describeError(error)}.`);
   }
   return { result };
 }
 
 /** The requested routines as C text, within the character bounds; the labels name routines and data. */
-function decompileRoutines(params: GhidraParams, functions: GhidraResult["functions"], body: Uint8Array, start: number, context: ToolContext): Pick<GhidraResult, "decompilations" | "notDecompiled"> {
-  const decompilations: GhidraResult["decompilations"] = [];
-  const notDecompiled: NonNullable<GhidraResult["notDecompiled"]> = [];
+function decompileRoutines(params: DecompilerParams, functions: DecompilerResult["functions"], body: Uint8Array, start: number, context: ToolContext): Pick<DecompilerResult, "decompilations" | "notDecompiled"> {
+  const decompilations: DecompilerResult["decompilations"] = [];
+  const notDecompiled: NonNullable<DecompilerResult["notDecompiled"]> = [];
   if (params.decompile.length === 0) return { decompilations, notDecompiled };
   const entries = new Set(functions.map((fn) => fn.entry));
   // A trap in the decompiler drops its image: the next routine loads it again.
@@ -63,12 +63,12 @@ function decompileRoutines(params: GhidraParams, functions: GhidraResult["functi
         setName(label.address, label.name, entries.has(label.address) ? "function" : "data");
       } catch (error) {
         // The decompiler then prints its own name for the address.
-        context.log?.(`The Ghidra decompiler refused the name ${label.name}: ${describeError(error)}`);
+        context.log?.(`The decompiler refused the name ${label.name}: ${describeError(error)}`);
       }
     }
     prepared = true;
   };
-  let remaining = GHIDRA_LIMITS.decompiledTotalChars;
+  let remaining = DECOMPILER_LIMITS.decompiledTotalChars;
   for (const entry of params.decompile) {
     if (!entries.has(entry)) {
       notDecompiled.push({ entry, reason: "no function starts at this address" });
@@ -84,11 +84,11 @@ function decompileRoutines(params: GhidraParams, functions: GhidraResult["functi
       text = decompile(entry);
     } catch (error) {
       prepared = false;
-      context.log?.(`The Ghidra decompiler failed at ${entry}: ${describeError(error)}`);
+      context.log?.(`The decompiler failed at ${entry}: ${describeError(error)}`);
       notDecompiled.push({ entry, reason: describeError(error).slice(0, MAX_REASON) || "the decompiler gave no reason" });
       continue;
     }
-    const limit = Math.min(GHIDRA_LIMITS.decompiledChars, remaining);
+    const limit = Math.min(DECOMPILER_LIMITS.decompiledChars, remaining);
     const truncated = text.length > limit;
     if (truncated) text = text.slice(0, limit);
     remaining -= text.length;

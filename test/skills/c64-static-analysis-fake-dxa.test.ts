@@ -1,6 +1,6 @@
 // The c64-static-analysis script with a fake dxa that prints a fixed listing:
-// how conflicts are shown, and what a refused import leaves behind. No DXA
-// or Ghidra needed.
+// how conflicts are shown, and what a refused import leaves behind. No real DXA
+// needed.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";

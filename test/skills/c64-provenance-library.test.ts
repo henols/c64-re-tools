@@ -59,8 +59,8 @@ function source(overrides: Partial<RoutineSource> = {}): RoutineSource {
     end: END,
     byteAt: (address) => bytesA[address - A]!,
     analyzed: [
-      { ...row, start: A, end: A + 0x13, type: "code", origin: "ghidra" },
-      { ...row, start: A + 0x14, end: A + 0x18, type: "code", origin: "ghidra" },
+      { ...row, start: A, end: A + 0x13, type: "code", origin: "decompiler" },
+      { ...row, start: A + 0x14, end: A + 0x18, type: "code", origin: "decompiler" },
     ] as RegionRow[],
     symbols: [
       { ...row, address: A, name: "play", kind: "routine" },

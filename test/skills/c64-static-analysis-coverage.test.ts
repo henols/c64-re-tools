@@ -69,7 +69,7 @@ test("coverage seeds the first instruction of each flow, not every instruction",
 });
 
 test("after an executed JSR the next instruction starts a flow, and a branch target or a return point is a code start, not a routine", () => {
-  // The Bruce Lee run: Ghidra took a called routine for one that does not return and left the code after the JSR undecoded.
+  // The Bruce Lee run: the decompiler took a called routine for one that does not return and left the code after the JSR undecoded.
   const image = new Uint8Array(0x10000);
   // $c000 JSR $c100 / $c003 BNE $c007 / $c005 LDA #1 / $c007 RTS; $c100 RTS; $c200 is reached only through a vector.
   image.set([0x20, 0x00, 0xc1, 0xd0, 0x02, 0xa9, 0x01, 0x60], 0xc000);
@@ -123,7 +123,7 @@ test("the RAM under ROM that the runs never read or ran is data for the analysis
   assert.deepEqual(romOnlyRanges(map, imageReader(prg, "prg")), [{ start: 0xa001, end: 0xa001 }], "only bytes of the image");
 });
 
-test("with coverage, Ghidra does not follow a KERNAL call or the IRQ vector into the RAM under the KERNAL", { timeout: 120_000 }, () => {
+test("with coverage, the decompiler does not follow a KERNAL call or the IRQ vector into the RAM under the KERNAL", { timeout: 120_000 }, () => {
   const { image, map } = kernalCall();
   const root = fresh();
   // The program and the RAM under the KERNAL that holds bytes like code.
@@ -134,7 +134,7 @@ test("with coverage, Ghidra does not follow a KERNAL call or the IRQ vector into
   // $080d and the return point after JSR $ffe4.
   assert.deepEqual(json.coverageSeeds, { entryPoints: 2, used: 2, romOnlyRanges: 2, romOnlyUsed: 2 }, run.stdout);
   const db = openForRead(root);
-  const typeAt = (address: number) => regionsOverlapping(db, address, address).find((region) => region.origin === "ghidra")?.type;
+  const typeAt = (address: number) => regionsOverlapping(db, address, address).find((region) => region.origin === "decompiler")?.type;
   assert.equal(typeAt(0x080d), "code", run.stdout);
   assert.notEqual(typeAt(0xffe4), "code", "the KERNAL call stays in ROM");
   assert.notEqual(typeAt(0x0016), "code", "BRK does not follow the IRQ vector under the KERNAL");
@@ -160,7 +160,7 @@ test("with coverage, DXA finds the code that only a vector reaches", { skip: dxa
   assert.deepEqual(seeded.coverageConflicts, []);
 });
 
-test("with coverage, a branch target after an RTS is no Ghidra function, and no executed start is missing", { timeout: 120_000 }, () => {
+test("with coverage, a branch target after an RTS is no decompiler function, and no executed start is missing", { timeout: 120_000 }, () => {
   // $0810 LDA $02 / BEQ $0815 / RTS / $0815 INC $d020 / RTS: the coverage seed at $0815 must not become FUN_0815.
   const prg = Buffer.from([0x10, 0x08, 0xa5, 0x02, 0xf0, 0x01, 0x60, 0xee, 0x20, 0xd0, 0x60]);
   const root = fresh();
@@ -172,7 +172,7 @@ test("with coverage, a branch target after an RTS is no Ghidra function, and no 
   assert.equal(json.coverageGaps.count, 0, run.stdout);
 });
 
-test("with coverage, Ghidra makes a function of the code that only a vector reaches", { timeout: 120_000 }, () => {
+test("with coverage, the decompiler makes a function of the code that only a vector reaches", { timeout: 120_000 }, () => {
   const root = fresh();
   importPrg(root, vectoredPrg);
   importCoverage(root, { "run.bin": mapWith([0x080d, 0x080f, 0x0812, 0x0814, 0x0817, VECTORED_ROUTINE, VECTORED_ROUTINE + 3]) });

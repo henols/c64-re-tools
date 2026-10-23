@@ -70,7 +70,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 ## Addresses, names and spaces
 
 - A symbol is the name of an address from the user or the LLM. Get it from `at`, `search` or `symbols`.
-- An analyzer name is a second name from DXA, Ghidra or an idiom search, for example `FUN_17e2`. Each analyzer keeps its own name at an address. Get them from `at`, `search` or `symbols --analyzer`.
+- An analyzer name is a second name from DXA, the decompiler or an idiom search, for example `FUN_17e2`. Each analyzer keeps its own name at an address. Get them from `at`, `search` or `symbols --analyzer`.
 - The generated source uses only the symbols. To use an analyzer name in the source, give the address that name with `rename`.
 - A symbol name is a label for ACME: a letter or an underscore, then letters, digits or underscores. The knowledge refuses the name of a 6502 instruction, for example `lda`, in upper or lower case.
 - A space is `c64` (the default), `drive8` for code in the 1541 drive, `loading` or `bank0` to `bank255`. `loading` is the captured stage of the loading that shows the start screen. `bank0` to `bank255` are cartridge banks, or other memory images of the program, for example a file that the program loads later. Drive code, the stage and banks use the same addresses as the C64. Thus each space has its own knowledge. A name is unique in one space.
@@ -113,7 +113,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--evidence <kind:ref>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
 | `--expect-revision <revision>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
 | `--range <start>-<end>` | `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `uses`, `export` | Only the rows in this range. The default is all addresses. |
-| `--origin <origin>` | `search`, `symbols`, `regions`, `comments`, `references`, `modules`, `operands`, `patches`, `macros`, `uses`, `export` | Only the rows of these origins: `user`, `llm`, `dxa`, `ghidra`, `heuristic`, `semantic` (user and llm), `analyzer` (dxa, ghidra and heuristic), or a comma list. The default is all origins. |
+| `--origin <origin>` | `search`, `symbols`, `regions`, `comments`, `references`, `modules`, `operands`, `patches`, `macros`, `uses`, `export` | Only the rows of these origins: `user`, `llm`, `dxa`, `decompiler`, `heuristic`, `semantic` (user and llm), `analyzer` (dxa, decompiler and heuristic), or a comma list. The default is all origins. |
 | `--max-listed <n>` | `search`, `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `switches`, `releases`, `macros`, `uses`, `spaces`, `history`, `revisions`, `revision`, `listing`, `join` | The most items in each list of the body. The default is 50. The counts are always complete. |
 | `--kind <kind>` | `symbols`, `rename` | The symbol kind: `label`, `routine`, `variable`, `data` or `vector`. A read gives all kinds by default. A new symbol without `--kind` is a `label`. A `rename` without `--kind` keeps the kind of the symbol. |
 | `--kind <kind>` | `references` | Only references of this kind: `call`, `jump`, `read`, `write`, `reference` or `pointer`. |
@@ -200,7 +200,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 ### `suppressions`
 
 - `body.suppressions` lists the places that a removal blocks. Each item has `suppresses` (`symbol`, `region` or `reference`), the place, and the `reason` of the removal.
-- `unclassify` and `unreference` block the place for DXA and Ghidra. A later analysis does not add a region in that range or that reference again. This is also true for a fact from the LLM.
+- `unclassify` and `unreference` block the place for DXA and the decompiler. A later analysis does not add a region in that range or that reference again. This is also true for a fact from the LLM.
 - `remove-symbol` does not block the address, because an analyzer name never becomes a symbol.
 - A `rename`, `classify` or `reference` at a blocked place ends the block there. A `revert` to a revision before the removal also ends the block.
 - `at` and `history` also show the blocks.

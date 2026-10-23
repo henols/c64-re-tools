@@ -129,7 +129,7 @@ export const OPTIONS = {
   "timeout-frames": { kind: "count", value: "<n>", help: "stop a wait after this number of video frames", min: 1, max: 1_000_000 },
   "max-listed": { kind: "count", value: "<n>", help: "list at most n items of each list (default 50). The counts are always given", min: 0, max: 100_000, default: 50 },
   symbols: { kind: "path", value: "<file>", help: "the symbols of a build: the symbols file of the assembler, or a JSON map of name to $ address" },
-  origin: { kind: "text", value: "<origin>", help: "user, llm, dxa, ghidra, heuristic, semantic (user and llm) or analyzer (dxa, ghidra and heuristic), or a comma list" },
+  origin: { kind: "text", value: "<origin>", help: "user, llm, dxa, decompiler, heuristic, semantic (user and llm) or analyzer (dxa, decompiler and heuristic), or a comma list" },
   reason: { kind: "text", value: "<text>", help: "why: kept with the revision" },
   evidence: { kind: "text", value: "<kind:ref>", help: "what the change rests on: coverage:<map>, test:<file>, file:<file> or note:<text>", multiple: true },
   "expect-revision": { kind: "text", value: "<revision>", help: "refuse the write when the knowledge changed after this revision" },

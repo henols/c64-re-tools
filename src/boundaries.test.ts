@@ -65,7 +65,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   knowledge: ["c64", "project", "time", "opcodes"],
   // The call contract of the skill scripts: the command line, the values, the envelope.
   script: ["protocol", "project", "trace", "c64"],
-  // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
+  // Running native tools (processes, workspaces, ACME, DXA, the decompiler): shared by the host and the skill scripts.
   native: ["protocol", "c64", "trace"],
   // The installation and status edge: host tool status through the host-client, local tool status through native.
   cli: ["host-client", "native", "protocol", "script", "distribution", "trace", "package"],

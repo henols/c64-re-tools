@@ -120,9 +120,9 @@ test("the exit guard kills every group when the owning process exits", { timeout
 });
 
 test("a .bat or .cmd file starts through cmd.exe with each argument quoted; other programs start directly", () => {
-  assert.deepEqual(batchInvocation(["D:\\ghidra\\support\\analyzeHeadless.bat", "D:\\work dir", "-scriptPath", "D:\\repo\\scripts\\", "-deleteProject"]), {
+  assert.deepEqual(batchInvocation(["D:\\tools\\dxa\\dxa.bat", "D:\\work dir", "-o", "D:\\out\\", "-q"]), {
     command: "cmd.exe",
-    args: ["/d", "/s", "/c", '""D:\\ghidra\\support\\analyzeHeadless.bat" "D:\\work dir" "-scriptPath" "D:\\repo\\scripts\\\\" "-deleteProject""'],
+    args: ["/d", "/s", "/c", '""D:\\tools\\dxa\\dxa.bat" "D:\\work dir" "-o" "D:\\out\\\\" "-q""'],
   });
   assert.equal(batchInvocation(["C:\\Tools\\npx.CMD", "-y"], "C:\\Windows\\system32\\cmd.exe")?.command, "C:\\Windows\\system32\\cmd.exe");
   assert.equal(batchInvocation(["x64sc.exe", "-default"]), undefined);

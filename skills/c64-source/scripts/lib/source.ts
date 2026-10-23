@@ -1,4 +1,4 @@
-// ACME source from an image, current knowledge and Ghidra's instruction
+// ACME source from an image, current knowledge and the decompiler's instruction
 // boundaries. The same input gives the same text. Names come from
 // knowledge; a target that knowledge does not name gets l_xxxx. A read or
 // write in the I/O area names the register, also where the image holds RAM. Data is
@@ -30,7 +30,7 @@ export interface SourceInput {
   /** The image byte at an address inside a segment. */
   byteAt: (address: number) => number;
   entry?: number;
-  /** Where Ghidra decoded an instruction, with its length. */
+  /** Where the decompiler decoded an instruction, with its length. */
   instructions: ReadonlyMap<number, number>;
   /** Without an origin, a symbol counts as a user or LLM name. */
   symbols: ReadonlyArray<{ address: number; name: string; origin?: Origin }>;
@@ -204,7 +204,7 @@ interface DataItem {
   kind: "data";
   start: number;
   end: number;
-  /** The region type, or unclassified. In a code region, bytes that Ghidra did not decode. */
+  /** The region type, or unclassified. In a code region, bytes that the decompiler did not decode. */
   type: RegionType | "unclassified" | "undecoded";
   region?: Region;
 }
@@ -280,7 +280,7 @@ function operandValue(address: number, opcode: number, byteAt: (address: number)
 
 /**
  * Each entry point inside a data region of the knowledge, with that region.
- * A data region wins over an entry: Ghidra does not decode there,
+ * A data region wins over an entry: the decompiler does not decode there,
  * and the source has data there. A code region in the knowledge changes that.
  */
 export function entriesInData<R extends { start: number; end: number; type: RegionType }>(entries: readonly number[], regions: readonly R[]): Array<{ entry: number; region: R }> {

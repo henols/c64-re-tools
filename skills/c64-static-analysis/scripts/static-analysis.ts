@@ -1,5 +1,5 @@
 // The c64-static-analysis script: analyzes the program in the knowledge
-// with DXA (fast first pass) or Ghidra (deeper), which it runs itself, seeded
+// with DXA (fast first pass) or the decompiler (deeper), which it runs itself, seeded
 // from current knowledge and the coverage of the knowledge, and imports the
 // structural findings into .c64-re-tools/knowledge/.
 
@@ -9,9 +9,9 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
-import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
+import { analyze as analyzeWithDecompiler } from "#src/native/decompiler/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
-import { GHIDRA_LIMITS } from "#src/native/types.ts";
+import { DECOMPILER_LIMITS } from "#src/native/types.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { analyzedBytes, operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
@@ -21,7 +21,7 @@ import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/s
 import { platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
-import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./lib/findings.ts";
+import { dxaFindings, decompilerFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList } from "./lib/instructions.ts";
 import { CATALOGUE, findMacroUses, type MacroCandidate } from "./lib/macros.ts";
@@ -178,15 +178,15 @@ async function analyze(call: Call): Promise<unknown> {
   const decompile = call.addresses("decompile");
   if (decompile.length > 32) throw new UsageError("--decompile takes at most 32 routines");
   const max = call.count("max-listed")!;
-  const analyzer = call.string("analyzer") as "dxa" | "ghidra";
+  const analyzer = call.string("analyzer") as "dxa" | "decompiler";
   const listingPath = call.string("out-listing");
   const instructionsPath = call.string("out-instructions");
   const applyMacros = call.flag("apply-macros");
   const skip = new Set(call.addresses("skip"));
   if (skip.size > 0 && !applyMacros) throw new UsageError("--skip works only with --apply-macros: it names a macro candidate that the run does not write");
-  if (analyzer === "dxa" && decompile.length > 0) throw new UsageError("--decompile works only with --analyzer ghidra");
-  if (analyzer === "ghidra" && listingPath !== undefined) throw new UsageError("--out-listing works only with --analyzer dxa");
-  if (analyzer === "dxa" && instructionsPath !== undefined) throw new UsageError("--out-instructions works only with --analyzer ghidra");
+  if (analyzer === "dxa" && decompile.length > 0) throw new UsageError("--decompile works only with --analyzer decompiler");
+  if (analyzer === "decompiler" && listingPath !== undefined) throw new UsageError("--out-listing works only with --analyzer dxa");
+  if (analyzer === "dxa" && instructionsPath !== undefined) throw new UsageError("--out-instructions works only with --analyzer decompiler");
   const space = call.space;
   const reader = openForRead();
   const program = requireProgram(reader, space);
@@ -206,21 +206,21 @@ async function analyze(call: Call): Promise<unknown> {
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries, space, executed.executed);
   // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound:
-  // at most GHIDRA_LIMITS.entryPoints (1024) entry points for both analyzers, and for Ghidra at most
-  // GHIDRA_LIMITS.codeStarts (8192) coverage flow starts that are code in a routine. coverageSeeds gives what was used.
+  // at most DECOMPILER_LIMITS.entryPoints (1024) entry points for both analyzers, and for the decompiler at most
+  // DECOMPILER_LIMITS.codeStarts (8192) coverage flow starts that are code in a routine. coverageSeeds gives what was used.
   const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, inProgram);
   const known = [...seeds.entryPoints, ...codeEntries(reader, byteAt, space)];
-  // Ghidra takes the coverage as code starts without a function; DXA has one list.
+  // The decompiler takes the coverage as code starts without a function; DXA has one list.
   const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, inProgram);
   const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines])];
-  seeds.entryPoints = ordered.slice(0, GHIDRA_LIMITS.entryPoints).sort((a, b) => a - b);
-  const codeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry)).slice(0, GHIDRA_LIMITS.codeStarts);
+  seeds.entryPoints = ordered.slice(0, DECOMPILER_LIMITS.entryPoints).sort((a, b) => a - b);
+  const codeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry)).slice(0, DECOMPILER_LIMITS.codeStarts);
   // Idiom tables and the RAM under ROM that the runs never used are data for this run too; semantic data ranges come first.
   // A range with an entry point of the knowledge or --entry in it is left out: that code stays code.
   const fromRom = coverage === undefined ? [] : romOnlyRanges(coverage, byteAt).filter((range) => !known.some((entry) => entry >= range.start && entry <= range.end));
   const dataRanges = [...seeds.dataRanges];
   for (const range of [...idioms.dataRanges, ...fromRom]) if (!dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start)) dataRanges.push(range);
-  seeds.dataRanges = dataRanges.slice(0, GHIDRA_LIMITS.dataRanges);
+  seeds.dataRanges = dataRanges.slice(0, DECOMPILER_LIMITS.dataRanges);
   const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
   const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry)).length;
   // Platform names are C64 names: drive code and banks get none.
@@ -316,10 +316,10 @@ async function analyze(call: Call): Promise<unknown> {
     return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision });
   }
 
-  const { result } = await analyzeWithGhidra({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
-  // Executed instruction starts that Ghidra did not decode: the instruction list and the source miss them.
+  const { result } = await analyzeWithDecompiler({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
+  // Executed instruction starts that the decompiler did not decode: the instruction list and the source miss them.
   const decoded = new Set(result.instructions.map((instruction) => instruction.address));
-  const imported = record({ ...ghidraFindings(result), space, ...executed }, revision, "Ghidra analysis of the program", runProvenance(bytes, result.toolVersion));
+  const imported = record({ ...decompilerFindings(result), space, ...executed }, revision, "Decompiler analysis of the program", runProvenance(bytes, result.toolVersion));
   const found = idiomsResult();
   // A start inside a dual-use region is a known overlap, for example the second instruction of a BIT skip: one list cannot hold both.
   // Read after the idioms, which write those regions.
@@ -333,7 +333,7 @@ async function analyze(call: Call): Promise<unknown> {
     instructions = { count: list.length, ...writeReported(instructionsPath, `${JSON.stringify(list, null, 1)}\n`, { what: "--out-instructions" }) };
   }
   const body = {
-    analyzer: "ghidra",
+    analyzer: "decompiler",
     ...(result.toolVersion === undefined ? {} : { analyzerVersion: result.toolVersion }),
     ...(space === DEFAULT_SPACE ? {} : { space }),
     ...(instructions === undefined ? {} : { instructions }),
@@ -353,24 +353,24 @@ async function analyze(call: Call): Promise<unknown> {
 
 await runScript({
   name: "static-analysis",
-  summary: "Analyzes the program in the knowledge with DXA or Ghidra, seeded from the knowledge and its coverage, and imports the structural findings into the knowledge.",
+  summary: "Analyzes the program in the knowledge with DXA or the decompiler, seeded from the knowledge and its coverage, and imports the structural findings into the knowledge.",
   names: knowledgeNames,
   commands: [
     {
       name: "analyze",
       summary: "Runs the analyzer over the program in the knowledge and imports what it finds as one revision, then the 6502 idioms as a second one.",
       options: {
-        analyzer: { kind: "choice", value: "<dxa|ghidra>", choices: ["dxa", "ghidra"], default: "ghidra", help: "dxa (a fast first pass) or ghidra (deeper, the default)" },
+        analyzer: { kind: "choice", value: "<dxa|decompiler>", choices: ["dxa", "decompiler"], default: "decompiler", help: "dxa (a fast first pass) or decompiler (deeper, the default)" },
         entry: { ...OPTIONS.entry, multiple: true, help: "an entry point of the program" },
-        decompile: { kind: "address", value: "<address>", multiple: true, help: "ghidra: a routine to decompile, at most 32" },
+        decompile: { kind: "address", value: "<address>", multiple: true, help: "decompiler: a routine to decompile, at most 32" },
         space: OPTIONS.space,
         "max-listed": { ...OPTIONS["max-listed"], help: "list at most n labels, functions or candidates (default 50, 0 for none). The counts are always given, and the knowledge has all labels and functions" },
         "out-listing": { kind: "path", output: "file", value: "<file>", help: "dxa: write the disassembly listing to this project file" },
-        "out-instructions": { kind: "path", output: "file", value: "<file>", help: "ghidra: write every instruction (address, bytes, mnemonic, mode, operand, target, executed) to this project file as JSON" },
+        "out-instructions": { kind: "path", output: "file", value: "<file>", help: "decompiler: write every instruction (address, bytes, mnemonic, mode, operand, target, executed) to this project file as JSON" },
         "apply-macros": { kind: "flag", help: "write the macro candidates (the macros and their uses) to the project knowledge as one revision of the LLM" },
         skip: { kind: "address", value: "<address>", multiple: true, help: "with --apply-macros: the start of a macro candidate that is not correct. The run does not write it" },
       },
-      notes: "The program and the coverage come from the project knowledge: put them into the project knowledge first. The executed code of the coverage gives entry points. Routine symbols in the knowledge are entry points too. Ghidra needs at least one entry point. DXA finds the SYS of a BASIC start by itself.",
+      notes: "The program and the coverage come from the project knowledge: put them into the project knowledge first. The executed code of the coverage gives entry points. Routine symbols in the knowledge are entry points too. The decompiler needs at least one entry point. DXA finds the SYS of a BASIC start by itself.",
       run: analyze,
     },
   ],

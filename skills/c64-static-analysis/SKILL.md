@@ -1,6 +1,6 @@
 ---
 name: c64-static-analysis
-description: Finds the structure of a C64 program with DXA or Ghidra, without running it. It records the code and data regions, the analyzer names and the references in the project knowledge. Use it to get a fast first pass of code and data, and a disassembly listing. Use it to get the routines, the references, an instruction list and decompiled code. Use it when the project knowledge has coverage, to find code that only a vector, a table or an interrupt reaches. Use it to find 6502 idioms, pointer candidates, raster pitfalls and macro candidates. It does not run the program. It does not give names to routines.
+description: Finds the structure of a C64 program with DXA or the decompiler, without running it. It records the code and data regions, the analyzer names and the references in the project knowledge. Use it to get a fast first pass of code and data, and a disassembly listing. Use it to get the routines, the references, an instruction list and decompiled code. Use it when the project knowledge has coverage, to find code that only a vector, a table or an interrupt reaches. Use it to find 6502 idioms, pointer candidates, raster pitfalls and macro candidates. It does not run the program. It does not give names to routines.
 ---
 
 # Static analysis
@@ -43,16 +43,16 @@ To get the command list, run the script with no arguments.
 - An entry point is an address where code starts. Give it with `--entry`. Get it from these sources:
   - The SYS address of a BASIC start. Get it from a listing of the BASIC program.
   - A vector or an interrupt target that you found in the emulator.
-  - An address in `functions` of an earlier Ghidra result.
-- Ghidra needs at least one entry point. DXA finds the SYS address of a BASIC start without help.
+  - An address in `functions` of an earlier decompiler result.
+- The decompiler needs at least one entry point. DXA finds the SYS address of a BASIC start without help.
 - Each routine, each `code` region and each entry of a `jumps` table in the project knowledge is also an entry point. Each name in the project knowledge is a label in the listing and in the decompiled code.
 - The two start vectors of a `CBM80` header at `$8000` are entry points without help.
 - Each region that is not code in the project knowledge stays data. Each `data` or `variable` symbol also keeps its region as data. If the region holds an entry point or executed code, only the byte of the symbol stays data.
 - If an analyzer decodes data as code, classify the region as data in the project knowledge. Then run `analyze` again.
 - The facts of an analyzer are not entry points or data for the next analysis. Thus a new analysis can correct them.
 - With coverage, the analysis keeps as data the RAM under ROM that the runs did not read or execute. A call into the KERNAL thus does not decode the RAM under it. If the program has code there, give its address with `--entry`.
-- Ghidra does not follow BRK. If the program removes the KERNAL and uses the BRK vector, give the target of the vector with `--entry`.
-- `--decompile` takes the address of a routine. Get it from `functions` of an earlier Ghidra result, or from the routines in the project knowledge.
+- The decompiler does not follow BRK. If the program removes the KERNAL and uses the BRK vector, give the target of the vector with `--entry`.
+- `--decompile` takes the address of a routine. Get it from `functions` of an earlier decompiler result, or from the routines in the project knowledge.
 
 ### Paths and the project folder
 
@@ -80,13 +80,13 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 | Flag | Command | Effect |
 |---|---|---|
-| `--analyzer <dxa\|ghidra>` | `analyze` | The analyzer. `dxa` gives a fast first pass. `ghidra` gives a deeper pass. The default is `ghidra`. |
+| `--analyzer <dxa\|decompiler>` | `analyze` | The analyzer. `dxa` gives a fast first pass. `decompiler` gives a deeper pass. The default is `decompiler`. |
 | `--entry <address>` | `analyze` | An entry point of the program. Give it again for more entry points. There is no default. |
-| `--decompile <address>` | `analyze` | Ghidra only. Decompile the routine at this address. Give it again for more routines, at most 32. There is no default. |
+| `--decompile <address>` | `analyze` | Only with `--analyzer decompiler`. Decompile the routine at this address. Give it again for more routines, at most 32. There is no default. |
 | `--space <space>` | `analyze` | The knowledge space of the program: `drive8` for 1541 drive code, or `bank0` to `bank255` for a cartridge bank. The analysis reads the entry points from that space and writes the findings into it. The default is `c64`. |
 | `--max-listed <n>` | `analyze` | List at most `n` items in each list. `0` lists no items. The counts stay complete. The default is 50. |
 | `--out-listing <file>` | `analyze` | DXA only. Write the disassembly listing to this project file. There is no default. |
-| `--out-instructions <file>` | `analyze` | Ghidra only. Write each instruction to this project file as JSON. There is no default. |
+| `--out-instructions <file>` | `analyze` | Only with `--analyzer decompiler`. Write each instruction to this project file as JSON. There is no default. |
 | `--apply-macros` | `analyze` | Write the macro candidates and their macros to the project knowledge as one revision of the LLM. Off by default. |
 | `--skip <address>` | `analyze` | With `--apply-macros`: the start of a macro candidate that is not correct. The run does not write it. Give one `--skip` for each such candidate. |
 
@@ -96,13 +96,13 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 ### `analyze`
 
-Runs DXA or Ghidra over the program in the project knowledge. The script records the findings in the project knowledge as one revision. Then it records the 6502 idioms as a second revision. When the findings do not change the knowledge, the script records no revision for them.
+Runs DXA or the decompiler over the program in the project knowledge. The script records the findings in the project knowledge as one revision. Then it records the 6502 idioms as a second revision. When the findings do not change the knowledge, the script records no revision for them.
 
-The script records only structure: code and data regions, analyzer names, and the references from Ghidra. It does not record the listing or the decompiled code. Do not record the listing, the decompiled code or the function list as comments in the project knowledge.
+The script records only structure: code and data regions, analyzer names, and the references from the decompiler. It does not record the listing or the decompiled code. Do not record the listing, the decompiled code or the function list as comments in the project knowledge.
 
 `body` holds these fields for both analyzers:
 
-- `analyzer`: `dxa` or `ghidra`. `analyzerVersion` gives the version of the analyzer when the analyzer tells it. `space` is in `body` only for a space that is not `c64`.
+- `analyzer`: `dxa` or `decompiler`. `analyzerVersion` gives the version of the analyzer when the analyzer tells it. `space` is in `body` only for a space that is not `c64`.
 - `revision`: the revision of the findings, or `null` when the knowledge did not change.
 - `coverage`: the ranges that the analyzer examined.
 - `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `references.inData` counts the references that the script did not record, because they start in a data region of the user, the LLM or a heuristic. The analyzer decoded these data bytes as code. `symbols.retired` counts the old symbols of the analyzer that became analyzer names.
@@ -117,13 +117,13 @@ DXA also gives:
 - `labels`: the names that DXA found, as a list.
 - `listing`: the listing file, with `--out-listing`.
 
-Ghidra also gives:
+The decompiler also gives:
 
-- `functions`: the routines that Ghidra found, as a list, each with `entry` and `name`.
+- `functions`: the routines that the decompiler found, as a list, each with `entry` and `name`.
 - `decompilations`: the C-like code of each `--decompile` routine, with `entry` and `text`. `truncated` tells that the text is cut.
-- `notDecompiled`: the routines that Ghidra did not decompile, each with a `reason`.
+- `notDecompiled`: the routines that the decompiler did not decompile, each with a `reason`.
 - `instructions`: the file and the `count`, with `--out-instructions`. Each instruction has `address`, `bytes`, `mnemonic`, `mode` and `operand` in 6502 syntax. A branch, a jump or a call also has `target`. With coverage, `executed` tells if the instruction ran.
-- `coverageGaps`: only with coverage. The executed instruction starts that are not in the instructions of Ghidra.
+- `coverageGaps`: only with coverage. The executed instruction starts that are not in the instructions of the decompiler.
 
 The `hint` gives each of these cases:
 
@@ -148,14 +148,14 @@ The script does not record the candidates. Examine each candidate and decide.
 #### Which facts the analysis replaces
 
 - The analysis never replaces a name or a region of the user or the LLM. Each disagreement shows in `conflicts`.
-- DXA and Ghidra do not replace the facts of each other, with one exception. With coverage, a code finding replaces DXA or Ghidra data where a run executed an instruction start. Thus put all coverage maps into the project knowledge first. Then run DXA, then Ghidra.
+- DXA and the decompiler do not replace the facts of each other, with one exception. With coverage, a code finding replaces DXA or decompiler data where a run executed an instruction start. Thus put all coverage maps into the project knowledge first. Then run DXA, then the decompiler.
 - An analyzer can find data where a run executed an instruction start, or at a `label` or `routine` symbol of the user or the LLM. Then the script does not record that data region, and the earlier region stays. The conflict has `executed` or `knowledge`.
-- An idiom region (origin `heuristic`) replaces the part of a DXA or Ghidra region where it lies. DXA and Ghidra never replace an idiom region. If they find code there, the result shows a conflict.
+- An idiom region (origin `heuristic`) replaces the part of a DXA or decompiler region where it lies. DXA and the decompiler never replace an idiom region. If they find code there, the result shows a conflict.
 - An idiom table can be too long or too short. Correct its region in the project knowledge. Your region replaces it.
 - A new analysis replaces the earlier facts of the same analyzer in its `coverage`, also its analyzer names. The history keeps the earlier facts.
 - A fact that the user or the LLM removed does not come back. To remove a wrong fact, remove it in the project knowledge.
 - An analyzer name is a second name of the address, not a symbol. Each analyzer keeps its own name at an address. The generated source does not use an analyzer name by default. To use a name in the source, give the address a name in the project knowledge.
-- A Ghidra function that only branches and jumps reach is a `label`, not a `routine`.
+- A decompiler function that only branches and jumps reach is a `label`, not a `routine`.
 
 #### Traps
 
@@ -172,7 +172,7 @@ The script does not record the candidates. Examine each candidate and decide.
 
 #### Failures
 
-- `invalid-input` about an entry point: Ghidra has no entry point in the program. Give one with `--entry`.
+- `invalid-input` about an entry point: the decompiler has no entry point in the program. Give one with `--entry`.
 - `stale-revision`: the project knowledge changed during the analysis. The script recorded nothing. Run `analyze` again.
 - `operation-failed` about an incomplete result or listing: the analyzer did not give a complete result. The script recorded nothing. Tell the user.
 - The script did not write the listing: the error tells if the project knowledge has the findings. Correct `--out-listing` and run `analyze` again.
@@ -185,7 +185,7 @@ The script does not record the candidates. Examine each candidate and decide.
 2. Put each coverage map of the program into the project knowledge.
 3. Run `analyze --analyzer dxa` for a first pass. Read the listing for a quick view of the code.
 4. Find the important routines. Give them names in the project knowledge.
-5. Run `analyze` with Ghidra. Give the entry points with `--entry`. Give `--decompile` for the routines that you must understand.
+5. Run `analyze` with the decompiler. Give the entry points with `--entry`. Give `--decompile` for the routines that you must understand.
 6. Do the action for each `hint`. Examine the candidates.
 7. Give each important routine a name in the project knowledge. Then run `analyze` again. The analyzers use the new names.
 

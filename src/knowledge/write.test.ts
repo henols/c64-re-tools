@@ -121,7 +121,7 @@ test("a stale expected revision is refused", () => {
 
 test("only the user and the LLM write semantic knowledge", () => {
   const db = fresh();
-  assert.throws(() => renameSymbol(db, { origin: "ghidra" } as unknown as WriteContext, { address: 1, name: "x" }), failsWith("invalid-input"));
+  assert.throws(() => renameSymbol(db, { origin: "decompiler" } as unknown as WriteContext, { address: 1, name: "x" }), failsWith("invalid-input"));
   assert.throws(() => renameSymbol(db, llm, { address: 1, name: "bad name" }), failsWith("invalid-input"));
   assert.throws(() => renameSymbol(db, llm, { address: 0x10000, name: "x" }), failsWith("invalid-input"));
   assert.equal(currentRevision(db), "0");
@@ -340,7 +340,7 @@ test("lists keep only the origins asked for", () => {
   renameSymbol(db, llm, { address: 0x2100, name: "update_player" });
   renameSymbol(db, { origin: "user" }, { address: 0x2200, name: "draw_room" });
   assert.deepEqual(listSymbols(db, undefined, undefined, ["user"]).map((row) => row.name), ["draw_room"]);
-  assert.deepEqual(listSymbols(db, undefined, undefined, ["dxa", "ghidra"]), []);
+  assert.deepEqual(listSymbols(db, undefined, undefined, ["dxa", "decompiler"]), []);
   assert.equal(listSymbols(db).length, 2);
 });
 
@@ -768,17 +768,17 @@ test("a batch writes a macro and its uses in one revision, and a revert restores
 });
 
 /** Rows of an analyzer, as an import of it writes them: one revision of `origin`. */
-function analyzerRows(db: DatabaseSync, origin: "dxa" | "ghidra", work: (change: Change) => void): void {
+function analyzerRows(db: DatabaseSync, origin: "dxa" | "decompiler", work: (change: Change) => void): void {
   transaction(db, () => work(new Change(db, { origin }, "import")));
 }
 
 test("a user or LLM write that confirms a row of an analyzer makes it a row of the writer, with the analyzer row as previous", () => {
   const db = fresh();
   const user: WriteContext = { origin: "user" };
-  analyzerRows(db, "ghidra", (change) => {
-    change.insertReference({ space: "c64", from: 0x1bc9, to: 0x0104, kind: "read", origin: "ghidra" });
-    change.insertSymbol({ space: "c64", address: 0x1bc2, name: "main_loop", kind: "label", origin: "ghidra" });
-    change.insertComment({ space: "c64", address: 0x1bc2, placement: "side", text: "the loop", origin: "ghidra" });
+  analyzerRows(db, "decompiler", (change) => {
+    change.insertReference({ space: "c64", from: 0x1bc9, to: 0x0104, kind: "read", origin: "decompiler" });
+    change.insertSymbol({ space: "c64", address: 0x1bc2, name: "main_loop", kind: "label", origin: "decompiler" });
+    change.insertComment({ space: "c64", address: 0x1bc2, placement: "side", text: "the loop", origin: "decompiler" });
   });
   analyzerRows(db, "dxa", (change) => change.insertRegion({ space: "c64", start: 0x1bc2, end: 0x1bff, type: "code", origin: "dxa" }));
   const before = currentRevision(db);
@@ -786,13 +786,13 @@ test("a user or LLM write that confirms a row of an analyzer makes it a row of t
   const reference = addReference(db, user, { from: 0x1bc9, to: 0x0104, kind: "read" });
   assert.notEqual(reference.revision, null);
   assert.equal(reference.current.origin, "user");
-  assert.equal(reference.previous?.origin, "ghidra");
+  assert.equal(reference.previous?.origin, "decompiler");
   assert.deepEqual(referencesFrom(db, 0x1bc9).map((row) => row.origin), ["user"], "one reference, of the user");
 
   const named = renameSymbol(db, llm, { address: 0x1bc2, name: "main_loop", kind: "label" });
-  assert.deepEqual([named.current.origin, named.previous?.origin], ["llm", "ghidra"]);
+  assert.deepEqual([named.current.origin, named.previous?.origin], ["llm", "decompiler"]);
   const commented = setComment(db, llm, { address: 0x1bc2, placement: "side", text: "the loop" });
-  assert.deepEqual([commented.current.origin, commented.previous?.origin], ["llm", "ghidra"]);
+  assert.deepEqual([commented.current.origin, commented.previous?.origin], ["llm", "decompiler"]);
   const classified = classifyRegion(db, llm, { start: 0x1bc2, end: 0x1bff, type: "code" });
   assert.deepEqual([classified.current.map((row) => row.origin), classified.previous?.map((row) => row.origin)], [["llm"], ["dxa"]]);
   assert.notEqual(currentRevision(db), before);

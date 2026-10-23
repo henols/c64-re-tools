@@ -1,4 +1,4 @@
-// The c64-re-tools NMOS 6510 Ghidra language:
+// The c64-re-tools NMOS 6510 SLEIGH language:
 // it decodes all 105 undocumented opcodes with the right lengths, executes
 // the deterministic ones correctly in p-code (decimal mode included), keeps
 // the unstable ones opaque and stops flow at JAM.

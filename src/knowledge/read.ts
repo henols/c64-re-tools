@@ -451,7 +451,7 @@ export function symbolNamed(db: DatabaseSync | undefined, name: string, space: S
   return row === undefined ? undefined : toSymbol(row);
 }
 
-/** The analyzer names at an address: one for each analyzer, in the order heuristic, Ghidra, DXA. */
+/** The analyzer names at an address: one for each analyzer, in the order heuristic, decompiler, DXA. */
 export function analyzerNamesAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): SymbolRow[] {
   if (db === undefined) return [];
   return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND address = ?`).all(space, address) as Raw[]).map(toSymbol).sort(byAnalyzer);
@@ -464,10 +464,10 @@ export function analyzerNamed(db: DatabaseSync | undefined, name: string, space:
 }
 
 /** The analyzers in the order that their names are used when no other name exists. */
-export const ANALYZER_NAME_ORDER: readonly Origin[] = ["heuristic", "ghidra", "dxa"];
+export const ANALYZER_NAME_ORDER: readonly Origin[] = ["heuristic", "decompiler", "dxa"];
 const byAnalyzer = (a: SymbolRow, b: SymbolRow) => a.address - b.address || ANALYZER_NAME_ORDER.indexOf(a.origin) - ANALYZER_NAME_ORDER.indexOf(b.origin);
 
-/** Current analyzer names in a range, in address order and then heuristic, Ghidra, DXA. */
+/** Current analyzer names in a range, in address order and then heuristic, decompiler, DXA. */
 export function listAnalyzerNames(db: DatabaseSync | undefined, range: AddressRange = ALL, kind?: SymbolKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): SymbolRow[] {
   if (db === undefined) return [];
   return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND address BETWEEN ? AND ?`).all(space, range.start, range.end) as Raw[])

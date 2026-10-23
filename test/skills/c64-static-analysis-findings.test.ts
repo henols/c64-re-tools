@@ -1,5 +1,5 @@
-// Seeds from knowledge and the Ghidra → normalized findings mapping of the
-// c64-static-analysis script. No Ghidra needed.
+// Seeds from knowledge and decompiler → normalized findings mapping of the
+// c64-static-analysis script. No analyzer runs.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
-import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "../../skills/c64-static-analysis/scripts/lib/findings.ts";
+import { dxaFindings, decompilerFindings, seedsFromKnowledge } from "../../skills/c64-static-analysis/scripts/lib/findings.ts";
 
 const root = mkdtempSync(join(tmpdir(), "c64-re-tools-findings-"));
 const db = openForWrite(root);
@@ -26,7 +26,7 @@ test("seeds come from current semantic knowledge only: routines, non-code region
   classifyRegion(db, { origin: "llm" }, { start: 0x4000, end: 0x403f, type: "sprite" });
   classifyRegion(db, { origin: "llm" }, { start: 0x2100, end: 0x21ff, type: "code" });
   importFindings(db, {
-    analyzer: "ghidra",
+    analyzer: "decompiler",
     coverage: [{ start: 0x2200, end: 0x22ff }],
     authoritative: { symbols: true, regions: true, references: true },
     symbols: [{ address: 0x2200, name: "FUN_2200", kind: "routine" }],
@@ -41,7 +41,7 @@ test("seeds come from current semantic knowledge only: routines, non-code region
     regions: [{ start: 0x5000, end: 0x50ff, type: "bytes" }],
     references: [],
   });
-  // Ghidra's FUN_2200 and DXA's data region are no seeds: a re-analysis must be free to drop them.
+  // The decompiler's FUN_2200 and DXA's data region are no seeds: a re-analysis must be free to drop them.
   // The variable player_x is data: its own byte, as no region holds it.
   assert.deepEqual(seedsFromKnowledge(db, [0x080d, 0x2100]), {
     entryPoints: [0x080d, 0x2100],
@@ -88,7 +88,7 @@ test("a data or variable symbol of the user or the LLM makes its non-code region
 });
 
 test("functions become routine symbols, code is code and data is bytes", () => {
-  const findings = ghidraFindings({
+  const findings = decompilerFindings({
     coverage: [{ start: 0x0801, end: 0x0827 }],
     functions: [
       { entry: 0x080d, name: "FUN_080d", nameSource: "generated" },
@@ -105,7 +105,7 @@ test("functions become routine symbols, code is code and data is bytes", () => {
     completeness: { functions: true, regions: true, references: false },
   });
   assert.deepEqual(findings, {
-    analyzer: "ghidra",
+    analyzer: "decompiler",
     coverage: [{ start: 0x0801, end: 0x0827 }],
     authoritative: { symbols: true, regions: true, references: false },
     symbols: [
@@ -121,8 +121,8 @@ test("functions become routine symbols, code is code and data is bytes", () => {
   });
 });
 
-test("a generated name that Ghidra gives to two functions gets each function's address", () => {
-  const findings = ghidraFindings({
+test("a generated name that the decompiler gives to two functions gets each function's address", () => {
+  const findings = decompilerFindings({
     coverage: [{ start: 0x0000, end: 0xffff }],
     functions: [
       { entry: 0x0812, name: "thunk_FUN_e434", nameSource: "generated" },
@@ -142,7 +142,7 @@ test("a generated name that Ghidra gives to two functions gets each function's a
 });
 
 test("a (zp),y or (zp,x) instruction keeps only its reference to the pointer, never a computed target", () => {
-  const findings = ghidraFindings({
+  const findings = decompilerFindings({
     coverage: [{ start: 0x26ce, end: 0x26d9 }],
     functions: [],
     regions: [],
@@ -184,7 +184,7 @@ test("an echoed seed stays with its semantic owner, and a code/data disagreement
     renameSymbol(own, { origin: "user" }, { address: 0x080d, name: "main", kind: "variable" });
     const result = importFindings(
       own,
-      ghidraFindings({
+      decompilerFindings({
         coverage: [{ start: 0x0801, end: 0x0827 }],
         functions: [
           { entry: 0x080d, name: "main", nameSource: "seed" },

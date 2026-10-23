@@ -268,10 +268,10 @@ function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindi
   }
 }
 
-/** Analyzers whose regions a heuristic finding replaces where it lies: user/LLM > heuristic > DXA/Ghidra. */
-const YIELDS_TO_HEURISTIC = new Set<Origin>(["dxa", "ghidra"]);
+/** Analyzers whose regions a heuristic finding replaces where it lies: user/LLM > heuristic > DXA/decompiler. */
+const YIELDS_TO_HEURISTIC = new Set<Origin>(["dxa", "decompiler"]);
 /** Analyzers whose data gives way to a code finding over an executed instruction start. */
-const YIELDS_TO_EXECUTED_CODE = new Set<Origin>(["dxa", "ghidra"]);
+const YIELDS_TO_EXECUTED_CODE = new Set<Origin>(["dxa", "decompiler"]);
 
 /** The first address in the range that is an executed instruction start, or undefined. */
 function firstExecuted(findings: NormalizedFindings, start: number, end: number): number | undefined {
@@ -286,7 +286,7 @@ function holdsExecuted(findings: NormalizedFindings, start: number, end: number)
 }
 
 /**
- * The data findings of DXA or Ghidra that code evidence contradicts: an
+ * The data findings of DXA or the decompiler that code evidence contradicts: an
  * executed instruction start, or a code name (label or routine) of the user or
  * the LLM, in the range. Evidence wins over an analyzer guess: such a finding
  * is not imported, and the analyzer's own code there stays.
@@ -321,7 +321,7 @@ function importRegions(db: DatabaseSync, change: Change, given: NormalizedFindin
   result.conflicts.push(...contradicted);
   const findings = { ...given, regions: given.regions.filter((region) => !contradicted.some((item) => item.start === region.start && item.end === region.end)) };
   if (analyzer === "heuristic") {
-    // An idiom is specific evidence about its bytes: the DXA or Ghidra region there gives way, its parts outside stay.
+    // An idiom is specific evidence about its bytes: the DXA or decompiler region there gives way, its parts outside stay.
     for (const region of findings.regions) {
       for (const row of regionsOverlapping(db, region.start, region.end, space).filter((candidate) => YIELDS_TO_HEURISTIC.has(candidate.origin))) {
         change.close("regions", "space = ? AND start_address = ? AND end_address = ? AND origin = ?", space, row.start, row.end, row.origin);

@@ -1,6 +1,6 @@
 // The c64-docs scripts, run as the LLM runs them: a small project with
 // knowledge, a PRG, and a source with its source map written by hand, so the
-// tests need neither ACME nor Ghidra.
+// tests need neither ACME nor the decompiler.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

@@ -1,5 +1,5 @@
 // Types of the native tools that skill scripts run directly (ACME, DXA,
-// Ghidra), and the checks of their complete results. The skill script runs
+// the decompiler), and the checks of their complete results. The skill script runs
 // these tools itself: nothing here crosses the Host Runtime wire. Bytes
 // (a program, an image, a listing) go next to these values as attachments.
 
@@ -43,14 +43,14 @@ export interface AcmeResult {
 export const IMAGE_KINDS = ["prg", "flat64k"] as const;
 export type ImageKind = (typeof IMAGE_KINDS)[number];
 
-export const GHIDRA_LIMITS = { entryPoints: 1024, codeStarts: 8192, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
+export const DECOMPILER_LIMITS = { entryPoints: 1024, codeStarts: 8192, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
 
-/** The Ghidra analysis. Its image is given next to these fields: a PRG, or 64 KiB from $0000. */
-export interface GhidraParams {
+/** The analysis. Its image is given next to these fields: a PRG, or 64 KiB from $0000. */
+export interface DecompilerParams {
   imageKind: ImageKind;
   /** Seeds from current knowledge. */
   entryPoints: number[];
-  /** Executed instruction starts that Ghidra disassembles without making a function: a branch target is no routine. */
+  /** Executed instruction starts that the decompiler disassembles without making a function: a branch target is no routine. */
   codeStarts?: number[];
   dataRanges: Array<{ start: number; end: number }>;
   labels: Array<{ address: number; name: string }>;
@@ -58,7 +58,7 @@ export interface GhidraParams {
   decompile: number[];
 }
 
-export interface GhidraInstruction {
+export interface DecompilerInstruction {
   address: number;
   /** Lowercase hex, 1 to 3 bytes. */
   bytes: string;
@@ -69,7 +69,7 @@ export interface GhidraInstruction {
   flows: number[];
 }
 
-export interface GhidraResult {
+export interface DecompilerResult {
   coverage: Array<{ start: number; end: number }>;
   functions: Array<{ entry: number; name: string; nameSource: "seed" | "generated" | "native" }>;
   regions: Array<{ start: number; end: number; classification: "code" | "data" }>;
@@ -77,30 +77,30 @@ export interface GhidraResult {
   decompilations: Array<{ entry: number; text: string; truncated: boolean }>;
   /** Requested routines without decompiled code, with the decompiler's reason. */
   notDecompiled?: Array<{ entry: number; reason: string }>;
-  /** Every instruction in the coverage, as Ghidra decoded it. */
-  instructions: GhidraInstruction[];
+  /** Every instruction in the coverage, as the decompiler decoded it. */
+  instructions: DecompilerInstruction[];
   /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { functions: boolean; regions: boolean; references: boolean };
   /** The version of the Ghidra port that made the result, for example "ghidra-decompiler 2.1.0". */
   toolVersion?: string;
 }
 
-/** Refuses a DXA or Ghidra request with more seeds or decompilations than the request bounds allow, by name. */
+/** Refuses a DXA or decompiler request with more seeds or decompilations than the request bounds allow, by name. */
 export function checkRequestBounds(params: DxaParams & { decompile?: number[]; codeStarts?: number[] }): void {
   const bounds = [
-    ["entry points", params.entryPoints.length, GHIDRA_LIMITS.entryPoints],
-    ["code starts", params.codeStarts?.length ?? 0, GHIDRA_LIMITS.codeStarts],
-    ["data ranges", params.dataRanges.length, GHIDRA_LIMITS.dataRanges],
-    ["labels", params.labels.length, GHIDRA_LIMITS.labels],
-    ["routines to decompile", params.decompile?.length ?? 0, GHIDRA_LIMITS.decompile],
+    ["entry points", params.entryPoints.length, DECOMPILER_LIMITS.entryPoints],
+    ["code starts", params.codeStarts?.length ?? 0, DECOMPILER_LIMITS.codeStarts],
+    ["data ranges", params.dataRanges.length, DECOMPILER_LIMITS.dataRanges],
+    ["labels", params.labels.length, DECOMPILER_LIMITS.labels],
+    ["routines to decompile", params.decompile?.length ?? 0, DECOMPILER_LIMITS.decompile],
   ] as const;
   for (const [name, count, limit] of bounds) {
     if (count > limit) throw new WireFailure("invalid-input", `The request has ${count} ${name}. Give at most ${limit} ${name}.`);
   }
 }
 
-/** The DXA analysis: the same image and seeds as Ghidra, without decompilation. */
-export type DxaParams = Omit<GhidraParams, "decompile" | "codeStarts">;
+/** The DXA analysis: the same image and seeds as the decompiler, without decompilation. */
+export type DxaParams = Omit<DecompilerParams, "decompile" | "codeStarts">;
 
 export interface DxaResult {
   coverage: Array<{ start: number; end: number }>;
@@ -129,11 +129,11 @@ function fail(message: string): never {
 const isList = (value: unknown): value is unknown[] => Array.isArray(value);
 
 /**
- * Checks a complete Ghidra result: every field typed and in range, every
+ * Checks a complete decompiler result: every field typed and in range, every
  * function, region and reference source inside the coverage, regions sorted
  * and without overlap. Throws an Error naming the first problem.
  */
-export function checkGhidraResult(value: unknown): GhidraResult {
+export function checkDecompilerResult(value: unknown): DecompilerResult {
   if (!isObject(value)) fail("not an object");
   const { coverage, functions, regions, references, decompilations, notDecompiled, completeness, toolVersion, instructions } = value;
   if (!isList(coverage) || coverage.length === 0) fail("no coverage");
@@ -179,16 +179,16 @@ export function checkGhidraResult(value: unknown): GhidraResult {
     if (!isObject(reference) || !isInteger(reference.from, 0, 0xffff) || !isInteger(reference.to, 0, 0xffff) || !isOneOf(REFERENCE_KINDS, reference.type)) fail("bad reference");
     if (!covered(reference.from)) fail("a reference source lies outside the coverage");
   }
-  if (!isList(decompilations) || decompilations.length > GHIDRA_LIMITS.decompile) fail("bad decompilations");
+  if (!isList(decompilations) || decompilations.length > DECOMPILER_LIMITS.decompile) fail("bad decompilations");
   let total = 0;
   for (const item of decompilations) {
     if (!isObject(item) || !isInteger(item.entry, 0, 0xffff) || typeof item.text !== "string" || typeof item.truncated !== "boolean") fail("bad decompilation");
-    if (item.text.length > GHIDRA_LIMITS.decompiledChars) fail("a decompilation is too long");
+    if (item.text.length > DECOMPILER_LIMITS.decompiledChars) fail("a decompilation is too long");
     total += item.text.length;
   }
-  if (total > GHIDRA_LIMITS.decompiledTotalChars) fail("the decompilations are too long together");
+  if (total > DECOMPILER_LIMITS.decompiledTotalChars) fail("the decompilations are too long together");
   if (notDecompiled !== undefined) {
-    if (!isList(notDecompiled) || notDecompiled.length > GHIDRA_LIMITS.decompile) fail("bad list of routines that were not decompiled");
+    if (!isList(notDecompiled) || notDecompiled.length > DECOMPILER_LIMITS.decompile) fail("bad list of routines that were not decompiled");
     for (const item of notDecompiled) {
       if (!isObject(item) || !isInteger(item.entry, 0, 0xffff) || typeof item.reason !== "string" || item.reason.length > 1000) fail("bad routine that was not decompiled");
     }
@@ -196,7 +196,7 @@ export function checkGhidraResult(value: unknown): GhidraResult {
   if (!isObject(completeness) || typeof completeness.functions !== "boolean" || typeof completeness.regions !== "boolean" || typeof completeness.references !== "boolean") fail("no completeness");
   if (!isToolVersion(toolVersion)) fail("bad tool version");
   // Every field is checked: the object is the result as it is.
-  return value as unknown as GhidraResult;
+  return value as unknown as DecompilerResult;
 }
 
 /**
@@ -249,7 +249,7 @@ export function imageRange(kind: ImageKind, image: Uint8Array): { start: number;
  * it, and the data ranges cut to it. A data range that holds an entry point
  * is left out, so that the entry point is disassembled.
  */
-export function seedsInside(params: Pick<GhidraParams, "entryPoints" | "dataRanges" | "codeStarts">, start: number, end: number): { entryPoints: number[]; codeStarts: number[]; dataRanges: GhidraParams["dataRanges"] } {
+export function seedsInside(params: Pick<DecompilerParams, "entryPoints" | "dataRanges" | "codeStarts">, start: number, end: number): { entryPoints: number[]; codeStarts: number[]; dataRanges: DecompilerParams["dataRanges"] } {
   const inside = (address: number) => address >= start && address <= end;
   const entryPoints = params.entryPoints.filter(inside);
   const codeStarts = (params.codeStarts ?? []).filter(inside);

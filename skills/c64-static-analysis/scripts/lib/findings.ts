@@ -1,4 +1,4 @@
-// Knowledge seeds for an analyzer, and the mapping of a Ghidra result to the
+// Knowledge seeds for an analyzer, and the mapping of a decompiler result to the
 // common normalized findings.
 
 import type { DatabaseSync } from "node:sqlite";
@@ -6,9 +6,9 @@ import type { DatabaseSync } from "node:sqlite";
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
 import { listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, type Space } from "#src/knowledge/schema.ts";
-import type { DxaResult, GhidraParams, GhidraResult } from "#src/native/types.ts";
+import type { DxaResult, DecompilerParams, DecompilerResult } from "#src/native/types.ts";
 
-export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
+export type Seeds = Pick<DecompilerParams, "entryPoints" | "dataRanges" | "labels">;
 
 const semantic = (row: { origin: string }) => isSemantic(row.origin);
 
@@ -49,12 +49,12 @@ export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoint
 
 /**
  * The 6510 opcodes with a low nibble of 1 or 3 use (zp,x) or (zp),y, also the
- * undocumented ones. Ghidra gives such an instruction a reference to the target
+ * undocumented ones. The decompiler gives such an instruction a reference to the target
  * that it computes from the pointer value at the entry state: a guess, because
  * the program sets the pointer at run time. Only the reference to the pointer
  * itself (zp or zp+1) is a fact.
  */
-function guessedIndirectTarget(instructions: GhidraResult["instructions"]): (reference: { from: number; to: number }) => boolean {
+function guessedIndirectTarget(instructions: DecompilerResult["instructions"]): (reference: { from: number; to: number }) => boolean {
   const pointers = new Map<number, number>();
   for (const instruction of instructions) {
     const opcode = Number.parseInt(instruction.bytes.slice(0, 2), 16);
@@ -67,28 +67,28 @@ function guessedIndirectTarget(instructions: GhidraResult["instructions"]): (ref
 }
 
 /**
- * Ghidra's result as normalized findings. A reference from a (zp,x) or (zp),y
+ * The decompiler's result as normalized findings. A reference from a (zp,x) or (zp),y
  * instruction to a computed target is not a finding (see guessedIndirectTarget).
  * A function named by an echoed seed
  * stays in the snapshot: its address holds the seed's semantic symbol, which
  * the importer never replaces, so the name keeps its owner,
  * and a code/data disagreement with that symbol is still reported.
  */
-export function ghidraFindings(result: GhidraResult): NormalizedFindings {
-  // Ghidra can give one generated name to two functions, for example
+export function decompilerFindings(result: DecompilerResult): NormalizedFindings {
+  // The decompiler can give one generated name to two functions, for example
   // thunk_FUN_e434 to two thunks of one routine. A name
   // must have one address, so a repeated name that is not a seed gets its address.
   const uses = new Map<string, number>();
   for (const fn of result.functions) uses.set(fn.name, (uses.get(fn.name) ?? 0) + 1);
-  const nameOf = (fn: GhidraResult["functions"][number]) =>
+  const nameOf = (fn: DecompilerResult["functions"][number]) =>
     fn.nameSource !== "seed" && uses.get(fn.name)! > 1 ? `${fn.name}_${fn.entry.toString(16).padStart(4, "0")}` : fn.name;
   // A function that branches and jumps reach, and no call, is a place in a routine: a label.
   const called = new Set(result.references.filter((reference) => reference.type === "call").map((reference) => reference.to));
   const jumped = new Set(result.references.filter((reference) => reference.type === "jump").map((reference) => reference.to));
   const guessed = guessedIndirectTarget(result.instructions);
-  const kindOf = (fn: GhidraResult["functions"][number]) => (jumped.has(fn.entry) && !called.has(fn.entry) ? ("label" as const) : ("routine" as const));
+  const kindOf = (fn: DecompilerResult["functions"][number]) => (jumped.has(fn.entry) && !called.has(fn.entry) ? ("label" as const) : ("routine" as const));
   return {
-    analyzer: "ghidra",
+    analyzer: "decompiler",
     coverage: result.coverage,
     authoritative: { symbols: result.completeness.functions, regions: result.completeness.regions, references: result.completeness.references },
     symbols: result.functions.map((fn) => ({ address: fn.entry, name: nameOf(fn), kind: kindOf(fn) })),

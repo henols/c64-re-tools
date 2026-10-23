@@ -50,7 +50,7 @@ test("a re-analysis closes the analyzer's own name that it no longer finds; anal
   const db = fresh();
   const first = importFindings(
     db,
-    findings("ghidra", 0x2000, 0x22ff, {
+    findings("decompiler", 0x2000, 0x22ff, {
       symbols: [
         { address: 0x2100, name: "FUN_2100", kind: "routine" },
         { address: 0x2200, name: "FUN_2200", kind: "routine" },
@@ -62,9 +62,9 @@ test("a re-analysis closes the analyzer's own name that it no longer finds; anal
   assert.equal(first.names.added, 2);
   assert.deepEqual(listSymbols(db), [], "no analyzer name is a symbol");
   const stored = db.prepare(`SELECT origin, operation, tool_version FROM revisions WHERE id = '${nth(db, 1)}'`).get();
-  assert.deepEqual({ ...stored }, { origin: "ghidra", operation: "import-ghidra", tool_version: "test 1" });
+  assert.deepEqual({ ...stored }, { origin: "decompiler", operation: "import-decompiler", tool_version: "test 1" });
 
-  const second = importFindings(db, findings("ghidra", 0x2000, 0x22ff, { symbols: [{ address: 0x2100, name: "FUN_2100", kind: "routine" }] }));
+  const second = importFindings(db, findings("decompiler", 0x2000, 0x22ff, { symbols: [{ address: 0x2100, name: "FUN_2100", kind: "routine" }] }));
   assert.equal(second.revision, nth(db, 2));
   assert.deepEqual(second.names, { added: 0, changed: 0, retired: 1, unchanged: 1, suppressed: 0 });
   assert.deepEqual(analyzerNamesAt(db, 0x2200), []);
@@ -90,7 +90,7 @@ test("stale references inside the coverage retire; references from outside stay"
   const db = fresh();
   importFindings(
     db,
-    findings("ghidra", 0x2100, 0x23ff, {
+    findings("decompiler", 0x2100, 0x23ff, {
       references: [
         { from: 0x2110, to: 0x3000, kind: "read" },
         { from: 0x2120, to: 0x4000, kind: "call" },
@@ -98,7 +98,7 @@ test("stale references inside the coverage retire; references from outside stay"
       ],
     }),
   );
-  const result = importFindings(db, findings("ghidra", 0x2100, 0x21ff, { references: [{ from: 0x2110, to: 0x3000, kind: "read" }] }));
+  const result = importFindings(db, findings("decompiler", 0x2100, 0x21ff, { references: [{ from: 0x2110, to: 0x3000, kind: "read" }] }));
   assert.deepEqual(result.references, { added: 0, changed: 0, retired: 1, unchanged: 1, suppressed: 0, inData: 0 });
   assert.deepEqual(
     listReferences(db).map((reference) => [reference.from, reference.to, reference.kind]),
@@ -131,7 +131,7 @@ test("a targeted region re-analysis keeps the parts outside its coverage", () =>
 test("semantic knowledge is kept; only a code/data disagreement is a conflict; a reference from data is false code", () => {
   const db = fresh();
   // An earlier run decoded the bytes at $5810 as code.
-  importFindings(db, findings("ghidra", 0x2000, 0x5fff, { references: [{ from: 0x5810, to: 0xc84c, kind: "read" }] }));
+  importFindings(db, findings("decompiler", 0x2000, 0x5fff, { references: [{ from: 0x5810, to: 0xc84c, kind: "read" }] }));
   importFindings(db, findings("heuristic", 0x5800, 0x58ff, { regions: [{ start: 0x5800, end: 0x58ff, type: "bytes" }] }));
   classifyRegion(db, { origin: "user" }, { start: 0x5900, end: 0x59ff, type: "dual-use" });
   renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "update_player", kind: "routine" });
@@ -140,7 +140,7 @@ test("semantic knowledge is kept; only a code/data disagreement is a conflict; a
   classifyRegion(db, { origin: "user" }, { start: 0x5000, end: 0x50ff, type: "bitmap" });
   const result = importFindings(
     db,
-    findings("ghidra", 0x2000, 0x5fff, {
+    findings("decompiler", 0x2000, 0x5fff, {
       symbols: [
         { address: 0x2100, name: "FUN_2100", kind: "routine" },
         { address: 0x3000, name: "FUN_3000", kind: "routine" },
@@ -161,8 +161,8 @@ test("semantic knowledge is kept; only a code/data disagreement is a conflict; a
   assert.deepEqual(
     listReferences(db).map((reference) => [reference.from, reference.to, reference.origin]),
     [
-      [0x2100, 0x3000, "ghidra"],
-      [0x5910, 0x4000, "ghidra"],
+      [0x2100, 0x3000, "decompiler"],
+      [0x5910, 0x4000, "decompiler"],
     ],
     "the references from the user bitmap and the heuristic bytes are not imported; code and dual-use bytes keep theirs",
   );
@@ -177,7 +177,7 @@ test("semantic knowledge is kept; only a code/data disagreement is a conflict; a
   );
   assert.deepEqual(regionList(db), [
     [0x4000, 0x403f, "sprite", "llm"],
-    [0x4040, 0x40ff, "bytes", "ghidra"],
+    [0x4040, 0x40ff, "bytes", "decompiler"],
     [0x5000, 0x50ff, "bitmap", "user"],
     [0x5800, 0x58ff, "bytes", "heuristic"],
     [0x5900, 0x59ff, "dual-use", "user"],
@@ -188,7 +188,7 @@ test("a data region of the user closes the analyzer references from it; referenc
   const db = fresh();
   importFindings(
     db,
-    findings("ghidra", 0x6000, 0x61ff, {
+    findings("decompiler", 0x6000, 0x61ff, {
       references: [
         { from: 0x6010, to: 0x1000, kind: "read" },
         { from: 0x6110, to: 0x1000, kind: "read" },
@@ -202,7 +202,7 @@ test("a data region of the user closes the analyzer references from it; referenc
     listReferences(db).map((reference) => [reference.from, reference.origin]),
     [
       [0x6020, "user"],
-      [0x6110, "ghidra"],
+      [0x6110, "decompiler"],
     ],
   );
 });
@@ -212,14 +212,14 @@ test("an analyzer does not replace another analyzer; a contradiction is a confli
   importFindings(db, findings("dxa", 0x3000, 0x30ff, { regions: [{ start: 0x3000, end: 0x30ff, type: "code" }], symbols: [{ address: 0x3000, name: "l3000", kind: "label" }] }));
   const result = importFindings(
     db,
-    findings("ghidra", 0x3000, 0x30ff, { regions: [{ start: 0x3000, end: 0x30ff, type: "bytes" }], symbols: [{ address: 0x3000, name: "FUN_3000", kind: "routine" }] }),
+    findings("decompiler", 0x3000, 0x30ff, { regions: [{ start: 0x3000, end: 0x30ff, type: "bytes" }], symbols: [{ address: 0x3000, name: "FUN_3000", kind: "routine" }] }),
   );
   assert.deepEqual(result.conflicts, [{ category: "region", start: 0x3000, end: 0x30ff, current: { type: "code", origin: "dxa" }, finding: { type: "bytes" } }]);
   assert.deepEqual(regionList(db), [[0x3000, 0x30ff, "code", "dxa"]]);
   assert.deepEqual(
     analyzerNamesAt(db, 0x3000).map((row) => [row.name, row.origin]),
     [
-      ["FUN_3000", "ghidra"],
+      ["FUN_3000", "decompiler"],
       ["l3000", "dxa"],
     ],
     "each analyzer keeps its own name",
@@ -228,8 +228,8 @@ test("an analyzer does not replace another analyzer; a contradiction is a confli
 
 test("a non-authoritative category adds facts but retires none", () => {
   const db = fresh();
-  importFindings(db, findings("ghidra", 0x2000, 0x20ff, { references: [{ from: 0x2010, to: 0x3000, kind: "read" }] }));
-  const partial = findings("ghidra", 0x2000, 0x20ff, { references: [{ from: 0x2020, to: 0x3001, kind: "write" }] });
+  importFindings(db, findings("decompiler", 0x2000, 0x20ff, { references: [{ from: 0x2010, to: 0x3000, kind: "read" }] }));
+  const partial = findings("decompiler", 0x2000, 0x20ff, { references: [{ from: 0x2020, to: 0x3001, kind: "write" }] });
   partial.authoritative.references = false;
   const result = importFindings(db, partial);
   assert.deepEqual(result.references, { added: 1, changed: 0, retired: 0, unchanged: 0, suppressed: 0, inData: 0 });
@@ -238,9 +238,9 @@ test("a non-authoritative category adds facts but retires none", () => {
 
 test("a non-authoritative run still closes its own reference from heuristic data", () => {
   const db = fresh();
-  importFindings(db, findings("ghidra", 0x7000, 0x70ff, { references: [{ from: 0x7010, to: 0x3000, kind: "read" }] }));
+  importFindings(db, findings("decompiler", 0x7000, 0x70ff, { references: [{ from: 0x7010, to: 0x3000, kind: "read" }] }));
   importFindings(db, findings("heuristic", 0x7000, 0x70ff, { regions: [{ start: 0x7000, end: 0x70ff, type: "bytes" }] }));
-  const partial = findings("ghidra", 0x7000, 0x70ff);
+  const partial = findings("decompiler", 0x7000, 0x70ff);
   partial.authoritative.references = false;
   assert.equal(importFindings(db, partial).references.retired, 1);
   assert.deepEqual(listReferences(db), []);
@@ -249,7 +249,7 @@ test("a non-authoritative run still closes its own reference from heuristic data
 test("an analyzer name that a symbol has elsewhere is no conflict: it is a second name", () => {
   const db = fresh();
   renameSymbol(db, { origin: "llm" }, { address: 0x9000, name: "FUN_2100", kind: "routine" });
-  const result = importFindings(db, findings("ghidra", 0x2000, 0x21ff, { symbols: [{ address: 0x2100, name: "FUN_2100", kind: "routine" }] }));
+  const result = importFindings(db, findings("decompiler", 0x2000, 0x21ff, { symbols: [{ address: 0x2100, name: "FUN_2100", kind: "routine" }] }));
   assert.deepEqual(result.conflicts, []);
   assert.equal(symbolAt(db, 0x2100), undefined);
   assert.equal(analyzerNamesAt(db, 0x2100)[0]?.name, "FUN_2100");
@@ -260,12 +260,12 @@ test("an unusable result or a stale revision imports nothing", () => {
   const db = fresh();
   renameSymbol(db, { origin: "llm" }, { address: 0x1000, name: "start", kind: "routine" });
   for (const bad of [
-    findings("ghidra", 0x2000, 0x20ff, { symbols: [{ address: 0x3000, name: "FUN_3000", kind: "routine" }] }),
-    findings("ghidra", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x2010, type: "code" }, { start: 0x2010, end: 0x2020, type: "bytes" }] }),
-    findings("ghidra", 0x2000, 0x20ff, { regions: [{ start: 0x20f0, end: 0x2100, type: "code" }] }),
-    findings("ghidra", 0x2000, 0x20ff, { symbols: [{ address: 0x2000, name: "a b", kind: "routine" }] }),
-    findings("ghidra", 0x2000, 0x20ff, { references: [{ from: 0x1fff, to: 0x2000, kind: "call" }] }),
-    { ...findings("ghidra", 0x2000, 0x20ff), coverage: [] },
+    findings("decompiler", 0x2000, 0x20ff, { symbols: [{ address: 0x3000, name: "FUN_3000", kind: "routine" }] }),
+    findings("decompiler", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x2010, type: "code" }, { start: 0x2010, end: 0x2020, type: "bytes" }] }),
+    findings("decompiler", 0x2000, 0x20ff, { regions: [{ start: 0x20f0, end: 0x2100, type: "code" }] }),
+    findings("decompiler", 0x2000, 0x20ff, { symbols: [{ address: 0x2000, name: "a b", kind: "routine" }] }),
+    findings("decompiler", 0x2000, 0x20ff, { references: [{ from: 0x1fff, to: 0x2000, kind: "call" }] }),
+    { ...findings("decompiler", 0x2000, 0x20ff), coverage: [] },
   ]) {
     assert.throws(() => importFindings(db, bad), failsWith("invalid-input"), JSON.stringify(bad));
   }
@@ -305,17 +305,17 @@ test("an analyzer import records the image hash and the analyzer version in its 
   const image = Buffer.from("abc");
   const sha256 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
   importFindings(db, findings("dxa", 0x0801, 0x08ff, { symbols: [{ address: 0x080d, name: "l080d", kind: "label" }] }), runProvenance(image, "dxa 0.1.5"));
-  importFindings(db, findings("ghidra", 0x2000, 0x20ff, { symbols: [{ address: 0x2000, name: "FUN_2000", kind: "routine" }] }), runProvenance(image, undefined));
+  importFindings(db, findings("decompiler", 0x2000, 0x20ff, { symbols: [{ address: 0x2000, name: "FUN_2000", kind: "routine" }] }), runProvenance(image, undefined));
   assert.deepEqual(
     revisions(db).map((revision) => [revision.origin, revision.inputHash, revision.toolVersion]),
     [
-      ["ghidra", sha256, undefined],
+      ["decompiler", sha256, undefined],
       ["dxa", sha256, "dxa 0.1.5"],
     ],
   );
   // The last version of each analyzer for these bytes: the next analysis compares its own version with it.
   assert.equal(lastToolVersion(db, "dxa", image), "dxa 0.1.5");
-  assert.equal(lastToolVersion(db, "ghidra", image), undefined, "the revision does not tell the version");
+  assert.equal(lastToolVersion(db, "decompiler", image), undefined, "the revision does not tell the version");
   assert.equal(lastToolVersion(db, "dxa", Buffer.from("abd")), undefined, "other bytes");
   importFindings(db, findings("dxa", 0x0801, 0x08ff, { symbols: [] }), runProvenance(image, "dxa 0.2.0"));
   assert.equal(lastToolVersion(db, "dxa", image), "dxa 0.2.0");
@@ -324,7 +324,7 @@ test("an analyzer import records the image hash and the analyzer version in its 
 test("a re-run replaces all of the analyzer's own names in its coverage, also when its labels are not complete", () => {
   const db = fresh();
   const partial = (symbols: NormalizedFindings["symbols"]) => {
-    const result = findings("ghidra", 0x2000, 0x2fff, { symbols });
+    const result = findings("decompiler", 0x2000, 0x2fff, { symbols });
     result.authoritative.symbols = false;
     return result;
   };
@@ -357,8 +357,8 @@ test("a non-authoritative region import changes the type of the analyzer's own r
 
 // A user/LLM removal is a suppression that holds against every later import.
 
-const ghidraRun = () =>
-  findings("ghidra", 0x0400, 0x04ff, {
+const decompilerRun = () =>
+  findings("decompiler", 0x0400, 0x04ff, {
     symbols: [{ address: 0x0408, name: "FUN_0408", kind: "routine" }],
     regions: [{ start: 0x0400, end: 0x04ff, type: "code" }],
     references: [{ from: 0x0410, to: 0xef29, kind: "jump" }],
@@ -366,19 +366,19 @@ const ghidraRun = () =>
 
 test("removals by the LLM hold: the same analyzer run adds nothing again and counts the suppressed findings", () => {
   const db = fresh();
-  importFindings(db, ghidraRun());
+  importFindings(db, decompilerRun());
   removeReference(db, { origin: "llm", description: "the vector is written at run time" }, { from: 0x0410, to: 0xef29, kind: "jump" });
   unclassifyRegion(db, { origin: "llm" }, { start: 0x0480, end: 0x04ff });
   const before = currentRevision(db);
 
-  const again = importFindings(db, ghidraRun());
+  const again = importFindings(db, decompilerRun());
   assert.equal(again.references.suppressed, 1);
   assert.equal(again.regions.suppressed, 1);
   assert.equal(again.revision, null, "nothing changed");
   assert.equal(currentRevision(db), before);
   assert.equal(symbolAt(db, 0x0408), undefined);
   assert.deepEqual(listReferences(db), []);
-  assert.deepEqual(regionList(db), [[0x0400, 0x047f, "code", "ghidra"]]);
+  assert.deepEqual(regionList(db), [[0x0400, 0x047f, "code", "decompiler"]]);
 });
 
 test("the removal of a name writes no suppression: an analyzer name there stays a second name", () => {
@@ -408,7 +408,7 @@ test("a non-authoritative region import also leaves a suppressed range free", ()
 
 test("a later write at the place lifts the suppression there, and only there", () => {
   const db = fresh();
-  importFindings(db, ghidraRun());
+  importFindings(db, decompilerRun());
   removeReference(db, { origin: "llm" }, { from: 0x0410, to: 0xef29, kind: "jump" });
   unclassifyRegion(db, { origin: "llm" }, { start: 0x0400, end: 0x04ff });
   renameSymbol(db, { origin: "llm" }, { address: 0x0408, name: "irq_vector" });
@@ -419,25 +419,25 @@ test("a later write at the place lifts the suppression there, and only there", (
     [["region", 0x0410, 0x04ff]],
     "the region suppression keeps its part outside the classified range",
   );
-  const again = importFindings(db, ghidraRun());
+  const again = importFindings(db, decompilerRun());
   assert.equal(again.regions.suppressed, 1);
   assert.deepEqual(regionList(db), [[0x0400, 0x040f, "code", "llm"]]);
 });
 
 test("a revert to before the removal lifts the suppression and restores the analyzer row", () => {
   const db = fresh();
-  const first = importFindings(db, ghidraRun());
+  const first = importFindings(db, decompilerRun());
   removeReference(db, { origin: "llm" }, { from: 0x0410, to: 0xef29, kind: "jump" });
   assert.equal(listSuppressions(db).length, 1);
   revert(db, { origin: "user" }, { revision: first.revision! });
   assert.deepEqual(listSuppressions(db), []);
-  assert.deepEqual(listReferences(db).map((row) => [row.from, row.to, row.origin]), [[0x0410, 0xef29, "ghidra"]]);
-  assert.equal(importFindings(db, ghidraRun()).revision, null);
+  assert.deepEqual(listReferences(db).map((row) => [row.from, row.to, row.origin]), [[0x0410, 0xef29, "decompiler"]]);
+  assert.equal(importFindings(db, decompilerRun()).revision, null);
 });
 
 test("a revision shows the suppression it wrote", () => {
   const db = fresh();
-  importFindings(db, ghidraRun());
+  importFindings(db, decompilerRun());
   const removed = removeReference(db, { origin: "llm", description: "not a jump" }, { from: 0x0410, to: 0xef29, kind: "jump" });
   const changes = revisionChanges(db, removed.revision!);
   assert.deepEqual(
@@ -453,7 +453,7 @@ test("a JMP table is code, and dual-use bytes conflict with no finding", () => {
   classifyRegion(db, { origin: "llm" }, { start: 0x0408, end: 0x0409, type: "dual-use" });
   const result = importFindings(
     db,
-    findings("ghidra", 0x0400, 0x05ff, {
+    findings("decompiler", 0x0400, 0x05ff, {
       regions: [
         { start: 0x0400, end: 0x04ff, type: "code" },
         { start: 0x0500, end: 0x0508, type: "bytes" },
@@ -484,15 +484,15 @@ test("a heuristic region replaces the DXA region where it lies, and DXA never re
 test("a code finding over an executed instruction start replaces another analyzer's data, and nothing else", () => {
   const db = fresh();
   importFindings(db, findings("dxa", 0x1000, 0x10ff, { regions: [{ start: 0x1000, end: 0x10ff, type: "bytes" }], symbols: [{ address: 0x1010, name: "d1010", kind: "data" }] }));
-  const ghidra = (executed?: (address: number) => boolean) =>
-    findings("ghidra", 0x1000, 0x10ff, {
+  const decompiler = (executed?: (address: number) => boolean) =>
+    findings("decompiler", 0x1000, 0x10ff, {
       regions: [{ start: 0x1000, end: 0x103f, type: "code" }],
       symbols: [{ address: 0x1010, name: "FUN_1010", kind: "routine" }],
       ...(executed === undefined ? {} : { executed }),
     });
 
   // Without coverage, the contradiction stays a conflict.
-  const without = importFindings(db, ghidra());
+  const without = importFindings(db, decompiler());
   assert.deepEqual(
     without.conflicts.map((conflict) => conflict.category),
     ["region"],
@@ -500,10 +500,10 @@ test("a code finding over an executed instruction start replaces another analyze
   assert.deepEqual(regionList(db), [[0x1000, 0x10ff, "bytes", "dxa"]]);
 
   // A run executed $1010: the DXA data gives way under the code finding, its part outside stays.
-  const executed = importFindings(db, ghidra((address) => address === 0x1010), { evidence: [{ kind: "coverage", ref: "runs/boot.bin", sha256: "0".repeat(64) }] });
+  const executed = importFindings(db, decompiler((address) => address === 0x1010), { evidence: [{ kind: "coverage", ref: "runs/boot.bin", sha256: "0".repeat(64) }] });
   assert.deepEqual(executed.conflicts, []);
   assert.deepEqual(regionList(db), [
-    [0x1000, 0x103f, "code", "ghidra"],
+    [0x1000, 0x103f, "code", "decompiler"],
     [0x1040, 0x10ff, "bytes", "dxa"],
   ]);
   assert.deepEqual(analyzerNamesAt(db, 0x1010).map((row) => row.name), ["FUN_1010", "d1010"]);
@@ -512,7 +512,7 @@ test("a code finding over an executed instruction start replaces another analyze
   // User data stays, also over executed code.
   const user = fresh();
   classifyRegion(user, { origin: "user" }, { start: 0x2000, end: 0x20ff, type: "bytes" });
-  const kept = importFindings(user, findings("ghidra", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x20ff, type: "code" }], executed: () => true }));
+  const kept = importFindings(user, findings("decompiler", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x20ff, type: "code" }], executed: () => true }));
   assert.equal(kept.conflicts.length, 1);
   assert.deepEqual(regionList(user), [[0x2000, 0x20ff, "bytes", "user"]]);
 });
@@ -540,16 +540,16 @@ test("a re-run does not replace the analyzer's own code with data where a run ex
   ]);
   // Executed code holds the same way, also with no name there.
   const run = fresh();
-  importFindings(run, findings("ghidra", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x20ff, type: "code" }] }));
-  const executed = importFindings(run, findings("ghidra", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x207f, type: "code" }, { start: 0x2080, end: 0x20ff, type: "bytes" }], executed: (address) => address === 0x2090 }));
+  importFindings(run, findings("decompiler", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x20ff, type: "code" }] }));
+  const executed = importFindings(run, findings("decompiler", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x207f, type: "code" }, { start: 0x2080, end: 0x20ff, type: "bytes" }], executed: (address) => address === 0x2090 }));
   assert.deepEqual(executed.conflicts, [{ category: "code-evidence", start: 0x2080, end: 0x20ff, finding: { type: "bytes" }, executed: 0x2090 }]);
-  assert.deepEqual(regionList(run), [[0x2000, 0x20ff, "code", "ghidra"]]);
+  assert.deepEqual(regionList(run), [[0x2000, 0x20ff, "code", "decompiler"]]);
   assert.equal(executed.revision, null, "nothing changed");
   // Without evidence, the analyzer's newer data replaces its own code.
-  const plain = importFindings(run, findings("ghidra", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x207f, type: "code" }, { start: 0x2080, end: 0x20ff, type: "bytes" }] }));
+  const plain = importFindings(run, findings("decompiler", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x207f, type: "code" }, { start: 0x2080, end: 0x20ff, type: "bytes" }] }));
   assert.deepEqual(plain.conflicts, []);
   assert.deepEqual(regionList(run), [
-    [0x2000, 0x207f, "code", "ghidra"],
-    [0x2080, 0x20ff, "bytes", "ghidra"],
+    [0x2000, 0x207f, "code", "decompiler"],
+    [0x2080, 0x20ff, "bytes", "decompiler"],
   ]);
 });
