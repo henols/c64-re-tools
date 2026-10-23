@@ -497,7 +497,7 @@ function leftoversCommand(call: Call): unknown {
 }
 
 /** The platform names of the main space of the machine, by name. */
-const platform = (machine: Machine) => new Map(platformNamesOfSpace(machine.spaces.main).map((entry) => [entry.name, entry.address]));
+const platform = (machine: Machine) => new Map(platformNamesOfSpace(machine, machine.spaces.main).map((entry) => [entry.name, entry.address]));
 
 /** routine: saves a module or a range of the program in the knowledge, with its knowledge, as a routine of the library (D71). */
 function routineCommand(call: Call): unknown {

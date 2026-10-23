@@ -1088,8 +1088,8 @@ const WRITE_COMMANDS: CommandSpec[] = [
   ),
   writeCommand({ name: "merge", summary: "Decides the conflicts that a git merge of two computers' work left: of the rows of one conflict, the newest stays. One revision for all." }, (call) => {
     const context = contextOf(call);
-    const platform = (space: string) => new Map(platformNamesOfSpace(space).map((entry) => [entry.name, entry.address]));
     return (db) => {
+      const platform = (space: string) => new Map(platformNamesOfSpace(machineOf(db), space).map((entry) => [entry.name, entry.address]));
       const merged = mergeConflicts(db, context, platform);
       return { revision: merged.revision, choices: merged.current.map(showChoice) };
     };

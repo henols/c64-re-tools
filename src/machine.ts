@@ -105,6 +105,35 @@ export function modelOfEntryState(state: Record<string, unknown> | undefined): M
 
 export const C64 = MACHINES.c64;
 
+/** The models of the ZX Spectrum: the 48K, and the 128K with the +2. */
+export type SpectrumModel = "48k" | "128k";
+
+export interface SpectrumTiming {
+  /** The CPU clock in Hz. */
+  cpuHz: number;
+  lineTstates: number;
+  frameLines: number;
+  /** The t-states from one interrupt to the next. */
+  frameTstates: number;
+  /** The lines from the interrupt to the first line of the picture. */
+  linesBeforePicture: number;
+  /** The first t-state of the frame where an access to contended memory waits, in the t-state count of the emulator session. */
+  contentionStart: number;
+}
+
+/**
+ * The frame of each model, from the World of Spectrum 48K and 128K
+ * references. contentionStart is the number that the branch measured in
+ * ZEsarUX 13.0 (and that zxrun uses): 14336 and 14362 in the t-state count of
+ * the session, where the t-state after the interrupt is 0. World of Spectrum
+ * gives 14335 and 14361 for the same first delayed cycle: its count is one
+ * t-state lower.
+ */
+export const SPECTRUM_TIMING: Record<SpectrumModel, SpectrumTiming> = {
+  "48k": { cpuHz: 3_500_000, lineTstates: 224, frameLines: 312, frameTstates: 69_888, linesBeforePicture: 64, contentionStart: 14_336 },
+  "128k": { cpuHz: 3_546_900, lineTstates: 228, frameLines: 311, frameTstates: 70_908, linesBeforePicture: 63, contentionStart: 14_362 },
+};
+
 /** The machine of a project whose knowledge names none. */
 export const DEFAULT_MACHINE: Machine = C64;
 

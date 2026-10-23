@@ -377,7 +377,12 @@ test("a 48K session that loads a 128K snapshot runs as a 128K: autostart and ula
     assert.deepEqual([ula.model, ula.frameTstates, ula.rom], ["128k", 70_908, 1]);
     // The load gives the border and the AY of the file.
     assert.equal(ula.border, 1);
-    assert.deepEqual(await call("ay"), { selected: 7, registers: AY_REGISTERS });
+    const loadedAy = await call("ay");
+    assert.deepEqual([loadedAy.selected, loadedAy.registers], [7, AY_REGISTERS]);
+    // decoded gives the meaning beside the registers: R0-R1 $0110 is 407.5 Hz at the AY clock of the 128K, R7 $38 turns the three tones on and the noise off, R8 15 is the level of A.
+    const decoded = loadedAy.decoded as { clockHz: number; channels: Array<{ toneHz: number; tone: boolean; noise: boolean; level: number; envelope: boolean }> };
+    assert.equal(decoded.clockHz, 1_773_450);
+    assert.deepEqual(decoded.channels.map((channel) => [channel.toneHz, channel.tone, channel.noise, channel.level, channel.envelope]), [[407.5, true, false, 15, false], [203.75, true, false, 14, false], [135.83, true, false, 13, false]]);
     await call("snapshot", { action: "export", out: "counter128-out.z80" });
     assert.deepEqual(readZ80(readFileSync(join(project, "counter128-out.z80"))).ay, { selected: 7, registers: AY_REGISTERS });
     const tstates = await frames(2);
@@ -386,7 +391,9 @@ test("a 48K session that loads a 128K snapshot runs as a 128K: autostart and ula
     await call("memory_write", { address: "$9100", data: "01fdff3e07ed7906bf3e3eed79" });
     await call("registers", { action: "write", values: { pc: "$9100", iff1: false, iff2: false } });
     await call("execution", { action: "step", count: 6 });
-    assert.equal(((await call("ay")).registers as number[])[7], 0x3e);
+    const probedAy = await call("ay");
+    assert.equal((probedAy.registers as number[])[7], 0x3e);
+    assert.deepEqual((probedAy.decoded as { channels: Array<{ tone: boolean }> }).channels.map((channel) => channel.tone), [true, false, false]);
     // The program runs on the 128K: it counts its frames.
     const seen = Number.parseInt((await call("memory_read", { address: `$${FRAMES_SEEN.toString(16)}`, size: 1 })).data as string, 16);
     assert.ok(seen >= 2, `${seen} frames seen`);

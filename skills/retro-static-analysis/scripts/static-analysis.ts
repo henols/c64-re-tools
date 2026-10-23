@@ -89,7 +89,7 @@ function macroCandidates(space: string, byteAt: ImageByte, romUse: RomUse, skip:
   const db = openForRead();
   try {
     // The platform names that retro-source uses: a name of a ROM that the program does not use is no arg.
-    const platform = new Map(platformNamesOfSpace(space, romUse).map((entry) => [entry.address, entry.name]));
+    const platform = new Map(platformNamesOfSpace(machineOf(db), space, romUse).map((entry) => [entry.address, entry.name]));
     const semantic = new Map(listSymbols(db, undefined, undefined, [...SEMANTIC_ORIGINS], space).map((symbol) => [symbol.address, symbol.name]));
     const code = listRegions(db, undefined, "code", undefined, space);
     const found = findMacroUses(byteAt, code, (address) => semantic.get(address) ?? platform.get(address));
@@ -244,7 +244,7 @@ async function analyze(call: Call): Promise<unknown> {
   const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
   const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry)).length;
   // Drive code and banks get no platform names.
-  const platform = platformNamesOfSpace(space);
+  const platform = platformNamesOfSpace(machine, space);
   reader?.close();
   /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
   const idiomsResult = () => {
@@ -264,7 +264,7 @@ async function analyze(call: Call): Promise<unknown> {
     // The macro candidates read the code regions after both imports.
     const macros = macroCandidates(space, byteAt, romUseOfProgram(coverage, program.state), skip);
     // With --apply-macros, the candidates and their macros are a third revision of the LLM.
-    const written = applyMacros && macros.writes.length > 0 ? withWrite((db) => applyBatch(db, { origin: "llm", description: "Macro candidates in the program", image: operandImages(db, new Map(platformNamesOfSpace(mainSpaceOf(db)).map((entry) => [entry.name, entry.address]))) }, macros.writes)) : undefined;
+    const written = applyMacros && macros.writes.length > 0 ? withWrite((db) => applyBatch(db, { origin: "llm", description: "Macro candidates in the program", image: operandImages(db, new Map(platformNamesOfSpace(machineOf(db), mainSpaceOf(db)).map((entry) => [entry.name, entry.address]))) }, macros.writes)) : undefined;
     // Platform pitfalls are C64 facts: drive code and banks get none. Pitfalls and pointers read the code regions after both imports.
     const codeDb = openForRead();
     const code = listRegions(codeDb, undefined, "code", undefined, space);

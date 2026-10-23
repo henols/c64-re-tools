@@ -63,7 +63,7 @@ import { join } from "node:path";
 import { COVERAGE, EXECUTE } from "../../cpu/coverage.ts";
 import { Z80 } from "../../cpu/z80.ts";
 import { encodePng, SPECTRUM_PALETTE, spectrumScreenFrame } from "../../graphics.ts";
-import type { MachineId } from "../../machine.ts";
+import { SPECTRUM_TIMING, type MachineId } from "../../machine.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import {
@@ -87,7 +87,7 @@ import { checkMedia } from "./media.ts";
 import { launchZesarux, type ZesaruxProcess } from "./process.ts";
 import { zsfHalted } from "./zsf.ts";
 
-const FRAME_TSTATES = { "48k": 69_888, "128k": 70_908 } as const;
+const FRAME_TSTATES = { "48k": SPECTRUM_TIMING["48k"].frameTstates, "128k": SPECTRUM_TIMING["128k"].frameTstates } as const;
 type Model = keyof typeof FRAME_TSTATES;
 /** The machines that ZEsarUX runs for c64-re-tools. */
 export const ZESARUX_MACHINES: readonly MachineId[] = ["spectrum48", "spectrum128"];

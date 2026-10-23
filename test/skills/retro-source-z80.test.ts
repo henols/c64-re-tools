@@ -52,7 +52,7 @@ test("a platform name names only an operand that is an address and gets its EQU;
     symbols: [{ address: 0x8000, name: "start" }, { address: 0x9002, name: "frames" }],
     regions: [{ start: 0x8000, end: 0x8019, type: "code" }],
     comments: [],
-    platform: platformNamesOfSpace("spectrum"),
+    platform: platformNamesOfSpace(MACHINES.spectrum48, "spectrum"),
     header: [],
   };
   const instructions = z80Instructions(input);

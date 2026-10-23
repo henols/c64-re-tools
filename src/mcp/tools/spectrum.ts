@@ -5,12 +5,21 @@
 import { z } from "zod";
 
 import { formatAddress } from "../../address.ts";
+import { SPECTRUM_TIMING } from "../../machine.ts";
+import { spectrumDecodeAy } from "../../platform/spectrum.ts";
 import type { SpectrumSessionClient } from "../../host-client/spectrum-session.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { SPECTRUM_MAX_DISASSEMBLE, SPECTRUM_MAX_FRAMES, SPECTRUM_MAX_HISTORY, SPECTRUM_MAX_MEMORY_READ, SPECTRUM_MAX_MEMORY_WRITE, SPECTRUM_MAX_STEPS, SPECTRUM_MAX_TEXT, Z80_WRITABLE, type SpectrumStop, type Z80RegisterState } from "../../protocol/spectrum.ts";
 import { AddressInput } from "../inputs.ts";
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressOutput, defineTool, HexData, requireFields, ToolOutput } from "../server.ts";
+
+const FRAMES_TEXT = `${SPECTRUM_TIMING["48k"].frameTstates} t-states (48K) or ${SPECTRUM_TIMING["128k"].frameTstates} t-states (128K)`;
+/** Where the code runs slower: the contended memory and the ULA port, with the numbers in the timing list of the memory map. */
+const CONTENTION_TEXT =
+  "During the 192 picture lines of each frame, the ULA makes the CPU wait. The CPU waits when it reads an opcode or data, or writes data, in $4000-$7fff. " +
+  "On the 128K, it also waits in $c000-$ffff when port $7ffd pages in RAM bank 1, 3, 5 or 7. An IN from port $fe also waits. " +
+  "Thus code and data in that memory run slower than in $8000-$bfff. The ZX Spectrum memory map gives the numbers: list timing.";
 
 type Session = Pick<SpectrumSessionClient, Exclude<keyof SpectrumSessionClient, "closed" | "lost" | "answered" | "unreportedLoss" | "close" | "request">>;
 
@@ -71,14 +80,15 @@ const execution = defineTool<z.ZodObject, z.ZodObject, Session>({
   title: "Stop, run or step the Z80",
   description:
     "Control the Z80. pause stops it. resume lets it run until a breakpoint or a watchpoint stops it, or until pause. step executes count instructions. " +
-    `advance-frames runs count frames of 69888 t-states (48K) or 70908 t-states (128K), up to ${SPECTRUM_MAX_FRAMES}. The default count is 1. ` +
+    `advance-frames runs count frames of ${FRAMES_TEXT}, up to ${SPECTRUM_MAX_FRAMES}. The default count is 1. ` +
     "The CPU stops at the first instruction at or after the end of the frames, thus some t-states late. " +
     "When the CPU did not run after the last advance-frames, the frames count from the end of that run, not from its stop. Thus advance-frames 1 and then 11 stops at the same place as advance-frames 12. " +
     "The same calls from the same state stop at the same place. A frame takes about 20 ms of real time. " +
     "A breakpoint or a watchpoint stops a run before its end: stopReason and pointId tell which. pause after such a stop gives that stop again. " +
     "waitsForInterrupt true: the CPU executed opcode $76 and waits for an interrupt. Then pc is the address after the $76, and cpu_history gives the address of the $76. The CPU executes the byte at pc only after the interrupt. " +
     "Each step in the wait is one wait cycle: 4 t-states pass, R increases by 1, and the PC does not change. " +
-    "While the CPU runs, only execution action pause, reset and autostart work.",
+    "While the CPU runs, only execution action pause, reset and autostart work. " +
+    CONTENTION_TEXT,
   inputSchema: z.object({ action: z.enum(["pause", "resume", "step", "advance-frames"]), count: z.number().int().min(1).max(SPECTRUM_MAX_STEPS).optional().describe("instructions for step, frames for advance-frames") }).strict(),
   outputSchema: StopOutput,
   readOnly: false,
@@ -395,7 +405,7 @@ const snapshot = defineTool<z.ZodObject, z.ZodObject, Session>({
   title: "Spectrum snapshots",
   description:
     "Save, restore, remove or list named snapshots of the machine in this session. Each of these actions gives the names of the snapshots that the session keeps after the action. " +
-    "A restore starts the frame from its first t-state. The emulator does not give the interrupt at the start of that frame. The first interrupt comes at the end of the frame, after 69888 t-states (48K) or 70908 t-states (128K). Thus a CPU that waits after opcode $76 waits one full frame first. " +
+    "A restore starts the frame from its first t-state. The emulator does not give the interrupt at the start of that frame. The first interrupt comes at the end of the frame, after " + FRAMES_TEXT + ". Thus a CPU that waits after opcode $76 waits one full frame first. " +
     "The interrupts come at different times than after the save, and the same calls can stop at different places. To do the same run two times, restore the snapshot before each of the two runs. " +
     "Action export writes the machine as a version 3 .z80 file to out. The name in out must end in .z80. The knowledge takes the file as the program, and other emulators load it. " +
     "A .z80 file does not keep the wait for an interrupt. When the CPU waits after opcode $76, the file gives the address of the $76 as PC, and R one less. Thus a load executes the $76 again, and the CPU then waits. The export does not change the machine in this session. The CPU must be stopped.",
@@ -419,7 +429,8 @@ const ula = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "ula",
   title: "Spectrum ULA and paging",
   description:
-    "Get the model (48k or 128k), the t-states of one frame (frameTstates) and the border colour. On the 128K, it also gets the paging of port $7ffd. The paging is the RAM bank at $c000, the screen bank (5 or 7), the ROM and the lock.",
+    "Get the model (48k or 128k), the t-states of one frame (frameTstates) and the border colour. On the 128K, it also gets the paging of port $7ffd. The paging is the RAM bank at $c000, the screen bank (5 or 7), the ROM and the lock. " +
+    CONTENTION_TEXT,
   inputSchema: z.object({}).strict(),
   outputSchema: z.object({ model: z.enum(["48k", "128k"]), frameTstates: z.number().int(), border: z.number().int(), port7ffd: z.number().int().optional(), pagedBank: z.number().int().optional(), screenBank: z.number().int().optional(), rom: z.number().int().optional(), pagingLocked: z.boolean().optional() }),
   readOnly: true,
@@ -432,13 +443,17 @@ const ay = defineTool<z.ZodObject, z.ZodObject, Session>({
   name: "ay",
   title: "Spectrum AY sound chip",
   description:
-    "Get the 16 registers of the AY-3-8912 sound chip of the 128K and the selected register: tone periods, noise, mixer, volumes and envelope. " +
+    "Get the 16 registers of the AY-3-8912 sound chip of the 128K, R0 first, and the selected register. " +
+    "decoded gives their meaning at the AY clock of the 128K (clockHz). For each channel, it gives the tone period and its frequency in Hz, and the tone and the noise of the mixer (true is on). " +
+    "It also gives the level 0-15 of each channel, and envelope true when the envelope gives the level. " +
+    "decoded also gives the noise period and frequency, and the envelope period, the time of one ramp in ms and the shape. It gives the direction and the value of each I/O port. " +
     "The 48K has no AY: on the 48K the tool refuses with invalid-input. After a load of a 128K file, the tool works again.",
   inputSchema: z.object({}).strict(),
-  outputSchema: z.object({ selected: z.number().int(), registers: z.array(z.number().int()) }),
+  outputSchema: z.object({ selected: z.number().int(), registers: z.array(z.number().int()), decoded: z.record(z.string(), z.unknown()) }),
   readOnly: true,
   async run(_input, session) {
-    return session.ay();
+    const result = await session.ay();
+    return { ...result, decoded: spectrumDecodeAy(result.registers) };
   },
 });
 

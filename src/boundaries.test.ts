@@ -69,7 +69,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   // The modules of a VICE snapshot file, and the changes that press keys in it.
   vsf: ["media"],
   "host-client": ["protocol", "c64", "c64-keys", "cpu", "project", "trace", "package", "machine", "spectrum"],
-  mcp: ["host-client", "protocol", "c64", "c64-keys", "cpu", "trace", "package", "machine"],
+  // platform: a tool gives the decoded meaning of a chip value with the decoder of the memory map, for example the AY registers.
+  mcp: ["host-client", "protocol", "c64", "c64-keys", "cpu", "trace", "package", "machine", "platform"],
   host: ["native", "protocol", "c64", "c64-keys", "cpu", "graphics", "opcodes", "trace", "package", "media", "vsf", "machine", "spectrum"],
   // opcodes: one rule for a name that ACME can take as a label.
   knowledge: ["c64", "cpu", "machine", "project", "time", "opcodes"],

@@ -1170,7 +1170,7 @@ async function generateZ80(call: Call, machine: Machine): Promise<{ output: Reco
     symbols: knowledge.symbols,
     regions: knowledge.regions,
     comments: knowledge.comments,
-    platform: platformNamesOfSpace(space),
+    platform: platformNamesOfSpace(machine, space),
     modules: knowledge.modules,
     operands: knowledge.operands,
     entries,

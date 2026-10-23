@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
+import { withWrite } from "../../src/knowledge/database.ts";
+import { writeMachine } from "../../src/knowledge/write.ts";
 import { readPng } from "../../src/graphics.testkit.ts";
 import { keyboardCounterSnapshot } from "../fixtures/z80/keyboard-counter.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
@@ -46,9 +48,13 @@ screen[0] = 0xff;
 screen.fill(0x38, 6144);
 writeFileSync(join(project, "title.scr"), screen);
 
-/** Runs a script in the project: `result` is the body, or { error: { code, message } } for a refusal. */
+/** Runs a script in the project (or in `cwd`): `result` is the body, or { error: { code, message } } for a refusal. */
 function run(skill: string, script: string, ...args: string[]): { status: number | null; result: Record<string, unknown>; envelope: ScriptEnvelope } {
-  const child = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", script), ...args], { cwd: project, encoding: "utf8" });
+  return runIn(project, skill, script, ...args);
+}
+
+function runIn(cwd: string, skill: string, script: string, ...args: string[]): { status: number | null; result: Record<string, unknown>; envelope: ScriptEnvelope } {
+  const child = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", script), ...args], { cwd, encoding: "utf8" });
   assert.equal(child.stderr, "", child.stderr);
   const { envelope, json } = readEnvelope(child.stdout, child.status);
   return { status: child.status, result: json as Record<string, unknown>, envelope };
@@ -113,4 +119,22 @@ test("spectrum-memory-map names addresses, decodes the paging and exports a sjas
   assert.deepEqual(run("spectrum-memory-map", "memory-map.ts", "decode", "paging", "$17").result, { what: "paging", value: "$17", ramBank: 7, screenBank: 5, rom: 1, locked: false });
   assert.equal(run("spectrum-memory-map", "memory-map.ts", "export", "--out", ".c64-re-tools/local/zx.asm").status, 0);
   assert.match(readFileSync(join(project, ".c64-re-tools/local/zx.asm"), "utf8"), /^FRAMES EQU \$5c78 +; The frame counter/m);
+});
+
+test("spectrum-memory-map takes the model of the project machine, and gives the contention, the AY registers and the timing", () => {
+  const at = (cwd: string) => (runIn(cwd, "spectrum-memory-map", "memory-map.ts", "at", "$5b5c", "$c000").result as { addresses: Array<Record<string, unknown>> }).addresses;
+  // The skills project names no machine: the 48K printer buffer, contended as all of $4000-$7fff.
+  assert.deepEqual(at(project).map((item) => [item.area, item.name, item.contended, item.contendedBanks]), [["printer-buffer", undefined, true, undefined], ["ram", undefined, undefined, undefined]]);
+  const project128 = join(project, ".c64-re-tools", "local", "p128");
+  mkdirSync(join(project128, ".c64-re-tools"), { recursive: true });
+  withWrite((db) => writeMachine(db, { origin: "user" }, { machine: "spectrum128" }), project128);
+  assert.deepEqual(at(project128).map((item) => [item.name, item.contended, item.contendedBanks]), [["BANK_M", true, undefined], [undefined, undefined, [1, 3, 5, 7]]]);
+  assert.equal(runIn(project128, "spectrum-memory-map", "memory-map.ts", "export", "--out", ".c64-re-tools/local/zx.asm").status, 0);
+  assert.match(readFileSync(join(project128, ".c64-re-tools/local/zx.asm"), "utf8"), /^BANK_M EQU \$5b5c /m);
+  const ay = run("spectrum-memory-map", "memory-map.ts", "decode", "ay", "$10", "$01", "0", "0", "0", "0", "0", "$38", "15").result as { registers: string[]; channels: Array<Record<string, unknown>> };
+  assert.deepEqual([ay.registers.length, ay.channels[0]!.toneHz, ay.channels[0]!.tone, ay.channels[0]!.noise, ay.channels[0]!.level], [16, 407.5, true, false, 15]);
+  assert.deepEqual(run("spectrum-memory-map", "memory-map.ts", "decode", "ay-volume", "$1f").result, { what: "ay-volume", value: "$1f", level: 15, envelope: true });
+  const listedNames = (list: string) => ((run("spectrum-memory-map", "memory-map.ts", "list", list).result as { entries: { listed: Array<{ name: string }> } }).entries.listed.map((item) => item.name));
+  assert.equal(listedNames("ay")[7], "MIXER");
+  assert.ok(listedNames("timing").includes("contentionStart"));
 });

@@ -1,6 +1,6 @@
 ---
 name: spectrum-memory-map
-description: Gives the ZX Spectrum platform meaning of an address. Examples are a ROM routine such as LD_BYTES, a restart such as RST $28 and a system variable such as FRAMES. It also decodes a value that the program writes to the ULA port, to the paging port $7FFD or to an attribute. It tells when an address has no platform meaning and belongs to the application. Use it when code reads or writes an address that you do not know. Use it to get the platform names as an include file for sjasmplus. It does not read the memory of a running program, and it does not change the project knowledge.
+description: Gives the ZX Spectrum platform meaning of an address. Examples are a ROM routine such as LD_BYTES, a restart such as RST $28 and a system variable such as FRAMES. It also decodes a value that the program writes to the ULA port, to the paging port $7FFD or to an attribute. It decodes the registers of the AY sound chip. It gives the frame timing and the contended memory, where code runs slower. It tells when an address has no platform meaning and belongs to the application. Use it when code reads or writes an address that you do not know. Use it to get the platform names as an include file for sjasmplus. It does not read the memory of a running program, and it does not change the project knowledge.
 ---
 
 # ZX Spectrum memory map
@@ -28,17 +28,24 @@ To get the command list, run the script with no arguments.
 | Decode a value that the program writes to port `$7FFD` | `decode paging '$17'` |
 | Decode a value that the program writes to the ULA port | `decode ula '$07'` |
 | Decode an attribute byte | `decode attribute '$38'` |
+| Decode the AY mixer, a volume or the envelope shape | `decode ay-mixer '$38'` |
+| Decode all AY registers, R0 first | `decode ay 0 0 0 0 0 0 0 '$38' 15` |
+| Find if an address is in contended memory | `at '$4000' '$8000'` |
 | Read the system variables | `list system` |
 | Read the I/O ports | `list ports` |
+| Read the AY registers | `list ay` |
+| Read the frame timing and the contention rules | `list timing` |
 | Write the platform names as a sjasmplus include file | `export --out src/platform.asm` |
 
 ## Addresses and values
 
 - `<address>` is an address from the code or from the question. It can also be a platform name, for example `FRAMES` or `LD_BYTES`, in upper or lower case. The commands `list` and `export` show the platform names. A platform name comes before a name of the project knowledge.
 - A platform name has `_` where the ROM disassembly has `-`.
-- `<what>` is the kind of value: `ula`, `paging` or `attribute`.
+- `<what>` is the kind of value: `ula`, `paging`, `attribute`, `ay-mixer`, `ay-volume`, `ay-shape` or `ay`.
 - `<value>` is a value from 0 to 255. Write it as `$` and hex digits, as a decimal number, or as `%` and binary digits. Put a `$` value in single quotes in a shell.
-- `<list>` is one of `rom`, `system`, `areas` and `ports`.
+- For `ay`, give 1 to 16 values, R0 first. Each register that you do not give is 0.
+- `<list>` is one of `rom`, `system`, `areas`, `ports`, `ay` and `timing`.
+- The project machine selects the model. In a 128K project, `$5B00-$5BFF` has the names of the 128K ROM, for example `BANK_M` at `$5B5C`. In another project, `$5B00-$5BFF` is the printer buffer of the 48K.
 - The ROM names are the names of the 48 BASIC ROM. On the 128K, they are correct only when port `$7FFD` selects ROM 1. To find the ROM, decode the last value that the program writes to `$7FFD` with `decode paging`.
 
 ### Paths and the project folder
@@ -81,6 +88,8 @@ Each flag applies only to the commands in the table. On another command, the scr
   - `application`: the address has no platform meaning. The program decides its use. This is not a failure.
 - `area`: the memory area of the address: `rom`, `screen`, `attributes`, `printer-buffer`, `system-variables` or `ram`.
 - `entryStart`: the first address of the entry, for a byte in an entry of more than one byte. An example is the high byte of a system variable.
+- `contended`: `true` for an address in `$4000-$7FFF`. During the picture lines, each access to this memory waits for the ULA. Thus code and data there run slower.
+- `contendedBanks`: on the 128K, for an address in `$C000-$FFFF`. An access to the address waits for the ULA when port `$7FFD` pages in one of these RAM banks.
 
 When an address has the kind `application`, `hint` names it. Find its use in the disassembly or in the emulator.
 
@@ -91,33 +100,43 @@ Failure:
 - `invalid-input` with "is not a ZX Spectrum platform name": the name is not a platform name and not a name in the project knowledge. Give a `$` address, a platform name, or a symbol of the project knowledge.
 - `invalid-input` with "must be $ and 1 to 4 hex digits": the address is not correct. A decimal number is not an address.
 
-### `decode <what> <value>`
+### `decode <what> <value>...`
 
 `body` holds `what`, `value`, and the meaning of each bit field of the value:
 
 - `ula`: a value that the program writes with OUT to an even port. The fields are `border`, `mic` and `beeper`.
 - `paging`: a value that the program writes to port `$7FFD` of the 128K. The fields are `ramBank` (the RAM bank at `$C000`), `screenBank`, `rom` and `locked`.
 - `attribute`: an attribute byte. The fields are `ink`, `paper`, `bright` and `flash`.
+- `ay-mixer`: a value of AY register R7. `tone` and `noise` give `true` for each channel `a`, `b` and `c` that has it on. `portA` and `portB` give `input` or `output`.
+- `ay-volume`: a value of AY register R8, R9 or R10. The fields are `level` (0-15) and `envelope`. When `envelope` is `true`, the envelope gives the level.
+- `ay-shape`: a value of AY register R13. The fields are `continue`, `attack`, `alternate`, `hold`, and `form` in words.
+- `ay`: all 16 AY registers. `body` holds `registers` and not `value`. `clockHz` is the AY clock of the 128K. `channels` gives for each channel `tonePeriod`, `toneHz`, `tone`, `noise`, `level` and `envelope`. `noise` gives the noise `period` and `hz`. `envelope` gives `period`, `rampMs` (the time of one ramp) and the shape. `portA` and `portB` give the direction and the value.
 
 The ULA decodes each even port. Thus `OUT ($FE),A` and an OUT to a different even port do the same thing. To get the meaning of each port, run `list ports`.
 
 Failure:
 
-- `invalid-input` with "must be one of": `<what>` is not `ula`, `paging` or `attribute`.
+- `invalid-input` with "must be one of": `<what>` is not one of the kinds.
+- `invalid-input` with "takes one <value>" or "takes at most 16 values": give one value, or 1 to 16 values for `ay`.
 
 ### `list <list>`
 
 `body.entries` is a list of the entries of the group: `count`, `listed` and `rest`.
 
-- `rom` and `system`: each item has `start`, `end` for an entry of more than one byte, `name` and `meaning`.
+- `rom` and `system`: each item has `start`, `end` for an entry of more than one byte, `name` and `meaning`. In a 128K project, `system` also gives the names of the 128K ROM at `$5B00-$5BFF`.
 - `areas`: each item has `start`, `end`, `name` and `meaning`.
 - `ports`: each item has `port`, `name` and `meaning`.
+- `ay`: each item has `register` (`R0` to `R15`), `name` and `meaning`.
+- `timing`: each item has `name`, the value of the `48k` and of the `128k`, and `meaning`.
+  - The items give the frame, the start and the pattern of the contention, and the contended memory.
+  - They also give the waits of an IN or an OUT, and interrupt mode 2.
+- The t-states in `timing` count from 0 at the interrupt, as the t-state count of the emulator.
 
 When the list is cut, `hint` gives the full count, and `nextAction` runs `list` again with a `--max-listed` that holds all entries.
 
 ### `export`
 
-Writes all platform names to the project file at `--out`, as a sjasmplus include file. Each line is `NAME EQU $xxxx` for one name, with its meaning as a comment.
+Writes all platform names of the project model to the project file at `--out`, as a sjasmplus include file. Each line is `NAME EQU $xxxx` for one name, with its meaning as a comment. Only a 128K project gets the names of the 128K ROM at `$5B00-$5BFF`.
 
 `body` holds `names` (the number of names) and the file as `out`, `bytes` and `sha256`.
 

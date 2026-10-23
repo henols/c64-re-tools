@@ -18,7 +18,7 @@ export function listingSource(db: DatabaseSync | undefined, space: string): List
   const image = requireProgram(db, space);
   const coverage = programCoverage(db, space)?.map;
   const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
-  const names = platformNamesOfSpace(space);
+  const names = platformNamesOfSpace(machineOf(db), space);
   const platform = new Map(names.map((entry) => [entry.address, entry.name]));
   const entries = names.filter((entry) => entry.end > entry.address);
   return {
@@ -49,5 +49,5 @@ export function listingSource(db: DatabaseSync | undefined, space: string): List
 
 /** The programs that operand, patch and macro use writes are checked against, with the platform names of the project machine. */
 export function operandImages(db: DatabaseSync): (space: string) => OperandImage {
-  return programImages(db, new Map(platformNamesOfSpace(mainSpaceOf(db)).map((entry) => [entry.name, entry.address])));
+  return programImages(db, new Map(platformNamesOfSpace(machineOf(db), mainSpaceOf(db)).map((entry) => [entry.name, entry.address])));
 }
