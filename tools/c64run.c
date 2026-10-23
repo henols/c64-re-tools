@@ -27,7 +27,7 @@
 #include "systems/c1541.h"
 #include "systems/c64.h"
 
-#define C64RUN_PROTOCOL 4
+#define C64RUN_PROTOCOL 5
 // The key code of matrix place 0 (row 0, column 0); place n has code 0x80 + n.
 #define C64RUN_KEY_PLACE 0x80
 #ifndef CHIPS_COMMIT
@@ -240,6 +240,13 @@ static void tick(void) {
         last_sync_pc = addr;
         if (sample_file && addr == sample_pc && decoded) sample();
         if (coverage_armed_pc && addr == coverage_pc && decoded) { coverage_armed_pc = 0; coverage_start(addr); }
+    }
+    if (read && !sync && decoded && sys.io_mapped && (addr & 0xFF0F) == 0xDC00) {
+        // chips gives port A of CIA 1 only joystick 2. A key also pulls its line of port A
+        // low while port B drives its column low: the scan from port B that some games use.
+        const m6526_port_t* pb = &sys.cia_1.pb;
+        const uint8_t low_columns = (uint8_t)~(pb->reg | ~pb->ddr);
+        if (low_columns) M6502_SET_DATA(pins, M6502_GET_DATA(pins) & (uint8_t)~kbd_test_lines(&sys.kbd, low_columns));
     }
     if (read && !sync && decoded && sys.io_mapped && (addr & 0xF000) == 0xD000 && input_addr[addr & 0x0FFF]) {
         input_read(last_sync_pc, addr);

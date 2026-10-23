@@ -105,9 +105,19 @@ keys[2 + 0x19] = 0x01;
 keys[2 + 0x1c] = 0x10;
 writeFileSync(join(project, "keys.prg"), keys);
 
+// A scan from port B, as Bruce Lee does: port B drives the F1 column (PB4) low, and $c010 reads port A, where F1 pulls row 0 (PA0) low.
+writeFileSync(join(project, "reverse.prg"), Uint8Array.from([
+  0x00, 0xc0,
+  0x78,
+  0xa9, 0xff, 0x8d, 0x03, 0xdc, // DDRB: all output
+  0xa9, 0x00, 0x8d, 0x02, 0xdc, // DDRA: all input
+  0xa9, 0xef, 0x8d, 0x01, 0xdc, // PB4 low
+  0xad, 0x00, 0xdc, 0x8d, 0x00, 0xc1, 0x4c, 0x10, 0xc0,
+]));
+
 /** Records the press steps between 20 frames before and 20 frames after; gives the reads and the events of the recording. */
-function recordPress(name: string, press: Array<{ press: { keys: string } }>): { reads: string; events: unknown[] } {
-  const file = { name, program: "keys.prg", symbols: "counter.json", load: true, steps: [{ registers: { pc: "start" } }, { frames: 20 }, ...press, { frames: 20 }] };
+function recordPress(name: string, press: Array<{ press: { keys: string } }>, program = "keys.prg"): { reads: string; events: unknown[] } {
+  const file = { name, program, symbols: "counter.json", load: true, steps: [{ registers: { pc: "start" } }, { frames: 20 }, ...press, { frames: 20 }] };
   writeFileSync(join(project, `${name}.json`), JSON.stringify(file));
   const recorded = script("record", [`${name}.json`, "--out", `tests/recordings/${name}`]);
   assert.equal(recorded.status, 0, JSON.stringify(recorded.result));
@@ -120,6 +130,11 @@ test("a press step presses a key of the matrix by its name: F1 reads in row 0", 
   const { reads, events } = recordPress("press", [{ press: { keys: "{F1}" } }]);
   assert.match(reads, /^c018 dc01 \d+ ef$/m, "the program reads F1 held in row 0");
   assert.equal(events.some((event) => (event as { action: { restore?: boolean } }).action.restore === true), false, "a key of the matrix is input, no event");
+});
+
+test("a press step shows in a scan from port B: F1 reads in port A", { skip, timeout: 120_000 }, () => {
+  const { reads } = recordPress("reverse", [{ press: { keys: "{F1}" } }], "reverse.prg");
+  assert.match(reads, /^c010 dc00 \d+ fe$/m, "the program reads F1 on row 0 of port A");
 });
 
 test("a press step holds keys together, and its RESTORE is an event that the replay does again", { skip, timeout: 120_000 }, () => {
