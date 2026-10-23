@@ -335,7 +335,7 @@ A loader file that loads into $d000 or higher writes the I/O area. When the prog
 To make the packed loader for other switch values, do these steps:
 
 1. Assemble `main.asm` without an output path. The build name of the program tells the switch values, for example `build/custom_trainer.prg`. The leftovers are $00 in this build.
-2. Assemble `loader.asm` without an output path, for example to `build/custom_trainer_loader.prg`. This is the copier.
+2. Assemble `loader.asm` without an output path, for example to `build/custom_trainer_copier.prg`. This is the copier. The build name has `copier` in place of `loader`, so the build does not write over the loader program.
 3. Pack the two files into `build/custom_trainer_packed.prg`. The start address is the copier address in the comment at the start of `loader.asm`. The memory configuration at the exit is `$34`.
 
 These steps do not work when a segment starts below $0400. They also do not work when a patch is between the free ranges of `loader.asm`. In these cases, use `generate --loader` for the base release.

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
+import { COPIER_LINE } from "../../src/build-name.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 import { importPrg } from "../fixtures/program.ts";
@@ -74,6 +75,9 @@ test("without --out, the name of the build tells what it is: the switch values o
   // Each switch at its default: the clean program. The start screen is on by default, the leftovers are off. An entry other than main.asm adds its name.
   writeFileSync(join(source, "config.asm"), "START_SCREEN = 1\nLEFTOVERS = 0 ; off\n");
   assert.deepEqual(await out("loader.asm"), ["build/clean_loader.prg", "build/symbols/clean_loader.json"]);
+  // The loader.asm of the packed form is only the copier: its build does not write over the loader program of generate.
+  writeFileSync(join(source, "loader.asm"), `${COPIER_LINE}\n* = $0801\n        rts\n`);
+  assert.deepEqual(await out("loader.asm"), ["build/clean_copier.prg", "build/symbols/clean_copier.json"]);
   // A switch that is not its default names the build.
   writeFileSync(join(source, "config.asm"), "START_SCREEN = 0\nLEFTOVERS = 1\nTRAINER = 1\n");
   assert.deepEqual(await out("main.asm", "--plain"), ["build/custom_no_start_screen_leftovers_trainer.bin", "build/symbols/custom_no_start_screen_leftovers_trainer.json"]);

@@ -28,7 +28,7 @@ To get the command list, run the script with no arguments.
 | Build a source that includes a file that you generated into a folder next to the source root | `build src boot.asm --out build/boot.prg --include ../build` |
 | Build a source that sets no start address | `build src main.a --out build/game.prg --set-pc '$0801'` |
 | Build a generated source with the values of `config.asm` | `build src main.asm` |
-| Build the loader of a generated source | `build src loader.asm` |
+| Build the loader of a generated source. For the packed form, this is only the copier. | `build src loader.asm` |
 | Check that the rebuild is identical to the program in the project knowledge | `build src main.asm --compare` |
 | Build a release and check it against the bytes of that release | `build src main.asm --release ORIGINAL --compare` |
 | Check the rebuild of a program in another space, for example the drive | `build src main.asm --out build/drive.prg --compare --space drive8` |
@@ -68,7 +68,7 @@ Without `--out`, the name of the program tells what the build is:
 | A value of `config.asm` is not its default | `custom_<switches>.prg`, for example `custom_trainer.prg`. A switch that is off has `no_` before its name, for example `custom_no_start_screen.prg`. |
 | A source without `config.asm` | the name of the entry, for example `main.prg` |
 
-An entry other than `main.asm` adds its name, for example `clean_loader.prg` for `loader.asm`. With `--plain`, the extension is `.bin`. Do not give `--out` for a build of a generated source. Then the name always tells the build.
+An entry other than `main.asm` adds its name, for example `clean_loader.prg` for `loader.asm`. The `loader.asm` of the packed form holds only the copier, so its build is `clean_copier.prg`. The packed loader program `clean_loader.prg` of the generated source stays. With `--plain`, the extension is `.bin`. Do not give `--out` for a build of a generated source. Then the name always tells the build.
 
 ### Paths and the project folder
 

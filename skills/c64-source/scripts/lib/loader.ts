@@ -16,6 +16,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { COPIER_LINE } from "#src/build-name.ts";
 import { type AddressRange, formatC64Address, formatC64Byte, prgRange } from "#src/c64.ts";
 import { compareBuild, mergedPrograms } from "#src/compare.ts";
 import { Refusal } from "#src/errors.ts";
@@ -691,6 +692,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     "; The image is too large for one loader file, so this is the packed form. Exomizer packs the",
     `; build of main.asm and the build of this file into the loader program, with --entry '${formatC64Address(copier)}' and --exit-memory '$34'.`,
     "; The unpacker of Exomizer uses the zero page and $0334-$03ff, so the copier writes pages $0002-$03ff after the unpack.",
+    COPIER_LINE,
     "",
     "!cpu 6510",
     ...settingsLines(input),

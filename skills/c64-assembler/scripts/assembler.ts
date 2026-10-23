@@ -84,12 +84,13 @@ await runScript({
         }
         const setPc = call.address("set-pc");
         const { contents, ...tree } = readSourceTree(sourceRoot, call.strings("include"));
-        if (!tree.files.some((file) => file.path === (tree.sourceDir === "" ? entry : `${tree.sourceDir}/${entry}`))) throw new Refusal("not-found", `${entry} is not a file in ${sourceRoot}. Give the main source file relative to the source root.`);
+        const inSource = (name: string) => tree.files.findIndex((file) => file.path === (tree.sourceDir === "" ? name : `${tree.sourceDir}/${name}`));
+        if (inSource(entry) < 0) throw new Refusal("not-found", `${entry} is not a file in ${sourceRoot}. Give the main source file relative to the source root.`);
         // The name of the build tells what it is: the release, or the switch values of config.asm.
-        const config = tree.files.findIndex((file) => file.path === (tree.sourceDir === "" ? CONFIG_FILE : `${tree.sourceDir}/${CONFIG_FILE}`));
+        const config = inSource(CONFIG_FILE);
         const kind: BuildKind | undefined = label !== undefined ? { release: label } : config < 0 ? undefined : { values: configValues(contents[config]!.toString("utf8")), defaults: switchDefaults(call.space) };
         const plain = call.flag("plain");
-        const out = call.string("out") ?? `${BUILD_DIRECTORY}/${buildName(entry, kind)}.${plain ? "bin" : "prg"}`;
+        const out = call.string("out") ?? `${BUILD_DIRECTORY}/${buildName(entry, kind, contents[inSource(entry)]!.toString("utf8"))}.${plain ? "bin" : "prg"}`;
         const params: AcmeParams = { ...tree, entrySource: entry, defines: { ...releaseDefine, ...Object.fromEntries(call.strings("define").map(parseDefine)) }, ...(setPc === undefined ? {} : { setPc }) };
 
         const { result, attachments } = await assemble(params, contents, localToolContext());

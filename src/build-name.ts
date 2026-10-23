@@ -2,7 +2,9 @@
 // A release build is release_<label>. A build of config.asm is clean when each
 // switch has its default, else custom_ with each switch that differs: its
 // name when it is on, no_<name> when it is off. A build of an entry other
-// than main.asm adds the entry, for example clean_loader. A source without
+// than main.asm adds the entry, for example clean_loader. The loader of the
+// packed form alone is only its copier, so its build is clean_copier: the loader
+// program, which generate packs, keeps clean_loader. A source without
 // config.asm and without a release keeps the name of its entry. The symbols
 // of a build go into symbols/ next to the program, so the program folder
 // holds only programs.
@@ -31,9 +33,12 @@ export function configValues(text: string): Map<string, 0 | 1> {
 /** What a build is made of: a release, or the values of config.asm with the default of each switch (0 when the defaults do not have it). */
 export type BuildKind = { release: string } | { values: ReadonlyMap<string, number>; defaults: ReadonlyMap<string, number> };
 
-/** The name of a build of `entry`, without an extension. */
-export function buildName(entry: string, kind: BuildKind | undefined): string {
-  const base = basename(entry, extname(entry));
+/** The line of a generated loader.asm of the packed form. Its build alone is only the copier, not the loader program. */
+export const COPIER_LINE = "; A build of this file alone is only the copier: its build name has copier in place of loader.";
+
+/** The name of a build of `entry`, without an extension. `source` is the text of the entry: COPIER_LINE in it gives the name copier. */
+export function buildName(entry: string, kind: BuildKind | undefined, source?: string): string {
+  const base = source?.split(/\r?\n/).includes(COPIER_LINE) ? "copier" : basename(entry, extname(entry));
   if (kind === undefined) return base;
   let type: string;
   if ("release" in kind) type = `release_${kind.release}`;
