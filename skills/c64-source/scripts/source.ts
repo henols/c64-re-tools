@@ -703,6 +703,9 @@ const LOADER_CHECK_DIRECTORY = "loader-check";
 /** The source files of the loader. Only a run with --loader writes them, so only such a run removes them. */
 const LOADER_FILES: ReadonlySet<string> = new Set(["loader.asm", START_SCREEN_FILE, STAGE_FILE]);
 
+/** The source files of the show stage. A run writes them only with a loader program whose check ran, so only such a run removes them. */
+const STAGE_FILES: ReadonlySet<string> = new Set([START_SCREEN_FILE, STAGE_FILE]);
+
 /** A loader program that generate wrote: its build name, as buildName gives it for loader.asm. */
 const LOADER_PROGRAM = /^(clean|custom_[a-z0-9_]+|release_[A-Za-z0-9_]+)_loader\.prg$/;
 
@@ -802,7 +805,7 @@ function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boole
       }
       if (!entry.isFile()) continue;
       const path = join(directory, entry.name);
-      if (LOADER_FILES.has(name) && !loaderRun) continue;
+      if ((LOADER_FILES.has(name) && !loaderRun) || STAGE_FILES.has(name)) continue;
       if (!name.endsWith(".asm") || keep.has(name) || !readFileSync(path, "utf8").startsWith(GENERATED_MARK)) continue;
       rmSync(path, { force: true });
       removed.push(`${out}/${name}`);
@@ -1346,7 +1349,9 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     rmSync(resolveProjectPath(scratch), { recursive: true, force: true });
   }
   // A loader program of an earlier run with another build name goes: config.asm has other values now.
-  for (const path of loaderPrograms().filter((item) => item !== loaderPath && item !== symbolsPath(loaderPath))) {
+  // The files of an earlier show stage go when this loader has no stage and this run did not write them.
+  const stageFiles = stage === undefined ? [...STAGE_FILES].filter((name) => !files.some((file) => file.name === name)).map((name) => `${out}/${name}`).filter((path) => existsSync(resolveProjectPath(path)) && readFileSync(resolveProjectPath(path), "utf8").startsWith(GENERATED_MARK)) : [];
+  for (const path of [...loaderPrograms().filter((item) => item !== loaderPath && item !== symbolsPath(loaderPath)), ...stageFiles]) {
     rmSync(resolveProjectPath(path), { force: true });
     removed.push(path);
   }
