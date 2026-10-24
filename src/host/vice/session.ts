@@ -82,7 +82,6 @@ const WINDOW_CLOSED =
   "Breakpoints and watchpoints are kept. Check the machine state before you continue.";
 
 /** Emulator state that a move to another VICE cannot carry. */
-/** The first bytes of every VICE snapshot file. */
 const NOT_CARRIED = ["cpu history", "memory map", "profile", "keyboard input not yet typed"];
 
 /** Starts another VICE for this session; `log` also gets that launch's lines. */
@@ -141,7 +140,8 @@ const BROKEN_MESSAGES: Record<ViceFeature, string> = {
   keyboard: "Keys of the keyboard matrix are not implemented in this setup. Do not press keys in this task. Give this message to the user.",
 };
 
-export type DiskDirectory = (type: DiskImageType, image: Buffer) => Promise<DiskFile[]>;
+/** `signal` aborts when the session closes. */
+export type DiskDirectory = (type: DiskImageType, image: Buffer, signal: AbortSignal) => Promise<DiskFile[]>;
 
 /**
  * Where VICE keeps a staged file: an autostarted disk stays in drive 8, a tape
@@ -170,6 +170,8 @@ export class ViceSession implements ViceSessionHandle {
   readonly #stepLimitMs: number;
   readonly #launch: ViceLauncher | undefined;
   readonly #directory: DiskDirectory | undefined;
+  /** Stops the host tool runs of this session when it closes. */
+  readonly #abort = new AbortController();
   /** Session files that outlive one VICE: snapshots, staged media, handovers. */
   readonly #workDir: string;
   readonly #releaseWorkDir: () => void;
@@ -373,6 +375,7 @@ export class ViceSession implements ViceSessionHandle {
 
   async close(): Promise<void> {
     this.#closed = true;
+    this.#abort.abort();
     try {
       await this.#vice.stop();
     } finally {
@@ -436,7 +439,7 @@ export class ViceSession implements ViceSessionHandle {
         if (type === "tap") this.#refuseBroken("tape", "c64_autostart of a tape image");
         const bytes = onlyAttachment(attachments);
         checkMedia(type, bytes);
-        if (index > 0 && this.#directory !== undefined && isOneOf(DISK_IMAGE_TYPES, type)) checkDirectoryEntry(await this.#directory(type, bytes), index);
+        if (index > 0 && this.#directory !== undefined && isOneOf(DISK_IMAGE_TYPES, type)) checkDirectoryEntry(await this.#directory(type, bytes, this.#abort.signal), index);
         const file = this.#stage(bytes, type);
         // VICE keeps a cartridge through every reset and autostart, as a real C64 does.
         if (type !== "crt" && this.#cartridge) {
@@ -475,7 +478,7 @@ export class ViceSession implements ViceSessionHandle {
         return this.#reset(params as ViceOperations["reset"]["params"]);
       case "keyboard": {
         const bytes = Buffer.from((params as ViceOperations["keyboard"]["params"]).data, "hex");
-        await this.#refuseWhileAutostartLoads("type");
+        await this.#refuseWhileAutostartLoads("a key now stops it before RUN", "type");
         await this.#observe(() => this.#machine.feedKeyboard(bytes));
         return { queuedBytes: bytes.length };
       }
@@ -718,12 +721,16 @@ export class ViceSession implements ViceSessionHandle {
     // running, and only a stop caused by this breakpoint counts.
     const vector = await this.#machine.resetVector();
     const checkpoint = await this.#machine.addCheckpoint({ start: vector, end: vector, operation: 0x04, space: "c64" });
-    await this.#resume();
-    const stopped = this.#nextStop(RESET_STOP_LIMIT_MS, checkpoint);
-    await this.#resumingCommand(() => this.#machine.reset(params.mode));
-    const reached = (await stopped) !== undefined;
-    if (!reached) await this.#stop();
-    await this.#machine.deleteCheckpoint(checkpoint);
+    let reached: boolean;
+    try {
+      await this.#resume();
+      const stopped = this.#nextStop(RESET_STOP_LIMIT_MS, checkpoint);
+      await this.#resumingCommand(() => this.#machine.reset(params.mode));
+      reached = (await stopped) !== undefined;
+      if (!reached) await this.#stop();
+    } finally {
+      await this.#machine.deleteCheckpoint(checkpoint);
+    }
     if (!reached) throw new WireFailure("operation-failed", "The C64 did not reach its reset vector after the reset.");
     this.#atResetStop = true;
     return { state: "stopped", pc: vector };
@@ -847,6 +854,9 @@ export class ViceSession implements ViceSessionHandle {
           hits.push(await this.#traceHit(index, params.points[index]!.kind, frames));
           if (hits.length >= params.maxHits) return { hits, frames, end: "hits", pc: stop.pc };
         }
+        // A user point ends the trace, also when a trace point or the clock hit in the same stop.
+        const point = this.#userPoint(stop.hits);
+        if (point !== undefined) return { hits, frames, end: point.stopReason, pc: stop.pc };
         if (stop.hits.includes(clock)) {
           if (stop.pc === clockPc && (await this.#jamAt(stop.pc))) return { hits, frames, end: "jam", pc: stop.pc };
           clockPc = stop.pc;
@@ -860,8 +870,6 @@ export class ViceSession implements ViceSessionHandle {
           continue;
         }
         if (traced.length > 0) continue;
-        const point = this.#userPoint(stop.hits);
-        if (point !== undefined) return { hits, frames, end: point.stopReason, pc: stop.pc };
         if (await this.#jamAt(stop.pc)) return { hits, frames, end: "jam", pc: stop.pc };
         if (this.#pendingStep) {
           this.#pendingStep = false;
@@ -1184,14 +1192,27 @@ export class ViceSession implements ViceSessionHandle {
     return publicView(point);
   }
 
-  /** VICE turns warp on for an autostart and off when it types RUN. A key in between ends the autostart with no message. */
-  async #refuseWhileAutostartLoads(verb: string): Promise<void> {
+  /**
+   * VICE turns warp on for an autostart and off when it types RUN. A key in
+   * between ends the autostart with no message, and another VICE does not go on with it.
+   */
+  async #refuseWhileAutostartLoads(effect: string, verb: string): Promise<void> {
     if (this.#autostarting && !this.#userWarp && (await this.#observe(() => this.#machine.warp()))) {
       throw new WireFailure(
         "operation-failed",
-        `The autostart still loads the program, and a key now stops it before RUN. Run frames with c64_execution advance-frames, then ${verb} again.`,
+        `The autostart still loads the program, and ${effect}. Run frames with c64_execution advance-frames, then ${verb} again.`,
       );
     }
+  }
+
+  /** VICE (3.9, 3.10) stops answering at the restore of a snapshot saved at the reset stop while the disk drive was busy. */
+  #refuseAtResetStop(verb: string): void {
+    if (!this.#atResetStop) return;
+    throw new WireFailure(
+      "operation-failed",
+      "The CPU stands at the reset stop of c64_reset with run false. The emulator stops answering at the restore of a snapshot saved here when the disk drive was busy. " +
+        `Step one instruction with c64_execution, then ${verb}.`,
+    );
   }
 
   /**
@@ -1204,7 +1225,7 @@ export class ViceSession implements ViceSessionHandle {
    */
   async #press(params: ViceOperations["press"]["params"]): Promise<PressResult> {
     this.#refuseBroken("keyboard", "c64_press");
-    await this.#refuseWhileAutostartLoads("press the keys");
+    await this.#refuseWhileAutostartLoads("a key now stops it before RUN", "press the keys");
     if (this.#atResetStop) {
       throw new WireFailure(
         "operation-failed",
@@ -1411,13 +1432,7 @@ export class ViceSession implements ViceSessionHandle {
     if (params.action === "list") return { snapshots: [...this.#snapshots.keys()] };
     const existing = this.#snapshots.get(params.name);
     if (params.action === "save") {
-      if (this.#atResetStop) {
-        throw new WireFailure(
-          "operation-failed",
-          "The CPU stands at the reset stop of c64_reset with run false. The emulator stops answering at the restore of a snapshot saved here when the disk drive was busy. " +
-            "Step one instruction with c64_execution, then save the snapshot.",
-        );
-      }
+      this.#refuseAtResetStop("save the snapshot");
       if (existing === undefined && this.#snapshots.size >= MAX_SNAPSHOTS) {
         throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_SNAPSHOTS} snapshots. Remove one first with action remove.`);
       }
@@ -1443,6 +1458,8 @@ export class ViceSession implements ViceSessionHandle {
     if (this.#autostarting) await this.#reset({ mode: "soft", run: false });
     await this.#machine.restoreSnapshot(file);
     this.#historySince = await this.#machine.clock();
+    // A save at the reset stop is refused, so no restored machine stands there.
+    this.#atResetStop = false;
     // A restore starts a jammed CPU again, but VICE still records no CPU history.
     this.#jammed = undefined;
     if (this.#historyStopped) this.#historyOld = true;
@@ -1466,12 +1483,19 @@ export class ViceSession implements ViceSessionHandle {
     if (!hasSignature("vsf", bytes)) throw new WireFailure("invalid-input", "The file is not a VICE snapshot file (.vsf). Give a file that c64_snapshot save wrote.");
     const file = this.#stage(bytes, "vsf");
     // VICE resets the machine after a snapshot file that it cannot read: a backup keeps the state before the restore.
-    const backup = join(this.#workDir, "before-restore.vsf");
+    // At the reset stop there is none: VICE can stop answering at the restore of a snapshot saved there (#atResetStop).
+    const backup = this.#atResetStop ? undefined : join(this.#workDir, "before-restore.vsf");
     await this.#stop();
-    await this.#machine.saveSnapshot(backup);
+    if (backup !== undefined) await this.#machine.saveSnapshot(backup);
     try {
       return await this.#restoreFrom(file);
     } catch (error) {
+      if (backup === undefined) {
+        throw new WireFailure(
+          "machine-state-lost",
+          "The emulator did not restore this snapshot file, and it reset the machine. A snapshot file restores only in the emulator version and with the machine settings that saved it. Use c64_reset with run false to stop at the reset again.",
+        );
+      }
       const kept = await this.#restoreFrom(backup).then(
         () => true,
         () => false,
@@ -1489,7 +1513,7 @@ export class ViceSession implements ViceSessionHandle {
       );
     } finally {
       rmSync(file, { force: true });
-      rmSync(backup, { force: true });
+      if (backup !== undefined) rmSync(backup, { force: true });
     }
   }
 
@@ -1506,13 +1530,17 @@ export class ViceSession implements ViceSessionHandle {
     if (this.#mode === mode) return { window: mode === "window", state: this.#state, notCarried: [] };
     if (this.#held !== undefined) throw new WireFailure("machine-unavailable", this.#heldWhy);
     if (this.#launch === undefined) throw new WireFailure("operation-failed", "This session cannot start another emulator.");
+    const verb = mode === "window" ? "open the window" : "close the window";
+    this.#refuseAtResetStop(verb);
+    await this.#refuseWhileAutostartLoads("a move to another emulator now stops it before RUN", verb);
     const running = this.#state === "running";
     this.#log(mode === "window" ? "moving the machine to a VICE with a window" : "moving the machine back to a headless VICE");
     await this.#stop();
     const handover: Handover = {
       file: join(this.#workDir, mode === "window" ? "window-open.vsf" : "window-close.vsf"),
       running,
-      warp: await this.#machine.warp(),
+      // VICE's own warp can be the one of a loading autostart.
+      warp: this.#userWarp,
       elapsed: (await this.#machine.clock()) - this.#timingStart,
     };
     await this.#machine.saveSnapshot(handover.file);

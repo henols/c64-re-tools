@@ -1336,6 +1336,19 @@ test("a snapshot save at the reset stop is refused until an instruction ran", as
   await session.close();
 });
 
+test("a snapshot file restore at the reset stop saves no backup there, and the restore leaves the reset stop", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("snapshot", { action: "save", name: "early" });
+  const exported: Buffer[] = [];
+  await session.handle("snapshotFile", { action: "export", name: "early" }, [], exported);
+  await session.handle("reset", { mode: "hard", run: false });
+  const saves = fake.commands.filter((command) => command === Command.dump).length;
+  assert.deepEqual(await session.handle("snapshotFile", { action: "restore" }, exported), { restored: true, state: "stopped" });
+  assert.equal(fake.commands.filter((command) => command === Command.dump).length, saves, "no snapshot is saved at the reset stop");
+  assert.deepEqual(await session.handle("snapshot", { action: "save", name: "after" }), { saved: true, name: "after" });
+  await session.close();
+});
+
 test("removing a point names the other kind when the id is of a watchpoint", async () => {
   const { session } = await startSession();
   const watch = await session.handle("watchpoint", { action: "add", address: 0xd020, size: 1, access: "write", space: "c64" });

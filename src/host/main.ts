@@ -121,8 +121,8 @@ async function main(): Promise<number> {
         log,
         flaws,
         // c1541 lists the disk, so an autostart index selects a program.
-        directory: async (imageType, image) => {
-          const { result } = await inspect({ action: "directory", imageType }, image, { supervisor, signal: new AbortController().signal, log });
+        directory: async (imageType, image, signal) => {
+          const { result } = await inspect({ action: "directory", imageType }, image, { supervisor, signal, log });
           return result.action === "directory" ? result.entries : [];
         },
       }),

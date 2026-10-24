@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { WireFailure } from "../../protocol/messages.ts";
 import { ProcessSupervisor, type SupervisedProcess } from "../../native/processes.ts";
-import { checkViceStarts, findVice, freePort, launchVice, viceArguments } from "./process.ts";
+import { checkViceStarts, findVice, freePort, freePorts, launchVice, viceArguments } from "./process.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -93,6 +93,11 @@ test("a headless VICE has no window and no sound output; a windowed one has both
 test("freePort returns a loopback port that can be bound", async () => {
   const port = await freePort();
   assert.ok(port > 0 && port < 65536);
+});
+
+test("freePorts returns different ports", async () => {
+  const ports = await freePorts(8);
+  assert.equal(new Set(ports).size, 8);
 });
 
 test("a VICE that cannot load its ROMs is refused with its own error lines", { skip: process.platform === "win32" ? "the stand-in VICE is a shell script" : false }, async () => {

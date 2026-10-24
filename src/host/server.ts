@@ -263,7 +263,7 @@ class Connection {
     const record = (outcome: Record<string, unknown>) => {
       const ms = elapsedMs(started);
       trace().event("request", { connection: this.#id, op: request.op, id: request.id, params: request.params, attachments: attachments.length, ms, ...outcome });
-      // A call from a skill script (c1541, petcat, status) is always logged; the many calls of a VICE session only in the trace.
+      // A call from a skill script (c1541, petcat) is always logged; the many calls of a VICE session only in the trace.
       if (this.#isTool) {
         const what = outcome.ok === true ? "ok" : `${String(outcome.code)}: ${String(outcome.message)}`;
         this.#log(`${request.op} ${JSON.stringify(summarize(request.params) ?? {})}: ${what} (${ms} ms)`);
@@ -387,6 +387,8 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       server.once("error", failed);
       server.listen({ host: address, port, exclusive: true }, () => {
         server.off("error", failed);
+        // A failed accept (for example EMFILE) fails only that connection; the listener goes on.
+        server.on("error", (error) => log(`listener on ${address} port ${port}: ${error.message}`));
         const bound = server.address();
         if (bound === null || typeof bound === "string") reject(new Error("listener has no TCP address"));
         else resolve(bound.port);

@@ -25,7 +25,7 @@
 //   A headless VICE plays no sound: `-sounddev dummy` keeps the SID emulated.
 
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -49,18 +49,33 @@ export function findVice(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** Asks the OS for a free loopback port. Another process can still take it before VICE binds. */
-export function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      server.close(() => {
-        if (address === null || typeof address === "string") reject(new Error("no TCP address"));
-        else resolve(address.port);
-      });
-    });
-  });
+export async function freePort(): Promise<number> {
+  return (await freePorts(1))[0]!;
+}
+
+/** Asks the OS for `count` different free loopback ports: each probe stays bound until all are known. */
+export async function freePorts(count: number): Promise<number[]> {
+  const servers: Server[] = [];
+  try {
+    const ports: number[] = [];
+    for (let index = 0; index < count; index++) {
+      const server = createServer();
+      servers.push(server);
+      ports.push(
+        await new Promise<number>((resolve, reject) => {
+          server.once("error", reject);
+          server.listen(0, "127.0.0.1", () => {
+            const address = server.address();
+            if (address === null || typeof address === "string") reject(new Error("no TCP address"));
+            else resolve(address.port);
+          });
+        }),
+      );
+    }
+    return ports;
+  } finally {
+    await Promise.all(servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+  }
 }
 
 /** A VICE with no window (the default) or one with a window the user can use. */
@@ -254,8 +269,7 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
   const env = options.env ?? process.env;
   const log = options.log ?? (() => {});
   const binary = findVice(env);
-  const port = await freePort();
-  const textPort = await freePort();
+  const [port, textPort] = (await freePorts(2)) as [number, number];
   const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-vice-"));
   // Owned by the supervisor: its exit guard and the watchdog remove it if this process dies.
   const releaseScratch = options.supervisor.ownPath(scratch);
@@ -384,9 +398,12 @@ async function checkSameMachine(monitor: BinaryMonitor, text: TextMonitor): Prom
     if (seen === null || Number.parseInt(seen[1]!, 16) !== marker) {
       throw new WireFailure("machine-unavailable", "The emulator's two monitor connections reached different machines.");
     }
-  } finally {
-    await write(original);
+  } catch (error) {
+    // The first failure tells why the launch failed; a failed restore after it would hide it.
+    await write(original).catch(() => {});
+    throw error;
   }
+  await write(original);
 }
 
 /** Connects the binary monitor and proves it answers a ping, until `deadline`. */
