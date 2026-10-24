@@ -15,7 +15,7 @@ import { COVERAGE, instructionLength } from "../../src/c64.ts";
 import { assemble } from "../../src/native/acme.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ciaSection, copyOrder, loaderLimits, packLoader, planLoader, loaderState, loaderSymbols, simulate, START_SCREEN_CODE, START_SCREEN_FILE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { ciaSection, copierAreas, copyOrder, loaderLimits, packLoader, planLoader, loaderState, loaderSymbols, simulate, START_SCREEN_CODE, START_SCREEN_FILE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { PACKAGE } from "../../src/package.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
@@ -229,10 +229,31 @@ test("an image too large for one loader file gets a packed loader: the copier at
     () => planLoader({ segments: [{ start: 0x0400, end: 0x0bff, files: ["a.asm"] }, { start: 0x0c10, end: 0xffff, files: ["b.asm"] }], byteAt, state: state(), entry: 0x0810, header }),
     (error: Error) => {
       assert.ok(error instanceof WireFailure);
-      assert.equal(error.message, "The plain loader would end past $ffff, after $cfff: loading it would write the I/O area. A packed loader needs one free range of 176 bytes or more for its copier, and 1022 more free bytes for pages 0-3, in $0400-$9fff or $c000-$cfff outside the segments. The largest free ranges there: $0c00-$0c0f (16 bytes). Write the loader by hand.");
+      assert.equal(error.message, "The plain loader would end past $ffff, after $cfff: loading it would write the I/O area. A packed loader needs one free range of 176 bytes or more for its copier in $0400-$9fff or $c000-$cfff, and 1022 more free bytes for pages 0-3 in $0400-$ffff, outside the segments. The copier runs with $01 = $35 and then with the $01 of the entry, so it is in RAM that both show. The largest free ranges there: $0c00-$0c0f (16 bytes). Write the loader by hand.");
       return true;
     },
   );
+});
+
+test("a packed loader puts pages 0-3 in free RAM under a ROM, and its copier only in RAM that $01 = $35 and the $01 of the entry show", () => {
+  // Found in a field run on a game of $0800-$ffff: the only free room was under the BASIC ROM and the KERNAL.
+  assert.deepEqual(copierAreas([0x2f, 0x37]), [{ start: 0x0400, end: 0x9fff }, { start: 0xc000, end: 0xcfff }]);
+  assert.deepEqual(copierAreas([0x2f, 0x36]), [{ start: 0x0400, end: 0xcfff }]);
+  assert.deepEqual(copierAreas([0x2f, 0x35]), [{ start: 0x0400, end: 0xcfff }, { start: 0xe000, end: 0xffff }]);
+  assert.deepEqual(copierAreas([0x00, 0x30]), copierAreas([0x2f, 0x37]), "a port bit that is an input reads 1");
+  const segments = [{ start: 0x0400, end: 0x9fff }, { start: 0xa400, end: 0xcf00 }, { start: 0xd000, end: 0xefff }, { start: 0xf100, end: 0xffff }];
+  const plan = (port1: number) => planLoader({ segments: segments.map((segment) => ({ ...segment, files: [] })), byteAt: () => 0, state: state({ port: [0x2f, port1] }), entry: 0x0810, header: [] });
+  const basic = plan(0x37);
+  assert.equal(basic.copier, 0xcf01, "not under the BASIC ROM, which the entry shows");
+  assert.deepEqual(basic.copies.map((copy) => [copy.target.start, copy.target.end, copy.source.start]), [[0x0002, 0x03ff, 0xa000]]);
+  assert.deepEqual(basic.packed, { start: 0xa000 });
+  // With $cf01-$cfff used too, only the KERNAL area has room for the copier.
+  const kernal = [{ start: 0x0400, end: 0x9fff }, { start: 0xa400, end: 0xefff }, { start: 0xf100, end: 0xffff }].map((segment) => ({ ...segment, files: [] }));
+  const under = (port1: number) => planLoader({ segments: kernal, byteAt: () => 0, state: state({ port: [0x2f, port1] }), entry: 0x0810, header: [] });
+  assert.throws(() => under(0x37), /for its copier in \$0400-\$9fff or \$c000-\$cfff, and 1022 more free bytes/);
+  const ram = under(0x35);
+  assert.equal(ram.copier, 0xf000, "the entry shows RAM under the KERNAL");
+  assert.deepEqual(ram.copies.map((copy) => copy.source.start), [0xa000]);
 });
 
 test("with real ACME, a packed loader puts the copier in one free range and pages 0-3 in pieces in other ranges, with the image bytes between them", { skip: acmeSkip }, async () => {

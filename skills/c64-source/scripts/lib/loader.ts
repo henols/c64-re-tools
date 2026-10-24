@@ -22,6 +22,7 @@ import { compareBuild, mergedPrograms } from "#src/compare.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState } from "#src/host-client/entry-state.ts";
 import { isRomFont, startScreenRanges, type StartScreenRow } from "#src/knowledge/read.ts";
+import { romUseOfPort } from "#src/platform.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { pack } from "#src/native/exomizer.ts";
 import type { ToolContext } from "#src/native/run.ts";
@@ -641,11 +642,19 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   };
 }
 
-/** Where the packed form puts its copier with the bytes of pages 0-3: the copier sets $01 to $35 and to the entry's value, so it is not under a ROM or the I/O area. */
-const PACKED_AREAS: readonly AddressRange[] = [
-  { start: 0x0400, end: 0x9fff },
-  { start: 0xc000, end: 0xcfff },
-];
+/** Where the packed form puts the bytes of pages 0-3: the copier reads them with all RAM visible ($01 = $34). */
+const PIECE_AREA: AddressRange = { start: 0x0400, end: 0xffff };
+
+/**
+ * Where the packed form puts its copier: the copier sets $01 to $35 and then
+ * to the entry's value, so it is in RAM that both show. A port bit that is an
+ * input reads 1.
+ */
+export function copierAreas(port: readonly [number, number]): AddressRange[] {
+  const rom = romUseOfPort((port[1] | ~port[0]) & 0x07);
+  if (rom.basic) return [{ start: 0x0400, end: 0x9fff }, { start: 0xc000, end: 0xcfff }];
+  return [{ start: 0x0400, end: 0xcfff }, ...(rom.kernal ? [] : [{ start: 0xe000, end: 0xffff }])];
+}
 /** The free ranges that a refusal of the packed form names. */
 const SHOWN_FREE = 8;
 
@@ -669,15 +678,16 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     return [{ what: cut ? `${block.what}, part ${show(range)}` : block.what, range, bytes: block.bytes }];
   });
   const lowBytes = low.reduce((sum, block) => sum + block.range.end - block.range.start + 1, 0);
-  const free = PACKED_AREAS.flatMap((area) => subtract(area, input.segments));
-  const placed = placePacked(free, low, codeSize);
+  const areas = copierAreas(state.port);
+  const free = subtract(PIECE_AREA, input.segments);
+  const placed = placePacked(areas.flatMap((area) => subtract(area, input.segments)), free, low, codeSize);
   if ("refusal" in placed) {
     const largest = [...free].sort((a, b) => b.end - b.start - (a.end - a.start)).slice(0, SHOWN_FREE);
     const ranges = largest.length === 0 ? "none" : largest.map((range) => `${show(range)} (${range.end - range.start + 1} bytes)`).join(", ");
     const why =
       placed.refusal === "copies"
         ? `A packed loader needs more than ${MAX_PACKED_COPIES} copies for the ${lowBytes} bytes of pages 0-3 in the free ranges.`
-        : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier, and ${lowBytes} more free bytes for pages 0-3, in $0400-$9fff or $c000-$cfff outside the segments.${screen === undefined ? "" : ` The start screen takes ${START_SCREEN_SIZES[screen.colourMode]} bytes of the copier: without it (unstart-screen), the copier is smaller.`}`;
+        : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier in ${areas.map(show).join(" or ")}, and ${lowBytes} more free bytes for pages 0-3 in $0400-$ffff, outside the segments. The copier runs with $01 = $35 and then with the $01 of the entry, so it is in RAM that both show.${screen === undefined ? "" : ` The start screen takes ${START_SCREEN_SIZES[screen.colourMode]} bytes of the copier: without it (unstart-screen), the copier is smaller.`}`;
     throw new WireFailure("invalid-input", `${tooLarge} ${why} The largest free ranges there: ${ranges}. Write the loader by hand.`);
   }
   const { copier, pieces } = placed;
@@ -788,19 +798,19 @@ export function placePieces(ranges: AddressRange[], low: ReadonlyArray<{ what: s
 
 /**
  * Where the packed form puts its copier and the pieces of pages 0-3: the copier
- * in one free range, a free page of the plain copier first, else the start of a
+ * in one range of copierFree, a free page of the plain copier first, else the start of a
  * free range. The placement with the fewest pieces wins, then the one with the
  * shortest build of loader.asm.
  */
-function placePacked(free: AddressRange[], low: Parameters<typeof placePieces>[1], codeSize: number): { copier: number; pieces: Piece[] } | { refusal: "room" | "copies" } {
-  const candidates = [...COPIER_PAGES, ...free.map((range) => range.start)];
+function placePacked(copierFree: AddressRange[], free: AddressRange[], low: Parameters<typeof placePieces>[1], codeSize: number): { copier: number; pieces: Piece[] } | { refusal: "room" | "copies" } {
+  const candidates = [...COPIER_PAGES, ...copierFree.map((range) => range.start)];
   // The table has one entry per piece: a split can make the copier larger, so the room for the table grows until it holds every piece.
   for (let copies = Math.max(low.length, 1); copies <= MAX_PACKED_COPIES; ) {
     const size = codeSize + COPY_ENTRY * copies + 2;
     let best: { copier: number; pieces: Piece[]; span: number } | undefined;
     for (const copier of candidates) {
       const range = { start: copier, end: copier + size - 1 };
-      if (!free.some((area) => range.start >= area.start && range.end <= area.end)) continue;
+      if (!copierFree.some((area) => range.start >= area.start && range.end <= area.end)) continue;
       // A piece goes to the start of its range: a range below the copier adds its whole length to the build.
       const distance = (other: AddressRange) => (other.end < range.start ? range.start - other.start : other.start - range.end);
       const pieces = placePieces(free.flatMap((area) => subtract(area, [range])), low, distance);
