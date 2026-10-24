@@ -215,3 +215,43 @@ test("a rebuild with a start screen replays: the replay goes on after the wait, 
   const waits = script("replay", ["tests/recordings/run-walk", ...compare, "--rebuild", "screen.prg", "--symbols", "no-labels.json"]);
   assert.deepEqual([waits.status, waits.result.result, waits.result.startScreen], [0, "FAIL", undefined], JSON.stringify(waits.result));
 });
+
+// Reads $dc00 once, then counts frames at tick for ever and reads no input, as an intro does:
+// $c000 SEI; LDA $dc00; STA $c101; wait: LDA $d012; CMP #$80; BNE wait; tick: INC $c100; skip: LDA $d012; CMP #$80; BEQ skip; JMP wait
+function quietAt(base: number): Uint8Array {
+  const wait = base + 0x07;
+  return Uint8Array.from([
+    base & 0xff, base >> 8,
+    0x78, 0xad, 0x00, 0xdc, 0x8d, 0x01, 0xc1,
+    0xad, 0x12, 0xd0, 0xc9, 0x80, 0xd0, 0xf9,
+    0xee, 0x00, 0xc1,
+    0xad, 0x12, 0xd0, 0xc9, 0x80, 0xf0, 0xf9,
+    0x4c, wait & 0xff, wait >> 8,
+  ]);
+}
+const quietSymbols = (base: number) => ({ start: `$${base.toString(16)}`, tick: `$${(base + 0x0e).toString(16)}`, frames: "$c100" });
+writeFileSync(join(project, "quiet.prg"), quietAt(0xc000));
+writeFileSync(join(project, "quiet.json"), JSON.stringify(quietSymbols(0xc000)));
+writeFileSync(join(project, "quiet-moved.prg"), quietAt(0xc400));
+writeFileSync(join(project, "quiet-moved.json"), JSON.stringify(quietSymbols(0xc400)));
+
+test("a runUntil step to an address needs no input read, and the step after it runs there on each replay", { skip, timeout: 120_000 }, () => {
+  const record = (name: string, steps: unknown[]) => {
+    writeFileSync(join(project, `record-${name}.json`), JSON.stringify({ name, program: "quiet.prg", symbols: "quiet.json", load: true, steps: [{ registers: { pc: "start" } }, { frames: 20 }, ...steps, { frames: 20 }] }));
+    return script("record", [`record-${name}.json`, "--out", `tests/recordings/${name}`]);
+  };
+  const write = { write: { address: "$c102", data: "05" } };
+  const recorded = record("quiet", [{ runUntil: { target: { kind: "address", address: "tick" }, timeoutFrames: 100 } }, write]);
+  assert.equal(recorded.status, 0, JSON.stringify(recorded.result));
+  const { events } = JSON.parse(readFileSync(join(project, "tests/recordings/quiet/recording.json"), "utf8")) as { events: Array<{ step: number; key: Record<string, unknown> }> };
+  assert.deepEqual(events.map((event) => [event.step, Object.keys(event.key).join()]), [[1, "tick"], [3, "pc,count"], [4, "previous"]]);
+  assert.ok((events[1]!.key.count as number) > 15, JSON.stringify(events[1]));
+  const self = script("replay", ["tests/recordings/quiet"]);
+  assert.deepEqual([self.status, self.result.result], [0, "PASS"], JSON.stringify(self.result));
+  const moved = script("replay", ["tests/recordings/quiet", "--checkpoint", "tick", "--state", "$c100:3", "--rebuild", "quiet-moved.prg", "--symbols", "quiet-moved.json"]);
+  assert.deepEqual([moved.status, moved.result.result], [0, "PASS"], JSON.stringify(moved.result));
+  // Without the runUntil step, the write waits for an input read that does not come.
+  const waits = record("quiet-write", [write]);
+  assert.equal(waits.result.recorded, false);
+  assert.match(waits.result.reason as string, /^step 3: the program did not read its input again within 600 frames\. .*runUntil step to an address/);
+});

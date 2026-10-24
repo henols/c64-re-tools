@@ -89,7 +89,7 @@ function recordingCore(name: string, from: string): { path: string; log: string 
       "while read cmd rest; do",
       `  echo "$cmd $rest" >> ${log}`,
       '  case "$cmd" in',
-      '    version) echo "ok c64run protocol=5 chips=test" ;;',
+      '    version) echo "ok c64run protocol=6 chips=test" ;;',
       '    inputs|joy|key|write) echo "ok" ;;',
       '    record) [ "$rest" = off ] || : > "$rest"; echo "ok" ;;',
       '    sites) echo "ok unknown=0" ;;',

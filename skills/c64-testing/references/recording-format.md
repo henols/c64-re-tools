@@ -72,7 +72,13 @@ The keyboard queue of the KERNAL holds 10 keys. If the keys of a `type` step and
 
 RESTORE starts an NMI and is not a read. The recording keeps each RESTORE of a `press` step as an event of that step. The replay presses RESTORE again at the same read of the program.
 
-`type`, `write`, `registers` and `runUntil` steps are events. The recording keeps a point in the program for each event. The point is the next read at the input site with the most reads. That site is not in ROM. A replay does the event again at the same read. An event that comes directly after another event runs at once after that event.
+`type`, `write`, `registers` and `runUntil` steps are events. The recording keeps a point in the program for each event. A replay does the event again at the same point:
+
+- A `runUntil` step to an address: the point is the number of times that the CPU got to that address. This step does not need an input read.
+- An event that comes directly after another event runs at once after that event.
+- Each other event: the point is the next read at the input site with the most reads. That site is not in ROM. If the program does not read input in 600 frames, the session stops.
+
+Some parts of a program read no input, for example an intro or a bonus screen. To do an event in such a part, put a `runUntil` step to an address before the event.
 
 ## Play
 

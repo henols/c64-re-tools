@@ -27,7 +27,7 @@
 #include "systems/c1541.h"
 #include "systems/c64.h"
 
-#define C64RUN_PROTOCOL 5
+#define C64RUN_PROTOCOL 6
 // The key code of matrix place 0 (row 0, column 0); place n has code 0x80 + n.
 #define C64RUN_KEY_PLACE 0x80
 #ifndef CHIPS_COMMIT
@@ -226,6 +226,24 @@ static void sample(void) {
     if (sample_stop && samples >= sample_stop) halted = 1;
 }
 
+// ---- Counts: the opcode fetches at some pcs, from "count-pc" on ----
+
+#define MAX_COUNTED 64
+// 0: the pc is not counted; else the index of its count + 1.
+static uint8_t counted_at[0x10000];
+static uint16_t counted_pc[MAX_COUNTED];
+static uint64_t counted[MAX_COUNTED];
+static int counted_pcs;
+
+static void clear_counts(void) {
+    for (int i = 0; i < counted_pcs; i++) counted_at[counted_pc[i]] = 0;
+    counted_pcs = 0;
+}
+
+static uint64_t count_of(uint16_t pc) {
+    return counted_at[pc] ? counted[counted_at[pc] - 1] : 0;
+}
+
 // ---- The tick ----
 
 static void tick(void) {
@@ -240,6 +258,7 @@ static void tick(void) {
         last_sync_pc = addr;
         if (sample_file && addr == sample_pc && decoded) sample();
         if (coverage_armed_pc && addr == coverage_pc && decoded) { coverage_armed_pc = 0; coverage_start(addr); }
+        if (counted_at[addr] && decoded) counted[counted_at[addr] - 1]++;
     }
     if (read && !sync && decoded && sys.io_mapped && (addr & 0xFF0F) == 0xDC00) {
         // chips gives port A of CIA 1 only joystick 2. A key also pulls its line of port A
@@ -444,6 +463,7 @@ int main(int argc, char** argv) {
             halted = 0;
             sample_stop = 0;
             maps = 0;
+            clear_counts();
             coverage_reset();
             if (pin_file) { fclose(pin_file); pin_file = NULL; }
             if (record_file) { fclose(record_file); record_file = NULL; }
@@ -493,6 +513,7 @@ int main(int argc, char** argv) {
             last_sync_pc = pc;
             // The prefetch is the opcode fetch at pc: it does not pass through tick.
             if (coverage_armed_pc && pc == coverage_pc) { coverage_armed_pc = 0; coverage_start(pc); }
+            if (counted_at[pc]) counted[counted_at[pc] - 1]++;
             if (coverage_on) cover(pc, 1, 1);
             status("ok");
         } else if (!strcmp(cmd, "run")) {
@@ -505,12 +526,39 @@ int main(int argc, char** argv) {
             do tick(); while (!(pins & M6502_SYNC) && !halted);
             status("ok");
         } else if (!strcmp(cmd, "run-pc")) {
-            // run-pc <pc hex> <until tick>: run to the next opcode fetch at pc
+            // run-pc <pc hex> <until tick> [<n>]: run to the next opcode fetch at pc; with n, run
+            // until the count of pc ("count-pc") is n
             unsigned pc;
-            const unsigned long long until = strtoull(a2, NULL, 10);
-            if (sscanf(a1, "%x", &pc) != 1) { printf("err run-pc: give a pc and a tick\n"); continue; }
+            unsigned long long until, n;
+            const int fields = sscanf(line, "%*s %x %llu %llu", &pc, &until, &n);
+            if (fields < 2 || pc > 0xFFFF) { printf("err run-pc: give a pc and a tick\n"); continue; }
+            if (fields == 3) {
+                if (!counted_at[pc]) { printf("err run-pc: give count-pc with %04x first\n", pc); continue; }
+                while (count_of((uint16_t)pc) < n && ticks < until && !halted) tick();
+                status(count_of((uint16_t)pc) >= n ? "ok reached" : "ok not-reached");
+                continue;
+            }
             do tick(); while (!((pins & M6502_SYNC) && M6502_GET_ADDR(pins) == pc) && ticks < until && !halted);
             status((pins & M6502_SYNC) && M6502_GET_ADDR(pins) == pc ? "ok reached" : "ok not-reached");
+        } else if (!strcmp(cmd, "count-pc")) {
+            // count-pc <pc hex,...> | off: count the opcode fetches at each pc from 0
+            clear_counts();
+            if (!strcmp(a1, "off")) { printf("ok counted=0\n"); continue; }
+            int bad = 0;
+            for (char* part = strtok(a1, ","); part; part = strtok(NULL, ",")) {
+                unsigned pc;
+                if (sscanf(part, "%x", &pc) != 1 || pc > 0xFFFF || counted_pcs == MAX_COUNTED) { bad = 1; break; }
+                if (counted_at[pc]) continue;
+                counted_pc[counted_pcs] = (uint16_t)pc;
+                counted[counted_pcs] = 0;
+                counted_at[pc] = (uint8_t)++counted_pcs;
+            }
+            if (bad) { clear_counts(); printf("err count-pc: give 1 to %d pcs in hex\n", MAX_COUNTED); } else printf("ok counted=%d\n", counted_pcs);
+        } else if (!strcmp(cmd, "hits")) {
+            // hits <pc hex>: the count of a pc of count-pc
+            unsigned pc;
+            if (sscanf(a1, "%x", &pc) != 1 || pc > 0xFFFF) { printf("err hits: give a pc\n"); continue; }
+            printf("ok count=%llu\n", (unsigned long long)count_of((uint16_t)pc));
         } else if (!strcmp(cmd, "run-reads")) {
             // run-reads <pc hex> <addr hex> <n> <until tick>: run until the site has n reads
             unsigned pc, addr;

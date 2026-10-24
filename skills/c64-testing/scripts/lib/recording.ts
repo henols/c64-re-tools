@@ -39,6 +39,10 @@ export function inputsArgument(inputs: string[]): string {
 /** Frames that a pressed key is held, and then released. */
 const KEY_FRAMES = 3;
 const MAX_STATE_ITEMS = 16;
+/** The replay core counts the opcode fetches at this many addresses at most: the targets of the runUntil steps to an address. */
+const MAX_COUNTED_TARGETS = 64;
+/** An event other than a runUntil to an address waits this long for the next input read. */
+const READ_WAIT_FRAMES = 600;
 const MAX_STATE_BYTES = 4096;
 /** A replay of a rebuild may take this many times the cycles of the recording before it stops. */
 const REBUILD_TIME_FACTOR = 2;
@@ -99,9 +103,11 @@ export interface RecordedEvent {
   /**
    * The point: the n-th read at the busiest program site, or a tick when no
    * program site has read yet. An event that follows another event directly
-   * has { previous: true }: it runs where that one ended.
+   * has { previous: true }: it runs where that one ended. A runUntil to an
+   * address has { pc, count }: the count-th opcode fetch at its target from the
+   * start, which needs no read; the event is done when the point is reached.
    */
-  key: { site: Location; addr: Location; count: number } | { tick: number } | { previous: true };
+  key: { site: Location; addr: Location; count: number } | { tick: number } | { previous: true } | { pc: Location; count: number };
 }
 
 export interface RecordedSite {
@@ -219,6 +225,7 @@ export function readRecordFile(path: string): RecordFile {
     checkCoreStep(step, at, fail);
     return step;
   });
+  if (new Set(steps.flatMap(addressTarget)).size > MAX_COUNTED_TARGETS) fail(`the runUntil steps go to more than ${MAX_COUNTED_TARGETS} addresses`);
   return {
     name: value.name as string,
     program: value.program as string,
@@ -229,6 +236,17 @@ export function readRecordFile(path: string): RecordFile {
     coverage: coverage as string,
     steps,
   };
+}
+
+/** The target of a runUntil step to an address, as a list of none or one. */
+function addressTarget(step: ActionStep | RestoreAction): Location[] {
+  return "runUntil" in step && step.runUntil.target.kind === "address" ? [step.runUntil.target.address] : [];
+}
+
+/** Starts the counts of the replay core at the addresses. */
+async function countAt(core: C64RunSession, addresses: number[]): Promise<void> {
+  const unique = [...new Set(addresses)];
+  if (unique.length > 0) await core.command(`count-pc ${unique.map(hex).join(",")}`);
 }
 
 /** What the replay core cannot do of a step that is right for VICE: it has the C64 alone, no raster wait and no conditions. */
@@ -369,8 +387,12 @@ function busiestSite(answer: string): { site: number; addr: number; count: numbe
  * Runs to the point of an event. `map` moves a site to the rebuild. "halted"
  * when a sample stop came first, "not-reached" when the point did not come before `until`.
  */
-async function runToKey(core: C64RunSession, key: RecordedEvent["key"], until: number, map: Map<number, number>, skipped: number): Promise<"reached" | "not-reached" | "halted"> {
+async function runToKey(core: C64RunSession, key: RecordedEvent["key"], until: number, map: Map<number, number>, skipped: number, at: SideAddresses): Promise<"reached" | "not-reached" | "halted"> {
   if ("previous" in key) return (await core.status("status")).word === "halted" ? "halted" : "reached";
+  if ("pc" in key) {
+    const status = await core.status(`run-pc ${hex(at.code(key.pc))} ${until} ${key.count}`);
+    return status.word === "halted" ? "halted" : status.word === "reached" ? "reached" : "not-reached";
+  }
   if ("tick" in key) {
     const status = await core.status(`run ${key.tick + skipped}`);
     return status.word === "halted" ? "halted" : "reached";
@@ -474,6 +496,7 @@ export async function record(
   await core.init();
   await core.command(`inputs ${inputsArgument(file.inputs)}`);
   await core.command(`record ${reads}`);
+  await countAt(core, file.steps.flatMap(addressTarget).map(at.code));
   await startProgram(core, prg, file.load ?? false);
   // From READY on: the start of the C64 itself is never in the map.
   await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hex(parseC64Address(file.coverage))}`);
@@ -485,13 +508,25 @@ export async function record(
   // replay. An event right after another event runs where that one ended.
   const runEvent = async (action: ActionStep | RestoreAction, step?: number): Promise<string | undefined> => {
     const tick = (await core.status("status")).tick;
+    if ("runUntil" in action && action.runUntil.target.kind === "address") {
+      // The next opcode fetch at the target: its count from the start is the point, on each replay.
+      const { address } = action.runUntil.target;
+      const pc = hex(at.code(address));
+      const count = Number(/count=(\d+)/.exec(await core.command(`hits ${pc}`))![1]) + 1;
+      const reached = await core.status(`run-pc ${pc} ${tick + action.runUntil.timeoutFrames * PAL_FRAME_CYCLES} ${count}`);
+      if (reached.word !== "reached") return `the program did not reach ${address} within ${action.runUntil.timeoutFrames} frames`;
+      events.push({ ...(step === undefined ? {} : { step }), action, key: { pc: address, count } });
+      return undefined;
+    }
     const busiest = afterEvent ? undefined : busiestSite(await core.command("sites"));
     const key: RecordedEvent["key"] = afterEvent
       ? { previous: true }
       : busiest === undefined
         ? { tick: tick + 1 }
         : { site: formatC64Address(busiest.site), addr: formatC64Address(busiest.addr), count: busiest.count + 1 };
-    if ((await runToKey(core, key, tick + 600 * PAL_FRAME_CYCLES, new Map(), 0)) !== "reached") return "the program did not read its input again within 600 frames";
+    if ((await runToKey(core, key, tick + READ_WAIT_FRAMES * PAL_FRAME_CYCLES, new Map(), 0, at)) !== "reached") {
+      return `the program did not read its input again within ${READ_WAIT_FRAMES} frames. This step runs at the next input read. Put a runUntil step to an address before it: that step needs no input read`;
+    }
     events.push({ ...(step === undefined ? {} : { step }), action, key });
     return doAction(core, action, at);
   };
@@ -640,6 +675,7 @@ export async function replaySide(
     // The samples hold the state, then the pinned items.
     await core.command(`sample ${hex(at.code(options.compare.checkpoint))} ${samples} ${rangesArgument([...options.compare.state, ...pinned], at)}${stop > 0 ? ` ${stop}` : ""}`);
   }
+  await countAt(core, recording.events.flatMap((event) => ("pc" in event.key ? [at.code(event.key.pc)] : [])));
   await startProgram(core, prg, recording.load);
   let limit = original ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
   let problem: string | undefined;
@@ -658,13 +694,14 @@ export async function replaySide(
   }
   for (const event of problem === undefined ? recording.events : []) {
     const what = event.step === undefined ? "the RESTORE of the play" : "step " + event.step;
-    const point = await runToKey(core, event.key, limit, map, skipped);
+    const point = await runToKey(core, event.key, limit, map, skipped, at);
     if (point === "halted") break;
     if (point === "not-reached") {
       problem = "the program did not come to the point of " + what;
       break;
     }
-    problem = await doAction(core, event.action, at);
+    // At the point of a runUntil to an address, its target is reached.
+    if (!("pc" in event.key)) problem = await doAction(core, event.action, at);
     if (problem !== undefined) {
       problem = what + ": " + problem;
       break;
