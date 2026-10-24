@@ -107,9 +107,16 @@ export const FIRST_SEGMENT_ADDRESS = 0x0400;
  * a segment. A block that an intermediate stage wrote inside a leftover, for
  * example a variable of the loader, is a leftover too. The filter comes before
  * the join: a join first would drop the program with a leftover. `writtenBy` is
- * the last stage that wrote into the range.
+ * the last stage that wrote into the range. When no written block holds the
+ * entry, the code there is as the program loaded it: `loaded`, the range of
+ * the PRG, is then a segment too (`loaded: true`), joined with the blocks that
+ * it overlaps or touches.
  */
-export function captureSegments(stages: ReadonlyArray<{ entry: number; wrote: readonly AddressRange[] }>, entry: number): Array<AddressRange & { writtenBy: number }> {
+export function captureSegments(
+  stages: ReadonlyArray<{ entry: number; wrote: readonly AddressRange[] }>,
+  entry: number,
+  loaded?: AddressRange,
+): Array<AddressRange & ({ writtenBy: number } | { loaded: true })> {
   const last = stages.length - 1;
   const replaced = (from: number, address: number) => stages.slice(from).some((stage) => inRanges(stage.wrote, address));
   const leftover = (block: AddressRange, writer: number) =>
@@ -129,7 +136,15 @@ export function captureSegments(stages: ReadonlyArray<{ entry: number; wrote: re
       previous.writtenBy = Math.max(previous.writtenBy, block.writtenBy);
     } else segments.push({ ...block });
   }
-  return segments;
+  if (loaded === undefined || !contains(loaded, entry) || segments.some((segment) => contains(segment, entry))) return segments;
+  const joined = { start: loaded.start, end: loaded.end, loaded: true as const };
+  const apart = segments.filter((segment) => {
+    if (segment.end + 1 < joined.start || segment.start > joined.end + 1) return true;
+    joined.start = Math.min(joined.start, segment.start);
+    joined.end = Math.max(joined.end, segment.end);
+    return false;
+  });
+  return [...apart, joined].sort((a, b) => a.start - b.start);
 }
 
 /** The segments without the bytes of `holes`: a segment that a hole cuts gives its parts, each with the fields of the segment. */

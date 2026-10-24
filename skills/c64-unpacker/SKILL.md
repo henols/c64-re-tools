@@ -195,7 +195,7 @@ Traps:
 
 - `captured`: true when the CPU got to `--until`. `pc` is that address.
 - `files`: each file that the command wrote, as `{out, bytes, sha256}`. `removed` names the segment files of an earlier capture that the new `image.json` does not list.
-- `segments` and `excluded`: the ranges of the segment files, and the ranges that `--exclude` removed.
+- `segments` and `excluded`: the ranges of the segment files, and the ranges that `--exclude` removed. `loaded: true` marks a segment with the bytes that the program loaded.
 - `stages`: the count of stages.
 - `differsFromReset`: the count of bytes that are not as a clean C64 has them at READY.
 
@@ -214,6 +214,8 @@ A segment is a block that a stage wrote, also a small block. These blocks are no
 
 The block with the capture entry is always a segment. Segments do not overlap.
 
+If no stage wrote the capture entry, the program runs as it loaded. Then the range of the PRG is a segment with `loaded: true`. The blocks that touch this range are in the same segment. An example is a memory dump that starts with `SYS`.
+
 A capture into a folder with an earlier capture removes only the segment files that the new `image.json` does not list. It keeps all other files.
 
 On `PASS`, `hint` tells you to disassemble the code at `pc`, and then to put `<out>/image.json` into the project knowledge.
@@ -221,7 +223,7 @@ On `PASS`, `hint` tells you to disassemble the code at `pc`, and then to put `<o
 Traps:
 
 - The capture stops at the first arrival at `--until` after the steps. To capture a later arrival, add a `runUntil` step to an address after the first arrival.
-- `captured: false`: the program did not get to `--until` in `--timeout-frames`. The reason tells where it stopped. Find a better address, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step.
+- `captured: false`: the program did not get to `--until` in `--timeout-frames`. The reason tells where it stopped. Find a better address, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step. If the CPU got to `--until` in a step, the reason names that step.
 
 ### `loads <program>`
 

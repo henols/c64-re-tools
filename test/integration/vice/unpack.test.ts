@@ -105,6 +105,25 @@ test("trace finds no written code in a program that runs as it loaded; a program
   assert.deepEqual(started.json.writtenThenExecuted, { count: 0, listed: [] }, "the counter runs where it loaded");
 });
 
+test("a capture of a program that runs as it loaded gives the loaded bytes as a segment", { skip: liveSkip, timeout: 180_000 }, async () => {
+  writeFileSync(join(project, "plain.prg"), ORIGINAL.prg);
+  const end = 0xc000 + ORIGINAL.prg.length - 3;
+  const { status, json } = await unpack("capture", "plain.prg", "--entry", "$c000", "--until", `$${ORIGINAL.symbols.done!.toString(16)}`, "--out", "unpacked/plain");
+  assert.equal(status, 0, JSON.stringify(json));
+  // The counter at $c100 is a block that the program wrote.
+  assert.deepEqual(json.segments, [{ start: "$c000", end: `$${end.toString(16)}`, loaded: true }, { start: "$c100", end: "$c100" }]);
+  assert.deepEqual([...readFileSync(join(project, "unpacked", "plain", `segment-c000-${end.toString(16)}.prg`))], [...ORIGINAL.prg]);
+});
+
+test("a capture whose --until the CPU executed in a step tells that step", { skip: liveSkip, timeout: 180_000 }, async () => {
+  writeFileSync(join(project, "plain.prg"), ORIGINAL.prg);
+  writeFileSync(join(project, "press-space.json"), JSON.stringify([{ press: { keys: " " } }]));
+  // The CPU stands at $c000 until the press step runs: the STA at $c002 runs once, in that step.
+  const { json } = await unpack("capture", "plain.prg", "--entry", "$c000", "--until", "$c002", "--steps", "press-space.json", "--out", "unpacked/passed", "--timeout-frames", "100");
+  assert.equal(json.captured, false, JSON.stringify(json));
+  assert.match(json.reason as string, /The CPU executed \$c002 in step 1, before the wait for --until started\./);
+});
+
 test("trace and stages give FAIL with the stop reason when the CPU stops before the frames ran", { skip: liveSkip, timeout: 180_000 }, async () => {
   // A JAM at $c000: the CPU stops at the first instruction.
   writeFileSync(join(project, "jam.prg"), Uint8Array.of(0x00, 0xc0, 0x02));

@@ -248,6 +248,18 @@ test("a small written block is a segment; a block all in pages 0-3 is not, unles
   ]);
 });
 
+test("a capture entry that no stage wrote is in the loaded bytes: the range of the PRG is a segment, joined with the blocks that it touches", () => {
+  // The Hover Bovver memory dump: $0801-$9fff, started by SYS 32768, whose start code wrote two blocks inside it and one after it.
+  const dump = [{ entry: 0x8000, wrote: [range(0x2000, 0x27ff), range(0x3000, 0x3fff), range(0xc000, 0xc0ff)] }];
+  assert.deepEqual(captureSegments(dump, 0x81ff, range(0x0801, 0x9fff)), [
+    { start: 0x0801, end: 0x9fff, loaded: true },
+    { start: 0xc000, end: 0xc0ff, writtenBy: 0 },
+  ]);
+  assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xa000, 0xa0ff)] }], 0x81ff, range(0x0801, 0x9fff)), [{ start: 0x0801, end: 0xa0ff, loaded: true }], "a block that touches the loaded range joins it");
+  // A written block holds the entry: the loaded bytes are the packer, not a segment.
+  assert.deepEqual(captureSegments([{ entry: 0x080d, wrote: [range(0xc000, 0xc0ff)] }], 0xc000, range(0x0801, 0x0fff)), [{ start: 0xc000, end: 0xc0ff, writtenBy: 0 }]);
+});
+
 test("--exclude leaves ranges out of the capture segments, and a segment that a range cuts gives its parts", () => {
   // The Bruce Lee field run: the crack's mover left $a000-$a9ff, and $fe00-$fff9 is not the game's.
   const found = [

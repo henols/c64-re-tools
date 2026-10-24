@@ -197,6 +197,8 @@ interface Followed {
   failed?: string;
   /** What stopped the CPU before the frames ran: a JAM or a point of the program. */
   halted?: { stopReason: string; pc: number };
+  /** The first step (1 = the first) in which the CPU executed `until`, before the run waited for it. */
+  untilRan?: number;
 }
 
 type RunUntilStep = Extract<ActionStep, { runUntil: unknown }>;
@@ -250,9 +252,16 @@ async function follow(
   const atTarget = (pc: number) => stopAt !== undefined && pc === stopAt;
   // The current stage: its memory map since it started, chunk by chunk, its own code, and the written code it calls.
   let stage = { map: new Uint8Array(0x10000), own: new Set<number>(), called: [] as AddressRange[] };
+  // A step that runs frames can pass until: the run then waits for it in vain.
+  let running = 0;
+  let untilRan: number | undefined;
+  const noteUntil = (map: Uint8Array) => {
+    if (options.until !== undefined && running > 0 && untilRan === undefined && (map[options.until]! & EXECUTE) !== 0) untilRan = running;
+  };
   const startStage = async (next: number, last: Uint8Array) => {
     mergeMaps(stage.map, last);
     await markIoRam(stage.map);
+    noteUntil(stage.map);
     found.push({ entry, firstFrame, frames: total - firstFrame, wrote: stageWrote(stage.map), next });
     entry = next;
     firstFrame = total;
@@ -428,6 +437,7 @@ async function follow(
   };
   // The steps run first and in the tracked time: a frames step and a runUntil step to an address. The others act between two chunks.
   for (const [index, step] of options.steps.entries()) {
+    running = index + 1;
     if ("frames" in step) await track(step.frames);
     else if (trackedRunUntil(step)) {
       if (!(await trackTo(knowledgeAt()(step.runUntil.target.address), step.runUntil.timeoutFrames))) {
@@ -436,7 +446,13 @@ async function follow(
         return { stages: found, frames: total, reached: false, failed: `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It is at ${formatC64Address(pc)}.${why}` };
       }
     } else await runActionStep(client, step, knowledgeAt());
+    if (options.until !== undefined && untilRan === undefined) {
+      const now = Uint8Array.from(stage.map);
+      mergeMaps(now, await readCoverage(client));
+      noteUntil(now);
+    }
   }
+  running = 0;
   const left = Math.max(0, options.frames - total);
   let reached = false;
   if (options.until === undefined) await track(left);
@@ -445,7 +461,7 @@ async function follow(
   mergeMaps(stage.map, await readCoverage(client));
   await markIoRam(stage.map);
   found.push({ entry, firstFrame, frames: total - firstFrame, wrote: stageWrote(stage.map) });
-  return { stages: found, frames: total, reached, ...(halted === undefined ? {} : { halted }) };
+  return { stages: found, frames: total, reached, ...(halted === undefined ? {} : { halted }), ...(untilRan === undefined ? {} : { untilRan }) };
 }
 
 const showRange = (range: { start: number; end: number }) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
@@ -490,6 +506,11 @@ async function stages(program: string, options: { frames: number; entry?: number
   }
 }
 
+/** Why a capture can wait for --until in vain: a step ran over it. */
+function passedInStep(until: number, step: number): string {
+  return `The CPU executed ${formatC64Address(until)} in step ${step}, before the wait for --until started. A press step runs frames. Make the steps stop before the program gets to that address, or give an --until address that the program gets to later.`;
+}
+
 async function capture(
   program: string,
   options: { until: number; out: string; range?: AddressRange; exclude: AddressRange[]; timeoutFrames: number; entry?: number; steps: ActionStep[]; minStage: number },
@@ -504,7 +525,7 @@ async function capture(
       return {
         output: {
           captured: false,
-          reason: `The program did not get to ${formatC64Address(options.until)} in ${options.timeoutFrames} frames. It is at ${formatC64Address(registers.pc)}.${followed.halted === undefined ? "" : ` ${stoppedEarly(followed.halted.stopReason, followed.halted.pc, followed.frames, options.timeoutFrames)}`}`,
+          reason: `The program did not get to ${formatC64Address(options.until)} in ${options.timeoutFrames} frames. It is at ${formatC64Address(registers.pc)}.${followed.halted === undefined ? "" : ` ${stoppedEarly(followed.halted.stopReason, followed.halted.pc, followed.frames, options.timeoutFrames)}`}${followed.untilRan === undefined ? "" : ` ${passedInStep(options.until, followed.untilRan)}`}`,
           ...(followed.halted === undefined ? {} : { stopReason: followed.halted.stopReason }),
           stages: showStages(followed.stages),
         },
@@ -515,7 +536,8 @@ async function capture(
     const memory = await readRam(client, 0x0000, 0x10000);
     const state = await machineState(client);
     // The segments: what the stages wrote, without loader leftovers, with no overlap.
-    const found = options.range !== undefined ? [options.range] : captureSegments(followed.stages, registers.pc);
+    const load = bytes[0]! | (bytes[1]! << 8);
+    const found = options.range !== undefined ? [options.range] : captureSegments(followed.stages, registers.pc, { start: load, end: Math.min(0xffff, load + bytes.length - 3) });
     const segments = withoutRanges(found, options.exclude);
     const file = (path: string) => `${options.out}/${path}`;
     const written: Written[] = [];
@@ -533,7 +555,7 @@ async function capture(
         `${JSON.stringify(
           {
             entry: formatC64Address(registers.pc),
-            segments: segments.map((segment, index) => ({ ...showRange(segment), ...("writtenBy" in segment ? { writtenBy: segment.writtenBy } : {}), file: files[index] })),
+            segments: segments.map((segment, index) => ({ ...showRange(segment), ...("writtenBy" in segment ? { writtenBy: segment.writtenBy } : {}), ...("loaded" in segment ? { loaded: true } : {}), file: files[index] })),
             ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
             vectors,
             stages: showStages(followed.stages),
@@ -556,7 +578,7 @@ async function capture(
         out: options.out,
         files: written,
         ...(removed.length === 0 ? {} : { removed }),
-        segments: segments.map(showRange),
+        segments: segments.map((segment) => ({ ...showRange(segment), ...("loaded" in segment ? { loaded: true } : {}) })),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
         stages: followed.stages.length,
         differsFromReset: entry.differsFromReset,
