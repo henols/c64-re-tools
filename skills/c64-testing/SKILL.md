@@ -48,6 +48,7 @@ To get the command list, run the script with no arguments.
 - `--state` and `--pin` take a name or a `$` address, with `:size` for more than one byte, for example `room:2`. Use the names that the project knowledge has at the time of the replay.
 - The joystick port of `--joystick` is the port that the program reads. Port 2 is `$DC00`, and port 1 is `$DC01`. Find the port in the code or in the project knowledge. If you do not know the port, use 2.
 - `diff` takes two states of one kind. A state is a snapshot file (`.vsf`), a memory file (`.bin`) of a run, or an observation of a run (`results.json:<name>`). A `save` step of a run writes a snapshot file. A snapshot save in the emulator also writes one.
+- Each command starts its own emulator. Thus many commands can run at the same time. For example, other commands can run while a long `record` runs in the background.
 
 ### Paths and the project folder
 
