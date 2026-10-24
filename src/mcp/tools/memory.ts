@@ -186,7 +186,7 @@ export const c64Disassemble = defineTool({
   description:
     `Disassemble count instructions (1 to ${MAX_DISASSEMBLE}) from an address, as the bytes are in the live machine now. ` +
     "Use it to read code that a program changed or unpacked at run time. It includes the undocumented opcodes. " +
-    `With out, it disassembles up to ${MAX_DISASSEMBLE_OUT} instructions, or to $ffff, and writes them as a listing to that project file. The result then gives the file in place of the instructions. ` +
+    `With out, it disassembles up to ${MAX_DISASSEMBLE_OUT} instructions, or to $ffff, and writes them as a listing to that project file. The result then gives the file in place of the instructions. A file name that ends in .json gets a JSON list of the instructions, as the result without out gives them. ` +
     "This does not change the run state of the machine.",
   inputSchema: z
     .object({
@@ -208,24 +208,27 @@ export const c64Disassemble = defineTool({
       const result = await session.disassemble(request);
       return { instructions: result.instructions.map((instruction) => ({ ...instruction, address: formatC64Address(instruction.address) })) };
     }
-    const lines: string[] = [];
+    const instructions: Array<{ address: string; bytes: string; text: string }> = [];
     let address = request.address;
     // Ends at count, or where the disassembly would wrap past $ffff.
     let wrapped = false;
-    while (!wrapped && lines.length < request.count && address <= 0xffff) {
-      const { instructions } = await session.disassemble({ ...request, address, count: Math.min(MAX_DISASSEMBLE, request.count - lines.length) });
-      if (instructions.length === 0) break;
-      for (const instruction of instructions) {
-        if (lines.length === request.count) break;
+    while (!wrapped && instructions.length < request.count && address <= 0xffff) {
+      const part = await session.disassemble({ ...request, address, count: Math.min(MAX_DISASSEMBLE, request.count - instructions.length) });
+      if (part.instructions.length === 0) break;
+      for (const instruction of part.instructions) {
+        if (instructions.length === request.count) break;
         if (instruction.address < address) {
           wrapped = true;
           break;
         }
-        lines.push(`${formatC64Address(instruction.address)}  ${spaced(instruction.bytes).padEnd(9)} ${instruction.text}`);
+        instructions.push({ ...instruction, address: formatC64Address(instruction.address) });
         address = instruction.address + instruction.bytes.length / 2;
       }
     }
-    return { count: lines.length, ...writeOut(out, linesText(lines), project) };
+    const text = out.toLowerCase().endsWith(".json")
+      ? `${JSON.stringify(instructions, null, 1)}\n`
+      : linesText(instructions.map((instruction) => `${instruction.address}  ${spaced(instruction.bytes).padEnd(9)} ${instruction.text}`));
+    return { count: instructions.length, ...writeOut(out, text, project) };
   },
 });
 

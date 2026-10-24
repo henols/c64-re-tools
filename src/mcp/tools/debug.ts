@@ -176,7 +176,7 @@ export const c64CpuHistory = defineTool({
   },
 });
 
-/** The hits that a trace result gives inline; out gives all of them. */
+/** The hits that a trace result gives inline; out gives all of them in the file, and none inline. */
 const TRACE_LISTED = 200;
 
 export const c64Trace = defineTool({
@@ -192,7 +192,7 @@ export const c64Trace = defineTool({
     "A read or write hit also gives the address that the instruction used, and value, the byte that it read or wrote. " +
     "At $D000-$DFFF only a load or a store gives value: a read after the access can give another byte. " +
     `The trace ends after frames frames (1 to ${MAX_TRACE_FRAMES}), at maxHits hits (at most ${MAX_TRACE_HITS}), or at a breakpoint, a watchpoint or a JAM. ` +
-    `The result lists the first ${TRACE_LISTED} hits. With out, it writes all hits as JSON lines to that project file. ` +
+    `The result lists the first ${TRACE_LISTED} hits. With out, it writes all hits as JSON lines to that project file, and the result gives no hits. ` +
     "Each hit stops the machine for a short time. Thus a point with many hits in each frame makes the trace slow. Use a small range and a maxHits. " +
     "The machine is stopped after the trace.",
   inputSchema: z
@@ -209,23 +209,25 @@ export const c64Trace = defineTool({
     frames: z.number().int().min(0),
     pc: AddressOutput,
     count: z.number().int().min(0),
-    hits: z.array(
-      z.object({
-        point: z.number().int().min(0),
-        pc: AddressOutput,
-        bytes: HexData,
-        text: z.string(),
-        a: Byte,
-        x: Byte,
-        y: Byte,
-        sp: Byte,
-        frame: z.number().int().min(0),
-        rasterLine: z.number().int().min(0),
-        rasterCycle: z.number().int().min(0),
-        address: AddressOutput.optional(),
-        value: Byte.optional(),
-      }),
-    ),
+    hits: z
+      .array(
+        z.object({
+          point: z.number().int().min(0),
+          pc: AddressOutput,
+          bytes: HexData,
+          text: z.string(),
+          a: Byte,
+          x: Byte,
+          y: Byte,
+          sp: Byte,
+          frame: z.number().int().min(0),
+          rasterLine: z.number().int().min(0),
+          rasterCycle: z.number().int().min(0),
+          address: AddressOutput.optional(),
+          value: Byte.optional(),
+        }),
+      )
+      .optional(),
     ...WrittenOutput,
   }),
   readOnly: false,
@@ -236,8 +238,8 @@ export const c64Trace = defineTool({
     if (ranges.some((point) => point.end < point.start)) throw new WireFailure("invalid-input", "A point end must not be before its start.");
     const traced = await session.trace({ points: ranges, ...request });
     const shown = traced.hits.map(({ address, ...hit }) => ({ ...hit, pc: formatC64Address(hit.pc), ...(address === undefined ? {} : { address: formatC64Address(address) }) }));
-    const summary = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length, hits: shown.slice(0, TRACE_LISTED) };
-    if (out === undefined) return summary;
+    const summary = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length };
+    if (out === undefined) return { ...summary, hits: shown.slice(0, TRACE_LISTED) };
     return { ...summary, ...writeOut(out, linesText(shown.map((hit) => JSON.stringify(hit))), project) };
   },
 });

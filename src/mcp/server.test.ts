@@ -969,6 +969,11 @@ test("out writes memory, a listing, the history and a screen to project files", 
     assert.equal(listing.count, 3);
     assert.equal(readFileSync(join(project, "listing.txt"), "utf8"), "$1000  a9 00     LDA #$00\n$1002  a9 00     LDA #$00\n$1004  a9 00     LDA #$00\n");
     assert.equal(errorOf(await call(client, "c64_disassemble", { address: "$1000", count: 300 })).code, "invalid-input");
+    await call(client, "c64_disassemble", { address: "$1000", count: 2, out: "listing.json" });
+    assert.deepEqual(JSON.parse(readFileSync(join(project, "listing.json"), "utf8")), [
+      { address: "$1000", bytes: "a900", text: "LDA #$00" },
+      { address: "$1002", bytes: "a900", text: "LDA #$00" },
+    ]);
 
     const history = (await call(client, "c64_cpu_history", { out: "history.txt" })).structuredContent as Record<string, unknown>;
     assert.equal(history.count, 1);
@@ -1087,6 +1092,22 @@ test("c64_trace takes points with an optional end and gives the hits with $ addr
   assert.equal(errorOf(await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011", end: "$d010" }], frames: 1 })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_trace", { points: [], frames: 1 })).code, "invalid-input");
   await client.close();
+});
+
+test("c64_trace with out writes all hits to the file and gives none in the result", async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-trace-"));
+  const home = process.cwd();
+  process.chdir(project);
+  const client = await connect(async () => new FakeSession());
+  try {
+    const traced = (await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011" }], frames: 100, out: "trace.jsonl" })).structuredContent as Record<string, unknown>;
+    assert.deepEqual([traced.count, traced.out, "hits" in traced], [1, "trace.jsonl", false]);
+    assert.equal(JSON.parse(readFileSync(join(project, "trace.jsonl"), "utf8")).pc, "$09c1");
+  } finally {
+    await client.close();
+    process.chdir(home);
+    rmSync(project, { recursive: true, force: true });
+  }
 });
 
 test("c64_run_until gives the observation and the history at the stop in one call", async () => {
