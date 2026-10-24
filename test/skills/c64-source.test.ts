@@ -1209,9 +1209,9 @@ test("a patch is written as !if SWITCH { code, NOP } else { original }, with its
   const text = textOf(rendered, "segments/segment_1000.asm");
   assert.match(
     text,
-    /^l_1000\nstore = \* \+ 2\nl_1003 = \* \+ 3\n!zone patch_CRACK_1000 \{\n\.patch_start\n!if CRACK \{\n {8}; CRACK on: 5 bytes at \$1000-\$1004, NOP after the code\n {8}; A grey border\.\n {8}lda #1\n {8}sta \$d021\n {8}!if \* - \.patch_start > 5 \{ !error .*\} else \{ !fill 5 - \(\* - \.patch_start\), \$ea \}\n\} else \{\n {8}lda #\$00\n {8}sta \$d020\n\}\n\}\n {8}jmp l_1000\n/m,
+    /^l_1000\nstore = \* \+ 2\nl_1003 = \* \+ 3\n!zone patch_CRACK_1000 \{\n\.patch_start\n!if CRACK \{\n {8}; CRACK on: 5 bytes at \$1000-\$1004, NOP after the code\n {8}; A grey border\.\n {8}lda #1\n {8}sta \$d021\n {8}!if \(\(\* - \.patch_start\) & \$ffff\) > 5 \{ !error .*\} else \{ !fill 5 - \(\(\* - \.patch_start\) & \$ffff\), \$ea \}\n\} else \{\n {8}lda #\$00\n {8}sta \$d020\n\}\n\}\n {8}jmp l_1000\n/m,
   );
-  assert.match(text, /!if DEBUG \{\n.*\n {8}!if \* - \.patch_start > 4 .*\n\} else \{\n {8}!byte \$01,\$02,\$03,\$04\n\}\n\}\n {8}!byte \$05,\$06,\$07,\$08\n/);
+  assert.match(text, /!if DEBUG \{\n.*\n {8}!if \(\(\* - \.patch_start\) & \$ffff\) > 4 .*\n\} else \{\n {8}!byte \$01,\$02,\$03,\$04\n\}\n\}\n {8}!byte \$05,\$06,\$07,\$08\n/);
   assert.match(textOf(rendered, "config.asm"), /\n; Other changes\nCRACK = 0 ; on in no release\. \$1000-\$1004\nDEBUG = 0 ; on in no release\. \$1008-\$100b\n$/);
   assert.match(textOf(rendered, "switches.asm"), /\n\n!source "config\.asm"\n$/, "without releases, every build reads config.asm");
   assert.match(textOf(rendered, "main.asm"), /!source "switches\.asm"\n!source "constants\.asm"\n/);
@@ -1260,6 +1260,21 @@ test("with real ACME, a switch off gives the image, on changes only its range, a
   const refused = await assembleRendered(withConfig(long, { CRACK: 1 }));
   assert.equal(refused.bytes, undefined);
   assert.deepEqual(refused.messages, ["!error: The patch CRACK at $1000 has 6 (0x6) bytes; the range has 5."]);
+});
+
+test("with real ACME, a patch that ends at $ffff assembles, and one too long there stops ACME", { skip: acmeSkip }, async () => {
+  // $fff8 LDA #$00; $fffa JMP $fff8; $fffd three data bytes, the last two the IRQ vector.
+  const bytes = [0xa9, 0x00, 0x4c, 0xf8, 0xff, 0x01, 0x48, 0xff];
+  const at = (patches: NonNullable<SourceInput["patches"]>) =>
+    input(bytes, 0xfff8, { instructions: new Map([[0xfff8, 2], [0xfffa, 3]]), regions: [{ start: 0xfffd, end: 0xffff, type: "bytes" }], patches, switches: [offSwitch("TRAINER")] });
+  const vector = render(layout(at([{ start: 0xfffe, end: 0xffff, switch: "TRAINER", code: "        !word $1234" }])), new Set(), []);
+  assert.deepEqual((await assembleRendered(vector)).bytes, bytes);
+  assert.deepEqual((await assembleRendered(withConfig(vector, { TRAINER: 1 }))).bytes, [...bytes.slice(0, 6), 0x34, 0x12]);
+  const short = render(layout(at([{ start: 0xfffd, end: 0xffff, switch: "TRAINER", code: "        !byte 0" }])), new Set(), []);
+  assert.deepEqual((await assembleRendered(withConfig(short, { TRAINER: 1 }))).bytes, [...bytes.slice(0, 5), 0x00, 0xea, 0xea], "NOP fills to $ffff");
+  const long = render(layout(at([{ start: 0xfffd, end: 0xfffe, switch: "TRAINER", code: "        !byte 0, 0, 0" }])), new Set(), []);
+  // The bytes after the patch then go past $ffff, so ACME also stops on its own.
+  assert.equal((await assembleRendered(withConfig(long, { TRAINER: 1 }))).messages[0], "!error: The patch TRAINER at $fffd has 3 (0x3) bytes; the range has 2.");
 });
 
 /**
@@ -1344,7 +1359,7 @@ test("config.asm has the value of every switch by kind, switches.asm each releas
     ].join("\n"),
   );
   const text = textOf(rendered, "segments/segment_1000.asm");
-  assert.match(text, /^!zone patch_PROTECTION_1000 \{\n\.patch_start\n!if PROTECTION = 0 \{\n {8}; PROTECTION off: 5 bytes at \$1000-\$1004, NOP after the code\n {8}; No check\.\n {8}!if \* - \.patch_start > 5 .*\n\} else \{\n {8}lda #\$00\n {8}sta \$d020\n\}\n\}\n/m);
+  assert.match(text, /^!zone patch_PROTECTION_1000 \{\n\.patch_start\n!if PROTECTION = 0 \{\n {8}; PROTECTION off: 5 bytes at \$1000-\$1004, NOP after the code\n {8}; No check\.\n {8}!if \(\(\* - \.patch_start\) & \$ffff\) > 5 .*\n\} else \{\n {8}lda #\$00\n {8}sta \$d020\n\}\n\}\n/m);
   assert.match(
     text,
     /^!zone patch_FIX_A_1008 \{\n\.patch_start\n!if FIX_A \{ !if FIX_B \{ !error "FIX_A and FIX_B change \$1008-\$100b: turn on one of them\." \} \}\n!if FIX_A \{\n.*\n {8}!byte 9, 9, 9, 9\n.*\n\} else \{ !if FIX_B \{\n.*\n {8}!byte 7, 7, 7, 7\n.*\n\} else \{\n {8}!byte \$01,\$02,\$03,\$04\n\}\}\n\}\n/m,

@@ -1102,6 +1102,9 @@ function macrosText(layout: Layout): { text: string; lines: Map<string, { first:
   return { text: `${out.join("\n")}\n`, lines };
 }
 
+/** The bytes of the patch code so far: after a byte at $ffff, ACME sets * to $0000. */
+const LENGTH = "((* - .patch_start) & $ffff)";
+
 /** The condition that puts in the code of a switch: the switch has the value that the program does not have. */
 const patchCondition = (alternative: PatchAlternative) => (alternative.base === 0 ? alternative.switch : `${alternative.switch} = 0`);
 
@@ -1128,7 +1131,7 @@ function patchOpening(patch: PatchBlock): string[] {
       `${INDENT}; ${alternative.switch} ${state}: ${bytes} byte${bytes === 1 ? "" : "s"} at ${range}, NOP after the code`,
       ...comment,
       ...(alternative.code === "" ? [] : alternative.code.split(/\r?\n/)),
-      `${INDENT}!if * - .patch_start > ${bytes} { !error "The patch ${alternative.switch} at ${formatC64Address(patch.start)} has ", * - .patch_start, " bytes; the range has ${bytes}." } else { !fill ${bytes} - (* - .patch_start), $ea }`,
+      `${INDENT}!if ${LENGTH} > ${bytes} { !error "The patch ${alternative.switch} at ${formatC64Address(patch.start)} has ", ${LENGTH}, " bytes; the range has ${bytes}." } else { !fill ${bytes} - ${LENGTH}, $ea }`,
     );
   });
   out.push("} else {");
