@@ -1,6 +1,6 @@
 ---
 name: c64-testing
-description: Tests if a rebuilt or changed C64 program behaves as the original, or if a program has the expected values. It runs a scenario on the original and on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. Use it when you must show that a rebuild or a correction keeps the behavior of the original. Use it to do many steps on one program and keep the screens, coverage maps, traces and snapshots as files. Use it to test a new program or a correction with expected values. Use it to record a play session of the original and replay it on each rebuild. Use it to find what changed between two machine states, and to make a checklist for a human playtest. It does not find the cause of a difference. It does not build the program.
+description: Tests if a rebuilt or changed C64 program behaves as the original, or if a program has the expected values. It runs a scenario on the original and on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. Use it when you must show that a rebuild or a correction keeps the behavior of the original. Use it to do many steps on one program and keep the screens, coverage maps, traces and snapshots as files. Use it to test a new program or a correction with expected values. Use it to record a play session of the original and replay it on the default build of the rebuild. Use it to find what changed between two machine states, and to make a checklist for a human playtest. It does not find the cause of a difference. It does not build the program.
 ---
 
 # C64 testing
@@ -179,6 +179,7 @@ A recording keeps a session of the original program, for example a play through 
 - Make the recordings early, before you change the program.
 - Ask the user to play first. Tell the user which parts of the program the recordings must have, for example each room, a fight and a lost life.
 - Record a session from steps only for a part that the sessions of the user do not have, or when the user cannot play.
+- Replay each recording on the default build `build/clean.prg`. Do not replay a release build or a build with a switch that is not at its default.
 - Commit the recording folder with the scenarios. Do not put a recording into the project knowledge. Do not put test results, screenshots or playtest results into it.
 - A finding that a recording shows can go into the project knowledge. Give the `recording.json` of the recording as its test evidence.
 - The C64 of a recording has no disk drive. For a program that loads more files from a disk, use a scenario with `test`.
