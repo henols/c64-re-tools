@@ -256,41 +256,62 @@ test("a runUntil step to an address needs no input read, and the step after it r
   assert.match(waits.result.reason as string, /^step 3: the program did not read its input again within 600 frames\. .*runUntil step to an address/);
 });
 
+// A game in place at $c000 after an unpacker or a loader that RUN starts. Before the game is in place, the code runs tick ($c00e) as
+// often as `calls`: an RTS there, then a JSR to it. A delay is a loop of about 16 frames. Then the code copies the game and jumps to $c000.
+function unpacked(game: Uint8Array, calls: number, delay = false): { prg: Uint8Array; jump: string } {
+  const before = [
+    0xa9, 0x60, 0x8d, 0x0e, 0xc0, // LDA #$60; STA $c00e
+    ...Array.from({ length: calls }, () => [0x20, 0x0e, 0xc0]).flat(), // JSR $c00e
+    ...(delay ? [0xa0, 0x00, 0xa2, 0x00, 0xca, 0xd0, 0xfd, 0x88, 0xd0, 0xfa] : []), // LDY #0; LDX #0; DEX; BNE; DEY; BNE
+  ];
+  const payload = 0x080d + before.length + 14;
+  const copy = [0xa2, game.length - 1, 0xbd, payload & 0xff, payload >> 8, 0x9d, 0x00, 0xc0, 0xca, 0x10, 0xf7]; // copy the game to $c000
+  return { prg: Uint8Array.from([0x01, 0x08, ...SYS_2061, ...before, ...copy, 0x4c, 0x00, 0xc0, ...game]), jump: `$${(0x080d + before.length + copy.length).toString(16)}` };
+}
+
+const handover = join(project, "handover");
+mkdirSync(join(handover, ".c64-re-tools"), { recursive: true });
+writeFileSync(join(handover, "game.json"), JSON.stringify(quietSymbols(0xc000)));
+// The checkpoint is the JMP back to the wait, which the code before the entry does not run.
+const handoverReplay = (recording: string, rebuild: string) =>
+  script("replay", [`tests/recordings/${recording}`, "--checkpoint", "$c018", "--state", "$c100:3", "--rebuild", `${rebuild}.prg`, "--symbols", `${rebuild}.json`], handover).result;
+function handoverFiles(name: string, built: { prg: Uint8Array; jump: string }, loader: boolean): void {
+  writeFileSync(join(handover, `${name}.prg`), built.prg);
+  writeFileSync(join(handover, `${name}.json`), JSON.stringify(loader ? { ...quietSymbols(0xc000), c64_source_loader_jump: built.jump } : quietSymbols(0xc000)));
+}
+function handoverRecord(name: string, program: string, steps: unknown[]): Record<string, unknown> {
+  writeFileSync(join(handover, `${name}-record.json`), JSON.stringify({ name, program: `${program}.prg`, symbols: `${program}.json`, steps }));
+  return script("record", [`${name}-record.json`, "--out", `tests/recordings/${name}`], handover).result;
+}
+
 test("a pc key of a rebuild with a loader counts from the jump of the loader, without the fetches of the original before its entry", { skip, timeout: 120_000 }, () => {
-  // The game is the quiet program at $c000. Before it is in place, the unpacker of the original runs tick ($c00e) once,
-  // and the loader of the rebuild runs it twice: an RTS there, then a JSR to it. Then each copies the game and jumps to $c000.
-  const folder = join(project, "handover");
-  mkdirSync(join(folder, ".c64-re-tools", "local", "capture"), { recursive: true });
   const game = quietAt(0xc000).subarray(2);
-  const unpacker = (calls: number) => {
-    const payload = 0x080d + 5 + 3 * calls + 11 + 3;
-    return Uint8Array.from([
-      0x01, 0x08, ...SYS_2061,
-      0xa9, 0x60, 0x8d, 0x0e, 0xc0, // LDA #$60; STA $c00e
-      ...Array.from({ length: calls }, () => [0x20, 0x0e, 0xc0]).flat(), // JSR $c00e
-      0xa2, game.length - 1, 0xbd, payload & 0xff, payload >> 8, 0x9d, 0x00, 0xc0, 0xca, 0x10, 0xf7, // copy the game to $c000
-      0x4c, 0x00, 0xc0, // JMP $c000
-      ...game,
-    ]);
-  };
-  writeFileSync(join(folder, "original.prg"), unpacker(1));
-  writeFileSync(join(folder, "rebuild.prg"), unpacker(2));
-  writeFileSync(join(folder, "original.json"), JSON.stringify(quietSymbols(0xc000)));
-  writeFileSync(join(folder, "rebuild.json"), JSON.stringify({ ...quietSymbols(0xc000), c64_source_loader_jump: "$0823" }));
-  const memory = Buffer.alloc(0x10000);
-  memory.set(game, 0xc000);
-  writeFileSync(join(folder, ".c64-re-tools", "local", "capture", "image.bin"), memory);
-  writeFileSync(join(folder, ".c64-re-tools", "local", "capture", "image.json"), JSON.stringify({ entry: "$c000", segments: [{ start: "$c000", end: `$${(0xc000 + game.length - 1).toString(16)}` }], image: "image.bin" }));
-  const steps = [{ frames: 20 }, { runUntil: { target: { kind: "address", address: "tick" }, timeoutFrames: 100 } }, { write: { address: "$c102", data: "05" } }, { frames: 20 }];
-  writeFileSync(join(folder, "record.json"), JSON.stringify({ name: "handover", program: "original.prg", symbols: "original.json", steps }));
-  const recorded = script("record", ["record.json", "--out", "tests/recordings/handover"], folder);
-  assert.equal(recorded.result.recorded, true, JSON.stringify(recorded.result));
-  // The checkpoint is the JMP back to the wait, which the code before the entry does not run.
-  const replay = () => script("replay", ["tests/recordings/handover", "--checkpoint", "$c018", "--state", "$c100:3", "--rebuild", "rebuild.prg", "--symbols", "rebuild.json"], folder).result;
-  // Without the entry in the knowledge, the fetch of the original before its entry counts: the write comes one frame late.
-  const failed = replay();
-  assert.equal(failed.result, "FAIL", JSON.stringify(failed));
-  assert.equal(script("image", [".c64-re-tools/local/capture/image.json"], folder, "c64-knowledge/scripts/knowledge.ts").status, 0);
-  const passed = replay();
+  handoverFiles("original", unpacked(game, 1), false);
+  handoverFiles("rebuild", unpacked(game, 2), true);
+  const recorded = handoverRecord("handover", "original", [{ frames: 20 }, { runUntil: { target: { kind: "address", address: "tick" }, timeoutFrames: 100 } }, { write: { address: "$c102", data: "05" } }, { frames: 20 }]);
+  assert.equal(recorded.recorded, true, JSON.stringify(recorded));
+  // The entry is where the loader of the rebuild jumps: the knowledge has none.
+  const passed = handoverReplay("handover", "rebuild");
   assert.equal(passed.result, "PASS", JSON.stringify(passed));
+});
+
+test("a step of a recording before the entry makes the replay of a rebuild with a loader INCONCLUSIVE", { skip, timeout: 120_000 }, () => {
+  const recorded = handoverRecord("early", "original", [{ write: { address: "$c103", data: "01" } }, { frames: 40 }]);
+  assert.equal(recorded.recorded, true, JSON.stringify(recorded));
+  const early = handoverReplay("early", "rebuild");
+  assert.deepEqual([early.result, early.reason], ["INCONCLUSIVE", "step 1 ran before the program came to its entry $c000. A rebuild with a loader has no point for it. Make the steps of the record file start after the entry"], JSON.stringify(early));
+});
+
+test("a tick key after the entry comes as far from the entry in a rebuild whose loader takes longer", { skip, timeout: 120_000 }, () => {
+  // The game reads no input, so the write of the recording runs at a tick.
+  const silent = quietAt(0xc000).subarray(2);
+  silent.set([0xad, 0xff, 0xc0], 1); // LDA $c0ff in place of LDA $dc00
+  handoverFiles("silent", unpacked(silent, 1), false);
+  handoverFiles("silent-slow", unpacked(silent, 1, true), true);
+  const recorded = handoverRecord("silent", "silent", [{ frames: 30 }, { write: { address: "$c102", data: "05" } }, { frames: 20 }]);
+  assert.equal(recorded.recorded, true, JSON.stringify(recorded));
+  const { events } = JSON.parse(readFileSync(join(handover, "tests/recordings/silent/recording.json"), "utf8")) as { events: Array<{ key: Record<string, unknown> }> };
+  assert.deepEqual(Object.keys(events[0]!.key), ["tick"]);
+  const slow = handoverReplay("silent", "silent-slow");
+  assert.equal(slow.result, "PASS", JSON.stringify(slow));
 });

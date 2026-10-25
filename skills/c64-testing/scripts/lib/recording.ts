@@ -353,6 +353,48 @@ export function siteMap(sites: RecordedSite[], from: Map<string, number>, to: Ma
   return moved;
 }
 
+/** Where the original came to the entry that the loader of a rebuild jumps to. */
+export interface EntryPoint {
+  /** The tick of the first opcode fetch at the entry. */
+  tick: number;
+  /** The count of each pc key, by its target, before that fetch. */
+  counts: Map<string, number>;
+  /** The number of events of the recording before the entry: always the first ones. */
+  eventsBefore: number;
+}
+
+/**
+ * A loader with a start screen that RUN starts waits for a key or a fire button that the recording does not have:
+ * the rebuild goes on after the wait, as the check of the loader does. Gives the tick of the wait, a problem, or
+ * undefined when the rebuild has no start screen.
+ */
+async function passStartScreen(core: C64RunSession, own: Map<string, number>, limit: number): Promise<number | string | undefined> {
+  const wait = own.get(START_SCREEN_WAIT);
+  const resume = own.get(START_SCREEN_CONTINUE);
+  if (wait === undefined || resume === undefined) return undefined;
+  const reached = await core.status(`run-pc ${hex(wait)} ${limit}`);
+  if (reached.word !== "reached") return `the rebuild did not come to the wait of its start screen at ${formatC64Address(wait)}`;
+  await core.status(`goto ${hex(resume)}`);
+  return reached.tick;
+}
+
+/**
+ * The entry that the generated loader of a rebuild jumps to: the operand of its jump, from a short run of the
+ * rebuild. Gives a problem when the rebuild does not come to the jump.
+ */
+export async function loaderEntry(core: C64RunSession, recording: Recording, subject: ReplaySubject): Promise<number | string> {
+  const own = namesOf(subject.symbols);
+  const jump = own.get(LOADER_JUMP)!;
+  const limit = recording.ticks * REBUILD_TIME_FACTOR;
+  await core.init();
+  await startProgram(core, readProjectFile(subject.program).bytes, false);
+  const screen = await passStartScreen(core, own, limit);
+  if (typeof screen === "string") return screen;
+  if ((await core.status(`run-pc ${hex(jump)} ${limit}`)).word !== "reached") return `the rebuild did not come to the jump of its loader at ${formatC64Address(jump)}`;
+  const operand = await core.peek((jump + 1) & 0xffff, 2);
+  return operand[0]! | (operand[1]! << 8);
+}
+
 /** Power-on and READY, then the program in memory as a LOAD leaves it, and RUN in the keyboard queue. */
 async function startProgram(core: C64RunSession, prg: Uint8Array, load: boolean): Promise<CoreStatus> {
   if (prg.length < 3) throw new Refusal("invalid-input", "the program is not a PRG file");
@@ -622,8 +664,8 @@ export interface SideRun {
   problem?: string;
   /** True when the rebuild went on after the wait of its start screen. */
   startScreenSkipped?: boolean;
-  /** The original with an `entry`: the count of each pc key (by its target) at the first opcode fetch at the entry. */
-  beforeEntry?: Map<string, number>;
+  /** The original with an `entry`: where it came to that entry, when it came to it. */
+  entryPoint?: EntryPoint;
   /**
    * Input reads that the recording has no value for, which got the fixed idle value:
    * at sites that it does not have, and after its end at a site.
@@ -644,7 +686,7 @@ export async function replaySide(
   folder: string,
   subject: ReplaySubject,
   workspace: Workspace,
-  options: { compare?: Comparison; stop?: number; dump?: number; pins?: string[]; entry?: number; beforeEntry?: Map<string, number> } = {},
+  options: { compare?: Comparison; stop?: number; dump?: number; pins?: string[]; entry?: number; handover?: { entry: number; original: EntryPoint } } = {},
 ): Promise<SideRun & { ram?: Uint8Array }> {
   const prg = readProjectFile(subject.program).bytes;
   const original = subject.side === "original";
@@ -683,43 +725,63 @@ export async function replaySide(
   await countAt(core, targets);
   if (options.entry !== undefined) await core.command(`mark ${hex(options.entry)}`);
   await startProgram(core, prg, recording.load);
-  let limit = original ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
+  const base = original ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
+  let limit = base;
   let problem: string | undefined;
-  // A loader with a start screen that RUN starts waits for a key or a fire button that the recording does not have:
-  // the rebuild goes on after the wait, as the check of the loader does. The cycles to the wait do not count.
-  const wait = own.get(START_SCREEN_WAIT);
-  const resume = own.get(START_SCREEN_CONTINUE);
+  // A tick key of the rebuild comes this many cycles later than in the original.
   let skipped = 0;
-  if (!original && !recording.load && wait !== undefined && resume !== undefined) {
-    const reached = await core.status(`run-pc ${hex(wait)} ${limit}`);
-    if (reached.word === "reached") {
-      skipped = reached.tick;
-      limit += skipped;
-      await core.status(`goto ${hex(resume)}`);
-    } else problem = `the rebuild did not come to the wait of its start screen at ${formatC64Address(wait)}`;
+  let screenSkipped = false;
+  if (!original && !recording.load) {
+    // The cycles to the wait of a start screen do not count.
+    const screen = await passStartScreen(core, own, limit);
+    if (typeof screen === "string") problem = screen;
+    else if (screen !== undefined) {
+      skipped = screen;
+      limit = base + skipped;
+      screenSkipped = true;
+    }
   }
   // A pc key counts the opcode fetches from the start, also those of the code before the entry: the unpacker of
   // the original, or the loader of the rebuild. The rebuild counts again from the jump of its loader, without those of the original.
-  const jump = own.get(LOADER_JUMP);
-  const before = !original && !recording.load && jump !== undefined ? options.beforeEntry : undefined;
-  if (problem === undefined && before !== undefined) {
-    if ((await core.status(`run-pc ${hex(jump!)} ${limit}`)).word === "reached") await countAt(core, targets);
-    else problem = `the rebuild did not come to the jump of its loader at ${formatC64Address(jump!)}`;
+  const { handover } = options;
+  if (problem === undefined && handover !== undefined) {
+    const jump = own.get(LOADER_JUMP)!;
+    if ((await core.status(`run-pc ${hex(jump)} ${limit}`)).word !== "reached") problem = `the rebuild did not come to the jump of its loader at ${formatC64Address(jump)}`;
+    else {
+      await countAt(core, targets);
+      const entered = await core.status(`run-pc ${hex(handover.entry)} ${limit}`);
+      if (entered.word !== "reached") problem = `the rebuild did not come to its entry at ${formatC64Address(handover.entry)}`;
+      else {
+        // After the entry, a tick key is as far from the entry as in the original.
+        skipped = entered.tick - handover.original.tick;
+        limit = base + Math.max(0, skipped);
+      }
+    }
   }
-  for (const event of problem === undefined ? recording.events : []) {
+  // The original with an entry: the events before the mark at the entry came.
+  let eventsBefore = 0;
+  let entryTick: number | undefined;
+  const marked = async () => {
+    const answer = /tick=(\d+)/.exec(await core.command("marked"));
+    if (answer !== null) entryTick = Number(answer[1]);
+  };
+  for (const [index, event] of (problem === undefined ? recording.events : []).entries()) {
     const what = event.step === undefined ? "the RESTORE of the play" : "step " + event.step;
     let key = event.key;
-    if (before !== undefined && "pc" in key) {
-      const earlier = before.get(key.pc) ?? 0;
-      // The original came to this point before its entry: the rebuild has its loader there.
-      if (key.count <= earlier) continue;
-      key = { ...key, count: key.count - earlier };
+    if (handover !== undefined) {
+      // The original came to this point before its entry, where the rebuild runs its loader. Each such event is a pc key: replay checks it.
+      if (index < handover.original.eventsBefore) continue;
+      if ("pc" in key) key = { ...key, count: key.count - (handover.original.counts.get(key.pc) ?? 0) };
     }
     const point = await runToKey(core, key, limit, map, skipped, at);
     if (point === "halted") break;
     if (point === "not-reached") {
       problem = "the program did not come to the point of " + what;
       break;
+    }
+    if (options.entry !== undefined && entryTick === undefined) {
+      await marked();
+      if (entryTick === undefined) eventsBefore = index + 1;
     }
     // At the point of a runUntil to an address, its target is reached.
     if (!("pc" in event.key)) problem = await doAction(core, event.action, at);
@@ -733,14 +795,16 @@ export async function replaySide(
   const unknown = Number(/unknown=(\d+)/.exec(sites)?.[1] ?? 0);
   const misses = sites.split(" ").slice(2).reduce((sum, entry) => sum + Number(entry.split(":")[4] ?? 0), 0);
   const ram = options.dump === undefined ? undefined : await core.peek(0, 0x10000);
-  let beforeEntry: Map<string, number> | undefined;
-  if (options.entry !== undefined) {
-    beforeEntry = new Map();
+  let entryPoint: EntryPoint | undefined;
+  if (options.entry !== undefined && entryTick === undefined) await marked();
+  if (entryTick !== undefined) {
+    const counts = new Map<string, number>();
     for (const event of recording.events) {
-      if (!("pc" in event.key) || beforeEntry.has(event.key.pc)) continue;
-      const marked = /marked=(\d+)/.exec(await core.command(`hits ${hex(at.code(event.key.pc))}`));
-      if (marked !== null) beforeEntry.set(event.key.pc, Number(marked[1]));
+      if (!("pc" in event.key) || counts.has(event.key.pc)) continue;
+      const before = /marked=(\d+)/.exec(await core.command(`hits ${hex(at.code(event.key.pc))}`));
+      if (before !== null) counts.set(event.key.pc, Number(before[1]));
     }
+    entryPoint = { tick: entryTick, counts, eventsBefore };
   }
   let lines: string[] = [];
   if (options.compare !== undefined) {
@@ -754,8 +818,8 @@ export async function replaySide(
     unknown,
     misses,
     ...(problem === undefined ? {} : { problem }),
-    ...(skipped > 0 ? { startScreenSkipped: true } : {}),
-    ...(beforeEntry === undefined ? {} : { beforeEntry }),
+    ...(screenSkipped ? { startScreenSkipped: true } : {}),
+    ...(entryPoint === undefined ? {} : { entryPoint }),
     ...(ram === undefined ? {} : { ram }),
   };
 }

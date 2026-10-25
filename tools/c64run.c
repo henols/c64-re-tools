@@ -234,10 +234,11 @@ static uint8_t counted_at[0x10000];
 static uint16_t counted_pc[MAX_COUNTED];
 static uint64_t counted[MAX_COUNTED];
 static int counted_pcs;
-// "mark": the counts at the first opcode fetch at mark_pc, before that fetch counts.
+// "mark": the counts and the tick at the first opcode fetch at mark_pc, before that fetch counts.
 static uint64_t marked[MAX_COUNTED];
+static uint64_t mark_tick;
 static int mark_pc = -1;  // -1: no mark waits
-static int mark_set;      // marked holds the counts
+static int mark_set;      // marked and mark_tick hold the mark
 
 static void clear_counts(void) {
     for (int i = 0; i < counted_pcs; i++) counted_at[counted_pc[i]] = 0;
@@ -249,6 +250,7 @@ static void clear_counts(void) {
 static void count_fetch(uint16_t pc) {
     if (mark_pc == pc) {
         for (int i = 0; i < counted_pcs; i++) marked[i] = counted[i];
+        mark_tick = ticks;
         mark_pc = -1;
         mark_set = 1;
     }
@@ -576,6 +578,10 @@ int main(int argc, char** argv) {
             mark_pc = (int)pc;
             mark_set = 0;
             printf("ok\n");
+        } else if (!strcmp(cmd, "marked")) {
+            // marked: the tick of the mark when it came, else none
+            if (mark_set) printf("ok tick=%llu\n", (unsigned long long)mark_tick);
+            else printf("ok none\n");
         } else if (!strcmp(cmd, "hits")) {
             // hits <pc hex>: the count of a pc of count-pc, and its count at the mark when the mark came
             unsigned pc;

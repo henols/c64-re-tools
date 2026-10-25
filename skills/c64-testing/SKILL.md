@@ -239,7 +239,7 @@ A `$` address is an address of the original. On the rebuild, it moves with the n
 
 A rebuild can be a loader with a start screen that RUN starts. If the symbols of the rebuild have `loader_start_screen_wait` and `loader_start_screen_continue`, the script runs the rebuild to the wait. Then it sets the PC to `loader_start_screen_continue`. The cycles before the wait do not count.
 
-A rebuild can be the loader program of a generated source. Give its symbols. Then a runUntil step to an address counts from the entry of the program. The count does not include the code of the loader. It also does not include the code that the original runs before the entry in the project knowledge.
+A rebuild can be the loader program of a generated source. Give its symbols. Then the replay counts from the entry of the program, where the loader jumps to. A runUntil step to an address does not count the code of the loader, or the code that the original runs before that entry. If another step of the recording runs before the entry, the result is INCONCLUSIVE. Then start the steps of the record file after the entry.
 
 `body` holds `result`, `side`, `firstDifference`, `reason` and `files`. The section "Replay" of `references/recording-format.md` gives each field.
 
