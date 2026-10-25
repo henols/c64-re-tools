@@ -57,6 +57,8 @@ Before the first step of each side, the script does a hard reset. The CPU stops 
 | `{ "normalize": true }` | Write pages 0 to 3 and `$00`/`$01` from the entry state in the project knowledge. The entry state comes from a capture of the unpacked program. Then both sides have the same zero page, stack and KERNAL work area. |
 | `{ "observe": "moved", ... }` | Record a checkpoint. |
 
+The `timeoutFrames` of a `runUntil` step is from 1 to 30000. The default is 3000. For a longer wait, put `frames` steps before the `runUntil` step.
+
 The `port` of a joystick is 1 or 2. The `direction` is `center`, `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left` or `down-right`.
 
 A `condition` has the `kind` `register`, `memory` or `raster`. A `register` condition has `register` (`a`, `x`, `y` or `sp`), `operator` and `value`. A `memory` condition has `address`, `operator` and `value`. A `raster` condition has `line` and an optional `cycle`.
@@ -95,7 +97,7 @@ A run file is one JSON object in a project file. It has:
 - `start`: required. `{ "program": "game.prg" }` to autostart a program with a BASIC start line, `{ "program": "game.prg", "load": true }` to load it with the CPU stopped (set `pc` in a step), or `{ "snapshot": ".c64-re-tools/local/snapshots/room0.vsf" }`.
 - `symbols`: optional, `knowledge`, `none` (default), or a JSON file as for a subject. Without `symbols`, a run has no names: give `"symbols": "knowledge"` to use the names of the knowledge.
 - `videoStandard`: optional, `pal` (default) or `ntsc`.
-- `steps`: required. At least one step. The steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage`, `trace`, `observe` and `expect`.
+- `steps`: required. At least one step. The steps `write`, `registers`, `joystick`, `type`, `press`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage`, `trace`, `observe` and `expect`.
 
 The run steps have these effects:
 
@@ -112,7 +114,7 @@ The run steps have these effects:
 
 A `trace` step has a name, `points` (1 to 8), `frames` (1 to 3000) and an optional `maxHits` (at most 20000). A point has `kind` (`exec`, `read` or `write`), `start` and an optional `end`. The step writes `<name>.json` with each hit. `results.json` gives the file, the count of hits, the frames and why the trace ended. A trace that a breakpoint, a watchpoint or a JAM ends also ends the run.
 
-In a run, an `observe` step can have `memory`, `registers`, `vicii` and `sprites`. `registers` and `vicii` are `true` or `false`, not a list. `"registers": true` gives all registers. A scenario takes a list of register names, a run does not. `sprites` is a list of sprite numbers from 0 to 7.
+In a run, an `observe` step can have `memory`, `registers`, `vicii` and `sprites`. `registers` and `vicii` are `true` or `false`, not a list. `"registers": true` gives all registers. A scenario takes a list of register names, a run does not. `sprites` is a list of sprite numbers from 0 to 7. In a run, the screen is not a key of `observe`. Write it with a `screen` step, for example `{ "screen": "room3" }`.
 
 In a run, a memory item has `address`, `size` (1 to 65536) and `view`. An item larger than 4096 bytes goes into the file `<observe>-<address>.bin`, without the `$`. `results.json` gives the file name.
 

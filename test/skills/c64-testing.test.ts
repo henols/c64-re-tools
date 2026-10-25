@@ -272,6 +272,14 @@ test("a run file and a scenario name a missing field with its form, and refuse a
   assert.equal(message({ ...valid, steps: [] }), "scenario fields.json: steps must be a list with at least one step");
 });
 
+test("a screen in the form of the other file is refused with the step to write: its own step in a run, an observe key in a scenario", async () => {
+  const run = await runRefusal("screen.json", { name: "r", start: { program: "game.prg" }, steps: [{ observe: "k01_f3", memory: ["$c000"], screen: {} }] });
+  assert.equal(run.code, "invalid-input");
+  assert.match(run.message, /\{"screen": "k01_f3"\}/);
+  const scenario = await refusal(() => readScenario(scenarioFile("screen.json", { ...valid, steps: [{ screen: "k01_f3" }, valid.steps[2]] })));
+  assert.match(scenario.message, /\{"observe": "k01_f3", "screen": \{\}\}/);
+});
+
 test("diff gives the changed ranges of two memory files and the changed items of two observations of one run", async () => {
   // The Bruce Lee run: the agent wrote the same diff script about six times.
   const ranges = changedRanges(Uint8Array.from([1, 2, 3, 4, 5, 6]), Uint8Array.from([1, 9, 3, 4, 8, 8]), 0xc000);

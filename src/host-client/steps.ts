@@ -344,6 +344,9 @@ export function newStepForm(kind: string, step: Record<string, unknown>): { fiel
   }
 }
 
+/** "a write step", "an observe step": the step kind with its article, for a refusal. */
+export const aStep = (kind: string): string => `${/^[aeiou]/.test(kind) ? "an" : "a"} ${kind} step`;
+
 /** Refuses a step in a form of the 2.0 files: the message names its 2.0 fields and gives the step to write. */
 export function refuseOldStep(kind: string, step: Record<string, unknown>, at: string, fail: (message: string) => never): void {
   const found = newStepForm(kind, step);
@@ -359,7 +362,7 @@ export function refuseOldStep(kind: string, step: Record<string, unknown>, at: s
  */
 export function checkActionStep(kind: ActionStepKind, step: Record<string, unknown>, at: string, fail: (message: string) => never): ActionStep {
   refuseOldStep(kind, step, at, fail);
-  for (const key of Object.keys(step)) if (key !== kind) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
+  for (const key of Object.keys(step)) if (key !== kind) fail(`${at} has the key ${key}, which ${aStep(kind)} does not have`);
   return checkInput(kind, step[kind], at, fail);
 }
 

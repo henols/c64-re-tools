@@ -9,7 +9,7 @@ import { screenText } from "#src/graphics.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
-import { ACTION_STEP_KINDS, checkActionStep, checkLocation, checkStepNames, isInteger, isObject, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, aStep, checkActionStep, checkLocation, checkStepNames, isInteger, isObject, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, WireFailure, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
@@ -61,6 +61,11 @@ const RUN_FIELDS = "A run file has name, start and steps, and optionally symbols
 const START_FORMS = '{ "program": "<file.prg>" }, { "program": "<file.prg>", "load": true } or { "snapshot": "<file.vsf>" }';
 const TRACE_KEYS = ["trace", "points", "frames", "maxHits"];
 const OBSERVE_KEYS = ["observe", "memory", "registers", "vicii", "sprites"];
+/** The fix for a key that the same step of a scenario has, or none. */
+function scenarioKeyFix(key: string, step: Record<string, unknown>): string {
+  if (key === "screen" && "observe" in step) return `. A run writes the screen with its own step: {"screen": "${typeof step.observe === "string" ? step.observe : "<name>"}"}`;
+  return key === "side" ? ". A run has one program. Remove side" : "";
+}
 const EXPECT_KEYS = ["expect", "memory", "registers"];
 const EXPECTED_MEMORY_KEYS = ["address", "data", "text", "mask", "view"];
 /** The characters that screenText gives for the screen codes 0 to 63; a graphics code gives a dot. */
@@ -135,7 +140,7 @@ function readRun(path: string): Run {
     const kind = kinds[0]!;
     refuseOldStep(kind, step, at, fail);
     const allowed = kind === "observe" ? OBSERVE_KEYS : kind === "expect" ? EXPECT_KEYS : kind === "trace" ? TRACE_KEYS : [kind];
-    for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
+    for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which ${aStep(kind)} of a run does not have${scenarioKeyFix(key, step)}`);
     if ((ACTION_STEP_KINDS as readonly string[]).includes(kind)) {
       // The step with its defaults filled in, as the shared schema of the action steps gives it.
       (value.steps as unknown[])[index] = checkActionStep(kind as ActionStepKind, step, at, fail);
