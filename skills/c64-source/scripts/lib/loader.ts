@@ -680,15 +680,19 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
   const lowBytes = low.reduce((sum, block) => sum + block.range.end - block.range.start + 1, 0);
   const areas = copierAreas(state.port);
   const free = subtract(PIECE_AREA, input.segments);
-  const placed = placePacked(areas.flatMap((area) => subtract(area, input.segments)), free, low, codeSize);
+  const copierFree = areas.flatMap((area) => subtract(area, input.segments));
+  const placed = placePacked(copierFree, free, low, codeSize);
   if ("refusal" in placed) {
-    const largest = [...free].sort((a, b) => b.end - b.start - (a.end - a.start)).slice(0, SHOWN_FREE);
-    const ranges = largest.length === 0 ? "none" : largest.map((range) => `${show(range)} (${range.end - range.start + 1} bytes)`).join(", ");
+    const largest = (ranges: AddressRange[]) => {
+      const shown = [...ranges].sort((a, b) => b.end - b.start - (a.end - a.start)).slice(0, SHOWN_FREE);
+      return shown.length === 0 ? "none" : shown.map((range) => `${show(range)} (${range.end - range.start + 1} bytes)`).join(", ");
+    };
+    const ranges = placed.refusal === "copies" ? `The largest free ranges for pages 0-3: ${largest(free)}.` : `The largest free ranges for the copier: ${largest(copierFree)}. The largest free ranges for pages 0-3: ${largest(free)}.`;
     const why =
       placed.refusal === "copies"
         ? `A packed loader needs more than ${MAX_PACKED_COPIES} copies for the ${lowBytes} bytes of pages 0-3 in the free ranges.`
         : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier in ${areas.map(show).join(" or ")}, and ${lowBytes} more free bytes for pages 0-3 in $0400-$ffff, outside the segments. The copier runs with $01 = $35 and then with the $01 of the entry, so it is in RAM that both show.${screen === undefined ? "" : ` The start screen takes ${START_SCREEN_SIZES[screen.colourMode]} bytes of the copier: without it (unstart-screen), the copier is smaller.`}`;
-    throw new WireFailure("invalid-input", `${tooLarge} ${why} The largest free ranges there: ${ranges}. Write the loader by hand.`);
+    throw new WireFailure("invalid-input", `${tooLarge} ${why} ${ranges} Write the loader by hand.`);
   }
   const { copier, pieces } = placed;
   const copierEnd = copier + codeSize + COPY_ENTRY * pieces.length + 2 - 1;
@@ -946,10 +950,11 @@ function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stac
     // The CIA part runs after the raster wait: the wait ends its whole lines earlier, so the entry comes in its line.
     ...vicLines(state, Math.floor((cia?.ops.reduce((sum, op) => sum + op.cycles, 0) ?? 0) / LINE_CYCLES)),
     ...(cia === undefined ? [] : cia.ops.map((op) => `        ${op.text}`)),
-    `        lda #${formatC64Byte(port0)}`,
-    "        sta $00",
+    // $01 before $00: with the port bits still outputs, $01 shows no ROM that the port of the entry does not show.
     `        lda #${formatC64Byte(port1)}`,
     "        sta $01",
+    `        lda #${formatC64Byte(port0)}`,
+    "        sta $00",
     `        ldx #${formatC64Byte((state.sp - 1) & 0xff)}`,
     "        txs",
     `        lda #${formatC64Byte(state.flags)}`,

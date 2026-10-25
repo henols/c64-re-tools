@@ -229,7 +229,7 @@ test("an image too large for one loader file gets a packed loader: the copier at
     () => planLoader({ segments: [{ start: 0x0400, end: 0x0bff, files: ["a.asm"] }, { start: 0x0c10, end: 0xffff, files: ["b.asm"] }], byteAt, state: state(), entry: 0x0810, header }),
     (error: Error) => {
       assert.ok(error instanceof WireFailure);
-      assert.equal(error.message, "The plain loader would end past $ffff, after $cfff: loading it would write the I/O area. A packed loader needs one free range of 176 bytes or more for its copier in $0400-$9fff or $c000-$cfff, and 1022 more free bytes for pages 0-3 in $0400-$ffff, outside the segments. The copier runs with $01 = $35 and then with the $01 of the entry, so it is in RAM that both show. The largest free ranges there: $0c00-$0c0f (16 bytes). Write the loader by hand.");
+      assert.equal(error.message, "The plain loader would end past $ffff, after $cfff: loading it would write the I/O area. A packed loader needs one free range of 176 bytes or more for its copier in $0400-$9fff or $c000-$cfff, and 1022 more free bytes for pages 0-3 in $0400-$ffff, outside the segments. The copier runs with $01 = $35 and then with the $01 of the entry, so it is in RAM that both show. The largest free ranges for the copier: $0c00-$0c0f (16 bytes). The largest free ranges for pages 0-3: $0c00-$0c0f (16 bytes). Write the loader by hand.");
       return true;
     },
   );
@@ -245,12 +245,14 @@ test("a packed loader puts pages 0-3 in free RAM under a ROM, and its copier onl
   const plan = (port1: number) => planLoader({ segments: segments.map((segment) => ({ ...segment, files: [] })), byteAt: () => 0, state: state({ port: [0x2f, port1] }), entry: 0x0810, header: [] });
   const basic = plan(0x37);
   assert.equal(basic.copier, 0xcf01, "not under the BASIC ROM, which the entry shows");
+  // With $00 first, a port bit that becomes an input reads 1 while $01 still has $35: the BASIC ROM over a copier at $a000.
+  assert.match(basic.text, /\n {8}lda #\$37\n {8}sta \$01\n {8}lda #\$2f\n {8}sta \$00\n/, "$01 before $00");
   assert.deepEqual(basic.copies.map((copy) => [copy.target.start, copy.target.end, copy.source.start]), [[0x0002, 0x03ff, 0xa000]]);
   assert.deepEqual(basic.packed, { start: 0xa000 });
   // With $cf01-$cfff used too, only the KERNAL area has room for the copier.
   const kernal = [{ start: 0x0400, end: 0x9fff }, { start: 0xa400, end: 0xefff }, { start: 0xf100, end: 0xffff }].map((segment) => ({ ...segment, files: [] }));
   const under = (port1: number) => planLoader({ segments: kernal, byteAt: () => 0, state: state({ port: [0x2f, port1] }), entry: 0x0810, header: [] });
-  assert.throws(() => under(0x37), /for its copier in \$0400-\$9fff or \$c000-\$cfff, and 1022 more free bytes/);
+  assert.throws(() => under(0x37), /for its copier in \$0400-\$9fff or \$c000-\$cfff, and 1022 more free bytes.* The largest free ranges for the copier: none\. The largest free ranges for pages 0-3: \$a000-\$a3ff \(1024 bytes\), \$f000-\$f0ff \(256 bytes\)\./);
   const ram = under(0x35);
   assert.equal(ram.copier, 0xf000, "the entry shows RAM under the KERNAL");
   assert.deepEqual(ram.copies.map((copy) => copy.source.start), [0xa000]);
