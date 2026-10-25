@@ -272,9 +272,9 @@ function unpacked(game: Uint8Array, calls: number, delay = false): { prg: Uint8A
 const handover = join(project, "handover");
 mkdirSync(join(handover, ".c64-re-tools"), { recursive: true });
 writeFileSync(join(handover, "game.json"), JSON.stringify(quietSymbols(0xc000)));
-// The checkpoint is the JMP back to the wait, which the code before the entry does not run.
-const handoverReplay = (recording: string, rebuild: string) =>
-  script("replay", [`tests/recordings/${recording}`, "--checkpoint", "$c018", "--state", "$c100:3", "--rebuild", `${rebuild}.prg`, "--symbols", `${rebuild}.json`], handover).result;
+// The checkpoint is tick, which the code before the entry also runs.
+const handoverReplay = (recording: string, rebuild: string, more: string[] = []) =>
+  script("replay", [`tests/recordings/${recording}`, "--checkpoint", "tick", "--state", "$c100:3", "--rebuild", `${rebuild}.prg`, "--symbols", `${rebuild}.json`, ...more], handover).result;
 function handoverFiles(name: string, built: { prg: Uint8Array; jump: string }, loader: boolean): void {
   writeFileSync(join(handover, `${name}.prg`), built.prg);
   writeFileSync(join(handover, `${name}.json`), JSON.stringify(loader ? { ...quietSymbols(0xc000), c64_source_loader_jump: built.jump } : quietSymbols(0xc000)));
@@ -284,7 +284,7 @@ function handoverRecord(name: string, program: string, steps: unknown[]): Record
   return script("record", [`${name}-record.json`, "--out", `tests/recordings/${name}`], handover).result;
 }
 
-test("a pc key of a rebuild with a loader counts from the jump of the loader, without the fetches of the original before its entry", { skip, timeout: 120_000 }, () => {
+test("a pc key and a checkpoint of a rebuild with a loader count from the jump of the loader, without the fetches of the original before its entry", { skip, timeout: 120_000 }, () => {
   const game = quietAt(0xc000).subarray(2);
   handoverFiles("original", unpacked(game, 1), false);
   handoverFiles("rebuild", unpacked(game, 2), true);
@@ -293,6 +293,15 @@ test("a pc key of a rebuild with a loader counts from the jump of the loader, wi
   // The entry is where the loader of the rebuild jumps: the knowledge has none.
   const passed = handoverReplay("handover", "rebuild");
   assert.equal(passed.result, "PASS", JSON.stringify(passed));
+  // A rebuild that does not keep its input byte at $c101 differs at checkpoint 1. The RAM of the original is from its checkpoint 1 after the entry.
+  const broken = quietAt(0xc000).subarray(2);
+  broken[5] = 0x03; // STA $c103 in place of STA $c101
+  handoverFiles("broken", unpacked(broken, 2), true);
+  const failed = handoverReplay("handover", "broken", ["--out", "out"]);
+  const difference = failed.firstDifference as { checkpoint: number; items: Array<{ address: string; original: string }> };
+  assert.deepEqual([failed.result, difference.checkpoint], ["FAIL", 1], JSON.stringify(failed));
+  const ram = readFileSync(join(handover, "out", "original-1.bin"));
+  assert.equal(ram.subarray(0xc100, 0xc103).toString("hex"), difference.items[0]!.original);
 });
 
 test("a step of a recording before the entry makes the replay of a rebuild with a loader INCONCLUSIVE", { skip, timeout: 120_000 }, () => {

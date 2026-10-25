@@ -126,7 +126,9 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     if (values.out !== undefined && difference !== undefined) {
       const files: Written[] = [];
       for (const subject of [original, rebuild]) {
-        const dumped = await side(subject, { compare: compare!, dump: difference.checkpoint, ...(subject.side === "rebuild" ? { pins, ...(handover === undefined ? {} : { handover }) } : {}) });
+        // The original also stops at the checkpoints before its entry, which its samples leave out.
+        const dump = difference.checkpoint + (subject.side === "original" ? (handover?.original.samplesBefore ?? 0) : 0);
+        const dumped = await side(subject, { compare: compare!, dump, ...(subject.side === "rebuild" ? { pins, ...(handover === undefined ? {} : { handover }) } : {}) });
         files.push(writeReported(`${values.out}/${subject.side}-${difference.checkpoint}.bin`, dumped.ram!, { what: "--out" }));
       }
       failed.files = files;

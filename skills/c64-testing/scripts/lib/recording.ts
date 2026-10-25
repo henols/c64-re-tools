@@ -361,6 +361,8 @@ export interface EntryPoint {
   counts: Map<string, number>;
   /** The number of events of the recording before the entry: always the first ones. */
   eventsBefore: number;
+  /** The number of checkpoints before the entry, which the samples of the original leave out. */
+  samplesBefore: number;
 }
 
 /**
@@ -709,9 +711,10 @@ export async function replaySide(
   await core.command(`inputs ${inputsArgument(recording.inputs)}`);
   await core.command(`site-map ${mapFile}`);
   await core.command(`replay ${reads}`);
-  if (options.compare !== undefined) {
+  let sampling = false;
+  const startSampling = async (compare: Comparison) => {
     const stop = options.dump ?? options.stop ?? 0;
-    const pinned = options.compare.pin ?? [];
+    const pinned = compare.pin ?? [];
     if (options.pins !== undefined && pinned.length > 0) {
       // The rebuild: each checkpoint first gets the original's values of the random state.
       const pinFile = workspace.path(`${subject.side}-pins.txt`);
@@ -719,8 +722,11 @@ export async function replaySide(
       await core.command(`pin ${pinFile} ${rangesArgument(pinned, at)}`);
     }
     // The samples hold the state, then the pinned items.
-    await core.command(`sample ${hex(at.code(options.compare.checkpoint))} ${samples} ${rangesArgument([...options.compare.state, ...pinned], at)}${stop > 0 ? ` ${stop}` : ""}`);
-  }
+    await core.command(`sample ${hex(at.code(compare.checkpoint))} ${samples} ${rangesArgument([...compare.state, ...pinned], at)}${stop > 0 ? ` ${stop}` : ""}`);
+    sampling = true;
+  };
+  // A rebuild with a loader takes its checkpoints from its entry on, as the original leaves out those before its own.
+  if (options.compare !== undefined && options.handover === undefined) await startSampling(options.compare);
   const targets = recording.events.flatMap((event) => ("pc" in event.key ? [at.code(event.key.pc)] : []));
   await countAt(core, targets);
   if (options.entry !== undefined) await core.command(`mark ${hex(options.entry)}`);
@@ -755,6 +761,7 @@ export async function replaySide(
         // After the entry, a tick key is as far from the entry as in the original.
         skipped = entered.tick - handover.original.tick;
         limit = base + Math.max(0, skipped);
+        if (options.compare !== undefined) await startSampling(options.compare);
       }
     }
   }
@@ -795,6 +802,12 @@ export async function replaySide(
   const unknown = Number(/unknown=(\d+)/.exec(sites)?.[1] ?? 0);
   const misses = sites.split(" ").slice(2).reduce((sum, entry) => sum + Number(entry.split(":")[4] ?? 0), 0);
   const ram = options.dump === undefined ? undefined : await core.peek(0, 0x10000);
+  let lines: string[] = [];
+  if (sampling) {
+    await core.command("pin off");
+    await core.command("sample off");
+    lines = readFileSync(samples, "utf8").split("\n").filter((line) => line !== "");
+  }
   let entryPoint: EntryPoint | undefined;
   if (options.entry !== undefined && entryTick === undefined) await marked();
   if (entryTick !== undefined) {
@@ -804,13 +817,10 @@ export async function replaySide(
       const before = /marked=(\d+)/.exec(await core.command(`hits ${hex(at.code(event.key.pc))}`));
       if (before !== null) counts.set(event.key.pc, Number(before[1]));
     }
-    entryPoint = { tick: entryTick, counts, eventsBefore };
-  }
-  let lines: string[] = [];
-  if (options.compare !== undefined) {
-    await core.command("pin off");
-    await core.command("sample off");
-    lines = readFileSync(samples, "utf8").split("\n").filter((line) => line !== "");
+    // A checkpoint at the first fetch at the entry has the tick of the mark. The rebuild starts its checkpoints after that fetch.
+    const after = lines.filter((line) => Number(line.split(" ")[0]) > entryTick!);
+    entryPoint = { tick: entryTick, counts, eventsBefore, samplesBefore: lines.length - after.length };
+    lines = after;
   }
   return {
     samples: lines,
