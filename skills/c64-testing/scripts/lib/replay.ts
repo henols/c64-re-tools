@@ -9,6 +9,9 @@ import { createHash } from "node:crypto";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
+import { openForRead } from "#src/knowledge/database.ts";
+import { programImage } from "#src/knowledge/program.ts";
+import { LOADER_JUMP } from "#src/knowledge/start-screen.ts";
 import { C64RunSession } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
@@ -69,8 +72,10 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     const originalSymbols = recording.symbols === "none" ? "knowledge" : recording.symbols;
     const original: ReplaySubject = { side: "original", program: recording.program, symbols: originalSymbols };
     const side = (subject: ReplaySubject, options: Parameters<typeof replaySide>[5]) => replaySide(core, recording, folder, subject, workspace, options);
+    // A rebuild with a generated loader starts the program at the entry of the knowledge, where the loader jumps to.
+    const entry = values.rebuild !== undefined && !recording.load && namesOf(values.symbols ?? originalSymbols).has(LOADER_JUMP) ? knowledgeEntry() : undefined;
     // The self-check: the original ends the session with the recorded state, to the cycle.
-    const self = await side(original, { ...(compare === undefined ? {} : { compare }) });
+    const self = await side(original, { ...(compare === undefined ? {} : { compare }), ...(entry === undefined ? {} : { entry }) });
     if (self.problem !== undefined) return result("INCONCLUSIVE", "original", { reason: `the recording does not reproduce on the original: ${self.problem}` });
     if (self.unknown > 0 || self.misses > 0) {
       return result("INCONCLUSIVE", "original", { reason: `the recording does not reproduce on the original: ${self.unknown + self.misses} input reads had no recorded value; record the session again with this version of the toolkit` });
@@ -90,7 +95,8 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
       throw new UsageError(`--symbols ${rebuild.symbols}: ${(error as Error).message}`);
     }
     const pins = pinLines(expected, compare!.state);
-    const replayed = await side(rebuild, { compare: compare!, stop: expected.length, pins });
+    const beforeEntry = self.beforeEntry ?? new Map<string, number>();
+    const replayed = await side(rebuild, { compare: compare!, stop: expected.length, pins, beforeEntry });
     const difference = firstDifference(expected, replayed.samples, compare!.state);
     // A read that the recording has no value for gets the idle value: it is in the result, never silent.
     const base = { checkpoints: expected.length, movedSites, ...(replayed.startScreenSkipped === true ? { startScreen: "skipped" } : {}), ...(replayed.unknown > 0 ? { idleReads: replayed.unknown } : {}) };
@@ -103,7 +109,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     if (values.out !== undefined && difference !== undefined) {
       const files: Written[] = [];
       for (const subject of [original, rebuild]) {
-        const dumped = await side(subject, { compare: compare!, dump: difference.checkpoint, ...(subject.side === "rebuild" ? { pins } : {}) });
+        const dumped = await side(subject, { compare: compare!, dump: difference.checkpoint, ...(subject.side === "rebuild" ? { pins, beforeEntry } : {}) });
         files.push(writeReported(`${values.out}/${subject.side}-${difference.checkpoint}.bin`, dumped.ram!, { what: "--out" }));
       }
       failed.files = files;
@@ -112,5 +118,15 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
   } finally {
     await core.close();
     workspace.remove();
+  }
+}
+
+/** The entry of the program in the knowledge, if it has one. */
+function knowledgeEntry(): number | undefined {
+  const db = openForRead();
+  try {
+    return programImage(db)?.entry;
+  } finally {
+    db?.close();
   }
 }

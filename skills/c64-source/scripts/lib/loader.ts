@@ -22,6 +22,7 @@ import { compareBuild, mergedPrograms } from "#src/compare.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState } from "#src/host-client/entry-state.ts";
 import { isRomFont, startScreenRanges, type StartScreenRow } from "#src/knowledge/read.ts";
+import { LOADER_JUMP } from "#src/knowledge/start-screen.ts";
 import { romUseOfPort } from "#src/platform.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { pack } from "#src/native/exomizer.ts";
@@ -139,9 +140,7 @@ export function loaderLimits(plan: { cia?: CiaPlan }): string[] {
   return plan.cia.limits;
 }
 
-/** The label of the loader's jump to the entry, in ACME's symbol list. */
-export const LOADER_JUMP = "c64_source_loader_jump";
-export { START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
+export { LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
 /** The file of the start screen in the generated source. */
 export const START_SCREEN_FILE = "start_screen.asm";
 /** The code of the start screen: the same for each program. loader.asm sets its values. */

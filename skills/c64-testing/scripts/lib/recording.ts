@@ -17,7 +17,7 @@ import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, renamedField, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
-import { START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
+import { LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
 import { namesOf, type Outcome } from "./scenario.ts";
@@ -622,6 +622,8 @@ export interface SideRun {
   problem?: string;
   /** True when the rebuild went on after the wait of its start screen. */
   startScreenSkipped?: boolean;
+  /** The original with an `entry`: the count of each pc key (by its target) at the first opcode fetch at the entry. */
+  beforeEntry?: Map<string, number>;
   /**
    * Input reads that the recording has no value for, which got the fixed idle value:
    * at sites that it does not have, and after its end at a site.
@@ -642,7 +644,7 @@ export async function replaySide(
   folder: string,
   subject: ReplaySubject,
   workspace: Workspace,
-  options: { compare?: Comparison; stop?: number; dump?: number; pins?: string[] } = {},
+  options: { compare?: Comparison; stop?: number; dump?: number; pins?: string[]; entry?: number; beforeEntry?: Map<string, number> } = {},
 ): Promise<SideRun & { ram?: Uint8Array }> {
   const prg = readProjectFile(subject.program).bytes;
   const original = subject.side === "original";
@@ -677,7 +679,9 @@ export async function replaySide(
     // The samples hold the state, then the pinned items.
     await core.command(`sample ${hex(at.code(options.compare.checkpoint))} ${samples} ${rangesArgument([...options.compare.state, ...pinned], at)}${stop > 0 ? ` ${stop}` : ""}`);
   }
-  await countAt(core, recording.events.flatMap((event) => ("pc" in event.key ? [at.code(event.key.pc)] : [])));
+  const targets = recording.events.flatMap((event) => ("pc" in event.key ? [at.code(event.key.pc)] : []));
+  await countAt(core, targets);
+  if (options.entry !== undefined) await core.command(`mark ${hex(options.entry)}`);
   await startProgram(core, prg, recording.load);
   let limit = original ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
   let problem: string | undefined;
@@ -694,9 +698,24 @@ export async function replaySide(
       await core.status(`goto ${hex(resume)}`);
     } else problem = `the rebuild did not come to the wait of its start screen at ${formatC64Address(wait)}`;
   }
+  // A pc key counts the opcode fetches from the start, also those of the code before the entry: the unpacker of
+  // the original, or the loader of the rebuild. The rebuild counts again from the jump of its loader, without those of the original.
+  const jump = own.get(LOADER_JUMP);
+  const before = !original && !recording.load && jump !== undefined ? options.beforeEntry : undefined;
+  if (problem === undefined && before !== undefined) {
+    if ((await core.status(`run-pc ${hex(jump!)} ${limit}`)).word === "reached") await countAt(core, targets);
+    else problem = `the rebuild did not come to the jump of its loader at ${formatC64Address(jump!)}`;
+  }
   for (const event of problem === undefined ? recording.events : []) {
     const what = event.step === undefined ? "the RESTORE of the play" : "step " + event.step;
-    const point = await runToKey(core, event.key, limit, map, skipped, at);
+    let key = event.key;
+    if (before !== undefined && "pc" in key) {
+      const earlier = before.get(key.pc) ?? 0;
+      // The original came to this point before its entry: the rebuild has its loader there.
+      if (key.count <= earlier) continue;
+      key = { ...key, count: key.count - earlier };
+    }
+    const point = await runToKey(core, key, limit, map, skipped, at);
     if (point === "halted") break;
     if (point === "not-reached") {
       problem = "the program did not come to the point of " + what;
@@ -714,13 +733,31 @@ export async function replaySide(
   const unknown = Number(/unknown=(\d+)/.exec(sites)?.[1] ?? 0);
   const misses = sites.split(" ").slice(2).reduce((sum, entry) => sum + Number(entry.split(":")[4] ?? 0), 0);
   const ram = options.dump === undefined ? undefined : await core.peek(0, 0x10000);
+  let beforeEntry: Map<string, number> | undefined;
+  if (options.entry !== undefined) {
+    beforeEntry = new Map();
+    for (const event of recording.events) {
+      if (!("pc" in event.key) || beforeEntry.has(event.key.pc)) continue;
+      const marked = /marked=(\d+)/.exec(await core.command(`hits ${hex(at.code(event.key.pc))}`));
+      if (marked !== null) beforeEntry.set(event.key.pc, Number(marked[1]));
+    }
+  }
   let lines: string[] = [];
   if (options.compare !== undefined) {
     await core.command("pin off");
     await core.command("sample off");
     lines = readFileSync(samples, "utf8").split("\n").filter((line) => line !== "");
   }
-  return { samples: lines, end, unknown, misses, ...(problem === undefined ? {} : { problem }), ...(skipped > 0 ? { startScreenSkipped: true } : {}), ...(ram === undefined ? {} : { ram }) };
+  return {
+    samples: lines,
+    end,
+    unknown,
+    misses,
+    ...(problem === undefined ? {} : { problem }),
+    ...(skipped > 0 ? { startScreenSkipped: true } : {}),
+    ...(beforeEntry === undefined ? {} : { beforeEntry }),
+    ...(ram === undefined ? {} : { ram }),
+  };
 }
 
 export interface CheckpointDifference {

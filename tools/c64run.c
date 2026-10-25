@@ -234,10 +234,25 @@ static uint8_t counted_at[0x10000];
 static uint16_t counted_pc[MAX_COUNTED];
 static uint64_t counted[MAX_COUNTED];
 static int counted_pcs;
+// "mark": the counts at the first opcode fetch at mark_pc, before that fetch counts.
+static uint64_t marked[MAX_COUNTED];
+static int mark_pc = -1;  // -1: no mark waits
+static int mark_set;      // marked holds the counts
 
 static void clear_counts(void) {
     for (int i = 0; i < counted_pcs; i++) counted_at[counted_pc[i]] = 0;
     counted_pcs = 0;
+    mark_pc = -1;
+    mark_set = 0;
+}
+
+static void count_fetch(uint16_t pc) {
+    if (mark_pc == pc) {
+        for (int i = 0; i < counted_pcs; i++) marked[i] = counted[i];
+        mark_pc = -1;
+        mark_set = 1;
+    }
+    if (counted_at[pc]) counted[counted_at[pc] - 1]++;
 }
 
 static uint64_t count_of(uint16_t pc) {
@@ -258,7 +273,7 @@ static void tick(void) {
         last_sync_pc = addr;
         if (sample_file && addr == sample_pc && decoded) sample();
         if (coverage_armed_pc && addr == coverage_pc && decoded) { coverage_armed_pc = 0; coverage_start(addr); }
-        if (counted_at[addr] && decoded) counted[counted_at[addr] - 1]++;
+        if (decoded) count_fetch(addr);
     }
     if (read && !sync && decoded && sys.io_mapped && (addr & 0xFF0F) == 0xDC00) {
         // chips gives port A of CIA 1 only joystick 2. A key also pulls its line of port A
@@ -513,7 +528,7 @@ int main(int argc, char** argv) {
             last_sync_pc = pc;
             // The prefetch is the opcode fetch at pc: it does not pass through tick.
             if (coverage_armed_pc && pc == coverage_pc) { coverage_armed_pc = 0; coverage_start(pc); }
-            if (counted_at[pc]) counted[counted_at[pc] - 1]++;
+            count_fetch((uint16_t)pc);
             if (coverage_on) cover(pc, 1, 1);
             status("ok");
         } else if (!strcmp(cmd, "run")) {
@@ -554,11 +569,19 @@ int main(int argc, char** argv) {
                 counted_at[pc] = (uint8_t)++counted_pcs;
             }
             if (bad) { clear_counts(); printf("err count-pc: give 1 to %d pcs in hex\n", MAX_COUNTED); } else printf("ok counted=%d\n", counted_pcs);
+        } else if (!strcmp(cmd, "mark")) {
+            // mark <pc hex>: keep the counts of count-pc at the next opcode fetch at pc, before it counts
+            unsigned pc;
+            if (sscanf(a1, "%x", &pc) != 1 || pc > 0xFFFF) { printf("err mark: give a pc\n"); continue; }
+            mark_pc = (int)pc;
+            mark_set = 0;
+            printf("ok\n");
         } else if (!strcmp(cmd, "hits")) {
-            // hits <pc hex>: the count of a pc of count-pc
+            // hits <pc hex>: the count of a pc of count-pc, and its count at the mark when the mark came
             unsigned pc;
             if (sscanf(a1, "%x", &pc) != 1 || pc > 0xFFFF) { printf("err hits: give a pc\n"); continue; }
-            printf("ok count=%llu\n", (unsigned long long)count_of((uint16_t)pc));
+            if (mark_set && counted_at[pc]) printf("ok count=%llu marked=%llu\n", (unsigned long long)count_of((uint16_t)pc), (unsigned long long)marked[counted_at[pc] - 1]);
+            else printf("ok count=%llu\n", (unsigned long long)count_of((uint16_t)pc));
         } else if (!strcmp(cmd, "run-reads")) {
             // run-reads <pc hex> <addr hex> <n> <until tick>: run until the site has n reads
             unsigned pc, addr;
