@@ -162,6 +162,37 @@ test("a stage that a press step unpacks is found when the program jumps there af
   assert.ok(fromScreen(found[0]!.wrote).some((block) => block.start === "$c000"), "the decoder wrote the block in the press step");
 });
 
+test("a runUntil step to memory that does not reach its target ends the run with the step", { skip: liveSkip, timeout: 180_000 }, async () => {
+  writeFileSync(join(project, "plain.prg"), ORIGINAL.prg);
+  writeFileSync(join(project, "never.json"), JSON.stringify([{ runUntil: { target: { kind: "memory", address: "$c0ff", operator: "eq", value: 0x99 }, timeoutFrames: 20 } }]));
+  const { json } = await unpack("capture", "plain.prg", "--entry", "$c000", "--until", "$c014", "--steps", "never.json", "--out", "unpacked/never-step");
+  assert.equal(json.captured, false, JSON.stringify(json));
+  assert.match(json.reason as string, /^Step 1 did not reach its target in 20 frames\. It stopped by timeout at \$c014\./);
+});
+
+test("the frames of a runUntil step to memory count toward the frames of the run", { skip: liveSkip, timeout: 180_000 }, async () => {
+  // $c000 sets the jiffy clock to 0 and waits for 120 jiffies (100 frames), then gets to done at $c00d.
+  writeFileSync(join(project, "jiffies.prg"), Uint8Array.of(0x00, 0xc0, 0xa9, 0x00, 0x85, 0xa2, 0xa9, 120, 0xc5, 0xa2, 0xd0, 0xfc, 0x4c, 0x0d, 0xc0, 0x4c, 0x0d, 0xc0));
+  // The step waits for 60 jiffies (50 frames) outside the chunks of the run.
+  writeFileSync(join(project, "jiffies.json"), JSON.stringify([{ runUntil: { target: { kind: "memory", address: "$a2", operator: "gte", value: 60 }, timeoutFrames: 200 } }]));
+  const late = await unpack("capture", "jiffies.prg", "--entry", "$c000", "--until", "$c00d", "--steps", "jiffies.json", "--out", "unpacked/jiffies-late", "--timeout-frames", "80");
+  assert.equal(late.json.captured, false, JSON.stringify(late.json));
+  assert.match(late.json.reason as string, /did not get to \$c00d in 80 frames/);
+  const inTime = await unpack("capture", "jiffies.prg", "--entry", "$c000", "--until", "$c00d", "--steps", "jiffies.json", "--out", "unpacked/jiffies", "--timeout-frames", "130");
+  assert.equal(inTime.json.captured, true, JSON.stringify(inTime.json));
+});
+
+test("stage 0 starts at the program also when the first step is no frames step: the RUN that the script types is no part of it", { skip: liveSkip, timeout: 180_000 }, async () => {
+  // 10 SYS2061, and at $080d a loop that writes nothing. The RUN that the script types shows on the screen at $0400.
+  writeFileSync(join(project, "variable.prg"), Uint8Array.of(0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00, 0x4c, 0x0d, 0x08));
+  writeFileSync(join(project, "type-first.json"), JSON.stringify([{ type: { mode: "text", text: " " } }]));
+  const { status, json } = await unpack("stages", "variable.prg", "--steps", "type-first.json", "--frames", "50", "--min-stage", "1");
+  assert.equal(status, 0, JSON.stringify(json));
+  const found = json.stages as Array<{ entry: string; wrote: Array<{ start: string; end: string }> }>;
+  assert.equal(found[0]!.entry, "$080d");
+  assert.deepEqual(fromScreen(found[0]!.wrote), [], JSON.stringify(found[0]));
+});
+
 test("stages finds each stage of a staged release and where the next one starts", { skip: liveSkip, timeout: 300_000 }, async () => {
   const { status, json } = await unpack("stages", "staged.prg", "--steps", "press-key.json", "--frames", "400");
   assert.equal(status, 0, JSON.stringify(json));

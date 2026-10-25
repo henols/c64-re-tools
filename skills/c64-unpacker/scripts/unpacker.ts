@@ -14,8 +14,8 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { keyTaps } from "#src/c64-keys.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
+import { RASTER } from "#src/protocol/vice.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
@@ -174,6 +174,8 @@ const stageWrote = (map: Uint8Array) => writtenBlocks(map, 1);
 
 /** Frames between two looks at the memory map while stages are followed. */
 const STAGE_CHUNK_FRAMES = 25;
+/** The cycles of one frame: the unpacker runs a PAL C64. */
+const FRAME_CYCLES = RASTER.pal.lines * RASTER.pal.cycles;
 const MAX_STAGES = 16;
 /** Most stops of one re-run of a chunk: own code and writes over it each stop once. */
 const MAX_STAGE_STOPS = 4096;
@@ -436,6 +438,8 @@ async function follow(
       stopAt = undefined;
     }
   };
+  // Stage 0 starts at the program, whatever the first step is: RUN and the BASIC line before it are no part of it.
+  await client.memmap({ action: "clear" });
   // The steps run first and in the tracked time: a frames step and a runUntil step to an address. The others act between two chunks.
   for (const [index, step] of options.steps.entries()) {
     running = index + 1;
@@ -447,11 +451,16 @@ async function follow(
         return { stages: found, frames: total, reached: false, failed: `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It is at ${formatC64Address(pc)}.${why}` };
       }
     } else {
-      await runActionStep(client, step, knowledgeAt());
-      // A press or a runUntil to memory or the raster runs frames outside the chunks: what it wrote and ran is in the stage
-      // before the next chunk clears the memory map. A press holds and lets go each key for its frames.
+      // A press or a runUntil to memory or the raster runs frames outside the chunks. The stopwatch of the session gives them,
+      // also for a run that a point stops early. What the step wrote and ran is in the stage before the next chunk clears the memory map.
+      await client.timing("start");
+      const notReached = await runActionStep(client, step, knowledgeAt());
+      const timed = await client.timing("read");
+      total += Math.round(Number("cycles" in timed ? timed.cycles : 0) / FRAME_CYCLES);
       mergeMaps(stage.map, await readCoverage(client));
-      if ("press" in step) total += keyTaps(step.press.keys).length * 2 * step.press.frames;
+      if (notReached !== undefined && "runUntil" in step) {
+        return { stages: found, frames: total, reached: false, failed: `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.` };
+      }
     }
     noteUntil(stage.map);
   }
