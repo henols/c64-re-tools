@@ -44,6 +44,10 @@ test("a record file needs a program and steps the replay core can do; a checkpoi
   assert.deepEqual(readRecordFile(file("pin.json", { ...valid, pin: [{ address: "$0016", size: 2 }] })).compare?.pin, [{ address: "$0016", size: 2 }]);
   assert.equal(read.load, false);
   assert.equal(readRecordFile(file("bare.json", { ...valid, checkpoint: undefined, state: undefined })).compare, undefined);
+  // 64 addresses, one of them also by its name: the replay core counts 64.
+  const targets = [...Array.from({ length: 64 }, (_, index) => `$${(0x1000 + index).toString(16)}`), "main_loop"];
+  const steps = targets.map((address) => ({ runUntil: { target: { kind: "address", address }, timeoutFrames: 5 } }));
+  assert.equal(readRecordFile(file("names.json", { ...valid, symbols: file("names-symbols.json", { main_loop: "$1000" }), steps })).steps.length, 65);
   for (const [name, bad] of Object.entries({
     checkpointOnly: { ...valid, state: undefined },
     pinOnly: { ...valid, checkpoint: undefined, state: undefined, pin: ["$0016"] },

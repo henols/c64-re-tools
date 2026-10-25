@@ -225,7 +225,6 @@ export function readRecordFile(path: string): RecordFile {
     checkCoreStep(step, at, fail);
     return step;
   });
-  if (new Set(steps.flatMap(addressTarget)).size > MAX_COUNTED_TARGETS) fail(`the runUntil steps go to more than ${MAX_COUNTED_TARGETS} addresses`);
   return {
     name: value.name as string,
     program: value.program as string,
@@ -491,12 +490,15 @@ export async function record(
     at.code(file.compare.checkpoint);
     for (const item of file.compare.state) at.data(item.address);
   }
+  // Two names can give one address: the replay core counts each address once.
+  const targets = [...new Set(file.steps.flatMap(addressTarget).map(at.code))];
+  if (targets.length > MAX_COUNTED_TARGETS) throw new Refusal("invalid-input", `record file of ${file.name}: the runUntil steps go to more than ${MAX_COUNTED_TARGETS} addresses`);
   const reads = workspace.path(RECORDING_FILES.reads);
   const coverage = workspace.path(RECORDING_FILES.coverage);
   await core.init();
   await core.command(`inputs ${inputsArgument(file.inputs)}`);
   await core.command(`record ${reads}`);
-  await countAt(core, file.steps.flatMap(addressTarget).map(at.code));
+  await countAt(core, targets);
   await startProgram(core, prg, file.load ?? false);
   // From READY on: the start of the C64 itself is never in the map.
   await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hex(parseC64Address(file.coverage))}`);
