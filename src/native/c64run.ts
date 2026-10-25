@@ -22,15 +22,18 @@ const STOP_MS = 5_000;
 const COMMAND_MS = 30_000;
 /** The slowest run that a command limit allows for: c64run runs about 6 million cycles per second. */
 const SLOWEST_CYCLES_PER_SECOND = 1_000_000;
+/** The argument of each run command that is the absolute tick it runs to at most: run <tick>, run-pc <pc> <tick> [<n>], run-reads <pc> <addr> <n> <tick>. */
+const UNTIL_ARGUMENT: Record<string, number> = { run: 0, "run-pc": 1, "run-reads": 3 };
 
 /**
  * The time limit of a command, so that a core that hangs cannot keep the
- * script running. run, run-pc and run-reads end with the absolute tick that
- * they run to at most; the others answer at once.
+ * script running. A run command gets the time of the cycles up to the tick
+ * that it runs to at most; the others answer at once.
  */
 export function commandLimitMs(text: string): number {
   const [name, ...rest] = text.split(" ");
-  const target = name === "run" || name === "run-pc" || name === "run-reads" ? Number(rest.at(-1)) : 0;
+  const at = UNTIL_ARGUMENT[name!];
+  const target = at === undefined ? 0 : Number(rest[at]);
   return COMMAND_MS + (Number.isFinite(target) ? (target * 1000) / SLOWEST_CYCLES_PER_SECOND : 0);
 }
 

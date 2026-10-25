@@ -67,6 +67,8 @@ test("a run to a far tick gets the time of its cycles at 1 million per second; o
   assert.equal(commandLimitMs("run-sync"), 30_000);
   assert.equal(commandLimitMs("run 600000000"), 630_000);
   assert.equal(commandLimitMs("run-pc c000 60000000"), 90_000);
+  // The count of a run-pc to the n-th fetch is no tick.
+  assert.equal(commandLimitMs("run-pc c000 60000000 5"), 90_000);
   assert.equal(commandLimitMs("run-reads c000 dc00 3 120000000"), 150_000);
 });
 
