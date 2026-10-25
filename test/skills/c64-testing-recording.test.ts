@@ -13,6 +13,9 @@ import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRec
 import { replay } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
+import { withWrite } from "../../src/knowledge/database.ts";
+import { renameSymbol } from "../../src/knowledge/write.ts";
+import { importCoverage } from "../fixtures/program.ts";
 import { readEnvelope } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-recording-"));
@@ -134,6 +137,23 @@ test("record starts the coverage as the record file tells, and the summary gives
   const address = record("by-address", "$1aed", "ok not-started");
   assert.ok(address.commands.includes("coverage on-pc 1aed"));
   assert.deepEqual([address.body.recorded, address.body.coverageFrom, address.body.executed], [true, null, 0]);
+});
+
+test("a record into the folder of an earlier recording names each file that the knowledge gives as evidence and that the record changed", { skip: process.platform === "win32" ? "the stand-in replay core is a shell script" : false }, () => {
+  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
+  const earlier = new Uint8Array(0x10000);
+  earlier[0x0801] = 4;
+  importCoverage(project, { "tests/recordings/cited/coverage.bin": earlier });
+  withWrite((db) => renameSymbol(db, { origin: "llm", evidence: [{ kind: "test", ref: "tests/recordings/cited/recording.json", sha256: "0".repeat(64) }] }, { address: 0x0801, name: "start" }), project);
+  const core = recordingCore("c64run-cited", "ok from tick=982800 pc=1aed");
+  const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), "record", file("cited.json", { name: "cited", program: "game.prg", symbols: "none", steps: [{ frames: 10 }] }), "--out", "tests/recordings/cited"], {
+    cwd: project,
+    encoding: "utf8",
+    env: { ...process.env, C64RT_C64RUN: core.path },
+  });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const evidence = (readEnvelope(run.stdout, run.status).json.evidence as Array<{ file: string; state: string }>).map((change) => [change.file, change.state]);
+  assert.deepEqual(evidence, [["tests/recordings/cited/coverage.bin", "changed"], ["tests/recordings/cited/recording.json", "changed"]]);
 });
 
 test("a state item of the command line is a name or an address with an optional size", () => {

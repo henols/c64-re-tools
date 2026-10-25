@@ -207,10 +207,12 @@ The script does the steps of the record file on the original program. Then it wr
 - `executed`: the number of instructions in the coverage map.
 - `coverageFrom`: the `frame` and the `pc` where the coverage map starts. `null` when the coverage did not start.
 - `reason`: with a FAIL, why the session did not complete.
+- `evidence`: only when the project knowledge gives a file of `--out` as evidence, and this record changed the file. Each item has the `file`, its `state` and the `revisions` that give the file.
 
 Do this for each result:
 
 - `PASS`: for a folder in `tests/recordings/`, `hint` tells you to commit the folder and to add its `coverage.bin` to the project knowledge as coverage. Git ignores `.c64-re-tools/local/`, thus the project knowledge must not name a file in it. For a folder there, `hint` tells you to record again with `--out tests/recordings/<name>`. `nextAction` replays the recording on the original. Run it to make sure that the recording replays.
+- `PASS` with `evidence`: you recorded into the folder of an earlier recording. Put the new `coverage.bin` into the project knowledge as coverage. It replaces the map of the earlier recording. For another file in `evidence`, examine the facts of its revisions against the new recording.
 - `FAIL` after a cancel on the page: `hint` tells you to ask the user what to do. Do not record a session from steps in place of the session of the user.
 - Another `FAIL`: `reason` names the step that did not complete. Examples are a `runUntil` step that did not get to its target, and a `type` step with too many keys. Change the step, then run `record` again.
 - `coverageFrom` is `null` and `executed` is 0: the coverage did not start, so the coverage map is empty. The recording can still replay.

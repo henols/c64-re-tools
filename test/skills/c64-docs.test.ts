@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -177,7 +178,7 @@ test("docs.ts generate writes the reference: module pages with anchors and links
   // Every link of the reference reaches its file, anchor and line.
   const checked = link(root, "docs", "--source", "src", "--check");
   assert.equal(checked.status, 0, JSON.stringify(checked.json));
-  assert.equal(checked.json.result, "PASS", JSON.stringify(checked.json));
+  assert.equal(checked.json.result, "PASS");
   const graphics = read("graphics.md");
   assert.match(graphics, /!\[ship in hires\]\(images\/ship-hires\.png\)/);
   const sheet = readPng(readFileSync(join(root, "docs/reference/images/ship-hires.png")));
@@ -334,6 +335,20 @@ test("docs.ts link reports a source and a reference that are older than the know
   assert.equal(stale.status, 0);
   assert.equal(stale.json.result, "FAIL");
   assert.deepEqual((stale.json.problems as { byKind: Record<string, number> }).byKind, { "stale-reference": 1 });
+});
+
+test("docs.ts link names the evidence files of the knowledge that are missing or changed, and they do not fail the link", () => {
+  const { root } = project();
+  writeFileSync(join(root, "docs.md"), "[`main` `$1000`](src/main_code.asm#L5)\n");
+  mkdirSync(join(root, "tests"));
+  writeFileSync(join(root, "tests/trap.json"), "{}");
+  // A write in another space: the source of the C64 stays at its revision.
+  const cited = withWrite((db) => renameSymbol(db, { origin: "llm", evidence: [{ kind: "test", ref: "tests/trap.json", sha256: createHash("sha256").update("{}").digest("hex") }] }, { space: "drive8", address: 0x0500, name: "drive_start" }), root);
+  assert.equal(link(root, "docs.md", "--source", "src", "--check").json.evidence, undefined);
+  rmSync(join(root, "tests/trap.json"));
+  const checked = link(root, "docs.md", "--source", "src", "--check");
+  assert.equal(checked.json.result, "PASS");
+  assert.deepEqual(checked.json.evidence, { count: 1, listed: [{ file: "tests/trap.json", state: "missing", revisions: [cited.revision] }] });
 });
 
 test("docs.ts link reports a page that is a symbolic link to no file or out of the project, and a link with a bare %", { skip: process.platform === "win32" && "symbolic links need rights on Windows" }, () => {

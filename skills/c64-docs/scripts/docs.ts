@@ -13,6 +13,7 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead } from "#src/knowledge/database.ts";
+import { changedEvidence, type EvidenceChange } from "#src/knowledge/evidence.ts";
 import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
 import { listComments, listModules, listReferences, listRegions, listSymbols, sourceRevision } from "#src/knowledge/read.ts";
 import { groupOf, namedGroup, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
@@ -247,6 +248,8 @@ function link(call: Call): Reply {
   const reference = checkedReference !== undefined ? checkedReference : foundReference === undefined ? undefined : foundReference.slice(memberOf(foundReference)!.prefix.length).replace(/^\//, "");
   const referenceOf = (member: Member) => (reference === undefined ? undefined : posix.join(member.prefix, reference));
   const problems: Problem[] = [];
+  /** The evidence files of the knowledge of each read project that are missing or changed, with paths relative to the root of the run. */
+  const evidence: EvidenceChange[] = [];
 
   /** The names of a project, read the first time a page needs them. A project with given pages is read before the pages. */
   const loaded = new Map<Member, Names>();
@@ -268,6 +271,7 @@ function link(call: Call): Reply {
     try {
       revision = sourceRevision(db, map.space);
       symbols = listSymbols(db, undefined, undefined, undefined, map.space);
+      for (const change of changedEvidence(db, member.root)) evidence.push({ ...change, file: inProject(change.file) });
     } finally {
       db?.close();
     }
@@ -395,11 +399,19 @@ function link(call: Call): Reply {
     ...(check ? { notUpToDate: { links, pages: changedPages } } : { linked: { links, pages: changedPages } }),
     problems: { byKind, ...shownProblems },
   };
+  const shownEvidence = listed(evidence, call.count("max-listed")!, (change) => ({ ...change, file: shown(change.file) }));
+  if (evidence.length > 0) output.evidence = shownEvidence;
   const again = (withCheck: boolean) =>
     call.next("link", ...call.subjects, "--source", call.string("source")!, ...(givenReference === undefined ? [] : ["--reference", givenReference]), ...(withCheck ? ["--check"] : []), ...(scope.unnamed ? ["--project", root] : []));
   const hints: string[] = [];
   let nextAction: string | undefined;
   if (reference === undefined) hints.push("No reference/ folder is in or beside the given pages, so the links to the reference are not checked. Give --reference <dir>, or run generate first.");
+  if (evidence.length > 0) {
+    hints.push(
+      "The project knowledge gives the files in evidence as evidence, and each file is missing or changed since the revisions in its item. For a coverage map that changed, put the map into the project knowledge again. For a file that you did not change on purpose, restore it from git. Else examine the facts of the revisions against the new file, and give the new file as evidence of the next write of these facts.",
+    );
+    if (shownEvidence.rest !== undefined) hints.push(`evidence is cut. To list all files, give ${shownEvidence.rest}.`);
+  }
   if (problems.length > 0) {
     hints.push("Correct each problem in problems.listed as its message tells. Then run nextAction.");
     if (shownProblems.rest !== undefined) hints.push(`problems is cut. To list all problems, give ${shownProblems.rest}.`);

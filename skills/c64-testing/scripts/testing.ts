@@ -13,8 +13,10 @@ import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { C64RunSession, PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
+import { openForRead } from "#src/knowledge/database.ts";
+import { changedEvidence } from "#src/knowledge/evidence.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative } from "#src/project.ts";
+import { LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot } from "#src/project.ts";
 import { OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type Reply } from "#src/script.ts";
 import { diffFiles } from "./lib/diff-files.ts";
 import { CANCELLED, play } from "./lib/play.ts";
@@ -79,7 +81,10 @@ async function recordCommand(call: Call): Promise<Reply> {
   const context = localToolContext();
   const core = await C64RunSession.open(context);
   const workspace = Workspace.create(context.supervisor, "c64-re-tools-record-");
+  let db: ReturnType<typeof openForRead>;
   try {
+    // The knowledge is read before the session: a record into the folder of an earlier recording can change files that it gives as evidence.
+    db = openForRead();
     const person = playing
       ? (session: C64RunSession, restore: () => Promise<string | undefined>) => {
           const ready = (url: string) =>
@@ -111,11 +116,20 @@ async function recordCommand(call: Call): Promise<Reply> {
       ? `Git ignores ${out}. To keep the recording as a test and to add its coverage to the project knowledge, record again with --out tests/recordings/<name>.`
       : `Commit ${out} with the scenarios. Add ${out}/${RECORDING_FILES.coverage} to the project knowledge as coverage.`;
     const recordFile = local(call.subject(0)) ? ` Git also ignores the record file ${call.subject(0)}. To record again later, keep a copy in a folder that git keeps, for example tests/record/.` : "";
+    const written = new Set(Object.values(RECORDING_FILES).map((name) => projectRelative(`${out}/${name}`)));
+    const evidence = changedEvidence(db, projectRoot(), (file) => written.has(file));
+    const map = projectRelative(`${out}/${RECORDING_FILES.coverage}`);
+    const cited = [
+      ...(evidence.length === 0 ? [] : [" The project knowledge gives the files in evidence as evidence of earlier revisions, and this record changed them."]),
+      ...(evidence.some((change) => change.file === map) ? [` Put the new ${RECORDING_FILES.coverage} into the project knowledge as coverage: it replaces the map of the earlier recording.`] : []),
+      ...(evidence.some((change) => change.file !== map) ? [` For a file other than ${RECORDING_FILES.coverage}, examine the facts of its revisions against the new recording.`] : []),
+    ].join("");
     return reply(
-      { result: "PASS", recorded: true, out, ...summary, files },
-      { hint: `${keep}${recordFile} ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
+      { result: "PASS", recorded: true, out, ...summary, files, ...(evidence.length === 0 ? {} : { evidence }) },
+      { hint: `${keep}${recordFile}${cited} ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
     );
   } finally {
+    db?.close();
     await core.close();
     workspace.remove();
   }
