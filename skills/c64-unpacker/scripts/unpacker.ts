@@ -15,7 +15,7 @@ import { readPrg } from "#src/host-client/image.ts";
 import { writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
-import { RASTER } from "#src/protocol/vice.ts";
+import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
@@ -174,8 +174,6 @@ const stageWrote = (map: Uint8Array) => writtenBlocks(map, 1);
 
 /** Frames between two looks at the memory map while stages are followed. */
 const STAGE_CHUNK_FRAMES = 25;
-/** The cycles of one frame: the unpacker runs a PAL C64. */
-const FRAME_CYCLES = RASTER.pal.lines * RASTER.pal.cycles;
 const MAX_STAGES = 16;
 /** Most stops of one re-run of a chunk: own code and writes over it each stop once. */
 const MAX_STAGE_STOPS = 4096;
@@ -456,7 +454,7 @@ async function follow(
       await client.timing("start");
       const notReached = await runActionStep(client, step, knowledgeAt());
       const timed = await client.timing("read");
-      total += Math.round(Number("cycles" in timed ? timed.cycles : 0) / FRAME_CYCLES);
+      total += Math.round(Number("cycles" in timed ? timed.cycles : 0) / PAL_FRAME_CYCLES);
       mergeMaps(stage.map, await readCoverage(client));
       if (notReached !== undefined && "runUntil" in step) {
         return { stages: found, frames: total, reached: false, failed: `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.` };
