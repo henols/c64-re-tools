@@ -160,3 +160,52 @@ test("a platform name has a reader where the source line names it or uses a macr
   assert.match(rowOf("SP0X"), /place_sprite/);
   assert.doesNotMatch(rowOf("SP0X"), /\(indexed\)/);
 });
+
+test("a label that another file reaches only by a pointer keeps its entry: the CPU enters it through a vector", () => {
+  // init sets the IRQ vector to irq_handler (lda #<irq_handler); game_loop is a label that only game jumps to.
+  const items = [
+    { start: 0x1000, end: 0x1004, file: "init.asm", line: 2 },
+    { start: 0x1100, end: 0x1102, file: "game.asm", line: 2 },
+    { start: 0x1108, end: 0x110a, file: "game.asm", line: 4 },
+    { start: 0x1110, end: 0x1112, file: "game.asm", line: 6 },
+  ];
+  const labels = [
+    { address: 0x1000, name: "init", file: "init.asm", line: 1 },
+    { address: 0x1100, name: "game", file: "game.asm", line: 1 },
+    { address: 0x1108, name: "game_loop", file: "game.asm", line: 3 },
+    { address: 0x1110, name: "irq_handler", file: "game.asm", line: 5 },
+  ];
+  const map: SourceMap = {
+    directory: "src",
+    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
+    space: "c64",
+    revision: "1",
+    files: ["init.asm", "game.asm"],
+    labels,
+    labelOf: (name) => labels.find((label) => label.name === name),
+    lineOf: (address) => items.find((item) => address >= item.start && address <= item.end),
+    pathOf: (file) => `src/${file}`,
+  };
+  const { files } = buildReference({
+    out: "docs/reference",
+    map,
+    revision: "1",
+    symbols: [
+      { ...row, address: 0x1000, name: "init", kind: "routine" },
+      { ...row, address: 0x1100, name: "game", kind: "routine" },
+      { ...row, address: 0x1108, name: "game_loop", kind: "label" },
+      { ...row, address: 0x1110, name: "irq_handler", kind: "label" },
+    ],
+    regions: [{ ...row, start: 0x1000, end: 0x1112, type: "code" }],
+    comments: [],
+    references: [
+      { ...row, from: 0x1000, to: 0x1110, kind: "pointer" },
+      { ...row, from: 0x1108, to: 0x1108, kind: "jump" },
+    ],
+    modules: [],
+    image: { byteAt: () => 0, inImage: (address: number) => address >= 0x1000 && address <= 0x1112 },
+  } as never);
+  const game = files.find((file) => file.path === "docs/reference/modules/game.md")!.bytes.toString("utf8");
+  assert.match(game, /### \[`irq_handler`\]/);
+  assert.doesNotMatch(game, /### \[`game_loop`\]/, "only code of its own file enters game_loop");
+});

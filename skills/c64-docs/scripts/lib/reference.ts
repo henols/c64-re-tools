@@ -307,6 +307,8 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       : ["", "| Label | Address | Comment |", "|---|---|---|", ...labels.map((label) => `| <a id="${label.name}"></a>${codeOfName(page, label.name)} | \`${hex(label.address)}\` | ${commentLines(label.address).join(" ").replace(/\|/g, "\\|")} |`)];
   const entersAt = new Map<number, ReferenceRow[]>();
   for (const reference of input.references) if (reference.kind === "call" || reference.kind === "jump") entersAt.set(reference.to, [...(entersAt.get(reference.to) ?? []), reference]);
+  // A pointer to code (lda #<irq_handler) is a vector: the CPU enters there from no file.
+  const pointedAt = new Set(input.references.filter((reference) => reference.kind === "pointer").map((reference) => reference.to));
   const tableAnchor = (table: RegionRow) => entryAt.get(table.start)?.name ?? `table_${table.start.toString(16).padStart(4, "0")}`;
   function tableLink(page: string, table: RegionRow): string {
     return `[\`${entryAt.get(table.start)?.name ?? range(table.start, table.end)}\`](${rel(page, posix.join(out, "tables.md"))}#${tableAnchor(table)})`;
@@ -329,7 +331,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     // A label that only code of this file enters is a row: under the routine that holds it, else in the labels of the page.
     const headAt = new Set(heads.map((head) => head.address));
     const fromOtherFiles = (address: number) => (entersAt.get(address) ?? []).filter((reference) => map.lineOf(reference.from)?.file !== file);
-    const mains = new Set(own.filter((entry) => entry.kind !== "label" || headAt.has(entry.address) || fromOtherFiles(entry.address).length > 0).map((entry) => entry.address));
+    const mains = new Set(own.filter((entry) => entry.kind !== "label" || headAt.has(entry.address) || pointedAt.has(entry.address) || fromOtherFiles(entry.address).length > 0).map((entry) => entry.address));
     const labelsOf = new Map<number | undefined, Entry[]>();
     for (const entry of own) {
       if (mains.has(entry.address)) continue;
