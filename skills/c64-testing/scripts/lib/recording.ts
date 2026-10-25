@@ -362,6 +362,11 @@ export function siteMap(sites: RecordedSite[], from: Map<string, number>, to: Ma
 export interface EntryPoint {
   /** The tick of the first opcode fetch at the entry. */
   tick: number;
+  /**
+   * The phase of the machine at that fetch, as the replay core gives it: the beam position, the CIA timers and
+   * the interrupt state. It depends on how the program started, so the rebuild gets it at its own entry.
+   */
+  phase: string;
   /** The count of each pc key, by its target, before that fetch. */
   counts: Map<string, number>;
   /** The number of events of the recording before the entry: always the first ones. */
@@ -760,9 +765,13 @@ export async function replaySide(
     if ((await core.status(`run-pc ${hex(jump)} ${limit}`)).word !== "reached") problem = `the rebuild did not come to the jump of its loader at ${formatC64Address(jump)}`;
     else {
       await countAt(core, targets);
-      const entered = await core.status(`run-pc ${hex(handover.entry)} ${limit}`);
-      if (entered.word !== "reached") problem = `the rebuild did not come to its entry at ${formatC64Address(handover.entry)}`;
+      const reached = await core.status(`run-pc ${hex(handover.entry)} ${limit}`);
+      if (reached.word !== "reached") problem = `the rebuild did not come to its entry at ${formatC64Address(handover.entry)}`;
       else {
+        // The loader sets the entry state of the capture, but the phase of the frame and of the CIA timers at the entry
+        // depends on how the original started: the rebuild waits at its entry for the beam position of the original, and
+        // gets its CIA timers and interrupt state there. A program that starts its timers without a load keeps that phase.
+        const entered = await core.status(`align ${handover.original.phase}`);
         // After the entry, a tick key is as far from the entry as in the original.
         skipped = entered.tick - handover.original.tick;
         limit = base + Math.max(0, skipped);
@@ -773,9 +782,10 @@ export async function replaySide(
   // The original with an entry: the events before the mark at the entry came.
   let eventsBefore = 0;
   let entryTick: number | undefined;
+  let entryPhase = "";
   const marked = async () => {
-    const answer = /tick=(\d+)/.exec(await core.command("marked"));
-    if (answer !== null) entryTick = Number(answer[1]);
+    const answer = /tick=(\d+) phase=([0-9a-f]+)/.exec(await core.command("marked"));
+    if (answer !== null) [entryTick, entryPhase] = [Number(answer[1]), answer[2]!];
   };
   for (const [index, event] of (problem === undefined ? recording.events : []).entries()) {
     const what = event.step === undefined ? "the RESTORE of the play" : "step " + event.step;
@@ -824,7 +834,7 @@ export async function replaySide(
     }
     // A checkpoint at the first fetch at the entry has the tick of the mark. The rebuild starts its checkpoints after that fetch.
     const after = lines.filter((line) => Number(line.split(" ")[0]) > entryTick!);
-    entryPoint = { tick: entryTick, counts, eventsBefore, samplesBefore: lines.length - after.length };
+    entryPoint = { tick: entryTick, phase: entryPhase, counts, eventsBefore, samplesBefore: lines.length - after.length };
     lines = after;
   }
   return {

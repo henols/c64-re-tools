@@ -27,7 +27,7 @@
 #include "systems/c1541.h"
 #include "systems/c64.h"
 
-#define C64RUN_PROTOCOL 6
+#define C64RUN_PROTOCOL 7
 // The key code of matrix place 0 (row 0, column 0); place n has code 0x80 + n.
 #define C64RUN_KEY_PLACE 0x80
 #ifndef CHIPS_COMMIT
@@ -240,6 +240,44 @@ static uint64_t mark_tick;
 static int mark_pc = -1;  // -1: no mark waits
 static int mark_set;      // marked and mark_tick hold the mark
 
+// The phase of the machine at the mark: the beam position, the timers and interrupt
+// state of both CIAs and the interrupt state of the CPU. It depends on how the
+// program was started, and no program can set all of it. "align" gives it to
+// another run at its own entry, so both runs go on from the same phase.
+typedef struct {
+    uint16_t line, cycle;
+    m6526_timer_t ta[2], tb[2];
+    m6526_int_t intr[2];
+    uint16_t irq_pip;
+    uint32_t nmi_pip;
+    uint8_t brk_flags;
+    uint64_t pins, cpu_pins;  // only the IRQ and NMI lines
+} phase_t;
+static phase_t mark_phase;
+
+static void phase_get(phase_t* p) {
+    memset(p, 0, sizeof *p);
+    p->line = sys.vic.rs.v_count;
+    p->cycle = sys.vic.rs.h_count;
+    const m6526_t* cia[2] = { &sys.cia_1, &sys.cia_2 };
+    for (int i = 0; i < 2; i++) { p->ta[i] = cia[i]->ta; p->tb[i] = cia[i]->tb; p->intr[i] = cia[i]->intr; }
+    p->irq_pip = sys.cpu.irq_pip;
+    p->nmi_pip = sys.cpu.nmi_pip;
+    p->brk_flags = sys.cpu.brk_flags;
+    p->pins = pins & (M6502_IRQ | M6502_NMI);
+    p->cpu_pins = sys.cpu.PINS & (M6502_IRQ | M6502_NMI);
+}
+
+static void phase_set(const phase_t* p) {
+    m6526_t* cia[2] = { &sys.cia_1, &sys.cia_2 };
+    for (int i = 0; i < 2; i++) { cia[i]->ta = p->ta[i]; cia[i]->tb = p->tb[i]; cia[i]->intr = p->intr[i]; }
+    sys.cpu.irq_pip = p->irq_pip;
+    sys.cpu.nmi_pip = p->nmi_pip;
+    sys.cpu.brk_flags = p->brk_flags;
+    pins = (pins & ~(M6502_IRQ | M6502_NMI)) | p->pins;
+    sys.cpu.PINS = (sys.cpu.PINS & ~(M6502_IRQ | M6502_NMI)) | p->cpu_pins;
+}
+
 static void clear_counts(void) {
     for (int i = 0; i < counted_pcs; i++) counted_at[counted_pc[i]] = 0;
     counted_pcs = 0;
@@ -251,6 +289,7 @@ static void count_fetch(uint16_t pc) {
     if (mark_pc == pc) {
         for (int i = 0; i < counted_pcs; i++) marked[i] = counted[i];
         mark_tick = ticks;
+        phase_get(&mark_phase);
         mark_pc = -1;
         mark_set = 1;
     }
@@ -579,9 +618,32 @@ int main(int argc, char** argv) {
             mark_set = 0;
             printf("ok\n");
         } else if (!strcmp(cmd, "marked")) {
-            // marked: the tick of the mark when it came, else none
-            if (mark_set) printf("ok tick=%llu\n", (unsigned long long)mark_tick);
+            // marked: the tick and the phase (hex) of the mark when it came, else none
+            if (mark_set) {
+                printf("ok tick=%llu phase=", (unsigned long long)mark_tick);
+                for (size_t i = 0; i < sizeof mark_phase; i++) printf("%02x", ((const uint8_t*)&mark_phase)[i]);
+                printf("\n");
+            }
             else printf("ok none\n");
+        } else if (!strcmp(cmd, "align")) {
+            // align <phase hex>: at an opcode fetch, hold the CPU on the fetch (RDY, as the VIC-II
+            // does on a bad line) until the beam is at the position of the phase, then give the
+            // CIAs and the CPU the timers and interrupt state of the phase (from "marked")
+            phase_t p;
+            if (strlen(a1) != 2 * sizeof p || !(pins & M6502_SYNC)) { printf("err align: give the phase of marked, at an opcode fetch\n"); continue; }
+            for (size_t i = 0; i < sizeof p; i++) ((uint8_t*)&p)[i] = (uint8_t)hexbyte(a1 + 2 * i);
+            // A PAL frame holds each beam position one time.
+            uint64_t held = 0;
+            while ((sys.vic.rs.v_count != p.line || sys.vic.rs.h_count != p.cycle) && held <= 312 * 63) {
+                pins = _c64_tick(&sys, pins | M6502_RDY);
+                ticks++;
+                held++;
+            }
+            if (sys.vic.rs.v_count != p.line || sys.vic.rs.h_count != p.cycle) { printf("err align: the beam never came to line %u cycle %u\n", p.line, p.cycle); continue; }
+            phase_set(&p);
+            char prefix[64];
+            snprintf(prefix, sizeof prefix, "ok held=%llu", (unsigned long long)held);
+            status(prefix);
         } else if (!strcmp(cmd, "hits")) {
             // hits <pc hex>: the count of a pc of count-pc, and its count at the mark when the mark came
             unsigned pc;

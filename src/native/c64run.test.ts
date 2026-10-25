@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../protocol/messages.ts";
-import { C64RunSession, commandLimitMs, parseStatus } from "./c64run.ts";
+import { C64RUN_PROTOCOL, C64RunSession, commandLimitMs, parseStatus } from "./c64run.ts";
 import { ProcessSupervisor } from "./processes.ts";
 
 const skip = process.platform === "win32" ? "the stand-in c64run is a shell script" : false;
@@ -24,7 +24,7 @@ function standInCore(name: string, options: { protocol?: number; roms?: boolean 
       "#!/bin/sh",
       "while read cmd rest; do",
       '  case "$cmd" in',
-      `    version) echo "ok c64run protocol=${options.protocol ?? 6} chips=test" ;;`,
+      `    version) echo "ok c64run protocol=${options.protocol ?? C64RUN_PROTOCOL} chips=test" ;;`,
       `    init) ${init} ;;`,
       '    peek) echo "ok 0102" ;;',
       "    hang) sleep 600 ;;",
@@ -90,7 +90,7 @@ test("a missing c64run, another protocol or missing ROMs refuse with installatio
   const refused = (pattern: RegExp) => (error: unknown) => error instanceof WireFailure && error.code === "installation-incomplete" && pattern.test(error.message);
   await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: join(scratch, "no-c64run") })), refused(/C64RT_C64RUN/));
   await assert.rejects(C64RunSession.open(context({})), refused(/c64run is not installed on this machine/));
-  await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-1", { protocol: 1 }) })), refused(/protocol 1; c64-re-tools needs protocol 6/));
+  await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-1", { protocol: 1 }) })), refused(new RegExp("protocol 1; c64-re-tools needs protocol " + C64RUN_PROTOCOL)));
   const session = await C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-no-roms", { roms: false }) }));
   try {
     await assert.rejects(session.init(), refused(/no ROM .*dev container of c64-re-tools/));

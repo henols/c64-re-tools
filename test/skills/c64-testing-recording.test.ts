@@ -12,6 +12,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { replay } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
+import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
@@ -96,7 +97,7 @@ function recordingCore(name: string, from: string): { path: string; log: string 
       "while read cmd rest; do",
       `  echo "$cmd $rest" >> ${log}`,
       '  case "$cmd" in',
-      '    version) echo "ok c64run protocol=6 chips=test" ;;',
+      `    version) echo "ok c64run protocol=${C64RUN_PROTOCOL} chips=test" ;;`,
       '    inputs|joy|key|write) echo "ok" ;;',
       '    record) [ "$rest" = off ] || : > "$rest"; echo "ok" ;;',
       '    sites) echo "ok unknown=0" ;;',
