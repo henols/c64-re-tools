@@ -179,7 +179,8 @@ A recording keeps a session of the original program, for example a play through 
 - Make the recordings early, before you change the program.
 - Ask the user to play first. Tell the user which parts of the program the recordings must have, for example each room, a fight and a lost life.
 - Record a session from steps only for a part that the sessions of the user do not have, or when the user cannot play.
-- Replay each recording on the default build `build/clean.prg`. Do not replay a release build or a build with a switch that is not at its default.
+- Replay each recording on the default build. Do not replay a release build or a build with a switch that is not at its default.
+- When the generated source has a loader, the default build is `build/clean_loader.prg`. Give `--symbols build/symbols/clean_loader.json` with it. Else the default build is `build/clean.prg`, with `--symbols build/symbols/clean.json`.
 - Commit the recording folder with the scenarios. Do not put a recording into the project knowledge. Do not put test results, screenshots or playtest results into it.
 - A finding that a recording shows can go into the project knowledge. Give the `recording.json` of the recording as its test evidence.
 - The C64 of a recording has no disk drive. For a program that loads more files from a disk, use a scenario with `test`.
@@ -237,6 +238,8 @@ The script first replays the recording on the original. The original must end th
 A `$` address is an address of the original. On the rebuild, it moves with the name before it.
 
 A rebuild can be a loader with a start screen that RUN starts. If the symbols of the rebuild have `loader_start_screen_wait` and `loader_start_screen_continue`, the script runs the rebuild to the wait. Then it sets the PC to `loader_start_screen_continue`. The cycles before the wait do not count.
+
+A rebuild can be the loader program of a generated source. Give its symbols. Then a runUntil step to an address counts from the entry of the program. The count does not include the code of the loader. It also does not include the code that the original runs before the entry in the project knowledge.
 
 `body` holds `result`, `side`, `firstDifference`, `reason` and `files`. The section "Replay" of `references/recording-format.md` gives each field.
 

@@ -110,7 +110,7 @@ A rebuilt program gets its source from the project knowledge. A change is a swit
    - Build the default build.
    - When the default build does not have the switch, set the switch to 1 in `src/config.asm`. Then build the default build. After the test, set the value back to the default if the user did not ask for the change.
 8. Test the builds:
-   - When the behavior must stay the same as the original, replay each recording on the default build `build/clean.prg`. Do not replay a build with a switch that is not at its default. Run a test scenario in `tests/` only when no recording executes the changed code.
+   - When the behavior must stay the same as the original, replay each recording on the default build. For a source with a loader, this is `build/clean_loader.prg`, else `build/clean.prg`. Do not replay a build with a switch that is not at its default. Run a test scenario in `tests/` only when no recording executes the changed code.
    - On the build that has the switch, run a run file with `expect` steps that show the feature or the fix.
 
 ### The answer
