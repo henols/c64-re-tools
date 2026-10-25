@@ -35,6 +35,7 @@ import { localToolContext } from "#src/native/local.ts";
 import { DECOMPILER_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, romRanges, romUseOfProgram } from "#src/platform.ts";
 import { ensureLocal, generatedDirectory, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
+import { generatedReferences } from "#src/reference-pages.ts";
 import { isoCet } from "#src/time.ts";
 import { zipFiles } from "#src/zip.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
@@ -1170,6 +1171,10 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   // The reports go to the local folder: the source folder holds only source files.
   const reports = generatedDirectory(projectRelative(out));
   written.push(writeReported(`${reports}/${SOURCE_MAP_FILE}`, sourceMapText(rendered, space, knowledge.sourceRevision, files)));
+  // A reference that the project has from this source, made at an earlier revision: the new source makes it old.
+  const staleReference = generatedReferences(projectRoot())
+    .filter((reference) => reference.mapPath === `${reports}/${SOURCE_MAP_FILE}` && reference.revision !== knowledge.sourceRevision)
+    .map((reference) => ({ folder: reference.folder, revision: reference.revision }));
   const showRange = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const inData = entriesInData(entries, knowledge.regions);
   if (rendered.notExecuted !== undefined) {
@@ -1199,6 +1204,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
     revision: knowledge.revision,
     // A run without --loader keeps the loader of an earlier run: one of another revision is stale.
     ...(stale === undefined ? {} : { staleLoader: { ...stale, ...(image.state === undefined || image.entry === undefined ? { noEntryState: true } : {}) } }),
+    ...(staleReference.length === 0 ? {} : { staleReference }),
     instructions: rendered.instructions,
     dataBytes: rendered.dataBytes,
     ...(rendered.undecodedBytes === 0 ? {} : { undecodedBytes: rendered.undecodedBytes }),
@@ -1785,7 +1791,9 @@ function generateReply(call: Call, body: Record<string, unknown>): Reply {
   }
   if ([body.asBytes, body.operandsAsNumbers, body.macrosAsInstructions, body.patchesNotWritten].some(isCut)) steps.push("To see all items of a list, give a larger --max-listed.");
   const staleLoader = body.staleLoader as { noEntryState?: boolean } | undefined;
-  if (steps.length === 0 && staleLoader === undefined) return reply(body, { hint: "Read the source. Record names, comments, regions and modules in the project knowledge. Then generate again." });
+  // The reference is made from the source: it is the step after this run, also when the run has no finding.
+  const reference = body.staleReference === undefined ? "" : " The reference pages in staleReference are from an earlier revision of this source. Generate the reference pages again from this source.";
+  if (steps.length === 0 && staleLoader === undefined) return reply(body, { hint: `Read the source. Record names, comments, regions and modules in the project knowledge. Then generate again.${reference}` });
   if (again) steps.push("Then generate again.");
   // The run with --loader writes the loader again, so it is the next action also for the other findings.
   const loaderAgain = staleLoader !== undefined && staleLoader.noEntryState !== true;
@@ -1793,7 +1801,7 @@ function generateReply(call: Call, body: Record<string, unknown>): Reply {
     steps.push("The loader files in staleLoader.files are of another knowledge revision or toolkit version, and the run kept them.");
     steps.push(loaderAgain ? "To write the loader of this revision, generate with --loader." : "The knowledge has no entry state, so --loader cannot write them again. Remove them when the build does not use them.");
   }
-  return reply(body, { hint: steps.join(" "), ...(again || loaderAgain ? { nextAction: generateAgain(call, call.flag("loader") || loaderAgain) } : {}) });
+  return reply(body, { hint: `${steps.join(" ")}${reference}`, ...(again || loaderAgain ? { nextAction: generateAgain(call, call.flag("loader") || loaderAgain) } : {}) });
 }
 
 /** The hint of an export result: the action for a failed stage, or the next steps for the new project. */

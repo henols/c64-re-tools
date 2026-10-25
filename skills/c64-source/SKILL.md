@@ -120,6 +120,7 @@ To make the source better, change the project knowledge. Then generate again.
 - `switches`, `default`, `releases`: the checks of the switches. See "Switches and releases".
 - `loader`: the check of the loader. See "The loader".
 - `staleLoader`: a run without `--loader` kept `loader.asm` and the loader program of another knowledge revision, or of another version of the toolkit. `files` gives the files. `revision` gives the revision of `loader.asm`, and `version` its toolkit version. Without `revision`, `loader.asm` does not give one. `noEntryState: true` tells that the knowledge has no entry state for a new loader. A change in a space that the loader does not hold does not make the loader stale. The loader holds space `c64` and the space of the stage of the start screen.
+- `staleReference`: each reference folder of the project that has pages of this source from an earlier knowledge revision. Each item has the `folder` and the `revision` of its pages.
 
 `result` is `FAIL` for each of these:
 
@@ -148,6 +149,7 @@ Do these actions for the findings:
 | `conflict` | The knowledge has conflicts from a git merge. Merge the open changes of the project knowledge. Then run the command again. |
 | A list with `rest` | Give a larger `--max-listed`. For `notExecuted`, read the file in `rest`. |
 | `staleLoader` | The loader can copy bytes that are not the bytes of the source. Run `nextAction`, which generates with `--loader`. With `noEntryState: true`, remove the files when the build does not use them. |
+| `staleReference` | The reference pages do not agree with the new source. When you do not change the knowledge again, generate the reference pages again from this source into each `folder`. |
 
 #### The source files
 
