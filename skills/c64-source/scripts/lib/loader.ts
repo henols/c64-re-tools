@@ -217,11 +217,12 @@ const COPY_ENTRY = 7;
 const TABLE_COPIES = Math.floor((256 - 2) / COPY_ENTRY);
 /** A loader that loads into $d000 or higher would write the I/O area. */
 const LOAD_LIMIT = 0xcfff;
-const COPIER_PAGES = [...Array.from({ length: 15 }, (_, index) => 0xc000 + index * 0x100), ...Array.from({ length: 0x9b }, (_, index) => 0x9e00 - index * 0x100)];
-/** The areas where the copier can run: RAM that no ROM and no I/O hides when $01 is $34 or $35, above the screen at $0400. */
-const COPIER_AREAS: readonly AddressRange[] = [
-  { start: 0x0400, end: 0x9fff },
-  { start: 0xc000, end: 0xcfff },
+/** The pages where the plain copier can start, the first one that is free: then the RAM that a ROM can hide, as copierAreas allows. */
+const COPIER_PAGES = [
+  ...Array.from({ length: 15 }, (_, index) => 0xc000 + index * 0x100),
+  ...Array.from({ length: 0x9b }, (_, index) => 0x9e00 - index * 0x100),
+  ...Array.from({ length: 0x20 }, (_, index) => 0xa000 + index * 0x100),
+  ...Array.from({ length: 0x20 }, (_, index) => 0xe000 + index * 0x100),
 ];
 
 const overlaps = (a: AddressRange, b: AddressRange) => a.start <= b.end && b.start <= a.end;
@@ -565,13 +566,14 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     throw new WireFailure("invalid-input", `No copy order exists: each of these copies writes over the packed bytes of another one: ${clashing.join(", ")}. Write the loader by hand.`);
   }
   const loaded = { start: LOAD, end };
+  const areas = copierAreas(state.port);
   const copier = COPIER_PAGES.find((page) => {
     const pages = { start: page, end: page + copierBytes - 1 };
-    return COPIER_AREAS.some((area) => pages.start >= area.start && pages.end <= area.end) && !overlaps(pages, loaded) && plain.every((copy) => !overlaps(pages, copy.target));
+    return areas.some((area) => pages.start >= area.start && pages.end <= area.end) && !overlaps(pages, loaded) && plain.every((copy) => !overlaps(pages, copy.target));
   });
   if (copier === undefined) {
     const count = copierPages === 2 ? "two" : "three";
-    throw new WireFailure("invalid-input", `No ${count} free pages exist for the copier in $0400-$9fff or $c000-$cfff outside the loader (${show(loaded)}) and the targets: ${plain.map((copy) => show(copy.target)).join(", ")}.`);
+    throw new WireFailure("invalid-input", `No ${count} free pages exist for the copier in ${areas.map(show).join(" or ")} outside the loader (${show(loaded)}) and the targets: ${plain.map((copy) => show(copy.target)).join(", ")}.`);
   }
   const copies: Copy[] = order.map((index) => {
     const copy = plain[index]!;
@@ -641,18 +643,20 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   };
 }
 
+/** The hardware vectors at $fffa-$ffff: the copier and the pieces of pages 0-3 stay below them. */
+const BELOW_VECTORS = 0xfff9;
 /** Where the packed form puts the bytes of pages 0-3: the copier reads them with all RAM visible ($01 = $34). */
-const PIECE_AREA: AddressRange = { start: 0x0400, end: 0xffff };
+const PIECE_AREA: AddressRange = { start: 0x0400, end: BELOW_VECTORS };
 
 /**
- * Where the packed form puts its copier: the copier sets $01 to $35 and then
- * to the entry's value, so it is in RAM that both show. A port bit that is an
- * input reads 1.
+ * Where a loader puts its copier: the copier sets $01 to $35 and then to the
+ * entry's value, so it is in RAM that both show. A port bit that is an input
+ * reads 1.
  */
 export function copierAreas(port: readonly [number, number]): AddressRange[] {
   const rom = romUseOfPort((port[1] | ~port[0]) & 0x07);
   if (rom.basic) return [{ start: 0x0400, end: 0x9fff }, { start: 0xc000, end: 0xcfff }];
-  return [{ start: 0x0400, end: 0xcfff }, ...(rom.kernal ? [] : [{ start: 0xe000, end: 0xffff }])];
+  return [{ start: 0x0400, end: 0xcfff }, ...(rom.kernal ? [] : [{ start: 0xe000, end: BELOW_VECTORS }])];
 }
 /** The free ranges that a refusal of the packed form names. */
 const SHOWN_FREE = 8;
@@ -667,8 +671,10 @@ const SHOWN_FREE = 8;
  * writes them after the unpack. Between its ranges, loader.asm holds the
  * bytes of the image, so its build does not change a segment.
  */
-function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof ciaSection>, codeSize: number, screen: StartScreenPlan | undefined, tooLarge: string): LoaderPlan {
+function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof ciaSection>, copierCode: number, screen: StartScreenPlan | undefined, tooLarge: string): LoaderPlan {
   const { state } = input;
+  // The packed copier starts with SEI, as the stub of the plain form does: an interrupt in the copies would go through the vectors in RAM.
+  const codeSize = copierCode + 1;
   // The parts below $0400 without $00/$01, which the loader sets last.
   const low = blocks.flatMap((block) => {
     const range = { start: Math.max(block.range.start, 0x0002), end: Math.min(block.range.end, 0x03ff) };
@@ -690,7 +696,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     const why =
       placed.refusal === "copies"
         ? `A packed loader needs more than ${MAX_PACKED_COPIES} copies for the ${lowBytes} bytes of pages 0-3 in the free ranges.`
-        : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier in ${areas.map(show).join(" or ")}, and ${lowBytes} more free bytes for pages 0-3 in $0400-$ffff, outside the segments. The copier runs with $01 = $35 and then with the $01 of the entry, so it is in RAM that both show.${screen === undefined ? "" : ` The start screen takes ${START_SCREEN_SIZES[screen.colourMode]} bytes of the copier: without it (unstart-screen), the copier is smaller.`}`;
+        : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier in ${areas.map(show).join(" or ")}, and ${lowBytes} more free bytes for pages 0-3 in ${show(PIECE_AREA)}, outside the segments. The copier runs with $01 = $35 and then with the $01 of the entry, so it is in RAM that both show.${screen === undefined ? "" : ` The start screen takes ${START_SCREEN_SIZES[screen.colourMode]} bytes of the copier: without it (unstart-screen), the copier is smaller.`}`;
     throw new WireFailure("invalid-input", `${tooLarge} ${why} ${ranges} Write the loader by hand.`);
   }
   const { copier, pieces } = placed;
@@ -717,6 +723,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     `; The copier runs at ${formatC64Address(copier)}. The flags pass through ${formatC64Address(stackByte)}, the free stack byte below the stack pointer.`,
     `* = ${formatC64Address(copier)}`,
     COPIER_SOURCE,
+    "        sei",
     // The entry by its address: main.asm, which has its label, is not in this build.
     ...copierLines(state, cia, stackByte, `${formatC64Address(input.entry)}${input.entryName === undefined ? "" : ` ; ${input.entryName} in main.asm`}`, screen !== undefined),
   ];
