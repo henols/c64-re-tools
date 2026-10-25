@@ -42,8 +42,10 @@ const TABLE_TYPES: readonly RegionType[] = [...POINTER_TABLE_TYPES, "jumps", "wo
 const GRAPHICS_TYPES: readonly RegionType[] = ["sprite", "bitmap", "charset", "screen"];
 /** A list longer than this ends with the number of the rest. */
 const MAX_LISTED = 40;
+/** A list of one entry of a module page is shorter: the reader scans it. */
+const MAX_FACTS = 12;
 /** A call graph with more edges is not readable: then it shows the calls only, and at most this many. */
-const MAX_EDGES = 60;
+const MAX_EDGES = 30;
 /** A name outside the image covers the addresses that references use up to the next name, at most this many. */
 const MAX_SPAN = 256;
 /** The kinds of a reference that reads a table: the decompiler gives an indexed read (lda table,x) as "reference". */
@@ -137,7 +139,13 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     const shown = named.base === address ? named.name : `${named.name}+${address - named.base}`;
     return entries.has(named.name) ? entryOfName(page, named.name, shown) : codeOfName(page, named.name).replace(`\`${named.name}\``, `\`${shown}\``);
   };
-  const capped = (items: string[]) => (items.length <= MAX_LISTED ? items.join(", ") : `${items.slice(0, MAX_LISTED).join(", ")} and ${items.length - MAX_LISTED} more`);
+  /** An address as the name that holds it, without the offset: a list names actor_queue once, not actor_queue+3 and actor_queue+6. */
+  const baseTarget = (page: string, address: number) => {
+    const named = nameFor(address);
+    if (named === undefined) return codeOfAddress(page, address);
+    return entries.has(named.name) ? entryOfName(page, named.name, named.name) : codeOfName(page, named.name);
+  };
+  const capped = (items: string[], limit = MAX_LISTED) => (items.length <= limit ? items.join(", ") : `${items.slice(0, limit).join(", ")} and ${items.length - limit} more`);
   /**
    * The references that use the data at their target. An access to the I/O area inside the image is the
    * register, as the source writes it: it uses no data of the RAM under it, unless the knowledge names that
@@ -216,6 +224,12 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     return named === undefined ? codeOfAddress(page, from) : `${named} ${codeOfAddress(page, from)}`;
   };
   const edges = routineEdges(heads, boundaries, graphReferences);
+  /** The routine that holds an address, linked to its entry; the address when no routine holds it. */
+  const ownerLink = (page: string, from: number) => {
+    const owner = ownerAt(from);
+    if (owner === undefined) return codeOfAddress(page, from);
+    return entries.has(owner.name) ? entryOfName(page, owner.name, owner.name) : codeOfName(page, owner.name);
+  };
 
   // --- File ranges ----------------------------------------------------------
   const fileRanges = new Map<string, { start: number; end: number }>();
@@ -240,7 +254,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       .map((comment) => comment.text.replace(/\s*\r?\n\s*/g, " ").trim());
   const incoming = (entry: Entry) => dataReferences.filter((reference) => reference.to >= entry.address && reference.to <= entry.spanEnd);
   const outgoing = (head: RoutineHead) => input.references.filter((reference) => ownerAt(reference.from)?.address === head.address);
-  const entryText = (page: string, entry: Entry): string[] => {
+  const entryText = (page: string, entry: Entry, labels: readonly Entry[]): string[] => {
     const lines = ["", `<a id="${entry.name}"></a>`, `### ${codeOfName(page, entry.name)} \`${entry.spanEnd > entry.address ? range(entry.address, entry.spanEnd) : hex(entry.address)}\``, "", `*${entry.kind}*`];
     const comments = commentLines(entry.address);
     if (comments.length > 0) lines.push("", ...comments);
@@ -252,9 +266,9 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     const by = (kinds: readonly string[]) =>
       fromOthers
         .filter((reference) => kinds.includes(reference.kind) && !((reference.kind === "reference" || reference.kind === "pointer") && strong.has(reference.from)))
-        .map((reference) => site(page, reference.from) + (reference.to === entry.address ? "" : ` (+${reference.to - entry.address})`));
+        .map((reference) => ownerLink(page, reference.from));
     const add = (label: string, items: string[]) => {
-      if (items.length > 0) facts.push(`- **${label}:** ${capped([...new Set(items)])}`);
+      if (items.length > 0) facts.push(`- **${label}:** ${capped([...new Set(items)], MAX_FACTS)}`);
     };
     add("Called from", by(["call"]));
     add("Jumped to from", by(["jump"]));
@@ -271,7 +285,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       const all = outgoing(head);
       const named = new Set(all.filter((reference) => reference.kind !== "reference" && reference.kind !== "pointer").map((reference) => `${reference.from}:${reference.to}`));
       const from = all.filter((reference) => !((reference.kind === "reference" || reference.kind === "pointer") && named.has(`${reference.from}:${reference.to}`)));
-      const to = (kinds: readonly string[]) => from.filter((reference) => kinds.includes(reference.kind) && ownerAt(reference.to)?.address !== head.address).map((reference) => target(page, reference.to));
+      const to = (kinds: readonly string[]) => from.filter((reference) => kinds.includes(reference.kind) && ownerAt(reference.to)?.address !== head.address).map((reference) => baseTarget(page, reference.to));
       add("Calls", to(["call"]));
       add("Jumps to", to(["jump"]));
       add("Reads", to(["read"]));
@@ -279,8 +293,15 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       add("Refers to", to(["reference", "pointer"]));
     }
     if (facts.length > 0) lines.push("", ...facts);
-    return lines;
+    return [...lines, ...labelTable(page, labels)];
   };
+  /** The labels that only code of their own file reaches: one row each, with the anchor that links to the label. */
+  const labelTable = (page: string, labels: readonly Entry[]) =>
+    labels.length === 0
+      ? []
+      : ["", "| Label | Address | Comment |", "|---|---|---|", ...labels.map((label) => `| <a id="${label.name}"></a>${codeOfName(page, label.name)} | \`${hex(label.address)}\` | ${commentLines(label.address).join(" ").replace(/\|/g, "\\|")} |`)];
+  const entersAt = new Map<number, ReferenceRow[]>();
+  for (const reference of input.references) if (reference.kind === "call" || reference.kind === "jump") entersAt.set(reference.to, [...(entersAt.get(reference.to) ?? []), reference]);
   const tableAnchor = (table: RegionRow) => entryAt.get(table.start)?.name ?? `table_${table.start.toString(16).padStart(4, "0")}`;
   function tableLink(page: string, table: RegionRow): string {
     return `[\`${entryAt.get(table.start)?.name ?? range(table.start, table.end)}\`](${rel(page, posix.join(out, "tables.md"))}#${tableAnchor(table)})`;
@@ -300,16 +321,31 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     const own = (pieceEntries.get(file) ?? []).sort((a, b) => a.address - b.address);
     const title = titleOf(file);
     const lines = [`# ${file}${title === undefined ? "" : `: ${title}`}`, "", `Range \`${span === undefined ? "-" : range(span.start, span.end)}\`. Source: [${file}](${rel(page, map.pathOf(file))}). Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`];
+    // A label that only code of this file enters is a row: under the routine that holds it, else in the labels of the page.
+    const headAt = new Set(heads.map((head) => head.address));
+    const fromOtherFiles = (address: number) => (entersAt.get(address) ?? []).filter((reference) => map.lineOf(reference.from)?.file !== file);
+    const mains = new Set(own.filter((entry) => entry.kind !== "label" || headAt.has(entry.address) || fromOtherFiles(entry.address).length > 0).map((entry) => entry.address));
+    const labelsOf = new Map<number | undefined, Entry[]>();
+    for (const entry of own) {
+      if (mains.has(entry.address)) continue;
+      const owner = ownerAt(entry.address)?.address;
+      const group = owner !== undefined && mains.has(owner) ? owner : undefined;
+      labelsOf.set(group, [...(labelsOf.get(group) ?? []), entry]);
+    }
     if (span !== undefined) {
       const inside = (address: number) => address >= span.start && address <= span.end;
-      const ownHeads = new Set(heads.filter((head) => inside(head.address)).map((head) => head.address));
-      let shown = edges.filter((edge) => ownHeads.has(edge.from) || ownHeads.has(edge.to));
-      const all = shown.length;
-      if (shown.length > MAX_EDGES) shown = shown.filter((edge) => edge.kind === "call").slice(0, MAX_EDGES);
-      if (shown.length > 0) {
-        lines.push("", "## Call graph", "", "A solid arrow is a call, a thick arrow a table entry, a dotted arrow a jump. Rounded nodes are in this file.");
-        if (shown.length < all) lines.push("", `The graph shows ${shown.length} of the ${all} edges: the calls only.`);
-        lines.push("", "```mermaid", mermaidGraph(heads, shown, ownHeads), "```");
+      const ownHeads = heads.filter((head) => inside(head.address));
+      // The overview: each routine, and each label that code of another file enters.
+      const starts = [...new Set([...ownHeads.map((head) => head.address), ...own.filter((entry) => mains.has(entry.address) && (entry.kind === "routine" || entry.kind === "label")).map((entry) => entry.address)])].sort((a, b) => a - b);
+      if (starts.length > 0) {
+        lines.push("", "## Routines", "", "| Routine | Address | Reached from | Summary |", "|---|---|---|---|");
+        for (const start of starts) {
+          const name = entryAt.get(start)?.name ?? ownHeads.find((head) => head.address === start)!.name;
+          const shown = entries.has(name) ? entryOfName(page, name, name) : codeOfName(page, name);
+          const callers = [...new Set([...edges.filter((edge) => edge.to === start && edge.kind !== "jump").map((edge) => edge.from), ...fromOtherFiles(start).map((reference) => reference.from)].map((from) => ownerLink(page, from)))];
+          const summary = /^.*?[.!?](?=\s|$)|^.*$/.exec(commentLines(start).join(" "))![0].replace(/\|/g, "\\|");
+          lines.push(`| ${shown} | \`${hex(start)}\` | ${capped(callers, MAX_FACTS)} | ${summary} |`);
+        }
       }
       const regions = input.regions.filter((region) => region.start <= span.end && region.end >= span.start && region.type !== "code");
       if (regions.length > 0) {
@@ -320,9 +356,20 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
           lines.push(`| ${codeOfAddress(page, region.start)}${region.end === region.start ? "" : `-\`${hex(region.end)}\``} | ${region.type}${region.element === undefined ? "" : ` of ${region.element}`} | ${name === undefined ? "" : codeOfName(page, name.name)} | ${owners("read")} | ${owners("write")} |`);
         }
       }
+      // Jumps are the control flow inside a group of routines: the graph draws the calls and the table entries only.
+      const ownAt = new Set(ownHeads.map((head) => head.address));
+      const reaching = edges.filter((edge) => edge.kind !== "jump" && (ownAt.has(edge.from) || ownAt.has(edge.to)));
+      const shown = reaching.slice(0, MAX_EDGES);
+      if (shown.length > 0) {
+        lines.push("", "## Call graph", "", "A solid arrow is a call, a thick arrow a table entry. Rounded nodes are in this file.");
+        if (shown.length < reaching.length) lines.push("", `The graph shows ${shown.length} of the ${reaching.length} edges.`);
+        lines.push("", "```mermaid", mermaidGraph(heads, shown, ownAt), "```");
+      }
     }
-    if (own.length > 0) lines.push("", "## Names");
-    for (const entry of own) lines.push(...entryText(page, entry));
+    if (own.length > 0) lines.push("", "## Details");
+    for (const entry of own) if (mains.has(entry.address)) lines.push(...entryText(page, entry, labelsOf.get(entry.address) ?? []));
+    const loose = labelsOf.get(undefined) ?? [];
+    if (loose.length > 0) lines.push("", "## Labels", ...labelTable(page, loose));
     counts.entries += own.length;
     write(page, lines);
   }
