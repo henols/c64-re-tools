@@ -14,6 +14,7 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { writeReported, type Written } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { keyTaps } from "#src/c64-keys.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
@@ -445,12 +446,14 @@ async function follow(
         const why = halted === undefined ? "" : ` ${stoppedEarly(halted.stopReason, halted.pc, total, step.runUntil.timeoutFrames)}`;
         return { stages: found, frames: total, reached: false, failed: `Step ${index + 1} did not reach its target in ${step.runUntil.timeoutFrames} frames. It is at ${formatC64Address(pc)}.${why}` };
       }
-    } else await runActionStep(client, step, knowledgeAt());
-    if (options.until !== undefined && untilRan === undefined) {
-      const now = Uint8Array.from(stage.map);
-      mergeMaps(now, await readCoverage(client));
-      noteUntil(now);
+    } else {
+      await runActionStep(client, step, knowledgeAt());
+      // A press or a runUntil to memory or the raster runs frames outside the chunks: what it wrote and ran is in the stage
+      // before the next chunk clears the memory map. A press holds and lets go each key for its frames.
+      mergeMaps(stage.map, await readCoverage(client));
+      if ("press" in step) total += keyTaps(step.press.keys).length * 2 * step.press.frames;
     }
+    noteUntil(stage.map);
   }
   running = 0;
   const left = Math.max(0, options.frames - total);

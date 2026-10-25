@@ -19,7 +19,7 @@ import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
 import { borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
-import { gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
+import { delayedPackedPrg, gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
 import { generatedCallPrg } from "../../fixtures/prg/generated-call.ts";
 import { selfOverwritingPrg } from "../../fixtures/prg/self-overwriting.ts";
 import { stagedPrg } from "../../fixtures/prg/staged.ts";
@@ -150,6 +150,16 @@ test("a steps file presses the key that an intro waits for", { skip: liveSkip, t
   // Whether the CPU is in the unpacked code at the end depends on the moment (an IRQ can be running); that it ran there does not.
   const traced = await unpack("trace", "gated.prg", "--steps", "press-key.json", "--frames", "100");
   assert.ok((traced.json.writtenThenExecuted as { listed: Array<{ start: string }> }).listed.some((range) => range.start === "$c000"), JSON.stringify(traced.json));
+});
+
+test("a stage that a press step unpacks is found when the program jumps there after the step", { skip: liveSkip, timeout: 240_000 }, async () => {
+  writeFileSync(join(project, "delayed.prg"), delayedPackedPrg);
+  writeFileSync(join(project, "press-long.json"), JSON.stringify([{ frames: 50 }, { press: { keys: " ", frames: 10 } }]));
+  const { status, json } = await unpack("stages", "delayed.prg", "--steps", "press-long.json", "--frames", "400", "--min-stage", "16");
+  assert.equal(status, 0, JSON.stringify(json));
+  const found = json.stages as Array<{ entry: string; next?: string; wrote: Array<{ start: string; end: string }> }>;
+  assert.equal(found[0]!.next, "$c000", JSON.stringify(found));
+  assert.ok(fromScreen(found[0]!.wrote).some((block) => block.start === "$c000"), "the decoder wrote the block in the press step");
 });
 
 test("stages finds each stage of a staged release and where the next one starts", { skip: liveSkip, timeout: 300_000 }, async () => {
