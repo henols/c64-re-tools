@@ -320,7 +320,7 @@ The program is packed while the screen shows. Thus the picture and the tune have
 - The loader program has only the bytes of the stage that the start screen uses. These are the screen, the bitmap and the charset. With a call, they are also each byte of the stage that is not free from the call, as in "The free ranges". A call thus needs the coverage of the stage.
 - With colours from the colour RAM of the capture, the show code holds the 1000 colours. It copies them to the colour RAM.
 - The patches of the stage are in at the defaults of their switches. Thus a patch under a switch can remove the text of a crack from the picture.
-- `start_screen_stage.asm` holds the show code and the bytes of the stage. Do not edit it. To make the loader program again, run `generate --loader`.
+- `start_screen_stage.asm` holds the show code and the bytes of the stage. Do not edit it. To make the loader program again, run `generate --out <dir> --loader`.
 - The show stage needs Exomizer. The show code needs free memory in $0400-$9fff or $c000-$cfff. When the memory is too small, the reason gives the largest free ranges.
 - The check runs the loader program to `loader_start_screen_wait` of the show stage. There, it compares the VIC-II with the start screen, the screen bytes in memory with the stage, and the colour RAM with the capture. Then it sets the PC to `loader_start_screen_continue`, and it checks the loader as usual.
 
@@ -338,7 +338,7 @@ To make the packed loader for other switch values, do these steps:
 2. Assemble `loader.asm` without an output path, for example to `build/custom_trainer_copier.prg`. This is the copier. The build name has `copier` in place of `loader`, so the build does not write over the loader program.
 3. Pack the two files into `build/custom_trainer_packed.prg`. The start address is the copier address in the comment at the start of `loader.asm`. The memory configuration at the exit is `$34`.
 
-These steps do not work when a segment starts below $0400. They also do not work when a patch is between the free ranges of `loader.asm`. In these cases, use `generate --loader` for the base release.
+These steps do not work when a segment starts below $0400. They also do not work when a patch is between the free ranges of `loader.asm`. In these cases, use `generate --out <dir> --loader` for the base release.
 
 ---
 
@@ -448,7 +448,7 @@ tests/                     the tests of the project, changed for the new program
 5. Record names, comments, regions and modules in the project knowledge.
 6. Run `generate` again. Do steps 4 to 6 again until the source is clear.
 7. Assemble `main.asm` to a program. This is the default build. For a release, give the build option `--release <label>`.
-8. For an unpacked program, run `generate` with `--loader` at the end. Compare the loader program with the original program in a test.
+8. For an unpacked program, run `generate --out <dir> --loader` at the end. Compare the loader program with the original program in a test.
 9. To start a new program from the rebuild, run `export`.
 
 ---
