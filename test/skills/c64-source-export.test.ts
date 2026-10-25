@@ -159,6 +159,16 @@ test("a run that read data, a knowledge reference and an immediate pair keep it"
   assert.deepEqual(planDrops(input(TABLE, { coverage: covered([0x1000, 0x1002, 0x1005]), regions: REGIONS, references: [{ from: 0x1002, to: 0x100c, kind: "read" }] })).free, []);
 });
 
+test("a read or a run of the ROM does not keep the data in the RAM under it", () => {
+  // Found in a field run: the KERNAL IRQ ran at $ffea, and the 122 unused bytes under it were no leftover.
+  const rom = covered([0x1000, 0x1002, 0x1005]);
+  rom[0x100c]! |= 1 << 4;
+  rom[0x100d]! |= 1 << 3;
+  assert.deepEqual(planDrops(input(TABLE, { coverage: rom, regions: REGIONS })).free, [{ start: 0x100c, end: 0x100f, what: "data" }]);
+  rom[0x100e]! |= READ;
+  assert.deepEqual(planDrops(input(TABLE, { coverage: rom, regions: REGIONS })).free, [], "a read of the RAM keeps it");
+});
+
 /** The free ranges of code at $1000 that ran in full, with four unused bytes at $100c-$100f that only an address in its immediates names. */
 function freeWith(code: Array<[number, number[]]>, more: Partial<DropInput> = {}) {
   const base = program(code, [[0x100c, [1, 2, 3, 4]]]);

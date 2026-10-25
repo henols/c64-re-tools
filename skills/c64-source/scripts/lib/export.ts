@@ -32,6 +32,13 @@ const CODE_TYPES: readonly RegionType[] = ["code", "jumps", "dual-use"];
 /** The hardware vectors $fffa-$ffff: they stay when the image holds them. */
 const VECTORS: AddressRange = { start: 0xfffa, end: 0xffff };
 
+/**
+ * The coverage flags that can be a use of the RAM byte: a read or a run of the
+ * ROM uses the ROM, not the RAM under it, so a JSR into the KERNAL keeps no byte
+ * of the image. The I/O flags stay, as VICE gives each access at $d000-$dfff as I/O.
+ */
+const RAM_ACCESS = 0xff & ~(COVERAGE.romRead | COVERAGE.romExecute);
+
 /** The I/O area: two immediates stored there are chip values, such as a timer latch, not an address. */
 const IO_AREA: AddressRange = { start: 0xd000, end: 0xdfff };
 
@@ -244,7 +251,7 @@ const isTable = (type: RegionType) => type === "jumps" || (POINTER_TABLE_TYPES a
  */
 export function planDrops(input: DropInput): DropPlan {
   const inImage = (address: number) => inside(address, input.segments);
-  const touched = (address: number) => input.coverage !== undefined && input.coverage[address] !== 0;
+  const touched = (address: number) => input.coverage !== undefined && (input.coverage[address]! & RAM_ACCESS) !== 0;
   const executed = (address: number) => input.coverage !== undefined && (input.coverage[address]! & COVERAGE.ramExecute) !== 0;
   const regions = input.regions.flatMap((region) => input.segments.filter((segment) => overlaps(region, segment)).map((segment) => ({ start: Math.max(region.start, segment.start), end: Math.min(region.end, segment.end), type: region.type })));
   // The source writes a data region as data, also where the decompiler decoded instructions in it: those are no code.
