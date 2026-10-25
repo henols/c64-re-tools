@@ -296,7 +296,12 @@ export function readRecording(folder: string): Recording {
     const named = typeof event.step === "number" ? `${at} (step ${event.step})` : at;
     if (event.action.restore === true && Object.keys(event.action).length === 1) return;
     // The action with the defaults filled in, as the record file gave it.
-    event.action = checkActionStep(stepKind(event.action, ACTION_STEP_KINDS, named, where), event.action, named, where);
+    const action = checkActionStep(stepKind(event.action, ACTION_STEP_KINDS, named, where), event.action, named, where);
+    event.action = action;
+    // Before 2.6.0-rc.16, a runUntil to an address had the point of another event: a replay cannot find its target again.
+    if ("runUntil" in action && action.runUntil.target.kind === "address" && !("pc" in event.key)) {
+      fail(`${named}: a runUntil step to an address has a point of an older version, which a replay cannot find. Record the session again with record`);
+    }
   });
   return value as unknown as Recording;
 }

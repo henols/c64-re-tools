@@ -127,7 +127,7 @@ The page sends input only between Start and End. The input of the page goes into
 
 A site is the address of the instruction that reads. The values are hex. `<from>` and `<count>` are decimal.
 
-`replay` examines `recording.json` before the replay starts. A recording of version 2.0 can have events or a comparison in the old form, for example `"at"` in place of `"address"`. The script refuses it with `invalid-input`. The message names the event, the old field and the form to write. Record the session again.
+`replay` examines `recording.json` before the replay starts. A recording of an older version can have events or a comparison in an old form. For example, `"at"` is in place of `"address"`, or a `runUntil` step to an address has no count of the CPU at its target. The script refuses such a recording with `invalid-input`, and the message names the event. Record the session again.
 
 ## Replay
 
