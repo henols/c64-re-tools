@@ -135,7 +135,7 @@ function map(...ranges: Array<[number, number, number]>): Uint8Array {
   return bytes;
 }
 
-test("coverage maps join into ranges of each kind, and one run's write and execute is wx", () => {
+test("the coverage is the union of the maps by kind, and one run's write and execute is wx", () => {
   const root = project();
   const { ramExecute: x, ramWrite: w, ramRead: r, romRead } = COVERAGE;
   const first = map([0x1000, 0x1000, x], [0x1003, 0x1003, x], [0x2000, 0x2003, r], [0xe000, 0xe001, romRead], [0x3000, 0x3000, w]);
@@ -149,14 +149,15 @@ test("coverage maps join into ranges of each kind, and one run's write and execu
   assert.equal(coverage.map[0x2003], r);
   assert.equal(coverage.map[0xe001], romRead);
   assert.deepEqual([coverage.selfModified[0x3000], coverage.selfModified[0x3001]], [0, 1]);
-  // Ranges only for flags that no earlier run set: $1000 of run two adds no row.
-  assert.equal(lines(root, "coverage.jsonl").filter((line) => line.includes('"start":"$1000"')).length, 1);
+  // Each map keeps its own ranges: $1000 is in the executed ranges of both maps.
+  const executed = lines(root, "coverage.jsonl").map((line) => JSON.parse(line) as { map: string; kind: string; ranges: string }).filter((line) => line.kind === "x");
+  assert.deepEqual(executed.map((line) => [line.map, line.ranges]), [["local/a.bin", "$1000 $1003"], ["local/b.bin", "$1000 $1006 $3000-$3001"]]);
   const revision = JSON.parse(lines(root, "revisions.jsonl").at(-1)!) as { operation: string; evidence: Array<{ kind: string; ref: string; sha256: string }> };
   assert.equal(revision.operation, "coverage");
   assert.deepEqual(revision.evidence.map((item) => item.ref), ["local/a.bin", "local/b.bin"]);
 });
 
-test("a coverage map that the knowledge has is not imported again; one that adds no flag is still evidence", () => {
+test("the latest map of a path is not imported again; a map that adds no access is still evidence", () => {
   const root = project();
   const bytes = map([0x1000, 0x1002, COVERAGE.ramExecute]);
   withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
@@ -165,7 +166,7 @@ test("a coverage map that the knowledge has is not imported again; one that adds
   assert.deepEqual(again.current.known, ["a.bin"]);
   const subset = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "b.bin", bytes: map([0x1001, 0x1001, COVERAGE.ramExecute]) }] }), root);
   assert.notEqual(subset.revision, null);
-  assert.equal(subset.current.ranges, 0);
+  assert.deepEqual([subset.current.added, subset.current.removed], [0, 0]);
   const db = openForRead(root)!;
   try {
     assert.deepEqual(coverageRuns(db).map((run) => [run.name, run.space]), [["a.bin", "c64"], ["b.bin", "c64"]]);
@@ -173,6 +174,43 @@ test("a coverage map that the knowledge has is not imported again; one that adds
     db.close();
   }
   assert.throws(() => withWrite((db) => addCoverage(db, llm, { maps: [{ name: "short.bin", bytes: new Uint8Array(10) }] }), root), (error: unknown) => error instanceof Refusal && error.code === "invalid-input");
+});
+
+test("a new map of a path replaces the earlier map of that path, and closes only the ranges that changed", () => {
+  const root = project();
+  const { ramExecute: x, ramRead: r } = COVERAGE;
+  const first = map([0x1000, 0x1002, x], [0x3000, 0x3000, r]);
+  withWrite((db) => addCoverage(db, llm, { maps: [{ name: "tests/a/coverage.bin", bytes: first }, { name: "tests/b/coverage.bin", bytes: map([0x2000, 0x2000, x]) }] }), root);
+  // The session of a is recorded again: it no longer executes $1001-$1002.
+  const again = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "tests/a/coverage.bin", bytes: map([0x1000, 0x1000, x], [0x3000, 0x3000, r]) }] }), root);
+  assert.deepEqual([again.current.imported, again.current.replaced, again.current.added, again.current.removed], [["tests/a/coverage.bin"], ["tests/a/coverage.bin"], 0, 1]);
+  const coverage = fromText(root).coverage!;
+  assert.deepEqual([0x1000, 0x1001, 0x2000].map((address) => coverage.map[address]! & x), [x, 0, x], "the map of b stays");
+  assert.equal(coverage.map[0x3000], r);
+  const db = openForRead(root)!;
+  try {
+    const changes = revisionChanges(db, again.revision!);
+    assert.deepEqual(changes.closed.map((entry) => entry.row), [{ space: "c64", map: "tests/a/coverage.bin", kind: "x", ranges: 1, origin: "llm", revision: changes.closed[0]!.row.revision }], "the read ranges of $3000 stay open");
+  } finally {
+    db.close();
+  }
+  // The earlier map of the path is no longer the latest: it is imported again and replaces the new one.
+  const back = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "tests/a/coverage.bin", bytes: first }] }), root);
+  assert.deepEqual([back.current.imported, back.current.added, back.current.removed], [["tests/a/coverage.bin"], 1, 0]);
+  assert.equal(fromText(root).coverage!.map[0x1002]! & x, x);
+});
+
+test("a map whose ranges are gone from the text is imported again, also when its revision is still the latest of its path", () => {
+  const root = project();
+  const bytes = map([0x1000, 0x1002, COVERAGE.ramExecute]);
+  withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
+  rmSync(join(textPath(root), "coverage.jsonl"));
+  rmSync(indexPath(root), { force: true });
+  const again = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
+  assert.deepEqual([again.current.imported, again.current.added], [["a.bin"], 1]);
+  const empty = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "empty.bin", bytes: new Uint8Array(0x10000) }] }), root);
+  assert.notEqual(empty.revision, null);
+  assert.equal(withWrite((db) => addCoverage(db, llm, { maps: [{ name: "empty.bin", bytes: new Uint8Array(0x10000) }] }), root).revision, null, "a map without accesses is known by its SHA-256");
 });
 
 test("revert takes the image and the coverage back too", () => {
@@ -234,7 +272,7 @@ test("the coverage maps that the knowledge has follow a revert, so a reverted ma
   assert.deepEqual(names(), []);
   assert.equal(fromText(root).coverage, undefined);
   const again = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
-  assert.deepEqual([again.current.imported, again.current.ranges], [["a.bin"], 1]);
+  assert.deepEqual([again.current.imported, again.current.added], [["a.bin"], 1]);
   // A revert to an earlier revert gives the maps of that revert.
   withWrite((db) => revert(db, llm, { revision: back.revision! }), root);
   assert.deepEqual(names(), ["a.bin"]);
@@ -254,7 +292,7 @@ test("a coverage map is known only in the space that it went into, and the runs 
   withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes: first }] }), root);
   const drive = withWrite((db) => addCoverage(db, llm, { space: "drive8", maps: [{ name: "a.bin", bytes: first }] }), root);
   assert.deepEqual(drive.current.imported, ["a.bin"]);
-  assert.equal(drive.current.ranges, 1);
+  assert.equal(drive.current.added, 1);
   withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes: second }] }), root);
   const db = openForRead(root)!;
   try {
@@ -286,7 +324,7 @@ test("a revision of an image or of coverage lists the memory, entry and coverage
     ]);
     const two = shown(second.revision!);
     assert.deepEqual([two.added.length, two.closed.length], [3, 3], "the new bytes and entry, and the old ones closed");
-    assert.deepEqual(shown(covered.revision!).added, [["coverage", { space: "c64", kind: "x", start: 0x1000, end: 0x1002, origin: "llm", revision: covered.revision }]]);
+    assert.deepEqual(shown(covered.revision!).added, [["coverage", { space: "c64", map: "a.bin", kind: "x", ranges: 1, origin: "llm", revision: covered.revision }]]);
   } finally {
     db.close();
   }

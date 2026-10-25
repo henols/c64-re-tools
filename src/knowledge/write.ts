@@ -328,11 +328,11 @@ export class Change {
       .run(this.#rowId(), row.space, row.address, row.state, row.stages, row.origin, this.id());
   }
 
-  /** One coverage range of one kind. */
-  insertCoverage(row: { space: Space; kind: string; start: number; end: number; origin: Origin }): void {
+  /** The ranges of one kind of the coverage map at a project path, as text. */
+  insertCoverage(row: { space: Space; map: string; kind: string; ranges: string; origin: Origin }): void {
     this.#db
-      .prepare("INSERT INTO coverage (id, space, kind, start_address, end_address, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.kind, row.start, row.end, row.origin, this.id());
+      .prepare("INSERT INTO coverage (id, space, map, kind, ranges, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.map, row.kind, row.ranges, row.origin, this.id());
   }
 }
 
@@ -1639,7 +1639,7 @@ const PROGRAM_TABLES = [
   ["memory", "space, address, bytes, origin"],
   ["release_memory", "space, label, address, bytes, origin"],
   ["entries", "space, address, state, stages, origin"],
-  ["coverage", "space, kind, start_address, end_address, origin"],
+  ["coverage", "space, map, kind, ranges, origin"],
 ] as const;
 
 const KEYS = {
@@ -1770,7 +1770,7 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         if (table === "memory") change.insertMemory(values);
         else if (table === "release_memory") change.insertReleaseMemory(values);
         else if (table === "entries") change.insertEntry(values);
-        else change.insertCoverage({ ...(values as { space: Space; kind: string; origin: Origin }), start: row.start_address as number, end: row.end_address as number });
+        else change.insertCoverage(values);
       }
     }
     return { restoredRevision: restored };

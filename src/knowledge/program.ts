@@ -139,53 +139,104 @@ export function setImage(db: DatabaseSync, context: WriteContext, request: Image
   });
 }
 
-/** The coverage of one space as ranges of each kind. */
+/** Address ranges as the knowledge text keeps them: "$1000-$1002 $1005". */
+function rangesText(ranges: readonly AddressRange[]): string {
+  const at = (address: number) => `$${address.toString(16).padStart(4, "0")}`;
+  return ranges.map((range) => (range.start === range.end ? at(range.start) : `${at(range.start)}-${at(range.end)}`)).join(" ");
+}
+
+/** Sets 1 in `map` at each address of ranges as text. */
+function fillRanges(map: Uint8Array, text: string): void {
+  for (const item of text.split(" ")) {
+    const [start, end] = item.split("-");
+    map.fill(1, Number.parseInt(start!.slice(1), 16), Number.parseInt((end ?? start)!.slice(1), 16) + 1);
+  }
+}
+
+/** The union of the coverage of one space: a map of each kind, 1 at each address that a map of the space has. */
 function currentCoverage(db: DatabaseSync, space: Space): Map<CoverageKind, Uint8Array> {
   const maps = new Map<CoverageKind, Uint8Array>(COVERAGE_KINDS.map((kind) => [kind, new Uint8Array(SIZE)]));
-  for (const row of db.prepare("SELECT kind, start_address, end_address FROM current_coverage WHERE space = ?").all(space) as Array<{ kind: CoverageKind; start_address: number; end_address: number }>) {
-    maps.get(row.kind)!.fill(1, row.start_address, row.end_address + 1);
-  }
+  for (const row of db.prepare("SELECT kind, ranges FROM current_coverage WHERE space = ?").all(space) as Array<{ kind: CoverageKind; ranges: string }>) fillRanges(maps.get(row.kind)!, row.ranges);
   return maps;
 }
 
+/** The number of address ranges of each kind in the coverage of a space: the ranges of the union of its maps. */
+export function coverageRangeCounts(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): Partial<Record<CoverageKind, number>> {
+  if (db === undefined) return {};
+  const counts: Partial<Record<CoverageKind, number>> = {};
+  for (const [kind, map] of currentCoverage(db, space)) {
+    const count = rangesWhere((address) => map[address] === 1).length;
+    if (count > 0) counts[kind] = count;
+  }
+  return counts;
+}
+
+/** The ranges of each kind of one coverage map as text, for each kind that it has. wx is each address that the run both wrote and executed. */
+function mapRanges(bytes: Uint8Array): Map<CoverageKind, string> {
+  const ranges = new Map<CoverageKind, string>();
+  for (const kind of COVERAGE_KINDS) {
+    const has = kind === "wx" ? (address: number) => (bytes[address]! & (COVERAGE.ramWrite | COVERAGE.ramExecute)) === (COVERAGE.ramWrite | COVERAGE.ramExecute) : (address: number) => (bytes[address]! & KIND_BITS[kind]) !== 0;
+    const found = rangesWhere(has);
+    if (found.length > 0) ranges.set(kind, rangesText(found));
+  }
+  return ranges;
+}
+
+/** The number of ranges of each kind that are in `after` and not in `before`. */
+function gained(before: Map<CoverageKind, Uint8Array>, after: Map<CoverageKind, Uint8Array>): number {
+  let count = 0;
+  for (const kind of COVERAGE_KINDS) count += rangesWhere((address) => after.get(kind)![address] === 1 && before.get(kind)![address] === 0).length;
+  return count;
+}
+
 /**
- * Joins coverage maps into the coverage of a space: adds the ranges of
- * the flags that no imported run set before, and as wx the addresses that one
- * run both wrote and executed. Each new map is evidence of the revision, with
- * its space. A map that the space has with the same name and bytes is not
- * imported again.
+ * Puts coverage maps into the coverage of a space. The knowledge keeps the
+ * ranges of each map by its project path; the coverage of the space is the
+ * union of the maps. A map for a path that the space has already replaces
+ * the earlier map of that path: a run that is recorded again counts only
+ * with its new map. wx is each address that one run both wrote and
+ * executed. Each new map is evidence of the revision, with its space. A map
+ * that is the latest map of its path in the space is not imported again.
  */
 export function addCoverage(
   db: DatabaseSync,
   context: WriteContext,
   request: { space?: Space; maps: CoverageMap[] },
-): { revision: string | null; current: { space: Space; imported: string[]; known: string[]; ranges: number } } {
+): { revision: string | null; current: { space: Space; imported: string[]; replaced: string[]; known: string[]; added: number; removed: number } } {
   checkSpace(request);
   const space = request.space ?? DEFAULT_SPACE;
   for (const map of request.maps) {
     if (map.bytes.length !== SIZE) throw new Refusal("invalid-input", `${map.name} has ${map.bytes.length} bytes; a coverage map has 65536, one for each address.`);
   }
-  const hashed = request.maps.map((map) => ({ ...map, sha256: createHash("sha256").update(map.bytes).digest("hex") }));
-  const known = new Set(coverageRuns(db).filter((run) => run.space === space).map((run) => `${run.name}\n${run.sha256}`));
-  const fresh = hashed.filter((map) => !known.has(`${map.name}\n${map.sha256}`));
+  // A path given twice is one map: the last one.
+  const byName = new Map(request.maps.map((map) => [map.name, map]));
+  const hashed = [...byName.values()].map((map) => ({ ...map, sha256: createHash("sha256").update(map.bytes).digest("hex") }));
+  // The runs of a name are oldest first: the last one is the latest map of the path.
+  const latest = new Map(coverageRuns(db).filter((run) => run.space === space).map((run) => [run.name, run.sha256]));
+  const withRows = new Set((db.prepare("SELECT DISTINCT map FROM current_coverage WHERE space = ?").all(space) as Array<{ map: string }>).map((row) => row.map));
+  // A map that has no access has no rows: it is known by its SHA-256 alone.
+  const isKnown = (map: (typeof hashed)[number]) => latest.get(map.name) === map.sha256 && (withRows.has(map.name) || map.bytes.every((byte) => byte === 0));
+  const fresh = hashed.filter((map) => !isKnown(map));
   const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256, ...(space === DEFAULT_SPACE ? {} : { space }) }))];
   return write(db, { ...context, evidence }, "coverage", (change) => {
-    const result = { space, imported: fresh.map((map) => map.name), known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name), ranges: 0 };
+    const result = { space, imported: fresh.map((map) => map.name), replaced: fresh.filter((map) => latest.has(map.name) && latest.get(map.name) !== map.sha256).map((map) => map.name), known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name), added: 0, removed: 0 };
     if (fresh.length === 0) return result;
-    // A revision for each import, also when no flag is new: the maps are its evidence.
+    // A revision for each import, also when the coverage does not change: the maps are its evidence.
     change.id();
-    const union = currentCoverage(db, space);
+    const before = currentCoverage(db, space);
     for (const map of fresh) {
-      for (const kind of COVERAGE_KINDS) {
-        const has = kind === "wx" ? (address: number) => (map.bytes[address]! & (COVERAGE.ramWrite | COVERAGE.ramExecute)) === (COVERAGE.ramWrite | COVERAGE.ramExecute) : (address: number) => (map.bytes[address]! & KIND_BITS[kind]) !== 0;
-        const known = union.get(kind)!;
-        for (const range of rangesWhere((address) => known[address] === 0 && has(address))) {
-          change.insertCoverage({ space, kind, start: range.start, end: range.end, origin: context.origin });
-          known.fill(1, range.start, range.end + 1);
-          result.ranges++;
-        }
+      // Only a kind whose ranges differ from the earlier map of the path changes.
+      const wanted = mapRanges(map.bytes);
+      const rows = db.prepare("SELECT id, kind, ranges FROM current_coverage WHERE space = ? AND map = ?").all(space, map.name) as Array<{ id: string; kind: CoverageKind; ranges: string }>;
+      for (const row of rows) {
+        if (wanted.get(row.kind) === row.ranges) wanted.delete(row.kind);
+        else change.close("coverage", "id = ?", row.id);
       }
+      for (const [kind, ranges] of wanted) change.insertCoverage({ space, map: map.name, kind, ranges, origin: context.origin });
     }
+    const after = currentCoverage(db, space);
+    result.added = gained(before, after);
+    result.removed = gained(after, before);
     return result;
   });
 }
@@ -268,15 +319,12 @@ export function analyzedBytes(image: ProgramImage): { bytes: Buffer; kind: "prg"
  */
 export function programCoverage(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): { map: Uint8Array; selfModified: Uint8Array } | undefined {
   if (db === undefined) return undefined;
-  const rows = db.prepare("SELECT kind, start_address, end_address FROM current_coverage WHERE space = ?").all(space) as Array<{ kind: CoverageKind; start_address: number; end_address: number }>;
-  if (rows.length === 0) return undefined;
+  const has = db.prepare("SELECT 1 FROM current_coverage WHERE space = ? LIMIT 1").get(space);
+  if (has === undefined) return undefined;
+  const union = currentCoverage(db, space);
   const map = new Uint8Array(SIZE);
-  const selfModified = new Uint8Array(SIZE);
-  for (const row of rows) {
-    if (row.kind === "wx") selfModified.fill(1, row.start_address, row.end_address + 1);
-    else for (let address = row.start_address; address <= row.end_address; address++) map[address]! |= KIND_BITS[row.kind];
-  }
-  return { map, selfModified };
+  for (const [kind, marks] of union) if (kind !== "wx") for (let address = 0; address < SIZE; address++) if (marks[address] === 1) map[address]! |= KIND_BITS[kind];
+  return { map, selfModified: union.get("wx")! };
 }
 
 /**

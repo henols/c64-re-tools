@@ -150,7 +150,7 @@ test("image puts a capture into the knowledge, and coverage joins maps that are 
   writeFileSync(join(capture, "attract.bin"), run);
   const joined = knowledge(root, "coverage", ".c64-re-tools/local/capture/attract.bin");
   assert.deepEqual(joined.json.imported, [".c64-re-tools/local/capture/attract.bin"]);
-  assert.equal(joined.json.ranges, 1);
+  assert.equal(joined.json.added, 1);
   const cited = knowledge(root, "rename", "$0400", "start", "--evidence", "coverage:.c64-re-tools/local/capture/attract.bin");
   assert.equal(cited.status, 0);
   const evidence = (knowledge(root, "revision", String(cited.json.revision)).json.revision as { evidence: Array<{ kind: string; ref: string }> }).evidence;

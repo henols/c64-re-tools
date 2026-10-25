@@ -59,13 +59,18 @@ export function rowId(revision: string, order: number): string {
  * text, bytes as lowercase hex digits, or a JSON value that the index keeps as
  * JSON text.
  */
-type Format = "address" | "integer" | "text" | "hex" | "json";
+type Format = "address" | "integer" | "text" | "hex" | "json" | "ranges";
+
+/** Address ranges as text: "$1000-$1002 $1005", in address order, one space between them. */
+const RANGES = /^\$[0-9a-f]{4}(?:-\$[0-9a-f]{4})?(?: \$[0-9a-f]{4}(?:-\$[0-9a-f]{4})?)*$/;
 
 interface Field {
   key: string;
   column: string;
   format: Format;
   optional?: boolean;
+  /** What to do when a line does not have this key: a key that an earlier toolkit version did not write. */
+  remedy?: string;
 }
 
 /** One fact table: its file, its fields in line order, and the column that sorts its lines after the space (an address, or a name). */
@@ -218,8 +223,23 @@ export const TABLES: readonly TableSpec[] = [
     sort: "address",
     fields: [space, field("entry", "address", "address"), field("state", "state", "json", true), field("stages", "stages", "json", true), origin],
   },
-  // What the runs did: the union of the coverage maps as ranges of one kind each.
-  { table: "coverage", file: "coverage.jsonl", sort: "start_address", fields: [space, field("kind", "kind", "text"), field("start", "start_address", "address"), field("end", "end_address", "address"), origin] },
+  // What the runs did: for each coverage map, by its project path, the ranges of each kind. The coverage of a space is the union of its maps.
+  {
+    table: "coverage",
+    file: "coverage.jsonl",
+    sort: "map",
+    fields: [
+      space,
+      {
+        ...field("map", "map", "text"),
+        remedy:
+          "The coverage of an earlier toolkit version does not keep the ranges of each map. Delete .c64-re-tools/knowledge/coverage.jsonl. Then put the coverage maps that you have into the project knowledge again.",
+      },
+      field("kind", "kind", "text"),
+      field("ranges", "ranges", "ranges"),
+      origin,
+    ],
+  },
 ];
 
 export const REVISIONS_FILE = "revisions.jsonl";
@@ -338,6 +358,8 @@ function parseLines(file: string, text: string): Array<{ line: number; value: Ra
 
 /** The column values of one line, checked against its fields. */
 function columnsOf(file: string, line: number, value: Raw, fields: readonly Field[], extra: readonly string[]): Raw {
+  // A line of an earlier format: the key that this format added is missing, and the remedy tells what to do.
+  for (const { key, remedy } of fields) if (remedy !== undefined && (value[key] === undefined || value[key] === null)) bad(file, line, `the key ${JSON.stringify(key)} is missing. ${remedy}`);
   const allowed = new Set([...fields.map((item) => item.key), ...extra]);
   for (const key of Object.keys(value)) if (!allowed.has(key)) bad(file, line, `the key ${JSON.stringify(key)} is not known.`);
   const columns: Raw = {};
@@ -354,6 +376,9 @@ function columnsOf(file: string, line: number, value: Raw, fields: readonly Fiel
       columns[column] = item;
     } else if (format === "hex") {
       if (typeof item !== "string" || !/^(?:[0-9a-f]{2})+$/.test(item)) bad(file, line, `${key} must be bytes as lowercase hex digits.`);
+      columns[column] = item;
+    } else if (format === "ranges") {
+      if (typeof item !== "string" || !RANGES.test(item)) bad(file, line, `${key} must be address ranges such as "$1000-$1002 $1005".`);
       columns[column] = item;
     } else if (format === "json") {
       if (typeof item !== "object") bad(file, line, `${key} must be a JSON object or list.`);

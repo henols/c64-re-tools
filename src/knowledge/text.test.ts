@@ -180,3 +180,14 @@ test("the evidence of a coverage map keeps a space other than the C64 in the tex
   assert.deepEqual({ ...(loaded.prepare("SELECT space FROM evidence").get() as object) }, { space: "drive8" });
   assert.throws(() => loadText(emptyIndex(), new Map([[REVISIONS_FILE, { text: line("drive9") }]])), (error: unknown) => error instanceof Refusal && error.code === "invalid-database");
 });
+
+test("coverage keeps the ranges of each map as text, and a line without a map or with bad ranges is refused", () => {
+  const coverage = (fields: string) => new Map([[REVISIONS_FILE, { text: revisionLine(revision) }], ["coverage.jsonl", { text: `{"id":"${revision}/1","space":"c64",${fields},"origin":"llm","added":"${revision}","closed":null}\n` }]]);
+  const loaded = emptyIndex();
+  loadText(loaded, coverage('"map":"tests/a/coverage.bin","kind":"x","ranges":"$1000-$1002 $1005"'));
+  assert.deepEqual({ ...(loaded.prepare("SELECT map, ranges FROM coverage").get() as object) }, { map: "tests/a/coverage.bin", ranges: "$1000-$1002 $1005" });
+  const refused = (error: unknown) => error instanceof Refusal && error.code === "invalid-database";
+  // A line of the earlier format: one range of the union, with no map.
+  assert.throws(() => loadText(emptyIndex(), coverage('"kind":"x","start":"$1000","end":"$1002"')), refused);
+  for (const ranges of ["", "$1000,$1002", "$1000  $1002", "1000"]) assert.throws(() => loadText(emptyIndex(), coverage(`"map":"a.bin","kind":"x","ranges":"${ranges}"`)), refused, ranges);
+});

@@ -279,7 +279,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 ### `revision <revision>`
 
 - `body.revision` gives the revision. `body.added` and `body.closed` list the rows that it added and closed.
-- The rows include the memory, entry and coverage rows of the program.
+- The rows include the memory, entry and coverage rows of the program. A coverage row gives the `map`, the access `kind` and the number of `ranges` of that kind in the map.
 
 ---
 
@@ -540,8 +540,9 @@ A macro writes a run of instructions as one line of the source, for example `+in
 ### `coverage <map>...`
 
 - `<map>` is a 64 KiB coverage map of a run. Write each map in `.c64-re-tools/local/`.
-- `body` holds `revision`, `imported`, `known` and `ranges`. `imported` lists the new maps. `known` lists the maps that the space has already. `ranges` counts the new ranges of accesses that no earlier map has. When `ranges` is 0, the source and the reference do not change.
-- `coverage` joins the maps. It keeps each address that a run executed, read or wrote. It also keeps each address that one run wrote and executed: self-modified code.
+- `body` holds `revision`, `imported`, `replaced`, `known`, `added` and `removed`. `imported` lists the new maps. `replaced` lists the new maps that replace an earlier map of the same path. `known` lists the maps that are the latest map of their path in the space already. `added` and `removed` count the ranges of accesses that the coverage gets and loses. When both are 0, the source and the reference do not change.
+- The knowledge keeps one map for each path in a space. A new map of a path replaces the earlier map of that path. Thus, after you record a run again into the same folder, put its new map into the project knowledge. Then the coverage has only the new run of that folder.
+- The coverage of a space is the union of its maps. It has each address that a run executed, read or wrote. It also has each address that one run wrote and executed: self-modified code.
 - `coverage` puts each map into the space of `--space`. You can add the same map to each space.
 - `--evidence coverage:<map>` names a map by its path at the import. It refers to the last import of that map into the space of the write.
 

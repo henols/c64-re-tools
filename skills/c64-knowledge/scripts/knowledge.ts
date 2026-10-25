@@ -17,7 +17,7 @@ import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { addCoverage, memoryRows, operandImages as programImages, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
+import { addCoverage, coverageRangeCounts, memoryRows, operandImages as programImages, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
 import { startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
   analyzerNamesAt,
@@ -203,11 +203,11 @@ function suppression(row: SuppressionRow) {
   return { ...spaceOf(row), suppresses: row.entity, ...place, origin: row.origin, revision: row.revision };
 }
 
-/** A row of the program in a revision: memory bytes, the entry, or a coverage range. */
+/** A row of the program in a revision: memory bytes, the entry, or the ranges of one kind of a coverage map. */
 function programRow(entry: Extract<HistoryEntry, { entity: "memory" | "entry" | "coverage" }>) {
   if (entry.entity === "memory") return { ...spaceOf(entry.row), start: formatC64Address(entry.row.address), end: formatC64Address(entry.row.address + entry.row.bytes - 1), bytes: entry.row.bytes, origin: entry.row.origin, revision: entry.row.revision };
   if (entry.entity === "entry") return { ...spaceOf(entry.row), address: formatC64Address(entry.row.address), state: entry.row.state, stages: entry.row.stages, origin: entry.row.origin, revision: entry.row.revision };
-  return { ...spaceOf(entry.row), kind: entry.row.kind, start: formatC64Address(entry.row.start), end: formatC64Address(entry.row.end), origin: entry.row.origin, revision: entry.row.revision };
+  return { ...spaceOf(entry.row), map: entry.row.map, kind: entry.row.kind, ranges: entry.row.ranges, origin: entry.row.origin, revision: entry.row.revision };
 }
 
 function historyEntry(entry: HistoryEntry) {
@@ -598,7 +598,6 @@ const READ_COMMANDS: CommandSpec[] = [
   readCommand({ name: "spaces", summary: "The address spaces that hold knowledge.", options: LIST }, (db, call) => ({ spaces: list(call, listSpaces(db), (space) => space, MORE) })),
   readCommand({ name: "program", summary: "The program in the knowledge: its segments and entry, and the coverage maps that coverage imported, with the ranges." }, (db, call) => {
     const image = programImage(db, call.space);
-    const ranges = db === undefined ? [] : (db.prepare("SELECT kind, count(*) AS count FROM current_coverage WHERE space = ? GROUP BY kind ORDER BY kind").all(call.space) as Array<{ kind: string; count: number }>);
     return {
       ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }),
       image:
@@ -612,7 +611,7 @@ const READ_COMMANDS: CommandSpec[] = [
               stages: image.stages?.length ?? 0,
             },
       ...((row) => (row === undefined ? {} : { startScreen: startScreen(row) }))(currentStartScreen(db, call.space)),
-      coverage: { maps: [...new Set(coverageRuns(db).filter((run) => run.space === call.space).map((run) => run.name))], ranges: Object.fromEntries(ranges.map((row) => [row.kind, row.count])) },
+      coverage: { maps: [...new Set(coverageRuns(db).filter((run) => run.space === call.space).map((run) => run.name))], ranges: coverageRangeCounts(db, call.space) },
     };
   }),
   readCommand(
@@ -1061,7 +1060,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "coverage",
-      summary: "Joins coverage maps of the emulator or of a run into the coverage of the knowledge. Each map is named by its path: --evidence coverage:<path> cites it.",
+      summary: "Puts coverage maps of the emulator or of a run into the coverage of the knowledge. Each map is named by its path: a new map of a path replaces the earlier map of that path, and --evidence coverage:<path> cites it.",
       subjects: [{ name: "<map>", help: "a 64 KiB coverage map", list: true }],
     },
     (call) => {
@@ -1069,14 +1068,14 @@ const WRITE_COMMANDS: CommandSpec[] = [
       const maps = call.subjects.map((path) => ({ bytes: readProjectFile(path).bytes, name: knowledgePath(path, "<map>") }));
       return (db) => {
         const { revision, current } = addCoverage(db, context, { space: call.space, maps });
-        const body = { revision, ...spaceOf(current), imported: current.imported, known: current.known, ranges: current.ranges };
-        // ranges counts the accesses that no earlier map had: only they change the source and the reference.
+        const body = { revision, ...spaceOf(current), imported: current.imported, replaced: current.replaced, known: current.known, added: current.added, removed: current.removed };
+        // Only a range that the coverage gained or lost changes the source and the reference.
         const hint =
           revision === null
             ? "The knowledge has each map already. Nothing changed."
-            : current.ranges === 0
-              ? "The maps add no access that the knowledge did not have. The knowledge keeps them as evidence. The source and the reference do not change."
-              : `The maps add ${current.ranges} ranges of accesses. They can change the leftovers and the code that no run executed. Generate the source again, then the reference.`;
+            : current.added === 0 && current.removed === 0
+              ? "The coverage did not change. The knowledge keeps the maps as evidence. The source and the reference do not change."
+              : `The coverage gained ${current.added} and lost ${current.removed} ranges of accesses. They can change the leftovers and the code that no run executed. Generate the source again, then the reference.`;
         return reply(body, { hint });
       };
     },

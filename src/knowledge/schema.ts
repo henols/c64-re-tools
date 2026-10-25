@@ -393,14 +393,14 @@ function createSchema(db: DatabaseSync): void {
       CREATE TABLE coverage (
         id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        map                 TEXT NOT NULL CHECK (length(map) > 0),
         kind                TEXT NOT NULL CHECK (kind IN (${list(COVERAGE_KINDS)})),
-        start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
-        end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
+        ranges              TEXT NOT NULL CHECK (length(ranges) >= 5),
         origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
         valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
         valid_to_revision   TEXT REFERENCES revisions (id)
       );
-      CREATE INDEX coverage_current ON coverage (space, kind) WHERE valid_to_revision IS NULL;
+      CREATE INDEX coverage_current ON coverage (space, map) WHERE valid_to_revision IS NULL;
       CREATE VIEW current_memory AS SELECT * FROM memory WHERE valid_to_revision IS NULL;
       CREATE VIEW current_release_memory AS SELECT * FROM release_memory WHERE valid_to_revision IS NULL;
       CREATE VIEW current_entries AS SELECT * FROM entries WHERE valid_to_revision IS NULL;
@@ -423,7 +423,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 14;
+export const INDEX_VERSION = 15;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

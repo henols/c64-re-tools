@@ -86,12 +86,12 @@ export interface EntryRow {
   revision: string;
 }
 
-/** A coverage range of one kind. */
+/** The ranges of one kind of the coverage map at a project path: their number. */
 export interface CoverageRow {
   space: Space;
+  map: string;
   kind: CoverageKind;
-  start: number;
-  end: number;
+  ranges: number;
   origin: Origin;
   revision: string;
 }
@@ -285,8 +285,8 @@ export function revision(db: DatabaseSync | undefined, text: string): RevisionCh
     [
       "coverage",
       "coverage",
-      "space, kind, start_address, end_address, origin, valid_from_revision",
-      (row: Raw): CoverageRow => ({ space: row.space as Space, kind: row.kind as CoverageKind, start: row.start_address as number, end: row.end_address as number, origin: row.origin as Origin, revision: row.valid_from_revision as string }),
+      "space, map, kind, length(ranges) - length(replace(ranges, ' ', '')) + 1 AS ranges, origin, valid_from_revision",
+      (row: Raw): CoverageRow => ({ space: row.space as Space, map: row.map as string, kind: row.kind as CoverageKind, ranges: row.ranges as number, origin: row.origin as Origin, revision: row.valid_from_revision as string }),
     ],
   ] as const;
   const added: HistoryEntry[] = [];
