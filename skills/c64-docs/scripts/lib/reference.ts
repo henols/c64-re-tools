@@ -48,6 +48,8 @@ const MAX_FACTS = 12;
 const MAX_EDGES = 30;
 /** A name outside the image covers the addresses that references use up to the next name, at most this many. */
 const MAX_SPAN = 256;
+/** A source line that uses an ACME macro: +name, after a label or not. An anonymous label (+ alone) is no use. */
+const MACRO_USE = /^\s*(?:[\w.]+\s+)?\+[A-Za-z_]/;
 /** The kinds of a reference that reads a table: the decompiler gives an indexed read (lda table,x) as "reference". */
 const TABLE_READS: readonly string[] = ["read", "reference", "pointer"];
 
@@ -156,32 +158,35 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
   /**
    * How the source line of a reference uses a platform name, as the source writes it: "named", "indexed"
    * (name,x or name,y: the index can reach the registers after it), or undefined when the line does not
-   * name it, for example lda $d000,x with the character ROM in. "named" when the source text is not there.
+   * name it, for example lda $d000,x with the character ROM in. "named" when the source text is not there,
+   * and for a macro use (+name): each byte of the macro maps to that line, which does not show its body.
    */
-  const platformUse = (reference: ReferenceRow, name: string): "named" | "indexed" | undefined => {
+  const platformUse = (reference: ReferenceRow, use: RegExp): "named" | "indexed" | undefined => {
     const line = map.lineOf(reference.from);
     const text = line === undefined ? undefined : map.textOf?.(line);
-    if (text === undefined) return "named";
-    const use = new RegExp(`(?<![\\w.])${name}(?!\\w)([^,)]*,\\s*[xXyY]\\b)?`).exec(text);
-    return use === null ? undefined : use[1] === undefined ? "named" : "indexed";
+    if (text === undefined || MACRO_USE.test(text)) return "named";
+    const found = use.exec(text);
+    return found === null ? undefined : found[1] === undefined ? "named" : "indexed";
   };
-  /** The routines that read or write a range, each linked to its entry. `platform` is the platform name of the range. */
-  const ownersOf = (page: string, start: number, end: number, kind: string, platform?: string) =>
-    capped(
-      [
-        ...new Set(
-          dataReferences
-            .filter((reference) => reference.kind === kind && reference.to >= start && reference.to <= end)
-            .flatMap((reference) => {
-              const use = platform === undefined ? "named" : platformUse(reference, platform);
-              if (use === undefined) return [];
-              const name = ownerAt(reference.from)?.name ?? hex(reference.from);
-              const shown = entries.has(name) ? entryOfName(page, name, name) : `\`${name}\``;
-              return [use === "indexed" ? `${shown} (indexed)` : shown];
-            }),
-        ),
-      ],
+  /** The routines that read or write a range, each once and linked to its entry. `platform` is the platform name of the range. */
+  const ownersOf = (page: string, start: number, end: number, kind: string, platform?: string) => {
+    const use = platform === undefined ? undefined : new RegExp(`(?<![\\w.])${platform}(?!\\w)([^,)]*,\\s*[xXyY]\\b)?`);
+    // A routine with an indexed use and a direct use shows once, as indexed.
+    const owners = new Map<string, boolean>();
+    for (const reference of dataReferences) {
+      if (reference.kind !== kind || reference.to < start || reference.to > end) continue;
+      const how = use === undefined ? "named" : platformUse(reference, use);
+      if (how === undefined) continue;
+      const name = ownerAt(reference.from)?.name ?? hex(reference.from);
+      owners.set(name, (owners.get(name) ?? false) || how === "indexed");
+    }
+    return capped(
+      [...owners].map(([name, indexed]) => {
+        const shown = entries.has(name) ? entryOfName(page, name, name) : `\`${name}\``;
+        return indexed ? `${shown} (indexed)` : shown;
+      }),
     );
+  };
 
   // --- The routine graph ----------------------------------------------------
   const tableReferences: GraphReference[] = [];

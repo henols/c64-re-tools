@@ -104,18 +104,22 @@ test("a platform name in the memory map covers only its register: RANDOM is no w
   assert.match(rowOf("SP0Y"), /^\| `\$D001` \|.*move_sprites/);
 });
 
-test("a platform name has a reader where the source line names it: an indexed use says so, and lda $d000,x with the character ROM in is no SP0X reader", () => {
+test("a platform name has a reader where the source line names it or uses a macro: an indexed use says so, and lda $d000,x with the character ROM in is no SP0X reader", () => {
   const items = [
     { start: 0x1000, end: 0x1002, file: "game.asm", line: 2 },
+    { start: 0x1003, end: 0x1005, file: "game.asm", line: 7 },
     { start: 0x1010, end: 0x1012, file: "game.asm", line: 4 },
     { start: 0x1020, end: 0x1022, file: "game.asm", line: 6 },
+    { start: 0x1030, end: 0x1034, file: "game.asm", line: 9 },
   ];
-  const text = ["read_fire", "        lda CIAPRA,x ; X = 1 reads port B", "copy_font", "        lda $d000,x", "place_sprite", "        sta SP0X"];
+  const text = ["read_fire", "        lda CIAPRA,x ; X = 1 reads port B", "copy_font", "        lda $d000,x", "place_sprite", "        sta SP0X", "        lda CIAPRA", "wait_frame", "        +wait_line $80"];
   const labels = [
     { address: 0x1000, name: "read_fire", file: "game.asm", line: 1 },
     { address: 0x1010, name: "copy_font", file: "game.asm", line: 3 },
     { address: 0x1020, name: "place_sprite", file: "game.asm", line: 5 },
+    { address: 0x1030, name: "wait_frame", file: "game.asm", line: 8 },
     { address: 0xd000, name: "SP0X", file: "constants.asm", line: 1 },
+    { address: 0xd012, name: "RASTER", file: "constants.asm", line: 3 },
     { address: 0xdc00, name: "CIAPRA", file: "constants.asm", line: 2 },
   ];
   const map: SourceMap = {
@@ -134,20 +138,24 @@ test("a platform name has a reader where the source line names it: an indexed us
     out: "docs/reference",
     map,
     revision: "1",
-    symbols: ["read_fire", "copy_font", "place_sprite"].map((name, index) => ({ ...row, address: 0x1000 + index * 0x10, name, kind: "routine" })),
-    regions: [{ ...row, start: 0x1000, end: 0x1022, type: "code" }],
+    symbols: ["read_fire", "copy_font", "place_sprite", "wait_frame"].map((name, index) => ({ ...row, address: 0x1000 + index * 0x10, name, kind: "routine" })),
+    regions: [{ ...row, start: 0x1000, end: 0x1034, type: "code" }],
     comments: [],
     references: [
       { ...row, from: 0x1000, to: 0xdc00, kind: "read" },
+      { ...row, from: 0x1003, to: 0xdc00, kind: "read" },
       { ...row, from: 0x1010, to: 0xd000, kind: "read" },
       { ...row, from: 0x1020, to: 0xd000, kind: "write" },
+      { ...row, from: 0x1031, to: 0xd012, kind: "read" },
     ],
     modules: [],
-    image: { byteAt: () => 0, inImage: (address: number) => address >= 0x1000 && address <= 0x1022 },
+    image: { byteAt: () => 0, inImage: (address: number) => address >= 0x1000 && address <= 0x1034 },
   } as never);
   const memoryMap = files.find((file) => file.path === "docs/reference/memory-map.md")!.bytes.toString("utf8");
   const rowOf = (name: string) => memoryMap.split("\n").find((line) => line.includes(`id="${name}"`))!;
   assert.match(rowOf("CIAPRA"), /read_fire.*\(indexed\)/, "the index can reach the registers after CIAPRA");
+  assert.equal(rowOf("CIAPRA").split("[`read_fire`]").length, 2, "a routine with a direct and an indexed use shows once");
+  assert.match(rowOf("RASTER"), /wait_frame/, "the macro body reads RASTER");
   assert.doesNotMatch(rowOf("SP0X"), /copy_font/, "the source does not name SP0X there");
   assert.match(rowOf("SP0X"), /place_sprite/);
   assert.doesNotMatch(rowOf("SP0X"), /\(indexed\)/);
