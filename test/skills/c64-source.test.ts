@@ -19,7 +19,7 @@ import { ciaSection, copierAreas, copyOrder, loaderLimits, packLoader, planLoade
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { PACKAGE } from "../../src/package.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
-import { configText, configValues, entriesInData, entryOutsideImage, layout, render, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
+import { configText, configValues, entriesInData, entryOutsideImage, layout, render, stagePatchText, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
 import { planStage, STAGE_CODE_END, STAGE_FILE, stageParts, type StageInput } from "../../skills/c64-source/scripts/lib/stage.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 import type { StartScreenRow } from "../../src/knowledge/read.ts";
@@ -1296,6 +1296,15 @@ test("with real ACME, a patch that ends at $ffff assembles, and one too long the
   const long = render(layout(at([{ start: 0xfffd, end: 0xfffe, switch: "TRAINER", code: "        !byte 0, 0, 0" }])), new Set(), []);
   // The bytes after the patch then go past $ffff, so ACME also stops on its own.
   assert.equal((await assembleRendered(withConfig(long, { TRAINER: 1 }))).messages[0], "!error: The patch TRAINER at $fffd has 3 (0x3) bytes; the range has 2.");
+});
+
+test("with real ACME, a patch of a captured stage whose code ends at $ffff assembles to its range", { skip: acmeSkip }, async () => {
+  // After the byte at $ffff, ACME sets * to $0000.
+  const text = stagePatchText([{ name: "irq", address: 0x1234 }], { start: 0xfffc, end: 0xffff, code: "        !byte $ea, $ea\n        !word irq" });
+  const contents = [Buffer.from(text)];
+  const { result, attachments } = await assemble({ files: [{ path: "patch.asm", size: contents[0]!.length }], entrySource: "patch.asm", includeDirs: [], defines: {} }, contents, localToolContext());
+  assert.deepEqual(result.diagnostics, []);
+  assert.deepEqual([...attachments![0]!], [0xfc, 0xff, 0xea, 0xea, 0x34, 0x12]);
 });
 
 /**

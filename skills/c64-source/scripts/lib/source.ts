@@ -1102,8 +1102,16 @@ function macrosText(layout: Layout): { text: string; lines: Map<string, { first:
   return { text: `${out.join("\n")}\n`, lines };
 }
 
-/** The bytes of the patch code so far: after a byte at $ffff, ACME sets * to $0000. */
-const LENGTH = "((* - .patch_start) & $ffff)";
+/** The bytes of patch code from `start` so far: after a byte at $ffff, ACME sets * to $0000. */
+const patchLength = (start: string) => `((* - ${start}) & $ffff)`;
+const LENGTH = patchLength(".patch_start");
+
+/** The source of one patch of a captured stage on its own: the names of the stage, the code, and NOP to the end of its range. */
+export function stagePatchText(names: ReadonlyArray<{ name: string; address: number }>, patch: { start: number; end: number; code: string }): string {
+  const start = formatC64Address(patch.start);
+  const lines = ["!cpu 6510", ...names.map((symbol) => `${symbol.name} = ${formatC64Address(symbol.address)}`), `* = ${start}`, ...patch.code.split(/\r?\n/)];
+  return `${[...lines, `!fill ${patch.end - patch.start + 1} - ${patchLength(start)}, $ea`].join("\n")}\n`;
+}
 
 /** The condition that puts in the code of a switch: the switch has the value that the program does not have. */
 const patchCondition = (alternative: PatchAlternative) => (alternative.base === 0 ? alternative.switch : `${alternative.switch} = 0`);

@@ -66,7 +66,7 @@ import { instructionWith, OPCODES } from "#src/opcodes.ts";
 import { capturedColourRam } from "#src/knowledge/start-screen.ts";
 import { planStage, STAGE_CODE_END, STAGE_FILE, STAGE_START, stageParts, stageText, type StageInput, type StagePart, type StagePlan } from "./lib/stage.ts";
 import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
-import { CONFIG_FILE, configText, configValues, entriesInData, entryOutsideImage, hasConfigFile, hasSwitchFile, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
+import { CONFIG_FILE, configText, configValues, entriesInData, entryOutsideImage, hasConfigFile, hasSwitchFile, layout, literalOperand, probeForms, render, stagePatchText, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
 
 /** At most this many diagnostics or differences of one check. */
 const MAX_DIAGNOSTICS = 20;
@@ -1020,13 +1020,11 @@ async function stageBytes(row: StartScreenRow): Promise<{ parts: StagePart[]; co
   if (row.colourRam === true && colourRam === undefined) throw new Refusal("not-found", `The start screen takes its colours from the colour RAM of the capture in ${stage}, and that capture has none. Capture the stage again while it shows the screen, and put it into the project knowledge with image --space ${stage}.`);
   const image = knowledge.program;
   const memory = Uint8Array.from(image.memory);
-  const addresses = knowledge.symbols.map((symbol) => `${symbol.name} = ${formatC64Address(symbol.address)}`);
   for (const patch of knowledge.patches) {
     const owner = knowledge.switches.find((item) => item.name === patch.switch);
     if (owner === undefined || owner.default === owner.base) continue;
     const length = patch.end - patch.start + 1;
-    const text = ["!cpu 6510", ...addresses, `* = ${formatC64Address(patch.start)}`, ...patch.code.split(/\r?\n/), `!fill ${length} - (* - ${formatC64Address(patch.start)}), $ea`].join("\n");
-    const built = await assembleFiles([{ name: "patch.asm", text: `${text}\n` }], "patch.asm");
+    const built = await assembleFiles([{ name: "patch.asm", text: stagePatchText(knowledge.symbols, patch) }], "patch.asm");
     if (built.program === undefined || built.start !== patch.start || built.program.length - 2 !== length) {
       throw new Refusal("invalid-input", `The patch of ${patch.switch} at ${formatC64Address(patch.start)}-${formatC64Address(patch.end)} in ${stage} does not assemble to ${length} bytes: ${built.diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "it is longer than its range"}. Correct the patch in the project knowledge.`);
     }
