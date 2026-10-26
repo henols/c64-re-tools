@@ -7,7 +7,8 @@
 // byte, includes the entry source and saves the 64 KiB. It assembles two times,
 // with two markers: an address that holds the same byte in both is a byte of
 // the program. So the entry source sets its addresses with ORG and has no
-// DEVICE of its own: the adapter refuses a DEVICE line with a diagnostic.
+// DEVICE of its own and does not change the paging: the adapter refuses a
+// DEVICE, SLOT, PAGE or MMU line, or an ORG with a page, with a diagnostic.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -70,11 +71,15 @@ export function wrapperSource(params: SjasmplusParams, marker: number, memory: s
 
 /** A DEVICE directive: after a label or indented, with or without its dot, in any letter case. */
 const DEVICE_LINE = /^(?:[^\s;]+\s+|\s+)?\.?device(?:\s|$)/i;
+/** A directive that maps another page into a slot: SLOT, PAGE, MMU, or ORG with a page. After a label or indented, as a word at the start of a line is a label. */
+const MAPPING_LINE = /^(?:[^\s;]+\s+|\s+)\.?(slot|page|mmu|org\s+[^,]+,)(?:\s|$|(?<=,))/i;
 
 /**
- * The DEVICE lines of the source files. The build sets the device of the model
- * and reads the program from its memory: another DEVICE gives the memory of
- * another device. A file with a NUL byte is binary data, not source.
+ * The DEVICE lines of the source files, and the lines that map another page
+ * into a slot. The build sets the device of the model and saves the 64 KiB
+ * that the CPU sees at the end: another DEVICE gives the memory of another
+ * device, and bytes in a page that is not mapped then are not in the build.
+ * A file with a NUL byte is binary data, not source.
  */
 export function deviceDiagnostics(params: Pick<SjasmplusParams, "files">, contents: readonly Buffer[]): Diagnostic[] {
   const found: Diagnostic[] = [];
@@ -87,6 +92,14 @@ export function deviceDiagnostics(params: Pick<SjasmplusParams, "files">, conten
       .forEach((text, line) => {
         const code = text.replace(/;.*$|\/\/.*$/, "");
         if (DEVICE_LINE.test(code)) found.push({ severity: "error", file: file.path, line: line + 1, message: "The source must not set DEVICE: the build sets the device of the model (--model). Remove this line." });
+        else if (MAPPING_LINE.test(code)) {
+          found.push({
+            severity: "error",
+            file: file.path,
+            line: line + 1,
+            message: "The source must not change the memory paging (SLOT, PAGE, MMU or ORG with a page): the build reads the program from the 64 KiB that the CPU sees, with the paging of the model at its reset. Remove this line, and give the addresses with ORG only.",
+          });
+        }
       });
   });
   return found;
@@ -123,7 +136,7 @@ export function parseSjasmplusDiagnostics(output: string, wrapper: string): Diag
 export function parseSjasmplusSymbols(list: string, segments: ReadonlyArray<{ start: number; end: number }>): AssembledSymbol[] {
   const symbols: AssembledSymbol[] = [];
   for (const line of list.split(/\r?\n/)) {
-    const match = /^([A-Za-z_][\w.]*):\s+EQU\s+0x([0-9A-Fa-f]+)\s*$/.exec(line.trim());
+    const match = /^([^\s:]+):\s+EQU\s+0x([0-9A-Fa-f]+)\s*$/.exec(line.trim());
     if (match === null) continue;
     const value = Number.parseInt(match[2]!, 16);
     const inside = segments.some((segment) => value >= segment.start && value <= segment.end);

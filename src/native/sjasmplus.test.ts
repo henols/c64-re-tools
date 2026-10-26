@@ -33,6 +33,13 @@ test("sjasmplus diagnostics and symbols are read; a line of the wrapper has no l
   ]);
 });
 
+test("a symbol keeps the characters that sjasmplus allows in a name, as a module label or a temporary name", () => {
+  assert.deepEqual(
+    parseSjasmplusSymbols("game.loop: EQU 0x00008000\n@main?: EQU 0x00008001\n", [{ start: 0x8000, end: 0x80ff }]).map((symbol) => symbol.name),
+    ["@main?", "game.loop"],
+  );
+});
+
 test("a DEVICE line of a source file is an error at its line: the build sets the device", () => {
   const files = [
     { path: "main.asm", size: 0 },
@@ -50,5 +57,28 @@ test("a DEVICE line of a source file is an error at its line: the build sets the
       ["lib/setup.asm", 2],
       ["lib/setup.asm", 3],
     ],
+  );
+});
+
+test("a line that maps another page into a slot is an error at its line: the build saves only the 64 KiB that the CPU sees", () => {
+  const files = [{ path: "main.asm", size: 0 }];
+  const contents = [
+    Buffer.from(
+      [
+        "page EQU 3", // 1: a label named page
+        "\tld a,page", // 2
+        "\tSLOT 3", // 3
+        "\t.page 1", // 4
+        "bank\tMMU 3, 4", // 5
+        "\torg $c000, 4", // 6
+        "\torg $8000 ; a page, in a comment", // 7
+        "\tORG $8000,1", // 8
+        "slots\tdb 1", // 9
+      ].join("\n"),
+    ),
+  ];
+  assert.deepEqual(
+    deviceDiagnostics({ files }, contents).map((item) => item.line),
+    [3, 4, 5, 6, 8],
   );
 });
