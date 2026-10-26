@@ -438,9 +438,18 @@ static const char* init(const char* romdir, int want128) {
     return NULL;
 }
 
+static int hexdigit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+// Two hex digits, or -1.
 static int hexbyte(const char* s) {
-    unsigned v;
-    return sscanf(s, "%2x", &v) == 1 ? (int)v : -1;
+    const int high = hexdigit(s[0]);
+    const int low = high < 0 ? -1 : hexdigit(s[1]);
+    return low < 0 ? -1 : (high << 4) | low;
 }
 
 static const char B64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -477,7 +486,18 @@ static const char* load_replay(const char* path) {
         site_t* s = site_for(pc, port);
         if (!s) { fclose(f); snprintf(problem, sizeof problem, "more than %d sites", MAX_SITES); return problem; }
         if (end) { s->total = n; continue; }
-        if (s->nruns == s->cap) { s->cap = s->cap ? s->cap * 2 : 64; s->runs = realloc(s->runs, s->cap * sizeof(run_t)); }
+        if (value > 0xFF || port > 0xFFFF || pc > 0xFFFF || (s->nruns > 0 && n <= s->runs[s->nruns - 1].from)) {
+            fclose(f);
+            snprintf(problem, sizeof problem, "%s line %d: a site, a port, a read index after the one before at the site, and a byte", path, line);
+            return problem;
+        }
+        if (s->nruns == s->cap) {
+            const size_t cap = s->cap ? s->cap * 2 : 64;
+            run_t* runs = realloc(s->runs, cap * sizeof(run_t));
+            if (!runs) { fclose(f); snprintf(problem, sizeof problem, "out of memory at %s line %d", path, line); return problem; }
+            s->runs = runs;
+            s->cap = cap;
+        }
         s->runs[s->nruns++] = (run_t){ .from = n, .value = (uint8_t)value };
     }
     fclose(f);
@@ -575,13 +595,15 @@ int main(int argc, char** argv) {
             // write <addr hex> <bytes hex>: into RAM (writes to ROM have no effect)
             unsigned addr;
             size_t len = strlen(a2);
-            if (sscanf(a1, "%x", &addr) != 1 || len % 2) { printf("err write: give an address and hex bytes\n"); continue; }
+            int valid = sscanf(a1, "%x", &addr) == 1 && len > 0 && len % 2 == 0;
+            for (size_t i = 0; valid && i < len / 2; i++) valid = hexbyte(a2 + 2 * i) >= 0;
+            if (!valid) { printf("err write: give an address and hex bytes\n"); continue; }
             for (size_t i = 0; i < len / 2; i++) mem_wr(&sys.mem, (uint16_t)(addr + i), (uint8_t)hexbyte(a2 + 2 * i));
             printf("ok %zu\n", len / 2);
         } else if (!strcmp(cmd, "peek")) {
             // peek <addr hex> <count>: bytes as the CPU sees them, as hex
             unsigned addr, count;
-            if (sscanf(line, "%*s %x %u", &addr, &count) != 2 || count > 4096) { printf("err peek: give an address and 1-4096\n"); continue; }
+            if (sscanf(line, "%*s %x %u", &addr, &count) != 2 || count < 1 || count > 4096) { printf("err peek: give an address and 1-4096\n"); continue; }
             printf("ok ");
             for (unsigned i = 0; i < count; i++) printf("%02x", mem_rd(&sys.mem, (uint16_t)(addr + i)));
             printf("\n");
