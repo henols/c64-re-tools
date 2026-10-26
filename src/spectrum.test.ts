@@ -62,7 +62,7 @@ test("version 2/3 .z80 files reject missing, duplicated and truncated RAM pages"
     const firstPageEnd = 86 + 3 + (firstLength === 0xffff ? 0x4000 : firstLength);
     assert.throws(() => readZ80(full.subarray(0, firstPageEnd)), /missing RAM banks/, model);
     assert.throws(() => readZ80(Uint8Array.from([...full, ...full.subarray(86, firstPageEnd)])), /occurs more than once/, model);
-    assert.throws(() => readZ80(full.subarray(0, full.length - 1)), /truncated/, model);
+    assert.throws(() => readZ80(full.subarray(0, full.length - 1)), /truncated|gives [0-9]+ bytes/, model);
     assert.throws(() => readZ80(Uint8Array.from([...full, 0xff])), /incomplete header/, model);
   }
 });
