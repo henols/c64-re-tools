@@ -7,6 +7,10 @@ name: CI
 # A tag on a commit of main is a release, and the tag gives the version:
 #   git tag v2.0.0-rc.2 && git push origin v2.0.0-rc.2   a prerelease, npm dist-tag next
 #   git tag v2.0.0      && git push origin v2.0.0        a release, npm dist-tag latest
+# A stable release can also be requested by changing .github/release-tag in a PR.
+# Once merged and CI passes on main, CI creates the tag and explicitly dispatches
+# its release workflow at that tag. GITHUB_TOKEN-created tags cannot trigger push
+# workflows by themselves.
 # A release tests nothing again: it needs the passed CI run of the push to
 # main for the same commit, and waits for it if it still runs. Each job
 # writes the tag's version into package.json and the plugin manifests
@@ -21,6 +25,8 @@ on:
     tags: ["v[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+-*"]
   pull_request:
     branches: [main]
+  # A dispatch targeted at a tag runs the same release jobs as a tag push.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -92,6 +98,61 @@ jobs:
           test -z "$(find . -type l)"
           grep -qE 'c64-re-tools@(latest|next)"' .mcp.json
           node .claude/skills/c64-memory-map/scripts/memory-map.ts at '$d020' | grep -q EXTCOL
+
+  # A changed release request on main creates a stable tag only after both CI
+  # jobs pass. Dispatch the tag explicitly: a tag pushed with GITHUB_TOKEN does
+  # not itself start a workflow run.
+  stable-tag:
+    name: tag requested stable release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, installed]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create refs/tags/vX.Y.Z
+      actions: write  # dispatch this workflow at the new tag
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create tag and start stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          request=.github/release-tag
+          if ! git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" -- "$request" | grep -Fxq "$request"; then
+            echo "No stable release requested by this push."
+            exit 0
+          fi
+
+          tag="$(cat "$request")"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "A stable release must use v<major>.<minor>.<patch>, got: $tag" >&2
+            exit 1
+          fi
+
+          existing="$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null || true)"
+          if [ -n "$existing" ] && [ "$existing" != "$GITHUB_SHA" ]; then
+            echo "$tag already points to $existing instead of $GITHUB_SHA; refusing to move it." >&2
+            exit 1
+          fi
+          if [ -z "$existing" ]; then
+            gh api -X POST "repos/$GH_REPO/git/refs" \
+              -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" > /dev/null
+            echo "Created $tag at $GITHUB_SHA."
+          else
+            echo "$tag already points to $GITHUB_SHA."
+          fi
+
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "GitHub Release $tag already exists."
+            exit 0
+          fi
+          gh workflow run ci.yml --ref "$tag"
+          echo "Dispatched stable release workflow for $tag."
 
   # A release tag: the commit must be on main and its CI run must have passed.
   tested:
