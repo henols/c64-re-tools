@@ -33,6 +33,13 @@ test("a file whose contents are not of its extension is refused before the load"
   refused("z80", Uint8Array.from([...v1, 0]), /49182 bytes/);
 });
 
+test("autostart refuses a .z80 snapshot without its required RAM pages", () => {
+  for (const model of ["48k", "128k"] as const) {
+    const headerOnly = writeZ80(snapshot(model)).subarray(0, 86);
+    refused("z80", headerOnly, /missing RAM banks/);
+  }
+});
+
 test("a .z80 and a .sna give the border of their header", () => {
   assert.equal(checkMedia("z80", writeZ80(snapshot("48k"))).border, 1);
   assert.equal(checkMedia("sna", writeSna(snapshot("128k"))).border, 1);

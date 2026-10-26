@@ -174,17 +174,27 @@ export function readZ80(bytes: Uint8Array): SpectrumSnapshot {
   }
   const snapshot: SpectrumSnapshot = { model: is128k ? "128k" : "48k", registers, border, port7ffd: is128k ? bytes[35]! : 0, banks };
   if (is128k) snapshot.ay = { registers: [...bytes.subarray(39, 55)], selected: bytes[38]! };
+  const seen = new Set<number>();
   let at = 32 + extra;
-  while (at + 3 <= bytes.length) {
+  while (at < bytes.length) {
+    if (bytes.length - at < 3) throw new Refusal("invalid-input", `The .z80 memory block at offset ${at} has an incomplete header.`);
     const length = word(bytes, at);
     const page = bytes[at + 2]!;
-    const data = length === 0xffff ? bytes.subarray(at + 3, at + 3 + BANK) : bytes.subarray(at + 3, at + 3 + length);
-    at += 3 + (length === 0xffff ? BANK : length);
-    const block = length === 0xffff ? Uint8Array.from(data) : decompress(data, BANK, false);
+    const size = length === 0xffff ? BANK : length;
+    if (size > bytes.length - at - 3) throw new Refusal("invalid-input", `The .z80 memory page ${page} at offset ${at} is truncated: it declares ${size} bytes.`);
     // The 128K: pages 3-10 are banks 0-7. The 48K: page 8 is $4000, 4 is $8000, 5 is $c000.
     const bank = is128k ? page - 3 : page === 8 ? 5 : page === 4 ? 2 : page === 5 ? 0 : -1;
-    if (bank >= 0 && bank <= 7) banks[bank]!.set(block);
+    if (bank >= 0 && bank <= 7) {
+      if (seen.has(bank)) throw new Refusal("invalid-input", `The .z80 memory page ${page} occurs more than once.`);
+      const data = bytes.subarray(at + 3, at + 3 + size);
+      banks[bank]!.set(length === 0xffff ? data : decompress(data, BANK, false));
+      seen.add(bank);
+    }
+    at += 3 + size;
   }
+  const required = is128k ? Array.from({ length: 8 }, (_, bank) => bank) : [...BANKS_48K];
+  const missing = required.filter((bank) => !seen.has(bank));
+  if (missing.length > 0) throw new Refusal("invalid-input", `The .z80 file is missing RAM ${missing.length === 1 ? "bank" : "banks"} ${missing.join(", ")}.`);
   return snapshot;
 }
 

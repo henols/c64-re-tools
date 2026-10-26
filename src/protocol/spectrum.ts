@@ -239,7 +239,7 @@ export function validateSpectrumParams<O extends SpectrumOperation>(op: O, param
       }
       if (params.action === "remove") {
         onlyFields(params, ["action", "id"]);
-        if (!isInteger(params.id, 1, 100)) invalid("id must be 1 to 100");
+        if (!isInteger(params.id, 1, Number.MAX_SAFE_INTEGER)) invalid("id must be a positive safe integer");
         return as({ action: "remove", id: params.id });
       }
       if (params.action !== "add") invalid("action must be add, remove or list");

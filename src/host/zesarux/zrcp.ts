@@ -4,9 +4,9 @@
 // command answers only when the CPU stops: a breakpoint, or data that the
 // client sends (pause sends one line feed for that).
 //
-// A command that gets no answer in time fails with machine-unavailable. Its
-// answer can still come later: the client drops it, so that the next answer
-// goes to the next command.
+// A command that gets no answer in time makes the connection unusable: a
+// subsequent prompt could be either its late answer or the next command's.
+// Close the socket rather than assign a response to the wrong command.
 
 import { Socket } from "node:net";
 
@@ -21,8 +21,6 @@ export class Zrcp {
   #waiting: { resolve: (text: string) => void; reject: (error: Error) => void; timer: NodeJS.Timeout | undefined } | undefined;
   #queue: Promise<unknown> = Promise.resolve();
   #closed: Error | undefined;
-  /** The answers of commands that timed out: they still come, and nobody waits for them. */
-  #stale = 0;
 
   private constructor(socket: Socket) {
     this.#socket = socket;
@@ -31,30 +29,26 @@ export class Zrcp {
       this.#buffer += chunk;
       this.#deliver();
     });
-    const end = (error: Error) => {
-      this.#closed ??= error;
-      const waiting = this.#waiting;
-      this.#waiting = undefined;
-      if (waiting !== undefined) {
-        clearTimeout(waiting.timer);
-        waiting.reject(this.#closed);
-      }
-    };
-    const lost = () => end(new WireFailure("machine-unavailable", `ZEsarUX closed its remote connection. ${RESTART}`));
+    const lost = () => this.#fail(new WireFailure("machine-unavailable", `ZEsarUX closed its remote connection. ${RESTART}`));
     socket.on("error", lost);
     socket.on("close", lost);
   }
 
-  #deliver(): void {
-    for (;;) {
-      const prompt = PROMPT.exec(this.#buffer);
-      if (prompt === null) return;
-      if (this.#stale === 0) break;
-      this.#stale--;
-      this.#buffer = this.#buffer.slice(prompt.index + prompt[0].length);
+  /** Rejects any pending command and closes the transport: its response boundary is no longer trustworthy. */
+  #fail(error: Error): void {
+    this.#closed ??= error;
+    const waiting = this.#waiting;
+    this.#waiting = undefined;
+    if (waiting !== undefined) {
+      clearTimeout(waiting.timer);
+      waiting.reject(this.#closed);
     }
-    const prompt = PROMPT.exec(this.#buffer)!;
-    if (this.#waiting === undefined) return;
+    this.#socket.destroy();
+  }
+
+  #deliver(): void {
+    const prompt = PROMPT.exec(this.#buffer);
+    if (prompt === null || this.#waiting === undefined) return;
     const text = this.#buffer.slice(0, prompt.index);
     this.#buffer = this.#buffer.slice(prompt.index + prompt[0].length);
     const waiting = this.#waiting;
@@ -96,9 +90,7 @@ export class Zrcp {
         timeoutMs === "none"
           ? undefined
           : setTimeout(() => {
-              this.#waiting = undefined;
-              this.#stale++;
-              reject(new WireFailure("machine-unavailable", `ZEsarUX gave no answer in ${Math.round(timeoutMs / 1000)} s. Wait a few seconds and do the operation again. If it fails again, restart the c64-re-tools MCP server: that starts a new emulator.`));
+              this.#fail(new WireFailure("machine-unavailable", `ZEsarUX gave no answer in ${Math.round(timeoutMs / 1000)} s. ${RESTART}`));
             }, timeoutMs);
       this.#waiting = { resolve, reject, timer };
       this.#deliver();
@@ -108,6 +100,7 @@ export class Zrcp {
   /** Sends one command line and gives its output, without the prompt. `timeoutMs` "none" waits until it answers. */
   command(text: string, timeoutMs: number | "none" = 10_000): Promise<string> {
     const run = this.#queue.then(() => {
+      if (this.#closed !== undefined) throw this.#closed;
       const answer = this.#wait(timeoutMs);
       this.#socket.write(`${text}\n`);
       return answer;
@@ -126,6 +119,6 @@ export class Zrcp {
   }
 
   close(): void {
-    this.#socket.destroy();
+    this.#fail(new WireFailure("machine-unavailable", `ZEsarUX remote connection closed. ${RESTART}`));
   }
 }

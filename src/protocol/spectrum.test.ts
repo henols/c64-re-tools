@@ -38,6 +38,17 @@ test("ranges, counts and registers stay in their limits", () => {
   assert.throws(() => validateSpectrumParams("snapshot", { action: "save", name: "../x" }), refused(/name must be/));
 });
 
+test("point removal accepts IDs beyond the first 100 allocations but refuses unsafe IDs", () => {
+  for (const op of ["breakpoint", "watchpoint"] as const) {
+    for (const id of [101, 1_000, Number.MAX_SAFE_INTEGER]) {
+      assert.deepEqual(validateSpectrumParams(op, { action: "remove", id }), { action: "remove", id });
+    }
+    for (const id of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      assert.throws(() => validateSpectrumParams(op, { action: "remove", id }), refused(/positive safe integer/));
+    }
+  }
+});
+
 test("a register write takes the interrupt mode and the flip-flops", () => {
   assert.deepEqual(validateSpectrumParams("registersSet", { values: { im: 1, iff1: 1, iff2: 0 } }), { values: { im: 1, iff1: 1, iff2: 0 } });
   assert.throws(() => validateSpectrumParams("registersSet", { values: { im: 3 } }), refused(/im must be 0 to 2/));

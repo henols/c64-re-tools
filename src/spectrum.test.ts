@@ -53,6 +53,20 @@ test("a .z80 gives the model of its hardware mode in each version, and refuses a
   assert.throws(() => readZ80(pentagon), /hardware mode 200/);
 });
 
+test("version 2/3 .z80 files reject missing, duplicated and truncated RAM pages", () => {
+  for (const model of ["48k", "128k"] as const) {
+    const full = writeZ80(snapshot(model));
+    const header = full.subarray(0, 86);
+    assert.throws(() => readZ80(header), /missing RAM banks/, model);
+    const firstLength = full[86]! | (full[87]! << 8);
+    const firstPageEnd = 86 + 3 + (firstLength === 0xffff ? 0x4000 : firstLength);
+    assert.throws(() => readZ80(full.subarray(0, firstPageEnd)), /missing RAM banks/, model);
+    assert.throws(() => readZ80(Uint8Array.from([...full, ...full.subarray(86, firstPageEnd)])), /occurs more than once/, model);
+    assert.throws(() => readZ80(full.subarray(0, full.length - 1)), /truncated/, model);
+    assert.throws(() => readZ80(Uint8Array.from([...full, 0xff])), /incomplete header/, model);
+  }
+});
+
 test("a written .z80 marks $0000-$3fff as ROM and gives the T-state counter of the first t-state of the frame", () => {
   for (const [model, low] of [["48k", 17_471], ["128k", 17_726]] as const) {
     const written = writeZ80(snapshot(model));
