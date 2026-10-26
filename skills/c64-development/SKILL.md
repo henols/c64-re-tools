@@ -1,5 +1,5 @@
 ---
-name: retro-development
+name: c64-development
 description: Writes a new C64 program in 6510 assembly for ACME, or adds a feature or a fix to a program. It builds, runs, debugs and tests the program in small steps, with tests that give PASS or FAIL. It works on source that a person wrote, and on a rebuilt program with switches. Use it when the user asks for a new program, for example "write a game" or "make the border flash". Use it to add a feature or a fix, for example "add a high score" or "fix the sprite flicker". It does not find out what an unknown program does.
 ---
 

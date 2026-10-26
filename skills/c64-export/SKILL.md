@@ -1,5 +1,5 @@
 ---
-name: retro-export
+name: c64-export
 description: Exports a rebuilt C64 program as the start of a new program. The export sets each switch to one value in the code. Corrections, trainers and cheats are in, and copy protection and crack changes are out. It removes code and data that nothing uses. It writes a new project folder with the source, a baseline program, the tests and a small knowledge, and a zip file of the folder. Use it when the user asks to "export the project", "start a new game from this rebuild" or "make a clean package of the code". It does not change the rebuilt project or its knowledge.
 ---
 
