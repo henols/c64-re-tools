@@ -123,9 +123,13 @@ jobs:
         run: |
           set -euo pipefail
           request=.github/release-tag
-          if ! git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" -- "$request" | grep -Fxq "$request"; then
-            echo "No stable release requested by this push."
+          if [ ! -f "$request" ]; then
+            echo "No stable release request file."
             exit 0
+          fi
+          requested_now=false
+          if git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" -- "$request" | grep -Fxq "$request"; then
+            requested_now=true
           fi
 
           tag="$(cat "$request")"
@@ -134,7 +138,13 @@ jobs:
             exit 1
           fi
 
-          existing="$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null || true)"
+          # A missing ref returns a 404 JSON body. Parse only object.sha, so
+          # that error message can never be mistaken for an existing tag.
+          existing="$(gh api "repos/$GH_REPO/git/ref/tags/$tag" 2>/dev/null | jq -r '.object.sha // empty' || true)"
+          if [ "$requested_now" = false ] && [ -n "$existing" ]; then
+            echo "No pending stable release: $tag already exists."
+            exit 0
+          fi
           if [ -n "$existing" ] && [ "$existing" != "$GITHUB_SHA" ]; then
             echo "$tag already points to $existing instead of $GITHUB_SHA; refusing to move it." >&2
             exit 1
