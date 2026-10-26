@@ -160,6 +160,7 @@ async function standInZesarux(
       const start = Number.parseInt(rest[0]!, 16);
       return Array.from({ length: Number(rest[1]) }, (_, offset) => (options.memory?.[start + offset] ?? 0).toString(16).padStart(2, "0")).join("");
     }
+    if (command === "get-version") return "13.0";
     if (command === "evaluate") return String(partial);
     if (command === "reset-tstates-partial") partial = 0;
     if (command === "cpu-step" && nmi) {

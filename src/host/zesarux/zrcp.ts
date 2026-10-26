@@ -7,12 +7,20 @@
 // A command that gets no answer in time makes the connection unusable: a
 // subsequent prompt could be either its late answer or the next command's.
 // Close the socket rather than assign a response to the wrong command.
+//
+// The line feed of an interrupt can cross a stop of the run in flight: then
+// ZEsarUX reads it at its prompt as an empty command and answers it with one
+// more prompt, which no command waits for. So the first command after an
+// interrupt syncs first: it sends get-version, whose answer is never empty,
+// and drops each empty answer before it.
 
 import { Socket } from "node:net";
 
 import { WireFailure } from "../../protocol/messages.ts";
 
 const PROMPT = /command(@cpu-step)?> /;
+/** How long a sync waits for each answer. */
+const SYNC_MS = 10_000;
 const RESTART = "Restart the c64-re-tools MCP server: that starts a new emulator.";
 
 export class Zrcp {
@@ -21,6 +29,8 @@ export class Zrcp {
   #waiting: { resolve: (text: string) => void; reject: (error: Error) => void; timer: NodeJS.Timeout | undefined } | undefined;
   #queue: Promise<unknown> = Promise.resolve();
   #closed: Error | undefined;
+  /** True after an interrupt: an empty answer of ZEsarUX to its line feed can still come. */
+  #mustSync = false;
 
   private constructor(socket: Socket) {
     this.#socket = socket;
@@ -99,8 +109,9 @@ export class Zrcp {
 
   /** Sends one command line and gives its output, without the prompt. `timeoutMs` "none" waits until it answers. */
   command(text: string, timeoutMs: number | "none" = 10_000): Promise<string> {
-    const run = this.#queue.then(() => {
+    const run = this.#queue.then(async () => {
       if (this.#closed !== undefined) throw this.#closed;
+      if (this.#mustSync) await this.#sync();
       const answer = this.#wait(timeoutMs);
       this.#socket.write(`${text}\n`);
       return answer;
@@ -109,9 +120,19 @@ export class Zrcp {
     return run.then((output) => output.replace(/\r/g, "").trimEnd());
   }
 
-  /** Sends one line feed: data that ends a run command. */
+  /** Sends one line feed: data that ends a run command. The next command syncs first. */
   interrupt(): void {
-    if (this.#closed === undefined) this.#socket.write("\n");
+    if (this.#closed !== undefined) return;
+    this.#mustSync = true;
+    this.#socket.write("\n");
+  }
+
+  /** Drops the empty answers to the line feeds of interrupts: they come before the answer of get-version, which is never empty. */
+  async #sync(): Promise<void> {
+    this.#mustSync = false;
+    let answer = this.#wait(SYNC_MS);
+    this.#socket.write("get-version\n");
+    while ((await answer).trim() === "") answer = this.#wait(SYNC_MS);
   }
 
   get closed(): boolean {

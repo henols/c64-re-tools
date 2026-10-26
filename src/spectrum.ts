@@ -101,6 +101,7 @@ function decompress(data: Uint8Array, size: number, endMarker: boolean): Uint8Ar
   while (from < data.length && to < size) {
     if (endMarker && data[from] === 0x00 && data[from + 1] === 0xed && data[from + 2] === 0xed && data[from + 3] === 0x00) break;
     if (data[from] === 0xed && data[from + 1] === 0xed) {
+      if (from + 4 > data.length) throw new Refusal("invalid-input", `A .z80 memory block ends inside a run of equal bytes at offset ${from}.`);
       const count = data[from + 2]!;
       out.fill(data[from + 3]!, to, Math.min(size, to + count));
       to += count;
@@ -167,6 +168,10 @@ export function readZ80(bytes: Uint8Array): SpectrumSnapshot {
   const version = extra === 23 ? 2 : 3;
   registers.pc = word(bytes, 32);
   const mode = bytes[34]!;
+  // Bit 7 of byte 37 modifies the hardware: a 48K mode becomes a 16K.
+  if ((MODE_48K[version] as readonly number[]).includes(mode) && (bytes[37]! & 0x80) !== 0) {
+    throw new Refusal("invalid-input", `The version ${version} .z80 file is for a ZX Spectrum 16K, not for a 48K or a 128K. Save the snapshot again on a 48K or a 128K.`);
+  }
   const is128k = (MODE_128K[version] as readonly number[]).includes(mode);
   if (!is128k && !(MODE_48K[version] as readonly number[]).includes(mode)) {
     const machine = OTHER_HARDWARE[mode] ?? `hardware mode ${mode}`;
@@ -300,19 +305,23 @@ export function readSna(bytes: Uint8Array): SpectrumSnapshot {
   if (bytes.length === SNA_48K) {
     BANKS_48K.forEach((bank, index) => banks[bank]!.set(ram.subarray(index * BANK, (index + 1) * BANK)));
     // The 48K form keeps the PC on the stack: the snapshot pops it.
-    const at = (registers.sp - 0x4000) & 0xffff;
-    registers.pc = ram[at]! | (ram[(at + 1) & 0xffff]! << 8);
+    if (registers.sp < 0x4000 || registers.sp > 0xfffe) throw new Refusal("invalid-input", `A 48K .sna keeps the PC on the stack, and the stack pointer $${registers.sp.toString(16)} is not in RAM.`);
+    const at = registers.sp - 0x4000;
+    registers.pc = ram[at]! | (ram[at + 1]! << 8);
     registers.sp = (registers.sp + 2) & 0xffff;
     return { model: "48k", registers, border, port7ffd: 0, banks };
   }
   registers.pc = word(bytes, SNA_48K);
   const port7ffd = bytes[SNA_48K + 2]!;
   const paged = port7ffd & 7;
+  // The other banks follow in order without 5, 2 and the paged bank: six of them when bank 5 or 2 is paged, else five.
+  const expected = SNA_48K + 4 + (paged === 5 || paged === 2 ? 6 : 5) * BANK;
+  if (bytes.length !== expected) throw new Refusal("invalid-input", `A 128K .sna with bank ${paged} paged has ${expected} bytes, not ${bytes.length}.`);
   banks[5]!.set(ram.subarray(0, BANK));
   banks[2]!.set(ram.subarray(BANK, 2 * BANK));
   banks[paged]!.set(ram.subarray(2 * BANK, 3 * BANK));
   let at = SNA_48K + 4;
-  for (let bank = 0; bank < 8 && at < bytes.length; bank++) {
+  for (let bank = 0; bank < 8; bank++) {
     if (bank === 5 || bank === 2 || bank === paged) continue;
     banks[bank]!.set(bytes.subarray(at, at + BANK));
     at += BANK;
@@ -496,8 +505,17 @@ export function readTzx(bytes: Uint8Array): TapeBlock[] {
       case 0x33:
         size = 1 + 3 * bytes[body]!;
         break;
+      case 0x34:
+        // Emulation info (deprecated): a fixed 8 bytes.
+        size = 8;
+        break;
       case 0x35:
-        size = 14 + dword(body + 10);
+        // Custom info: a 16-character identification, then a 4-byte length.
+        size = 20 + dword(body + 16);
+        break;
+      case 0x40:
+        // Snapshot (deprecated): a type byte, then a 3-byte length.
+        size = 4 + long(body + 1);
         break;
       case 0x5a:
         size = 9;

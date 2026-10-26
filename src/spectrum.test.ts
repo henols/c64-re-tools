@@ -106,6 +106,37 @@ test("a .sna keeps the registers and the RAM; the 48K form keeps the PC on the s
   assert.throws(() => readSna(new Uint8Array(100)), Refusal);
 });
 
+test("a 48K .sna refuses a stack pointer outside RAM, and a 128K .sna a length that does not match its paged bank", () => {
+  const sna48 = writeSna(snapshot("48k"));
+  for (const sp of [0x0000, 0x3fff, 0xffff]) {
+    const bytes = Uint8Array.from(sna48);
+    bytes[23] = sp & 0xff;
+    bytes[24] = sp >> 8;
+    assert.throws(() => readSna(bytes), /stack pointer \$[0-9a-f]+ is not in RAM/, `sp $${sp.toString(16)}`);
+  }
+  const sna128 = writeSna(snapshot("128k"));
+  const paged = sna128[27 + 0xc000 + 2]! & 7;
+  assert.ok(paged !== 2 && paged !== 5, "the fixture pages a bank other than 2 or 5");
+  assert.throws(() => readSna(Uint8Array.from([...sna128, ...new Uint8Array(0x4000)])), /has 131103 bytes, not 147487/);
+  const pagedFive = Uint8Array.from([...sna128, ...new Uint8Array(0x4000)]);
+  pagedFive[27 + 0xc000 + 2] = (pagedFive[27 + 0xc000 + 2]! & ~7) | 5;
+  assert.equal(readSna(pagedFive).port7ffd & 7, 5);
+  assert.throws(() => readSna(Uint8Array.from(sna128).map((byte, at) => (at === 27 + 0xc000 + 2 ? (byte & ~7) | 2 : byte))), /has 147487 bytes, not 131103/);
+});
+
+test("a .z80 of a 16K is refused by name, and a block that ends inside a run says so", () => {
+  const v3 = writeZ80(snapshot("48k"));
+  const sixteen = Uint8Array.from(v3);
+  sixteen[37] = 0x80;
+  assert.throws(() => readZ80(sixteen), /ZX Spectrum 16K/);
+  // A version 1 file whose compressed body ends after "ed ed".
+  const v1 = Uint8Array.from(v3.subarray(0, 30));
+  v1[6] = 0x00;
+  v1[7] = 0x80;
+  v1[12] = 0x20;
+  assert.throws(() => readZ80(Uint8Array.from([...v1, 0xed, 0xed])), /ends inside a run of equal bytes/);
+});
+
 /** A ROM tape block: flag, data, and the checksum that makes the XOR of all of them 0. */
 function block(flag: number, data: number[]): number[] {
   const checksum = data.reduce((xor, byte) => xor ^ byte, flag);
@@ -147,6 +178,18 @@ test("a TZX file gives its data blocks, turbo and pure data too, and the text of
   assert.deepEqual([[...blocks[4]!.bytes!], blocks[4]!.flag, blocks[4]!.checksumOk], [data, undefined, undefined]);
   assert.throws(() => readTzx(tzx.subarray(0, tzx.length - 2)), Refusal);
   assert.throws(() => readTzx(Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])), Refusal);
+});
+
+test("a TZX file steps over a custom info block, an emulation info block and a snapshot block by their own layouts", () => {
+  const signature = [...[..."ZXTape!"].map((char) => char.charCodeAt(0)), 0x1a, 1, 20];
+  const customInfo = [0x35, ...[..."POKEs".padEnd(16, " ")].map((char) => char.charCodeAt(0)), 3, 0, 0, 0, 1, 2, 3];
+  const emulationInfo = [0x34, 0, 0, 0, 0, 0, 0, 0, 0];
+  const snapshotBlock = [0x40, 0, 2, 0, 0, 9, 9];
+  const description = [0x30, 2, 0x68, 0x69];
+  const tzx = Uint8Array.from([...signature, ...customInfo, ...emulationInfo, ...snapshotBlock, ...description]);
+  const blocks = readTzx(tzx);
+  assert.deepEqual(blocks.map((item) => item.id), [0x35, 0x34, 0x40, 0x30]);
+  assert.equal(blocks[3]!.text, "hi");
 });
 
 /** A program line as the ROM keeps it: number (high byte first), length, bytes, ENTER. */
