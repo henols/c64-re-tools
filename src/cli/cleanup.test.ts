@@ -210,3 +210,20 @@ test("the directories of a removed skill go when nothing else is in them", () =>
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("an update deletes the MCP servers that the earlier install merged and this one no longer declares, and keeps every other server", () => {
+  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-servers-"));
+  try {
+    mkdirSync(join(root, ".ap-sdk"));
+    const mcp = (names: string[]) => ({ harness: "claude", kind: "mcp", name: names.join(", "), files: [".mcp.json"], detail: { mergeKey: "mcpServers", names } });
+    const before = [mcp(["c64-re-tools"])];
+    const after = [mcp(["c64", "spectrum"])];
+    writeFileSync(join(root, ".mcp.json"), JSON.stringify({ mcpServers: { "c64-re-tools": { command: "old" }, c64: { command: "new" }, spectrum: { command: "new" }, other: { command: "theirs" } } }));
+    writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: after } } }));
+    assert.deepEqual(removeDroppedItems(before, "project", root), ["c64-re-tools"]);
+    assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8")).mcpServers), ["c64", "spectrum", "other"]);
+    assert.deepEqual(removeDroppedItems(after, "project", root), [], "a server that this install declares stays");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

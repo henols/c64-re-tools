@@ -198,9 +198,11 @@ export function tidyAfterUninstall(items: readonly InstallItem[], scope: Scope, 
  * After an install or update: deletes the files of the items that the
  * earlier install made and this one no longer has, for example a skill that
  * a version renamed, then the directories that they leave empty. Only the
- * harnesses that this install wrote count, and an MCP item never goes: its
- * file holds other servers too. A file that this install also wrote stays.
- * Returns the names of the removed items.
+ * harnesses that this install wrote count. An MCP file never goes, as it
+ * holds other servers too: only the servers that the earlier install merged
+ * into it and this one no longer declares leave it, for example the
+ * c64-re-tools server of 2.x after the c64 server took its place. A file that
+ * this install also wrote stays. Returns the names of the removed items.
  */
 export function removeDroppedItems(before: readonly InstallItem[], scope: Scope, cwd = process.cwd()): string[] {
   const root = scopeRoot(scope, cwd);
@@ -221,7 +223,33 @@ export function removeDroppedItems(before: readonly InstallItem[], scope: Scope,
   }
   // Deepest first, so a parent is tried after its children.
   for (const directory of [...directories].sort((a, b) => b.length - a.length)) removeEmptyDirectories(directory, root);
-  return [...new Set(dropped.map((item) => item.name))];
+  return [...new Set([...dropped.map((item) => item.name), ...removeDroppedServers(before, after, absolute, root)])];
+}
+
+/** Deletes from each MCP file the servers that an earlier item merged into it and no item of this install declares there; returns their names. */
+function removeDroppedServers(before: readonly InstallItem[], after: readonly InstallItem[], absolute: (file: string) => string, root: string): string[] {
+  const harnesses = new Set(after.map((item) => item.harness));
+  const where = (item: InstallItem, name: string) => `${absolute(item.files[0] ?? "")}\0${item.detail?.mergeKey}\0${name}`;
+  const declared = new Set(after.filter((item) => item.kind === "mcp").flatMap((item) => (item.detail?.names ?? []).map((name) => where(item, name))));
+  const removed: string[] = [];
+  for (const item of before) {
+    const file = item.files[0];
+    const mergeKey = item.detail?.mergeKey;
+    if (item.kind !== "mcp" || !harnesses.has(item.harness) || file === undefined || mergeKey === undefined) continue;
+    const gone = (item.detail?.names ?? []).filter((name) => !declared.has(where(item, name)));
+    const path = absolute(file);
+    if (gone.length === 0 || !isWithin(root, path) || !existsSync(path)) continue;
+    const config = readJson(path);
+    const servers = config?.[mergeKey];
+    if (config === undefined || typeof servers !== "object" || servers === null || Array.isArray(servers)) continue;
+    const bucket = servers as Record<string, unknown>;
+    const present = gone.filter((name) => name in bucket);
+    if (present.length === 0) continue;
+    for (const name of present) delete bucket[name];
+    writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+    removed.push(...present);
+  }
+  return removed;
 }
 
 const ANSI = new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g");
