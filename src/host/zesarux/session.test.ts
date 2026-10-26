@@ -119,7 +119,7 @@ function tapeOf(text: string): Buffer {
  */
 async function standInZesarux(
   machine: string,
-  options: { fires?: string[]; overshoot?: number; ioPorts?: string; history?: string[]; steps?: string[]; ran?: string[]; runs?: string[][]; historyMax?: number; memory?: Record<number, number>; halted?: boolean } = {},
+  options: { fires?: string[]; overshoot?: number; ioPorts?: string; history?: string[]; steps?: string[]; ran?: string[]; runs?: string[][]; historyMax?: number; memory?: Record<number, number>; halted?: boolean; failRun?: boolean } = {},
 ): Promise<{ zesarux: ZesaruxProcess; commands: string[]; cpu: { registers: string; halted: boolean } }> {
   // The CPU history, the most recent entry first: a step adds one entry.
   const historyMax = options.historyMax ?? 1_000_000;
@@ -212,7 +212,14 @@ async function standInZesarux(
         // A line feed alone ends a run, which this stand-in already ended.
         if (line === "") continue;
         commands.push(line);
-        socket.write(`${answer(line)}\ncommand@cpu-step> `);
+        if (line === "run" && options.failRun === true) {
+          // Reply after resume has already acknowledged the background run.
+          setTimeout(() => {
+            if (!socket.destroyed) socket.write("Error: emulator run failed\ncommand@cpu-step> ");
+          }, 180);
+        } else {
+          socket.write(`${answer(line)}\ncommand@cpu-step> `);
+        }
       }
     });
   });
@@ -233,6 +240,41 @@ async function standInZesarux(
   };
   return { zesarux, commands, cpu };
 }
+
+test("overlapping watchpoints are rejected without erasing an existing watchpoint", async () => {
+  const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k");
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    const first = (await session.handle("watchpoint", { action: "add", start: 0x9000, end: 0x900f, access: "write" })) as { points: Array<{ id: number }> };
+    const countBefore = commands.filter((command) => command.startsWith("set-membreakpoint ")).length;
+    await assert.rejects(
+      session.handle("watchpoint", { action: "add", start: 0x9008, end: 0x9017, access: "read" }),
+      (error) => error instanceof WireFailure && error.code === "invalid-input" && /overlaps watchpoint/.test(error.message),
+    );
+    assert.equal(commands.filter((command) => command.startsWith("set-membreakpoint ")).length, countBefore);
+    assert.equal(((await session.handle("watchpoint", { action: "list" })) as { points: unknown[] }).points.length, 1);
+    await session.handle("watchpoint", { action: "remove", id: first.points[0]!.id });
+    assert.equal(((await session.handle("watchpoint", { action: "add", start: 0x9008, end: 0x9017, access: "read" })) as { points: unknown[] }).points.length, 1);
+  } finally {
+    await session.close();
+  }
+});
+
+test("a background run failure clears the running state and makes the unusable session fail closed", async () => {
+  const { zesarux } = await standInZesarux("ZX Spectrum 48k", { failRun: true });
+  const session = await ZesaruxSession.open(zesarux, "spectrum48");
+  try {
+    assert.deepEqual(await session.handle("execution", { action: "resume" }), { state: "running" });
+    // The stand-in responds with a malformed run answer after the resume ACK.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    for (const [op, params] of [["status", {}], ["reset", { run: false }], ["execution", { action: "pause" }]] as const) {
+      await assert.rejects(session.handle(op, params), (error) =>
+        error instanceof WireFailure && error.code === "machine-unavailable" && /background ZEsarUX run failed/.test(error.message));
+    }
+  } finally {
+    await session.close();
+  }
+});
 
 test("the session takes its model from the machine that a load gives: a 128K snapshot in a 48K session runs 128K frames", async () => {
   const { zesarux, commands } = await standInZesarux("ZX Spectrum 48k");

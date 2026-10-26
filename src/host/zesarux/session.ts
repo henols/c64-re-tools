@@ -820,7 +820,16 @@ export class ZesaruxSession implements SessionHandle {
           }
           return stop;
         },
-        (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
+        (error: unknown) => {
+          // The asynchronous run failed after resume returned. Its state is no
+          // longer trustworthy, and the failed promise must not pin the
+          // session in "running" or make pause/reset fail indefinitely.
+          this.#lost = `The background ZEsarUX run failed: ${error instanceof Error ? error.message : String(error)}.`;
+          this.#state = "stopped";
+          if (this.#run === run) this.#run = undefined;
+          this.#stop = {};
+          return error instanceof Error ? error : new Error(String(error));
+        },
       );
       this.#run = run;
       return { state: "running" };
@@ -885,6 +894,16 @@ export class ZesaruxSession implements SessionHandle {
 
   async #watchpoint(params: SpectrumOperations["watchpoint"]["params"]): Promise<{ points: SpectrumPoint[] }> {
     if (params.action === "add") {
+      // ZEsarUX memory breakpoints are keyed by address range, not our point IDs.
+      // Removing an overlapping point would clear bytes belonging to its peer.
+      // Until the backend can atomically rebuild the effective per-byte masks,
+      // refuse overlaps rather than leave a silently broken watchpoint.
+      const overlap = [...this.#points.values()].find((point) =>
+        point.kind === "watchpoint" && point.start <= params.end && params.start <= point.end,
+      );
+      if (overlap !== undefined) {
+        throw new WireFailure("invalid-input", `The watchpoint overlaps watchpoint ${overlap.id} ($${hex4(overlap.start)}-$${hex4(overlap.end)}). Remove the existing watchpoint or use a non-overlapping range.`);
+      }
       const point: Point = { id: this.#nextId++, kind: "watchpoint", start: params.start, end: params.end, access: params.access, enabled: true };
       await this.#setPoint(point);
       this.#points.set(point.id, point);
