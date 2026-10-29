@@ -35,7 +35,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Write all knowledge to one file | `export --out .c64-re-tools/local/knowledge.json` |
 | Find what the knowledge holds of the program | `program` |
 | Put a captured program into the knowledge | `image .c64-re-tools/local/capture/image.json` |
-| Put a PRG into the knowledge | `image original/game.prg` |
+| Put a PRG into the knowledge | `image releases/game.prg` |
 | Put drive code into the knowledge | `image drive.prg --space drive8` |
 | Add the coverage of runs | `coverage .c64-re-tools/local/runs/rooms/room0.bin` |
 | Name the symbol at an address | `rename '$2100' update_player --kind routine --reason 'reads joystick 2'` |
@@ -48,8 +48,8 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Find the places that a removal blocks | `suppressions --range '$2000-$2fff'` |
 | Start a file of the generated source | `module '$2000' game/player.asm --title 'Player movement'` |
 | Write the operand of an instruction as an expression | `operand '$8079' --lo irq_handler` |
-| Record a release of the program | `release ORIGINAL --file original/game.prg --base` |
-| Write a switch | `switch PROTECTION --kind protection --releases ORIGINAL` |
+| Record a release of the program | `release FIRESTAR --file releases/game.prg --base` |
+| Write a switch | `switch PROTECTION --kind protection --releases FIRESTAR` |
 | Write the code of a switch for a range | `patch '$100e-$1010' PROTECTION --code-file no-check.asm` |
 | List the releases, switches and patches | `switches` |
 | Record the start screen of the program | `start-screen --mode multicolour --screen '$5c00' --bitmap '$6000' --colours '$8328' --border 0 --background 0` |
@@ -82,7 +82,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 - Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
 - In a group folder, each version of a program is a project. The script refuses the group folder and each folder in it that is not a project. Give `--project` with a project of the group, for example `--project v1`.
-- A path that a command only reads can go into another project of the group, for example `../v1/original/game.prg`. The command writes only in its own project.
+- A path that a command only reads can go into another project of the group, for example `../v1/releases/game.prg`. The command writes only in its own project.
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
@@ -396,7 +396,7 @@ A rebuild keeps all of the program in the source: unused bytes, dead code, old c
 Do not write a file of the rebuild by hand, for example a boot file, a packed picture or a script that changes bytes. Record each change in the knowledge, and generate the source.
 
 - `--file` is a PRG or the `image.json` of a capture. The project knowledge keeps the bytes of the release. After the write, the project does not need the file. A capture can stay in `.c64-re-tools/local/`.
-- A label is upper case, for example `ORIGINAL`, `FIRESTAR` or `V2`.
+- A label is upper case, for example `FIRESTAR`, `TBC` or `V2`.
 - The base release is the release whose bytes are the program of the knowledge. Record it with `--base`. The script refuses `--base` when the segments or the bytes of the file are not the program.
 - A space has one base release. Record the base release before the first switch.
 - The build of a release gives each switch the value of that release. The check of the generated source compares that build with the bytes of the release in the project knowledge.
@@ -435,8 +435,8 @@ Use this when a stage of the loading shows the screen, and the program at the en
 #### A start screen in the program
 
 - Capture the program while the bytes of the screen are in memory.
-- Get the mode, the addresses and the colours from the VIC-II while the original program shows the screen.
-- Find the 1000 colour bytes in the program: compare them with the colour RAM at $d800 while the original shows the screen. Give their address with `--colours`. If the program does not have them, give one colour with `--colour`.
+- Get the mode, the addresses and the colours from the VIC-II while the program of the base release shows the screen.
+- Find the 1000 colour bytes in the program: compare them with the colour RAM at $d800 while that program shows the screen. Give their address with `--colours`. If the program does not have them, give one colour with `--colour`.
 
 #### The rules of the VIC-II
 

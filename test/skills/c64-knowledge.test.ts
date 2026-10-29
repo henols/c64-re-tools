@@ -284,10 +284,10 @@ test("release, switch, patch, macro and use write the source knowledge, and swit
   mkdirSync(join(root, ".c64-re-tools", "local"), { recursive: true });
   writeFileSync(join(root, "other.prg"), Buffer.from([0x00, 0x81, 0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xa9, 0x01, 0x8d, 0x20, 0xd0]));
   assert.match(String((knowledge(root, "release", "OTHER", "--file", "other.prg", "--base").json.error as { message: string }).message), /The bytes of other\.prg are not the program of the knowledge/);
-  const original = knowledge(root, "release", "ORIGINAL", "--file", "game.prg", "--base", "--comment", "The first release.").json;
+  const original = knowledge(root, "release", "FIRESTAR", "--file", "game.prg", "--base", "--comment", "The first release.").json;
   assert.deepEqual(original, {
     revision: original.revision,
-    release: { label: "ORIGINAL", base: true, define: "--define RELEASE_ORIGINAL=1", comment: "The first release.", origin: "llm", revision: original.revision },
+    release: { label: "FIRESTAR", base: true, define: "--define RELEASE_FIRESTAR=1", comment: "The first release.", origin: "llm", revision: original.revision },
     bytes: 11,
   });
   // The knowledge keeps the bytes of the release: its file can be a scratch file that git ignores.

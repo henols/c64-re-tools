@@ -32,7 +32,7 @@ test("a type step right after autostart reaches the program", { skip: liveSkip, 
     join(project, "key.json"),
     JSON.stringify({
       name: "takes a key after autostart",
-      original: { program: "game.prg", symbols: "symbols.json" },
+      reference: { program: "game.prg", symbols: "symbols.json" },
       rebuild: { program: "game.prg", symbols: "symbols.json" },
       steps: [{ autostart: true }, { type: { mode: "text", text: "X" } }, { runUntil: { target: { kind: "memory", address: "$c000", operator: "eq", value: 0x58 }, timeoutFrames: 600 } }, { observe: "key", memory: ["$c000"] }],
     }),

@@ -547,21 +547,21 @@ test("c64_registers write writes only the named registers; read refuses values",
 test("media tools pass the project path and fill defaults", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
-  assert.deepEqual((await call(client, "c64_autostart", { path: "original/game.d64" })).structuredContent, { state: "running" });
+  assert.deepEqual((await call(client, "c64_autostart", { path: "releases/game.d64" })).structuredContent, { state: "running" });
   assert.deepEqual((await call(client, "c64_program_load", { path: "build/game.prg", address: "$C000" })).structuredContent, {
     state: "stopped",
     loadAddress: "$c000",
     size: 100,
   });
-  assert.deepEqual((await call(client, "c64_disk_attach", { path: "original/game.d64" })).structuredContent, { attached: true });
-  await call(client, "c64_autostart", { path: "original/game.d64", index: 1 });
+  assert.deepEqual((await call(client, "c64_disk_attach", { path: "releases/game.d64" })).structuredContent, { attached: true });
+  await call(client, "c64_autostart", { path: "releases/game.d64", index: 1 });
   // The project folder of a call without project: the project lookup from the working directory.
   const root = process.cwd();
   assert.deepEqual(session.media, [
-    ["autostart", { path: "original/game.d64", index: 0, run: true, root }],
+    ["autostart", { path: "releases/game.d64", index: 0, run: true, root }],
     ["programLoad", { path: "build/game.prg", address: 0xc000, root }],
-    ["diskAttach", { path: "original/game.d64", root }],
-    ["autostart", { path: "original/game.d64", index: 2, run: true, root }],
+    ["diskAttach", { path: "releases/game.d64", root }],
+    ["autostart", { path: "releases/game.d64", index: 2, run: true, root }],
   ]);
   assert.equal(errorOf(await call(client, "c64_disk_attach", { path: "" })).code, "invalid-input");
   await client.close();
@@ -777,11 +777,11 @@ test("refusals name the rule that the call broke", async () => {
   assert.equal(await message("c64_snapshot", { action: "save", name: "a", project: "." }), "project is used only with out.");
   assert.equal(await message("c64_snapshot", { action: "restore", name: "a", file: "a.vsf" }), "Action restore takes name or file, not both.");
   assert.match(await message("c64_snapshot", { action: "restore" }), /needs name .* or file/);
-  assert.match(await message("c64_program_load", { path: "original/game.d64" }), /is a disk image \(\.d64\), not a PRG\. Use c64_autostart/);
+  assert.match(await message("c64_program_load", { path: "releases/game.d64" }), /is a disk image \(\.d64\), not a PRG\. Use c64_autostart/);
   assert.match(await message("c64_program_load", { path: "README.md" }), /a PRG has the extension \.prg or no extension, not \.md/);
   assert.match(await message("c64_sid", { voice: 1 }), /Unrecognized key.*The tool takes no fields$/);
   assert.match(await message("c64_joystick", { port: 3, direction: "up" }), /port must be the number 1 or 2/);
-  assert.match(await message("c64_autostart", { path: "original/game.prg", index: 0 }), /A \.prg file has no directory: leave out index/);
+  assert.match(await message("c64_autostart", { path: "releases/game.prg", index: 0 }), /A \.prg file has no directory: leave out index/);
   assert.equal(await message("c64_registers", { action: "write", values: { flags: { q: true } } }), 'values.flags: Unrecognized key: "q"');
   assert.match(await message("c64_snapshot", { action: "restore", file: "/etc/passwd" }), /^file: give a path relative to the project folder/);
   await client.close();
@@ -1003,7 +1003,7 @@ test("in a folder with projects below it, a tool with a path takes project and r
     const refused = errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin" }));
     assert.equal(refused.code, "invalid-input");
     assert.match(refused.message, /These folders below it are projects: a, b\. Give project: <folder> with one of them\./);
-    assert.equal(errorOf(await call(client, "c64_autostart", { path: "original/game.prg" })).code, "invalid-input");
+    assert.equal(errorOf(await call(client, "c64_autostart", { path: "releases/game.prg" })).code, "invalid-input");
     assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, project: "a" })).code, "invalid-input", "project without out");
     assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "x.bin", project: "missing" })).code, "not-found");
 
@@ -1013,8 +1013,8 @@ test("in a folder with projects below it, a tool with a path takes project and r
     await call(client, "c64_snapshot", { action: "save", name: "room0", out: "snapshots/room0.vsf", project: "b" });
     await call(client, "c64_snapshot", { action: "restore", file: "snapshots/room0.vsf", project: "b" });
     assert.deepEqual(session.restoredFiles, ["VSF of room0"]);
-    await call(client, "c64_autostart", { path: "original/game.prg", project: "b" });
-    assert.deepEqual(session.media.at(-1), ["autostart", { path: "original/game.prg", index: 0, run: true, root: join(workspace, "b") }]);
+    await call(client, "c64_autostart", { path: "releases/game.prg", project: "b" });
+    assert.deepEqual(session.media.at(-1), ["autostart", { path: "releases/game.prg", index: 0, run: true, root: join(workspace, "b") }]);
     assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save", name: "room1", project: "b" })).code, "invalid-input", "project without out");
     assert.equal((await call(client, "c64_warp", { enabled: false })).isError, undefined, "a tool without a path needs no project");
     await client.close();

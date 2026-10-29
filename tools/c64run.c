@@ -196,7 +196,7 @@ static int halted;
 
 // Pins: at each sample, before it is taken, the next line of a pin file
 // ("hex hex ...", one field for each range) goes into RAM. A replay pins the
-// random state of a rebuild to the values of the original this way.
+// random state of a rebuild to the values of the reference this way.
 static FILE* pin_file;
 static uint16_t pin_from[16], pin_size[16];
 static int pin_ranges;

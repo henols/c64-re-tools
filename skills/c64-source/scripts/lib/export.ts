@@ -408,7 +408,7 @@ const hasSnapshot = (value: unknown): boolean =>
 /**
  * A scenario or a run file of the project for the new project. A scenario
  * compares the baseline (the exported program) with the build of the new
- * project: a step of the original side alone goes, and a step of the rebuild
+ * project: a step of the reference side alone goes, and a step of the rebuild
  * side alone runs on both sides. A run file runs the build. A test is left out when it restores a
  * snapshot (a state of the old program), names something that the exported
  * program does not have, or names an address in a free range.
@@ -422,7 +422,7 @@ export function rewriteTest(text: string, name: string, symbols: ReadonlyMap<str
   } catch {
     return { reason: "it is not JSON" };
   }
-  const scenario = typeof test.original === "object" && typeof test.rebuild === "object" && Array.isArray(test.steps);
+  const scenario = typeof test.reference === "object" && typeof test.rebuild === "object" && Array.isArray(test.steps);
   const run = typeof test.start === "object" && test.start !== null && Array.isArray(test.steps);
   if (!scenario && !run) return { reason: "it is not a scenario or a run file" };
   if (hasSnapshot(test)) return { reason: "it restores a snapshot, which is a state of the old program" };
@@ -434,14 +434,14 @@ export function rewriteTest(text: string, name: string, symbols: ReadonlyMap<str
   }
   const side = (program: string) => ({ program: `${program}.prg`, symbols: symbolsPath(`${program}.prg`) });
   if (scenario) {
-    // Both sides are the exported program now: a step of the original alone (for example a key for its intro) goes, and a step of the rebuild alone runs on both sides.
-    const { original: _original, rebuild: _rebuild, steps, ...rest } = test;
+    // Both sides are the exported program now: a step of the reference alone (for example a key for its intro) goes, and a step of the rebuild alone runs on both sides.
+    const { reference: _reference, rebuild: _rebuild, steps, ...rest } = test;
     const both = (steps as unknown[]).flatMap((step) => {
       if (step === null || typeof step !== "object" || !("side" in step)) return [step];
       const { side: only, ...action } = step as Record<string, unknown>;
-      return only === "original" ? [] : [action];
+      return only === "reference" ? [] : [action];
     });
-    return { kind: "scenario", text: `${JSON.stringify({ ...rest, original: side(`baseline/${name}`), rebuild: side(`build/${name}`), steps: both }, null, 2)}\n` };
+    return { kind: "scenario", text: `${JSON.stringify({ ...rest, reference: side(`baseline/${name}`), rebuild: side(`build/${name}`), steps: both }, null, 2)}\n` };
   }
   const start = test.start as Record<string, unknown>;
   const symbolsFile = test.symbols === undefined || test.symbols === "none" ? {} : { symbols: symbolsPath(`build/${name}.prg`) };

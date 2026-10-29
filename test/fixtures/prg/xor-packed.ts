@@ -2,13 +2,13 @@
 // payload into place at $C000 and jumps there. The payload is the original
 // counter program, so a capture after the jump must give it back exactly.
 
-import { ORIGINAL } from "./counter-variants.ts";
+import { REFERENCE } from "./counter-variants.ts";
 
 export const PAYLOAD_START = 0xc000;
 export const DECODER = 0x080d;
 const KEY = 0x5a;
 
-const body = ORIGINAL.prg.subarray(2);
+const body = REFERENCE.prg.subarray(2);
 const payloadAddress = 0x081f;
 
 export const xorPackedPrg = Uint8Array.from([

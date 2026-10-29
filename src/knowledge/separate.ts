@@ -3,8 +3,8 @@
 // region of knowledge, whether call and jump references or the run on from
 // its last instruction reach it from a root (the entry, and the NMI, RESET
 // and IRQ vectors at $fffa-$ffff when the image holds them); and what the program reads
-// or executes outside the image. Evidence only: nothing here decides what is
-// original.
+// or executes outside the image. Evidence only: nothing here decides which
+// bytes the publisher shipped.
 
 import { type AddressRange, COVERAGE, executedRamCode, instructionLength } from "../c64.ts";
 

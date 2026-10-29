@@ -39,11 +39,11 @@ after(async () => {
 
 /** The fixture disk, made by the real c1541: a BASIC loader with its machine code after it. */
 function makeDisk(): void {
-  mkdirSync(join(project, "original"));
-  writeFileSync(join(project, "original", "loader.prg"), borderLoopPrg);
-  const made = spawnSync(c1541, ["-format", "border demo,b1", "d64", "original/demo.d64", "-write", "original/loader.prg", "border loader"], { cwd: project, encoding: "utf8" });
+  mkdirSync(join(project, "releases"));
+  writeFileSync(join(project, "releases", "loader.prg"), borderLoopPrg);
+  const made = spawnSync(c1541, ["-format", "border demo,b1", "d64", "releases/demo.d64", "-write", "releases/loader.prg", "border loader"], { cwd: project, encoding: "utf8" });
   assert.equal(made.status, 0, made.stdout + made.stderr);
-  rmSync(join(project, "original", "loader.prg"));
+  rmSync(join(project, "releases", "loader.prg"));
 }
 
 function script(skill: string, file: string, args: string[], address: string): { status: number | null; json: Record<string, unknown> } {
@@ -64,7 +64,7 @@ before(
     if (toolSkip !== false) return;
     makeDisk();
     host = await startHost();
-    const read = script("c64-disk", "disk.ts", ["read", "original/demo.d64", "BORDER LOADER", "--out", extracted], host.address);
+    const read = script("c64-disk", "disk.ts", ["read", "releases/demo.d64", "BORDER LOADER", "--out", extracted], host.address);
     assert.equal(read.status, 0, JSON.stringify(read.json));
     const decoded = script("c64-basic", "basic.ts", ["list", extracted], host.address);
     assert.equal(decoded.status, 0, JSON.stringify(decoded.json));
@@ -76,13 +76,13 @@ before(
 test("a BASIC loader on a disk is found, extracted and decoded to its handoff", { skip: toolSkip, timeout: 60_000 }, async () => {
   const { address } = host;
 
-  const directory = script("c64-disk", "disk.ts", ["directory", "original/demo.d64"], address);
+  const directory = script("c64-disk", "disk.ts", ["directory", "releases/demo.d64"], address);
   assert.equal(directory.status, 0, JSON.stringify(directory.json));
   assert.equal(directory.json.diskName, "BORDER DEMO");
   const entries = directory.json.entries as Array<{ name: string; type: string }>;
   assert.deepEqual(entries.map((entry) => [entry.name, entry.type]), [["BORDER LOADER", "prg"]]);
 
-  const read = script("c64-disk", "disk.ts", ["read", "original/demo.d64", entries[0]!.name, "--out", "extracted/again.prg"], address);
+  const read = script("c64-disk", "disk.ts", ["read", "releases/demo.d64", entries[0]!.name, "--out", "extracted/again.prg"], address);
   assert.equal(read.status, 0, JSON.stringify(read.json));
 
   const decoded = script("c64-basic", "basic.ts", ["list", "extracted/again.prg"], address);

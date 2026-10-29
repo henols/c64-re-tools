@@ -560,9 +560,9 @@ function sourceImage(): OperandImage {
   return { byteAt: (address) => bytes.get(address) ?? image.byteAt(address), platform: image.platform };
 }
 
-/** The base release ORIGINAL, and a change switch for each name, off by default and off in ORIGINAL. */
+/** The base release FIRESTAR, and a change switch for each name, off by default and off in FIRESTAR. */
 function withSwitches(db: DatabaseSync, image: (space: string) => OperandImage, ...names: string[]): void {
-  setRelease(db, { origin: "user" }, { label: "ORIGINAL", base: true });
+  setRelease(db, { origin: "user" }, { label: "FIRESTAR", base: true });
   for (const name of names) setSwitch(db, { origin: "user", image }, { name, kind: "change", default: 0 });
 }
 
@@ -607,14 +607,14 @@ test("a switch has a kind, a default and the releases that have it on; the base 
   const image = sourceImage();
   const context: WriteContext = { origin: "llm", image: () => image };
   assert.throws(() => setSwitch(db, context, { name: "PROTECTION", kind: "protection" }), /no base release/);
-  setRelease(db, llm, { label: "ORIGINAL", base: true, comment: "Uncracked." });
+  setRelease(db, llm, { label: "FIRESTAR", base: true, comment: "Uncracked." });
   setRelease(db, llm, { label: "V2", rows: new Map([[0x1000, "a9"]]) });
-  assert.throws(() => setRelease(db, llm, { label: "V2", base: true }), /The release ORIGINAL is the base release/);
+  assert.throws(() => setRelease(db, llm, { label: "V2", base: true }), /The release FIRESTAR is the base release/);
   for (const label of ["v2", "V", "2V"]) assert.throws(() => setRelease(db, llm, { label, rows: new Map([[0x1000, "a9"]]) }), failsWith("invalid-input"), label);
 
   // The kinds give the default: the default build is the clean program with every fix.
-  const protection = setSwitch(db, context, { name: "PROTECTION", kind: "protection", releases: ["ORIGINAL"], comment: "The disk check." });
-  assert.deepEqual(protection.current, { space: "c64", name: "PROTECTION", kind: "protection", default: 0, releases: ["ORIGINAL"], comment: "The disk check.", origin: "llm", revision: nth(db, 3) });
+  const protection = setSwitch(db, context, { name: "PROTECTION", kind: "protection", releases: ["FIRESTAR"], comment: "The disk check." });
+  assert.deepEqual(protection.current, { space: "c64", name: "PROTECTION", kind: "protection", default: 0, releases: ["FIRESTAR"], comment: "The disk check.", origin: "llm", revision: nth(db, 3) });
   assert.equal(setSwitch(db, context, { name: "FIX_LIVES", kind: "fix", releases: ["V2"] }).current.default, 1);
   assert.equal(setSwitch(db, context, { name: "FIX_LIVES", kind: "fix" }).revision, null, "a write without releases keeps them");
   for (const kind of ["protection", "trainer", "cheat", "crack"] as const) assert.throws(() => setSwitch(db, context, { name: "OTHER", kind, default: 1 }), /off in the default build/, kind);
@@ -629,12 +629,12 @@ test("a switch has a kind, a default and the releases that have it on; the base 
 
   // A patch holds the state that the base release does not have: that state cannot change under it.
   setPatch(db, context, { start: 0x8079, end: 0x807b, switch: "PROTECTION", code: "!fill 3, $ea", comment: "No check." });
-  assert.throws(() => setSwitch(db, context, { name: "PROTECTION", kind: "protection", releases: [] }), /changes whether the base release ORIGINAL has it on/);
-  assert.equal(setSwitch(db, context, { name: "PROTECTION", kind: "protection", releases: ["ORIGINAL", "V2"] }).current.releases.join(), "ORIGINAL,V2", "V2 has it on too: the base value stays");
+  assert.throws(() => setSwitch(db, context, { name: "PROTECTION", kind: "protection", releases: [] }), /changes whether the base release FIRESTAR has it on/);
+  assert.equal(setSwitch(db, context, { name: "PROTECTION", kind: "protection", releases: ["FIRESTAR", "V2"] }).current.releases.join(), "FIRESTAR,V2", "V2 has it on too: the base value stays");
   assert.throws(() => removeSwitch(db, llm, { name: "PROTECTION" }), /has patches at \$8079/);
   assert.throws(() => removeRelease(db, llm, { label: "V2" }), /is named by the switches FIX_LIVES, PROTECTION/);
-  assert.throws(() => removeRelease(db, llm, { label: "ORIGINAL" }), /decides the state of the program for the switches/);
-  assert.throws(() => setRelease(db, llm, { label: "ORIGINAL", rows: new Map([[0x1000, "a9"]]), base: false }), /Remove them first \(unswitch\) to change the base release/);
+  assert.throws(() => removeRelease(db, llm, { label: "FIRESTAR" }), /decides the state of the program for the switches/);
+  assert.throws(() => setRelease(db, llm, { label: "FIRESTAR", rows: new Map([[0x1000, "a9"]]), base: false }), /Remove them first \(unswitch\) to change the base release/);
   assert.equal(switchNamed(db, "PROTECTION")?.comment, "The disk check.", "a write without a comment keeps it");
   assert.deepEqual(historyOfSwitch(db, "PROTECTION").map((entry) => entry.entity), ["switch", "patch", "switch"]);
 
@@ -838,8 +838,8 @@ test("the knowledge keeps the bytes of each release other than the base release;
   setImage(db, llm, { segments: [{ start: 0x1000, end: 0x1003 }], byteAt: () => 0xea });
   const bytes = (values: number[]) => memoryRows([{ start: 0x1000, end: 0x1000 + values.length - 1 }], (address) => values[address - 0x1000]!);
   // The base release has no bytes of its own: its bytes are the program.
-  setRelease(db, llm, { label: "ORIGINAL", base: true });
-  assert.deepEqual(releaseImage(db, "ORIGINAL")?.segments, [{ start: 0x1000, end: 0x1003 }]);
+  setRelease(db, llm, { label: "FIRESTAR", base: true });
+  assert.deepEqual(releaseImage(db, "FIRESTAR")?.segments, [{ start: 0x1000, end: 0x1003 }]);
   assert.throws(() => setRelease(db, llm, { label: "V2" }), /The release V2 has no bytes/);
   const first = setRelease(db, llm, { label: "V2", rows: bytes([0xa9, 0x00, 0x60]) });
   const v2 = releaseImage(db, "V2")!;

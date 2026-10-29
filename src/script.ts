@@ -342,7 +342,7 @@ export function listed<T, U = T>(items: readonly T[], max: number, show: (item: 
 
 /** The conventions in the help of every script. */
 export const CONVENTIONS = `Addresses are $ and 1 to 4 hex digits, for example '$c000' or '$fb', or a name: a symbol, else an analyzer name that only one analyzer gives. A range is <start>-<end>, for example '$c000-$cfff'. Quote them in a shell.
-Paths are relative to the project folder. Every script takes --project <folder>: the project folder, relative to the working directory. Without it, the script uses the nearest folder at or above the working directory that holds .c64-re-tools/. In a group folder, give --project with a project of the group. A path that a command only reads can go into another project of the group, for example ../v1/original/game.prg.
+Paths are relative to the project folder. Every script takes --project <folder>: the project folder, relative to the working directory. Without it, the script uses the nearest folder at or above the working directory that holds .c64-re-tools/. In a group folder, give --project with a project of the group. A path that a command only reads can go into another project of the group, for example ../v1/releases/game.prg.
 Each command prints one JSON envelope: {ok: true, command, body, hint?, nextAction?} with exit status 0, or {ok: false, command?, code, error, hint?, nextAction?} with exit status 2.`;
 
 function optionLabel(name: string, spec: OptionSpec): string {

@@ -479,8 +479,8 @@ test("config.asm has START_SCREEN with the default 1 when the knowledge has a st
   const rendered = render(layout(input([0xea], 0x1000, { startScreen: true })), new Set(), []);
   assert.match(textOf(rendered, "config.asm"), /\n; Start screen: on by default\nSTART_SCREEN = 1 ; the loader shows the start screen/);
   // A release is the bytes of its file: its build has no start screen.
-  const release = render(layout(input([0xea], 0x1000, { startScreen: true, releases: [{ label: "ORIGINAL", base: true }] })), new Set(), []);
-  assert.match(textOf(release, "switches.asm"), /!ifdef RELEASE_ORIGINAL \{\n {8}START_SCREEN = 0\n\}/);
+  const release = render(layout(input([0xea], 0x1000, { startScreen: true, releases: [{ label: "FIRESTAR", base: true }] })), new Set(), []);
+  assert.match(textOf(release, "switches.asm"), /!ifdef RELEASE_FIRESTAR \{\n {8}START_SCREEN = 0\n\}/);
   assert.equal(rendered.files.some((file) => file.name === "switches.asm"), false, "without releases there is no switches.asm");
   assert.deepEqual([...configValues(configText({ switches: [], patches: new Map(), startScreen: true, leftovers: [] }, new Map([["START_SCREEN", 0]])))], [["START_SCREEN", 0]]);
   assert.equal(render(layout(input([0xea], 0x1000)), new Set(), []).files.some((file) => file.name === "config.asm"), false);
@@ -1117,7 +1117,7 @@ async function assembleRendered(rendered: ReturnType<typeof render>, defines: Re
 }
 
 test("a range of leftovers is a file of its own that only LEFTOVERS = 1 builds; the module that it cuts goes on in a file of its own", () => {
-  const source = patchInput([], { modules: [{ start: 0x1000, file: "game.asm", title: "The game" }], leftovers: [{ start: 0x1008, end: 0x100b }], releases: [{ label: "ORIGINAL", base: true }] });
+  const source = patchInput([], { modules: [{ start: 0x1000, file: "game.asm", title: "The game" }], leftovers: [{ start: 0x1008, end: 0x100b }], releases: [{ label: "FIRESTAR", base: true }] });
   const laid = layout(source);
   assert.deepEqual(laid.pieces.map((piece) => [piece.file, piece.start, piece.end, piece.leftover]), [["game.asm", 0x1000, 0x1007, false], ["leftovers/leftover_1008.asm", 0x1008, 0x100b, true], ["game_100c.asm", 0x100c, 0x1013, false]]);
   assert.equal(laid.pieces[2]!.title, "The game, from $100c");
@@ -1125,7 +1125,7 @@ test("a range of leftovers is a file of its own that only LEFTOVERS = 1 builds; 
   assert.match(textOf(rendered, "main.asm"), /!source "game\.asm"\n!if LEFTOVERS \{ !source "leftovers\/leftover_1008\.asm" \} else \{ !skip 4 \}\n!source "game_100c\.asm"\n/);
   assert.match(textOf(rendered, "main.asm"), /!source "switches\.asm"/, "main.asm gets LEFTOVERS from switches.asm");
   assert.match(textOf(rendered, "config.asm"), /\n; Leftovers: off by default\nLEFTOVERS = 0 ; 4 bytes in 1 file in leftovers\/ that nothing uses\./);
-  assert.match(textOf(rendered, "switches.asm"), /!ifdef RELEASE_ORIGINAL \{\n {8}LEFTOVERS = 1\n\}/, "each release has the leftovers");
+  assert.match(textOf(rendered, "switches.asm"), /!ifdef RELEASE_FIRESTAR \{\n {8}LEFTOVERS = 1\n\}/, "each release has the leftovers");
   assert.match(textOf(rendered, "leftovers/leftover_1008.asm"), /^; Leftovers \$1008-\$100b: 4 bytes that nothing uses\./);
   // A module that starts in the leftovers goes on after them.
   const inside = layout(patchInput([], { modules: [{ start: 0x1000, file: "game.asm" }, { start: 0x100a, file: "table.asm", title: "The table" }], leftovers: [{ start: 0x1008, end: 0x100b }] }));
@@ -1230,7 +1230,7 @@ function patchInput(patches: NonNullable<SourceInput["patches"]>, overrides: Par
 
 const CRACK = { start: 0x1000, end: 0x1004, switch: "CRACK", code: "        lda #1\n        sta $d021", comment: "A grey border." };
 
-test("a patch is written as !if SWITCH { code, NOP } else { original }, with its inner names before it", () => {
+test("a patch is written as !if SWITCH { code, NOP } else { base code }, with its inner names before it", () => {
   const laid = layout(patchInput([CRACK, { start: 0x1008, end: 0x100b, switch: "DEBUG", code: "" }]));
   assert.deepEqual(laid.patchesNotWritten, []);
   const rendered = render(laid, new Set(), []);
@@ -1316,7 +1316,7 @@ test("with real ACME, a patch of a captured stage whose code ends at $ffff assem
 });
 
 /**
- * The program of ORIGINAL has a protection call at $1000 and four data bytes
+ * The program of FIRESTAR has a protection call at $1000 and four data bytes
  * at $1008. V2 has the protection and the fix A there, V3 has the fix B and
  * no protection.
  */
@@ -1331,11 +1331,11 @@ function releaseInput(): SourceInput {
       switches: [
         { name: "FIX_A", kind: "fix", default: 1, base: 0, releases: ["V2"], comment: "Fix A." },
         { name: "FIX_B", kind: "fix", default: 0, base: 0, releases: ["V3"] },
-        { name: "PROTECTION", kind: "protection", default: 0, base: 1, releases: ["ORIGINAL", "V2"], comment: "The check." },
+        { name: "PROTECTION", kind: "protection", default: 0, base: 1, releases: ["FIRESTAR", "V2"], comment: "The check." },
       ],
       releases: [
         { label: "V3", base: false },
-        { label: "ORIGINAL", base: true, comment: "The first release." },
+        { label: "FIRESTAR", base: true, comment: "The first release." },
         { label: "V2", base: false },
       ],
     },
@@ -1355,7 +1355,7 @@ test("config.asm has the value of every switch by kind, switches.asm each releas
       "; knowledge does not have. The build of a release does not read this file.",
       "",
       "; Copy protection: off by default",
-      "PROTECTION = 0 ; on in ORIGINAL, V2. $1000-$1004. The check.",
+      "PROTECTION = 0 ; on in FIRESTAR, V2. $1000-$1004. The check.",
       "",
       "; Fixes of the releases: on by default",
       "FIX_A      = 1 ; on in V2. $1008-$100b. Fix A.",
@@ -1371,8 +1371,8 @@ test("config.asm has the value of every switch by kind, switches.asm each releas
       "; Build a release with -DRELEASE_<label>=1 (the build option --release <label>):",
       "; then each switch has the value of that release, and the build does not read config.asm.",
       "",
-      "; ORIGINAL (the program of the knowledge): The first release.",
-      "!ifdef RELEASE_ORIGINAL {",
+      "; FIRESTAR (the program of the knowledge): The first release.",
+      "!ifdef RELEASE_FIRESTAR {",
       "        FIX_A = 0",
       "        FIX_B = 0",
       "        PROTECTION = 1",
@@ -1392,7 +1392,7 @@ test("config.asm has the value of every switch by kind, switches.asm each releas
       "        PROTECTION = 0",
       "}",
       "",
-      '!ifndef RELEASE_ORIGINAL { !ifndef RELEASE_V2 { !ifndef RELEASE_V3 { !source "config.asm" } } }',
+      '!ifndef RELEASE_FIRESTAR { !ifndef RELEASE_V2 { !ifndef RELEASE_V3 { !source "config.asm" } } }',
       "",
     ].join("\n"),
   );
@@ -1414,7 +1414,7 @@ test("with real ACME, each release builds its bytes, the default build is the cl
     return out;
   };
   const nop = [0xea, 0xea, 0xea, 0xea, 0xea];
-  assert.deepEqual((await assembleRendered(rendered, { RELEASE_ORIGINAL: 1 })).bytes, image, "the base release is the program");
+  assert.deepEqual((await assembleRendered(rendered, { RELEASE_FIRESTAR: 1 })).bytes, image, "the base release is the program");
   assert.deepEqual((await assembleRendered(rendered, { RELEASE_V2: 1 })).bytes, bytes([[8, [9, 9, 9, 9]]]));
   assert.deepEqual((await assembleRendered(rendered, { RELEASE_V3: 1 })).bytes, bytes([[0, nop], [8, [7, 7, 7, 7]]]));
   assert.deepEqual((await assembleRendered(rendered)).bytes, bytes([[0, nop], [8, [9, 9, 9, 9]]]), "the default: no protection, fix A");
@@ -1436,7 +1436,7 @@ test("with real ACME, the script builds each switch on and reports it; a patch t
   assert.equal(knowledge("image", "test.prg").status, 0);
   // V2 is the release with a grey border: its file is the program with the code of the CRACK patch.
   writeFileSync(join(project, "v2.prg"), Uint8Array.from([0x00, 0x10, 0xa9, 0x01, 0x8d, 0x21, 0xd0, 0x4c, 0x00, 0x10]));
-  assert.equal(knowledge("release", "ORIGINAL", "--file", "test.prg", "--base").status, 0);
+  assert.equal(knowledge("release", "FIRESTAR", "--file", "test.prg", "--base").status, 0);
   assert.equal(knowledge("release", "V2", "--file", "v2.prg").status, 0);
   // The knowledge keeps the bytes of V2: the check does not read its file.
   rmSync(join(project, "v2.prg"));
@@ -1467,7 +1467,7 @@ test("with real ACME, the script builds each switch on and reports it; a patch t
   assert.equal(json.check.identical, true, "the build of the base release gives the image");
   assert.deepEqual(json.switches.map((item) => [item.name, item.result]), [["BIG", "overflow"], ["CRACK", "fits"]]);
   assert.deepEqual(json.default, { in: [], result: "fits", changedBytes: 0 });
-  assert.deepEqual(json.releases.map((item) => [item.label, item.result]), [["ORIGINAL", "identical"], ["V2", "identical"]], "each release builds to its bytes");
+  assert.deepEqual(json.releases.map((item) => [item.label, item.result]), [["FIRESTAR", "identical"], ["V2", "identical"]], "each release builds to its bytes");
   assert.deepEqual(json.switches[0]!.overflow, [{ start: "$1005", message: "The patch BIG at $1005 has 4 (0x4) bytes; the range has 3." }]);
   assert.equal(json.switches[1]!.changedBytes, 2);
   assert.equal(knowledge("unpatch", "$1005").status, 0);
@@ -1809,7 +1809,7 @@ test("with real ACME, a release that lacks a segment of the program is identical
   writeFileSync(join(project, "demo.prg"), Uint8Array.from([0x00, 0x10, 0x60, 0xea, 0xea, 0xea]));
   writeFileSync(join(project, "bad.prg"), Uint8Array.from([0x00, 0x10, 0x60, 0xea, 0xea, 0x00]));
   const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
-  for (const args of [["image", "unpacked/image.json"], ["release", "ORIGINAL", "--file", "unpacked/image.json", "--base"], ["release", "DEMO", "--file", "demo.prg"], ["release", "BAD", "--file", "bad.prg"]]) assert.equal(knowledge(...args).status, 0, args.join(" "));
+  for (const args of [["image", "unpacked/image.json"], ["release", "FIRESTAR", "--file", "unpacked/image.json", "--base"], ["release", "DEMO", "--file", "demo.prg"], ["release", "BAD", "--file", "bad.prg"]]) assert.equal(knowledge(...args).status, 0, args.join(" "));
   const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], {
     cwd: project,
     env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
@@ -1820,7 +1820,7 @@ test("with real ACME, a release that lacks a segment of the program is identical
   assert.equal(run.status, 0, run.stdout);
   assert.deepEqual(
     json.releases.map((item) => [item.label, item.result, item.notInRelease]),
-    [["ORIGINAL", "identical", undefined], ["BAD", "different", [{ start: "$2000", end: "$2003" }]], ["DEMO", "identical", [{ start: "$2000", end: "$2003" }]]],
+    [["FIRESTAR", "identical", undefined], ["BAD", "different", [{ start: "$2000", end: "$2003" }]], ["DEMO", "identical", [{ start: "$2000", end: "$2003" }]]],
   );
 });
 

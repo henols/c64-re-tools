@@ -36,7 +36,7 @@ Ask for what you want in plain words. The agent picks the skill for each step.
 - Keep names, regions and comments as text in the project, ready for git.
 - Compare releases, and find routines that several programs share.
 - Generate ACME source that rebuilds the program byte for byte, and its documentation.
-- Test that a rebuild behaves as the original: PASS, FAIL or INCONCLUSIVE.
+- Test that a rebuild behaves as the reference program: PASS, FAIL or INCONCLUSIVE.
 - Export a rebuild as the start of a new program: one value for each switch, unused code removed, as a zip file.
 
 ## How it works
@@ -102,7 +102,7 @@ flashes when it hits the edge. Build it, run it, and show me the screen.
 The music stops when the title screen starts. Find out why.
 ```
 ```
-Reverse engineer original/game.d64. Find how it starts, unpack it if it is
+Reverse engineer releases/game.d64. Find how it starts, unpack it if it is
 packed, and name the main routines.
 ```
 ```

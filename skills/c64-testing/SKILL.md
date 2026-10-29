@@ -1,11 +1,11 @@
 ---
 name: c64-testing
-description: Tests if a rebuilt or changed C64 program behaves as the original, or if a program has the expected values. It runs a scenario on the original and on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. Use it when you must show that a rebuild or a correction keeps the behavior of the original. Use it to do many steps on one program and keep the screens, coverage maps, traces and snapshots as files. Use it to test a new program or a correction with expected values. Use it to record a play session of the original and replay it on the default build of the rebuild. Use it to find what changed between two machine states, and to make a checklist for a human playtest. It does not find the cause of a difference. It does not build the program.
+description: Tests if a rebuilt or changed C64 program behaves as the reference, or if a program has the expected values. It runs a scenario on the reference and on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. Use it when you must show that a rebuild or a correction keeps the behavior of the reference. Use it to do many steps on one program and keep the screens, coverage maps, traces and snapshots as files. Use it to test a new program or a correction with expected values. Use it to record a play session of the reference and replay it on the default build of the rebuild. Use it to find what changed between two machine states, and to make a checklist for a human playtest. It does not find the cause of a difference. It does not build the program.
 ---
 
 # C64 testing
 
-Use this script to test a rebuild or a changed C64 program against the original, or against expected values.
+Use this script to test a rebuild or a changed C64 program against the reference, or against expected values.
 Use only the commands of the script. Do not compare machine states or replay play sessions in another way.
 
 ```bash
@@ -23,13 +23,13 @@ To get the command list, run the script with no arguments.
 
 | Goal | Command |
 |---|---|
-| Compare the rebuild with the original in a scenario | `test tests/moves-left.json` |
+| Compare the rebuild with the reference in a scenario | `test tests/moves-left.json` |
 | Keep the screens and all differing bytes of a FAIL | `test tests/moves-left.json --out .c64-re-tools/local/results/moves-left` |
 | Do many steps on one program and keep the results as files | `run .c64-re-tools/local/runs/rooms/run.json --out .c64-re-tools/local/runs/rooms` |
 | Test a new program or a correction with expected values | `run tests/title.json --out .c64-re-tools/local/runs/title` |
-| Record a play session of a person on the original | `record tests/record/start.json --out tests/recordings/play1 --play --joystick 1` |
+| Record a play session of a person on the reference | `record tests/record/start.json --out tests/recordings/play1 --play --joystick 1` |
 | Record a session from steps only | `record tests/record/rooms.json --out tests/recordings/rooms` |
-| Make sure that a recording replays on the original | `replay tests/recordings/rooms` |
+| Make sure that a recording replays on the reference | `replay tests/recordings/rooms` |
 | Compare the rebuild with a recording | `replay tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/clean.prg --symbols build/symbols/clean.json --out .c64-re-tools/local/results/rooms` |
 | Find what changed between two snapshot files | `diff .c64-re-tools/local/runs/rooms/before.vsf .c64-re-tools/local/runs/rooms/after.vsf` |
 | Find what changed between two observations of runs | `diff .c64-re-tools/local/runs/rooms/results.json:room0 .c64-re-tools/local/runs/rooms/results.json:room3` |
@@ -38,8 +38,9 @@ To get the command list, run the script with no arguments.
 
 ## Programs, files and names
 
-- The original program and the rebuild are PRG files in the project. The script refuses a disk, tape or cartridge image. Extract the program file from the image first.
-- The original gets its names from the project knowledge. Give `"symbols": "knowledge"` for the original.
+- The reference is the program file that the test compares the rebuild with, for example the file of the base release. A PASS tells only about that file.
+- The reference program and the rebuild are PRG files in the project. The script refuses a disk, tape or cartridge image. Extract the program file from the image first.
+- The reference gets its names from the project knowledge. Give `"symbols": "knowledge"` for the reference.
 - The rebuild gets its names from the symbol file of its build. Build the rebuild with a symbol file that has all symbols, also the constants that the source does not use.
 - You write the scenario file, the run file and the record file. Their formats are in the files of the section "Reference".
 - A file in `tests/` is a scenario or a run file with expected values. Give a scenario to `test` and a run file to `run`. `test` refuses a run file.
@@ -55,7 +56,7 @@ To get the command list, run the script with no arguments.
 - Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
 - In a group folder, each version of a program is a project. The script refuses the group folder and each folder in it that is not a project. Give `--project` with a project of the group, for example `--project v1`.
-- A path that a command only reads can go into another project of the group, for example `../v1/original/game.prg`. The command writes only in its own project.
+- A path that a command only reads can go into another project of the group, for example `../v1/releases/game.prg`. The command writes only in its own project.
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
@@ -83,8 +84,8 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--http-port <n>` | `record` | With `--play`: the port of the page. The default is 6465. |
 | `--checkpoint <routine>` | `replay` | The routine of the checkpoints. Each entry of the routine is a checkpoint. The default is the comparison of the record file. |
 | `--state <item>` | `replay` | A memory item to compare at each checkpoint. Give it again for each item. |
-| `--pin <item>` | `replay` | Random state in RAM. At each checkpoint, the rebuild gets the values of the original there. Give it again for each item. |
-| `--rebuild <prg>` | `replay` | The rebuild to compare with the original. Without it, the script replays only on the original. |
+| `--pin <item>` | `replay` | Random state in RAM. At each checkpoint, the rebuild gets the values of the reference there. Give it again for each item. |
+| `--rebuild <prg>` | `replay` | The rebuild to compare with the reference. Without it, the script replays only on the reference. |
 | `--symbols <file>` | `replay` | The symbol file of the rebuild. The default is the symbols of the recording. |
 | `--out <dir>` | `replay` | With a FAIL, write the RAM of each side at the first different checkpoint into this folder. |
 | `--gap <n>` | `diff` | Join changed ranges across at most n equal bytes. The default is 0. |
@@ -100,7 +101,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 ### `test <scenario.json>`
 
-The script runs the scenario on the original and then on the rebuild. Before each side, it does a hard reset. The CPU then stops at the reset vector.
+The script runs the scenario on the reference and then on the rebuild. Before each side, it does a hard reset. The CPU then stops at the reset vector.
 Before the test starts, the script examines the scenario and each file that it names. The section "Checks" of `references/scenario-format.md` gives each refusal.
 
 `body` holds:
@@ -108,8 +109,8 @@ Before the test starts, the script examines the scenario and each file that it n
 - `result`: `PASS`, `FAIL` or `INCONCLUSIVE`.
 - `checkpoints`: the names of the checkpoints.
 - `differences`: with a FAIL, each difference with its `checkpoint` and the item in `what`.
-  - A memory item gives `bytes`. `bytes.count` is the number of differing bytes. `bytes.listed` gives the first bytes, each with `address`, `original` and `rebuild`.
-  - Another item gives the `original` value and the `rebuild` value.
+  - A memory item gives `bytes`. `bytes.count` is the number of differing bytes. `bytes.listed` gives the first bytes, each with `address`, `reference` and `rebuild`.
+  - Another item gives the `reference` value and the `rebuild` value.
 - `excluded`: each byte that an `exclude` left out of the comparison, with its `reason`.
 - `files`: with `--out` and a FAIL, the files that the script wrote. These are both screens and the difference image for each screen difference. `memory.json` has all bytes of each memory item that differs, and each byte that differs.
 - `reason`: with an INCONCLUSIVE, why the script could not compare.
@@ -130,7 +131,7 @@ Traps:
 
 - A FAIL with only a `screen` difference: add `vicii` or `sprites` to the observation. Then you find the chip state that is different.
 - A program that uses random numbers: set the random seed with a `write` step on both sides. If you cannot set it, observe only values that do not depend on the random numbers.
-- The two sides start differently, for example the original after a cracked intro. Give a `side` to the steps that only one side needs. Then make the memory the same with a `normalize` step.
+- The two sides start differently, for example the reference after a cracked intro. Give a `side` to the steps that only one side needs. Then make the memory the same with a `normalize` step.
 - `normalize` needs the entry state of a capture in the project knowledge. If the knowledge has no capture, the script refuses. Then capture the unpacked program at its entry point, and put the capture image into the project knowledge.
 - The frame counts of the sides are different by one frame. The sides got to the same address at different raster positions. Do not synchronize on an interrupt handler. Synchronize on a value that the interrupt changes, with a `runUntil` step with a `memory` target. Or use an `address` target with a `raster` condition.
 - A byte cannot be the same on both sides, for example a read-only collision register. Use `exclude` with the reason. Do not use `exclude` to hide a real difference.
@@ -174,7 +175,7 @@ Traps:
 
 ## Recordings
 
-A recording keeps a session of the original program, for example a play through some rooms of a game. A replay gives the same input to a rebuild and compares the game state. A recording needs no names.
+A recording keeps a session of the reference program, for example a play through some rooms of a game. A replay gives the same input to a rebuild and compares the game state. A recording needs no names.
 
 - Make the recordings early, before you change the program.
 - Ask the user to play first. Tell the user which parts of the program the recordings must have, for example each room, a fight and a lost life.
@@ -196,7 +197,7 @@ Control each source of random numbers:
 
 ### `record <record.json>`
 
-The script does the steps of the record file on the original program. Then it writes the recording folder into `--out`: `recording.json`, `reads.txt` and `coverage.bin`. The program must be a PRG file.
+The script does the steps of the record file on the reference program. Then it writes the recording folder into `--out`: `recording.json`, `reads.txt` and `coverage.bin`. The program must be a PRG file.
 
 `body` holds:
 
@@ -211,7 +212,7 @@ The script does the steps of the record file on the original program. Then it wr
 
 Do this for each result:
 
-- `PASS`: for a folder in `tests/recordings/`, `hint` tells you to commit the folder and to add its `coverage.bin` to the project knowledge as coverage. Git ignores `.c64-re-tools/local/`, thus the project knowledge must not name a file in it. For a folder there, `hint` tells you to record again with `--out tests/recordings/<name>`. `nextAction` replays the recording on the original. Run it to make sure that the recording replays.
+- `PASS`: for a folder in `tests/recordings/`, `hint` tells you to commit the folder and to add its `coverage.bin` to the project knowledge as coverage. Git ignores `.c64-re-tools/local/`, thus the project knowledge must not name a file in it. For a folder there, `hint` tells you to record again with `--out tests/recordings/<name>`. `nextAction` replays the recording on the reference. Run it to make sure that the recording replays.
 - `PASS` with `evidence`: you recorded into the folder of an earlier recording. Put the new `coverage.bin` into the project knowledge as coverage. It replaces the map of the earlier recording. For another file in `evidence`, examine the facts of its revisions against the new recording.
 - `FAIL` after a cancel on the page: `hint` tells you to ask the user what to do. Do not record a session from steps in place of the session of the user.
 - Another `FAIL`: `reason` names the step that did not complete. Examples are a `runUntil` step that did not get to its target, and a `type` step with too many keys. Change the step, then run `record` again.
@@ -234,31 +235,31 @@ Traps:
 
 ### `replay <recording>`
 
-The script first replays the recording on the original. The original must end the session with the recorded state. With `--rebuild`, the script then replays the recording on the rebuild and compares the state at each checkpoint. Without `--rebuild`, it replays only on the original.
+The script first replays the recording on the reference. The reference must end the session with the recorded state. With `--rebuild`, the script then replays the recording on the rebuild and compares the state at each checkpoint. Without `--rebuild`, it replays only on the reference.
 
 `--checkpoint` and `--state` go together. `--pin` needs both of them. `--symbols` needs `--rebuild`. Give at most 16 `--state` and `--pin` items. Without `--checkpoint`, the script uses the comparison of the record file.
-A `$` address is an address of the original. On the rebuild, it moves with the name before it.
+A `$` address is an address of the reference. On the rebuild, it moves with the name before it.
 
 A rebuild can be a loader with a start screen that RUN starts. If the symbols of the rebuild have `loader_start_screen_wait` and `loader_start_screen_continue`, the script runs the rebuild to the wait. Then it sets the PC to `loader_start_screen_continue`. The cycles before the wait do not count.
 
-A rebuild can be the loader program of a generated source. Give its symbols. Then the replay counts from the entry of the program, where the loader jumps to. The checkpoints of both sides start at that entry. At the entry, the rebuild gets the raster position, the CIA timers and the interrupt state of the original. The loader cannot set them as the original has them in the replay. A runUntil step to an address does not count the code of the loader, or the code that the original runs before that entry. If another step of the recording runs before the entry, the result is INCONCLUSIVE. Then start the steps of the record file after the entry.
+A rebuild can be the loader program of a generated source. Give its symbols. Then the replay counts from the entry of the program, where the loader jumps to. The checkpoints of both sides start at that entry. At the entry, the rebuild gets the raster position, the CIA timers and the interrupt state of the reference. The loader cannot set them as the reference has them in the replay. A runUntil step to an address does not count the code of the loader, or the code that the reference runs before that entry. If another step of the recording runs before the entry, the result is INCONCLUSIVE. Then start the steps of the record file after the entry.
 
 `body` holds `result`, `side`, `firstDifference`, `reason` and `files`. The section "Replay" of `references/recording-format.md` gives each field.
 
 Do this for each result:
 
-- `PASS`: each checkpoint of the rebuild has the state of the original. Without `--rebuild`, the recording replays on the original.
+- `PASS`: each checkpoint of the rebuild has the state of the reference. Without `--rebuild`, the recording replays on the reference.
 - `FAIL` with `--out`: `files` has the RAM of each side at the first different checkpoint. `nextAction` compares the two files with `diff`. Then examine the first different state item in the emulator.
 - `FAIL` without `--out`: `hint` tells you to give `--out`. A FAIL where an enemy or an event is different, but the input is the same, often shows that a `--pin` is missing.
 - `FAIL` with no `firstDifference`: the rebuild did not get to all checkpoints. `reason` gives the number. Examine the rebuild in the emulator after its last checkpoint.
 - `INCONCLUSIVE`: `reason` gives the cause:
-  - "does not reproduce": the original does not end the session with the recorded state. Record the session again.
-  - "never came to the checkpoint": the original did not execute the checkpoint routine in the session. Give another routine.
+  - "does not reproduce": the reference does not end the session with the recorded state. Record the session again.
+  - "never came to the checkpoint": the reference did not execute the checkpoint routine in the session. Give another routine.
   - "is not the program of the recording": the program file changed after the recording. Record the session again.
 
 Traps:
 
-- `idleReads` counts the input reads of the rebuild that the recording had no value for. On the original, such a read makes the result INCONCLUSIVE. The rebuild can read input where the original does not, for example in its loader before the start screen. Such reads do not change a PASS of the rebuild.
+- `idleReads` counts the input reads of the rebuild that the recording had no value for. On the reference, such a read makes the result INCONCLUSIVE. The rebuild can read input where the reference does not, for example in its loader before the start screen. Such reads do not change a PASS of the rebuild.
 - The script refuses a recording of an older version in an old form with `invalid-input`. Record the session again.
 
 ---

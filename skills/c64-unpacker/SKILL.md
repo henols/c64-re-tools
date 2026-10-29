@@ -13,7 +13,7 @@ node <skill>/scripts/unpacker.ts <command>
 ```
 
 `<skill>` is the base directory of this skill. Run the script with `node`. You can run it from any directory.
-Each command in this skill, for example `inspect original/game.prg`, goes in the place of `<command>`.
+Each command in this skill, for example `inspect releases/game.prg`, goes in the place of `<command>`.
 Each command prints one JSON envelope on stdout. See the section "JSON output".
 To get the command list, run the script with no arguments.
 
@@ -23,16 +23,16 @@ To get the command list, run the script with no arguments.
 
 | Goal | Command |
 |---|---|
-| Find evidence of packing in the file, without a run | `inspect original/game.prg` |
-| Find the code that the program wrote and then executed | `trace original/game.prg` |
-| Run a program that is not a BASIC program at `$0801` | `trace original/game.prg --entry '$c000'` |
-| Give input to an intro or a menu before the evidence starts | `trace original/game.prg --steps .c64-re-tools/local/input.json` |
-| Find each stage and the entry of the unpacked program | `stages original/game.prg` |
-| Capture the unpacked program at its entry | `capture original/game.prg --until '$c000' --out .c64-re-tools/local/capture` |
-| Capture again without the bytes of a cracktro | `capture original/game.prg --until '$c000' --out .c64-re-tools/local/capture --exclude '$a000-$a9ff'` |
-| Capture only one known range of the program | `capture original/game.prg --until '$c000' --out .c64-re-tools/local/capture --range '$c000-$cfff'` |
-| Capture each part of a multi-load program | `loads original/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts` |
-| Capture each part and the RAM of the disk drive | `loads original/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts --drive` |
+| Find evidence of packing in the file, without a run | `inspect releases/game.prg` |
+| Find the code that the program wrote and then executed | `trace releases/game.prg` |
+| Run a program that is not a BASIC program at `$0801` | `trace releases/game.prg --entry '$c000'` |
+| Give input to an intro or a menu before the evidence starts | `trace releases/game.prg --steps .c64-re-tools/local/input.json` |
+| Find each stage and the entry of the unpacked program | `stages releases/game.prg` |
+| Capture the unpacked program at its entry | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture` |
+| Capture again without the bytes of a cracktro | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture --exclude '$a000-$a9ff'` |
+| Capture only one known range of the program | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture --range '$c000-$cfff'` |
+| Capture each part of a multi-load program | `loads releases/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts` |
+| Capture each part and the RAM of the disk drive | `loads releases/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts --drive` |
 
 ---
 
@@ -75,7 +75,7 @@ The script refuses a step in an old form. The message gives the step to write.
 - Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
 - In a group folder, each version of a program is a project. The script refuses the group folder and each folder in it that is not a project. Give `--project` with a project of the group, for example `--project v1`.
-- A path that a command only reads can go into another project of the group, for example `../v1/original/game.prg`. The command writes only in its own project.
+- A path that a command only reads can go into another project of the group, for example `../v1/releases/game.prg`. The command writes only in its own project.
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.

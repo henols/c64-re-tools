@@ -2,9 +2,9 @@
 // values that its input reads got (the joystick ports, the keyboard matrix,
 // the SID noise) and the state hash at its end. A replay gives the same values
 // to the same reads, keyed by the site (the reading instruction) and the read
-// index. On the original it must end with the same hash. On a rebuild it
+// index. On the reference it must end with the same hash. On a rebuild it
 // compares the state at each entry of one routine (the checkpoints) with the
-// original's. Timing does not key anything, so a rebuild with other timing
+// reference's. Timing does not key anything, so a rebuild with other timing
 // replays the same session. A recording needs no names: the checkpoint and the
 // state can be chosen at replay time, with the names that the knowledge has then.
 
@@ -82,7 +82,7 @@ const COVERAGE_COMMANDS = new Map([
 /**
  * What a replay compares: the state at each entry of a routine, for example the
  * main loop of a game. `pin` is random state in RAM (a seed, a pointer into a
- * random table): at each checkpoint the rebuild gets the original's values there.
+ * random table): at each checkpoint the rebuild gets the reference's values there.
  */
 export interface Comparison {
   checkpoint: Location;
@@ -308,7 +308,7 @@ export function readRecording(folder: string): Recording {
 
 /**
  * The addresses of one side. A name comes from the symbols of the side. A $
- * address is an address of the original: on the rebuild it moves with the
+ * address is an address of the reference: on the rebuild it moves with the
  * name before it (code with a code label, data with any symbol).
  */
 export interface SideAddresses {
@@ -330,8 +330,8 @@ function sideAddresses(symbols: Map<string, number>, side: string, move: { code:
 const MAX_LABEL_DISTANCE = 4096;
 
 /**
- * Moves an address of the original to the rebuild: the name before it in the
- * original, plus the same offset from that name in the rebuild. An address
+ * Moves an address of the reference to the rebuild: the name before it in the
+ * reference, plus the same offset from that name in the rebuild. An address
  * without a name before it (within MAX_LABEL_DISTANCE) stays where it is.
  */
 export function mover(from: Map<string, number>, to: Map<string, number>): (address: number) => number {
@@ -358,7 +358,7 @@ export function siteMap(sites: RecordedSite[], from: Map<string, number>, to: Ma
   return moved;
 }
 
-/** Where the original came to the entry that the loader of a rebuild jumps to. */
+/** Where the reference came to the entry that the loader of a rebuild jumps to. */
 export interface EntryPoint {
   /** The tick of the first opcode fetch at the entry. */
   tick: number;
@@ -371,7 +371,7 @@ export interface EntryPoint {
   counts: Map<string, number>;
   /** The number of events of the recording before the entry: always the first ones. */
   eventsBefore: number;
-  /** The number of checkpoints before the entry, which the samples of the original leave out. */
+  /** The number of checkpoints before the entry, which the samples of the reference leave out. */
   samplesBefore: number;
 }
 
@@ -538,7 +538,7 @@ export async function record(
 ): Promise<RecordOutcome> {
   const prg = readProjectFile(file.program).bytes;
   const same = (address: number) => address;
-  const at = sideAddresses(namesOf(file.symbols), "original", { code: same, data: same });
+  const at = sideAddresses(namesOf(file.symbols), "reference", { code: same, data: same });
   // A checkpoint and state of the record file must resolve now, so that a replay can use them.
   if (file.compare !== undefined) {
     at.code(file.compare.checkpoint);
@@ -662,7 +662,7 @@ export async function record(
 
 /** One side of a replay. */
 export interface ReplaySubject {
-  side: "original" | "rebuild";
+  side: "reference" | "rebuild";
   program: string;
   symbols: string;
 }
@@ -676,7 +676,7 @@ export interface SideRun {
   problem?: string;
   /** True when the rebuild went on after the wait of its start screen. */
   startScreenSkipped?: boolean;
-  /** The original with an `entry`: where it came to that entry, when it came to it. */
+  /** The reference with an `entry`: where it came to that entry, when it came to it. */
   entryPoint?: EntryPoint;
   /**
    * Input reads that the recording has no value for, which got the fixed idle value:
@@ -687,7 +687,7 @@ export interface SideRun {
 }
 
 /**
- * Replays a recording on one side. The original runs to the end of the
+ * Replays a recording on one side. The reference runs to the end of the
  * session; a rebuild runs until `stop` checkpoints (or REBUILD_TIME_FACTOR
  * times the cycles). With `dump`, it stops at that checkpoint (1 = the first)
  * and gives the RAM there.
@@ -698,19 +698,19 @@ export async function replaySide(
   folder: string,
   subject: ReplaySubject,
   workspace: Workspace,
-  options: { compare?: Comparison; stop?: number; dump?: number; pins?: string[]; entry?: number; handover?: { entry: number; original: EntryPoint } } = {},
+  options: { compare?: Comparison; stop?: number; dump?: number; pins?: string[]; entry?: number; handover?: { entry: number; reference: EntryPoint } } = {},
 ): Promise<SideRun & { ram?: Uint8Array }> {
   const prg = readProjectFile(subject.program).bytes;
-  const original = subject.side === "original";
-  // The names of the original: a recording without names takes those of the knowledge.
+  const reference = subject.side === "reference";
+  // The names of the reference: a recording without names takes those of the knowledge.
   const names = recording.symbols === "none" ? "knowledge" : recording.symbols;
   const same = (address: number) => address;
-  const move = original
+  const move = reference
     ? { code: same, data: same }
     : { code: mover(namesOf(names, "code"), namesOf(subject.symbols, "code")), data: mover(namesOf(names), namesOf(subject.symbols)) };
   const own = namesOf(subject.symbols);
   const at = sideAddresses(own, subject.side, move);
-  const moved = original ? [] : siteMap(recording.sites, namesOf(names, "code"), namesOf(subject.symbols, "code"));
+  const moved = reference ? [] : siteMap(recording.sites, namesOf(names, "code"), namesOf(subject.symbols, "code"));
   const map = new Map(moved);
   const reads = workspace.path(`${subject.side}-${RECORDING_FILES.reads}`);
   writeFileSync(reads, readProjectFile(`${folder}/${RECORDING_FILES.reads}`).bytes);
@@ -726,7 +726,7 @@ export async function replaySide(
     const stop = options.dump ?? options.stop ?? 0;
     const pinned = compare.pin ?? [];
     if (options.pins !== undefined && pinned.length > 0) {
-      // The rebuild: each checkpoint first gets the original's values of the random state.
+      // The rebuild: each checkpoint first gets the reference's values of the random state.
       const pinFile = workspace.path(`${subject.side}-pins.txt`);
       writeFileSync(pinFile, options.pins.map((line) => `${line}\n`).join(""));
       await core.command(`pin ${pinFile} ${rangesArgument(pinned, at)}`);
@@ -735,19 +735,19 @@ export async function replaySide(
     await core.command(`sample ${hex(at.code(compare.checkpoint))} ${samples} ${rangesArgument([...compare.state, ...pinned], at)}${stop > 0 ? ` ${stop}` : ""}`);
     sampling = true;
   };
-  // A rebuild with a loader takes its checkpoints from its entry on, as the original leaves out those before its own.
+  // A rebuild with a loader takes its checkpoints from its entry on, as the reference leaves out those before its own.
   if (options.compare !== undefined && options.handover === undefined) await startSampling(options.compare);
   const targets = recording.events.flatMap((event) => ("pc" in event.key ? [at.code(event.key.pc)] : []));
   await countAt(core, targets);
   if (options.entry !== undefined) await core.command(`mark ${hex(options.entry)}`);
   await startProgram(core, prg, recording.load);
-  const base = original ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
+  const base = reference ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
   let limit = base;
   let problem: string | undefined;
-  // A tick key of the rebuild comes this many cycles later than in the original.
+  // A tick key of the rebuild comes this many cycles later than in the reference.
   let skipped = 0;
   let screenSkipped = false;
-  if (!original && !recording.load) {
+  if (!reference && !recording.load) {
     // The cycles to the wait of a start screen do not count.
     const screen = await passStartScreen(core, own, limit);
     if (typeof screen === "string") problem = screen;
@@ -758,7 +758,7 @@ export async function replaySide(
     }
   }
   // A pc key counts the opcode fetches from the start, also those of the code before the entry: the unpacker of
-  // the original, or the loader of the rebuild. The rebuild counts again from the jump of its loader, without those of the original.
+  // the reference, or the loader of the rebuild. The rebuild counts again from the jump of its loader, without those of the reference.
   const { handover } = options;
   if (problem === undefined && handover !== undefined) {
     const jump = own.get(LOADER_JUMP)!;
@@ -769,17 +769,17 @@ export async function replaySide(
       if (reached.word !== "reached") problem = `the rebuild did not come to its entry at ${formatC64Address(handover.entry)}`;
       else {
         // The loader sets the entry state of the capture, but the phase of the frame and of the CIA timers at the entry
-        // depends on how the original started: the rebuild waits at its entry for the beam position of the original, and
+        // depends on how the reference started: the rebuild waits at its entry for the beam position of the reference, and
         // gets its CIA timers and interrupt state there. A program that starts its timers without a load keeps that phase.
-        const entered = await core.status(`align ${handover.original.phase}`);
-        // After the entry, a tick key is as far from the entry as in the original.
-        skipped = entered.tick - handover.original.tick;
+        const entered = await core.status(`align ${handover.reference.phase}`);
+        // After the entry, a tick key is as far from the entry as in the reference.
+        skipped = entered.tick - handover.reference.tick;
         limit = base + Math.max(0, skipped);
         if (options.compare !== undefined) await startSampling(options.compare);
       }
     }
   }
-  // The original with an entry: the events before the mark at the entry came.
+  // The reference with an entry: the events before the mark at the entry came.
   let eventsBefore = 0;
   let entryTick: number | undefined;
   let entryPhase = "";
@@ -791,9 +791,9 @@ export async function replaySide(
     const what = event.step === undefined ? "the RESTORE of the play" : "step " + event.step;
     let key = event.key;
     if (handover !== undefined) {
-      // The original came to this point before its entry, where the rebuild runs its loader. Each such event is a pc key: replay checks it.
-      if (index < handover.original.eventsBefore) continue;
-      if ("pc" in key) key = { ...key, count: key.count - (handover.original.counts.get(key.pc) ?? 0) };
+      // The reference came to this point before its entry, where the rebuild runs its loader. Each such event is a pc key: replay checks it.
+      if (index < handover.reference.eventsBefore) continue;
+      if ("pc" in key) key = { ...key, count: key.count - (handover.reference.counts.get(key.pc) ?? 0) };
     }
     const point = await runToKey(core, key, limit, map, skipped, at);
     if (point === "halted") break;
@@ -852,8 +852,8 @@ export async function replaySide(
 export interface CheckpointDifference {
   /** 1 = the first checkpoint. */
   checkpoint: number;
-  tick: { original: number; rebuild: number };
-  items: Array<{ address: Location; original: string; rebuild: string }>;
+  tick: { reference: number; rebuild: number };
+  items: Array<{ address: Location; reference: string; rebuild: string }>;
 }
 
 /** The pinned values of each sample line: the fields after the state items. */
@@ -872,8 +872,8 @@ export function firstDifference(expected: string[], got: string[], state: StateI
     const a = allA.slice(0, state.length);
     const b = allB.slice(0, state.length);
     if (a.join(" ") === b.join(" ")) continue;
-    const items = state.flatMap((item, at) => (a[at] === b[at] ? [] : [{ address: item.address, original: a[at] ?? "", rebuild: b[at] ?? "" }]));
-    return { checkpoint: index + 1, tick: { original: Number(tickA), rebuild: Number(tickB) }, items };
+    const items = state.flatMap((item, at) => (a[at] === b[at] ? [] : [{ address: item.address, reference: a[at] ?? "", rebuild: b[at] ?? "" }]));
+    return { checkpoint: index + 1, tick: { reference: Number(tickA), rebuild: Number(tickB) }, items };
   }
   return undefined;
 }
@@ -881,9 +881,9 @@ export function firstDifference(expected: string[], got: string[], state: StateI
 export interface ReplayResult {
   result: Outcome;
   recording: string;
-  /** The side that the result is about: the original (the self-check) or the rebuild. */
-  side: "original" | "rebuild";
-  /** The routine of the checkpoints, and the checkpoints of the original. */
+  /** The side that the result is about: the reference (the self-check) or the rebuild. */
+  side: "reference" | "rebuild";
+  /** The routine of the checkpoints, and the checkpoints of the reference. */
   checkpoint?: Location;
   checkpoints: number;
   /** The checkpoints of the rebuild that were equal. */

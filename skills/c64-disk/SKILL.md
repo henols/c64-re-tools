@@ -13,7 +13,7 @@ node <skill>/scripts/disk.ts <command>
 ```
 
 `<skill>` is the base directory of this skill. Run the script with `node`. You can run it from any directory.
-Each command in this skill, for example `directory original/game.d64`, goes in the place of `<command>`.
+Each command in this skill, for example `directory releases/game.d64`, goes in the place of `<command>`.
 Each command prints one JSON envelope on stdout. See the section "JSON output".
 To get the command list, run the script with no arguments.
 
@@ -23,17 +23,17 @@ To get the command list, run the script with no arguments.
 
 | Goal | Command |
 |---|---|
-| Get the disk name, the free blocks and the files of a disk | `directory original/game.d64` |
-| Extract one file of a disk | `read original/game.d64 GAME --out extracted/game.prg` |
-| Get the type, the size and the first block of one file | `entry original/game.d64 GAME` |
-| Get the track and the sector of each block of one file | `chain original/game.d64 GAME` |
-| Find the used sectors that no file uses | `bam original/game.d64` |
-| Write the bytes of the used sectors that no file uses | `sectors original/game.d64 --unreferenced --out .c64-re-tools/local/hidden.bin` |
-| Write the bytes of some sectors | `sectors original/game.d64 18/0 20/5 --out .c64-re-tools/local/sectors.bin` |
-| Get the files of a tape | `directory original/game.t64` |
-| Extract one file of a tape | `read original/game.t64 GAME --out extracted/game.prg` |
-| Get the banks of a cartridge | `directory original/game.crt` |
-| Write each bank of a cartridge as a PRG | `crt original/game.crt --out cart` |
+| Get the disk name, the free blocks and the files of a disk | `directory releases/game.d64` |
+| Extract one file of a disk | `read releases/game.d64 GAME --out extracted/game.prg` |
+| Get the type, the size and the first block of one file | `entry releases/game.d64 GAME` |
+| Get the track and the sector of each block of one file | `chain releases/game.d64 GAME` |
+| Find the used sectors that no file uses | `bam releases/game.d64` |
+| Write the bytes of the used sectors that no file uses | `sectors releases/game.d64 --unreferenced --out .c64-re-tools/local/hidden.bin` |
+| Write the bytes of some sectors | `sectors releases/game.d64 18/0 20/5 --out .c64-re-tools/local/sectors.bin` |
+| Get the files of a tape | `directory releases/game.t64` |
+| Extract one file of a tape | `read releases/game.t64 GAME --out extracted/game.prg` |
+| Get the banks of a cartridge | `directory releases/game.crt` |
+| Write each bank of a cartridge as a PRG | `crt releases/game.crt --out cart` |
 
 ## Images and file names
 
@@ -62,7 +62,7 @@ To get the command list, run the script with no arguments.
 - Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
 - In a group folder, each version of a program is a project. The script refuses the group folder and each folder in it that is not a project. Give `--project` with a project of the group, for example `--project v1`.
-- A path that a command only reads can go into another project of the group, for example `../v1/original/game.prg`. The command writes only in its own project.
+- A path that a command only reads can go into another project of the group, for example `../v1/releases/game.prg`. The command writes only in its own project.
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.

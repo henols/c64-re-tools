@@ -4,7 +4,7 @@
 // covers the addresses where every release has bytes, and reports where the
 // releases differ and which releases agree there. For two releases with
 // moved code, align maps the bytes of one to the other in blocks of equal
-// bytes. It never decides which bytes are original: that needs evidence
+// bytes. It never decides which bytes the publisher shipped: that needs evidence
 // beyond one comparison.
 
 import { type AddressRange, formatC64Address } from "#src/c64.ts";

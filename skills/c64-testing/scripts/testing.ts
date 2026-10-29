@@ -1,4 +1,4 @@
-// The c64-testing script. test runs a scenario on the original and the
+// The c64-testing script. test runs a scenario on the reference and the
 // rebuild in one emulator; run runs steps on one side and writes what they
 // ask for; record and replay play a session in the replay core (c64run) and
 // compare the rebuild with it; diff shows what changed between two states;
@@ -30,9 +30,9 @@ const DEFAULT_HTTP_PORT = 6465;
 
 /** Behavior that only a person can judge. */
 const ALWAYS = [
-  "The controls respond as fast as in the original.",
+  "The controls respond as fast as in the reference.",
   "The animation is smooth and has no glitches.",
-  "The music and the sound effects sound the same as in the original.",
+  "The music and the sound effects sound the same as in the reference.",
   "The game flow and the level changes work from start to end.",
   "Nothing unexpected happens outside the tested scenarios.",
 ];
@@ -140,7 +140,7 @@ function checklist(call: Call): { text: string } {
   for (const path of call.subjects) {
     const scenario: Scenario = readScenario(path);
     lines.push(`## ${scenario.name}`, "");
-    for (const step of scenario.steps) if ("observe" in step) lines.push(`- [ ] At "${step.observe}", the rebuild looks and behaves as the original.`);
+    for (const step of scenario.steps) if ("observe" in step) lines.push(`- [ ] At "${step.observe}", the rebuild looks and behaves as the reference.`);
     lines.push("");
   }
   lines.push("## Application", "");
@@ -154,7 +154,7 @@ const STATE_ITEM = "a name or a $ address, with :size for more than one byte, fo
 const COMMANDS: CommandSpec[] = [
   {
     name: "test",
-    summary: "Runs a scenario on the original and then on the rebuild in one emulator. result is PASS, FAIL with the differences, or INCONCLUSIVE with the reason.",
+    summary: "Runs a scenario on the reference and then on the rebuild in one emulator. result is PASS, FAIL with the differences, or INCONCLUSIVE with the reason.",
     subjects: [{ name: "<scenario.json>", help: "a scenario file, relative to the project folder. See references/scenario-format.md" }],
     options: {
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write both screens, the difference image and memory.json into this folder: each differing memory item with all its bytes, and each byte that differs" },
@@ -177,7 +177,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "record",
-    summary: "Plays the steps of a record file on the original, and writes the session as a recording folder: recording.json, reads.txt and coverage.bin. result is FAIL when the session did not complete.",
+    summary: "Plays the steps of a record file on the reference, and writes the session as a recording folder: recording.json, reads.txt and coverage.bin. result is FAIL when the session did not complete.",
     subjects: [{ name: "<record.json>", help: "a record file, relative to the project folder. See references/recording-format.md" }],
     options: {
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the recording folder, for example tests/recordings/<name>" },
@@ -189,25 +189,25 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "replay",
-    summary: "Replays a recording on the original, which must end with the recorded state, and with --rebuild on the rebuild, which must have the state of the original at each checkpoint. result is PASS, FAIL or INCONCLUSIVE.",
+    summary: "Replays a recording on the reference, which must end with the recorded state, and with --rebuild on the rebuild, which must have the state of the reference at each checkpoint. result is PASS, FAIL or INCONCLUSIVE.",
     subjects: [{ name: "<recording>", help: "a folder that record wrote, relative to the project folder" }],
     options: {
       checkpoint: { kind: "text", value: "<routine>", help: "the name or $ address of a routine: each entry is a checkpoint. Without it, the comparison of the record file" },
       state: { kind: "text", value: "<item>", multiple: true, help: `the state to compare at each checkpoint: ${STATE_ITEM}` },
-      pin: { kind: "text", value: "<item>", multiple: true, help: `random state in RAM, in the form of --state: at each checkpoint the rebuild gets the original's values there` },
-      rebuild: { kind: "path", value: "<prg>", help: "the rebuild to compare with the original" },
+      pin: { kind: "text", value: "<item>", multiple: true, help: `random state in RAM, in the form of --state: at each checkpoint the rebuild gets the reference's values there` },
+      rebuild: { kind: "path", value: "<prg>", help: "the rebuild to compare with the reference" },
       symbols: { ...OPTIONS.symbols, help: "the names of the rebuild: the symbol file of its build (default: the symbols of the recording)" },
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder" },
     },
-    notes: "A recording without names takes the names of the knowledge for the original. A $ address is an address of the original: on the rebuild it moves with the name before it.",
+    notes: "A recording without names takes the names of the knowledge for the reference. A $ address is an address of the reference: on the rebuild it moves with the name before it.",
     run: async (call) => {
       const [checkpoint, rebuild, symbols, out] = [call.string("checkpoint"), call.string("rebuild"), call.string("symbols"), call.string("out")];
       const result = await replay({ folder: call.subject(0), state: call.strings("state"), pin: call.strings("pin"), ...(checkpoint === undefined ? {} : { checkpoint }), ...(rebuild === undefined ? {} : { rebuild }), ...(symbols === undefined ? {} : { symbols }), ...(out === undefined ? {} : { out }) });
       if (result.result === "INCONCLUSIVE") return reply(result, { hint: INCONCLUSIVE_HINT });
       if (result.result !== "FAIL") return result;
-      const [original, rebuilt] = result.files ?? [];
-      if (original !== undefined && rebuilt !== undefined) {
-        return reply(result, { hint: "files holds the RAM of each side at the first different checkpoint. Run nextAction to compare them. Then examine the first different state item in the emulator.", nextAction: call.next("diff", original.out, rebuilt.out) });
+      const [reference, rebuilt] = result.files ?? [];
+      if (reference !== undefined && rebuilt !== undefined) {
+        return reply(result, { hint: "files holds the RAM of each side at the first different checkpoint. Run nextAction to compare them. Then examine the first different state item in the emulator.", nextAction: call.next("diff", reference.out, rebuilt.out) });
       }
       if (result.firstDifference === undefined) return reply(result, { hint: "reason tells how many checkpoints the rebuild came to. Examine the rebuild in the emulator after its last checkpoint." });
       return reply(result, { hint: `A difference in a random value with the same input often shows a missing --pin.${out === undefined ? " Give --out to get the RAM of each side at the first different checkpoint." : ""}` });
@@ -243,7 +243,7 @@ const COMMANDS: CommandSpec[] = [
 
 await runScript({
   name: "testing",
-  summary: "Tests a rebuild against the original: scenarios in an emulator, runs, recorded play sessions, state differences, and a checklist for a human tester.",
+  summary: "Tests a rebuild against the reference: scenarios in an emulator, runs, recorded play sessions, state differences, and a checklist for a human tester.",
   names: knowledgeNames,
   commands: COMMANDS,
 });

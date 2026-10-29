@@ -1,4 +1,4 @@
-// Three PRGs for equivalence tests: an original counter program, a rebuild
+// Three PRGs for equivalence tests: a reference counter program, a rebuild
 // that does the same with a different memory layout, and a rebuild that
 // stops one count early. Each counts to its limit, sets the border, and
 // loops at "done". Bytes are spelled out so no assembler is needed.
@@ -26,6 +26,6 @@ function symbols(base: number, counterAddress: number): Record<string, number> {
   return { start: base, loop: base + 5, done: base + 0x14, never: base + 0xf0, counter: counterAddress };
 }
 
-export const ORIGINAL = { prg: counter(0xc000, 0xc100, 10), symbols: symbols(0xc000, 0xc100) };
+export const REFERENCE = { prg: counter(0xc000, 0xc100, 10), symbols: symbols(0xc000, 0xc100) };
 export const EQUIVALENT = { prg: counter(0xc800, 0xc200, 10), symbols: symbols(0xc800, 0xc200) };
 export const BROKEN = { prg: counter(0xc800, 0xc200, 9), symbols: symbols(0xc800, 0xc200) };
