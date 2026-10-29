@@ -40,7 +40,7 @@ export interface LinkContext {
   managed: (path: string) => boolean;
 }
 
-export type ProblemKind = "unknown-name" | "wrong-address" | "repeated-link" | "link-in-table" | "missing-file" | "missing-anchor" | "missing-line" | "outside-project" | "outside-group" | "unknown-label" | "unlabelled-name" | "stale-reference";
+export type ProblemKind = "unknown-name" | "wrong-address" | "repeated-link" | "link-in-table" | "missing-file" | "missing-anchor" | "missing-line" | "outside-project" | "outside-group" | "unknown-label" | "unlabelled-name" | "stale-reference" | "unreadable-knowledge";
 
 export interface Problem {
   page: string;
