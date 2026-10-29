@@ -25,7 +25,7 @@ To get the command list, run the script with no arguments.
 |---|---|
 | Generate the reference pages from the project knowledge and the source | `generate src --out docs/reference` |
 | Link the names in the pages to the source, and check each link and image | `link README.md docs --source src` |
-| Check that each link is up to date, and write nothing | `link README.md docs --source src --check` |
+| Check that each link is up to date and that the evidence did not change, and write nothing | `link README.md docs --source src --check` |
 | Link the pages when the reference is in a folder with another name | `link README.md docs --source src --reference docs/lookup` |
 | Link one page | `link docs/main_loop.md --source src` |
 | In a group folder, link the shared pages and the pages of each project | `link README.md docs v1/README.md v1/docs v2/README.md v2/docs --source src` |
@@ -86,7 +86,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--out <dir>` | `generate` | Required. The folder of the reference, relative to the project folder. `generate` writes only there. It refuses to start when the folder holds a page that it did not write. |
 | `--source <dir>` | `link` | Required. The folder of the generated source, relative to the project folder. In a group folder, each project has its source in this folder. |
 | `--reference <dir>` | `link` | The folder of the reference, relative to the project folder. In a group folder, each project has its reference in this folder. The default is the first `reference` folder in a given folder or beside a given page, for example `docs/reference`. |
-| `--check` | `link` | Write nothing. `result` is `FAIL` when a link is not up to date or a page has a problem. Off by default. |
+| `--check` | `link` | Write nothing. `result` is `FAIL` when a link is not up to date, a page has a problem, or `evidence` has items. Off by default. |
 | `--max-listed <n>` | `generate`, `link` | List at most `n` items in each list. The default is 50. The count is always in the body. |
 
 ---
@@ -170,18 +170,17 @@ In a group folder, a label names the project of a name. Write the label and a co
 
 `body` holds:
 
-- `result`: `PASS` when no page has a problem. `FAIL` when a page has a problem, or with `--check` when a link is not up to date.
+- `result`: `PASS` when no page has a problem. `FAIL` when a page has a problem. With `--check`, also `FAIL` when a link is not up to date or `evidence` has items.
 - `pages`: the count of the pages that it read.
 - `reference`: the folder of the reference, or `none`.
 - `linked`: `links`, the count of the links that it wrote, and `pages`, the pages that it changed. With `--check`, `notUpToDate` has the same fields for the links that are not up to date.
 - `problems`: `byKind`, `count`, `listed` and `rest`. Each item has `at` (the page and the line), `kind` and `message`. In a group folder, each item also has `project`: the label of the project of the page, or `shared`.
 - `group`: only in a group folder. `folder` is the group folder, relative to the folder of the pages. `projects` holds the labels.
-- `evidence`: only when the project knowledge gives a file as evidence and the file is missing or changed. `count`, `listed` and `rest`. Each item has the `file`, its `state` (`missing` or `changed`) and the `revisions` that give the file. The project knowledge keeps the SHA-256 of each file of its evidence. With `--check`, any such evidence makes `result` a FAIL; without `--check`, it is reported as a warning.
+- `evidence`: only when the project knowledge gives a file as evidence and the file is missing or changed. `count`, `listed` and `rest`. Each item has the `file`, its `state` (`missing` or `changed`) and the `revisions` that give the file. The project knowledge keeps the SHA-256 of each file of its evidence. In a group folder, a shared page adds the evidence of each project. With `--check`, an evidence item makes `result` a FAIL. Without `--check`, it does not.
 
 `hint` and `nextAction`:
 
 - A page has a problem: `hint` tells you to correct each problem. `nextAction` runs the same `link` command again.
-- With `--check`, missing or changed knowledge evidence also makes `result` FAIL even if all links are valid. Restore the file or re-examine and update the affected knowledge revisions before checking again. A normal `link` run still reports the evidence without blocking edits.
 - With `--check`, a link is not up to date and no page has a problem: `nextAction` runs `link` without `--check` to write the links.
 - `reference` is `none`: no `reference` folder is in or beside the given pages. Give `--reference <dir>`, or run `generate` first.
 - `evidence` has items: for a coverage map that changed, put the map into the project knowledge again. For a file that you did not change on purpose, restore it from git. Else examine the facts of the revisions against the new file. Give the new file as evidence of the next write of these facts.

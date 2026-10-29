@@ -364,6 +364,26 @@ test("docs.ts link --check fails on changed or missing knowledge evidence, while
   assert.deepEqual(updating.json.evidence, missing.json.evidence);
 });
 
+test("docs.ts link --check in a group folder fails on the changed evidence of a project that no shared page names", () => {
+  const group = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-group-"));
+  projects.push(group);
+  mkdirSync(join(group, ".git"));
+  for (const version of ["v1", "v2"]) project(join(group, version));
+  writeFileSync(join(group, "README.md"), "[`v1:main` `$1000`](v1/src/main_code.asm#L5)\n");
+  mkdirSync(join(group, "v2/tests"));
+  writeFileSync(join(group, "v2/tests/trap.json"), "{}");
+  const cited = withWrite((db) => renameSymbol(db, { origin: "llm", evidence: [{ kind: "test", ref: "tests/trap.json", sha256: createHash("sha256").update("{}").digest("hex") }] }, { space: "drive8", address: 0x0500, name: "drive_start" }), join(group, "v2"));
+  assert.equal(link(group, "README.md", "--source", "src", "--check").json.result, "PASS");
+
+  writeFileSync(join(group, "v2/tests/trap.json"), '{"changed":true}');
+  const checked = link(group, "README.md", "--source", "src", "--check");
+  assert.equal(checked.json.result, "FAIL");
+  assert.deepEqual(checked.json.evidence, { count: 1, listed: [{ file: "v2/tests/trap.json", state: "changed", revisions: [cited.revision] }] });
+  const linked = link(group, "README.md", "--source", "src");
+  assert.equal(linked.json.result, "PASS");
+  assert.deepEqual(linked.json.evidence, checked.json.evidence);
+});
+
 test("docs.ts link reports a page that is a symbolic link to no file or out of the project, and a link with a bare %", { skip: process.platform === "win32" && "symbolic links need rights on Windows" }, () => {
   const { root } = project();
   const outside = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-outside-"));

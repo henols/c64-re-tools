@@ -251,6 +251,17 @@ function link(call: Call): Reply {
   const problems: Problem[] = [];
   /** The evidence files of the knowledge of each read project that are missing or changed, with paths relative to the root of the run. */
   const evidence: EvidenceChange[] = [];
+  const evidenceRead = new Set<Member>();
+  const readEvidence = (member: Member) => {
+    if (evidenceRead.has(member)) return;
+    evidenceRead.add(member);
+    const db = openForRead(member.root);
+    try {
+      for (const change of changedEvidence(db, member.root)) evidence.push({ ...change, file: posix.join(member.prefix, change.file) });
+    } finally {
+      db?.close();
+    }
+  };
 
   /** The names of a project, read the first time a page needs them. A project with given pages is read before the pages. */
   const loaded = new Map<Member, Names>();
@@ -272,10 +283,10 @@ function link(call: Call): Reply {
     try {
       revision = sourceRevision(db, map.space);
       symbols = listSymbols(db, undefined, undefined, undefined, map.space);
-      for (const change of changedEvidence(db, member.root)) evidence.push({ ...change, file: inProject(change.file) });
     } finally {
       db?.close();
     }
+    readEvidence(member);
     if (map.revision !== revision) {
       problems.push({ page: inProject(map.mapPath), line: 1, kind: "stale-reference", message: `The source${of} is from knowledge revision ${map.revision}, and the knowledge of the source is at ${revision}. Generate the source and the reference again, then run docs.ts link.` });
     }
@@ -346,6 +357,8 @@ function link(call: Call): Reply {
     return names;
   };
   for (const member of members) if (pagesGiven.some((page) => memberOf(page) === member)) load(member, true);
+  // A shared page of the group folder can tell about each project: the evidence of each project counts, also of a project that no page names.
+  if (pagesGiven.some((page) => memberOf(page) === undefined)) members.forEach(readEvidence);
 
   const labels = members.map((member) => member.label!);
   const namesFor = (page: string) => (label: string | undefined): ReturnType<LinkContext["names"]> => {
@@ -421,8 +434,7 @@ function link(call: Call): Reply {
     hints.push("Some links are not up to date. Run nextAction to write them.");
     nextAction = again(false);
   }
-  // A read-only documentation check must not pass when evidence backing the knowledge is stale.
-  // Normal link runs still report evidence without blocking edits to the pages.
+  // Evidence fails only a check: link without --check still writes the links.
   return reply({ result: problems.length > 0 || (check && (links > 0 || evidence.length > 0)) ? "FAIL" : "PASS", ...output }, { ...(hints.length === 0 ? {} : { hint: hints.join(" ") }), nextAction });
 }
 
@@ -448,13 +460,13 @@ await runScript({
     },
     {
       name: "link",
-      summary: "Links each name with its address in the pages to its line in the source, and checks every link and image. result is FAIL when a page has a problem, or with --check when a link is not up to date.",
+      summary: "Links each name with its address in the pages to its line in the source, and checks every link and image. result is FAIL when a page has a problem, or with --check when a link is not up to date or a file of the evidence of the knowledge is missing or changed.",
       subjects: [{ name: "<page>", help: ".md files and folders of the documentation, relative to the project folder or the group folder, for example README.md docs. link reads each file and every .md file below each folder", list: true }],
       options: {
         // Text, not a path of the run: in a group, each project has the source and the reference at this path.
         source: { kind: "text", value: "<dir>", help: `${SOURCE.help}. In a group, the same folder in each project`, required: true },
         reference: { kind: "text", value: "<dir>", help: "the folder of the reference pages of generate, relative to the project folder; in a group, the same folder in each project. The default is the first reference/ folder in a given folder or beside a given page" },
-        check: { kind: "flag", help: "write nothing. FAIL when a link is not up to date or a page has a problem" },
+        check: { kind: "flag", help: "write nothing. FAIL when a link is not up to date, a page has a problem, or a file of the evidence of the knowledge is missing or changed" },
         "max-listed": OPTIONS["max-listed"],
       },
       notes: "A name in backticks with its address in backticks after it, for example `draw_room` `$09BC`, becomes one link to the line of the name in the source. A name without an address gets no link. A name gets one link in each section, and a table gets no links. In a group folder, write the folder of the project before the name, for example `v2:draw_room` `$09BC`.",
