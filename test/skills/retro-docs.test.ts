@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -325,6 +326,45 @@ test("docs.ts link reports a source and a reference that are older than the know
   assert.equal(stale.status, 0);
   assert.equal(stale.json.result, "FAIL");
   assert.deepEqual((stale.json.problems as { byKind: Record<string, number> }).byKind, { "stale-reference": 1 });
+});
+
+test("retro-docs --check fails when cited knowledge evidence changes or disappears", () => {
+  const { root } = project();
+  writeFileSync(join(root, "docs.md"), "[`main` `$1000`](src/main_code.asm#L5)\n");
+  mkdirSync(join(root, "tests"));
+  writeFileSync(join(root, "tests/trap.json"), "{}");
+  // Evidence in another space must still be checked even when the C64 source revision did not change.
+  const cited = withWrite(
+    (db) => renameSymbol(db, {
+      origin: "llm",
+      evidence: [{ kind: "test", ref: "tests/trap.json", sha256: createHash("sha256").update("{}").digest("hex") }],
+    }, { space: "bank1", address: 0x0500, name: "other_bank_start" }),
+    root,
+  );
+  const intact = link(root, "docs.md", "--source", "src", "--check");
+  assert.equal(intact.json.result, "PASS");
+  assert.equal(intact.json.evidence, undefined);
+
+  writeFileSync(join(root, "tests/trap.json"), '{"changed":true}');
+  const changed = link(root, "docs.md", "--source", "src", "--check");
+  assert.equal(changed.json.result, "FAIL");
+  assert.deepEqual(changed.json.evidence, {
+    count: 1,
+    listed: [{ file: "tests/trap.json", state: "changed", revisions: [cited.revision] }],
+  });
+
+  rmSync(join(root, "tests/trap.json"));
+  const missing = link(root, "docs.md", "--source", "src", "--check");
+  assert.equal(missing.json.result, "FAIL");
+  assert.deepEqual(missing.json.evidence, {
+    count: 1,
+    listed: [{ file: "tests/trap.json", state: "missing", revisions: [cited.revision] }],
+  });
+
+  // Non-check mode still permits link updates and reports the problem.
+  const editMode = link(root, "docs.md", "--source", "src");
+  assert.equal(editMode.json.result, "PASS");
+  assert.deepEqual(editMode.json.evidence, missing.json.evidence);
 });
 
 test("docs.ts link reports a page that is a symbolic link to no file or out of the project, and a link with a bare %", { skip: process.platform === "win32" && "symbolic links need rights on Windows" }, () => {
