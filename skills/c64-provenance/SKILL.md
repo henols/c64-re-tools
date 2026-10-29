@@ -1,6 +1,6 @@
 ---
 name: c64-provenance
-description: Compares two or more releases of a C64 program byte by byte and tells which releases agree at each difference. It can run each release and tell how the program uses each difference. It gives evidence for each range of the program in the project knowledge. It finds the leftovers in the program, for example texts, assembler source, BASIC lines, unused bytes, copies and dead code. It keeps a library of routines that several programs share, and finds these routines in a program. Use it to separate the original application from the changes of a crack or of a release. Use it to find the history of a program in its leftovers. Use it to find known routines, for example a music driver, in a program. It does not disassemble or analyze the code, and it does not change the project knowledge.
+description: Compares two or more releases of a C64 program byte by byte and tells which releases agree at each difference. It can run each release and tell how the program uses each difference. It gives evidence for each range of the program in the project knowledge. It finds the leftovers in the program, for example texts, assembler source, BASIC lines, unused bytes, copies and dead code. It keeps a library of routines that several programs share, and finds these routines in a program. Use it to distinguish shared application bytes from changes made by cracks or releases, without assuming they prove the unexamined commercial original. Use it to find the history of a program in its leftovers. Use it to find known routines, for example a music driver, in a program. It does not disassemble or analyze the code, and it does not change the project knowledge.
 ---
 
 # C64 provenance
@@ -303,9 +303,11 @@ Traps:
 3. Read `differences`.
 4. To find how the program uses the differences, run `compare` again with `--frames`. Give the frames and the steps that get the program to the part that you examine. Read `runtime` of each difference.
 5. Examine each important difference. Disassemble or analyze the bytes of each release. Find what the change does, for example a trainer, a removed copy protection, or a changed text.
-6. Decide which bytes are probably the original application. Use more than the byte comparison: the code, the text, and the history of the releases.
+6. Identify shared program bytes and assess possible historical origins of differences. Use more than the byte comparison: the code, the text, and the history of the releases.
    - Do not call releases independent when you do not know their relation. Two cracks can come from the same source.
    - Do not call a byte original only because one release has it. A majority of releases is also not proof.
+   - Without an authenticated and compared commercial release, describe the result as a reconstruction of the named captures, never as a byte-identical reproduction of the publisher's original.
+   - Distinguish evidence of old code or source text from a proven claim about the exact development machine, build order or path through later crackers.
 7. Record each release in the project knowledge. The base release is the program in the project knowledge.
 8. Record each difference in the project knowledge as a switch and a patch. Select the kind of the switch:
    - `protection`: a copy protection, or the code that a crack changed to remove it.
