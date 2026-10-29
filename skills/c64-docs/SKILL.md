@@ -86,7 +86,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--out <dir>` | `generate` | Required. The folder of the reference, relative to the project folder. `generate` writes only there. It refuses to start when the folder holds a page that it did not write. |
 | `--source <dir>` | `link` | Required. The folder of the generated source, relative to the project folder. In a group folder, each project has its source in this folder. |
 | `--reference <dir>` | `link` | The folder of the reference, relative to the project folder. In a group folder, each project has its reference in this folder. The default is the first `reference` folder in a given folder or beside a given page, for example `docs/reference`. |
-| `--check` | `link` | Write nothing. `result` is `FAIL` when a link is not up to date, a page has a problem, or `evidence` has items. Off by default. |
+| `--check` | `link` | Write no page. `result` is `FAIL` when a link is not up to date, a page has a problem, or `evidence` has items. Off by default. |
 | `--max-listed <n>` | `generate`, `link` | List at most `n` items in each list. The default is 50. The count is always in the body. |
 
 ---
@@ -176,14 +176,14 @@ In a group folder, a label names the project of a name. Write the label and a co
 - `linked`: `links`, the count of the links that it wrote, and `pages`, the pages that it changed. With `--check`, `notUpToDate` has the same fields for the links that are not up to date.
 - `problems`: `byKind`, `count`, `listed` and `rest`. Each item has `at` (the page and the line), `kind` and `message`. In a group folder, each item also has `project`: the label of the project of the page, or `shared`.
 - `group`: only in a group folder. `folder` is the group folder, relative to the folder of the pages. `projects` holds the labels.
-- `evidence`: only when the project knowledge gives a file as evidence and the file is missing or changed. `count`, `listed` and `rest`. Each item has the `file`, its `state` (`missing` or `changed`) and the `revisions` that give the file. The project knowledge keeps the SHA-256 of each file of its evidence. In a group folder, a shared page adds the evidence of each project. With `--check`, an evidence item makes `result` a FAIL. Without `--check`, it does not.
+- `evidence`: only when the project knowledge gives a file as evidence and the file is missing or changed. `count`, `listed` and `rest`. Each item has the `file`, its `state` (`missing` or `changed`) and the `revisions` that give the file. The project knowledge keeps the SHA-256 of each file of its evidence. In a group folder, a shared page adds the evidence of each project, and each item also has `project`. With `--check`, an evidence item makes `result` a FAIL. Without `--check`, it does not.
 
 `hint` and `nextAction`:
 
 - A page has a problem: `hint` tells you to correct each problem. `nextAction` runs the same `link` command again.
 - With `--check`, a link is not up to date and no page has a problem: `nextAction` runs `link` without `--check` to write the links.
 - `reference` is `none`: no `reference` folder is in or beside the given pages. Give `--reference <dir>`, or run `generate` first.
-- `evidence` has items: for a coverage map that changed, put the map into the project knowledge again. For a file that you did not change on purpose, restore it from git. Else examine the facts of the revisions against the new file. Give the new file as evidence of the next write of these facts.
+- `evidence` has items: for a coverage map that changed, put the map into the project knowledge again. For a file that you did not change on purpose, restore it from git. Else examine the facts of the revisions against the new file. Give the new file as evidence of the next write of these facts. `nextAction` runs `link` with `--check`.
 
 Do this for each `kind` of problem:
 
@@ -199,6 +199,7 @@ Do this for each `kind` of problem:
 | `unknown-label` | No project of the group folder has the label. `message` gives the labels. Correct the label. |
 | `unlabelled-name` | A shared page gives a name and its address without a label. Write the label of the project before the name. |
 | `stale-reference` | The source or the reference is older than the project knowledge. `message` names the project. Do steps 2 and 3 of the workflow again for that project. |
+| `unreadable-knowledge` | The script cannot read the project knowledge of the project that `message` names. Correct the knowledge as `message` tells. Then run `link` again. |
 
 Errors:
 

@@ -7,16 +7,17 @@
 
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, join, posix } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
-import { openForRead } from "#src/knowledge/database.ts";
+import { openForRead, TEXT_DIRECTORY } from "#src/knowledge/database.ts";
 import { changedEvidence, type EvidenceChange } from "#src/knowledge/evidence.ts";
 import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
 import { listComments, listModules, listReferences, listRegions, listSymbols, sourceRevision } from "#src/knowledge/read.ts";
-import { groupOf, namedGroup, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
+import { groupOf, namedGroup, PROJECT_DIRECTORY, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
 import { GENERATED_MARK, referenceStamp } from "#src/reference-pages.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
 import { checkLinks, linkPage, type Files, type LinkContext, type Names, type Problem } from "./lib/links.ts";
@@ -250,14 +251,22 @@ function link(call: Call): Reply {
   const referenceOf = (member: Member) => (reference === undefined ? undefined : posix.join(member.prefix, reference));
   const problems: Problem[] = [];
   /** The evidence files of the knowledge of each read project that are missing or changed, with paths relative to the root of the run. */
-  const evidence: EvidenceChange[] = [];
+  const evidence: Array<EvidenceChange & { project?: string }> = [];
   const evidenceRead = new Set<Member>();
+  const addEvidence = (member: Member, db: DatabaseSync | undefined) => {
+    evidenceRead.add(member);
+    for (const change of changedEvidence(db, member.root)) evidence.push({ ...change, file: posix.join(member.prefix, change.file), ...(member.label === undefined ? {} : { project: member.label }) });
+  };
+  /** The evidence of a project that no page names. Knowledge that cannot be read is a problem of the run, not the end of it. */
   const readEvidence = (member: Member) => {
     if (evidenceRead.has(member)) return;
-    evidenceRead.add(member);
-    const db = openForRead(member.root);
+    let db: DatabaseSync | undefined;
     try {
-      for (const change of changedEvidence(db, member.root)) evidence.push({ ...change, file: posix.join(member.prefix, change.file) });
+      db = openForRead(member.root);
+      addEvidence(member, db);
+    } catch (error) {
+      if (!(error instanceof Refusal)) throw error;
+      problems.push({ page: posix.join(member.prefix, PROJECT_DIRECTORY, TEXT_DIRECTORY), line: 1, kind: "unreadable-knowledge", message: `The knowledge of the project ${member.label} cannot be read: ${error.message}` });
     } finally {
       db?.close();
     }
@@ -283,10 +292,10 @@ function link(call: Call): Reply {
     try {
       revision = sourceRevision(db, map.space);
       symbols = listSymbols(db, undefined, undefined, undefined, map.space);
+      addEvidence(member, db);
     } finally {
       db?.close();
     }
-    readEvidence(member);
     if (map.revision !== revision) {
       problems.push({ page: inProject(map.mapPath), line: 1, kind: "stale-reference", message: `The source${of} is from knowledge revision ${map.revision}, and the knowledge of the source is at ${revision}. Generate the source and the reference again, then run docs.ts link.` });
     }
@@ -413,6 +422,8 @@ function link(call: Call): Reply {
     ...(check ? { notUpToDate: { links, pages: changedPages } } : { linked: { links, pages: changedPages } }),
     problems: { byKind, ...shownProblems },
   };
+  const order = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  evidence.sort((a, b) => order(a.file, b.file) || order(a.project ?? "", b.project ?? ""));
   const shownEvidence = listed(evidence, call.count("max-listed")!, (change) => ({ ...change, file: shown(change.file) }));
   if (evidence.length > 0) output.evidence = shownEvidence;
   const again = (withCheck: boolean) =>
@@ -422,7 +433,7 @@ function link(call: Call): Reply {
   if (reference === undefined) hints.push("No reference/ folder is in or beside the given pages, so the links to the reference are not checked. Give --reference <dir>, or run generate first.");
   if (evidence.length > 0) {
     hints.push(
-      "The project knowledge gives the files in evidence as evidence, and each file is missing or changed since the revisions in its item. For a coverage map that changed, put the map into the project knowledge again. For a file that you did not change on purpose, restore it from git. Else examine the facts of the revisions against the new file, and give the new file as evidence of the next write of these facts.",
+      "The project knowledge gives the files in evidence as evidence, and each file is missing or changed since the revisions in its item. For a coverage map that changed, put the map into the project knowledge again. For a file that you did not change on purpose, restore it from git. Else examine the facts of the revisions against the new file, and give the new file as evidence of the next write of these facts. Then run nextAction.",
     );
     if (shownEvidence.rest !== undefined) hints.push(`evidence is cut. To list all files, give ${shownEvidence.rest}.`);
   }
@@ -433,7 +444,7 @@ function link(call: Call): Reply {
   } else if (check && links > 0) {
     hints.push("Some links are not up to date. Run nextAction to write them.");
     nextAction = again(false);
-  }
+  } else if (evidence.length > 0) nextAction = again(true);
   // Evidence fails only a check: link without --check still writes the links.
   return reply({ result: problems.length > 0 || (check && (links > 0 || evidence.length > 0)) ? "FAIL" : "PASS", ...output }, { ...(hints.length === 0 ? {} : { hint: hints.join(" ") }), nextAction });
 }
@@ -466,7 +477,7 @@ await runScript({
         // Text, not a path of the run: in a group, each project has the source and the reference at this path.
         source: { kind: "text", value: "<dir>", help: `${SOURCE.help}. In a group, the same folder in each project`, required: true },
         reference: { kind: "text", value: "<dir>", help: "the folder of the reference pages of generate, relative to the project folder; in a group, the same folder in each project. The default is the first reference/ folder in a given folder or beside a given page" },
-        check: { kind: "flag", help: "write nothing. FAIL when a link is not up to date, a page has a problem, or a file of the evidence of the knowledge is missing or changed" },
+        check: { kind: "flag", help: "write no page. FAIL when a link is not up to date, a page has a problem, or a file of the evidence of the knowledge is missing or changed" },
         "max-listed": OPTIONS["max-listed"],
       },
       notes: "A name in backticks with its address in backticks after it, for example `draw_room` `$09BC`, becomes one link to the line of the name in the source. A name without an address gets no link. A name gets one link in each section, and a table gets no links. In a group folder, write the folder of the project before the name, for example `v2:draw_room` `$09BC`.",
