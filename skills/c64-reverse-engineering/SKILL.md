@@ -1,6 +1,6 @@
 ---
 name: c64-reverse-engineering
-description: Reverse engineers a C64 program or a part of it, from an unknown disk image or file to documented understanding or a rebuilt program. It selects the next unknown to examine and the task that examines it. Use it when the user asks what a program does, for example "what does this game do", "find the main loop" or "understand $2100". Use it to rebuild a program from its original file, for example "rebuild this program". It does not do the specialist work of each task itself, and it does not add a feature to a program.
+description: Reverse engineers a C64 program or a part of it, from an unknown disk image or file to documented understanding or a rebuilt program. It selects the next unknown to examine and the task that examines it. Use it when the user asks what a program does, for example "what does this game do", "find the main loop" or "understand $2100". Use it to rebuild a program from a named reference file or capture, for example "rebuild this program". It does not do the specialist work of each task itself, and it does not add a feature to a program.
 ---
 
 # C64 reverse engineering
@@ -21,6 +21,13 @@ Do the specialist work of each task as that task tells. Do not do it in another 
   - reconstruct the input system
   - reverse engineer and rebuild the whole program
 - The current project knowledge.
+
+## Reference identity and terminology
+
+- A **reference file/capture** is the actual artifact that was examined. It can be a crack, snapshot, dump, disk image or authenticated commercial release.
+- A **base release** is the selected byte baseline in the project knowledge. This is not a statement of authenticity. The conventional `original/` directory is a storage location, not proof that its contents are the commercial original.
+- Name the exact input release and checked memory ranges when reporting byte identity. If the original commercial distribution was not authenticated and compared, describe its identity as unknown.
+- Repeated bytes in related copies do not establish the bytes of an unexamined original. Separate facts about captures from historical inferences about the developer or publisher.
 
 ## Project rules
 
@@ -73,7 +80,7 @@ Select the path for the scope:
 | A routine that another program of the workspace has, for example a music driver | Match the program against the routine library of the workspace. |
 | Source code from the knowledge | Generate the source from the project knowledge. |
 | Source code to build | Assemble the source. |
-| Proof that a rebuild behaves as the original | Test the rebuild against the original. |
+| Proof that a rebuild behaves like the examined reference | Test the rebuild against the named reference capture. |
 
 4. Interpret the result. Keep observed facts apart from your conclusions.
 5. Record each conclusion that the evidence supports in the project knowledge: names of routines and variables, data classifications, comments.
@@ -85,22 +92,22 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 
 | Stage | Work | Exit check |
 |---|---|---|
-| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these criteria: a base release that is identical to the original, and a passed replay of each recording on the default build. Also offer test scenarios and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. | The user gave the criteria. |
+| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these criteria: a base release that is byte-identical to the captured reference within its checked segments, and a passed replay of each recording on the default build. Also offer test scenarios and a list of the code that no run executed. Also offer documentation of the flows, tables, formats and graphics. | The user gave the criteria. |
 | 2. Get | List the disk image. Extract the start file into `original/`. | The start file is in the project. |
 | 3. Start | Find the SYS address of the BASIC start. | You have the entry address. |
 | 4. Unpack | Examine the program for a packer. Trace it and find its stages. Capture a packed program into `.c64-re-tools/local/`. When a segment is the data of a cracktro and the program does not read it, capture again and exclude that range. Put the capture, or the PRG of a program without a packer, into the project knowledge. | The program in the project knowledge has the segments and the entry. |
 | 5. Run | First, record. Ask the user to play each part that the scope names, in a recording session. Tell the user which parts. Record a part yourself only when the sessions of the user do not have it. Put the recordings in `tests/recordings/`. Then run the parts that a recording cannot have, in the emulator or as test runs. Write a coverage map for each part into `.c64-re-tools/local/`. Add the maps and the `coverage.bin` of each recording to the project knowledge. | The program in the project knowledge has a coverage map for each part that the scope names. |
 | 6. Analyze | Analyze the program statically. The analysis reads the program and the coverage from the project knowledge. | No coverage conflict is open. |
 | 7. Name | If the workspace has a routine library, match the program against it. Write the names of the matches to the project knowledge. Then name each routine in the scope and give it a comment. Find the platform addresses in the memory map of the C64. Record the modules. Put the modules of one part of the program in one folder, for example `music/`, `irq/` or `graphics/`. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
-| 8. Releases and switches | Record the original file, or the capture of it, as the base release in the project knowledge. The project knowledge keeps the bytes of each release. Record each other release. Compare the releases. Find the leftovers. Record a switch for each copy protection, trainer, cheat, crack change and correction. Record a patch for each range of a switch. Record each leftover as a region with a comment. | The project knowledge lists each switch. Each difference between the releases is in a patch, or the answer gives it as an exception. |
+| 8. Releases and switches | Record the examined reference file, or its capture, as the base release in the project knowledge. The project knowledge keeps the bytes of each release. Record each other release. Compare the releases. Find the leftovers. Record a switch for each copy protection, trainer, cheat, crack change and correction. Record a patch for each range of a switch. Record each leftover as a region with a comment. | The project knowledge lists each switch. Each difference between the releases is in a patch, or the answer gives it as an exception. |
 | 9. Generate | Generate the source from the project knowledge into `src`. For an unpacked program, also generate the loader. | The result of the generation is PASS. A release whose code is at other addresses is a version with a project of its own, or an exception in the answer. See "Versions of one program". |
-| 10. Build and test | Build the base release into `build/`, and compare it with the original. Build the default build. For a generated source with a loader, the default build is `build/clean_loader.prg`. Else it is `build/clean.prg`. Replay each recording on the default build. For each replay, give the checkpoint routine, the state and the random state with the names of stage 7. Then do only the tests that the next paragraph gives. | The criteria of stage 1 are true. |
-| 11. Document | When the criteria ask for documentation, generate it into `README.md` and `docs/`. For versions in a group folder, also write the shared pages of the group folder. Then link the pages. | The link check of the documentation gives PASS. |
+| 10. Build and test | Build the base release into `build/`, and compare its specified ranges with the recorded reference capture. Build the default build. For a generated source with a loader, the default build is `build/clean_loader.prg`. Else it is `build/clean.prg`. Replay each recording on the default build. For each replay, give the checkpoint routine, the state and the random state with the names of stage 7. Then do only the tests that the next paragraph gives. | The criteria of stage 1 are true. |
+| 11. Document | When the criteria ask for documentation, generate it into `README.md` and `docs/`. Identify source provenance and verification limits at the start. For versions in a group folder, also write shared pages. Then link the pages and review evidence scope before publishing. | The link check gives PASS and the documentary claims stay within the checked evidence. |
 | 12. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
 
 In stage 5, make the recordings before you change the program. A recording needs no names, and its coverage gives the analysis of stage 6 more code. If you cannot get to a part of the program, ask the user how to get to it. Do stages 7 to 9 again until the source is clear. Each generation writes the source again.
 
-In stage 10, a base release that is identical to the original proves the source. Do not test the base release more. The default build is different from the base release only in its patches, its leftovers and its loader. The replays on the default build test these differences:
+In stage 10, byte equality to the recorded base release establishes source fidelity for the ranges that were compared. It does not authenticate an unexamined commercial release. Do not test the base release more solely to repeat that same byte comparison. The default build is different from the base release only in its patches, its leftovers and its loader. The replays on the default build test these differences:
 
 - Replay only the default build: `build/clean_loader.prg` for a source with a loader, else `build/clean.prg`. Do not replay a release build or a build with a switch that is not at its default.
 - Write a test scenario only for a test that a replay cannot do. Examples are a program that loads more files from a disk, and a criterion of the user.
