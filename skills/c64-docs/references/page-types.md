@@ -8,13 +8,13 @@ One entry page for the program: `README.md` in the project folder. A large subsy
 
 The most interesting parts for a reader are the development of the program and its copy protection. Put them first, and explain them in depth. The entry page of the program has these parts, in this order:
 
-1. **One paragraph.** What the program is, the credited authors and year, and which specific reference releases or captures the documentation examines. State whether an authenticated commercial original was examined. Under it, one line defines the evidence marks: **Observed**, **Code** and **Conclusion**.
-2. **The development.** What the code and leftovers reveal or suggest about how the authors made the program; do not assume the origin of bytes found in a later copy. Explain each trace in depth: what the bytes are, how you identified them, and what they tell about the work of the authors. Use as many paragraphs as the traces need. Link the development page (section 6) for the full details.
-3. **The copy protection.** How the original protection works, in depth. Tell what the loader left in memory, and explain each check and where the program hides it. Tell what happens when a check fails, and how the rebuild turns it off. Link the copy protection page (section 7) for the full details.
+1. **One paragraph.** What the program is, the authors and the year, and the reference files that the documentation is for. Tell if somebody examined an authenticated original. Under it, one line defines the evidence marks: **Observed**, **Code** and **Conclusion**.
+2. **The development.** How the authors made the program, as the code and the leftovers tell it. Bytes in a later copy can come from a crack or a release. Do not tell where they came from without evidence. Explain each trace in depth: what the bytes are, how you identified them, and what they tell about the work of the authors. Use as many paragraphs as the traces need. Link the development page (section 6) for the full details.
+3. **The copy protection.** How the protection of the reference files works, in depth. Tell what the loader left in memory, and explain each check and where the program hides it. Tell what happens when a check fails, and how the rebuild turns it off. Link the copy protection page (section 7) for the full details.
 4. **Findings.** The bugs and the facts that a reader does not expect. Write a bulleted list, not a table. Each item has a title in bold, the facts and the evidence. It also has a link to the page with the details. Then tell what the finding means in practice. Examples are what a player sees, what a test or a fix can use, and what a preservation project must know. Mark an idea that no run showed as **Conclusion**.
 5. **How the program works.** A short walk through the program, from the start to the main loop. Tell what the program does at each stage and why. Use one mermaid diagram of the layers and one of the flow of the player. Under the diagrams, a numbered list tells how the layers work together. Link only the entry of each layer, for example the cold start, the main loop and the interrupt. Use about 5 to 8 links in the full section.
 6. **The pages.** A table with one row for each page: the link and one sentence about its content. The sentences have no links to the code.
-7. **The releases.** A small table gives each examined release: the label, the file, the SHA-256 of the file and its known or uncertain provenance. Then one line for each crack tells the group, what the crack adds around the program, and the bytes of the program that it changed. When a crack left a trace in the program that is interesting, give it a short paragraph. Tell what the trace is, how you identified it, and what it means in practice. Link the code of the trace one time. A group that left no such trace gets only its line. Do not describe the intro, the mover or the relocator of a crack. They are not part of the program.
+7. **The releases.** A small table gives each examined release: the label, the file, the SHA-256 of the file and where it came from. Then one line for each crack tells the group, what the crack adds around the program, and the bytes of the program that it changed. When a crack left a trace in the program that is interesting, give it a short paragraph. Tell what the trace is, how you identified it, and what it means in practice. Link the code of the trace one time. A group that left no such trace gets only its line. Do not describe the intro, the mover or the relocator of a crack. They are not part of the program.
 
    Examples of traces that are interesting:
 
@@ -24,7 +24,7 @@ The most interesting parts for a reader are the development of the program and i
    - A release is a memory dump of a program that ran.
    - A crack put a text or a tag into the program.
    - A crack damaged a part of the program, for example a level that does not load.
-8. **The rebuild.** Which release is the base release, the program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. A table of the switches of the project knowledge: the name, the kind, the default and the releases that have the switch on. How to build the default program and each release. What the runs that compare the named reference capture with the rebuild do, in words, including checked regions.
+8. **The rebuild.** Which release is the base release, the program of the knowledge. Which changes of the release to the machine state stay, and how the loader sets them. A table of the switches of the project knowledge: the name, the kind, the default and the releases that have the switch on. How to build the default program and each release. What the runs that compare the reference file with the rebuild do, in words, and the ranges that they compare.
 9. **Still open.** What is not known yet, and which run can find it.
 10. **The reference.** One line with a link to `docs/reference/index.md`.
 
@@ -39,7 +39,7 @@ Look for findings of these kinds. They are often the most useful to a reader:
 ```markdown
 # <Program>
 
-<What the program is. The credited authors and year. The examined reference release(s) and their provenance. State clearly whether an authenticated commercial original was examined.>
+<What the program is. The authors and the year. The reference files that this documentation is for, and where they came from. Tell if somebody examined an authenticated original.>
 
 **Evidence.** **Observed** marks a fact that a run showed. **Code** marks a fact from the code only. **Conclusion** marks an interpretation.
 
@@ -101,7 +101,7 @@ A workspace with several projects has one `README.md` at its root. It lists each
 ```markdown
 # C64 games
 
-Reverse-engineered C64 games. Each game has its own folder with reference program files or media images, the rebuilt source and the documentation. These references can include commercial originals, cracks and snapshots.
+Reverse-engineered C64 games. Each game has its own folder with its reference files, the rebuilt source and the documentation. A reference file can be a commercial release, a crack or a snapshot.
 
 | Game | |
 |---|---|
@@ -112,7 +112,7 @@ Reverse-engineered C64 games. Each game has its own folder with reference progra
 
 A program with two or more versions in a group folder has one `README.md` in the group folder. It tells the parts of the program that the versions share. Each version has its own entry page in its project folder. The group entry page has these parts, in this order:
 
-1. **One paragraph.** What the program is, who made it and when, which versions and reference captures the documentation covers, and whether an authenticated commercial original was examined. Under it, one line defines the evidence marks.
+1. **One paragraph.** What the program is, who made it and when, and which versions and reference files the documentation is for. Tell if somebody examined an authenticated original. Under it, one line defines the evidence marks.
 2. **The versions.** A table with one row for each version: the link to its entry page, the releases of the version, and its entry address. Under the table, tell how the versions are different and why the versions need a project each.
 3. **The development**, **The copy protection** and **Findings**, as in the entry page of section 1, for the facts that the versions share. Write the label of the version before each name, for example `` `v1:speech_irq` `$29C8` ``.
 4. **The pages.** A table of the shared pages in `docs/`, for example the development, the changes between the versions, the releases and the disk layout.
@@ -213,7 +213,7 @@ One page for each format of data, for example a packed map, a music stream or a 
 
 ## 6. The development page
 
-One page, `docs/development.md`, that investigates how the authors may have made the program from the surviving code and data. Distinguish confirmed artifacts from hypotheses about their origin. The facts come from the code, the texts and the leftovers. Get the leftovers from the leftover spaces of the project knowledge. If the knowledge has none, find the leftovers of the development in the program. This page is one of the most interesting pages for a reader. Explain each trace in depth: what the bytes are, how you identified them, and what they tell. Compare an old copy with the version that runs, byte by byte when it helps. Use the parts that the program has evidence for:
+One page, `docs/development.md`, that tells how the authors made the program, as the code and the data tell it. Keep the bytes that you found apart from your conclusions about where they came from. The facts come from the code, the texts and the leftovers. Get the leftovers from the leftover spaces of the project knowledge. If the knowledge has none, find the leftovers of the development in the program. This page is one of the most interesting pages for a reader. Explain each trace in depth: what the bytes are, how you identified them, and what they tell. Compare an old copy with the version that runs, byte by byte when it helps. Use the parts that the program has evidence for:
 
 1. **The authors and the version.** The names, the dates and the version texts in the program, for example a credit line or "REV.2".
 2. **The tools and the computer of the development.** The format of the source text in the leftovers, and the assembler. The computer that the authors used, for example an Apple II with a cross-assembler.
@@ -221,7 +221,7 @@ One page, `docs/development.md`, that investigates how the authors may have made
 4. **Old versions in the image.** Old copies of code, tables, graphics or music. Tell what changed between the old copy and the version that runs.
 5. **The original names.** Fragments of a symbol table or source text that give the names of the authors. Tell which names of the knowledge come from them.
 6. **Unused and unfinished parts.** Code that nothing calls, texts and graphics that nothing shows, debug code and test code. Tell what each part did, or was to do.
-7. **What the development tells.** A short, qualified conclusion, marked **Conclusion**, for example a possible order in which the authors made the parts; list unresolved alternatives.
+7. **What the development tells.** A short conclusion, marked **Conclusion**, for example a possible order in which the authors made the parts. Give the other possible interpretations.
 
 For each fact, give the evidence. A leftover in another space of the knowledge has no line in the source. Write its name without its address. Then give its space and its address, for example "`old_demo_input_stream` in bank3 at `$F300`".
 
@@ -229,7 +229,7 @@ For each fact, give the evidence. A leftover in another space of the knowledge h
 
 One page, `docs/protection.md`, that explains the copy protection of the program in depth. This page is one of the most interesting pages for a reader. It has these parts:
 
-1. **The scheme.** How the original protection works as a whole. Tell about the disk or the loader, and the marks that the loader leaves in memory. Tell which keys the program compares.
+1. **The scheme.** How the protection works as a whole. Tell about the disk or the loader, and the marks that the loader leaves in memory. Tell which keys the program compares.
 2. **Each check.** For each check, tell where it is and when it runs. Tell what it compares, and how the program hides it. Link the code of the check one time. Use a table for a summary of the checks, without links.
 3. **The effect of a failed check.** What the program does when a check fails. Examples are a crash at once, a slow change of code, damaged data and a wipe of memory. Tell how long the effect takes to show.
 4. **The releases.** In one or two sentences: which checks still run in each release. When a crack changed bytes of the program to stop a check, tell which bytes, and link the code of the change one time.

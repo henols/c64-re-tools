@@ -33,17 +33,27 @@ These rules apply to each page that you write. The `link` command checks the rul
 - Tell in words what the run did and what it showed. An example: "a run fills each leftover with `$A5` at the entry, and the memory and the screen stay the same at all 10 checkpoints (**Observed**)".
 - Do not link to a file in `.c64-re-tools/local/`.
 - Do not write a fact that you did not check in the code, the knowledge or a run. Put a question in **Still open**.
+## Terms and scope
 
-## Provenance and scope
+Use these terms with these meanings:
 
-- Identify the source release or capture before stating a byte comparison. Include the compared range when the comparison does not cover the whole program. A PASS against a cracked capture supports that comparison only, not a claim about the commercial original.
-- Use **commercial original** only for an authenticated original distributor/publisher release, not for a base release, a crack, a PRG in `original/`, or memory captured from an emulator. State when authentication is unknown.
-- Do not count copies with a shared lineage as independent confirmation. A majority of release bytes is not proof of the publisher's bytes.
-- **Observed** means an observation in a named test, capture or byte comparison; it does not establish authorship, historical provenance or completeness beyond the tested inputs.
-- **Code** means a deduction from the examined program bytes; it does not establish that unexamined releases behave identically.
-- **Conclusion** means a supported interpretation. Give its premises and material alternatives. The presence of source text with Apple II conventions does not by itself prove which machine the developers used.
-- Do not equate untouched bytes in coverage with bytes that are unreachable on every possible path. State the runs or checks that establish the limit.
-- Put material caveats in the introduction and repeat them wherever a shorter summary would otherwise overstate the evidence. A link-check PASS is not a factual review.
+- **Reference file**: the file or the capture that you examined. It can be a crack, a snapshot, a memory dump, a disk image or a commercial release. In a test, it is the side that the test compares the rebuild with.
+- **Base release**: the release whose bytes are the program of the project knowledge. Its label and its folder do not tell where the bytes came from.
+- **Commercial original**: the release that the publisher sold. Use this term to name that release, also when nobody examined it.
+- **Authenticated original**: a commercial original with recorded evidence that it is genuine, for example the disk of the publisher.
+- **Default build**: `build/clean.prg`, or `build/clean_loader.prg` for a source with a loader.
+
+Rules:
+
+- Name the reference file before you give the result of a byte compare. When the compare does not include all of the program, give the ranges.
+- Write that a rebuild is identical to the commercial original only after a compare with an authenticated original. A PASS against a crack is true only for that crack.
+- Two releases that can come from the same copy do not give two items of evidence. A byte that most releases have is not always a byte of the commercial original.
+- **Observed** tells what a named test, capture or compare showed. It does not tell who made the program, its history, or the bytes of a release that you did not examine.
+- **Code** tells what the examined bytes do. It does not tell that a release that you did not examine does the same.
+- **Conclusion** tells your interpretation. Give the facts that it uses and the other possible interpretations. For example, source text in the format of an Apple II assembler does not prove the computer of the authors.
+- Bytes that no run read are not always bytes that the program cannot read. Give the runs and the checks that show the limit.
+- Write the limits in the first paragraph. Write them again in each short summary that can tell more than the evidence shows. A PASS of `link --check` does not prove that the text is correct.
+
 
 ## Diagrams and images
 

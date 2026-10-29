@@ -1,6 +1,6 @@
 ---
 name: c64-provenance
-description: Compares two or more releases of a C64 program byte by byte and tells which releases agree at each difference. It can run each release and tell how the program uses each difference. It gives evidence for each range of the program in the project knowledge. It finds the leftovers in the program, for example texts, assembler source, BASIC lines, unused bytes, copies and dead code. It keeps a library of routines that several programs share, and finds these routines in a program. Use it to distinguish shared application bytes from changes made by cracks or releases, without assuming they prove the unexamined commercial original. Use it to find the history of a program in its leftovers. Use it to find known routines, for example a music driver, in a program. It does not disassemble or analyze the code, and it does not change the project knowledge.
+description: Compares two or more releases of a C64 program byte by byte and tells which releases agree at each difference. It can run each release and tell how the program uses each difference. It gives evidence for each range of the program in the project knowledge. It finds the leftovers in the program, for example texts, assembler source, BASIC lines, unused bytes, copies and dead code. It keeps a library of routines that several programs share, and finds these routines in a program. Use it to separate the program from the changes of a crack or of a release. The bytes that the releases share do not prove the bytes of the commercial original. Use it to find the history of a program in its leftovers. Use it to find known routines, for example a music driver, in a program. It does not disassemble or analyze the code, and it does not change the project knowledge.
 ---
 
 # C64 provenance
@@ -59,7 +59,7 @@ To get the command list, run the script with no arguments.
 - Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
 - In a group folder, each version of a program is a project. The script refuses the group folder and each folder in it that is not a project. Give `--project` with a project of the group, for example `--project v1`.
-- A path that a command only reads can go into another project of the group, for example `../v1/original/game.prg`. The command writes only in its own project.
+- A path that a command only reads can go into another project of the group, for example `../v1/releases/game.prg`. The command writes only in its own project.
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
@@ -303,11 +303,11 @@ Traps:
 3. Read `differences`.
 4. To find how the program uses the differences, run `compare` again with `--frames`. Give the frames and the steps that get the program to the part that you examine. Read `runtime` of each difference.
 5. Examine each important difference. Disassemble or analyze the bytes of each release. Find what the change does, for example a trainer, a removed copy protection, or a changed text.
-6. Identify shared program bytes and assess possible historical origins of differences. Use more than the byte comparison: the code, the text, and the history of the releases.
+6. Find the bytes that the releases share, and find where each difference can come from. Use more than the byte comparison: the code, the text, and the history of the releases.
    - Do not call releases independent when you do not know their relation. Two cracks can come from the same source.
-   - Do not call a byte original only because one release has it. A majority of releases is also not proof.
-   - Without an authenticated and compared commercial release, describe the result as a reconstruction of the named captures, never as a byte-identical reproduction of the publisher's original.
-   - Distinguish evidence of old code or source text from a proven claim about the exact development machine, build order or path through later crackers.
+   - Do not call a byte a byte of the commercial original only because one release has it. A majority of releases is also not proof.
+   - When nobody compared an authenticated original, the rebuild is a rebuild of the reference files. Do not write that it is identical to the commercial original.
+   - Old code or old source text is evidence of the development. It does not prove the computer of the authors, the order of their work, or the path of a copy through the crackers.
 7. Record each release in the project knowledge. The base release is the program in the project knowledge.
 8. Record each difference in the project knowledge as a switch and a patch. Select the kind of the switch:
    - `protection`: a copy protection, or the code that a crack changed to remove it.

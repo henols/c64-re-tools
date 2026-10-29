@@ -1,6 +1,6 @@
 ---
 name: c64-docs
-description: Writes the documentation of a C64 program. You write the pages by the method of this skill. The script generates the reference pages from the project knowledge and the generated source. The pages put first the development of the program and its copy protection, in depth, with the findings and what each one means in practice. They explain how the program works, with links to the main parts of the source, and they list the releases in short. They tell the history of a crack only when the crack left traces in the program. Use it to document a program after its rebuilt source matches a named reference capture or release within explicitly checked byte ranges. Use it to keep the documentation correct after a change to the project knowledge. It does not change the project knowledge, and it does not run the program.
+description: Writes the documentation of a C64 program. You write the pages by the method of this skill. The script generates the reference pages from the project knowledge and the generated source. The pages put first the development of the program and its copy protection, in depth, with the findings and what each one means in practice. They explain how the program works, with links to the main parts of the source, and they list the releases in short. They tell the history of a crack only when the crack left traces in the program. Use it to document a program after the build of its source is identical to its base release. Use it to keep the documentation correct after a change to the project knowledge. It does not change the project knowledge, and it does not run the program.
 ---
 
 # C64 documentation
@@ -51,7 +51,7 @@ Get the values for the commands from these places:
 - Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
 - In a group folder, each version of a program is a project. The script refuses the group folder and each folder in it that is not a project. Give `--project` with a project of the group, for example `--project v1`.
-- A path that a command only reads can go into another project of the group, for example `../v1/original/game.prg`. The command writes only in its own project.
+- A path that a command only reads can go into another project of the group, for example `../v1/releases/game.prg`. The command writes only in its own project.
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
@@ -208,31 +208,28 @@ Errors:
 
 ---
 
-## Reference artifacts and claim scope
+## Scope of the claims
 
-Before writing historical or reconstruction claims, identify the actual input artifact(s): release labels, paths or capture IDs, available hashes, entry stage, and whether an authenticated commercial original was examined. The folder name `original/`, a base-release label, and byte equality to a crack or capture do not authenticate the commercial release.
+The terms and the rules of scope are in `<skill>/references/style.md`. Before you write a claim about the history or the rebuild, find these facts:
 
-- State what was compared (which artifacts and address ranges) and what the comparison proves. A byte-for-byte match establishes fidelity only to those recorded bytes.
-- If no authenticated original release was examined, say so near the beginning of `README.md`, not only in a late releases section. Do not claim the rebuild matches the commercial original.
-- Do not call related cracks independent witnesses. Shared bytes, a majority of copies or a restored clean/default build do not by themselves prove what a publisher shipped.
-- Keep observed bytes and emulator results separate from interpretations of the developer's machine, tools, workflow, intent or chronology. Document reasonable interpretations as **Conclusion**, along with the assumptions and remaining alternatives. Mark unresolved questions **Still open**.
-- State the limits of runtime coverage. No reads during recorded runs does not prove that a range can never be read.
-- Carry the same scope and qualifications into summaries, release descriptions and workspace indexes. Do not turn a qualified finding into an unconditional headline.
-- `link --check` verifies references and supporting files, not historical truth. Review the prose and its evidence separately before calling the documentation complete.
+- The label, the file and the SHA-256 of each reference file, and the stage of each capture.
+- If somebody examined an authenticated original. If not, write this in the first paragraph of `README.md`.
+- What each compare included, and what it proves. A compare proves only the bytes of its reference file.
 
+`link --check` checks the links, the reference pages and the files of the evidence. It does not check if a claim is true. Read each claim against its evidence before you call the documentation complete.
 ## Workflow
 
 1. Read the project knowledge. The documentation can only be as good as the knowledge. Each routine needs a name and a comment. Each table needs a region and a name. Each file of the source needs a module with a title. Record what is missing in the project knowledge.
-2. Generate the source from the project knowledge. Make sure that its source comparison passes for the specified reference release and checked ranges. This also writes the source map.
+2. Generate the source from the project knowledge. Make sure that the check of the source gives identical bytes. This also writes the source map.
 3. Run `generate`. Read `index.md` of the reference. A module with no routines, or a routine with no comment, shows what the knowledge does not have yet.
 4. Make the plan of the pages. Start from the modules and the call graphs. Find the main loop, the interrupt chain, the dispatch tables, the state machines and the data formats. Each subsystem gets one page in `docs/`. The entry page `README.md` lists the pages. Use the page types in `<skill>/references/page-types.md`.
-5. Record the known provenance and limitations of each source artifact before making claims about the development and the copy protection. Collect facts from those artifacts, not from an assumed commercial original. These findings are interesting parts for a reader, so look for them carefully.
+5. Collect the facts about the development and the copy protection. Collect them from the reference files, not from a commercial original that nobody examined. These facts are the most interesting parts for a reader, so look for them carefully.
    - Read the leftover spaces and their comments in the project knowledge. If the knowledge has none, find the leftovers of the development in the program.
    - For two or more releases, compare the releases. Then you can separate the program from the changes of each release.
    - Find each check of the copy protection in the code, and the effect of a failed check.
    - Find the traces of each crack in the program. The bytes that the compare of the releases shows are the start. Examples are a check that the crack changed, a group text in the program, and bytes in memory that the program now uses.
    - Do not examine the intro, the mover or the relocator of a crack. They are not part of the program.
-6. Write each page. Read the code and the knowledge for each fact. When a fact needs a run, run the program in a test run or in the emulator. Explain each part before you name the code. Link only the main parts. Mark each fact with its evidence and its reference scope. Do not promote a hypothesis into a fact, or a match against a capture into proof about an unexamined release. Several subagents can write the pages at the same time, one page each. Give each subagent `<skill>/references/page-types.md` and `<skill>/references/style.md`.
+6. Write each page. Read the code and the knowledge for each fact. When a fact needs a run, run the program in a test run or in the emulator. Explain each part before you name the code. Link only the main parts. Mark each fact with its evidence and its reference file. Do not write a conclusion as a fact. A compare with a crack is not proof about a release that you did not examine. Several subagents can write the pages at the same time, one page each. Give each subagent `<skill>/references/page-types.md` and `<skill>/references/style.md`.
 7. Record each new fact in the project knowledge first: a name, a comment, a region or a module. Then the source and the reference show it too. A fact that is only in a page is lost at the next change of the knowledge.
 8. Run `link`. Correct each problem. Then run `link` with `--check`. Make sure that `result` is `PASS`.
 9. When the project folder is in a workspace with other projects, find `README.md` at the root of the workspace. This page lists each program of the workspace. Add one row for the program, with a link to `<project>/README.md` and one sentence. If the page does not exist, make it. Use the workspace index in `<skill>/references/page-types.md`. When the workspace folder is a group folder, run `link README.md --source src` in it to check the links of this page. Else `link` does not read this page.
