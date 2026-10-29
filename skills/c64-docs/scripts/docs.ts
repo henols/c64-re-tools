@@ -283,22 +283,30 @@ function link(call: Call): Reply {
 
   /** The names of a project, read the first time a page needs them. A project with given pages is read before the pages. */
   const loaded = new Map<Member, Names>();
-  const load = (member: Member, required: boolean): Names => {
+  const load = (member: Member, required: boolean): Names | undefined => {
     const done = loaded.get(member);
     if (done !== undefined) return done;
     const of = member.label === undefined ? "" : ` of the project ${member.label}`;
     const inProject = (path: string) => posix.join(member.prefix, path);
-    let map;
+    // The knowledge first: a project that a page only names, with knowledge that cannot be read, is one problem and has no names.
+    let db: DatabaseSync | undefined;
     try {
-      map = readSourceMap(source, member.root);
+      db = openForRead(member.root);
     } catch (error) {
-      if (member.label === undefined || !(error instanceof WireFailure)) throw error;
-      throw new WireFailure(error.code, `In the project ${member.label}: ${error.message}`);
+      if (required || !(error instanceof Refusal)) throw error;
+      markUnreadable(member, error);
+      return undefined;
     }
-    const db = openForRead(member.root);
+    let map;
     let symbols;
     let revision;
     try {
+      try {
+        map = readSourceMap(source, member.root);
+      } catch (error) {
+        if (member.label === undefined || !(error instanceof WireFailure)) throw error;
+        throw new WireFailure(error.code, `In the project ${member.label}: ${error.message}`);
+      }
       revision = sourceRevision(db, map.space);
       symbols = listSymbols(db, undefined, undefined, undefined, map.space);
       addEvidence(member, db);
@@ -375,20 +383,12 @@ function link(call: Call): Reply {
     return names;
   };
   for (const member of members) if (pagesGiven.some((page) => memberOf(page) === member)) load(member, true);
-  // A shared page of the group folder can tell about each project: the evidence of each project counts, also of a project that no page names.
-  if (pagesGiven.some((page) => memberOf(page) === undefined)) members.forEach(readEvidence);
 
   const labels = members.map((member) => member.label!);
   /** The names of a project that a page names: a project whose knowledge cannot be read has none, so its mentions stay as they are. */
   const loadNamed = (member: Member): Names | undefined => {
     if (unreadableKnowledge.has(member)) return undefined;
-    try {
-      return load(member, false);
-    } catch (error) {
-      if (!(error instanceof Refusal)) throw error;
-      markUnreadable(member, error);
-      return undefined;
-    }
+    return load(member, false);
   };
   const namesFor = (page: string) => (label: string | undefined): ReturnType<LinkContext["names"]> => {
     if (group === undefined) return label === undefined ? load(members[0]!, false) : undefined;
@@ -427,6 +427,8 @@ function link(call: Call): Reply {
     writeProjectFile(page, Buffer.from(linked.text, "utf8"), { root });
     texts.set(page, linked.text);
   }
+  // A shared page of the group folder can tell about each project: the evidence of each project counts, also of a project that no page names. After the pages, a project that a page names is read once.
+  if (pagesGiven.some((page) => memberOf(page) === undefined)) members.forEach(readEvidence);
   const byKind: Record<string, number> = {};
   for (const problem of problems) byKind[problem.kind] = (byKind[problem.kind] ?? 0) + 1;
   const shownProblems = listed(problems, call.count("max-listed")!, (problem) => ({

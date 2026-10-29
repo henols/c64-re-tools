@@ -412,8 +412,21 @@ test("docs.ts link --check in a group folder fails on the changed evidence of a 
   // A page of v1 that names v3, with no shared page: the same problem.
   writeFileSync(join(group, "v1/notes.md"), "`main` `$1000` and `v3:main` `$1000`\n");
   const fromProject = link(group, "v1/notes.md", "--source", "src");
-  assert.deepEqual((fromProject.json.problems as { byKind: Record<string, number> }).byKind, { "unreadable-knowledge": 1 });
+  assert.equal(fromProject.json.result, "FAIL");
+  const fromProjectProblems = fromProject.json.problems as { byKind: Record<string, number>; listed: Array<{ at: string }> };
+  assert.deepEqual(fromProjectProblems.byKind, { "unreadable-knowledge": 1 });
+  assert.equal(fromProjectProblems.listed[0]!.at, "v3/.c64-re-tools/knowledge:1");
   assert.equal(readFileSync(join(group, "v1/notes.md"), "utf8"), "[`main` `$1000`](src/main_code.asm#L5) and `v3:main` `$1000`\n");
+
+  // A named project with readable knowledge and no source: the refusal of that project, not unreadable knowledge.
+  rmSync(join(group, "v3"), { recursive: true });
+  project(join(group, "v4"));
+  rmSync(join(group, "v4", MAP_DIRECTORY), { recursive: true });
+  writeFileSync(join(group, "README.md"), "`v1:main` `$1000` and `v4:main` `$1000`\n");
+  const noSource = link(group, "README.md", "--source", "src");
+  const refusal = noSource.json.error as { code: string; message: string };
+  assert.equal(refusal.code, "not-found");
+  assert.match(refusal.message, /^In the project v4: /);
 });
 
 test("docs.ts link reports a page that is a symbolic link to no file or out of the project, and a link with a bare %", { skip: process.platform === "win32" && "symbolic links need rights on Windows" }, () => {

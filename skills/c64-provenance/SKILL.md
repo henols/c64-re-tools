@@ -324,6 +324,7 @@ Traps:
 4. Run `leftovers`. When you have two or more releases, also run `compare`.
 5. Read `text` first: names, dates, greetings and credits. Then read `copies`, `residue`, `basic` and `deadCode`.
 6. Examine each important finding. Disassemble or analyze its bytes, or examine them in the emulator.
+   - Old code or old source text is evidence of the development. It does not prove the computer of the authors, the order of their work, or the path of a copy through the crackers.
 7. Record each finding that you proved in the project knowledge. Do not record the full list of leftovers.
    - Do not remove a leftover from the program. A rebuild keeps it. Only the data of a cracktro goes out: leave it out of the capture of the program.
    - Classify a PETSCII text that you proved as a `petscii` region, and a screen code text as a `screen` region. Classify other text as `bytes`.
