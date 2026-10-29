@@ -337,18 +337,31 @@ test("docs.ts link reports a source and a reference that are older than the know
   assert.deepEqual((stale.json.problems as { byKind: Record<string, number> }).byKind, { "stale-reference": 1 });
 });
 
-test("docs.ts link names the evidence files of the knowledge that are missing or changed, and they do not fail the link", () => {
+test("docs.ts link --check fails on changed or missing knowledge evidence, while normal link only reports it", () => {
   const { root } = project();
   writeFileSync(join(root, "docs.md"), "[`main` `$1000`](src/main_code.asm#L5)\n");
   mkdirSync(join(root, "tests"));
   writeFileSync(join(root, "tests/trap.json"), "{}");
   // A write in another space: the source of the C64 stays at its revision.
   const cited = withWrite((db) => renameSymbol(db, { origin: "llm", evidence: [{ kind: "test", ref: "tests/trap.json", sha256: createHash("sha256").update("{}").digest("hex") }] }, { space: "drive8", address: 0x0500, name: "drive_start" }), root);
-  assert.equal(link(root, "docs.md", "--source", "src", "--check").json.evidence, undefined);
+  const fresh = link(root, "docs.md", "--source", "src", "--check");
+  assert.equal(fresh.json.result, "PASS");
+  assert.equal(fresh.json.evidence, undefined);
+
+  writeFileSync(join(root, "tests/trap.json"), '{"changed":true}');
+  const changed = link(root, "docs.md", "--source", "src", "--check");
+  assert.equal(changed.json.result, "FAIL");
+  assert.deepEqual(changed.json.evidence, { count: 1, listed: [{ file: "tests/trap.json", state: "changed", revisions: [cited.revision] }] });
+  assert.match(String(changed.envelope.hint), /restore it from git/);
+
   rmSync(join(root, "tests/trap.json"));
-  const checked = link(root, "docs.md", "--source", "src", "--check");
-  assert.equal(checked.json.result, "PASS");
-  assert.deepEqual(checked.json.evidence, { count: 1, listed: [{ file: "tests/trap.json", state: "missing", revisions: [cited.revision] }] });
+  const missing = link(root, "docs.md", "--source", "src", "--check");
+  assert.equal(missing.json.result, "FAIL");
+  assert.deepEqual(missing.json.evidence, { count: 1, listed: [{ file: "tests/trap.json", state: "missing", revisions: [cited.revision] }] });
+
+  const updating = link(root, "docs.md", "--source", "src");
+  assert.equal(updating.json.result, "PASS");
+  assert.deepEqual(updating.json.evidence, missing.json.evidence);
 });
 
 test("docs.ts link reports a page that is a symbolic link to no file or out of the project, and a link with a bare %", { skip: process.platform === "win32" && "symbolic links need rights on Windows" }, () => {
