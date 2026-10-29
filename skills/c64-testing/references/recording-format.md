@@ -149,3 +149,4 @@ The body of the envelope of `replay` has these fields:
 - `startScreen`: `skipped` when the rebuild went past the wait of its start screen.
 - `idleReads`: the input reads of the rebuild that the recording had no value for. Such a read is at a site that the recording does not have, or after its end. Each got the fixed value `$FF` (joystick, keyboard, paddles) or `$00`. An input site that the site map did not find shows here.
 - `files`: with `--out`, the RAM of each side at the first different checkpoint, `reference-<n>.bin` and `rebuild-<n>.bin`.
+- `screen`: with `--screen`, the PNG file of the screen of the reference at the end of the session.

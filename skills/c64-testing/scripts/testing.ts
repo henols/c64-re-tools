@@ -198,11 +198,12 @@ const COMMANDS: CommandSpec[] = [
       rebuild: { kind: "path", value: "<prg>", help: "the rebuild to compare with the reference" },
       symbols: { ...OPTIONS.symbols, help: "the names of the rebuild: the symbol file of its build (default: the symbols of the recording)" },
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder" },
+      screen: { ...OPTIONS.out, output: "file", value: "<png>", help: "write the screen of the reference at the end of the session into this PNG file" },
     },
     notes: "A recording without names takes the names of the knowledge for the reference. A $ address is an address of the reference: on the rebuild it moves with the name before it.",
     run: async (call) => {
-      const [checkpoint, rebuild, symbols, out] = [call.string("checkpoint"), call.string("rebuild"), call.string("symbols"), call.string("out")];
-      const result = await replay({ folder: call.subject(0), state: call.strings("state"), pin: call.strings("pin"), ...(checkpoint === undefined ? {} : { checkpoint }), ...(rebuild === undefined ? {} : { rebuild }), ...(symbols === undefined ? {} : { symbols }), ...(out === undefined ? {} : { out }) });
+      const [checkpoint, rebuild, symbols, out, screen] = [call.string("checkpoint"), call.string("rebuild"), call.string("symbols"), call.string("out"), call.string("screen")];
+      const result = await replay({ folder: call.subject(0), state: call.strings("state"), pin: call.strings("pin"), ...(checkpoint === undefined ? {} : { checkpoint }), ...(rebuild === undefined ? {} : { rebuild }), ...(symbols === undefined ? {} : { symbols }), ...(out === undefined ? {} : { out }), ...(screen === undefined ? {} : { screen }) });
       if (result.result === "INCONCLUSIVE") return reply(result, { hint: INCONCLUSIVE_HINT });
       if (result.result !== "FAIL") return result;
       const [reference, rebuilt] = result.files ?? [];

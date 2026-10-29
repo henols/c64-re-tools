@@ -98,6 +98,20 @@ test("a session records with no checkpoint, and replays on the reference to the 
   assert.ok((counted.result.checkpoints as number) >= 65, `${counted.result.checkpoints} checkpoints`);
 });
 
+test("--screen writes the screen of the reference at the end of the session, the same on each replay", { skip, timeout: 120_000 }, () => {
+  const shots = ["first", "second"].map((name) => {
+    const replayed = script("replay", ["tests/recordings/walk", "--screen", `shots/${name}.png`]);
+    assert.deepEqual([replayed.status, replayed.result.result], [0, "PASS"], JSON.stringify(replayed.result));
+    assert.equal((replayed.result.screen as { out: string }).out, `shots/${name}.png`);
+    return readFileSync(join(project, "shots", `${name}.png`));
+  });
+  const [first, second] = shots as [Buffer, Buffer];
+  assert.equal(first.subarray(1, 4).toString("latin1"), "PNG");
+  // The IHDR: the visible screen of the replay core.
+  assert.deepEqual([first.readUInt32BE(16), first.readUInt32BE(20)], [392, 272]);
+  assert.ok(first.equals(second), "two replays give the same screen");
+});
+
 // The counter reads row 0 of the keyboard ($dc00 = $fe) at $c018 in place of joystick 2: F1 is bit 4 of $dc01 there, F3 bit 5.
 const keys = counterAt(0xc000);
 keys[2 + 0x0a] = 0xfe;

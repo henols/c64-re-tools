@@ -30,6 +30,7 @@ To get the command list, run the script with no arguments.
 | Record a play session of a person on the reference | `record tests/record/start.json --out tests/recordings/play1 --play --joystick 1` |
 | Record a session from steps only | `record tests/record/rooms.json --out tests/recordings/rooms` |
 | Make sure that a recording replays on the reference | `replay tests/recordings/rooms` |
+| Keep the screen at the end of a recorded session | `replay tests/recordings/final --screen .c64-re-tools/local/results/final.png` |
 | Compare the rebuild with a recording | `replay tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/clean.prg --symbols build/symbols/clean.json --out .c64-re-tools/local/results/rooms` |
 | Find what changed between two snapshot files | `diff .c64-re-tools/local/runs/rooms/before.vsf .c64-re-tools/local/runs/rooms/after.vsf` |
 | Find what changed between two observations of runs | `diff .c64-re-tools/local/runs/rooms/results.json:room0 .c64-re-tools/local/runs/rooms/results.json:room3` |
@@ -88,6 +89,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--rebuild <prg>` | `replay` | The rebuild to compare with the reference. Without it, the script replays only on the reference. |
 | `--symbols <file>` | `replay` | The symbol file of the rebuild. The default is the symbols of the recording. |
 | `--out <dir>` | `replay` | With a FAIL, write the RAM of each side at the first different checkpoint into this folder. |
+| `--screen <png>` | `replay` | Write the screen of the reference at the end of the session into this PNG file. |
 | `--gap <n>` | `diff` | Join changed ranges across at most n equal bytes. The default is 0. |
 | `--max-listed <n>` | `diff` | List at most n items of each list. The default is 50. |
 | `--ntsc` | `diff` | The snapshot files are of an NTSC machine. The default is PAL. |
@@ -185,7 +187,7 @@ A recording keeps a session of the reference program, for example a play through
 - Commit the recording folder with the scenarios. Do not put a recording into the project knowledge. Do not put test results, screenshots or playtest results into it.
 - A finding that a recording shows can go into the project knowledge. Give the `recording.json` of the recording as its test evidence.
 - The C64 of a recording has no disk drive. For a program that loads more files from a disk, use a scenario with `test`.
-- The emulator cannot examine the C64 of a recording or a replay.
+- The emulator cannot examine the C64 of a recording or a replay. To keep the screen at the end of a recorded session, use `--screen` of `replay`.
 
 A replay is deterministic. The same recording gives the same session, to the cycle. The n-th read of an input at each instruction gets the value of the n-th read in the recording. Thus a rebuild with different timing gets the same input, also the same random values from the SID.
 
@@ -239,6 +241,7 @@ The script first replays the recording on the reference. The reference must end 
 
 `--checkpoint` and `--state` go together. `--pin` needs both of them. `--symbols` needs `--rebuild`. Give at most 16 `--state` and `--pin` items. Without `--checkpoint`, the script uses the comparison of the record file.
 A `$` address is an address of the reference. On the rebuild, it moves with the name before it.
+`--screen` writes the screen of the reference at the end of the session into a PNG file. The screen is the same on each replay. The script writes it only when the reference ends the session with the recorded state.
 
 A rebuild can be a loader with a start screen that RUN starts. If the symbols of the rebuild have `loader_start_screen_wait` and `loader_start_screen_continue`, the script runs the rebuild to the wait. Then it sets the PC to `loader_start_screen_continue`. The cycles before the wait do not count.
 
@@ -259,6 +262,7 @@ Do this for each result:
 
 Traps:
 
+- A run does not have the timing of a recording. The same steps in a run can give a different session, for example a lost fight. To show the screen of a recorded session, use `replay --screen`. Do not do the steps again in a run.
 - `idleReads` counts the input reads of the rebuild that the recording had no value for. On the reference, such a read makes the result INCONCLUSIVE. The rebuild can read input where the reference does not, for example in its loader before the start screen. Such reads do not change a PASS of the rebuild.
 - The script refuses a recording of an older version in an old form with `invalid-input`. Record the session again.
 

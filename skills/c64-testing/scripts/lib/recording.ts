@@ -894,4 +894,6 @@ export interface ReplayResult {
   /** Input reads of the rebuild that the recording had no value for: they got the idle value. */
   idleReads?: number;
   files?: Written[];
+  /** The screen of the reference at the end of the session (--screen). */
+  screen?: Written;
 }

@@ -10,6 +10,7 @@ import { isRefusal, Refusal } from "#src/errors.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { formatC64Address } from "#src/c64.ts";
+import { encodePng } from "#src/graphics.ts";
 import { LOADER_JUMP } from "#src/knowledge/start-screen.ts";
 import { C64RunSession } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
@@ -28,6 +29,8 @@ export interface ReplayOptions {
   rebuild?: string;
   symbols?: string;
   out?: string;
+  /** A PNG file for the screen of the reference at the end of the session. */
+  screen?: string;
 }
 
 /** Replays the recording on the reference, and with `rebuild` on the rebuild: PASS, FAIL or INCONCLUSIVE. */
@@ -41,6 +44,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
   const given: Comparison | undefined =
     values.checkpoint === undefined ? undefined : { checkpoint: values.checkpoint, state: values.state.map((item) => parseStateItem(item, "--state")), ...(values.pin.length === 0 ? {} : { pin: values.pin.map((item) => parseStateItem(item, "--pin")) }) };
   const compare = given ?? recording.compare;
+  let screen: Written | undefined;
   if (values.rebuild !== undefined && compare === undefined) throw new UsageError("The recording has no checkpoint and state for --rebuild. Give --checkpoint and --state.");
   const result = (outcome: ReplayResult["result"], side: ReplayResult["side"], fields: Partial<ReplayResult> = {}): ReplayResult => ({
     result: outcome,
@@ -49,6 +53,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     ...(compare === undefined ? {} : { checkpoint: compare.checkpoint }),
     checkpoints: 0,
     compared: 0,
+    ...(screen === undefined ? {} : { screen }),
     ...fields,
   });
   // The files of the rebuild are checked before the replay core starts.
@@ -87,6 +92,11 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     }
     if (self.end.tick !== recording.ticks || self.end.hash !== recording.hash) {
       return result("INCONCLUSIVE", "reference", { reason: "the recording does not reproduce on the reference: the state at its end is different; record the session again with this version of the toolkit" });
+    }
+    // The core is still at the end of the session: the rebuild side starts it again.
+    if (values.screen !== undefined) {
+      const shot = await core.screen();
+      screen = writeReported(values.screen, encodePng(shot.frame, shot.palette), { what: "--screen" });
     }
     const expected = self.samples;
     if (compare !== undefined && expected.length === 0) return result("INCONCLUSIVE", "reference", { reason: `the reference never came to the checkpoint ${compare.checkpoint} in the session` });

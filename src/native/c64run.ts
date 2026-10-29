@@ -184,6 +184,17 @@ export class C64RunSession {
     return Buffer.concat(parts);
   }
 
+  /** The visible screen now, as palette indices, with the 16 colours of the palette. */
+  async screen(): Promise<{ frame: { width: number; height: number; pixels: Uint8Array }; palette: Array<[number, number, number]> }> {
+    const [, width, height, pixels] = (await this.command("frame")).split(" ");
+    const byte = (hex: string, at: number) => Number.parseInt(hex.slice(at, at + 2), 16);
+    const palette = (await this.command("palette"))
+      .split(" ")
+      .slice(1)
+      .map((hex): [number, number, number] => [byte(hex, 0), byte(hex, 2), byte(hex, 4)]);
+    return { frame: { width: Number(width), height: Number(height), pixels: Buffer.from(pixels ?? "", "base64") }, palette };
+  }
+
   /** Ends c64run: quit, then the stop of its process group (at once when it ended, else after STOP_MS). */
   async close(): Promise<void> {
     if (this.#ended === undefined) {
