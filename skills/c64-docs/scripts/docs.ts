@@ -421,7 +421,9 @@ function link(call: Call): Reply {
     hints.push("Some links are not up to date. Run nextAction to write them.");
     nextAction = again(false);
   }
-  return reply({ result: problems.length > 0 || (check && links > 0) ? "FAIL" : "PASS", ...output }, { ...(hints.length === 0 ? {} : { hint: hints.join(" ") }), nextAction });
+  // A read-only documentation check must not pass when evidence backing the knowledge is stale.
+  // Normal link runs still report evidence without blocking edits to the pages.
+  return reply({ result: problems.length > 0 || (check && (links > 0 || evidence.length > 0)) ? "FAIL" : "PASS", ...output }, { ...(hints.length === 0 ? {} : { hint: hints.join(" ") }), nextAction });
 }
 
 const SOURCE = { kind: "path", value: "<dir>", help: "the folder of the source that was generated from the knowledge, relative to the project folder" } as const;
