@@ -25,7 +25,7 @@ To get the command list, run the script with no arguments.
 |---|---|
 | Generate the reference pages from the project knowledge and the source | `generate src --out docs/reference` |
 | Link the names in the pages to the source, and check each link and image | `link README.md docs --source src` |
-| Check that each link is up to date and that the evidence did not change, and write nothing | `link README.md docs --source src --check` |
+| Check that each link is up to date and that the evidence did not change, and write no page | `link README.md docs --source src --check` |
 | Link the pages when the reference is in a folder with another name | `link README.md docs --source src --reference docs/lookup` |
 | Link one page | `link docs/main_loop.md --source src` |
 | In a group folder, link the shared pages and the pages of each project | `link README.md docs v1/README.md v1/docs v2/README.md v2/docs --source src` |
@@ -214,7 +214,7 @@ The terms and the rules of scope are in `<skill>/references/style.md`. Before yo
 
 - The label, the file and the SHA-256 of each reference file, and the stage of each capture.
 - Find out if somebody examined an authenticated original. When nobody examined one, write this fact in the first paragraph of `README.md`.
-- What each compare included, and what it proves. A compare proves only the bytes of its reference file.
+- What each compare included, and what it proves.
 
 `link --check` checks the links, the reference pages and the files of the evidence. It does not check if a claim is true. Read each claim against its evidence before you call the documentation complete.
 

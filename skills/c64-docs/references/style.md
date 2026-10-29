@@ -47,13 +47,13 @@ Use these terms with these meanings:
 Rules:
 
 - Give the release label of the reference file before you give the result of a byte compare. When the compare does not include all of the program, give the ranges.
-- Write that a rebuild is identical to the commercial original only after a compare with an authenticated original. A PASS against a crack is true only for that crack.
+- Write that a rebuild is identical to the commercial original only after a compare with an authenticated original. A PASS of a compare is true only for the bytes of its reference file, for example a crack.
 - Two releases that can come from the same copy do not give two items of evidence. A byte that most releases have is not always a byte of the commercial original.
-- **Observed** tells what a run, a capture or a compare showed. Tell in words what it did, not the name of its file. It does not tell who made the program, its history, or the bytes of a release that you did not examine.
-- **Code** tells what the examined bytes do. It does not tell that a release that you did not examine does the same.
+- **Observed**: a run showed it. A capture of a run and a compare of the releases count as runs. Tell in words what the run did, not the name of its file. Observed does not tell who made the program, its history, or the bytes of a release that you did not examine.
+- **Code**: the code shows it, and no run showed it. Code does not tell that a release that you did not examine does the same.
 - **Conclusion** tells your interpretation. Give the facts that it uses and the other possible interpretations. For example, source text in the format of an Apple II assembler does not prove the computer of the authors.
 - Bytes that no run read are not always bytes that the program cannot read. Give the runs and the checks that show the limit.
-- Write the limits in the first paragraph. Write them again in each short summary that can tell more than the evidence shows. A PASS of `link --check` does not prove that the text is correct.
+- Write the limits in the first paragraph. Write them again in each short summary that can tell more than the evidence shows.
 
 ## Diagrams and images
 
