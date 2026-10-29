@@ -38,7 +38,7 @@ To get the command list, run the script with no arguments.
 
 ## Programs, files and names
 
-- The reference is the program file that the test compares the rebuild with, for example the file of the base release. A PASS tells only about that file.
+- The reference is the reference file: the program file or the capture that you examined. A test compares the rebuild with it. It can be a crack, a snapshot, a memory dump, a disk image or a commercial release. Here it must be a PRG file, for example the file of the base release. A PASS tells only about that file.
 - The reference program and the rebuild are PRG files in the project. The script refuses a disk, tape or cartridge image. Extract the program file from the image first.
 - The reference gets its names from the project knowledge. Give `"symbols": "knowledge"` for the reference.
 - The rebuild gets its names from the symbol file of its build. Build the rebuild with a symbol file that has all symbols, also the constants that the source does not use.

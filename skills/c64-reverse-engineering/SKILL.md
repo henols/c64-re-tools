@@ -24,9 +24,11 @@ Do the specialist work of each task as that task tells. Do not do it in another 
 
 ## Terms
 
-- **Reference file**: the file or the capture that you examined. It can be a crack, a snapshot, a memory dump, a disk image or a commercial release.
+- **Reference file**: the program file or the capture that you examined. A test compares the rebuild with it. It can be a crack, a snapshot, a memory dump, a disk image or a commercial release.
 - **Base release**: the release whose bytes are the program of the project knowledge. Its label and its folder do not tell where the bytes came from.
-- **Commercial original**: the release that the publisher sold. Write that a rebuild is identical to it only after a compare with an authenticated original. An authenticated original is a commercial original with recorded evidence that it is genuine.
+- **Commercial original**: the release that the publisher sold. You can use this term also when nobody examined that release.
+- **Authenticated original**: a commercial original with recorded evidence that it is genuine, for example the disk of the publisher.
+- Write that a rebuild is identical to the commercial original only after a compare with an authenticated original. A PASS against a crack is true only for that crack.
 - Bytes that several related copies share do not prove the bytes of the commercial original. Keep the facts about the reference files apart from your conclusions about the authors or the publisher.
 
 ## Project rules

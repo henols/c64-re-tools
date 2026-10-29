@@ -424,6 +424,7 @@ export function rewriteTest(text: string, name: string, symbols: ReadonlyMap<str
   }
   const scenario = typeof test.reference === "object" && typeof test.rebuild === "object" && Array.isArray(test.steps);
   const run = typeof test.start === "object" && test.start !== null && Array.isArray(test.steps);
+  if (!scenario && typeof test.rebuild === "object" && Array.isArray(test.steps)) return { reason: "it is a scenario without a reference side. A scenario has reference, rebuild and steps" };
   if (!scenario && !run) return { reason: "it is not a scenario or a run file" };
   if (hasSnapshot(test)) return { reason: "it restores a snapshot, which is a state of the old program" };
   for (const location of locationsOf(test.steps)) {

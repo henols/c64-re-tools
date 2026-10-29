@@ -242,6 +242,7 @@ test("a test is left out for a snapshot, a name that the export does not have, a
   assert.deepEqual(rewriteTest("[]", "game", SYMBOLS, []), { reason: "it is not a JSON object" });
   assert.deepEqual(rewriteTest("{", "game", SYMBOLS, []), { reason: "it is not JSON" });
   assert.deepEqual(rewriteTest("{}", "game", SYMBOLS, []), { reason: "it is not a scenario or a run file" });
+  assert.deepEqual(rewriteTest(JSON.stringify({ name: "s", original: { program: "a.prg" }, rebuild: { program: "b.prg" }, steps: [] }), "game", SYMBOLS, []), { reason: "it is a scenario without a reference side. A scenario has reference, rebuild and steps" });
 });
 
 test("the README gives the commands first, then the free ranges, the files and the origin", () => {

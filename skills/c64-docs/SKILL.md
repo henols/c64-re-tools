@@ -213,10 +213,13 @@ Errors:
 The terms and the rules of scope are in `<skill>/references/style.md`. Before you write a claim about the history or the rebuild, find these facts:
 
 - The label, the file and the SHA-256 of each reference file, and the stage of each capture.
-- If somebody examined an authenticated original. If not, write this in the first paragraph of `README.md`.
+- Find out if somebody examined an authenticated original. When nobody examined one, write this fact in the first paragraph of `README.md`.
 - What each compare included, and what it proves. A compare proves only the bytes of its reference file.
 
 `link --check` checks the links, the reference pages and the files of the evidence. It does not check if a claim is true. Read each claim against its evidence before you call the documentation complete.
+
+---
+
 ## Workflow
 
 1. Read the project knowledge. The documentation can only be as good as the knowledge. Each routine needs a name and a comment. Each table needs a region and a name. Each file of the source needs a module with a title. Record what is missing in the project knowledge.
