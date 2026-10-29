@@ -34,6 +34,17 @@ These rules apply to each page that you write. The `link` command checks the rul
 - Do not link to a file in `.c64-re-tools/local/`.
 - Do not write a fact that you did not check in the code, the knowledge or a run. Put a question in **Still open**.
 
+## Provenance and scope
+
+- Identify the source release or capture before stating a byte comparison. Include the compared range when the comparison does not cover the whole program. A PASS against a cracked capture supports that comparison only, not a claim about the commercial original.
+- Use **commercial original** only for an authenticated original distributor/publisher release, not for a base release, a crack, a PRG in `original/`, or memory captured from an emulator. State when authentication is unknown.
+- Do not count copies with a shared lineage as independent confirmation. A majority of release bytes is not proof of the publisher's bytes.
+- **Observed** means an observation in a named test, capture or byte comparison; it does not establish authorship, historical provenance or completeness beyond the tested inputs.
+- **Code** means a deduction from the examined program bytes; it does not establish that unexamined releases behave identically.
+- **Conclusion** means a supported interpretation. Give its premises and material alternatives. The presence of source text with Apple II conventions does not by itself prove which machine the developers used.
+- Do not equate untouched bytes in coverage with bytes that are unreachable on every possible path. State the runs or checks that establish the limit.
+- Put material caveats in the introduction and repeat them wherever a shorter summary would otherwise overstate the evidence. A link-check PASS is not a factual review.
+
 ## Diagrams and images
 
 - Use mermaid for the diagrams: `flowchart` for calls and data flow, `stateDiagram-v2` for state machines.
