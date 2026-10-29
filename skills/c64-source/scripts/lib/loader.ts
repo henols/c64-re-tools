@@ -10,6 +10,8 @@
 // copier, and the copier writes only pages $0002-$03ff. With a start
 // screen in the knowledge, the copier shows it after the copies and waits for
 // a key or a fire button: the code is start-screen.asm, the same for each program.
+// After the start screen, which writes the colour RAM, the copier sets the
+// colour RAM of the entry from a free range where the copies or the unpack put it.
 // The loader loads the segments without the leftovers: the ranges of the
 // source that nothing uses are not in the loader program.
 
@@ -22,7 +24,7 @@ import { compareBuild, mergedPrograms } from "#src/compare.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState } from "#src/host-client/entry-state.ts";
 import { isRomFont, startScreenRanges, type StartScreenRow } from "#src/knowledge/read.ts";
-import { LOADER_JUMP } from "#src/knowledge/start-screen.ts";
+import { capturedColourRam, LOADER_JUMP } from "#src/knowledge/start-screen.ts";
 import { romUseOfPort } from "#src/platform.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { pack } from "#src/native/exomizer.ts";
@@ -44,6 +46,8 @@ export interface EntryState {
   vic?: { registers: Uint8Array; bank: number };
   /** CIA 1 and CIA 2 at the entry. */
   cia?: [EntryCia, EntryCia];
+  /** The colour RAM at the entry: 1000 colours from $d800. */
+  colourRam?: Uint8Array;
 }
 
 /** A CIA at the entry: $xx00-$xx0f as a read without side effects gives them, and what no read gives. */
@@ -81,7 +85,8 @@ const FLAG_BITS = { n: 0x80, v: 0x40, d: 0x08, i: 0x04, z: 0x02, c: 0x01 } as co
 
 /**
  * The entry state that the loader recreates: the shared entry state of the
- * program capture, with the flags as PLP reads them, the VIC-II and the CIAs.
+ * program capture, with the flags as PLP reads them, the VIC-II, the CIAs and
+ * the colour RAM.
  */
 export function loaderState(value: unknown, where: string): EntryState {
   const state = parseEntryState(value, where);
@@ -90,7 +95,8 @@ export function loaderState(value: unknown, where: string): EntryState {
   };
   let flags = 0x20;
   for (const [name, bit] of Object.entries(FLAG_BITS)) if (state.flags[name as keyof typeof FLAG_BITS]) flags |= bit;
-  return { pc: state.pc, a: state.a, x: state.x, y: state.y, sp: state.sp, flags, port: state.port, pages: state.pages, ...readVic(state.raw.io as Record<string, any> | undefined, fail), ...readCia(state.raw, fail) };
+  const colourRam = capturedColourRam(state.raw);
+  return { pc: state.pc, a: state.a, x: state.x, y: state.y, sp: state.sp, flags, port: state.port, pages: state.pages, ...readVic(state.raw.io as Record<string, any> | undefined, fail), ...readCia(state.raw, fail), ...(colourRam === undefined ? {} : { colourRam }) };
 }
 
 export interface Copy {
@@ -127,17 +133,19 @@ export interface LoaderPlan {
   packed?: { start: number };
   /** The VIC-II values that the start screen sets, when the knowledge has one. */
   startScreen?: StartScreenPlan;
+  /** The range where the copier reads the colours of the entry state, when the loader sets the colour RAM. */
+  colours?: AddressRange;
+  /** Why the loader does not set the colour RAM, when it does not. */
+  colourLimit?: string;
 }
 
 /**
  * What the loader cannot set as it was at the entry. An entry state
  * without CIA values (from a capture of an older version) gives no timers at all.
  */
-export function loaderLimits(plan: { cia?: CiaPlan }): string[] {
-  if (plan.cia === undefined) {
-    return ["The entry state has no CIA values, so the loader does not set the CIA timers. Capture the program again at its entry point to get them."];
-  }
-  return plan.cia.limits;
+export function loaderLimits(plan: { cia?: CiaPlan; colourLimit?: string }): string[] {
+  const cia = plan.cia === undefined ? ["The entry state has no CIA values, so the loader does not set the CIA timers. Capture the program again at its entry point to get them."] : plan.cia.limits;
+  return [...cia, ...(plan.colourLimit === undefined ? [] : [plan.colourLimit])];
 }
 
 export { LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
@@ -208,6 +216,10 @@ const COPIER_CODE_SIZE = 167;
 /** The VIC-II code of the copier, without its two tables of one byte per register. */
 const VIC_CODE_SIZE = 44;
 const VIC_SIZE = VIC_CODE_SIZE + 2 * VIC_DISPLAY_REGISTERS.length;
+/** The colours of the colour RAM at $d800-$dbe7. */
+const COLOURS = 1000;
+/** The colour code of the copier: its copy of the colours into the colour RAM. */
+const COLOUR_CODE_SIZE = 35;
 /** The copier and the stub's move of it: two pages, or three with a start screen. */
 const COPIER_LIMIT = 0x200;
 /** The bytes that the stub adds for each more page of the copier: lda and sta. */
@@ -521,6 +533,23 @@ function byteLines(range: AddressRange, bytes: (address: number) => number): str
  * An image too large for one loader file gets the packed form (see planPacked). Refuses by name when no plan exists.
  */
 export function planLoader(input: LoaderInput): LoaderPlan {
+  const { colourRam } = input.state;
+  if (colourRam === undefined) return { ...planForm(input, undefined)!, colourLimit: "The entry state has no colour RAM, so the loader does not set it. Capture the program again at its entry point to get it." };
+  // The colours take 1000 bytes of free RAM and make the loader larger: a plan that has no room for them is made without them.
+  try {
+    const plan = planForm(input, colourRam);
+    if (plan !== undefined) return plan;
+  } catch (error) {
+    if (!(error instanceof WireFailure)) throw error;
+  }
+  return {
+    ...planForm(input, undefined)!,
+    colourLimit: `The loader has no room for the ${COLOURS} colours of the colour RAM in ${COLOUR_AREAS.map(show).join(" or ")} outside the segments, the loader and its copier, so it does not set the colour RAM. The program starts with the colours that the loader leaves there.`,
+  };
+}
+
+/** The plain or the packed plan, with the colours of the colour RAM when they are given. Undefined when the colours have no room. */
+function planForm(input: LoaderInput, colours: Uint8Array | undefined): LoaderPlan | undefined {
   const { state } = input;
   const screen = checkStartScreen(input);
   const copierBytes = screen === undefined ? COPIER_LIMIT : COPIER_LIMIT + 0x100;
@@ -550,15 +579,19 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   }
   const cia = ciaSection(state);
   const ciaSize = cia === undefined ? 0 : cia.ops.reduce((sum, op) => sum + op.bytes, 0);
-  const codeSize = COPIER_CODE_SIZE + (state.vic === undefined ? 0 : VIC_SIZE) + ciaSize + (screen === undefined ? 0 : START_SCREEN_SIZES[screen.colourMode]);
+  const codeSize = COPIER_CODE_SIZE + (state.vic === undefined ? 0 : VIC_SIZE) + ciaSize + (screen === undefined ? 0 : START_SCREEN_SIZES[screen.colourMode]) + (colours === undefined ? 0 : COLOUR_CODE_SIZE);
+  // The colours come after the blocks in the loader file. Their copy runs first, to a free range outside the loader file.
+  const colourSource = at;
+  if (colours !== undefined) at += COLOURS;
+  const copyCount = plain.length + (colours === undefined ? 0 : 1);
   const copierImage = at;
-  const end = copierImage + codeSize + COPY_ENTRY * plain.length + 2 - 1;
-  if (input.packed === true) return planPacked(input, blocks, cia, codeSize, screen, "The start screen of a captured stage shows while the program is still packed.");
+  const end = copierImage + codeSize + COPY_ENTRY * copyCount + 2 - 1;
+  if (input.packed === true) return planPacked(input, blocks, cia, codeSize, screen, "The start screen of a captured stage shows while the program is still packed.", colours);
   // The end can be past $ffff, which is no address.
-  if (end > LOAD_LIMIT) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader would end ${end > 0xffff ? "past $ffff" : `at ${formatC64Address(end)}`}, after ${formatC64Address(LOAD_LIMIT)}: loading it would write the I/O area.`);
+  if (end > LOAD_LIMIT) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader would end ${end > 0xffff ? "past $ffff" : `at ${formatC64Address(end)}`}, after ${formatC64Address(LOAD_LIMIT)}: loading it would write the I/O area.`, colours);
   // The CIA part and the start screen take room from the copy table in the copier's pages.
   const maxCopies = Math.max(0, Math.min(TABLE_COPIES, Math.floor((copierBytes - codeSize - 2) / COPY_ENTRY)));
-  if (plain.length > maxCopies) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader needs ${plain.length} copies, and its copier can do at most ${maxCopies}.`);
+  if (copyCount > maxCopies) return planPacked(input, blocks, cia, codeSize, screen, `The plain loader needs ${copyCount} copies, and its copier can do at most ${maxCopies}.`, colours);
 
   const order = copyOrder(plain);
   if (order === undefined) {
@@ -572,8 +605,21 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     return areas.some((area) => pages.start >= area.start && pages.end <= area.end) && !overlaps(pages, loaded) && plain.every((copy) => !overlaps(pages, copy.target));
   });
   if (copier === undefined) {
+    if (colours !== undefined) return undefined;
     const count = copierPages === 2 ? "two" : "three";
     throw new WireFailure("invalid-input", `No ${count} free pages exist for the copier in ${areas.map(show).join(" or ")} outside the loader (${show(loaded)}) and the targets: ${plain.map((copy) => show(copy.target)).join(", ")}.`);
+  }
+  let colourRange: AddressRange | undefined;
+  if (colours !== undefined) {
+    // Outside the loader file, the copy of the colours writes over no source: it runs first, before a copy writes over its own source.
+    colourRange = freeColourRange([...input.segments, loaded, { start: copier, end: copier + copierBytes - 1 }]);
+    if (colourRange === undefined) return undefined;
+    const block = { what: "entry state colour RAM", range: colourRange, pseudo: colourRange.start, bytes: (address: number) => colours[address - colourRange!.start]! };
+    blocks.push(block);
+    packedAt.push(colourSource);
+    order.unshift(plain.length);
+    plain.push({ what: block.what, target: colourRange, source: { start: colourSource, end: colourSource + COLOURS - 1 } });
+    blockOf.push(colourRange.start);
   }
   const copies: Copy[] = order.map((index) => {
     const copy = plain[index]!;
@@ -617,7 +663,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     lines.push("}", blockLabel(block.range.start, "end"));
   }
   lines.push("", `; The copier runs at ${formatC64Address(copier)}. The flags pass through ${formatC64Address(stackByte)}, the free stack byte below the stack pointer.`, COPIER_SOURCE, `!pseudopc ${formatC64Address(copier)} {`);
-  lines.push(...copierLines(state, cia, stackByte, input.entryName ?? formatC64Address(input.entry), screen !== undefined));
+  lines.push(...copierLines(state, cia, stackByte, input.entryName ?? formatC64Address(input.entry), screen !== undefined, colourRange?.start));
   copies.forEach((copy, index) => {
     // A block that starts at $0000 skips $00/$01, which the loader sets last.
     const start = copyBlocks[index]!;
@@ -640,6 +686,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     text: `${lines.join("\n")}\n`,
     ...(cia === undefined ? {} : { cia: cia.plan }),
     ...(screen === undefined ? {} : { startScreen: screen }),
+    ...(colourRange === undefined ? {} : { colours: colourRange }),
   };
 }
 
@@ -647,6 +694,23 @@ export function planLoader(input: LoaderInput): LoaderPlan {
 const BELOW_VECTORS = 0xfff9;
 /** Where the packed form puts the bytes of pages 0-3: the copier reads them with all RAM visible ($01 = $34). */
 const PIECE_AREA: AddressRange = { start: 0x0400, end: BELOW_VECTORS };
+/** Where the colours of the colour RAM wait for the copier, which reads them with $01 = $35: RAM outside the I/O area, below the vectors. */
+const COLOUR_AREAS: readonly AddressRange[] = [
+  { start: 0x0400, end: 0xcfff },
+  { start: 0xe000, end: BELOW_VECTORS },
+];
+
+/**
+ * The first free range of the 1000 colours outside the taken ranges, or
+ * undefined when none holds them. The screen at $0400 comes last: the colours
+ * there show while the loader runs.
+ */
+function freeColourRange(taken: AddressRange[]): AddressRange | undefined {
+  const free = COLOUR_AREAS.flatMap((area) => subtract(area, taken))
+    .sort((a, b) => Number(a.start < 0x0800) - Number(b.start < 0x0800))
+    .find((range) => range.end - range.start + 1 >= COLOURS);
+  return free === undefined ? undefined : { start: free.start, end: free.start + COLOURS - 1 };
+}
 
 /**
  * Where a loader puts its copier: the copier sets $01 to $35 and then to the
@@ -669,9 +733,11 @@ const SHOWN_FREE = 8;
  * and the bytes of pages $0002-$03ff, in pieces in the free ranges: the
  * unpacker of Exomizer uses the zero page and $0334-$03ff, so the copier
  * writes them after the unpack. Between its ranges, loader.asm holds the
- * bytes of the image, so its build does not change a segment.
+ * bytes of the image, so its build does not change a segment. The colours of
+ * the colour RAM are in one more free range, where the unpack puts them.
+ * Undefined when the colours have no room.
  */
-function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof ciaSection>, copierCode: number, screen: StartScreenPlan | undefined, tooLarge: string): LoaderPlan {
+function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof ciaSection>, copierCode: number, screen: StartScreenPlan | undefined, tooLarge: string, colours: Uint8Array | undefined): LoaderPlan | undefined {
   const { state } = input;
   // The packed copier starts with SEI, as the stub of the plain form does: an interrupt in the copies would go through the vectors in RAM.
   const codeSize = copierCode + 1;
@@ -703,8 +769,11 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
   const copierEnd = copier + codeSize + COPY_ENTRY * pieces.length + 2 - 1;
   // The sources are at $0400 or higher and the targets below: any order works.
   const copies: Copy[] = pieces.map((piece) => ({ what: piece.what, target: piece.target, source: { start: piece.at, end: piece.at + piece.target.end - piece.target.start }, backward: false }));
-  const start = Math.min(copier, ...pieces.map((piece) => piece.at));
-  const end = Math.max(copierEnd, ...copies.map((copy) => copy.source.end));
+  const colourRange = colours === undefined ? undefined : freeColourRange([...input.segments, { start: copier, end: copierEnd }, ...copies.map((copy) => copy.source)]);
+  if (colours !== undefined && colourRange === undefined) return undefined;
+  const colourBytes = (address: number) => colours![address - colourRange!.start]!;
+  const start = Math.min(copier, ...pieces.map((piece) => piece.at), ...(colourRange === undefined ? [] : [colourRange.start]));
+  const end = Math.max(copierEnd, ...copies.map((copy) => copy.source.end), ...(colourRange === undefined ? [] : [colourRange.end]));
   const stackByte = 0x0100 + state.sp;
   const lines: string[] = [
     ...input.header.map((line) => `; ${line}`),
@@ -725,7 +794,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     COPIER_SOURCE,
     "        sei",
     // The entry by its address: main.asm, which has its label, is not in this build.
-    ...copierLines(state, cia, stackByte, `${formatC64Address(input.entry)}${input.entryName === undefined ? "" : ` ; ${input.entryName} in main.asm`}`, screen !== undefined),
+    ...copierLines(state, cia, stackByte, `${formatC64Address(input.entry)}${input.entryName === undefined ? "" : ` ; ${input.entryName} in main.asm`}`, screen !== undefined, colourRange?.start),
   ];
   for (const copy of copies) {
     const [from, to] = [blockLabel(copy.target.start, "from"), blockLabel(copy.target.start, "end")];
@@ -738,6 +807,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     const text = [`; ${piece.what}`, `* = ${formatC64Address(piece.at)}`, blockLabel(piece.target.start, "from"), ...byteLines(piece.target, piece.bytes), blockLabel(piece.target.start, "end")];
     parts.push({ range, text });
   }
+  if (colourRange !== undefined) parts.push({ range: colourRange, text: ["; The colour RAM of the entry state: the copier puts it into $d800-$dbe7", `* = ${formatC64Address(colourRange.start)}`, ...byteLines(colourRange, colourBytes)] });
   const used = parts.map((part) => part.range);
   for (const segment of input.segments) {
     const within = { start: Math.max(segment.start, start), end: Math.min(segment.end, end) };
@@ -750,7 +820,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
   for (const part of parts) lines.push("", ...part.text);
   return {
     loaded: input.segments.map(({ start, end }) => ({ start, end })),
-    blocks: pieces.map((piece) => ({ what: piece.what, range: piece.target, packedAt: piece.at, bytes: piece.bytes })),
+    blocks: [...pieces.map((piece) => ({ what: piece.what, range: piece.target, packedAt: piece.at, bytes: piece.bytes })), ...(colourRange === undefined ? [] : [{ what: "entry state colour RAM", range: colourRange, packedAt: colourRange.start, bytes: colourBytes }])],
     copies,
     copier,
     stackByte,
@@ -758,6 +828,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     text: `${lines.join("\n")}\n`,
     ...(cia === undefined ? {} : { cia: cia.plan }),
     ...(screen === undefined ? {} : { startScreen: screen }),
+    ...(colourRange === undefined ? {} : { colours: colourRange }),
     packed: { start },
   };
 }
@@ -893,9 +964,10 @@ export async function packParts(parts: ReadonlyArray<{ start: number; body: Uint
  * the stack pointer, the flags and A/X/Y, and the jump to the entry. It ends
  * with the label of the table; the caller writes the table and closes the zone.
  * A start screen comes after the copies, which put its bytes in place, and
- * before the VIC-II part, which sets the display of the entry again.
+ * before the VIC-II part, which sets the display of the entry again. The
+ * colours come after the start screen, which writes the colour RAM.
  */
-function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stackByte: number, jumpTarget: string, startScreen: boolean): string[] {
+function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stackByte: number, jumpTarget: string, startScreen: boolean, colours: number | undefined): string[] {
   const [port0, port1] = state.port;
   return [
     "!zone loader_copier {",
@@ -953,6 +1025,7 @@ function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stac
     "        jmp .next",
     ".done",
     ...(startScreen ? START_SCREEN_LINES : []),
+    ...(colours === undefined ? [] : colourLines(colours)),
     // The CIA part runs after the raster wait: the wait ends its whole lines earlier, so the entry comes in its line.
     ...vicLines(state, Math.floor((cia?.ops.reduce((sum, op) => sum + op.cycles, 0) ?? 0) / LINE_CYCLES)),
     ...(cia === undefined ? [] : cia.ops.map((op) => `        ${op.text}`)),
@@ -981,6 +1054,23 @@ function copierLines(state: EntryState, cia: ReturnType<typeof ciaSection>, stac
           `.vicval !byte ${VIC_DISPLAY_REGISTERS.map((item) => formatC64Byte(state.vic!.registers[item.register]!)).join(",")}`,
         ]),
     ".table",
+  ];
+}
+
+/**
+ * The copier's colour part: with the I/O area visible, it copies the 1000
+ * colours of the entry state from `at` into the colour RAM, in four parts of 250.
+ */
+function colourLines(at: number): string[] {
+  const parts = [0, 250, 500, 750];
+  return [
+    "        lda #$35",
+    "        sta $01",
+    "        ldx #0",
+    ...parts.flatMap((offset, index) => [`${index === 0 ? ".colour " : "        "}lda ${formatC64Address(at + offset)},x`, `        sta ${formatC64Address(0xd800 + offset)},x`]),
+    "        inx",
+    `        cpx #${formatC64Byte(250)}`,
+    "        bne .colour",
   ];
 }
 

@@ -651,6 +651,12 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, state:
       const wanted = rasterLine(state.vic.registers);
       if (line !== wanted && line !== wanted + 1) differences.push(`the raster line is ${line}, not ${wanted}`);
     }
+    if (plan.colours !== undefined && state.colourRam !== undefined) {
+      // The colour RAM: the first wrong colour.
+      const colours = Buffer.from((await client.ioRead(0xd800, state.colourRam.length)).data, "hex");
+      const wrong = state.colourRam.findIndex((value, offset) => (colours[offset]! & 0x0f) !== value);
+      if (wrong >= 0) differences.push(`the colour RAM has ${colours[wrong]! & 0x0f} at ${formatC64Address(0xd800 + wrong)}, not ${state.colourRam[wrong]}`);
+    }
     if (plan.cia !== undefined) {
       // The CIA timers: at the jump a running timer is 3 cycles, the JMP, before its value at the entry.
       const chips = (await client.cia("both")).chips;
@@ -987,7 +993,14 @@ async function buildLoader(
   const program = loaderBuilt.program;
   const memory = new Int16Array(0x10000).fill(-1);
   program.subarray(2).forEach((byte, offset) => (memory[loaderBuilt.start! + offset] = byte));
-  const expected = (address: number) => (loader.loaded.some((part) => address >= part.start && address <= part.end) ? main.program[2 + address - main.start]! : state.pages[address]!);
+  // The plain form also copies the colours of the colour RAM to a free range, where the copier reads them.
+  const colours = loader.colours;
+  const expected = (address: number) =>
+    loader.loaded.some((part) => address >= part.start && address <= part.end)
+      ? main.program[2 + address - main.start]!
+      : colours !== undefined && address >= colours.start && address <= colours.end
+        ? state.colourRam![address - colours.start]!
+        : state.pages[address]!;
   const wrongPacking = loader.blocks.find((block) => {
     for (let address = block.range.start; address <= block.range.end; address++) if (memory[block.packedAt + address - block.range.start] !== block.bytes(address)) return true;
     return false;

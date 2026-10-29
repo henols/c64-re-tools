@@ -15,7 +15,7 @@ import { COVERAGE, instructionLength } from "../../src/c64.ts";
 import { assemble } from "../../src/native/acme.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ciaSection, copierAreas, copyOrder, loaderLimits, packLoader, planLoader, loaderState, loaderSymbols, simulate, START_SCREEN_CODE, START_SCREEN_FILE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { ciaSection, copierAreas, copyOrder, loaderLimits, packLoader, planLoader, loaderState, loaderSymbols, simulate, START_SCREEN_CODE, START_SCREEN_FILE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState, type LoaderPlan } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { PACKAGE } from "../../src/package.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
@@ -264,6 +264,45 @@ test("a packed loader puts pages 0-3 in free RAM under a ROM, and its copier onl
   assert.deepEqual(ram.copies.map((copy) => copy.source.start), [0xa000]);
 });
 
+test("the loader sets the colour RAM of the entry from a free range outside the I/O area; without the colours or without room, a limit says so", () => {
+  // Found on Barbarian: the loader did not set the colour RAM, so the pictures of the default build had other colours.
+  const colourRam = Uint8Array.from({ length: 1000 }, (_, index) => (index * 7) & 0x0f);
+  const byteAt = () => 0;
+  const colourAt = (plan: LoaderPlan) => (address: number) => (address >= plan.colours!.start && address <= plan.colours!.end ? colourRam[address - plan.colours!.start]! : 0);
+  // The plain form: the colours follow the blocks in the loader file, and their copy runs first, to a range outside the loader file.
+  const plain = planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }, { start: 0xc000, end: 0xc3ff, files: ["b.asm"] }], byteAt, state: state({ colourRam }), entry: 0x0810, header: [] });
+  assert.equal(plain.packed, undefined);
+  // 1022 + 2047 + 1024 bytes of blocks from $0826, then the 1000 colours; 202 bytes of copier code and 4 copies.
+  assert.equal(plain.end, 0x0826 + 4093 + 1000 + 202 + 4 * 7 + 2 - 1);
+  assert.deepEqual(plain.colours, { start: plain.end + 1, end: plain.end + 1000 }, "after the loader file, not on the screen at $0400");
+  assert.deepEqual([plain.copies[0]!.what, plain.copies[0]!.target, plain.copies[0]!.source.start], ["entry state colour RAM", plain.colours, 0x0826 + 4093]);
+  const memory = new Int16Array(0x10000).fill(-1);
+  for (const block of plain.blocks) for (let address = block.range.start; address <= block.range.end; address++) memory[block.packedAt + address - block.range.start] = block.bytes(address);
+  assert.equal(simulate(memory, plain.copies, colourAt(plain)), undefined, "the copies of the segments do not write over the colours before their copy");
+  const at = plain.colours!.start;
+  const hex = (address: number) => address.toString(16).padStart(4, "0");
+  assert.match(plain.text, new RegExp(`\\n {8}lda #\\$35\\n {8}sta \\$01\\n {8}ldx #0\\n\\.colour lda \\$${hex(at)},x\\n {8}sta \\$d800,x\\n {8}lda \\$${hex(at + 250)},x\\n {8}sta \\$d8fa,x\\n`));
+  assert.match(plain.text, /\n {8}inx\n {8}cpx #\$fa\n {8}bne \.colour\n/);
+  assert.deepEqual(loaderLimits(plain), ["The entry state has no CIA values, so the loader does not set the CIA timers. Capture the program again at its entry point to get them."]);
+
+  // The packed form: the unpack puts the colours in a free range of their own, outside the copier and the pieces of pages 0-3.
+  const packed = planLoader({ segments: [{ start: 0x0300, end: 0x0fff, files: ["a.asm"] }, { start: 0x2000, end: 0xffff, files: ["b.asm"] }], byteAt, state: state({ colourRam }), entry: 0x0810, header: [] });
+  const colours = packed.colours!;
+  assert.ok(colours.start >= 0x1000 && colours.end <= 0x1fff, `the colours at ${hex(colours.start)} are in the free range`);
+  const copierEnd = packed.copier + 168 + 35 + 2 * 7 + 2 - 1;
+  for (const range of [{ start: packed.copier, end: copierEnd }, ...packed.copies.map((copy) => copy.source)]) assert.ok(colours.end < range.start || colours.start > range.end, "the colours are not on the copier or a piece");
+  assert.ok(packed.packed!.start <= colours.start && packed.end >= colours.end, "loader.asm holds the colours");
+  assert.deepEqual(packed.blocks.at(-1), { what: "entry state colour RAM", range: colours, packedAt: colours.start, bytes: packed.blocks.at(-1)!.bytes });
+  assert.match(packed.text, new RegExp(`\\n\\* = \\$${hex(colours.start)}\\n {8}!byte \\$00,\\$07,\\$0e,\\$05,`));
+
+  // Without the colour RAM in the entry state, and without room for the colours, the loader is the one without them.
+  assert.equal(loaderLimits(planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x0810, header: [] })).at(-1), "The entry state has no colour RAM, so the loader does not set it. Capture the program again at its entry point to get it.");
+  const full = planLoader({ segments: [{ start: 0x0400, end: 0x1234, files: ["a.asm"] }, { start: 0x1700, end: 0xffff, files: ["b.asm"] }], byteAt, state: state({ colourRam }), entry: 0x0810, header: [] });
+  assert.deepEqual([full.colours, full.copier, full.copies.map((copy) => copy.what)], [undefined, 0x1235, ["entry state $0002-$03ff"]]);
+  assert.match(loaderLimits(full).at(-1)!, /^The loader has no room for the 1000 colours of the colour RAM in \$0400-\$cfff or \$e000-\$fff9 outside the segments, the loader and its copier, so it does not set the colour RAM\./);
+  assert.doesNotMatch(full.text, /\.colour/);
+});
+
 test("with real ACME, a packed loader puts the copier in one free range and pages 0-3 in pieces in other ranges, with the image bytes between them", { skip: acmeSkip }, async () => {
   // Found in a field run on a 57 KB game: no free range held the copier and pages 0-3 together.
   // Free: $c000-$c2ff and $c400-$c5ff. The copier with a part of pages 0-3 fills $c000-$c2ff; the rest goes to $c400.
@@ -502,7 +541,8 @@ test("with real ACME, the start screen code has its planned size in each colour 
   }
 });
 
-test("with real ACME, a loader with a start screen assembles to its planned layout in the plain and the packed form", { skip: acmeSkip }, async () => {
+test("with real ACME, a loader with a start screen and the colour RAM assembles to its planned layout in the plain and the packed form", { skip: acmeSkip }, async () => {
+  const colourRam = Uint8Array.from({ length: 1000 }, (_, index) => (index * 5) & 0x0f);
   const bytes = Array.from({ length: 0x8000 }, (_, offset) => offset & 0xff);
   const source = input(bytes, 0x0800, { regions: [{ start: 0x0800, end: 0x87ff, type: "bytes" }], startScreen: true });
   const rendered = render(layout(source), new Set(), []);
@@ -514,21 +554,25 @@ test("with real ACME, a loader with a start screen assembles to its planned layo
     return { program: attachments![0]!, symbols: result.symbols! };
   };
   for (const row of [koala(), koala({ colours: undefined as never, colour: 3 }), koala({ mode: "hires", colours: undefined as never })]) {
-    const plan = planLoader({ segments: [{ start: 0x0800, end: 0x87ff, files: ["segments/segment_0800.asm"] }], byteAt: source.byteAt, state: vicState({ pc: 0x0800 }), entry: 0x0800, header: [], config: true, startScreen: row });
+    const plan = planLoader({ segments: [{ start: 0x0800, end: 0x87ff, files: ["segments/segment_0800.asm"] }], byteAt: source.byteAt, state: vicState({ pc: 0x0800, colourRam }), entry: 0x0800, header: [], config: true, startScreen: row });
     const { program, symbols } = await build(plan.text);
     assert.equal(program.length - 2, plan.end - 0x0801 + 1, `the plan has the size of the code, ${row.mode}`);
+    const block = plan.blocks.find((item) => item.what === "entry state colour RAM")!;
+    assert.deepEqual(Uint8Array.from(program.subarray(2 + block.packedAt - 0x0801, 2 + block.packedAt - 0x0801 + 1000)), colourRam, "the colours are where the plan copies them from");
     const wait = symbols.find((symbol) => symbol.name === "loader_start_screen_wait")!;
     const at = wait.kind === "address" ? wait.address : wait.value;
     assert.ok(at > plan.copier && at < plan.copier + 0x300, "the start screen runs in the copier pages");
   }
   const packedSource: SourceInput = { ...input([], 0x0800, { startScreen: true }), segments: [{ start: 0x0800, end: 0xbfff }, { start: 0xd000, end: 0xdfff }], byteAt: (address) => address & 0xff };
   const packedRendered = render(layout(packedSource), new Set(), []);
-  const packed = planLoader({ segments: [{ start: 0x0800, end: 0xbfff, files: ["segments/segment_0800.asm"] }, { start: 0xd000, end: 0xdfff, files: ["segments/segment_d000.asm"] }], byteAt: packedSource.byteAt, state: vicState({ pc: 0x0800 }), entry: 0x0800, header: [], config: true, startScreen: koala() });
+  const packed = planLoader({ segments: [{ start: 0x0800, end: 0xbfff, files: ["segments/segment_0800.asm"] }, { start: 0xd000, end: 0xdfff, files: ["segments/segment_d000.asm"] }], byteAt: packedSource.byteAt, state: vicState({ pc: 0x0800, colourRam }), entry: 0x0800, header: [], config: true, startScreen: koala() });
   const files = [...packedRendered.files, { name: "loader.asm", text: packed.text }, { name: "start_screen.asm", text: START_SCREEN_CODE }];
   const contents = files.map((file) => Buffer.from(file.text));
   const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
   assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
   assert.equal(attachments![0]!.length - 2, packed.end - packed.packed!.start + 1, "the packed form has its planned layout");
+  const offset = 2 + packed.colours!.start - packed.packed!.start;
+  assert.deepEqual(Uint8Array.from(attachments![0]!.subarray(offset, offset + 1000)), colourRam, "the unpack puts the colours where the copier reads them");
 });
 
 test("an entry state file is read with its flags as PLP reads them, and a wrong one is refused", () => {

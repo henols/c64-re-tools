@@ -123,10 +123,12 @@ async function generate(memory: Uint8Array, segments: ReadonlyArray<{ start: num
       // The VIC-II at the entry: raster line $123, screen at $0c00 with bitmap mode, VIC bank 2, other colours.
       // The CIAs: CIA 1 timer A runs with TOD at 50 Hz and its own latch, timer B counts its underflows;
       // CIA 2 timer A runs one-shot, timer B is as the KERNAL leaves it. CIA 1 has timers A and B as interrupt sources.
+      // The colour RAM: no colour that the KERNAL leaves after RUN, in its high bits too, which the loader leaves out.
       io: {
         vic: { from: "$d000", bytes: Buffer.from(vic).toString("hex") },
         cia1: { from: "$dc00", bytes: "7fffff00" + "3412" + "5500" + "00000001" + "00" + "00" + "81" + "41" },
         cia2: { from: "$dd00", bytes: "c63f3f00" + "0020" + "ffff" + "00000001" + "00" + "00" + "09" + "08" },
+        colour: { from: "$d800", bytes: Buffer.from(Array.from({ length: 1000 }, (_, index) => 0xf0 | ((index * 5 + 2) & 0x0f))).toString("hex") },
       },
       cia: { cia1: { latchA: 0x2345, latchB: 0x0100, interruptMask: 0x03 }, cia2: { latchA: 0x3000, latchB: 0xffff, interruptMask: 0x00 } },
     }),
@@ -173,7 +175,7 @@ test("the loader puts every segment and pages 0-3 in place and gets to the entry
   assert.equal(json.loader.verified, true);
   assert.equal(json.loader.stackByte, "$01f0");
   assert.notEqual(json.loader.copier, "$c000", "the copier stays out of the segment at $c000");
-  assert.equal(json.loader.copies.length, 4, "three segments and pages $0002-$03ff");
+  assert.equal(json.loader.copies.length, 5, "three segments, pages $0002-$03ff and the colours of the colour RAM");
   assert.equal(json.loader.packed, undefined, "the plain form");
   const loader = readFileSync(join(project, "build", "clean_loader.prg"));
   assert.equal(loader.readUInt16LE(0), 0x0801);
@@ -195,8 +197,8 @@ test("a 62 KiB image with RAM at $d000-$dfff gets the packed loader, which gets 
   assert.deepEqual(json.loader.differences, []);
   assert.equal(json.loader.verified, true);
   assert.equal(json.loader.copier, "$c000");
-  // The segments and the copier at $c000: the gap $c000-$c7ff of main.asm is not packed.
-  assert.ok(json.loader.packed!.unpackedBytes > 0xc000 - 0x0801 + 0x10000 - 0xc800 && json.loader.packed!.unpackedBytes < 0x10000 - 0x0801, JSON.stringify(json.loader.packed));
+  // The segments, the copier at $c000 and the colours of the colour RAM at $0400, as the rest of the gap $c000-$c7ff is too small for them.
+  assert.ok(json.loader.packed!.unpackedBytes > 0xc000 - 0x0801 + 0x10000 - 0xc800 + 1000 && json.loader.packed!.unpackedBytes < 0x10000 - 0x0400, JSON.stringify(json.loader.packed));
   assert.deepEqual(json.loader.copies.map((copy) => copy.what), ["entry state $0002-$03ff"]);
   const loader = readFileSync(join(project, "build", "clean_loader.prg"));
   assert.equal(loader.readUInt16LE(0), 0x0801);
@@ -237,7 +239,7 @@ test("the loader does not load the leftovers: a range that nothing uses is not i
   assert.deepEqual(json.loader.differences, []);
   assert.equal(json.loader.verified, true);
   assert.deepEqual(json.leftovers?.listed.map((range) => [range.start, range.end]), [["$0813", "$08ff"]]);
-  assert.equal(json.loader.copies.length, 4, "the segment parts without the leftovers, and pages $0002-$03ff");
+  assert.equal(json.loader.copies.length, 5, "the segment parts without the leftovers, pages $0002-$03ff and the colours of the colour RAM");
   const loader = readFileSync(join(project, "build", "clean_loader.prg"));
   const table = Buffer.from(memory.subarray(0x0880, 0x0900));
   assert.equal(loader.indexOf(table), -1, "the bytes of the leftovers are not in the loader program");

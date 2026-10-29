@@ -258,15 +258,16 @@ The loader does these steps:
 
 1. `10 SYS 2061` starts it.
 2. It stops the interrupts and makes all RAM visible. It moves its copier to two free pages.
-3. It copies each segment without the leftovers, and the pages $0002-$03ff of the entry state, into place. No copy writes over the packed bytes of a copy that has not run yet.
+3. It copies each segment without the leftovers, and the pages $0002-$03ff of the entry state, into place. It also copies the 1000 colours of the colour RAM of the entry state to free RAM. No copy writes over the packed bytes of a copy that has not run yet.
 4. When the knowledge has a start screen and `START_SCREEN` is 1, it shows the start screen. It waits until the user releases all keys and fire buttons. Then it waits for a key, or for a fire button on joystick port 1 or 2, and for its release. A move of a joystick is not a key.
-5. It sets the screen registers of the VIC-II and the VIC bank from the entry state. Then it waits for the raster line of the entry.
-6. It sets the CIA timers, their latches and the interrupt masks from the entry state. A running timer gets the value that counts down to the timer value at the entry.
-7. It sets $00/$01, the stack pointer, A, X, Y and the flags. Then it jumps to the entry.
+5. It sets the colour RAM from the entry state. The start screen writes the colour RAM, thus this step comes after it.
+6. It sets the screen registers of the VIC-II and the VIC bank from the entry state. Then it waits for the raster line of the entry.
+7. It sets the CIA timers, their latches and the interrupt masks from the entry state. A running timer gets the value that counts down to the timer value at the entry.
+8. It sets $00/$01, the stack pointer, A, X, Y and the flags. Then it jumps to the entry.
 
 The copy table, the copier and the jump use labels, not numbers. `loader_from_xxxx` and `loader_end_xxxx` are around each packed segment. `loader_to_xxxx` is its first address in place. Thus a segment can change its length, and the loader still works.
 
-The loader changes the free stack byte below the stack pointer (`stackByte`). It does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. A program that reads SID voice 3 for random numbers can thus give a different result. A start screen writes the colour RAM, and the loader does not set it again. When you compare the reference and the rebuild, observe after the program sets its own random numbers.
+The loader changes the free stack byte below the stack pointer (`stackByte`). It does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. A program that reads SID voice 3 for random numbers can thus give a different result. When you compare the reference and the rebuild, observe after the program sets its own random numbers.
 
 The script builds and checks the loader program with the values of `config.asm`. With the defaults, the loader program is the clean program: no copy protection, all corrections and no leftovers. The entry state is the state of the base release. For a loader of a release, build `loader.asm` with the build option `--release <label>`. That loader also does not have the leftovers.
 
@@ -281,8 +282,9 @@ The start screen:
 `loader` holds these fields:
 
 - `program`, the `copies` in their order, `copier` and `stackByte`.
-- `verified: true`: the check ran the loader program to its jump to the entry. There, the memory, $00/$01, the registers and the VIC-II are equal to the entry state. The raster line and the CIA values are also equal. An interrupt can run right at the entry, as in the program of the base release.
-- `limits`: each CIA value that the loader cannot set as it was at the entry. An old capture has no CIA values. Then capture the program again at its entry point.
+- `verified: true`: the check ran the loader program to its jump to the entry. There, the memory, $00/$01, the registers, the VIC-II and the colour RAM are equal to the entry state. The raster line and the CIA values are also equal. An interrupt can run right at the entry, as in the program of the base release.
+- `limits`: each CIA value that the loader cannot set as it was at the entry. An old capture has no CIA values or no colour RAM. Then capture the program again at its entry point.
+  When no free RAM outside the segments has room for the 1000 colours, the loader does not set the colour RAM, and `limits` tells this. Then the program starts with other colours where it does not write them.
 - `startScreen`: with a start screen, `shown: true` when the VIC-II had the values of the start screen, and `waits: true` when the start screen waited without a key. `wait` and `continue` are the addresses of the wait and of the code after it. The check sets the PC to `continue`, and then runs the loader to its jump.
 - `packed`: `packedBytes` and `unpackedBytes` of the packed form. With a start screen of a captured stage, this is the packed program in the loader program.
 - `stage`: the show stage of a start screen of a captured stage. It has the `space` of the stage and the address of the show `code`. It also has the `bytes` of the stage in the loader program, the `stash` copies, `packedBytes` and `unpackedBytes`. `startScreen.stage` names the space.
