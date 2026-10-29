@@ -13,6 +13,7 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { openForRead } from "#src/knowledge/database.ts";
+import { changedEvidence, type EvidenceChange } from "#src/knowledge/evidence.ts";
 import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
 import { listComments, listModules, listReferences, listRegions, listSymbols, sourceRevision } from "#src/knowledge/read.ts";
 import { machineOf } from "#src/knowledge/project-machine.ts";
@@ -254,6 +255,8 @@ function link(call: Call): Reply {
   const reference = checkedReference !== undefined ? checkedReference : foundReference === undefined ? undefined : foundReference.slice(memberOf(foundReference)!.prefix.length).replace(/^\//, "");
   const referenceOf = (member: Member) => (reference === undefined ? undefined : posix.join(member.prefix, reference));
   const problems: Problem[] = [];
+  /** Missing or modified SHA-256-backed evidence in projects whose documentation is checked. */
+  const evidence: EvidenceChange[] = [];
 
   /** The names of a project, read the first time a page needs them. A project with given pages is read before the pages. */
   const loaded = new Map<Member, Names>();
@@ -275,6 +278,7 @@ function link(call: Call): Reply {
     try {
       revision = sourceRevision(db, map.space);
       symbols = listSymbols(db, undefined, undefined, undefined, map.space);
+      for (const change of changedEvidence(db, member.root)) evidence.push({ ...change, file: inProject(change.file) });
     } finally {
       db?.close();
     }
@@ -402,11 +406,17 @@ function link(call: Call): Reply {
     ...(check ? { notUpToDate: { links, pages: changedPages } } : { linked: { links, pages: changedPages } }),
     problems: { byKind, ...shownProblems },
   };
+  const shownEvidence = listed(evidence, call.count("max-listed")!, (change) => ({ ...change, file: shown(change.file) }));
+  if (evidence.length > 0) output.evidence = shownEvidence;
   const again = (withCheck: boolean) =>
     call.next("link", ...call.subjects, "--source", call.string("source")!, ...(givenReference === undefined ? [] : ["--reference", givenReference]), ...(withCheck ? ["--check"] : []), ...(scope.unnamed ? ["--project", root] : []));
   const hints: string[] = [];
   let nextAction: string | undefined;
   if (reference === undefined) hints.push("No reference/ folder is in or beside the given pages, so the links to the reference are not checked. Give --reference <dir>, or run generate first.");
+  if (evidence.length > 0) {
+    hints.push("The project knowledge cites files that are missing or changed since they were recorded. Restore the expected file or re-examine the affected facts and record updated evidence before rerunning --check.");
+    if (shownEvidence.rest !== undefined) hints.push(`evidence is cut. To list all files, give ${shownEvidence.rest}.`);
+  }
   if (problems.length > 0) {
     hints.push("Correct each problem in problems.listed as its message tells. Then run nextAction.");
     if (shownProblems.rest !== undefined) hints.push(`problems is cut. To list all problems, give ${shownProblems.rest}.`);
@@ -415,7 +425,8 @@ function link(call: Call): Reply {
     hints.push("Some links are not up to date. Run nextAction to write them.");
     nextAction = again(false);
   }
-  return reply({ result: problems.length > 0 || (check && links > 0) ? "FAIL" : "PASS", ...output }, { ...(hints.length === 0 ? {} : { hint: hints.join(" ") }), nextAction });
+  // Stale supporting material invalidates read-only checks but does not block link edits.
+  return reply({ result: problems.length > 0 || (check && (links > 0 || evidence.length > 0)) ? "FAIL" : "PASS", ...output }, { ...(hints.length === 0 ? {} : { hint: hints.join(" ") }), nextAction });
 }
 
 const SOURCE = { kind: "path", value: "<dir>", help: "the folder of the source that was generated from the knowledge, relative to the project folder" } as const;
@@ -440,13 +451,13 @@ await runScript({
     },
     {
       name: "link",
-      summary: "Links each name with its address in the pages to its line in the source, and checks every link and image. result is FAIL when a page has a problem, or with --check when a link is not up to date.",
+      summary: "Links each name with its address in the pages to its line in the source, and checks every link and image. With --check, FAIL also when cited knowledge evidence is missing or changed.",
       subjects: [{ name: "<page>", help: ".md files and folders of the documentation, relative to the project folder or the group folder, for example README.md docs. link reads each file and every .md file below each folder", list: true }],
       options: {
         // Text, not a path of the run: in a group, each project has the source and the reference at this path.
         source: { kind: "text", value: "<dir>", help: `${SOURCE.help}. In a group, the same folder in each project`, required: true },
         reference: { kind: "text", value: "<dir>", help: "the folder of the reference pages of generate, relative to the project folder; in a group, the same folder in each project. The default is the first reference/ folder in a given folder or beside a given page" },
-        check: { kind: "flag", help: "write nothing. FAIL when a link is not up to date or a page has a problem" },
+        check: { kind: "flag", help: "write nothing. FAIL when a link is not up to date, a page has a problem, or knowledge evidence is stale" },
         "max-listed": OPTIONS["max-listed"],
       },
       notes: "A name in backticks with its address in backticks after it, for example `draw_room` `$09BC`, becomes one link to the line of the name in the source. A name without an address gets no link. A name gets one link in each section, and a table gets no links. In a group folder, write the folder of the project before the name, for example `v2:draw_room` `$09BC`.",
