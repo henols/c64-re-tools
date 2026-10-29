@@ -176,11 +176,12 @@ In a group folder, a label names the project of a name. Write the label and a co
 - `linked`: `links`, the count of the links that it wrote, and `pages`, the pages that it changed. With `--check`, `notUpToDate` has the same fields for the links that are not up to date.
 - `problems`: `byKind`, `count`, `listed` and `rest`. Each item has `at` (the page and the line), `kind` and `message`. In a group folder, each item also has `project`: the label of the project of the page, or `shared`.
 - `group`: only in a group folder. `folder` is the group folder, relative to the folder of the pages. `projects` holds the labels.
-- `evidence`: only when the project knowledge gives a file as evidence and the file is missing or changed. `count`, `listed` and `rest`. Each item has the `file`, its `state` (`missing` or `changed`) and the `revisions` that give the file. The project knowledge keeps the SHA-256 of each file of its evidence. An evidence item does not make `result` a FAIL.
+- `evidence`: only when the project knowledge gives a file as evidence and the file is missing or changed. `count`, `listed` and `rest`. Each item has the `file`, its `state` (`missing` or `changed`) and the `revisions` that give the file. The project knowledge keeps the SHA-256 of each file of its evidence. With `--check`, any such evidence makes `result` a FAIL; without `--check`, it is reported as a warning.
 
 `hint` and `nextAction`:
 
 - A page has a problem: `hint` tells you to correct each problem. `nextAction` runs the same `link` command again.
+- With `--check`, missing or changed knowledge evidence also makes `result` FAIL even if all links are valid. Restore the file or re-examine and update the affected knowledge revisions before checking again. A normal `link` run still reports the evidence without blocking edits.
 - With `--check`, a link is not up to date and no page has a problem: `nextAction` runs `link` without `--check` to write the links.
 - `reference` is `none`: no `reference` folder is in or beside the given pages. Give `--reference <dir>`, or run `generate` first.
 - `evidence` has items: for a coverage map that changed, put the map into the project knowledge again. For a file that you did not change on purpose, restore it from git. Else examine the facts of the revisions against the new file. Give the new file as evidence of the next write of these facts.
