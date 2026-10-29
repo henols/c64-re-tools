@@ -17,6 +17,7 @@ import { openForRead, TEXT_DIRECTORY } from "#src/knowledge/database.ts";
 import { changedEvidence, type EvidenceChange } from "#src/knowledge/evidence.ts";
 import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
 import { listComments, listModules, listReferences, listRegions, listSymbols, sourceRevision } from "#src/knowledge/read.ts";
+import { compareText } from "#src/knowledge/text.ts";
 import { groupOf, namedGroup, PROJECT_DIRECTORY, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
 import { GENERATED_MARK, referenceStamp } from "#src/reference-pages.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
@@ -254,19 +255,27 @@ function link(call: Call): Reply {
   const evidence: Array<EvidenceChange & { project?: string }> = [];
   const evidenceRead = new Set<Member>();
   const addEvidence = (member: Member, db: DatabaseSync | undefined) => {
+    if (evidenceRead.has(member)) return;
     evidenceRead.add(member);
     for (const change of changedEvidence(db, member.root)) evidence.push({ ...change, file: posix.join(member.prefix, change.file), ...(member.label === undefined ? {} : { project: member.label }) });
   };
-  /** The evidence of a project that no page names. Knowledge that cannot be read is a problem of the run, not the end of it. */
+  /** The projects whose knowledge cannot be read: one problem each, not the end of the run. */
+  const unreadableKnowledge = new Set<Member>();
+  const markUnreadable = (member: Member, error: Refusal) => {
+    if (unreadableKnowledge.has(member)) return;
+    unreadableKnowledge.add(member);
+    problems.push({ page: posix.join(member.prefix, PROJECT_DIRECTORY, TEXT_DIRECTORY), line: 1, kind: "unreadable-knowledge", message: `The knowledge of the project ${member.label} cannot be read: ${error.message}` });
+  };
+  /** The evidence of a project that no page names. */
   const readEvidence = (member: Member) => {
-    if (evidenceRead.has(member)) return;
+    if (evidenceRead.has(member) || unreadableKnowledge.has(member)) return;
     let db: DatabaseSync | undefined;
     try {
       db = openForRead(member.root);
       addEvidence(member, db);
     } catch (error) {
       if (!(error instanceof Refusal)) throw error;
-      problems.push({ page: posix.join(member.prefix, PROJECT_DIRECTORY, TEXT_DIRECTORY), line: 1, kind: "unreadable-knowledge", message: `The knowledge of the project ${member.label} cannot be read: ${error.message}` });
+      markUnreadable(member, error);
     } finally {
       db?.close();
     }
@@ -370,16 +379,27 @@ function link(call: Call): Reply {
   if (pagesGiven.some((page) => memberOf(page) === undefined)) members.forEach(readEvidence);
 
   const labels = members.map((member) => member.label!);
+  /** The names of a project that a page names: a project whose knowledge cannot be read has none, so its mentions stay as they are. */
+  const loadNamed = (member: Member): Names | undefined => {
+    if (unreadableKnowledge.has(member)) return undefined;
+    try {
+      return load(member, false);
+    } catch (error) {
+      if (!(error instanceof Refusal)) throw error;
+      markUnreadable(member, error);
+      return undefined;
+    }
+  };
   const namesFor = (page: string) => (label: string | undefined): ReturnType<LinkContext["names"]> => {
     if (group === undefined) return label === undefined ? load(members[0]!, false) : undefined;
     if (label === undefined) {
       const own = memberOf(page);
-      if (own !== undefined) return load(own, false);
+      if (own !== undefined) return loadNamed(own);
       return { kind: "unlabelled-name", message: `A page of the group folder must name the project of each name. Write the folder of the project before the name, for example \`${labels[0]}:name\`.` };
     }
     const member = members.find((each) => each.label === label);
     if (member === undefined) return { kind: "unknown-label", message: `${label} is no project of the group folder. The projects are ${labels.join(", ")}. Correct the label.` };
-    return load(member, false);
+    return loadNamed(member);
   };
   const managed = (path: string) => members.some((member) => within(path, posix.join(member.prefix, source)) || within(path, referenceOf(member)));
 
@@ -422,8 +442,8 @@ function link(call: Call): Reply {
     ...(check ? { notUpToDate: { links, pages: changedPages } } : { linked: { links, pages: changedPages } }),
     problems: { byKind, ...shownProblems },
   };
-  const order = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  evidence.sort((a, b) => order(a.file, b.file) || order(a.project ?? "", b.project ?? ""));
+  // Two projects can give the same file, one of them through a ../ path: the project orders them.
+  evidence.sort((a, b) => compareText(a.file, b.file) || compareText(a.project ?? "", b.project ?? ""));
   const shownEvidence = listed(evidence, call.count("max-listed")!, (change) => ({ ...change, file: shown(change.file) }));
   if (evidence.length > 0) output.evidence = shownEvidence;
   const again = (withCheck: boolean) =>

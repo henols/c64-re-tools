@@ -303,11 +303,9 @@ Traps:
 3. Read `differences`.
 4. To find how the program uses the differences, run `compare` again with `--frames`. Give the frames and the steps that get the program to the part that you examine. Read `runtime` of each difference.
 5. Examine each important difference. Disassemble or analyze the bytes of each release. Find what the change does, for example a trainer, a removed copy protection, or a changed text.
-6. Find the bytes that the releases share, and find where each difference can come from. Use more than the byte comparison: the code, the text, and the history of the releases.
+6. Decide which bytes of each difference are the program, and which bytes are a change of a crack or of a release. Steps 7 and 8 use this decision. Use more than the byte comparison: the code, the text, and the history of the releases.
    - Do not call releases independent when you do not know their relation. Two cracks can come from the same source.
    - Do not call a byte a byte of the commercial original only because one release has it. A majority of releases is also not proof.
-   - When nobody compared an authenticated original, the rebuild is a rebuild of the reference files. Do not write that it is identical to the commercial original.
-   - Old code or old source text is evidence of the development. It does not prove the computer of the authors, the order of their work, or the path of a copy through the crackers.
 7. Record each release in the project knowledge. The base release is the program in the project knowledge.
 8. Record each difference in the project knowledge as a switch and a patch. Select the kind of the switch:
    - `protection`: a copy protection, or the code that a crack changed to remove it.

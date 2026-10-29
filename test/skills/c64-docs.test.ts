@@ -389,6 +389,9 @@ test("docs.ts link --check in a group folder fails on the changed evidence of a 
   const linked = link(group, "README.md", "--source", "src");
   assert.equal(linked.json.result, "PASS");
   assert.deepEqual(linked.json.evidence, checked.json.evidence);
+  // A shared page that also names v2: its evidence counts once.
+  writeFileSync(join(group, "README.md"), "[`v1:main` `$1000`](v1/src/main_code.asm#L5) and [`v2:main` `$1000`](v2/src/main_code.asm#L5)\n");
+  assert.deepEqual(link(group, "README.md", "--source", "src", "--check").json.evidence, checked.json.evidence);
 
   // A project that no page names, with knowledge that cannot be read: a problem of the run, and the links are still written.
   project(join(group, "v3"));
@@ -400,6 +403,17 @@ test("docs.ts link --check in a group folder fails on the changed evidence of a 
   assert.deepEqual(problems.byKind, { "unreadable-knowledge": 1 });
   assert.deepEqual([problems.listed[0]!.at, problems.listed[0]!.project], ["v3/.c64-re-tools/knowledge:1", "v3"]);
   assert.equal(readFileSync(join(group, "README.md"), "utf8"), "[`v1:main` `$1000`](v1/src/main_code.asm#L5)\n");
+  // A page that names v3: still one problem, and its mention of v3 stays as it is.
+  writeFileSync(join(group, "README.md"), "`v1:main` `$1000` and `v3:main` `$1000`\n");
+  const named = link(group, "README.md", "--source", "src");
+  assert.equal(named.json.result, "FAIL");
+  assert.deepEqual((named.json.problems as { byKind: Record<string, number> }).byKind, { "unreadable-knowledge": 1 });
+  assert.equal(readFileSync(join(group, "README.md"), "utf8"), "[`v1:main` `$1000`](v1/src/main_code.asm#L5) and `v3:main` `$1000`\n");
+  // A page of v1 that names v3, with no shared page: the same problem.
+  writeFileSync(join(group, "v1/notes.md"), "`main` `$1000` and `v3:main` `$1000`\n");
+  const fromProject = link(group, "v1/notes.md", "--source", "src");
+  assert.deepEqual((fromProject.json.problems as { byKind: Record<string, number> }).byKind, { "unreadable-knowledge": 1 });
+  assert.equal(readFileSync(join(group, "v1/notes.md"), "utf8"), "[`main` `$1000`](src/main_code.asm#L5) and `v3:main` `$1000`\n");
 });
 
 test("docs.ts link reports a page that is a symbolic link to no file or out of the project, and a link with a bare %", { skip: process.platform === "win32" && "symbolic links need rights on Windows" }, () => {
