@@ -78,7 +78,7 @@ writeFileSync(join(project, "walk.json"), JSON.stringify(walk));
 // The comparison comes at replay time: the recording has no names.
 const compare = ["--checkpoint", "count", "--state", "$c100:2"];
 
-test("a session records with no checkpoint, and replays on the original to the cycle", { skip, timeout: 120_000 }, () => {
+test("a session records with no checkpoint, and replays on the reference to the cycle", { skip, timeout: 120_000 }, () => {
   const recorded = script("record", ["walk.json", "--out", "tests/recordings/walk"]);
   assert.equal(recorded.status, 0, JSON.stringify(recorded.result));
   assert.equal(recorded.result.recorded, true);
@@ -187,11 +187,11 @@ test("a relocated rebuild replays the same, and a changed one fails at the first
   assert.deepEqual([moved.status, moved.result.result, moved.result.movedSites, moved.result.idleReads], [0, "PASS", 1, undefined]);
   const right = script("replay", ["tests/recordings/walk", ...compare, "--rebuild", "right.prg", "--out", "out"]);
   assert.deepEqual([right.status, right.result.result], [0, "FAIL"], JSON.stringify(right.result));
-  const difference = right.result.firstDifference as { checkpoint: number; items: Array<{ address: string; original: string; rebuild: string }> };
+  const difference = right.result.firstDifference as { checkpoint: number; items: Array<{ address: string; reference: string; rebuild: string }> };
   // Left is pressed after 20 frames: the frame that sees it first differs, in the left count.
   assert.ok(difference.checkpoint >= 20 && difference.checkpoint <= 23, `checkpoint ${difference.checkpoint}`);
   assert.equal(difference.items[0]!.address, "$c100");
-  assert.deepEqual((right.result.files as Array<{ out: string }>).map((file: { out: string }) => file.out.split("/").at(-1)), [`original-${difference.checkpoint}.bin`, `rebuild-${difference.checkpoint}.bin`]);
+  assert.deepEqual((right.result.files as Array<{ out: string }>).map((file: { out: string }) => file.out.split("/").at(-1)), [`reference-${difference.checkpoint}.bin`, `rebuild-${difference.checkpoint}.bin`]);
   assert.equal(readFileSync(join(project, "out", `rebuild-${difference.checkpoint}.bin`)).length, 65536);
 });
 
@@ -284,28 +284,28 @@ function handoverRecord(name: string, program: string, steps: unknown[]): Record
   return script("record", [`${name}-record.json`, "--out", `tests/recordings/${name}`], handover).result;
 }
 
-test("a pc key and a checkpoint of a rebuild with a loader count from the jump of the loader, without the fetches of the original before its entry", { skip, timeout: 120_000 }, () => {
+test("a pc key and a checkpoint of a rebuild with a loader count from the jump of the loader, without the fetches of the reference before its entry", { skip, timeout: 120_000 }, () => {
   const game = quietAt(0xc000).subarray(2);
-  handoverFiles("original", unpacked(game, 1), false);
+  handoverFiles("reference", unpacked(game, 1), false);
   handoverFiles("rebuild", unpacked(game, 2), true);
-  const recorded = handoverRecord("handover", "original", [{ frames: 20 }, { runUntil: { target: { kind: "address", address: "tick" }, timeoutFrames: 100 } }, { write: { address: "$c102", data: "05" } }, { frames: 20 }]);
+  const recorded = handoverRecord("handover", "reference", [{ frames: 20 }, { runUntil: { target: { kind: "address", address: "tick" }, timeoutFrames: 100 } }, { write: { address: "$c102", data: "05" } }, { frames: 20 }]);
   assert.equal(recorded.recorded, true, JSON.stringify(recorded));
   // The entry is where the loader of the rebuild jumps: the knowledge has none.
   const passed = handoverReplay("handover", "rebuild");
   assert.equal(passed.result, "PASS", JSON.stringify(passed));
-  // A rebuild that does not keep its input byte at $c101 differs at checkpoint 1. The RAM of the original is from its checkpoint 1 after the entry.
+  // A rebuild that does not keep its input byte at $c101 differs at checkpoint 1. The RAM of the reference is from its checkpoint 1 after the entry.
   const broken = quietAt(0xc000).subarray(2);
   broken[5] = 0x03; // STA $c103 in place of STA $c101
   handoverFiles("broken", unpacked(broken, 2), true);
   const failed = handoverReplay("handover", "broken", ["--out", "out"]);
-  const difference = failed.firstDifference as { checkpoint: number; items: Array<{ address: string; original: string }> };
+  const difference = failed.firstDifference as { checkpoint: number; items: Array<{ address: string; reference: string }> };
   assert.deepEqual([failed.result, difference.checkpoint], ["FAIL", 1], JSON.stringify(failed));
-  const ram = readFileSync(join(handover, "out", "original-1.bin"));
-  assert.equal(ram.subarray(0xc100, 0xc103).toString("hex"), difference.items[0]!.original);
+  const ram = readFileSync(join(handover, "out", "reference-1.bin"));
+  assert.equal(ram.subarray(0xc100, 0xc103).toString("hex"), difference.items[0]!.reference);
 });
 
 test("a step of a recording before the entry makes the replay of a rebuild with a loader INCONCLUSIVE", { skip, timeout: 120_000 }, () => {
-  const recorded = handoverRecord("early", "original", [{ write: { address: "$c103", data: "01" } }, { frames: 40 }]);
+  const recorded = handoverRecord("early", "reference", [{ write: { address: "$c103", data: "01" } }, { frames: 40 }]);
   assert.equal(recorded.recorded, true, JSON.stringify(recorded));
   const early = handoverReplay("early", "rebuild");
   assert.deepEqual([early.result, early.reason], ["INCONCLUSIVE", "step 1 ran before the program came to its entry $c000. A rebuild with a loader has no point for it. Make the steps of the record file start after the entry"], JSON.stringify(early));

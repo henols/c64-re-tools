@@ -279,9 +279,9 @@ function usesInErrors(diagnostics: Diagnostic[], lineOf: ReadonlyMap<string, num
 }
 
 /** The first address where two byte runs differ, as a reason. */
-function firstDifference(start: number, built: (address: number) => number, original: (address: number) => number, end: number): string | undefined {
+function firstDifference(start: number, built: (address: number) => number, imageByte: (address: number) => number, end: number): string | undefined {
   for (let address = start; address <= end; address++) {
-    if (built(address) !== original(address)) return `ACME assembles it to other bytes than the image: at ${formatC64Address(address)} it gives $${built(address).toString(16).padStart(2, "0")}, and the image has $${original(address).toString(16).padStart(2, "0")}.`;
+    if (built(address) !== imageByte(address)) return `ACME assembles it to other bytes than the image: at ${formatC64Address(address)} it gives $${built(address).toString(16).padStart(2, "0")}, and the image has $${imageByte(address).toString(16).padStart(2, "0")}.`;
   }
   return undefined;
 }
@@ -371,8 +371,8 @@ function blame(rendered: Rendered, built: Awaited<ReturnType<typeof assembleFile
   for (const item of rendered.expressions) {
     if (item.address + item.length - 1 > end || item.address < built.start!) continue;
     const assembled = word((address) => built.program![2 + address - built.start!]!, item);
-    const original = word(image.byteAt, item);
-    if (assembled !== original) blamed.set(item.address, `ACME assembles it to ${show(assembled, item.length)}, and the image has ${show(original, item.length)}.`);
+    const imageWord = word(image.byteAt, item);
+    if (assembled !== imageWord) blamed.set(item.address, `ACME assembles it to ${show(assembled, item.length)}, and the image has ${show(imageWord, item.length)}.`);
   }
   return { numbers: blamed, uses };
 }
@@ -526,7 +526,7 @@ async function readRam(client: ViceSessionClient, start: number, size: number): 
  * Runs the loader in the emulator to its jump to the entry and compares the
  * machine with the entry state there. At the jump, every byte and register is
  * set and no interrupt has run since the PLP: the 6502 takes one only after
- * the JMP, as the original program can take one right at its entry.
+ * the JMP, as the program can take one right at its entry.
  */
 /** What the check of the loader gives. `stop`: why the loader did not get to its copier or its jump. */
 interface LoaderRun {
@@ -1541,28 +1541,28 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
 
   // 1. The source of the knowledge must give the base release byte for byte, with every patch in it.
   const baseValues = new Map(knowledge.switches.map((row) => [row.name, row.base]));
-  const original = await buildSource(knowledge, { space: DEFAULT_SPACE, entries: [], header: [], values: baseValues, notExecutedMarks: false });
-  if (original.built.program === undefined) return { result: "FAIL", stage: "original", reason: "The source of the knowledge does not assemble.", diagnostics: original.built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
-  const checked = check(original.built.program, original.built.start!, image);
-  if (!checked.identical) return { result: "FAIL", stage: "original", reason: "The source of the knowledge does not assemble to the program.", check: checked };
-  if (original.missingEntry !== undefined) return { result: "FAIL", stage: "original", reason: original.missingEntry };
-  if (original.laid.patchesNotWritten.length > 0) {
-    return { result: "FAIL", stage: "original", reason: "The source cannot write every patch.", patchesNotWritten: listed(original.laid.patchesNotWritten, max, (item) => ({ ...shownRange(item), switch: item.switch, reason: item.reason })) };
+  const baseSource = await buildSource(knowledge, { space: DEFAULT_SPACE, entries: [], header: [], values: baseValues, notExecutedMarks: false });
+  if (baseSource.built.program === undefined) return { result: "FAIL", stage: "base", reason: "The source of the knowledge does not assemble.", diagnostics: baseSource.built.diagnostics.slice(0, MAX_DIAGNOSTICS) };
+  const checked = check(baseSource.built.program, baseSource.built.start!, image);
+  if (!checked.identical) return { result: "FAIL", stage: "base", reason: "The source of the knowledge does not assemble to the program.", check: checked };
+  if (baseSource.missingEntry !== undefined) return { result: "FAIL", stage: "base", reason: baseSource.missingEntry };
+  if (baseSource.laid.patchesNotWritten.length > 0) {
+    return { result: "FAIL", stage: "base", reason: "The source cannot write every patch.", patchesNotWritten: listed(baseSource.laid.patchesNotWritten, max, (item) => ({ ...shownRange(item), switch: item.switch, reason: item.reason })) };
   }
 
   // 2. Each switch at its export value. Two alternatives of one range cannot both be in.
   const values = new Map(knowledge.switches.map((row) => [row.name, exportValue(row)]));
-  for (const patch of original.laid.patches.values()) {
+  for (const patch of baseSource.laid.patches.values()) {
     const both = patch.alternatives.filter((alternative) => values.get(alternative.switch) !== alternative.base);
     if (both.length > 1) {
       throw new Refusal("invalid-input", `The switches ${both.map((item) => item.switch).join(" and ")} change ${formatC64Address(patch.start)}-${formatC64Address(patch.end)} in different ways, and the export puts both in. In the project knowledge, give all but one of them the kind change, with the default of the base release. Then export again.`);
     }
   }
-  const withPatches = switchesOf(original.laid);
+  const withPatches = switchesOf(baseSource.laid);
   const changedSwitches = knowledge.switches.filter((row) => values.get(row.name) !== row.base);
   const patchesIn = changedSwitches.flatMap((row) => withPatches.get(row.name) ?? []);
-  const baked = await assembleFiles(withValues(original.files, original.laid, values), "main.asm");
-  const bakedCheck = compareBuilds(baked, patchesIn, { program: original.built.program, start: original.built.start! });
+  const baked = await assembleFiles(withValues(baseSource.files, baseSource.laid, values), "main.asm");
+  const bakedCheck = compareBuilds(baked, patchesIn, { program: baseSource.built.program, start: baseSource.built.start! });
   const switches = knowledge.switches.map((row) => ({ name: row.name, kind: row.kind, base: row.base, value: values.get(row.name)! }));
   if (bakedCheck.result !== "fits" || baked.program === undefined) return { result: "FAIL", stage: "switches", reason: "The build with the export values of the switches does not fit.", switches, build: bakedCheck };
 
@@ -1808,7 +1808,7 @@ function generateReply(call: Call, body: Record<string, unknown>): Reply {
 function exportReply(body: Record<string, unknown>): Reply {
   if (body.result === "FAIL") {
     const hints: Record<string, string> = {
-      original: "Run generate, and correct the project knowledge until generate gives PASS. Then export again.",
+      base: "Run generate, and correct the project knowledge until generate gives PASS. Then export again.",
       switches: "Run generate. It builds each switch alone. Correct the patches in the project knowledge until each switch fits. Then export again.",
       export: "This is a defect of the script. Give the result to the user.",
       loader: "Read reason, and give it to the user.",

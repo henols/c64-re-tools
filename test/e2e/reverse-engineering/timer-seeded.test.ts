@@ -1,6 +1,6 @@
 // A program that reads the CIA timer at its entry, as a game that seeds its
 // random numbers from it: capture, source with a loader, and a c64-testing
-// scenario against the original. The loader sets the CIA timers, so
+// scenario against the reference. The loader sets the CIA timers, so
 // the rebuild reads the same value; a loader without them reads another.
 // Needs real VICE (C64RT_LIVE_VICE) and ACME.
 
@@ -55,13 +55,13 @@ async function skill(address: string, name: string, file: string, ...args: strin
   return { status, stdout, json: readEnvelope(stdout, status).json as Record<string, any> };
 }
 
-test("a rebuild whose loader sets the CIA timers reads the timer value of the original at the entry", { skip, timeout: 900_000 }, async () => {
-  mkdirSync(join(project, "original"));
-  writeFileSync(join(project, "original", "timer.prg"), timerPrg());
+test("a rebuild whose loader sets the CIA timers reads the timer value of the reference at the entry", { skip, timeout: 900_000 }, async () => {
+  mkdirSync(join(project, "releases"));
+  writeFileSync(join(project, "releases", "timer.prg"), timerPrg());
   const { address } = await startHost();
   const run = (name: string, file: string, ...args: string[]) => skill(address, name, file, ...args);
 
-  const captured = await run("c64-unpacker", "unpacker.ts", "capture", "original/timer.prg", "--until", "$c000", "--out", "unpacked");
+  const captured = await run("c64-unpacker", "unpacker.ts", "capture", "releases/timer.prg", "--until", "$c000", "--out", "unpacked");
   assert.equal(captured.status, 0, captured.stdout);
   const state = JSON.parse(readFileSync(join(project, "unpacked", "entry_state.json"), "utf8")) as Record<string, any>;
   assert.equal(state.cia.cia1.latchA, 0x4025, "the KERNAL's latch of CIA 1 timer A");
@@ -85,7 +85,7 @@ test("a rebuild whose loader sets the CIA timers reads the timer value of the or
       join(project, name),
       JSON.stringify({
         name: "reads the timer at the entry",
-        original: { program: "original/timer.prg", symbols: "none" },
+        reference: { program: "releases/timer.prg", symbols: "none" },
         rebuild: { program: loader, symbols: "none" },
         steps: [{ reset: "hard" }, { autostart: true }, { runUntil: { target: { kind: "address", address: "$c00c" }, timeoutFrames: 300 } }, { observe: "seeded", memory: [{ address: "$c100", size: 2 }] }],
       }),

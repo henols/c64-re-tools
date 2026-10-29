@@ -51,7 +51,7 @@ To get the command list, run the script with no arguments.
 - Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
 - In a group folder, each version of a program is a project. The script refuses the group folder and each folder in it that is not a project. Give `--project` with a project of the group, for example `--project v1`.
-- A path that a command only reads can go into another project of the group, for example `../v1/original/game.prg`. The command writes only in its own project.
+- A path that a command only reads can go into another project of the group, for example `../v1/releases/game.prg`. The command writes only in its own project.
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
@@ -192,7 +192,7 @@ Do these actions for the findings:
 - `; not executed $xxxx-$yyyy` starts code that no run of the coverage executed. The range is the same as in `not_executed.json`.
 - `+inc16 ptr` is a use of a macro of the knowledge. The comments inside a use go to its side comment.
 - `!zone patch_PROTECTION_100e` starts a patch. The condition is the switch state that the program does not have. It is `!if TRAINER` when the base release has the switch off. It is `!if PROTECTION = 0` when the base release has it on.
-- A patch block has the code of the patch and NOP to the end of the range. `else` has the original code. The labels inside the range come before the zone as `name = * + n`.
+- A patch block has the code of the patch and NOP to the end of the range. `else` has the code of the base release. The labels inside the range come before the zone as `name = * + n`.
 - Alternatives are patches of two or more switches at one range. They follow as `} else { !if FIX_B {`. A line before them stops the build with `!error` when two of them are in.
 
 #### The leftovers
@@ -242,7 +242,7 @@ The script writes a macro use only when the use gives the bytes of the program. 
 Build the program from the source in these ways:
 
 - The build of `config.asm`: no option. With the defaults, this is the default build, without the leftovers.
-- A release: the build option `--release ORIGINAL`.
+- A release: the build option `--release FIRESTAR`.
 - One switch: set its value in `config.asm`, for example `TRAINER = 1`. Do not define a switch on the command line of the build. ACME stops with `Symbol already defined`, because `config.asm` also sets the switch.
 
 #### The loader
@@ -266,7 +266,7 @@ The loader does these steps:
 
 The copy table, the copier and the jump use labels, not numbers. `loader_from_xxxx` and `loader_end_xxxx` are around each packed segment. `loader_to_xxxx` is its first address in place. Thus a segment can change its length, and the loader still works.
 
-The loader changes the free stack byte below the stack pointer (`stackByte`). It does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. A program that reads SID voice 3 for random numbers can thus give a different result. A start screen writes the colour RAM, and the loader does not set it again. When you compare the original and the rebuild, observe after the program sets its own random numbers.
+The loader changes the free stack byte below the stack pointer (`stackByte`). It does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. A program that reads SID voice 3 for random numbers can thus give a different result. A start screen writes the colour RAM, and the loader does not set it again. When you compare the reference and the rebuild, observe after the program sets its own random numbers.
 
 The script builds and checks the loader program with the values of `config.asm`. With the defaults, the loader program is the clean program: no copy protection, all corrections and no leftovers. The entry state is the state of the base release. For a loader of a release, build `loader.asm` with the build option `--release <label>`. That loader also does not have the leftovers.
 
@@ -281,7 +281,7 @@ The start screen:
 `loader` holds these fields:
 
 - `program`, the `copies` in their order, `copier` and `stackByte`.
-- `verified: true`: the check ran the loader program to its jump to the entry. There, the memory, $00/$01, the registers and the VIC-II are equal to the entry state. The raster line and the CIA values are also equal. An interrupt can run right at the entry, as in the original program.
+- `verified: true`: the check ran the loader program to its jump to the entry. There, the memory, $00/$01, the registers and the VIC-II are equal to the entry state. The raster line and the CIA values are also equal. An interrupt can run right at the entry, as in the program of the base release.
 - `limits`: each CIA value that the loader cannot set as it was at the entry. An old capture has no CIA values. Then capture the program again at its entry point.
 - `startScreen`: with a start screen, `shown: true` when the VIC-II had the values of the start screen, and `waits: true` when the start screen waited without a key. `wait` and `continue` are the addresses of the wait and of the code after it. The check sets the PC to `continue`, and then runs the loader to its jump.
 - `packed`: `packedBytes` and `unpackedBytes` of the packed form. With a start screen of a captured stage, this is the packed program in the loader program.
@@ -379,7 +379,7 @@ On `FAIL`, `hint` gives the action for the stage:
 
 | `stage` | Action |
 |---|---|
-| `original` | The source of the knowledge does not pass. Run `generate`, and correct the project knowledge until `generate` gives `PASS`. Then export again. |
+| `base` | The source of the knowledge does not pass. Run `generate`, and correct the project knowledge until `generate` gives `PASS`. Then export again. |
 | `switches` | The build with the export values changes bytes outside the patches, or a patch does not fit. Read `build`. Run `generate`, and correct the patches. |
 | `export` | This is a defect of the script. Give the result to the user. |
 | `loader` | Read `reason`, and give it to the user. The export does not make the packed form of the loader. |
@@ -433,7 +433,7 @@ tests/                     the tests of the project, changed for the new program
 
 - The source has no mark line, no `switches.asm` or `config.asm`, no patch zones and no `; not executed` lines. A start screen stays in the loader. Build with `-DSTART_SCREEN=0` to start the program at once. It keeps the names, the comments, the operand expressions and the macros. A line comment at each changed patch gives the switch, its kind, its value and the comments.
 - The knowledge has one revision `export`. It holds the program, the entry and its state, the names, the comments, the regions, the modules and the start screen. It has no history, analyzer names, references, operand expressions, macros, patches, switches, releases or coverage.
-- A scenario of `tests/` compares the build of the new project with the baseline. Both sides are the same program. Thus a step of the original side alone goes. A step of the rebuild side alone runs on both sides.
+- A scenario of `tests/` compares the build of the new project with the baseline. Both sides are the same program. Thus a step of the reference side alone goes. A step of the rebuild side alone runs on both sides.
 - A run file of `tests/` runs the build of the new project. Scenarios and run files take the names from the symbol files.
 - The export leaves out a test that restores a snapshot. It also leaves out a test with a name that the new program does not have, or with an address in a free range.
 - The export does not copy recordings, record files or `runs/`.
@@ -450,7 +450,7 @@ tests/                     the tests of the project, changed for the new program
 5. Record names, comments, regions and modules in the project knowledge.
 6. Run `generate` again. Do steps 4 to 6 again until the source is clear.
 7. Assemble `main.asm` to a program. This is the default build. For a release, give the build option `--release <label>`.
-8. For an unpacked program, run `generate --out <dir> --loader` at the end. Compare the loader program with the original program in a test.
+8. For an unpacked program, run `generate --out <dir> --loader` at the end. Compare the loader program with the program of the base release in a test.
 9. To start a new program from the rebuild, run `export`.
 
 ---

@@ -1039,7 +1039,7 @@ type ReleaseRequest = InSpace & { label: string; base?: boolean; comment?: strin
 function checkRelease(request: ReleaseRequest): void {
   checkSpace(request);
   if (typeof request.label !== "string" || !RELEASE_LABEL.test(request.label)) {
-    throw new Refusal("invalid-input", "A release label is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example ORIGINAL or FIRESTAR.");
+    throw new Refusal("invalid-input", "A release label is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example FIRESTAR or V2.");
   }
   for (const [address, bytes] of request.rows ?? []) {
     if (!Number.isInteger(address) || address < 0 || address > 0xffff || !/^(?:[0-9a-f]{2})+$/.test(bytes) || bytes.length > MEMORY_ROW * 2 || address + bytes.length / 2 > 0x10000) {

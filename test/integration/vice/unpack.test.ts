@@ -17,7 +17,7 @@ import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
+import { REFERENCE } from "../../fixtures/prg/counter-variants.ts";
 import { borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
 import { delayedPackedPrg, gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
 import { generatedCallPrg } from "../../fixtures/prg/generated-call.ts";
@@ -58,12 +58,12 @@ async function unpack(...args: string[]): Promise<{ status: number | null; json:
 }
 
 test("a capture at the unpacked entry gives the original program back", { skip: liveSkip, timeout: 180_000 }, async () => {
-  const end = 0xc000 + ORIGINAL.prg.length - 3;
+  const end = 0xc000 + REFERENCE.prg.length - 3;
   const { status, json } = await unpack("capture", "packed.prg", "--until", "$c000", "--out", "unpacked/game", "--range", `$c000-$${end.toString(16)}`);
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.segments, [{ start: "$c000", end: `$${end.toString(16)}` }]);
   assert.equal(json.pc, "$c000");
-  assert.deepEqual([...readFileSync(join(project, "unpacked", "game", `segment-c000-${end.toString(16)}.prg`))], [...ORIGINAL.prg]);
+  assert.deepEqual([...readFileSync(join(project, "unpacked", "game", `segment-c000-${end.toString(16)}.prg`))], [...REFERENCE.prg]);
   assert.equal(readFileSync(join(project, "unpacked", "game", "image.bin")).length, 0x10000);
 });
 
@@ -84,10 +84,10 @@ test("trace finds the code that the packed program wrote and runs; its range sta
   assert.equal(running.start, "$c000", "the decoder wrote the payload at $c000 and jumped there");
   assert.equal(traced.json.suggestedUntil, traced.json.pc);
 
-  const end = 0xc000 + ORIGINAL.prg.length - 3;
+  const end = 0xc000 + REFERENCE.prg.length - 3;
   const captured = await unpack("capture", "packed.prg", "--until", running.start, "--out", "unpacked/traced", "--range", `$c000-$${end.toString(16)}`);
   assert.equal(captured.status, 0, JSON.stringify(captured.json));
-  assert.deepEqual([...readFileSync(join(project, "unpacked", "traced", `segment-c000-${end.toString(16)}.prg`))], [...ORIGINAL.prg]);
+  assert.deepEqual([...readFileSync(join(project, "unpacked", "traced", `segment-c000-${end.toString(16)}.prg`))], [...REFERENCE.prg]);
 });
 
 test("trace finds no written code in a program that runs as it loaded; a program without BASIC needs --entry", { skip: liveSkip, timeout: 180_000 }, async () => {
@@ -97,7 +97,7 @@ test("trace finds no written code in a program that runs as it loaded; a program
   assert.equal(loop.json.packing, "unlikely");
   assert.deepEqual(loop.json.writtenThenExecuted, { count: 0, listed: [] });
 
-  writeFileSync(join(project, "counter.prg"), ORIGINAL.prg);
+  writeFileSync(join(project, "counter.prg"), REFERENCE.prg);
   assert.equal((await unpack("trace", "counter.prg")).status, 2, "no BASIC start line and no --entry");
   const started = await unpack("trace", "counter.prg", "--entry", "$c000", "--frames", "100");
   assert.equal(started.status, 0, JSON.stringify(started.json));
@@ -106,17 +106,17 @@ test("trace finds no written code in a program that runs as it loaded; a program
 });
 
 test("a capture of a program that runs as it loaded gives the loaded bytes as a segment", { skip: liveSkip, timeout: 180_000 }, async () => {
-  writeFileSync(join(project, "plain.prg"), ORIGINAL.prg);
-  const end = 0xc000 + ORIGINAL.prg.length - 3;
-  const { status, json } = await unpack("capture", "plain.prg", "--entry", "$c000", "--until", `$${ORIGINAL.symbols.done!.toString(16)}`, "--out", "unpacked/plain");
+  writeFileSync(join(project, "plain.prg"), REFERENCE.prg);
+  const end = 0xc000 + REFERENCE.prg.length - 3;
+  const { status, json } = await unpack("capture", "plain.prg", "--entry", "$c000", "--until", `$${REFERENCE.symbols.done!.toString(16)}`, "--out", "unpacked/plain");
   assert.equal(status, 0, JSON.stringify(json));
   // The counter at $c100 is a block that the program wrote.
   assert.deepEqual(json.segments, [{ start: "$c000", end: `$${end.toString(16)}`, loaded: true }, { start: "$c100", end: "$c100" }]);
-  assert.deepEqual([...readFileSync(join(project, "unpacked", "plain", `segment-c000-${end.toString(16)}.prg`))], [...ORIGINAL.prg]);
+  assert.deepEqual([...readFileSync(join(project, "unpacked", "plain", `segment-c000-${end.toString(16)}.prg`))], [...REFERENCE.prg]);
 });
 
 test("a capture whose --until the CPU executed in a step tells that step", { skip: liveSkip, timeout: 180_000 }, async () => {
-  writeFileSync(join(project, "plain.prg"), ORIGINAL.prg);
+  writeFileSync(join(project, "plain.prg"), REFERENCE.prg);
   writeFileSync(join(project, "press-space.json"), JSON.stringify([{ press: { keys: " " } }]));
   // The CPU stands at $c000 until the press step runs: the STA at $c002 runs once, in that step.
   const { json } = await unpack("capture", "plain.prg", "--entry", "$c000", "--until", "$c002", "--steps", "press-space.json", "--out", "unpacked/passed", "--timeout-frames", "100");
@@ -140,13 +140,13 @@ test("trace and stages give FAIL with the stop reason when the CPU stops before 
 });
 
 test("a steps file presses the key that an intro waits for", { skip: liveSkip, timeout: 240_000 }, async () => {
-  const end = 0xc000 + ORIGINAL.prg.length - 3;
+  const end = 0xc000 + REFERENCE.prg.length - 3;
   const range = ["--range", `$c000-$${end.toString(16)}`];
   const blocked = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/blocked", "--timeout-frames", "300", ...range);
   assert.equal(blocked.json.captured, false, "without a key the intro waits");
   const { status, json } = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/gated", "--steps", "press-key.json", ...range);
   assert.equal(status, 0, JSON.stringify(json));
-  assert.deepEqual([...readFileSync(join(project, "unpacked", "gated", `segment-c000-${end.toString(16)}.prg`))], [...ORIGINAL.prg]);
+  assert.deepEqual([...readFileSync(join(project, "unpacked", "gated", `segment-c000-${end.toString(16)}.prg`))], [...REFERENCE.prg]);
   // Whether the CPU is in the unpacked code at the end depends on the moment (an IRQ can be running); that it ran there does not.
   const traced = await unpack("trace", "gated.prg", "--steps", "press-key.json", "--frames", "100");
   assert.ok((traced.json.writtenThenExecuted as { listed: Array<{ start: string }> }).listed.some((range) => range.start === "$c000"), JSON.stringify(traced.json));
@@ -163,7 +163,7 @@ test("a stage that a press step unpacks is found when the program jumps there af
 });
 
 test("a runUntil step to memory that does not reach its target ends the run with the step", { skip: liveSkip, timeout: 180_000 }, async () => {
-  writeFileSync(join(project, "plain.prg"), ORIGINAL.prg);
+  writeFileSync(join(project, "plain.prg"), REFERENCE.prg);
   writeFileSync(join(project, "never.json"), JSON.stringify([{ runUntil: { target: { kind: "memory", address: "$c0ff", operator: "eq", value: 0x99 }, timeoutFrames: 20 } }]));
   const { json } = await unpack("capture", "plain.prg", "--entry", "$c000", "--until", "$c014", "--steps", "never.json", "--out", "unpacked/never-step");
   assert.equal(json.captured, false, JSON.stringify(json));

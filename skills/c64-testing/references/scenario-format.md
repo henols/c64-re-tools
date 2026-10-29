@@ -7,7 +7,7 @@ A scenario is one JSON object in a project file.
 ```json
 {
   "name": "player moves left",
-  "original": { "program": "original/game.prg", "symbols": "knowledge" },
+  "reference": { "program": "releases/game.prg", "symbols": "knowledge" },
   "rebuild": { "program": "build/clean.prg", "symbols": "build/symbols/clean.json" },
   "steps": [
     { "frames": 150 },
@@ -23,7 +23,7 @@ A scenario is one JSON object in a project file.
 
 ## Subjects
 
-`original` and `rebuild` each have:
+`reference` and `rebuild` each have:
 
 - `program`: a PRG file, relative to the project folder.
 - `symbols`: where the names come from:
@@ -65,7 +65,7 @@ A `condition` has the `kind` `register`, `memory` or `raster`. A `register` cond
 
 `timeoutFrames` is from 1 to 30000, and 3000 by default. A `runUntil` that does not get to its target in `timeoutFrames` frames makes the result INCONCLUSIVE.
 
-Each step except `observe` can have `"side": "original"` or `"side": "rebuild"`. Then only that side does the step. Use it when only one side needs a step, for example a key for the intro of the original. An `observe` step has no `side`, because it compares both sides.
+Each step except `observe` can have `"side": "reference"` or `"side": "rebuild"`. Then only that side does the step. Use it when only one side needs a step, for example a key for the intro of the reference. An `observe` step has no `side`, because it compares both sides.
 
 Each side finds a name in its own symbols.
 
@@ -77,7 +77,7 @@ An `observe` step has a checkpoint name. A scenario can have each name only one 
 |---|---|
 | `memory` | A list of names, `$` addresses, or objects. An object has `address`, `size` (1 to 65536, default 1), `view` (`cpu` or `ram`, default `cpu`), `tolerance` (0 to 255, default 0), `mask` and `exclude`. The view `ram` reads the RAM under the ROMs and the I/O area. |
 | `registers` | A list of register names: `pc`, `a`, `x`, `y`, `sp`, `flags`. |
-| `screen` | The screen of the rebuild against the screen of the original. `maxMismatchRatio` (default 0) is the largest permitted part of different pixels. `mask` is a list of rectangles (`x`, `y`, `width`, `height`) that the comparison does not include. |
+| `screen` | The screen of the rebuild against the screen of the reference. `maxMismatchRatio` (default 0) is the largest permitted part of different pixels. `mask` is a list of rectangles (`x`, `y`, `width`, `height`) that the comparison does not include. |
 | `vicii` | The VIC-II state: mode, screen address, scroll and colors. |
 | `sprites` | A list of sprite numbers from 0 to 7. The script compares their position, color and flags. |
 
@@ -122,7 +122,7 @@ A name in `save`, `screen`, `coverage`, `observe` and `expect` has 1 to 64 lette
 
 ### Expected values
 
-An `expect` step compares the memory and the registers with the values that the step gives. It writes no file. Use it to test a program that has no original, for example a new program or a fix.
+An `expect` step compares the memory and the registers with the values that the step gives. It writes no file. Use it to test a program that has no reference, for example a new program or a fix.
 
 ```json
 { "expect": "title",

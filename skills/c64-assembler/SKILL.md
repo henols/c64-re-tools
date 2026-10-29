@@ -30,7 +30,7 @@ To get the command list, run the script with no arguments.
 | Build a generated source with the values of `config.asm` | `build src main.asm` |
 | Build the loader of a generated source. For the packed form, this is only the copier. | `build src loader.asm` |
 | Check that the rebuild is identical to the program in the project knowledge | `build src main.asm --compare` |
-| Build a release and check it against the bytes of that release | `build src main.asm --release ORIGINAL --compare` |
+| Build a release and check it against the bytes of that release | `build src main.asm --release FIRESTAR --compare` |
 | Check the rebuild of a program in another space, for example the drive | `build src main.asm --out build/drive.prg --compare --space drive8` |
 | List all symbols, also the constants that the source does not use | `build src main.a --out build/game.prg --all-symbols --max-listed 500` |
 | Write only the bytes of the program, without the load address | `build src main.a --out build/game.bin --plain` |
@@ -63,7 +63,7 @@ Without `--out`, the name of the program tells what the build is:
 
 | Build | Name |
 |---|---|
-| `--release <label>` | `release_<label>.prg`, for example `release_ORIGINAL.prg` |
+| `--release <label>` | `release_<label>.prg`, for example `release_FIRESTAR.prg` |
 | Each value of `config.asm` is its default | `clean.prg` |
 | A value of `config.asm` is not its default | `custom_<switches>.prg`, for example `custom_trainer.prg`. A switch that is off has `no_` before its name, for example `custom_no_start_screen.prg`. |
 | A source without `config.asm` | the name of the entry, for example `main.prg` |
@@ -75,7 +75,7 @@ An entry other than `main.asm` adds its name, for example `clean_loader.prg` for
 - Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
 - In a group folder, each version of a program is a project. The script refuses the group folder and each folder in it that is not a project. Give `--project` with a project of the group, for example `--project v1`.
-- A path that a command only reads can go into another project of the group, for example `../v1/original/game.prg`. The command writes only in its own project.
+- A path that a command only reads can go into another project of the group, for example `../v1/releases/game.prg`. The command writes only in its own project.
 - An address is `$` and 1 to 4 hex digits, for example `'$c000'` or `'$fb'`, or a name. A name is a symbol, else an analyzer name that only one analyzer gives. Put an address in single quotes in a shell.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
@@ -149,7 +149,7 @@ Do as the result tells:
 
 The script does not keep the diagnostics or the program in the project knowledge.
 
-To compare runs of the rebuild with runs of the original, give the symbols file to the test run as the symbols of the rebuild. A symbol of the rebuild gives the address of a routine in the rebuild.
+To compare runs of the rebuild with runs of the reference, give the symbols file to the test run as the symbols of the rebuild. A symbol of the rebuild gives the address of a routine in the rebuild.
 
 ---
 

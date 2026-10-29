@@ -9,7 +9,7 @@ A record file is one JSON object in a project file.
 ```json
 {
   "name": "first rooms",
-  "program": "original/game.prg",
+  "program": "releases/game.prg",
   "steps": [
     { "frames": 300 },
     { "joystick": { "port": 2, "direction": "center", "fire": true } },
@@ -131,21 +131,21 @@ A site is the address of the instruction that reads. The values are hex. `<from>
 
 ## Replay
 
-`replay` replays the recording on the original program first. The session must end with the recorded cycles and state hash. Else the result is INCONCLUSIVE. With `--rebuild`, `replay` then replays the recording on the rebuild. At each checkpoint, the rebuild first gets the pinned values of the original. Then the script compares the state. The cycles can be different.
+`replay` replays the recording on the reference program first. The session must end with the recorded cycles and state hash. Else the result is INCONCLUSIVE. With `--rebuild`, `replay` then replays the recording on the rebuild. At each checkpoint, the rebuild first gets the pinned values of the reference. Then the script compares the state. The cycles can be different.
 
 A recording without names (`symbols` is `none`) takes the names of the project knowledge at the time of the replay.
 
-For the rebuild, the script finds each name with the names of the rebuild (`--symbols`). A `$` address is an address of the original. It moves with the name before it in the original: the script finds the same name in the rebuild and adds the same offset. Code moves with a code label, and data with any name. A site in ROM does not move. Give a state item a name, or the state moves with the code before it.
+For the rebuild, the script finds each name with the names of the rebuild (`--symbols`). A `$` address is an address of the reference. It moves with the name before it in the reference: the script finds the same name in the rebuild and adds the same offset. Code moves with a code label, and data with any name. A site in ROM does not move. Give a state item a name, or the state moves with the code before it.
 
 The body of the envelope of `replay` has these fields:
 
 - `result`: PASS, FAIL or INCONCLUSIVE.
-- `side`: `original` for the check of the original only, `rebuild` with `--rebuild`.
+- `side`: `reference` for the check of the reference only, `rebuild` with `--rebuild`.
 - `checkpoint`: the routine of the comparison.
-- `checkpoints` and `compared`: the checkpoints of the original, and the checkpoints of the rebuild that were the same.
-- `firstDifference`: on a FAIL, the checkpoint (1 is the first), the cycle on each side, and each state item that is different. An item has `address`, and the `original` and `rebuild` values as hex.
+- `checkpoints` and `compared`: the checkpoints of the reference, and the checkpoints of the rebuild that were the same.
+- `firstDifference`: on a FAIL, the checkpoint (1 is the first), the cycle on each side, and each state item that is different. An item has `address`, and the `reference` and `rebuild` values as hex.
 - `reason`: why the result is FAIL or INCONCLUSIVE.
 - `movedSites`: the number of sites at a different address in the rebuild.
 - `startScreen`: `skipped` when the rebuild went past the wait of its start screen.
 - `idleReads`: the input reads of the rebuild that the recording had no value for. Such a read is at a site that the recording does not have, or after its end. Each got the fixed value `$FF` (joystick, keyboard, paddles) or `$00`. An input site that the site map did not find shows here.
-- `files`: with `--out`, the RAM of each side at the first different checkpoint, `original-<n>.bin` and `rebuild-<n>.bin`.
+- `files`: with `--out`, the RAM of each side at the first different checkpoint, `reference-<n>.bin` and `rebuild-<n>.bin`.

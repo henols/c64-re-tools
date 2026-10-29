@@ -62,7 +62,7 @@ const EXECUTED = [0x080d, 0x080f, 0x0812, 0x0815, 0x0818, 0x081b, 0x081e, 0x0820
 
 const SCENARIO = {
   name: "to the check",
-  original: { program: "game.prg", symbols: "knowledge" },
+  reference: { program: "game.prg", symbols: "knowledge" },
   rebuild: { program: "build/game.prg", symbols: "build/symbols/game.json" },
   steps: [{ frames: 150 }, { load: true }, { registers: { pc: "start" } }, { runUntil: { target: { kind: "address", address: "loop" }, timeoutFrames: 60 } }, { observe: "lives", memory: [{ address: "$0400", size: 1 }] }],
 };
@@ -101,8 +101,8 @@ test("export: switches fixed, dead code and unused data free, a slim knowledge, 
   );
   ok("c64-knowledge", "knowledge.ts", ["image", "game.prg"]);
   ok("c64-knowledge", "knowledge.ts", ["coverage", "runs/play.bin"]);
-  ok("c64-knowledge", "knowledge.ts", ["release", "ORIGINAL", "--file", "game.prg", "--base"]);
-  ok("c64-knowledge", "knowledge.ts", ["switch", "PROTECTION", "--kind", "protection", "--releases", "ORIGINAL", "--comment", "The copy check reads the keyboard."]);
+  ok("c64-knowledge", "knowledge.ts", ["release", "FIRESTAR", "--file", "game.prg", "--base"]);
+  ok("c64-knowledge", "knowledge.ts", ["switch", "PROTECTION", "--kind", "protection", "--releases", "FIRESTAR", "--comment", "The copy check reads the keyboard."]);
   ok("c64-knowledge", "knowledge.ts", ["switch", "TRAINER", "--kind", "trainer", "--comment", "Infinite lives."]);
   ok("c64-knowledge", "knowledge.ts", ["apply", "knowledge.json", "--reason", "the program"]);
   ok("c64-knowledge", "knowledge.ts", ["patch", "$0812-$0814", "TRAINER", "--nop", "--comment", "Lives stay."]);
@@ -110,7 +110,7 @@ test("export: switches fixed, dead code and unused data free, a slim knowledge, 
   assert.equal(generated.result, "PASS");
   // The dead routine and the table are leftovers: the release has them, the default build does not.
   assert.deepEqual(generated.leftovers, { bytes: 14, count: 1, listed: [{ start: "$0826", end: "$0833", bytes: 14, file: "leftovers/leftover_0826.asm" }] });
-  assert.deepEqual(generated.releases.map((release: { label: string; result: string }) => [release.label, release.result]), [["ORIGINAL", "identical"]]);
+  assert.deepEqual(generated.releases.map((release: { label: string; result: string }) => [release.label, release.result]), [["FIRESTAR", "identical"]]);
   assert.equal(generated.default.result, "fits");
   assert.match(readFileSync(join(project, "src", "main.asm"), "utf8"), /!if LEFTOVERS \{ !source "leftovers\/leftover_0826\.asm" \} else \{ !skip 14 \}/);
   assert.match(readFileSync(join(project, "src", "config.asm"), "utf8"), /\nLEFTOVERS = 0 ; /);
@@ -162,7 +162,7 @@ test("export: switches fixed, dead code and unused data free, a slim knowledge, 
 
   // The tests name the baseline and the build of the new project.
   const scenario = JSON.parse(readFileSync(join(to, "tests", "lives.json"), "utf8"));
-  assert.deepEqual([scenario.original, scenario.rebuild], [{ program: "baseline/game.prg", symbols: "baseline/symbols/game.json" }, { program: "build/game.prg", symbols: "build/symbols/game.json" }]);
+  assert.deepEqual([scenario.reference, scenario.rebuild], [{ program: "baseline/game.prg", symbols: "baseline/symbols/game.json" }, { program: "build/game.prg", symbols: "build/symbols/game.json" }]);
   const run = JSON.parse(readFileSync(join(to, "tests", "run-lives.json"), "utf8"));
   assert.deepEqual([run.start, run.symbols], [{ program: "build/game.prg", load: true }, "build/symbols/game.json"]);
   assert.match(readFileSync(join(to, "README.md"), "utf8"), /acme -f cbm -o \.\.\/build\/game\.prg main\.asm/);

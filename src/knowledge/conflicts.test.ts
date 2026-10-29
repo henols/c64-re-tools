@@ -198,7 +198,7 @@ test("patches, switches, macros and macro uses have their conflicts, and merge k
   const root = computers(
     (base) =>
       withWrite((db) => {
-        setRelease(db, llm, { label: "ORIGINAL", base: true });
+        setRelease(db, llm, { label: "FIRESTAR", base: true });
         setSwitch(db, { ...llm, image }, { name: "CRACK", kind: "crack" });
         return setSwitch(db, { ...llm, image }, { name: "TRAINER", kind: "trainer" });
       }, base),

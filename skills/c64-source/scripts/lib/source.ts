@@ -6,7 +6,7 @@
 // generator forces operand sizes, and writes an opcode form that ACME
 // encodes differently as bytes (see the probe in source.ts). An operand
 // expression of the knowledge is written in place of its number. A
-// patch is written as !if SWITCH { code } else { original }, with the
+// patch is written as !if SWITCH { code } else { base code }, with the
 // condition of the state that the program does not have, and a macro use as
 // one +name args line. config.asm holds the value of each switch, and
 // switches.asm the values of each release. A range of leftovers (bytes that
@@ -1119,7 +1119,7 @@ const patchCondition = (alternative: PatchAlternative) => (alternative.base === 
 /**
  * The lines that open a patch: its zone, a guard that stops two alternatives
  * together, then for each switch its condition, its code and the guard that
- * stops code longer than the range. The original code follows in the last
+ * stops code longer than the range. The code of the base release follows in the last
  * else; the patch closes with closingBraces.
  */
 function patchOpening(patch: PatchBlock): string[] {
@@ -1200,7 +1200,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     let running = false;
     /** The line of the mark of the open range of instructions that did not execute. */
     let markLine = 0;
-    /** The open patch: its labels are defined before it, so the original code writes none. */
+    /** The open patch: its labels are defined before it, so the code of the base release writes none. */
     let patch: PatchBlock | undefined;
     /** The last address of the macro use just written: its instructions are in the use line. */
     let useEnd = -1;

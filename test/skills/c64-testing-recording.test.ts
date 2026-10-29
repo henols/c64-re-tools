@@ -164,7 +164,7 @@ test("a state item of the command line is a name or an address with an optional 
   assert.throws(() => parseStateItem("seed:0", "--pin"), { code: "invalid-input", message: /^--pin seed:0: give a name or a \$ address/ });
 });
 
-test("an address of the original moves with the name before it", () => {
+test("an address of the reference moves with the name before it", () => {
   const move = mover(new Map([["frames", 0xc100], ["main", 0xc000]]), new Map([["frames", 0xc100], ["main", 0xc400]]));
   assert.equal(move(0xc015), 0xc415);
   assert.equal(move(0xc101), 0xc101);
@@ -207,7 +207,7 @@ test("the first different checkpoint names the state items that differ", () => {
   const state = [{ address: "room", size: 1 }, { address: "$c100", size: 2 }];
   const expected = ["100 00 0102", "200 01 0103", "300 01 0104"];
   assert.equal(firstDifference(expected, ["90 00 0102", "180 01 0103", "290 01 0104"], state), undefined);
-  assert.deepEqual(firstDifference(expected, ["90 00 0102", "180 02 0103"], state), { checkpoint: 2, tick: { original: 200, rebuild: 180 }, items: [{ address: "room", original: "01", rebuild: "02" }] });
+  assert.deepEqual(firstDifference(expected, ["90 00 0102", "180 02 0103"], state), { checkpoint: 2, tick: { reference: 200, rebuild: 180 }, items: [{ address: "room", reference: "01", rebuild: "02" }] });
 });
 
 test("replay gives INCONCLUSIVE before the replay core starts when the program changed since the recording", async () => {

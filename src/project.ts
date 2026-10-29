@@ -443,7 +443,7 @@ export function readGroup(root: string): ProjectGroup | undefined {
  * Resolves a path that a command only reads, relative to the project folder,
  * as resolveProjectPath does. In a group the path can also lead into the group
  * folder, so a version reads the files of the other versions, for example
- * ../v1/original/game.prg. A write stays in the project.
+ * ../v1/releases/game.prg. A write stays in the project.
  */
 export function resolveReadPath(path: string, root = projectRoot()): string {
   const group = readGroup(root);

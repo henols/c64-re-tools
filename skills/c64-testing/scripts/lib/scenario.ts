@@ -1,5 +1,5 @@
 // Functional-equivalence scenarios: a small JSON scenario of ordered
-// steps runs on the original and then on the rebuild in one VICE session.
+// steps runs on the reference and then on the rebuild in one VICE session.
 // Observations name semantic symbols that resolve per side, comparisons are
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
@@ -19,8 +19,8 @@ import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
 import { programImage } from "#src/knowledge/program.ts";
 import { listed } from "#src/script.ts";
 
-export type Side = "original" | "rebuild";
-export const SIDES: Side[] = ["original", "rebuild"];
+export type Side = "reference" | "rebuild";
+export const SIDES: Side[] = ["reference", "rebuild"];
 
 /** A "$xxxx" address or a symbol name that each side resolves on its own. */
 export type { Location };
@@ -67,7 +67,7 @@ export interface Subject {
 export interface Scenario {
   name: string;
   videoStandard?: "pal" | "ntsc";
-  original: Subject;
+  reference: Subject;
   rebuild: Subject;
   steps: Step[];
 }
@@ -77,7 +77,7 @@ export type Outcome = "PASS" | "FAIL" | "INCONCLUSIVE";
 /** A byte of a memory item that differs: its address, and its value on each side as two hex digits. */
 export interface DifferingByte {
   address: string;
-  original: string;
+  reference: string;
   rebuild: string;
 }
 
@@ -89,7 +89,7 @@ export interface DifferingByte {
 export interface Difference {
   checkpoint: string;
   what: string;
-  original?: unknown;
+  reference?: unknown;
   rebuild?: unknown;
   bytes?: { count: number; listed: DifferingByte[]; rest?: string };
 }
@@ -110,8 +110,8 @@ export interface ScenarioResult {
 const STEP_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", ...ACTION_STEP_KINDS, "observe"];
 
 /** The keys of a scenario file: all but videoStandard are required. */
-const SCENARIO_KEYS = ["name", "original", "rebuild", "steps", "videoStandard"];
-const SCENARIO_FIELDS = "A scenario file has name, original, rebuild and steps, and optionally videoStandard";
+const SCENARIO_KEYS = ["name", "reference", "rebuild", "steps", "videoStandard"];
+const SCENARIO_FIELDS = "A scenario file has name, reference, rebuild and steps, and optionally videoStandard";
 
 /** The keys each kind of step can have. */
 const STEP_KEYS: Record<string, readonly string[]> = {
@@ -159,7 +159,7 @@ export function readScenario(path: string): Scenario {
     refuseOldStep(kind, step, at, fail);
     const allowed = [...(STEP_KEYS[kind] ?? [kind]), ...(kind === "observe" ? [] : ["side"])];
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which ${aStep(kind)} does not have`);
-    if (step.side !== undefined && !(SIDES as unknown[]).includes(step.side)) fail(`${at}: side must be original or rebuild`);
+    if (step.side !== undefined && !(SIDES as unknown[]).includes(step.side)) fail(`${at}: side must be reference or rebuild`);
     if ((ACTION_STEP_KINDS as readonly string[]).includes(kind)) {
       // The step with its defaults filled in, as the shared schema of the action steps gives it.
       scenario.steps[index] = { ...checkActionStep(kind as ActionStepKind, { [kind]: step[kind] }, at, fail), ...(step.side === undefined ? {} : { side: step.side as Side }) } as Step;
@@ -255,7 +255,7 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
           isInteger(rectangle.height, 1, 4096);
         if (!ok) fail(`${at}: a screen.mask rectangle needs whole numbers x and y from 0, and width and height from 1`);
       }
-      // The emulator refuses such a compare too, but only after the original side ran.
+      // The emulator refuses such a compare too, but only after the reference side ran.
       if (maskCoversFrame(screen.mask as Array<{ x: number; y: number; width: number; height: number }>, videoStandard)) fail(`${at}: screen.mask covers the whole screen, so nothing is compared`);
     }
   }
@@ -464,7 +464,7 @@ async function runStep(client: ViceSessionClient, scenario: Scenario, side: Side
     if (step.sprites !== undefined) observation.sprites = (await client.sprites(step.sprites)).sprites.map(formatSprite);
     if (step.screen !== undefined) {
       const baseline = baselineName(checkpoint, step.observe);
-      if (side === "original") {
+      if (side === "reference") {
         const shot = await client.screenCapture(baseline);
         if (files) observation.png = shot.png;
       } else {
@@ -506,7 +506,7 @@ function differingBytes(item: MemoryItem, other: MemoryItem): DifferingByte[] {
   const hex = (byte: number) => byte.toString(16).padStart(2, "0");
   const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
   const bits = (offset: number) => (item.mask === undefined ? 0xff : item.mask.length === 1 ? item.mask[0]! : item.mask[offset]!);
-  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs((byte & bits(offset)) - (other.bytes[offset]! & bits(offset))) > item.tolerance ? [{ address: formatC64Address(item.address + offset), original: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
+  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs((byte & bits(offset)) - (other.bytes[offset]! & bits(offset))) > item.tolerance ? [{ address: formatC64Address(item.address + offset), reference: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
 }
 
 /** The most differing bytes of one memory item that a result lists when no --max-listed is given. */
@@ -517,10 +517,10 @@ export const DEFAULT_LISTED_BYTES = 50;
  * under the scenario's rules. A memory item lists at most `max` differing
  * bytes; `rest` tells where the others are.
  */
-export function compare(original: Map<string, Observation>, rebuild: Map<string, Observation>, options: { max?: number; rest?: string } = {}): Difference[] {
+export function compare(reference: Map<string, Observation>, rebuild: Map<string, Observation>, options: { max?: number; rest?: string } = {}): Difference[] {
   const differences: Difference[] = [];
   const max = options.max ?? DEFAULT_LISTED_BYTES;
-  for (const [checkpoint, left] of original) {
+  for (const [checkpoint, left] of reference) {
     const right = rebuild.get(checkpoint)!;
     left.memory.forEach((item, index) => {
       const bytes = differingBytes(item, right.memory[index]!);
@@ -528,12 +528,12 @@ export function compare(original: Map<string, Observation>, rebuild: Map<string,
     });
     for (const [name, value] of Object.entries(left.registers)) {
       const other = right.registers[name as ObservedRegister];
-      if (JSON.stringify(other) !== JSON.stringify(value)) differences.push({ checkpoint, what: `register ${name}`, original: value, rebuild: other });
+      if (JSON.stringify(other) !== JSON.stringify(value)) differences.push({ checkpoint, what: `register ${name}`, reference: value, rebuild: other });
     }
     const screenDiffers = right.screen !== undefined && !right.screen.match;
-    if (screenDiffers) differences.push({ checkpoint, what: "screen", original: "baseline", rebuild: right.screen });
-    if (left.vicii !== undefined && JSON.stringify(left.vicii) !== JSON.stringify(right.vicii)) differences.push({ checkpoint, what: "VIC-II state", original: left.vicii, rebuild: right.vicii });
-    if (left.sprites !== undefined && JSON.stringify(left.sprites) !== JSON.stringify(right.sprites)) differences.push({ checkpoint, what: "sprites", original: left.sprites, rebuild: right.sprites });
+    if (screenDiffers) differences.push({ checkpoint, what: "screen", reference: "baseline", rebuild: right.screen });
+    if (left.vicii !== undefined && JSON.stringify(left.vicii) !== JSON.stringify(right.vicii)) differences.push({ checkpoint, what: "VIC-II state", reference: left.vicii, rebuild: right.vicii });
+    if (left.sprites !== undefined && JSON.stringify(left.sprites) !== JSON.stringify(right.sprites)) differences.push({ checkpoint, what: "sprites", reference: left.sprites, rebuild: right.sprites });
   }
   return differences;
 }
@@ -543,18 +543,18 @@ export function compare(original: Map<string, Observation>, rebuild: Map<string,
  * screens and the difference image, and memory.json with each differing
  * memory item: all its bytes on each side, and each byte that differs.
  */
-function writeFailFiles(out: string, original: Map<string, Observation>, rebuild: Map<string, Observation>, differences: Difference[]): Written[] {
+function writeFailFiles(out: string, reference: Map<string, Observation>, rebuild: Map<string, Observation>, differences: Difference[]): Written[] {
   const files: Written[] = [];
   const write = (name: string, bytes: Uint8Array) => {
     files.push(writeReported(`${out}/${name}`, bytes, { what: "--out" }));
   };
-  const memory: Array<{ checkpoint: string; what: string; address: string; original: string; rebuild: string; bytes: DifferingByte[] }> = [];
+  const memory: Array<{ checkpoint: string; what: string; address: string; reference: string; rebuild: string; bytes: DifferingByte[] }> = [];
   for (const difference of differences) {
-    const left = original.get(difference.checkpoint)!;
+    const left = reference.get(difference.checkpoint)!;
     const right = rebuild.get(difference.checkpoint)!;
     const name = difference.checkpoint.replace(/[^A-Za-z0-9._-]/g, "_");
     if (difference.what === "screen") {
-      if (left.png !== undefined) write(`${name}-original.png`, Buffer.from(left.png, "base64"));
+      if (left.png !== undefined) write(`${name}-reference.png`, Buffer.from(left.png, "base64"));
       if (right.png !== undefined) write(`${name}-rebuild.png`, Buffer.from(right.png, "base64"));
       if (right.diffPng !== undefined) write(`${name}-diff.png`, Buffer.from(right.diffPng, "base64"));
     }
@@ -563,14 +563,14 @@ function writeFailFiles(out: string, original: Map<string, Observation>, rebuild
       const item = left.memory[index]!;
       const other = right.memory[index]!;
       const show = (bytes: number[]) => Buffer.from(bytes).toString("hex");
-      memory.push({ checkpoint: difference.checkpoint, what: difference.what, address: formatC64Address(item.address), original: show(item.bytes), rebuild: show(other.bytes), bytes: differingBytes(item, other) });
+      memory.push({ checkpoint: difference.checkpoint, what: difference.what, address: formatC64Address(item.address), reference: show(item.bytes), rebuild: show(other.bytes), bytes: differingBytes(item, other) });
     }
   }
   if (memory.length > 0) write("memory.json", Buffer.from(`${JSON.stringify(memory, null, 2)}\n`));
   return files;
 }
 
-/** Runs the scenario on the original, then on the rebuild, in one VICE session. With out, a FAIL leaves files there. */
+/** Runs the scenario on the reference, then on the rebuild, in one VICE session. With out, a FAIL leaves files there. */
 export async function runScenario(client: ViceSessionClient, scenario: Scenario, options: { out?: string; names?: Map<Side, Map<string, number>>; max?: number } = {}): Promise<ScenarioResult> {
   const checkpoints = scenario.steps.flatMap((step) => ("observe" in step ? [step.observe] : []));
   const observed = new Map<Side, Map<string, Observation>>();
@@ -587,11 +587,11 @@ export async function runScenario(client: ViceSessionClient, scenario: Scenario,
       throw error;
     }
   }
-  const original = observed.get("original")!;
+  const reference = observed.get("reference")!;
   const rebuild = observed.get("rebuild")!;
-  const differences = compare(original, rebuild, { ...(options.max === undefined ? {} : { max: options.max }), rest: options.out === undefined ? "a larger --max-listed, or --out <dir> for memory.json with every byte" : `${options.out}/memory.json` });
-  const excluded = [...original].flatMap(([checkpoint, observation]) => observation.memory.flatMap((item) => item.excluded.map((excluded) => ({ checkpoint, address: excluded.address, reason: excluded.reason }))));
-  const files = differences.length > 0 && options.out !== undefined ? writeFailFiles(options.out, original, rebuild, differences) : [];
+  const differences = compare(reference, rebuild, { ...(options.max === undefined ? {} : { max: options.max }), rest: options.out === undefined ? "a larger --max-listed, or --out <dir> for memory.json with every byte" : `${options.out}/memory.json` });
+  const excluded = [...reference].flatMap(([checkpoint, observation]) => observation.memory.flatMap((item) => item.excluded.map((excluded) => ({ checkpoint, address: excluded.address, reason: excluded.reason }))));
+  const files = differences.length > 0 && options.out !== undefined ? writeFailFiles(options.out, reference, rebuild, differences) : [];
   return {
     result: differences.length === 0 ? "PASS" : "FAIL",
     scenario: scenario.name,

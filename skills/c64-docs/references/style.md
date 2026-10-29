@@ -34,6 +34,27 @@ These rules apply to each page that you write. The `link` command checks the rul
 - Do not link to a file in `.c64-re-tools/local/`.
 - Do not write a fact that you did not check in the code, the knowledge or a run. Put a question in **Still open**.
 
+## Terms and scope
+
+Use these terms with these meanings:
+
+- **Reference file**: the program file or the capture that you examined. A test compares the rebuild with it. It can be a crack, a snapshot, a memory dump, a disk image or a commercial release.
+- **Base release**: the release whose bytes are the program of the project knowledge. Its label and its folder do not tell where the bytes came from.
+- **Commercial original**: the release that the publisher sold. You can use this term also when nobody examined that release.
+- **Authenticated original**: a commercial original with recorded evidence that it is genuine, for example the disk of the publisher.
+- **Default build**: `build/clean.prg`, or `build/clean_loader.prg` for a source with a loader.
+
+Rules:
+
+- Give the release label of the reference file before you give the result of a byte compare. When the compare does not include all of the program, give the ranges.
+- Write that a rebuild is identical to the commercial original only after a compare with an authenticated original. A PASS against a crack is true only for that crack.
+- Two releases that can come from the same copy do not give two items of evidence. A byte that most releases have is not always a byte of the commercial original.
+- **Observed** tells what a run, a capture or a compare showed. Tell in words what it did, not the name of its file. It does not tell who made the program, its history, or the bytes of a release that you did not examine.
+- **Code** tells what the examined bytes do. It does not tell that a release that you did not examine does the same.
+- **Conclusion** tells your interpretation. Give the facts that it uses and the other possible interpretations. For example, source text in the format of an Apple II assembler does not prove the computer of the authors.
+- Bytes that no run read are not always bytes that the program cannot read. Give the runs and the checks that show the limit.
+- Write the limits in the first paragraph. Write them again in each short summary that can tell more than the evidence shows. A PASS of `link --check` does not prove that the text is correct.
+
 ## Diagrams and images
 
 - Use mermaid for the diagrams: `flowchart` for calls and data flow, `stateDiagram-v2` for state machines.

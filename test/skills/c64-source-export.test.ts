@@ -219,17 +219,17 @@ test("the BASIC line that starts the program and the hardware vectors stay; othe
 const SYMBOLS = new Map([["start", 0x1000], ["loop", 0x1003]]);
 
 test("a scenario compares the baseline with the build, and a run file runs the build", () => {
-  const scenario = rewriteTest(JSON.stringify({ name: "s", original: { program: "game.prg", symbols: "knowledge" }, rebuild: { program: "build/x.prg", symbols: "none" }, steps: [{ registers: { pc: "start" } }] }), "game", SYMBOLS, []);
+  const scenario = rewriteTest(JSON.stringify({ name: "s", reference: { program: "game.prg", symbols: "knowledge" }, rebuild: { program: "build/x.prg", symbols: "none" }, steps: [{ registers: { pc: "start" } }] }), "game", SYMBOLS, []);
   assert.ok("kind" in scenario && scenario.kind === "scenario");
-  assert.deepEqual(JSON.parse(scenario.text), { name: "s", steps: [{ registers: { pc: "start" } }], original: { program: "baseline/game.prg", symbols: "baseline/symbols/game.json" }, rebuild: { program: "build/game.prg", symbols: "build/symbols/game.json" } });
+  assert.deepEqual(JSON.parse(scenario.text), { name: "s", steps: [{ registers: { pc: "start" } }], reference: { program: "baseline/game.prg", symbols: "baseline/symbols/game.json" }, rebuild: { program: "build/game.prg", symbols: "build/symbols/game.json" } });
   const run = rewriteTest(JSON.stringify({ start: { program: "game.prg", load: true }, steps: [{ expect: "e", memory: [{ address: "$0400", data: "01" }] }] }), "game", SYMBOLS, []);
   assert.ok("kind" in run && run.kind === "run");
   assert.deepEqual(JSON.parse(run.text), { start: { program: "build/game.prg", load: true }, steps: [{ expect: "e", memory: [{ address: "$0400", data: "01" }] }] });
 });
 
-test("in a scenario, a step of the original alone goes, and a step of the rebuild alone runs on both sides", () => {
-  const steps = [{ frames: 100, side: "original" }, { type: { mode: "text", text: " " }, side: "original" }, { frames: 5, side: "rebuild" }, { observe: "o", registers: ["a"] }];
-  const rewritten = rewriteTest(JSON.stringify({ name: "s", original: { program: "a.prg" }, rebuild: { program: "b.prg" }, steps }), "game", SYMBOLS, []);
+test("in a scenario, a step of the reference alone goes, and a step of the rebuild alone runs on both sides", () => {
+  const steps = [{ frames: 100, side: "reference" }, { type: { mode: "text", text: " " }, side: "reference" }, { frames: 5, side: "rebuild" }, { observe: "o", registers: ["a"] }];
+  const rewritten = rewriteTest(JSON.stringify({ name: "s", reference: { program: "a.prg" }, rebuild: { program: "b.prg" }, steps }), "game", SYMBOLS, []);
   assert.ok("kind" in rewritten);
   assert.deepEqual(JSON.parse(rewritten.text).steps, [{ frames: 5 }, { observe: "o", registers: ["a"] }]);
 });
@@ -242,6 +242,7 @@ test("a test is left out for a snapshot, a name that the export does not have, a
   assert.deepEqual(rewriteTest("[]", "game", SYMBOLS, []), { reason: "it is not a JSON object" });
   assert.deepEqual(rewriteTest("{", "game", SYMBOLS, []), { reason: "it is not JSON" });
   assert.deepEqual(rewriteTest("{}", "game", SYMBOLS, []), { reason: "it is not a scenario or a run file" });
+  assert.deepEqual(rewriteTest(JSON.stringify({ name: "s", original: { program: "a.prg" }, rebuild: { program: "b.prg" }, steps: [] }), "game", SYMBOLS, []), { reason: "it is a scenario without a reference side. A scenario has reference, rebuild and steps" });
 });
 
 test("the README gives the commands first, then the free ranges, the files and the origin", () => {

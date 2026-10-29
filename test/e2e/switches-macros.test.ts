@@ -1,8 +1,8 @@
-// Code switches and macros. The original release has a copy check: a
+// Code switches and macros. The base release has a copy check: a
 // PROTECTION switch of three patches holds the code without it, and a TRAINER
 // switch of only NOP keeps the lives. A macro writes one of two 16-bit
 // increments, and the other one, with a label inside it, stays instructions.
-// The build of the original is identical to the program, each switch fits,
+// The build of the base release is identical to the program, each switch fits,
 // the default build is the program without the copy check, and the macro
 // candidates of the analyzer, applied, keep the source identical.
 
@@ -56,7 +56,7 @@ const CODE = [
 
 const INC16 = CATALOGUE.find((idiom) => idiom.name === "inc16")!;
 
-test("switches and macros: the original stays identical, each switch fits, and the default build has no copy check", { skip, timeout: 900_000 }, () => {
+test("switches and macros: the base release stays identical, each switch fits, and the default build has no copy check", { skip, timeout: 900_000 }, () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.from([0x00, 0x10, ...CODE]));
   writeFileSync(
     join(project, "knowledge.json"),
@@ -78,8 +78,8 @@ test("switches and macros: the original stays identical, each switch fits, and t
     ]),
   );
   ok("c64-knowledge", "knowledge.ts", ["image", "game.prg"]);
-  ok("c64-knowledge", "knowledge.ts", ["release", "ORIGINAL", "--file", "game.prg", "--base", "--comment", "With the copy check."]);
-  ok("c64-knowledge", "knowledge.ts", ["switch", "PROTECTION", "--kind", "protection", "--releases", "ORIGINAL", "--comment", "The copy check reads the keyboard."]);
+  ok("c64-knowledge", "knowledge.ts", ["release", "FIRESTAR", "--file", "game.prg", "--base", "--comment", "With the copy check."]);
+  ok("c64-knowledge", "knowledge.ts", ["switch", "PROTECTION", "--kind", "protection", "--releases", "FIRESTAR", "--comment", "The copy check reads the keyboard."]);
   ok("c64-knowledge", "knowledge.ts", ["switch", "TRAINER", "--kind", "trainer", "--comment", "Infinite lives."]);
   ok("c64-knowledge", "knowledge.ts", ["apply", "knowledge.json", "--reason", "the copy check and the counters"]);
   ok("c64-knowledge", "knowledge.ts", ["patch", "$100b-$100d", "TRAINER", "--nop", "--comment", "Lives stay."]);
@@ -89,7 +89,7 @@ test("switches and macros: the original stays identical, each switch fits, and t
   assert.deepEqual(generated.files.map((file: { out: string }) => file.out).filter((path: string) => path.endsWith(".asm")), ["src/segments/segment_1000.asm", "src/switches.asm", "src/config.asm", "src/constants.asm", "src/macros.asm", "src/main.asm"]);
   assert.deepEqual(generated.switches.map((item: { name: string; result: string; changedBytes: number }) => [item.name, item.result, item.changedBytes]), [["PROTECTION", "fits", 8], ["TRAINER", "fits", 3]]);
   assert.deepEqual(generated.default, { in: ["PROTECTION"], result: "fits", changedBytes: 8 });
-  assert.deepEqual(generated.releases.map((item: { label: string; result: string }) => [item.label, item.result]), [["ORIGINAL", "identical"]]);
+  assert.deepEqual(generated.releases.map((item: { label: string; result: string }) => [item.label, item.result]), [["FIRESTAR", "identical"]]);
   assert.equal(generated.macroUses, 1);
   assert.deepEqual(generated.macrosAsInstructions.listed, [{ start: "$1011", end: "$1016", macro: "inc16", reason: "The source has a label at $1013, inside the use." }]);
   const text = readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8");
@@ -98,10 +98,10 @@ test("switches and macros: the original stays identical, each switch fits, and t
   assert.match(text, /^!zone patch_PROTECTION_100e \{\n\.patch_start\n!if PROTECTION = 0 \{\n {8}; PROTECTION off: /m);
   const configPath = join(project, "src", "config.asm");
   const config = readFileSync(configPath, "utf8");
-  assert.match(config, /^; Copy protection: off by default\nPROTECTION = 0 ; on in ORIGINAL\. \$100e-\$1010, \$1027-\$1028, \$102a-\$102c\. The copy check reads the keyboard\.$/m);
+  assert.match(config, /^; Copy protection: off by default\nPROTECTION = 0 ; on in FIRESTAR\. \$100e-\$1010, \$1027-\$1028, \$102a-\$102c\. The copy check reads the keyboard\.$/m);
   assert.match(config, /^; Trainers: off by default\nTRAINER {4}= 0 ; on in no release\. \$100b-\$100d\. Infinite lives\.$/m);
 
-  // The agent builds the default program with c64-assembler: only the bytes of the PROTECTION ranges differ from the original.
+  // The agent builds the default program with c64-assembler: only the bytes of the PROTECTION ranges differ from the base release.
   const clean = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/clean.prg", "--compare"]);
   assert.equal(clean.status, 0, JSON.stringify(clean.json));
   assert.equal(clean.json.result, "FAIL", JSON.stringify(clean.json));
@@ -111,8 +111,8 @@ test("switches and macros: the original stays identical, each switch fits, and t
   assert.deepEqual([...built.subarray(2 + 0x0e, 2 + 0x11)], [0xea, 0xea, 0xea], "no JSR check");
   assert.deepEqual([...built.subarray(2 + 0x2a, 2 + 0x2d)], [0x60, 0xea, 0xea], "fail returns");
   assert.deepEqual([...built.subarray(2 + 0x0b, 2 + 0x0e)], [0xce, 0x00, 0x20], "the trainer is off");
-  const original = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/game.prg", "--release", "ORIGINAL", "--compare"]);
-  assert.equal(original.json.compare.identical, true, "the build of the original release is the program");
+  const base = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/game.prg", "--release", "FIRESTAR", "--compare"]);
+  assert.equal(base.json.compare.identical, true, "the build of the base release is the program");
   // The user turns the trainer on in config.asm.
   writeFileSync(configPath, config.replace(/^TRAINER {4}= 0/m, "TRAINER    = 1"));
   const trained = ok("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/trained.prg"]);

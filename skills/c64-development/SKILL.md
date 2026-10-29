@@ -94,9 +94,9 @@ When the user must play or look at the program, open the emulator window for the
 
 ### C. A feature or a fix in a rebuilt program
 
-A rebuilt program gets its source from the project knowledge. A change is a switch and its patches in the knowledge. The build of the base release stays identical to the original.
+A rebuilt program gets its source from the project knowledge. A change is a switch and its patches in the knowledge. The build of the base release stays identical to the base release in the project knowledge.
 
-1. Read the releases and the switches in the project knowledge. If the knowledge has no base release, record the original file as the base release first, for example `original/game.prg`.
+1. Read the releases and the switches in the project knowledge. If the knowledge has no base release, record the program file that you examine as the base release first, for example `releases/game.prg`.
 2. Give each feature and each fix its own switch. Then each one can be on or off alone. Record the switch in the project knowledge. No release has your change, so do not give the switch a release. Select the kind of the switch:
    - A fix: `fix`, for example `FIX_FLICKER`. The default build has it.
    - A trainer or a cheat: `trainer` or `cheat`. The default build does not have it.
@@ -106,11 +106,11 @@ A rebuilt program gets its source from the project knowledge. A change is a swit
 5. If the code does not fit, write a short patch with a `jsr` to the new code. Put the new code in a second patch of the same switch, in a range that the program does not use. The range must have evidence: a leftover that you found in the program, or code that no run executed and that the program cannot reach. If no range has this evidence, stop and ask the user.
 6. Generate the source from the project knowledge into `src`. Continue only when the result of the generation is PASS. A switch with the result `overflow` or `does not assemble` has a patch that you must change.
 7. Build the program:
-   - Build the base release and compare it with the original. This build must be identical to the original.
+   - Build the base release and compare it with the bytes of the base release in the project knowledge. This build must be identical to them.
    - Build the default build.
    - When the default build does not have the switch, set the switch to 1 in `src/config.asm`. Then build the default build. After the test, set the value back to the default if the user did not ask for the change.
 8. Test the builds:
-   - When the behavior must stay the same as the original, replay each recording on the default build. For a source with a loader, this is `build/clean_loader.prg`, else `build/clean.prg`. Do not replay a build with a switch that is not at its default. Run a test scenario in `tests/` only when no recording executes the changed code.
+   - When the behavior must stay the same as the base release, replay each recording on the default build. For a source with a loader, this is `build/clean_loader.prg`, else `build/clean.prg`. Do not replay a build with a switch that is not at its default. Run a test scenario in `tests/` only when no recording executes the changed code.
    - On the build that has the switch, run a run file with `expect` steps that show the feature or the fix.
 
 ### The answer
@@ -136,7 +136,7 @@ Do not store:
 
 ## Result
 
-A program that builds, with a run file in `tests/` for each acceptance check, and each run gives PASS. For a rebuilt program: a switch for each change, and a build of the base release that is identical to the original.
+A program that builds, with a run file in `tests/` for each acceptance check, and each run gives PASS. For a rebuilt program: a switch for each change, and a build of the base release that is identical to the base release.
 
 ## Failure and conflicts
 

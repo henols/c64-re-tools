@@ -50,18 +50,18 @@ async function skill(address: string, name: string, file: string, ...args: strin
 
 test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout: 900_000 }, async () => {
   // The unknown artifact: a disk made by real c1541.
-  mkdirSync(join(project, "original"));
-  writeFileSync(join(project, "original", "game.prg"), basicCounterPrg);
-  const made = spawnSync(c1541, ["-format", "mystery,m1", "d64", "original/mystery.d64", "-write", "original/game.prg", "game"], { cwd: project, encoding: "utf8" });
+  mkdirSync(join(project, "releases"));
+  writeFileSync(join(project, "releases", "game.prg"), basicCounterPrg);
+  const made = spawnSync(c1541, ["-format", "mystery,m1", "d64", "releases/mystery.d64", "-write", "releases/game.prg", "game"], { cwd: project, encoding: "utf8" });
   assert.equal(made.status, 0, made.stdout + made.stderr);
-  rmSync(join(project, "original", "game.prg"));
+  rmSync(join(project, "releases", "game.prg"));
   const { address } = await startHost();
   const run = (name: string, file: string, ...args: string[]) => skill(address, name, file, ...args);
 
   // 1. Media: list the disk and extract the start file.
-  const directory = await run("c64-disk", "disk.ts", "directory", "original/mystery.d64");
+  const directory = await run("c64-disk", "disk.ts", "directory", "releases/mystery.d64");
   assert.deepEqual((directory.json.entries as Array<{ name: string }>).map((entry) => entry.name), ["GAME"]);
-  assert.equal((await run("c64-disk", "disk.ts", "read", "original/mystery.d64", "GAME", "--out", "extracted/game.prg")).status, 0);
+  assert.equal((await run("c64-disk", "disk.ts", "read", "releases/mystery.d64", "GAME", "--out", "extracted/game.prg")).status, 0);
 
   // 2. BASIC: the start line hands over to machine code at $080d.
   const basic = await run("c64-basic", "basic.ts", "list", "extracted/game.prg");
@@ -101,12 +101,12 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   assert.equal(built.status, 0, built.stdout);
   assert.equal(built.json.result, "PASS", built.stdout);
 
-  // 8. Functional verification: the rebuild behaves as the original.
+  // 8. Functional verification: the rebuild behaves as the reference.
   writeFileSync(
     join(project, "counts.json"),
     JSON.stringify({
       name: "counts to ten and turns the border green",
-      original: { program: "extracted/game.prg", symbols: "knowledge" },
+      reference: { program: "extracted/game.prg", symbols: "knowledge" },
       rebuild: { program: "build/game.prg", symbols: "build/symbols/game.json" },
       steps: [
         { reset: "hard" },

@@ -3,10 +3,10 @@
 // that puts the counter program at $C000 and jumps there. Without a key the
 // program never gets to $C000.
 
-import { ORIGINAL } from "./counter-variants.ts";
+import { REFERENCE } from "./counter-variants.ts";
 
 const KEY = 0x5a;
-const body = ORIGINAL.prg.subarray(2);
+const body = REFERENCE.prg.subarray(2);
 const payloadAddress = 0x0824;
 
 export const gatedPackedPrg = Uint8Array.from([

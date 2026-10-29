@@ -27,12 +27,12 @@ try {
 
 const script = resolve(import.meta.dirname, "../../skills/c64-disk/scripts/disk.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-disk-"));
-mkdirSync(join(project, "original"));
+mkdirSync(join(project, "releases"));
 const gameDisk = buildD64([{ name: "LOOP", bytes: borderLoopPrg }], "GAME DISK", [{ track: 20, sector: 5 }, { track: 1, sector: 0 }]);
 // The sectors that no file holds have their own bytes, as a loader that reads them directly finds them.
 gameDisk.fill(0xaa, offsetOf(1, 0), offsetOf(1, 0) + 256);
 gameDisk.fill(0x55, offsetOf(20, 5), offsetOf(20, 5) + 256);
-writeFileSync(join(project, "original", "game.d64"), gameDisk);
+writeFileSync(join(project, "releases", "game.d64"), gameDisk);
 let server: HostServer | undefined;
 after(async () => {
   await server?.close();
@@ -66,32 +66,32 @@ async function disk(...args: string[]): Promise<{ status: number | null; json: R
 }
 
 test("the directory lists the disk and its files", { skip }, async () => {
-  const { status, json } = await disk("directory", "original/game.d64");
+  const { status, json } = await disk("directory", "releases/game.d64");
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.diskName, "GAME DISK");
   assert.deepEqual(json.entries, [{ name: "LOOP", type: "prg", blocks: 1, closed: true, locked: false }]);
 });
 
 test("read writes the file into the project; a missing file is not-found", { skip }, async () => {
-  const { status, json } = await disk("read", "original/game.d64", "loop", "--out", "extracted/loop.prg");
+  const { status, json } = await disk("read", "releases/game.d64", "loop", "--out", "extracted/loop.prg");
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual({ ...json, sha256: undefined }, { name: "LOOP", out: "extracted/loop.prg", bytes: borderLoopPrg.length, sha256: undefined });
   assert.deepEqual([...readFileSync(join(project, "extracted", "loop.prg"))], [...borderLoopPrg]);
-  const missing = await disk("read", "original/game.d64", "OTHER", "--out", "extracted/other.prg");
+  const missing = await disk("read", "releases/game.d64", "OTHER", "--out", "extracted/other.prg");
   assert.equal(missing.status, 2);
-  assert.deepEqual(missing.json.error, { code: "not-found", message: "original/game.d64 has no file OTHER. Give the name as directory shows it." });
+  assert.deepEqual(missing.json.error, { code: "not-found", message: "releases/game.d64 has no file OTHER. Give the name as directory shows it." });
   assert.equal(existsSync(join(project, "extracted", "other.prg")), false);
 });
 
 test("entry and chain give the file's blocks", { skip }, async () => {
-  const entry = await disk("entry", "original/game.d64", "LOOP");
+  const entry = await disk("entry", "releases/game.d64", "LOOP");
   assert.deepEqual(entry.json, { found: true, entry: { name: "LOOP", type: "prg", blocks: 1, closed: true, locked: false, startTrack: 17, startSector: 0 } });
-  const chain = await disk("chain", "original/game.d64", "LOOP");
+  const chain = await disk("chain", "releases/game.d64", "LOOP");
   assert.deepEqual(chain.json, { found: true, sectors: [{ track: 17, sector: 0 }] });
 });
 
 test("bam gives each track and the used sectors that no file holds", { skip }, async () => {
-  const { status, json, envelope } = await disk("bam", "original/game.d64");
+  const { status, json, envelope } = await disk("bam", "releases/game.d64");
   assert.equal(status, 0, JSON.stringify(json));
   const tracks = json.tracks as Array<{ track: number; usedSectors: number[] }>;
   assert.equal(tracks.length, 35);
@@ -100,11 +100,11 @@ test("bam gives each track and the used sectors that no file holds", { skip }, a
     { track: 1, sector: 0 },
     { track: 20, sector: 5 },
   ]);
-  assert.match(envelope.nextAction ?? "", /disk\.ts sectors original\/game\.d64 --unreferenced --out \.c64-re-tools\/local\/game-unreferenced\.bin/);
+  assert.match(envelope.nextAction ?? "", /disk\.ts sectors releases\/game\.d64 --unreferenced --out \.c64-re-tools\/local\/game-unreferenced\.bin/);
 });
 
 test("sectors writes the blocks in the given order, then the used sectors that no file holds, and gives the index", { skip }, async () => {
-  const { status, json } = await disk("sectors", "original/game.d64", "18/0", "--unreferenced", "--out", "extracted/hidden.bin");
+  const { status, json } = await disk("sectors", "releases/game.d64", "18/0", "--unreferenced", "--out", "extracted/hidden.bin");
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.count, 3);
   assert.deepEqual(json.sectors, [
@@ -122,8 +122,8 @@ test("sectors writes the blocks in the given order, then the used sectors that n
 
 test("sectors needs a sector or --unreferenced, and a sector is <track>/<sector>", { skip }, async () => {
   for (const args of [
-    ["sectors", "original/game.d64", "--out", "extracted/none.bin"],
-    ["sectors", "original/game.d64", "18/x", "--out", "extracted/none.bin"],
+    ["sectors", "releases/game.d64", "--out", "extracted/none.bin"],
+    ["sectors", "releases/game.d64", "18/x", "--out", "extracted/none.bin"],
   ]) {
     const { status, json } = await disk(...args);
     assert.equal(status, 2, args.join(" "));

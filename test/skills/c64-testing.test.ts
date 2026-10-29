@@ -29,7 +29,7 @@ after(() => rmSync(project, { recursive: true, force: true }));
 
 const valid = {
   name: "moves left",
-  original: { program: "original.prg", symbols: "knowledge" },
+  reference: { program: "reference.prg", symbols: "knowledge" },
   rebuild: { program: "build/clean.prg", symbols: "build/symbols/clean.json" },
   steps: [{ reset: "hard" }, { frames: 50 }, { observe: "moved", memory: ["player_x"], registers: ["a"] }],
 };
@@ -78,10 +78,10 @@ test("each side resolves names from its own symbols", () => {
     JSON.stringify({ assembled: true, symbols: [{ name: "draw", kind: "address", address: "$0900" }, { name: "player_x", kind: "constant", value: "$c200" }, { name: "BIG", kind: "constant", value: "$11170" }] }),
   );
   writeFileSync(join(project, "map.json"), JSON.stringify({ player_x: "$c300" }));
-  const original = namesOf("knowledge");
+  const reference = namesOf("knowledge");
   const fromAssembler = namesOf("assembled.json");
   const fromMap = namesOf("map.json");
-  assert.equal(resolve("player_x", original, "original"), 0xc100);
+  assert.equal(resolve("player_x", reference, "reference"), 0xc100);
   assert.equal(resolve("player_x", fromAssembler, "rebuild"), 0xc200);
   assert.equal(resolve("draw", fromAssembler, "rebuild"), 0x0900);
   assert.equal(fromAssembler.has("BIG"), false, "a value outside $0000-$ffff is no address");
@@ -118,12 +118,12 @@ test("an excluded byte does not count, and steps for one side and the new step k
   assert.equal(compare(new Map([["c", observation([1, 5])]]), new Map([["c", observation([1, 6])]])).length, 1, "the second byte still counts");
   const scenario = (steps: unknown[]) => scenarioFile("d46.json", { ...valid, steps: [...steps, { observe: "x", memory: ["$c000"] }] });
   assert.equal(
-    readScenario(scenario([{ type: { mode: "text", text: " " }, side: "original" }, { snapshot: "s.vsf", side: "rebuild" }, { normalize: true }, { runUntil: { target: { kind: "raster", line: 250 }, timeoutFrames: 2 } }, { runUntil: { target: { kind: "address", address: "$c000", condition: { kind: "raster", line: 100 } }, timeoutFrames: 2 } }])).steps.length,
+    readScenario(scenario([{ type: { mode: "text", text: " " }, side: "reference" }, { snapshot: "s.vsf", side: "rebuild" }, { normalize: true }, { runUntil: { target: { kind: "raster", line: 250 }, timeoutFrames: 2 } }, { runUntil: { target: { kind: "address", address: "$c000", condition: { kind: "raster", line: 100 } }, timeoutFrames: 2 } }])).steps.length,
     6,
   );
   for (const bad of [
     [{ type: { mode: "text", text: " " }, side: "both" }],
-    [{ observe: "y", memory: ["$c000"], side: "original" }],
+    [{ observe: "y", memory: ["$c000"], side: "reference" }],
     [{ runUntil: { target: { kind: "raster", line: 400 }, timeoutFrames: 2 } }],
     [{ normalize: "entry_state.json" }],
     [{ observe: "y", memory: [{ address: "$d01e", exclude: [{ address: "$d01e" }] }] }],
@@ -138,7 +138,7 @@ test("the checklist lists each checkpoint and what only a person can judge", () 
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const { text } = readEnvelope(run.stdout, run.status).json as { text: string };
   assert.match(text, /^# Playtest checklist/);
-  assert.match(text, /- \[ \] At "moved", the rebuild looks and behaves as the original\./);
+  assert.match(text, /- \[ \] At "moved", the rebuild looks and behaves as the reference\./);
   assert.match(text, /- \[ \] FIRE starts the game\./);
   assert.match(text, /music and the sound effects/);
 });
@@ -231,7 +231,7 @@ test("each side starts from a hard reset, each checkpoint has its own baseline, 
   const scenario = readScenario(
     scenarioFile("checkpoints.json", {
       name: "two checkpoints",
-      original: { program: "original.prg", symbols: "none" },
+      reference: { program: "reference.prg", symbols: "none" },
       rebuild: { program: "rebuild.prg", symbols: "none" },
       steps: [{ frames: 10 }, { observe: "after move", screen: {}, vicii: true, registers: ["pc", "flags"] }, { observe: "after_move", screen: {} }],
     }),
@@ -240,7 +240,7 @@ test("each side starts from a hard reset, each checkpoint has its own baseline, 
   assert.deepEqual(result, { result: "PASS", scenario: "two checkpoints", checkpoints: ["after move", "after_move"], differences: [] });
   const resets = calls.flatMap(([name, params], index) => (name === "reset" ? [[index, params]] : []));
   assert.deepEqual(resets.map(([, params]) => params), [{ mode: "hard", run: false }, { mode: "hard", run: false }]);
-  assert.equal(resets[0]![0], 0, "the original side starts with the reset");
+  assert.equal(resets[0]![0], 0, "the reference side starts with the reset");
   const captured = calls.filter(([name]) => name === "screenCapture").map(([, name]) => name);
   assert.equal(new Set(captured).size, 2, "two checkpoints, two baselines");
 });
@@ -266,9 +266,9 @@ test("a run file and a scenario name a missing field with its form, and refuse a
     }
     return assert.fail("not refused");
   };
-  assert.equal(message({ ...valid, symbols: "knowledge" }), "scenario fields.json: has the key symbols. A scenario file has name, original, rebuild and steps, and optionally videoStandard");
+  assert.equal(message({ ...valid, symbols: "knowledge" }), "scenario fields.json: has the key symbols. A scenario file has name, reference, rebuild and steps, and optionally videoStandard");
   assert.equal(message({ ...valid, rebuild: { program: "build/game.prg" } }), 'scenario fields.json: rebuild must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file');
-  assert.equal(message({ ...valid, original: { ...valid.original, load: true } }), 'scenario fields.json: original has the key load. original must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file');
+  assert.equal(message({ ...valid, reference: { ...valid.reference, load: true } }), 'scenario fields.json: reference has the key load. reference must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file');
   assert.equal(message({ ...valid, steps: [] }), "scenario fields.json: steps must be a list with at least one step");
 });
 
@@ -403,7 +403,7 @@ test("a run and a scenario refuse the 2.0 step and memory forms with the field a
     }
     return assert.fail("not refused");
   };
-  assert.equal(scenario([{ type: " ", side: "original" }, valid.steps[2]]), 'scenario old-scenario.json: step 1 has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}, "side": "original"}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes');
+  assert.equal(scenario([{ type: " ", side: "reference" }, valid.steps[2]]), 'scenario old-scenario.json: step 1 has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}, "side": "reference"}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes');
   assert.equal(scenario([{ observe: "x", memory: [{ at: "$0002", size: 254 }] }]), "scenario old-scenario.json: step 1: a memory object has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(scenario([{ observe: "x", memory: [{ address: "$d01e", exclude: [{ at: "$d01e", reason: "latched" }] }] }]), "scenario old-scenario.json: step 1: an exclude has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(scenario([{ frames: 5, type: { mode: "text", text: " " } }, valid.steps[2]]), "scenario old-scenario.json: step 1 has 2 step kinds: frames, type. Give each one its own step");
@@ -415,14 +415,14 @@ test("test and run check every file before the emulator: a missing file is not-f
   writeFileSync(join(project, "game.d64"), Buffer.alloc(174848));
   // test reads the scenario and checks its files before it opens the emulator.
   const test = (name: string, sides: Record<string, unknown>, steps: unknown[] = [{ autostart: true }, { observe: "x", memory: ["$0400"] }]) => {
-    scenarioFile(name, { name: "files", original: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, ...sides, steps });
+    scenarioFile(name, { name: "files", reference: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, ...sides, steps });
     return refusal(() => scenarioNames(readScenario(name), name));
   };
   assert.deepEqual(await test("no-rebuild.json", { rebuild: { program: "build/nope.prg", symbols: "none" } }), { code: "not-found", message: "scenario no-rebuild.json: rebuild.program: There is no file at build/nope.prg in the project folder." });
   assert.deepEqual(await test("no-symbols.json", { rebuild: { program: "game.prg", symbols: "build/nope.json" } }), { code: "not-found", message: "scenario no-symbols.json: rebuild.symbols: There is no file at build/nope.json in the project folder." });
-  assert.deepEqual(await test("disk.json", { original: { program: "game.d64", symbols: "none" } }), {
+  assert.deepEqual(await test("disk.json", { reference: { program: "game.d64", symbols: "none" } }), {
     code: "invalid-input",
-    message: "scenario disk.json: original.program: game.d64 is a disk image (.d64), not a PRG. A scenario program is a PRG. Extract the program file from the disk, tape or cartridge image, and give that PRG.",
+    message: "scenario disk.json: reference.program: game.d64 is a disk image (.d64), not a PRG. A scenario program is a PRG. Extract the program file from the disk, tape or cartridge image, and give that PRG.",
   });
   assert.equal((await test("no-snapshot.json", {}, [{ snapshot: "nope.vsf" }, { observe: "x", memory: ["$0400"] }])).code, "not-found");
   assert.equal((await runRefusal("run-missing.json", { name: "r", start: { program: "nope.prg" }, steps: [{ frames: 1 }] })).code, "not-found");
@@ -439,19 +439,19 @@ test("test and run check every file before the emulator: a missing file is not-f
 
 test("a memory difference lists the differing bytes, at most --max-listed, and memory.json in --out keeps all bytes", () => {
   const observation = (bytes: number[]) => ({ memory: [{ label: "$0400 (3320 bytes)", address: 0x0400, bytes, tolerance: 0, excluded: [] }], registers: {} });
-  const original = Array.from({ length: 3320 }, (_, index) => index & 0xff);
-  const rebuild = [...original];
+  const reference = Array.from({ length: 3320 }, (_, index) => index & 0xff);
+  const rebuild = [...reference];
   rebuild[0x10] = 0xff;
-  const [one] = compare(new Map([["title", observation(original)]]), new Map([["title", observation(rebuild)]]));
-  assert.deepEqual(one, { checkpoint: "title", what: "memory $0400 (3320 bytes)", bytes: { count: 1, listed: [{ address: "$0410", original: "10", rebuild: "ff" }] } }, "one byte differs: the result gives that byte, not 2 x 6640 hex digits");
+  const [one] = compare(new Map([["title", observation(reference)]]), new Map([["title", observation(rebuild)]]));
+  assert.deepEqual(one, { checkpoint: "title", what: "memory $0400 (3320 bytes)", bytes: { count: 1, listed: [{ address: "$0410", reference: "10", rebuild: "ff" }] } }, "one byte differs: the result gives that byte, not 2 x 6640 hex digits");
   rebuild[0x20] = 0xee;
   rebuild[0x30] = 0xdd;
-  const [three] = compare(new Map([["title", observation(original)]]), new Map([["title", observation(rebuild)]]), { max: 2, rest: "out/memory.json" });
-  assert.deepEqual(three!.bytes, { count: 3, listed: [{ address: "$0410", original: "10", rebuild: "ff" }, { address: "$0420", original: "20", rebuild: "ee" }], rest: "out/memory.json" });
+  const [three] = compare(new Map([["title", observation(reference)]]), new Map([["title", observation(rebuild)]]), { max: 2, rest: "out/memory.json" });
+  assert.deepEqual(three!.bytes, { count: 3, listed: [{ address: "$0410", reference: "10", rebuild: "ff" }, { address: "$0420", reference: "20", rebuild: "ee" }], rest: "out/memory.json" });
 });
 
 test("a FAIL with --out writes memory.json with all bytes of the item and each differing byte", async () => {
-  // The rebuild side writes $01 to the observed bytes; the original side reads zeros.
+  // The rebuild side writes $01 to the observed bytes; the reference side reads zeros.
   let writes = 0;
   const fake = {
     reset: async () => ({ state: "stopped" }),
@@ -464,26 +464,26 @@ test("a FAIL with --out writes memory.json with all bytes of the item and each d
   const scenario = readScenario(
     scenarioFile("fail.json", {
       name: "fail",
-      original: { program: "original.prg", symbols: "none" },
+      reference: { program: "reference.prg", symbols: "none" },
       rebuild: { program: "rebuild.prg", symbols: "none" },
       steps: [{ write: { address: "$c000", data: "01" }, side: "rebuild" }, { observe: "x", memory: [{ address: "$c000", size: 3 }] }],
     }),
   );
   const result = await runScenario(fake as unknown as ViceSessionClient, scenario, { out: "fail-out", max: 1 });
   assert.equal(result.result, "FAIL");
-  assert.deepEqual(result.differences, [{ checkpoint: "x", what: "memory $c000 (3 bytes)", bytes: { count: 3, listed: [{ address: "$c000", original: "00", rebuild: "01" }], rest: "fail-out/memory.json" } }]);
+  assert.deepEqual(result.differences, [{ checkpoint: "x", what: "memory $c000 (3 bytes)", bytes: { count: 3, listed: [{ address: "$c000", reference: "00", rebuild: "01" }], rest: "fail-out/memory.json" } }]);
   const memory = JSON.parse(readFileSync(join(project, "fail-out", "memory.json"), "utf8")) as unknown;
   assert.deepEqual(memory, [
     {
       checkpoint: "x",
       what: "memory $c000 (3 bytes)",
       address: "$c000",
-      original: "000000",
+      reference: "000000",
       rebuild: "010101",
       bytes: [
-        { address: "$c000", original: "00", rebuild: "01" },
-        { address: "$c001", original: "00", rebuild: "01" },
-        { address: "$c002", original: "00", rebuild: "01" },
+        { address: "$c000", reference: "00", rebuild: "01" },
+        { address: "$c001", reference: "00", rebuild: "01" },
+        { address: "$c002", reference: "00", rebuild: "01" },
       ],
     },
   ]);
@@ -499,14 +499,14 @@ test("an unknown name in a scenario step gives INCONCLUSIVE with the step", asyn
   const scenario = readScenario(
     scenarioFile("unknown-name.json", {
       name: "unknown name",
-      original: { program: "original.prg", symbols: "none" },
+      reference: { program: "reference.prg", symbols: "none" },
       rebuild: { program: "rebuild.prg", symbols: "none" },
       steps: [{ frames: 10 }, { runUntil: { target: { kind: "address", address: "no_such_name" }, timeoutFrames: 30 } }, { observe: "x", memory: ["$c000"] }],
     }),
   );
   const result = await runScenario(fake as unknown as ViceSessionClient, scenario);
   assert.equal(result.result, "INCONCLUSIVE");
-  assert.equal(result.reason, "step 2 (runUntil): the original side has no symbol no_such_name");
+  assert.equal(result.reason, "step 2 (runUntil): the reference side has no symbol no_such_name");
 });
 
 test("test, run and diff refuse a snapshot file that is no VICE snapshot file before the emulator, with the file and the step", async () => {
@@ -516,7 +516,7 @@ test("test, run and diff refuse a snapshot file that is no VICE snapshot file be
   const why = 'is not a VICE snapshot file (.vsf): it does not start with "VICE Snapshot File". Give a file that c64_snapshot save or a save step of a run wrote.';
   assert.deepEqual(await runRefusal("snap-step.json", { name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }] }), { code: "invalid-input", message: `run snap-step.json: step 2: snapshot: notes.txt ${why}` });
   assert.deepEqual(await runRefusal("snap-start.json", { name: "x", start: { snapshot: "notes.vsf" }, steps: [{ frames: 5 }] }), { code: "invalid-input", message: `run snap-start.json: start.snapshot: notes.vsf ${why}` });
-  scenarioFile("snap-scenario.json", { ...valid, original: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }, { observe: "x", memory: ["$0400"] }] });
+  scenarioFile("snap-scenario.json", { ...valid, reference: { program: "game.prg", symbols: "none" }, rebuild: { program: "game.prg", symbols: "none" }, steps: [{ frames: 5 }, { snapshot: "notes.txt" }, { observe: "x", memory: ["$0400"] }] });
   assert.deepEqual(await refusal(() => scenarioNames(readScenario("snap-scenario.json"), "snap-scenario.json")), { code: "invalid-input", message: `scenario snap-scenario.json: step 2: snapshot: notes.txt ${why}` });
   assert.deepEqual(await refusal(() => diffFiles("notes.vsf", "notes.vsf", { gap: 0, max: 50, ntsc: false })), { code: "invalid-input", message: `notes.vsf ${why}` });
 });

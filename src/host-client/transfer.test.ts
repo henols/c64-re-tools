@@ -10,8 +10,8 @@ import { readProjectFile, readProjectTree, readSourceTree, writeProjectFile } fr
 
 const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-transfer-"));
 const project = join(sandbox, "project");
-mkdirSync(join(project, "original"), { recursive: true });
-writeFileSync(join(project, "original", "Game.D64"), Buffer.from([1, 2, 3]));
+mkdirSync(join(project, "releases"), { recursive: true });
+writeFileSync(join(project, "releases", "Game.D64"), Buffer.from([1, 2, 3]));
 writeFileSync(join(project, "noext"), Buffer.from([9]));
 writeFileSync(join(sandbox, "outside.prg"), Buffer.from([7]));
 symlinkSync(join(sandbox, "outside.prg"), join(project, "escape.prg"));
@@ -20,7 +20,7 @@ after(() => rmSync(sandbox, { recursive: true, force: true }));
 const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
 
 test("a project file is read as bytes with its lowercase extension as type", () => {
-  assert.deepEqual(readProjectFile("original/Game.D64", { root: project }), { bytes: Buffer.from([1, 2, 3]), type: "d64" });
+  assert.deepEqual(readProjectFile("releases/Game.D64", { root: project }), { bytes: Buffer.from([1, 2, 3]), type: "d64" });
   assert.deepEqual(readProjectFile("noext", { root: project }), { bytes: Buffer.from([9]), type: "" });
 });
 
@@ -29,7 +29,7 @@ test("paths outside the project, missing files, directories and large files are 
   assert.throws(() => readProjectFile(join(project, "noext"), { root: project }), failsWith("invalid-input"));
   assert.throws(() => readProjectFile("../outside.prg", { root: project }), failsWith("invalid-input"));
   assert.throws(() => readProjectFile("escape.prg", { root: project }), failsWith("invalid-input"));
-  assert.throws(() => readProjectFile("original", { root: project }), failsWith("invalid-input"));
+  assert.throws(() => readProjectFile("releases", { root: project }), failsWith("invalid-input"));
 });
 
 test("a file over the transfer limit is refused before it is read", () => {

@@ -1,7 +1,7 @@
 // The replay of c64-testing: replays a recording in the replay core
-// (c64run). First on the original program, which must end with the recorded
+// (c64run). First on the reference program, which must end with the recorded
 // state hash. Then, with --rebuild, on the rebuild: it compares the state at
-// each checkpoint with the original's. --checkpoint and --state choose the
+// each checkpoint with the reference's. --checkpoint and --state choose the
 // comparison, else the record file gave it.
 
 import { createHash } from "node:crypto";
@@ -30,7 +30,7 @@ export interface ReplayOptions {
   out?: string;
 }
 
-/** Replays the recording on the original, and with `rebuild` on the rebuild: PASS, FAIL or INCONCLUSIVE. */
+/** Replays the recording on the reference, and with `rebuild` on the rebuild: PASS, FAIL or INCONCLUSIVE. */
 export async function replay(values: ReplayOptions): Promise<ReplayResult> {
   if (values.symbols !== undefined && values.rebuild === undefined) throw new UsageError("--symbols gives the names of the rebuild, and --rebuild is missing. Give --rebuild too, or leave out --symbols.");
   if ((values.checkpoint === undefined) !== (values.state.length === 0)) throw new UsageError("--checkpoint and --state go together. Give both of them, or neither.");
@@ -61,54 +61,54 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     }
   }
   const sha256 = createHash("sha256").update(readProjectFile(recording.program).bytes).digest("hex");
-  if (sha256 !== recording.sha256) return result("INCONCLUSIVE", "original", { reason: `${recording.program} is not the program of the recording (its SHA-256 changed); record the session again` });
+  if (sha256 !== recording.sha256) return result("INCONCLUSIVE", "reference", { reason: `${recording.program} is not the program of the recording (its SHA-256 changed); record the session again` });
 
   const context = localToolContext();
   const core = await C64RunSession.open(context);
   const workspace = Workspace.create(context.supervisor, "c64-re-tools-replay-");
   try {
     // A recording made without names takes the names that the knowledge has now.
-    const originalSymbols = recording.symbols === "none" ? "knowledge" : recording.symbols;
-    const original: ReplaySubject = { side: "original", program: recording.program, symbols: originalSymbols };
+    const referenceSymbols = recording.symbols === "none" ? "knowledge" : recording.symbols;
+    const reference: ReplaySubject = { side: "reference", program: recording.program, symbols: referenceSymbols };
     const side = (subject: ReplaySubject, options: Parameters<typeof replaySide>[5]) => replaySide(core, recording, folder, subject, workspace, options);
-    const rebuildSymbols = values.symbols ?? originalSymbols;
-    // A rebuild with a generated loader starts the program where its loader jumps to. The original comes to that entry by the same name.
-    let loader: { entry: number; original: number } | undefined;
+    const rebuildSymbols = values.symbols ?? referenceSymbols;
+    // A rebuild with a generated loader starts the program where its loader jumps to. The reference comes to that entry by the same name.
+    let loader: { entry: number; reference: number } | undefined;
     if (values.rebuild !== undefined && !recording.load && namesOf(rebuildSymbols).has(LOADER_JUMP)) {
       const entry = await loaderEntry(core, recording, { side: "rebuild", program: values.rebuild, symbols: rebuildSymbols });
       if (typeof entry === "string") return result("FAIL", "rebuild", { reason: entry });
-      loader = { entry, original: mover(namesOf(rebuildSymbols, "code"), namesOf(originalSymbols, "code"))(entry) };
+      loader = { entry, reference: mover(namesOf(rebuildSymbols, "code"), namesOf(referenceSymbols, "code"))(entry) };
     }
-    // The self-check: the original ends the session with the recorded state, to the cycle.
-    const self = await side(original, { ...(compare === undefined ? {} : { compare }), ...(loader === undefined ? {} : { entry: loader.original }) });
-    if (self.problem !== undefined) return result("INCONCLUSIVE", "original", { reason: `the recording does not reproduce on the original: ${self.problem}` });
+    // The self-check: the reference ends the session with the recorded state, to the cycle.
+    const self = await side(reference, { ...(compare === undefined ? {} : { compare }), ...(loader === undefined ? {} : { entry: loader.reference }) });
+    if (self.problem !== undefined) return result("INCONCLUSIVE", "reference", { reason: `the recording does not reproduce on the reference: ${self.problem}` });
     if (self.unknown > 0 || self.misses > 0) {
-      return result("INCONCLUSIVE", "original", { reason: `the recording does not reproduce on the original: ${self.unknown + self.misses} input reads had no recorded value; record the session again with this version of the toolkit` });
+      return result("INCONCLUSIVE", "reference", { reason: `the recording does not reproduce on the reference: ${self.unknown + self.misses} input reads had no recorded value; record the session again with this version of the toolkit` });
     }
     if (self.end.tick !== recording.ticks || self.end.hash !== recording.hash) {
-      return result("INCONCLUSIVE", "original", { reason: "the recording does not reproduce on the original: the state at its end is different; record the session again with this version of the toolkit" });
+      return result("INCONCLUSIVE", "reference", { reason: "the recording does not reproduce on the reference: the state at its end is different; record the session again with this version of the toolkit" });
     }
     const expected = self.samples;
-    if (compare !== undefined && expected.length === 0) return result("INCONCLUSIVE", "original", { reason: `the original never came to the checkpoint ${compare.checkpoint} in the session` });
-    if (values.rebuild === undefined) return result("PASS", "original", { checkpoints: expected.length });
-    let handover: { entry: number; original: NonNullable<typeof self.entryPoint> } | undefined;
+    if (compare !== undefined && expected.length === 0) return result("INCONCLUSIVE", "reference", { reason: `the reference never came to the checkpoint ${compare.checkpoint} in the session` });
+    if (values.rebuild === undefined) return result("PASS", "reference", { checkpoints: expected.length });
+    let handover: { entry: number; reference: NonNullable<typeof self.entryPoint> } | undefined;
     if (loader !== undefined) {
       const entered = self.entryPoint;
-      const at = formatC64Address(loader.original);
-      if (entered === undefined) return result("INCONCLUSIVE", "original", { reason: `the original never came to ${at}, where the loader of the rebuild jumps` });
+      const at = formatC64Address(loader.reference);
+      if (entered === undefined) return result("INCONCLUSIVE", "reference", { reason: `the reference never came to ${at}, where the loader of the rebuild jumps` });
       // An event before the entry has no point in a rebuild with a loader. A runUntil to an address there does nothing, and the rebuild leaves it out.
       const early = recording.events.slice(0, entered.eventsBefore).find((event) => !("pc" in event.key));
       if (early !== undefined) {
         const what = early.step === undefined ? "the RESTORE of the play" : `step ${early.step}`;
-        return result("INCONCLUSIVE", "original", { reason: `${what} ran before the program came to its entry ${at}. A rebuild with a loader has no point for it. Make the steps of the record file start after the entry` });
+        return result("INCONCLUSIVE", "reference", { reason: `${what} ran before the program came to its entry ${at}. A rebuild with a loader has no point for it. Make the steps of the record file start after the entry` });
       }
-      handover = { entry: loader.entry, original: entered };
+      handover = { entry: loader.entry, reference: entered };
     }
 
     const rebuild: ReplaySubject = { side: "rebuild", program: values.rebuild, symbols: rebuildSymbols };
     let movedSites: number;
     try {
-      movedSites = siteMap(recording.sites, namesOf(originalSymbols, "code"), namesOf(rebuild.symbols, "code")).length;
+      movedSites = siteMap(recording.sites, namesOf(referenceSymbols, "code"), namesOf(rebuild.symbols, "code")).length;
     } catch (error) {
       throw new UsageError(`--symbols ${rebuild.symbols}: ${(error as Error).message}`);
     }
@@ -125,9 +125,9 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     const failed = result("FAIL", "rebuild", { ...base, compared: (difference?.checkpoint ?? replayed.samples.length + 1) - 1, reason, ...(difference === undefined ? {} : { firstDifference: difference }) });
     if (values.out !== undefined && difference !== undefined) {
       const files: Written[] = [];
-      for (const subject of [original, rebuild]) {
-        // The original also stops at the checkpoints before its entry, which its samples leave out.
-        const dump = difference.checkpoint + (subject.side === "original" ? (handover?.original.samplesBefore ?? 0) : 0);
+      for (const subject of [reference, rebuild]) {
+        // The reference also stops at the checkpoints before its entry, which its samples leave out.
+        const dump = difference.checkpoint + (subject.side === "reference" ? (handover?.reference.samplesBefore ?? 0) : 0);
         const dumped = await side(subject, { compare: compare!, dump, ...(subject.side === "rebuild" ? { pins, ...(handover === undefined ? {} : { handover }) } : {}) });
         files.push(writeReported(`${values.out}/${subject.side}-${difference.checkpoint}.bin`, dumped.ram!, { what: "--out" }));
       }

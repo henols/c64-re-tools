@@ -1,6 +1,6 @@
 // One scenario PASSes an equivalent reconstruction, FAILs a behaviorally
-// different one, and is INCONCLUSIVE when its checkpoint cannot be reached. Original and rebuild run one after
-// the other in one real VICE; the original's names come from the knowledge,
+// different one, and is INCONCLUSIVE when its checkpoint cannot be reached. Reference and rebuild run one after
+// the other in one real VICE; the reference's names come from the knowledge,
 // the rebuild's from its symbol files. Opt-in with C64RT_LIVE_VICE.
 
 import assert from "node:assert/strict";
@@ -17,7 +17,7 @@ import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { openForWrite } from "../../../src/knowledge/database.ts";
 import { renameSymbol } from "../../../src/knowledge/write.ts";
-import { BROKEN, EQUIVALENT, ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
+import { BROKEN, EQUIVALENT, REFERENCE } from "../../fixtures/prg/counter-variants.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { readEnvelope } from "../../kit.ts";
 
@@ -30,11 +30,11 @@ after(async () => {
 });
 
 function setUpProject(): void {
-  writeFileSync(join(project, "original.prg"), ORIGINAL.prg);
+  writeFileSync(join(project, "reference.prg"), REFERENCE.prg);
   writeFileSync(join(project, "good.prg"), EQUIVALENT.prg);
   writeFileSync(join(project, "bad.prg"), BROKEN.prg);
   const db = openForWrite(project);
-  for (const [name, address] of Object.entries(ORIGINAL.symbols)) renameSymbol(db, { origin: "llm" }, { address, name, kind: name === "counter" ? "variable" : "label" });
+  for (const [name, address] of Object.entries(REFERENCE.symbols)) renameSymbol(db, { origin: "llm" }, { address, name, kind: name === "counter" ? "variable" : "label" });
   db.close();
   // The good rebuild's symbols as c64-assembler prints them; the bad one's as a plain map.
   const assembled = { assembled: true, symbols: Object.entries(EQUIVALENT.symbols).map(([name, address]) => ({ name, kind: "address", address: formatC64Address(address), used: true })) };
@@ -42,7 +42,7 @@ function setUpProject(): void {
   writeFileSync(join(project, "bad.json"), JSON.stringify(Object.fromEntries(Object.entries(BROKEN.symbols).map(([name, address]) => [name, formatC64Address(address)]))));
   const scenario = (name: string, rebuild: string, checkpoint: string, timeoutFrames: number) => ({
     name,
-    original: { program: "original.prg", symbols: "knowledge" },
+    reference: { program: "reference.prg", symbols: "knowledge" },
     rebuild: { program: `${rebuild}.prg`, symbols: `${rebuild}.json` },
     steps: [
       { reset: "hard" },
@@ -87,10 +87,10 @@ test("the equivalent rebuild passes, the different one fails, an unreachable che
   assert.equal(fail.status, 0);
   assert.equal(fail.json.result, "FAIL");
   // Only the counter differs: the screen, the border and A are the same on both sides.
-  assert.deepEqual(fail.json.differences, [{ checkpoint: "counted", what: "memory counter", bytes: { count: 1, listed: [{ address: "$c100", original: "0a", rebuild: "09" }] } }]);
+  assert.deepEqual(fail.json.differences, [{ checkpoint: "counted", what: "memory counter", bytes: { count: 1, listed: [{ address: "$c100", reference: "0a", rebuild: "09" }] } }]);
 
   const inconclusive = await runTest("inconclusive.json");
   assert.equal(inconclusive.status, 0);
   assert.equal(inconclusive.json.result, "INCONCLUSIVE");
-  assert.match(inconclusive.json.reason as string, /original side did not reach the checkpoint before 10 frames/);
+  assert.match(inconclusive.json.reason as string, /reference side did not reach the checkpoint before 10 frames/);
 });

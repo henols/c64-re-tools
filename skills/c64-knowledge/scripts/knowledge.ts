@@ -891,7 +891,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
     {
       name: "release",
       summary: "Records a release of the program from its PRG or the image.json of its capture: the knowledge keeps the bytes of the release. The base release is the one whose bytes are the program of the knowledge.",
-      subjects: [{ name: "<label>", help: "the release label, for example ORIGINAL or FIRESTAR" }],
+      subjects: [{ name: "<label>", help: "the release label, for example FIRESTAR or V2" }],
       options: {
         file: { kind: "path", value: "<file>", help: "the PRG or image.json of the release. After the write, the knowledge does not need the file", required: true },
         base: { kind: "flag", help: "this release is the program of the knowledge: its segments and bytes must be the same" },
