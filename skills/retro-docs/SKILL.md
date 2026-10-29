@@ -173,16 +173,18 @@ In a group folder, a label names the project of a name. Write the label and a co
 
 `body` holds:
 
-- `result`: `PASS` when no page has a problem. `FAIL` when a page has a problem, or with `--check` when a link is not up to date.
+- `result`: `PASS` when no page has a problem. `FAIL` when a page has a problem, or with `--check` when a link is out of date or knowledge evidence is missing/changed.
 - `pages`: the count of the pages that it read.
 - `reference`: the folder of the reference, or `none`.
 - `linked`: `links`, the count of the links that it wrote, and `pages`, the pages that it changed. With `--check`, `notUpToDate` has the same fields for the links that are not up to date.
 - `problems`: `byKind`, `count`, `listed` and `rest`. Each item has `at` (the page and the line), `kind` and `message`. In a group folder, each item also has `project`: the label of the project of the page, or `shared`.
 - `group`: only in a group folder. `folder` is the group folder, relative to the folder of the pages. `projects` holds the labels.
+- `evidence`: when a SHA-256-backed file supporting the knowledge is missing or changed. Each entry has `file`, `state` and `revisions`. With `--check` this makes `result` FAIL; a normal link run only reports a warning.
 
 `hint` and `nextAction`:
 
 - A page has a problem: `hint` tells you to correct each problem. `nextAction` runs the same `link` command again.
+- With `--check`, missing or changed knowledge evidence makes `result` FAIL even when links are correct. Restore the file or re-examine the affected facts, update their evidence and rerun the check. A normal link run still reports a warning.
 - With `--check`, a link is not up to date and no page has a problem: `nextAction` runs `link` without `--check` to write the links.
 - `reference` is `none`: no `reference` folder is in or beside the given pages. Give `--reference <dir>`, or run `generate` first.
 
