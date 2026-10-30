@@ -1,8 +1,9 @@
 // Packs a field-test run into one archive for report.ts in the c64-re-tools
 // checkout: the run record, the notes, the trace of Claude Code's programs,
 // the Claude Code transcripts of this project, a summary of project
-// knowledge, the skill descriptions and the configuration with its secrets
-// removed. Run it in the project after you quit Claude Code:
+// knowledge, the skill descriptions with the word count of each skill, and
+// the configuration with its secrets removed. Run it in the project after you
+// quit Claude Code:
 //
 //   node <kit>/bundle.ts [--out <dir>]
 
@@ -80,6 +81,21 @@ function skillDescriptions(project: string): Record<string, string> {
   return out;
 }
 
+/** The words of each installed skill: its SKILL.md and its references/*.md files. A word has a letter or a digit, so a table rule or a list mark is none. */
+function skillWords(project: string): Record<string, number> {
+  const dir = join(project, ".claude", "skills");
+  const out: Record<string, number> = {};
+  if (!existsSync(dir)) return out;
+  for (const name of readdirSync(dir).sort()) {
+    const skill = join(dir, name);
+    if (!existsSync(join(skill, "SKILL.md"))) continue;
+    const references = join(skill, "references");
+    const files = ["SKILL.md", ...(existsSync(references) ? readdirSync(references).filter((file) => file.endsWith(".md")).map((file) => join("references", file)) : [])];
+    out[name] = files.reduce((sum, file) => sum + readFileSync(join(skill, file), "utf8").split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length, 0);
+  }
+  return out;
+}
+
 function main(): void {
   const { values } = parseArgs({ options: { out: { type: "string" } } });
   const project = process.cwd();
@@ -103,6 +119,7 @@ function main(): void {
 
     writeFileSync(join(root, "knowledge-summary.json"), `${JSON.stringify(knowledgeSummary(project), null, 2)}\n`);
     writeFileSync(join(root, "skills.json"), `${JSON.stringify(skillDescriptions(project), null, 2)}\n`);
+    writeFileSync(join(root, "skill-words.json"), `${JSON.stringify(skillWords(project), null, 2)}\n`);
     for (const file of [".mcp.json", join(".claude", "settings.local.json"), join(".claude", "settings.json")]) {
       const path = join(project, file);
       if (!existsSync(path)) continue;
