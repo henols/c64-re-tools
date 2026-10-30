@@ -2,8 +2,9 @@
 // into one report under field-reports/: the files, and summary.md with the
 // builds and the clock difference, the failures, the slow operations, the
 // host connections, the VICE events, the notes with the trace around each
-// one, the agent's comprehension next to each description, and the detours
-// of the agent in its transcripts.
+// one, the agent's comprehension next to each description, the skill text
+// that changed what the agent did, the size of the skill text, and the
+// detours of the agent in its transcripts.
 //
 //   node test/field/report.ts <bundle.tgz|bundle-dir> [--host-trace <dir> ...] [--out <dir>]
 
@@ -21,6 +22,8 @@ import { memoryTools } from "../../src/mcp/tools/memory.ts";
 import { videoTools } from "../../src/mcp/tools/video.ts";
 import { isoCet } from "../../src/time.ts";
 import { detoursSection } from "./detours.ts";
+import { findQuote } from "./kit/c64-field-debug/scripts/note.ts";
+import { quotesSection, skillSizeSection } from "./skill-text.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -192,7 +195,7 @@ function summary(dir: string, events: Event[], notes: Note[], skew: { skewMs: nu
 
   h(2, "Notes");
   const byComponent = new Map<string, Note[]>();
-  for (const note of notes.filter((note) => note.kind !== "comprehension")) byComponent.set(note.component, [...(byComponent.get(note.component) ?? []), note]);
+  for (const note of notes.filter((note) => note.kind !== "comprehension" && note.kind !== "quote")) byComponent.set(note.component, [...(byComponent.get(note.component) ?? []), note]);
   if (byComponent.size === 0) lines.push("None.");
   // A note is written on the clients' clock.
   const noteAt = (note: Note) => Date.parse(note.t) - (skew?.skewMs ?? 0);
@@ -222,6 +225,12 @@ function summary(dir: string, events: Event[], notes: Note[], skew: { skewMs: nu
     if (described !== undefined) lines.push(`- Description: ${described}`);
     lines.push(`- The agent: ${note.text}`);
   }
+
+  h(2, "Skill text that changed what the agent did");
+  lines.push(...quotesSection(notes, (component, words) => findQuote(join(root, "skills", component), words) !== undefined));
+
+  h(2, "Skill text size");
+  lines.push(...skillSizeSection(readJson<Record<string, number>>(join(dir, "skill-words.json"), {})));
 
   h(2, "Detours");
   lines.push(...detoursSection(join(dir, "transcripts")));
