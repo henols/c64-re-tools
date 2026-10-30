@@ -3,7 +3,7 @@
 // the bytes from coverage files, and the references in and out. Nothing here
 // reads files: knowledge.ts gives the lookups.
 
-import { COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
+import { COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
 import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
@@ -80,8 +80,9 @@ function operandOf(mode: Mode, address: number, low: number, high: number, sourc
 }
 
 /**
- * The values of a table region as c64-source writes them: a word of a words or an address table
- * as one !word value, and each byte of a split table as <target or >target. A byte of no entry has no value.
+ * The values of a table region in the form that c64-source writes, with the names of the
+ * knowledge and the platform: a word of a words or an address table as one !word value, and
+ * each byte of a split table as <target or >target. A byte of no entry has no value.
  */
 function tableValues(region: Region, source: ListingSource): Map<number, { length: 1 | 2; text: string }> {
   const values = new Map<number, { length: 1 | 2; text: string }>();
@@ -97,15 +98,13 @@ function tableValues(region: Region, source: ListingSource): Map<number, { lengt
   const split = region.type === "addresses-split" || region.type === "rts-addresses-split";
   for (const entry of pointerTableEntries({ start: region.start, end: region.end, type: region.type as PointerTableType }, byteAt)) {
     if (!present(entry.low) || !present(entry.high)) continue;
-    const target = targetName(entry.target, source) ?? formatC64Address(entry.target);
-    const text = rts ? `${target}-1` : target;
+    const text = pointerEntryText(entry.target, rts, (address) => targetName(address, source));
     if (!split) {
       values.set(entry.low, { length: 2, text });
       continue;
     }
-    const part = /^[$A-Za-z_.0-9]+$/.test(text) ? text : `(${text})`;
-    values.set(entry.low, { length: 1, text: `<${part}` });
-    values.set(entry.high, { length: 1, text: `>${part}` });
+    values.set(entry.low, { length: 1, text: splitEntryByte(text, false) });
+    values.set(entry.high, { length: 1, text: splitEntryByte(text, true) });
   }
   return values;
 }

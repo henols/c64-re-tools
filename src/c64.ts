@@ -79,6 +79,22 @@ export function pointerTableEntries(table: { start: number; end: number; type: P
   });
 }
 
+/**
+ * The ACME text of a pointer table entry: the name of its target, else its
+ * address. An entry of an RTS table holds the target - 1: name-1, or the
+ * address before the target.
+ */
+export function pointerEntryText(target: number, rts: boolean, nameOf: (address: number) => string | undefined): string {
+  const name = nameOf(target);
+  if (!rts) return name ?? formatC64Address(target);
+  return name === undefined ? formatC64Address((target - 1) & 0xffff) : `${name}-1`;
+}
+
+/** One byte of an entry of a split table: <text or >text, with the text in parentheses unless it is one name or number. */
+export function splitEntryByte(text: string, high: boolean): string {
+  return `${high ? ">" : "<"}${/^[$A-Za-z_.0-9]+$/.test(text) ? text : `(${text})`}`;
+}
+
 /** How 6502 code refers to an address. A pointer is code that builds the address from immediates. */
 export const REFERENCE_KINDS = ["call", "jump", "read", "write", "reference", "pointer"] as const;
 export type ReferenceKind = (typeof REFERENCE_KINDS)[number];

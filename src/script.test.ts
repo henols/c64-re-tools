@@ -242,6 +242,7 @@ test("pickFields keeps the dotted paths with their nesting, takes a path through
   assert.deepEqual(pickFields(body, ["regions", "regions.count"]), { body: { regions: body.regions }, missing: [] });
   assert.deepEqual(pickFields(body, ["regions.listed.origin"]), { body: { regions: { listed: [{ origin: "llm" }, {}] } }, missing: [] });
   assert.deepEqual(pickFields(body, ["revision", "nothing", "note.deeper"]), { body: { revision: "r1" }, missing: ["nothing", "note.deeper"] });
+  assert.deepEqual(pickFields({ regions: { count: 0, listed: [] } }, ["regions.listed.start"]), { body: { regions: { listed: [] } }, missing: [] }, "an empty list lacks no field");
 });
 
 test("--fields prints only those parts of the body, and a path that the body lacks gives a hint, not a failure", () => {
@@ -252,6 +253,9 @@ test("--fields prints only those parts of the body, and a path that the body lac
   assert.equal(lacking.status, 0, lacking.stderr);
   assert.deepEqual(lacking.json, { subjects: ["a"] });
   assert.equal(lacking.envelope.hint, "The body has no nothing. Its fields are subjects, out, flag, items and maxListed.");
+  // The sentence for a cut list comes only when the fields show that list.
+  assert.equal(run(["cut", "--fields", "nothing"]).envelope.hint, "The body has no nothing. Its fields are items.");
+  assert.match(run(["cut", "--fields", "items.count"]).envelope.hint, /^A list in the body is cut/);
 });
 
 test("--project sets the project of the script", () => {

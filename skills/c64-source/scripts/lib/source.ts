@@ -15,7 +15,7 @@
 // loads it.
 
 import { CONFIG_FILE, configValues } from "#src/build-name.ts";
-import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
 import { type CommentPlacement, isAnalyzer, isGeneratedFile, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, SEGMENT_FOLDER, RELEASE_DEFINE, START_SCREEN_SWITCH, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
@@ -779,8 +779,6 @@ function cellsOf(item: DataItem, layout: Layout, breaks: Set<number>): Cell[] {
   const { byteAt } = layout;
   const cells: Cell[] = [];
   const name = (address: number) => layout.names.get(address);
-  const expression = (target: number) => name(target) ?? formatC64Address(target);
-  const rtsExpression = (target: number) => (name(target) === undefined ? formatC64Address((target - 1) & 0xffff) : `${name(target)}-1`);
   const byteCell = (address: number, text = formatC64Byte(byteAt(address))): Cell => ({ address, length: 1, directive: "!byte", text });
 
   if (item.region !== undefined && POINTER_TYPES.includes(item.type)) {
@@ -798,14 +796,14 @@ function cellsOf(item: DataItem, layout: Layout, breaks: Set<number>): Cell[] {
         cells.push(byteCell(address));
         continue;
       }
-      const text = rts ? rtsExpression(part.pair.target) : expression(part.pair.target);
+      const text = pointerEntryText(part.pair.target, rts, name);
       const whole = !split && !part.high && address + 1 <= item.end && !breaks.has(address + 1);
       if (whole) {
         cells.push({ address, length: 2, directive: "!word", text });
         address++;
         continue;
       }
-      cells.push(byteCell(address, `${part.high ? ">" : "<"}${/^[$A-Za-z_.0-9]+$/.test(text) ? text : `(${text})`}`));
+      cells.push(byteCell(address, splitEntryByte(text, part.high)));
     }
     return cells;
   }

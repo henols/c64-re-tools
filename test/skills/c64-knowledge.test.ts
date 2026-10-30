@@ -446,7 +446,7 @@ test("listing writes a table of words or addresses as its values with the names 
     listing(source, 0x2000, 0x200a).map((line) => [line.address, line.text]),
     [
       [0x2000, "!word room_a,$3010"],
-      [0x2004, "!byte <(handler-1),<($3200-1),>(handler-1),>($3200-1)"],
+      [0x2004, "!byte <(handler-1),<$31ff,>(handler-1),>$31ff"],
       [0x2008, "!word $1234"],
       [0x200a, "!byte $56"],
     ],

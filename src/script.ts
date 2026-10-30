@@ -475,7 +475,11 @@ export function pickFields(body: unknown, paths: readonly string[]): { body: unk
     rest: readonly string[];
   }
   const pick = (node: unknown, wanted: readonly Wanted[]): unknown => {
-    if (Array.isArray(node)) return node.map((item) => pick(item, wanted));
+    if (Array.isArray(node)) {
+      // An empty list has no item that lacks the field.
+      if (node.length === 0) for (const item of wanted) found.add(item.path);
+      return node.map((item) => pick(item, wanted));
+    }
     if (typeof node !== "object" || node === null) return undefined;
     const out: Record<string, unknown> = {};
     const groups = new Map<string, Wanted[]>();
@@ -683,19 +687,22 @@ export function parseCall(script: ScriptSpec, command: CommandSpec, argv: readon
 // ---------------------------------------------------------------------------
 // Running
 
-/** A hint for a body with a cut list: the rest of the first list that has one. */
-function cutListHint(body: unknown): string | undefined {
-  const lists = (value: unknown, depth: number): string | undefined => {
+/** A hint for a body with a cut list: the rest of the first cut list that the fields show, or of the first one without --fields. */
+function cutListHint(body: unknown, fields?: readonly string[]): string | undefined {
+  // A field shows a list when it is the list, a field in it, or a field that holds it.
+  const shown = (path: string) => fields === undefined || path === "" || fields.some((field) => field === path || field.startsWith(`${path}.`) || path.startsWith(`${field}.`));
+  const lists = (value: unknown, path: string, depth: number): string | undefined => {
     if (typeof value !== "object" || value === null || depth > 2) return undefined;
     const rest = (value as { rest?: unknown; count?: unknown }).rest;
-    if (typeof rest === "string" && typeof (value as { count?: unknown }).count === "number") return rest;
-    for (const item of Object.values(value)) {
-      const found = lists(item, depth + 1);
+    if (typeof rest === "string" && typeof (value as { count?: unknown }).count === "number") return shown(path) ? rest : undefined;
+    // A path through a list names the field of each item, so an item adds no key to the path.
+    for (const [key, item] of Object.entries(value)) {
+      const found = lists(item, Array.isArray(value) ? path : path === "" ? key : `${path}.${key}`, depth + 1);
       if (found !== undefined) return found;
     }
     return undefined;
   };
-  const rest = lists(body, 0);
+  const rest = lists(body, "", 0);
   return rest === undefined ? undefined : `A list in the body is cut: count gives its full size. To get the rest, give ${rest}.`;
 }
 
@@ -775,7 +782,7 @@ async function envelope(script: Envelope): Promise<void> {
       commandName = command;
     });
     const { body, hint, nextAction } = result instanceof Reply ? result : { body: result ?? {}, hint: undefined, nextAction: undefined };
-    const cut = cutListHint(body);
+    const cut = cutListHint(body, fields);
     let shownHint = hint === undefined ? cut : cut === undefined || hint.includes("--max-listed") ? hint : `${sentence(hint)} ${cut}`;
     let shownBody: unknown = body ?? {};
     // The fields are a view of the result: the command has done its work, so a path that the body lacks is no failure.

@@ -145,12 +145,17 @@ function rangesText(ranges: readonly AddressRange[]): string {
   return ranges.map((range) => (range.start === range.end ? at(range.start) : `${at(range.start)}-${at(range.end)}`)).join(" ");
 }
 
-/** Sets 1 in `map` at each address of ranges as text. */
-function fillRanges(map: Uint8Array, text: string): void {
+/** Calls `each` with the start and the end of each range of ranges as text. */
+function forRanges(text: string, each: (start: number, end: number) => void): void {
   for (const item of text.split(" ")) {
     const [start, end] = item.split("-");
-    map.fill(1, Number.parseInt(start!.slice(1), 16), Number.parseInt((end ?? start)!.slice(1), 16) + 1);
+    each(Number.parseInt(start!.slice(1), 16), Number.parseInt((end ?? start)!.slice(1), 16));
   }
+}
+
+/** Sets 1 in `map` at each address of ranges as text. */
+function fillRanges(map: Uint8Array, text: string): void {
+  forRanges(text, (start, end) => map.fill(1, start, end + 1));
 }
 
 /** The union of the coverage of one space: a map of each kind, 1 at each address that a map of the space has. */
@@ -244,26 +249,20 @@ export function addCoverage(
 /** What the runs did at an address: executed (x wins), read and written (rw), read, written, or nothing (-). */
 export type Access = "x" | "rw" | "r" | "w" | "-";
 
+/** The bit of each coverage kind in a mask of kinds. */
+const kindBit = (kind: CoverageKind) => 1 << COVERAGE_KINDS.indexOf(kind);
+const maskOf = (kinds: readonly CoverageKind[]) => kinds.reduce((mask, kind) => mask | kindBit(kind), 0);
+
 /** The kinds of coverage ranges that count as an execute, a read and a write: RAM, ROM and the I/O area. */
-const EXECUTES: readonly CoverageKind[] = ["x", "rom-x", "io-x"];
-const READS: readonly CoverageKind[] = ["r", "rom-r", "io-r"];
-const WRITES: readonly CoverageKind[] = ["w", "io-w"];
+const EXECUTES = maskOf(["x", "rom-x", "io-x"]);
+const READS = maskOf(["r", "rom-r", "io-r"]);
+const WRITES = maskOf(["w", "io-w"]);
 
-/** The access of a set of coverage kinds: an execute wins, then a read and a write together. */
-function accessOf(kinds: ReadonlySet<CoverageKind>): Access {
-  const has = (list: readonly CoverageKind[]) => list.some((kind) => kinds.has(kind));
-  if (has(EXECUTES)) return "x";
-  if (has(READS)) return has(WRITES) ? "rw" : "r";
-  return has(WRITES) ? "w" : "-";
-}
-
-/** True when an address is in ranges as text: "$1000-$1002 $1005". */
-function inRanges(text: string, address: number): boolean {
-  for (const item of text.split(" ")) {
-    const [start, end] = item.split("-");
-    if (address >= Number.parseInt(start!.slice(1), 16) && address <= Number.parseInt((end ?? start)!.slice(1), 16)) return true;
-  }
-  return false;
+/** The access of a mask of coverage kinds: an execute wins, then a read and a write together. */
+function accessOf(kinds: number): Access {
+  if ((kinds & EXECUTES) !== 0) return "x";
+  if ((kinds & READS) !== 0) return (kinds & WRITES) !== 0 ? "rw" : "r";
+  return (kinds & WRITES) !== 0 ? "w" : "-";
 }
 
 /**
@@ -275,12 +274,21 @@ export function coverageAccess(db: DatabaseSync | undefined, space: Space = DEFA
   if (db === undefined) return undefined;
   const maps = [...new Set(coverageRuns(db).filter((run) => run.space === space).map((run) => run.name))];
   if (maps.length === 0) return undefined;
-  const rows = db.prepare("SELECT map, kind, ranges FROM current_coverage WHERE space = ?").all(space) as Array<{ map: string; kind: CoverageKind; ranges: string }>;
+  // The kinds of each map at each address, as a mask: each lookup then reads one value for each map.
+  const masks = new Map(maps.map((map) => [map, new Uint16Array(SIZE)]));
+  for (const row of db.prepare("SELECT map, kind, ranges FROM current_coverage WHERE space = ?").all(space) as Array<{ map: string; kind: CoverageKind; ranges: string }>) {
+    const mask = masks.get(row.map);
+    if (mask === undefined) continue;
+    const bit = kindBit(row.kind);
+    forRanges(row.ranges, (start, end) => {
+      for (let address = start; address <= end; address++) mask[address]! |= bit;
+    });
+  }
   return (address) => {
-    const all = new Set<CoverageKind>();
+    let all = 0;
     const each = maps.map((map) => {
-      const kinds = new Set(rows.filter((row) => row.map === map && inRanges(row.ranges, address)).map((row) => row.kind));
-      for (const kind of kinds) all.add(kind);
+      const kinds = masks.get(map)![address]!;
+      all |= kinds;
       return { map, access: accessOf(kinds) };
     });
     return { maps: each, access: accessOf(all) };
