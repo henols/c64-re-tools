@@ -9,6 +9,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs
 import { basename, join, posix } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
+import { formatC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile, writeReported } from "#src/host-client/transfer.ts";
@@ -93,15 +94,25 @@ function generate(call: Call): Reply {
   });
   for (const path of old) rmSync(join(directory, path), { force: true });
   const written = built.files.map((file) => writeReported(file.path, file.bytes, { what: "--out" }));
-  const files = listed(written, call.count("max-listed")!);
+  const max = call.count("max-listed")!;
+  const files = listed(written, max);
+  // What the knowledge does not have yet: the empty summaries, the modules with code but no routine, and the tables without a name of the pages.
+  const gaps = {
+    routinesWithoutComment: listed(built.gaps.routinesWithoutComment, max, (routine) => ({ name: routine.name, address: formatC64Address(routine.address), file: routine.file })),
+    modulesWithoutRoutines: listed(built.gaps.modulesWithoutRoutines, max, (module) => ({ file: module.file, start: formatC64Address(module.start), ...(module.title === undefined ? {} : { title: module.title }) })),
+    tablesWithoutName: listed(built.gaps.tablesWithoutName, max, (table) => ({ start: formatC64Address(table.start), end: formatC64Address(table.end), type: table.type })),
+  };
   const hints: string[] = [];
   if (image === undefined) hints.push("The knowledge has no program bytes. Thus the reference does not decode the tables and does not show the graphics. To get them, put the program bytes into the project knowledge and run generate again.");
   if (files.rest !== undefined) hints.push(`files is cut. To list all files, give ${files.rest}.`);
+  if (Object.values(gaps).some((gap) => gap.count > 0)) {
+    hints.push("gaps lists what the project knowledge does not have yet. Record a comment for each routine, the routines of each module, and a name for each table in the project knowledge. Then generate the source again, and run generate again.");
+  }
   hints.push("Write the pages of the documentation. Then run nextAction to link them to the source.");
   // The next step links the entry page and the folder above the reference, with the reference given, so that it also finds a reference that is not named reference/.
   const parent = posix.dirname(posix.normalize(out));
   return reply(
-    { out, revision: knowledge.revision, index: posix.join(posix.normalize(out), "index.md"), ...built.counts, files, program: image === undefined ? "none" : "the knowledge" },
+    { out, revision: knowledge.revision, index: posix.join(posix.normalize(out), "index.md"), ...built.counts, files, gaps, program: image === undefined ? "none" : "the knowledge" },
     { hint: hints.join(" "), nextAction: call.next("link", "README.md", ...(parent === "." ? [] : [parent]), "--source", source, "--reference", posix.normalize(out)) },
   );
 }

@@ -1,12 +1,12 @@
 // The c64-provenance script: compares two or more releases byte by byte at
 // their addresses and reports where they differ and which releases agree. A
-// release is a PRG or an unpacker image.json. With --run, each release
+// release is a PRG or an unpacker image.json. With --frames, each release
 // runs in its own emulator, and each listed difference gets its first access
 // and whether the run changed it. The separate command gives evidence from
 // the program in the knowledge, and the leftovers command lists what its
 // unused bytes hold: text, BASIC lines, fills and copies. The routine and match commands keep
 // routines that several programs share in a library folder and find them in the
-// program (D71).
+// program.
 
 import { basename } from "node:path";
 
@@ -293,10 +293,9 @@ const NO_ROOTS = "none: the program in the knowledge has no entry, and the image
 
 const NO_STAGES = "The program in the knowledge has no stage log. Only a capture of the unpack stages gives one. A capture of the loads of a loader holds one part of a program and has none.";
 
-/** separate: evidence from the program in the knowledge, with all ranges in --out and the first ones in the result. */
+/** separate: evidence from the program in the knowledge. --out gets the fields of the body with all items of each list. */
 function separateCommand(call: Call): unknown {
   const out = call.string("out");
-  const max = call.count("max-listed")!;
   const { program, stages, coverage, found } = programEvidence();
   const loaded = { entry: program.entry, stages };
   const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
@@ -304,31 +303,32 @@ function separateCommand(call: Call): unknown {
   const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }) }));
   const outside = { read: found.outside.read.map(show), executed: found.outside.executed.map(show), generated: found.outside.generated.map(show) };
   const roots = showRoots(found.roots);
-  const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify({ roots, ranges, codeRegions, outside }, null, 1)}\n`, { what: "--out" });
-  const list = <T>(items: T[]) => listed(items, max, undefined, out ?? "a larger --max-listed, or --out <file>");
   const bytes = (filter: (range: (typeof found.ranges)[number]) => boolean) => found.ranges.filter(filter).reduce((sum, range) => sum + range.end - range.start + 1, 0);
   const lastStage = loaded.stages === undefined ? undefined : loaded.stages.length - 1;
-  const body = {
-    ...(loaded.entry === undefined ? {} : { entry: formatC64Address(loaded.entry) }),
-    ...(lastStage === undefined
-      ? { noStages: NO_STAGES }
-      : {
-          stages: lastStage + 1,
-          bytesByStage: Object.fromEntries([...[...Array(lastStage + 1).keys()].map((stage): [string, number] => [String(stage), bytes((range) => range.stage === stage)]), ["none", bytes((range) => range.stage === undefined)]]),
-        }),
-    ...(coverage === undefined ? {} : { bytesByAccess: Object.fromEntries((["executed", "read", "written", "read-written", "untouched"] as const).map((access) => [access, bytes((range) => range.access === access)])) }),
-    ranges: list(ranges),
-    // The roots of the reachability: the entry and the hardware vectors in the image.
-    roots: roots.length === 0 ? NO_ROOTS : roots,
-    // total counts every code region; unreachable is a list like the others.
-    codeRegions: {
-      total: codeRegions.length,
-      ...(roots.length === 0 ? {} : { unreachable: list(codeRegions.filter((region) => region.reachable === false)) }),
-    },
-    ...(coverage === undefined ? {} : { outside: { read: list(outside.read), executed: list(outside.executed), generated: list(outside.generated) } }),
-    ...(written === undefined ? {} : written),
+  /** The body with at most `most` items in each list. */
+  const bodyOf = (most: number) => {
+    const list = <T>(items: T[]) => listed(items, most);
+    return {
+      ...(loaded.entry === undefined ? {} : { entry: formatC64Address(loaded.entry) }),
+      ...(lastStage === undefined
+        ? { noStages: NO_STAGES }
+        : {
+            stages: lastStage + 1,
+            bytesByStage: Object.fromEntries([...[...Array(lastStage + 1).keys()].map((stage): [string, number] => [String(stage), bytes((range) => range.stage === stage)]), ["none", bytes((range) => range.stage === undefined)]]),
+          }),
+      ...(coverage === undefined ? {} : { bytesByAccess: Object.fromEntries((["executed", "read", "written", "read-written", "untouched"] as const).map((access) => [access, bytes((range) => range.access === access)])) }),
+      ranges: list(ranges),
+      // The roots of the reachability: the entry and the hardware vectors in the image.
+      roots: roots.length === 0 ? NO_ROOTS : roots,
+      // total counts every code region; unreachable is a list like the others.
+      codeRegions: {
+        total: codeRegions.length,
+        ...(roots.length === 0 ? {} : { unreachable: list(codeRegions.filter((region) => region.reachable === false)) }),
+      },
+      ...(coverage === undefined ? {} : { outside: { read: list(outside.read), executed: list(outside.executed), generated: list(outside.generated) } }),
+    };
   };
-  return withFile(body, out);
+  return withFile(bodyOf, call.count("max-listed")!, out);
 }
 
 /** True when a list of the body ({count, listed}) holds fewer items than its count. */
@@ -339,25 +339,27 @@ function hasCutList(value: unknown, depth = 0): boolean {
   return Object.values(value).some((item) => hasCutList(item, depth + 1));
 }
 
-/** The note for a cut list: with --out, the file holds all items; without it, a larger --max-listed or --out gives them. */
-function cutNote(body: unknown, out: string | undefined): string | undefined {
-  if (!hasCutList(body)) return undefined;
-  return out === undefined ? "A list in the body is cut: count gives its full size. To get the rest, give a larger --max-listed." : `A list in the body is cut: count gives its full size. ${out} holds all items.`;
+/** The note for a cut list of match: a larger --max-listed gives the rest. */
+function cutNote(body: unknown): string | undefined {
+  return hasCutList(body) ? "A list in the body is cut: count gives its full size. To get the rest, give a larger --max-listed." : undefined;
 }
 
-/** A body with the note for a cut list when --out holds all items. Without --out, the envelope gives the note itself. */
-function withFile(body: unknown, out: string | undefined): unknown {
-  const note = out === undefined ? undefined : cutNote(body, out);
-  return note === undefined ? body : reply(body, { hint: note });
+/**
+ * The body with at most `max` items in each list, and with --out the file of
+ * the same fields with all items. A cut list names a larger --max-listed: the
+ * envelope gives that note.
+ */
+function withFile(bodyOf: (most: number) => Record<string, unknown>, max: number, out: string | undefined): Record<string, unknown> {
+  const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify(bodyOf(Number.POSITIVE_INFINITY), null, 1)}\n`, { what: "--out" });
+  return { ...bodyOf(max), ...(written === undefined ? {} : written) };
 }
 
 /** The longest text that the result shows; --out has all of it. */
 const SHOWN_TEXT = 120;
 
-/** leftovers: what the program in the knowledge holds besides its working code, with all findings in --out and the first ones in the result. */
+/** leftovers: what the program in the knowledge holds besides its working code. --out gets the fields of the body with all items and the full texts. */
 function leftoversCommand(call: Call): unknown {
   const out = call.string("out");
-  const max = call.count("max-listed")!;
   const min = call.count("min-text")!;
   const { program, stages, coverage, found } = programEvidence();
   const leftovers = findLeftovers({
@@ -382,27 +384,29 @@ function leftoversCommand(call: Call): unknown {
     copies: leftovers.copies.map(({ copyOf, ...rest }) => ({ ...show(rest), copyOf: formatC64Address(copyOf) })),
     deadCode: leftovers.deadCode.map(show),
   };
-  const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify(all, null, 1)}\n`, { what: "--out" });
-  const list = <T>(items: T[]) => listed(items, max, undefined, out ?? "a larger --max-listed, or --out <file>");
-  const body = {
-    ...(program.entry === undefined ? {} : { entry: formatC64Address(program.entry) }),
-    roots: found.roots.length === 0 ? NO_ROOTS : showRoots(found.roots),
-    ...(stages === undefined ? { noStages: NO_STAGES } : { stages: stages.length }),
-    ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Put the coverage of runs into the project knowledge." } : {}),
-    text: list(all.text.map((item) => (item.text.length > SHOWN_TEXT ? { ...item, text: `${item.text.slice(0, SHOWN_TEXT)} ...`, length: item.text.length } : item))),
-    basic: list(all.basic),
-    fill: list(all.fill),
-    residue: list(all.residue),
-    copies: list(all.copies),
-    deadCode: list(all.deadCode),
-    ...(written === undefined ? {} : written),
+  /** The body with at most `most` items in each list; the file has the full texts. */
+  const bodyOf = (most: number) => {
+    const list = <T>(items: T[]) => listed(items, most);
+    const shown = Number.isFinite(most) ? SHOWN_TEXT : Number.POSITIVE_INFINITY;
+    return {
+      ...(program.entry === undefined ? {} : { entry: formatC64Address(program.entry) }),
+      roots: found.roots.length === 0 ? NO_ROOTS : showRoots(found.roots),
+      ...(stages === undefined ? { noStages: NO_STAGES } : { stages: stages.length }),
+      ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Put the coverage of runs into the project knowledge." } : {}),
+      text: list(all.text.map((item) => (item.text.length > shown ? { ...item, text: `${item.text.slice(0, shown)} ...`, length: item.text.length } : item))),
+      basic: list(all.basic),
+      fill: list(all.fill),
+      residue: list(all.residue),
+      copies: list(all.copies),
+      deadCode: list(all.deadCode),
+    };
   };
-  return withFile(body, out);
+  return withFile(bodyOf, call.count("max-listed")!, out);
 }
 
 const platform = () => new Map(platformNames().map((entry) => [entry.name, entry.address]));
 
-/** routine: saves a module or a range of the program in the knowledge, with its knowledge, as a routine of the library (D71). */
+/** routine: saves a module or a range of the program in the knowledge, with its knowledge, as a routine of the library. */
 function routineCommand(call: Call): unknown {
   const given = call.subject(0);
   const library = call.string("library")!;
@@ -497,7 +501,7 @@ function matchCommand(call: Call): unknown {
     .sort((a, b) => a.start.localeCompare(b.start));
   const result: Record<string, unknown> = { library, routines: routines.length, matches: list(matches) };
   const noMatch = "No routine of the library is in the program. A packed program can hold a routine in a packed form. Unpack the program, put the unpacked program into the project knowledge, and run match again.";
-  const withNote = (shown: unknown, hint: string) => [cutNote(shown, undefined), hint].filter((part) => part !== undefined).join(" ");
+  const withNote = (shown: unknown, hint: string) => [cutNote(shown), hint].filter((part) => part !== undefined).join(" ");
   if (matches.length === 0) return reply(result, { hint: noMatch });
   const db = openForRead();
   let suggestions: ReturnType<typeof suggest>;
@@ -569,14 +573,14 @@ const COMMANDS: CommandSpec[] = [
   {
     name: "separate",
     summary: "Evidence from the program in the knowledge: the unpack stage that wrote each range, its access in the coverage, whether call and jump references, or the run on from the code before it, reach each code region from the entry, and what the program reads or executes outside its segments.",
-    options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write all ranges to this file" }, "max-listed": OPTIONS["max-listed"] },
+    options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the fields of the body, with all items of each list, to this file" }, "max-listed": OPTIONS["max-listed"] },
     run: separateCommand,
   },
   {
     name: "leftovers",
     summary: "What the program in the knowledge holds besides its working code: texts in PETSCII, screen codes, ASCII or with bit 7 set (Apple II), assembler source, BASIC lines away from the BASIC start, fills, untouched bytes outside code, copies of earlier bytes, and code regions that nothing reaches and no run executed.",
     options: {
-      out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write all findings to this file" },
+      out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the fields of the body, with all findings and the full texts, to this file" },
       "min-text": { kind: "count", value: "<n>", min: 4, max: 999, default: 8, help: "the shortest text to find (default 8)" },
       "max-listed": OPTIONS["max-listed"],
     },

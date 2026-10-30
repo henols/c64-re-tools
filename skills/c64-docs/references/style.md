@@ -25,10 +25,16 @@ These rules apply to each page that you write. The `link` command checks the rul
 ## Evidence
 
 - Mark each fact with its evidence, as text:
-  - **Observed**: a run showed it.
+  - **Observed**: a run showed it. A capture of a run and a compare of the releases count as runs.
   - **Code**: the code shows it, and no run showed it.
   - **Conclusion**: an interpretation of the facts.
 - Put the mark at the end of the paragraph or the list item. When the facts of a paragraph have different evidence, mark each fact.
+- The evidence line tells the reader the marks. Put it under the first paragraph of each entry page, and in the conventions block of each subsystem page:
+
+  ```markdown
+  **Evidence.** **Observed** marks a fact that a run showed. **Code** marks a fact from the code only. **Conclusion** marks an interpretation.
+  ```
+
 - Do not write the name of a JSON file in a page, and do not link to it. Examples are a scenario, a run file, a capture and a list that the source generation wrote. These files are input and output of the tools. They do not help a reader to understand the program.
 - Tell in words what the run did and what it showed. An example: "a run fills each leftover with `$A5` at the entry, and the memory and the screen stay the same at all 10 checkpoints (**Observed**)".
 - Do not link to a file in `.c64-re-tools/local/`.
@@ -49,9 +55,9 @@ Rules:
 - Give the release label of the reference file before you give the result of a byte compare. When the compare does not include all of the program, give the ranges.
 - Write that a rebuild is identical to the commercial original only after a compare with an authenticated original. A PASS of a compare is true only for the bytes of its reference file, for example a crack.
 - Two releases that can come from the same copy do not give two items of evidence. A byte that most releases have is not always a byte of the commercial original.
-- **Observed**: a run showed it. A capture of a run and a compare of the releases count as runs. Tell in words what the run did, not the name of its file. Observed does not tell who made the program, its history, or the bytes of a release that you did not examine.
-- **Code**: the code shows it, and no run showed it. Code does not tell that a release that you did not examine does the same.
-- **Conclusion** tells your interpretation. Give the facts that it uses and the other possible interpretations. For example, source text in the format of an Apple II assembler does not prove the computer of the authors.
+- **Observed** does not tell who made the program, its history, or the bytes of a release that you did not examine.
+- **Code** does not tell that a release that you did not examine does the same.
+- For a **Conclusion**, give the facts that it uses and the other possible interpretations. For example, source text in the format of an Apple II assembler does not prove the computer of the authors.
 - Bytes that no run read are not always bytes that the program cannot read. Give the runs and the checks that show the limit.
 - Write the limits in the first paragraph. Write them again in each short summary that can tell more than the evidence shows.
 
