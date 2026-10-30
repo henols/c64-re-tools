@@ -57,13 +57,11 @@ Before the first step of each side, the script does a hard reset. The CPU stops 
 | `{ "normalize": true }` | Write pages 0 to 3 and `$00`/`$01` from the entry state in the project knowledge. The entry state comes from a capture of the unpacked program. Then both sides have the same zero page, stack and KERNAL work area. |
 | `{ "observe": "moved", ... }` | Record a checkpoint. |
 
-The `timeoutFrames` of a `runUntil` step is from 1 to 30000. The default is 3000. For a longer wait, put `frames` steps before the `runUntil` step.
+The `timeoutFrames` of a `runUntil` step is from 1 to 30000. The default is 3000. A `runUntil` step that does not get to its target in `timeoutFrames` frames makes the result INCONCLUSIVE. For a longer wait, put `frames` steps before the `runUntil` step.
 
 The `port` of a joystick is 1 or 2. The `direction` is `center`, `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left` or `down-right`.
 
 A `condition` has the `kind` `register`, `memory` or `raster`. A `register` condition has `register` (`a`, `x`, `y` or `sp`), `operator` and `value`. A `memory` condition has `address`, `operator` and `value`. A `raster` condition has `line` and an optional `cycle`.
-
-`timeoutFrames` is from 1 to 30000, and 3000 by default. A `runUntil` that does not get to its target in `timeoutFrames` frames makes the result INCONCLUSIVE.
 
 Each step except `observe` can have `"side": "reference"` or `"side": "rebuild"`. Then only that side does the step. Use it when only one side needs a step, for example a key for the intro of the reference. An `observe` step has no `side`, because it compares both sides.
 
@@ -112,13 +110,11 @@ The run steps have these effects:
 | `{ "trace": "d011", "points": [{ "kind": "write", "start": "$d011" }], "frames": 100 }` | Record each hit of the points for 100 frames in `d011.json`: the instruction, its registers, and the raster line and cycle. |
 | `{ "expect": "title", "memory": [{ "address": "$0400", "text": "HELLO" }] }` | Compare memory and registers with the expected values. See the section "Expected values". |
 
-A `trace` step has a name, `points` (1 to 8), `frames` (1 to 3000) and an optional `maxHits` (at most 20000). A point has `kind` (`exec`, `read` or `write`), `start` and an optional `end`. The step writes `<name>.json` with each hit. `results.json` gives the file, the count of hits, the frames and why the trace ended. A trace that a breakpoint, a watchpoint or a JAM ends also ends the run.
+A `trace` step has a name, `points` (1 to 8), `frames` (1 to 3000) and an optional `maxHits` (at most 20000). A point has `kind` (`exec`, `read` or `write`), `start` and an optional `end`. The step writes `<name>.json` with each hit. A trace that a breakpoint, a watchpoint or a JAM ends also ends the run.
 
-In a run, an `observe` step can have `memory`, `registers`, `vicii` and `sprites`. `registers` and `vicii` are `true` or `false`, not a list. `"registers": true` gives all registers. A scenario takes a list of register names, a run does not. `sprites` is a list of sprite numbers from 0 to 7. In a run, the screen is not a key of `observe`. Write it with a `screen` step, for example `{ "screen": "room3" }`.
+In a run, an `observe` step can have `memory`, `registers`, `vicii` and `sprites`. A memory item has only `address`, `size` (1 to 65536) and `view`. `registers` and `vicii` are `true` or `false`, not a list. `"registers": true` gives all registers. A scenario takes a list of register names, a run does not. `sprites` is a list of sprite numbers from 0 to 7. In a run, the screen is not a key of `observe`. Write it with a `screen` step, for example `{ "screen": "room3" }`.
 
-In a run, a memory item has `address`, `size` (1 to 65536) and `view`. An item larger than 4096 bytes goes into the file `<observe>-<address>.bin`, without the `$`. `results.json` gives the file name.
-
-A name in `save`, `screen`, `coverage`, `observe` and `expect` has 1 to 64 letters, digits, dots, underscores or hyphens. The files go into the `--out` directory, with `results.json`. It has the observations, the expectations, the files and the steps done. If a `runUntil` step did not reach its target, it also tells why the run stopped.
+A name in `save`, `screen`, `coverage`, `observe` and `expect` has 1 to 64 letters, digits, dots, underscores or hyphens. The files go into the `--out` folder.
 
 ### Expected values
 
@@ -150,8 +146,6 @@ A memory item has at most 4096 bytes.
 
 `registers` has the fields of a `registers` step: `pc`, `a`, `x`, `y`, `sp` and `flags`. Only `pc` can be a name.
 
-A value that is not equal does not stop the run. The later steps run. `results.json` and the result have `expectations`. For each step, it gives `pass` and the count of values that are not equal. It also lists at most 16 of them, with the expected and the actual value. `failedExpectations` names each step that did not pass. The result is FAIL when an expectation did not pass.
-
 Example: visit two rooms from the same start.
 
 ```json
@@ -181,7 +175,5 @@ A scenario file or a run file with an unknown key also stops the script with `in
 The script also examines each file before it does a step: the program and the symbols of each side, and each snapshot file. A missing file stops the script with `not-found`. A program that is not a PRG, for example a disk image, stops the script with `invalid-input`. A snapshot file that is not a `.vsf` snapshot file also stops the script with `invalid-input`. The message names the step and the file.
 
 A run also examines each name of its steps before it does a step. An unknown name stops the run with `invalid-input`, and the message names the step. In a scenario, a side that does not have a name gives INCONCLUSIVE, and `reason` names the step.
-
-A step in the form of version 2.0 stops the script with `invalid-input`. The message names the old field and gives the step to write. For example, the script refuses `{ "runUntil": { "at": "main_loop" }, "timeoutFrames": 300 }` and gives `{"runUntil": {"target": {"kind": "address", "address": "main_loop"}, "timeoutFrames": 300}}`. A memory item with `at` gets the same refusal: write `address`.
 
 In a run, two steps must not write the same file name. The script refuses such a run before it starts. Names that differ only in upper and lower case are the same name.

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { capturedColourRam, coloursOfCapture, startScreenOfCapture, startScreenOfStage } from "./start-screen.ts";
+import { capturedColourRam, coloursOfCapture, startScreenLabels, startScreenOfCapture, startScreenOfStage } from "./start-screen.ts";
 
 /** An entry state with the VIC-II values, $dd00 and the colour RAM: colour n at place n mod 16, one colour for all, or none. */
 function captured(values: { d011: number; d016: number; d018: number; dd00: number; colour?: false | number }): Record<string, unknown> {
@@ -63,4 +63,14 @@ test("a capture of the program gives the screen, and its colours as 1000 bytes o
   for (let index = 0; index < 1000; index++) program.delete(0x4000 + index);
   assert.throws(() => coloursOfCapture(state, "c/image.json", (address) => program.get(address)), /has more than one colour, and the program of the knowledge has no 1000 bytes with these colours/);
   assert.deepEqual(coloursOfCapture(captured({ d011: 0x3b, d016: 0x18, d018: 0x38, dd00: 0x00, colour: 6 }), "c/image.json", () => undefined), { colour: 6 });
+});
+
+test("a build shows its start screen when its symbols have both labels and the switches leave the screen on", () => {
+  const labels: Array<[string, number]> = [["loader_start_screen_wait", 0x0900], ["loader_start_screen_continue", 0x0930]];
+  assert.deepEqual(startScreenLabels(new Map(labels)), { wait: 0x0900, continue: 0x0930 });
+  assert.deepEqual(startScreenLabels(new Map([...labels, ["START_SCREEN", 1], ["LEFTOVERS", 0]])), { wait: 0x0900, continue: 0x0930 });
+  assert.equal(startScreenLabels(new Map([...labels, ["START_SCREEN", 0]])), undefined);
+  assert.equal(startScreenLabels(new Map([...labels, ["LEFTOVERS", 1]])), undefined);
+  assert.equal(startScreenLabels(new Map([labels[0]!])), undefined);
+  assert.equal(startScreenLabels(new Map()), undefined);
 });

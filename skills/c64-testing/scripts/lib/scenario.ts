@@ -18,6 +18,7 @@ import { nameTable } from "#src/knowledge/names.ts";
 import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
 import { programImage } from "#src/knowledge/program.ts";
 import { listed } from "#src/script.ts";
+import { passStartScreen } from "./start-screen.ts";
 
 export type Side = "reference" | "rebuild";
 export const SIDES: Side[] = ["reference", "rebuild"];
@@ -392,16 +393,20 @@ export function baselineName(checkpoint: number, label: string): string {
   return `test-${checkpoint}-${label}`.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 64);
 }
 
-/** Autostart that returns only when the program runs (runProgram), or INCONCLUSIVE with the reason. */
-async function startProgram(client: ViceSessionClient, program: string, side: Side): Promise<void> {
+/**
+ * Autostart that returns only when the program runs (runProgram), and after the
+ * start screen of a loader program (passStartScreen), or INCONCLUSIVE with the reason.
+ */
+async function startProgram(client: ViceSessionClient, program: string, side: Side, symbols: Map<string, number>): Promise<void> {
   const failed = await runProgram(client, program, readProjectFile(program).bytes);
   if (failed === "not-loaded") throw new Inconclusive(`the ${side} program was not in memory after ${LOAD_LIMIT_FRAMES} frames of autostart`);
   if (failed === "not-started") throw new Inconclusive(`the ${side} program did not start within ${RUN_LIMIT_FRAMES} frames of RUN; autostart runs only a program with a BASIC start line`);
+  const screen = await passStartScreen(client, symbols);
+  if (typeof screen === "object") throw new Inconclusive(`the ${side} side: ${screen.problem}`);
 }
 
 async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side, symbols: Map<string, number>, files: boolean): Promise<Map<string, Observation>> {
   const observations = new Map<string, Observation>();
-  const at = (location: Location) => resolve(location, symbols, side);
   // Each side starts from a hard reset, stopped at the reset vector, with the control ports released.
   await client.reset({ mode: "hard", run: false });
   for (const port of [1, 2] as const) {
@@ -416,7 +421,7 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
   for (const [index, step] of scenario.steps.entries()) {
     if (step.side !== undefined && step.side !== side) continue;
     try {
-      checkpoint = await runStep(client, scenario, side, step, at, checkpoint, files, observations);
+      checkpoint = await runStep(client, scenario, side, step, symbols, checkpoint, files, observations);
     } catch (error) {
       // The step in the reason or the message: the scenario file has many steps.
       const where = `step ${index + 1} (${stepKindOf(step)})`;
@@ -433,8 +438,9 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
 const stepKindOf = (step: Step) => Object.keys(step).find((key) => STEP_KINDS.includes(key)) ?? "step";
 
 /** Runs one step of one side. Gives the number of the last checkpoint. */
-async function runStep(client: ViceSessionClient, scenario: Scenario, side: Side, step: Step, at: (location: Location) => number, last: number, files: boolean, observations: Map<string, Observation>): Promise<number> {
+async function runStep(client: ViceSessionClient, scenario: Scenario, side: Side, step: Step, symbols: Map<string, number>, last: number, files: boolean, observations: Map<string, Observation>): Promise<number> {
   const subject = scenario[side];
+  const at = (location: Location) => resolve(location, symbols, side);
   let checkpoint = last;
   // Observe first: an observe step may also carry "registers" or "memory".
   if ("observe" in step) {
@@ -484,7 +490,7 @@ async function runStep(client: ViceSessionClient, scenario: Scenario, side: Side
   } else if ("load" in step) {
     await client.programLoad({ path: subject.program });
   } else if ("autostart" in step) {
-    await startProgram(client, subject.program, side);
+    await startProgram(client, subject.program, side, symbols);
   } else if ("snapshot" in step) {
     await client.snapshotRestore(readProjectFile(step.snapshot).bytes);
   } else if ("normalize" in step) {

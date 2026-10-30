@@ -1,8 +1,9 @@
 // The c64-testing script. test runs a scenario on the reference and the
 // rebuild in one emulator; run runs steps on one side and writes what they
-// ask for; record and replay play a session in the replay core (c64run) and
-// compare the rebuild with it; diff shows what changed between two states;
-// checklist gives the Markdown list for a human tester.
+// ask for; keep copies a run into a folder that git keeps; record and replay
+// play a session in the replay core (c64run) and compare the rebuild with it;
+// show tells what a recording holds; diff shows what changed between two
+// states; checklist gives the Markdown list for a human tester.
 
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
@@ -20,9 +21,9 @@ import { LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot } from
 import { OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type Reply } from "#src/script.ts";
 import { diffFiles } from "./lib/diff-files.ts";
 import { CANCELLED, play } from "./lib/play.ts";
-import { readRecordFile, record, RECORDING_FILES } from "./lib/recording.ts";
+import { readRecordFile, record, RECORDING_FILES, showRecording } from "./lib/recording.ts";
 import { replay } from "./lib/replay.ts";
-import { runFile } from "./lib/runs.ts";
+import { keepRun, runFile } from "./lib/runs.ts";
 import { namesOf, readScenario, runScenario, scenarioNames, type Scenario, type ScenarioResult } from "./lib/scenario.ts";
 
 /** The default port of the --play page: next to the Host Runtime's 6464. */
@@ -171,13 +172,26 @@ const COMMANDS: CommandSpec[] = [
     run: async (call) => {
       const { output, failed } = await runFile(call.subject(0), call.string("out")!);
       if (!failed) return { result: "PASS", ...output };
-      const hint = output.reason !== undefined ? "reason tells why a step did not run. Correct the step or the start, then run again." : "failedExpectations names the expect steps that failed. expectations in results.json gives the expected and the actual values.";
+      const hint = output.reason !== undefined ? "reason tells why a step did not run. Correct the step or the start, then run again." : "failedExpectations names the expect steps that failed. expectations gives the expected and the actual values.";
       return reply({ result: "FAIL", ...output }, { hint });
     },
   },
   {
+    name: "keep",
+    summary: "Keeps a run as evidence in a new folder that git keeps: the run file as run.json, its results, and the files in .c64-re-tools/local/ that the run file starts from. The run file in the folder gets the new paths of those files.",
+    subjects: [
+      { name: "<run.json>", help: "the run file, relative to the project folder" },
+      { name: "<out>", help: "the --out folder of the run" },
+      { name: "<folder>", help: "the new folder, for example runs/<name>" },
+    ],
+    run: (call) => {
+      const kept = keepRun(call.subject(0), call.subject(1), call.subject(2));
+      return reply(kept, { hint: `Commit ${kept.out}. Give its files as evidence, for example ${kept.out}/results.json.` });
+    },
+  },
+  {
     name: "record",
-    summary: "Plays the steps of a record file on the reference, and writes the session as a recording folder: recording.json, reads.txt and coverage.bin. result is FAIL when the session did not complete.",
+    summary: "Plays the steps of a record file on the reference, and writes the session into the recording folder --out. result is FAIL when the session did not complete.",
     subjects: [{ name: "<record.json>", help: "a record file, relative to the project folder. See <skill>/references/recording-format.md" }],
     options: {
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the recording folder, for example tests/recordings/<name>" },
@@ -186,6 +200,13 @@ const COMMANDS: CommandSpec[] = [
       "http-port": { kind: "count", value: "<n>", min: 0, max: 65535, help: `with --play: the port of the page (default ${DEFAULT_HTTP_PORT})` },
     },
     run: recordCommand,
+  },
+  {
+    name: "show",
+    summary: "What a recording holds, without a replay: the program, the frames, the events, the comparison of the record file, each input site with its reads and the changes of its value, and the counts of the coverage map.",
+    subjects: [{ name: "<recording>", help: "a folder that record wrote, relative to the project folder" }],
+    options: { "max-listed": { ...OPTIONS["max-listed"], help: "list at most n input sites (default 50). The count is always given" } },
+    run: (call) => showRecording(call.subject(0).replace(/\/+$/, ""), call.count("max-listed")!),
   },
   {
     name: "replay",
