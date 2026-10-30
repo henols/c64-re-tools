@@ -115,15 +115,15 @@ async function recordCommand(call: Call): Promise<Reply> {
     const local = (path: string) => projectRelative(path).startsWith(`${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/`);
     const keep = local(out)
       ? `Git ignores ${out}. To keep the recording as a test and to add its coverage to the project knowledge, record again with --out tests/recordings/<name>.`
-      : `Commit ${out} with the scenarios. Add ${out}/${RECORDING_FILES.coverage} to the project knowledge as coverage.`;
+      : `Commit ${out} with the scenarios. Put the coverage of the recording folder ${out} into the project knowledge.`;
     const recordFile = local(call.subject(0)) ? ` Git also ignores the record file ${call.subject(0)}. To record again later, keep a copy in a folder that git keeps, for example tests/record/.` : "";
     const written = new Set(Object.values(RECORDING_FILES).map((name) => projectRelative(`${out}/${name}`)));
     const evidence = changedEvidence(db, projectRoot(), (file) => written.has(file));
     const map = projectRelative(`${out}/${RECORDING_FILES.coverage}`);
     const cited = [
       ...(evidence.length === 0 ? [] : [" The project knowledge gives the files in evidence as evidence of earlier revisions, and this record changed them."]),
-      ...(evidence.some((change) => change.file === map) ? [` Put the new ${RECORDING_FILES.coverage} into the project knowledge as coverage: it replaces the map of the earlier recording.`] : []),
-      ...(evidence.some((change) => change.file !== map) ? [` For a file other than ${RECORDING_FILES.coverage}, examine the facts of its revisions against the new recording.`] : []),
+      ...(evidence.some((change) => change.file === map) ? [` Put the coverage of the recording folder ${out} into the project knowledge again: it replaces the map of the earlier recording.`] : []),
+      ...(evidence.some((change) => change.file !== map) ? [" For each other file in evidence, examine the facts of its revisions against the new recording."] : []),
     ].join("");
     return reply(
       { result: "PASS", recorded: true, out, ...summary, files, ...(evidence.length === 0 ? {} : { evidence }) },
