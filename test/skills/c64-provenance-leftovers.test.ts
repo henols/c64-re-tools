@@ -10,6 +10,8 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
+import { withWrite } from "../../src/knowledge/database.ts";
+import { applyBatch } from "../../src/knowledge/write.ts";
 import { findBasic, findCopies, findFills, findLeftovers, findText } from "../../skills/c64-provenance/scripts/lib/leftovers.ts";
 import { separate } from "../../src/knowledge/separate.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
@@ -147,16 +149,21 @@ test("residue is untouched bytes without text and fill; dead code and the placem
   assert.deepEqual(found.deadCode, [{ start: 0x10f0, end: 0x10ff, type: "code", executed: false, stages: [0], access: ["untouched"] }]);
 });
 
-test("the leftovers command reads the program, its stages and the coverage from the knowledge and writes all findings to --out", () => {
+test("the leftovers command lists each kind of finding with --max-listed, and --out gets the fields of the body with all findings", () => {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-leftovers-"));
   roots.push(root);
   const memory = new Uint8Array(0x10000);
   memory.set(seededBytes(9, 0x0f), 0x2000); // zeros around the texts, as strings usually have
   memory.set(petscii("CRACKED BY THE GANG"), 0x2010);
+  memory.set(seededBytes(11, 0x30), 0x2030);
+  memory.set(basicLines(0x0801), 0x20a0);
   memory.set(screen("GREETINGS TO ALL"), 0x2100);
+  memory.set(seededBytes(11, 0x30), 0x2140); // a copy of the bytes at $2030
   memory.set(petscii("VERSION 1.2 BY ME"), 0x2180);
+  memory.set([0xa9, 0x01, 0x60], 0x21f0); // code that nothing reaches and no run executed
   const stages = [{ stage: 0, entry: "$0810", wrote: [{ start: "$2000", end: "$20ff" }] }, { stage: 1, entry: "$2000", wrote: [{ start: "$2100", end: "$21ff" }] }];
   importImage(root, memory, { segments: [{ start: 0x2000, end: 0x21ff }], entry: 0x2000, stages });
+  withWrite((db) => applyBatch(db, { origin: "llm" }, [{ op: "classify", start: 0x21f0, end: 0x21f2, type: "code" }]), root);
   const coverage = new Uint8Array(0x10000);
   coverage[0x2000] = COVERAGE.ramExecute;
   importCoverage(root, { "cov.bin": coverage });
@@ -164,14 +171,21 @@ test("the leftovers command reads the program, its stages and the coverage from 
   const run = script(provenance, ["leftovers", "--out", ".c64-re-tools/local/leftovers.json", "--max-listed", "1"], root);
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const result = run.json as Record<string, any>;
-  assert.match(run.envelope.hint ?? "", /\.c64-re-tools\/local\/leftovers\.json holds all items\./);
+  assert.match(run.envelope.hint ?? "", /cut: count gives its full size\. To get the rest, give a larger --max-listed\./);
   assert.equal(result.entry, "$2000");
   assert.equal(result.stages, 2);
   assert.equal(result.noCoverage, undefined);
+  const kinds = ["text", "basic", "fill", "residue", "copies", "deadCode"];
+  for (const kind of kinds) {
+    assert.ok(result[kind].count > 0, `${kind} has findings`);
+    assert.equal(result[kind].listed.length, 1, `${kind} lists at most --max-listed findings`);
+    assert.equal(result[kind].rest, result[kind].count > 1 ? "a larger --max-listed" : undefined, `${kind}: rest names a larger --max-listed`);
+  }
   assert.equal(result.text.count, 3);
   assert.deepEqual(result.text.listed, [{ start: "$2010", end: "$2022", encoding: "petscii", text: "CRACKED BY THE GANG", stages: [0], access: ["untouched"] }]);
-  assert.ok(result.fill.count > 0);
-  const all = JSON.parse(readFileSync(join(root, ".c64-re-tools/local/leftovers.json"), "utf8")) as Record<string, Array<Record<string, unknown>>>;
-  assert.deepEqual(all.text!.map((item) => [item.start, item.encoding, item.stages]), [["$2010", "petscii", [0]], ["$2100", "screen", [1]], ["$2180", "petscii", [1]]]);
-  assert.deepEqual(Object.keys(all), ["text", "basic", "fill", "residue", "copies", "deadCode"]);
+  const all = JSON.parse(readFileSync(join(root, ".c64-re-tools/local/leftovers.json"), "utf8")) as Record<string, any>;
+  const { out: _out, bytes: _bytes, sha256: _sha256, ...fields } = result;
+  assert.deepEqual(Object.keys(all), Object.keys(fields));
+  for (const kind of kinds) assert.deepEqual([all[kind].count, all[kind].listed.length, all[kind].rest], [result[kind].count, result[kind].count, undefined], `the file lists all ${kind}`);
+  assert.deepEqual(all.text.listed.map((item: Record<string, unknown>) => [item.start, item.encoding, item.stages]), [["$2010", "petscii", [0]], ["$2100", "screen", [1]], ["$2180", "petscii", [1]]]);
 });

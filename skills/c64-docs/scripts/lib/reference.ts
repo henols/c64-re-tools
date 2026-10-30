@@ -34,6 +34,16 @@ export interface ReferenceFile {
   bytes: Buffer;
 }
 
+/** What the knowledge does not have yet, as the pages show it. */
+export interface ReferenceGaps {
+  /** The routines of the module pages without a comment: an empty summary in the routine table. */
+  routinesWithoutComment: Array<{ name: string; address: number; file: string }>;
+  /** The modules of the knowledge whose file has code but no routine. */
+  modulesWithoutRoutines: Array<{ file: string; start: number; title?: string }>;
+  /** The tables of the tables page without a name: their heading is a range. */
+  tablesWithoutName: Array<{ start: number; end: number; type: RegionType }>;
+}
+
 /** Files that the source map lists but that hold no code of the program: they get no module page. */
 const NOT_PIECES = new Set(["main.asm", "constants.asm", "macros.asm", "loader.asm", "config.asm", "switches.asm", "start_screen.asm", "start_screen_stage.asm"]);
 const TABLE_TYPES: readonly RegionType[] = [...POINTER_TABLE_TYPES, "jumps", "words"];
@@ -65,8 +75,8 @@ interface Entry {
   spanEnd: number;
 }
 
-/** Builds every page and image of the reference. */
-export function buildReference(input: ReferenceInput): { files: ReferenceFile[]; counts: Record<string, number> } {
+/** Builds every page and image of the reference, and lists what the knowledge does not have yet. */
+export function buildReference(input: ReferenceInput): { files: ReferenceFile[]; counts: Record<string, number>; gaps: ReferenceGaps } {
   const { map, out } = input;
   const pieces = map.files.filter((file) => !NOT_PIECES.has(file));
   const pageOfFile = (file: string) => (file === "constants.asm" ? posix.join(out, "memory-map.md") : posix.join(out, "modules", `${stem(file)}.md`));
@@ -366,7 +376,12 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       const reaching = edges.filter((edge) => edge.kind !== "jump" && (ownAt.has(edge.from) || ownAt.has(edge.to)));
       const shown = reaching.slice(0, MAX_EDGES);
       if (shown.length > 0) {
-        lines.push("", "## Call graph", "", "A solid arrow is a call, a thick arrow a table entry. Rounded nodes are in this file.");
+        lines.push(
+          "",
+          "## Call graph",
+          "",
+          "A solid arrow is a call, a thick arrow a table entry: from each routine that reads the table to each target in code. A table of data addresses gives no arrow, and the graph does not show the jumps. Rounded nodes are in this file.",
+        );
         if (shown.length < reaching.length) lines.push("", `The graph shows ${shown.length} of the ${reaching.length} edges.`);
         lines.push("", "```mermaid", mermaidGraph(heads, shown, ownAt), "```");
       }
@@ -442,7 +457,16 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
   // --- Memory map ---------------------------------------------------------------
   {
     const page = posix.join(out, "memory-map.md");
-    const lines = ["# Memory map", "", `Every region of the knowledge in address order, then the variables outside the program. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`, "", "## Regions", "", "| Range | Bytes | Type | Name | File |", "|---|---|---|---|---|"];
+    const lines = [
+      "# Memory map",
+      "",
+      `Every region of the knowledge in address order, then the variables outside the program. A platform name, for example a chip register, has a reader or a writer only where the source line uses that name. (indexed) after a routine: the line adds X or Y to the address, so the access can also reach the addresses after it, which can have no row. Index: [the reference](${rel(page, posix.join(out, "index.md"))}).`,
+      "",
+      "## Regions",
+      "",
+      "| Range | Bytes | Type | Name | File |",
+      "|---|---|---|---|---|",
+    ];
     for (const region of [...input.regions].sort((a, b) => a.start - b.start)) {
       const name = entryAt.get(region.start);
       const line = map.lineOf(region.start);
@@ -483,5 +507,23 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     write(page, lines);
   }
   counts.pages = files.filter((file) => file.path.endsWith(".md")).length;
-  return { files, counts };
+
+  // --- Gaps -----------------------------------------------------------------------
+  const fileOf = (address: number) => map.lineOf(address)?.file;
+  const routineFiles = new Set(heads.map((head) => fileOf(head.address)));
+  // A module of data only needs no routine: only a file with code lines is a gap.
+  const codeFiles = new Set<string | undefined>();
+  for (const region of input.regions) if (region.type === "code") for (let address = region.start; address <= region.end; address++) codeFiles.add(fileOf(address));
+  const gaps: ReferenceGaps = {
+    routinesWithoutComment: heads.flatMap((head) => {
+      const file = fileOf(head.address);
+      return file !== undefined && pieces.includes(file) && commentLines(head.address).length === 0 ? [{ name: head.name, address: head.address, file }] : [];
+    }),
+    modulesWithoutRoutines: [...input.modules]
+      .sort((a, b) => a.start - b.start)
+      .filter((module) => pieces.includes(module.file) && codeFiles.has(module.file) && !routineFiles.has(module.file))
+      .map((module) => ({ file: module.file, start: module.start, ...(module.title === undefined ? {} : { title: module.title }) })),
+    tablesWithoutName: tables.filter((table) => entryAt.get(table.start) === undefined).map((table) => ({ start: table.start, end: table.end, type: table.type })),
+  };
+  return { files, counts, gaps };
 }

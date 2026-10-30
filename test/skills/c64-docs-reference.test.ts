@@ -209,3 +209,66 @@ test("a label that another file reaches only by a pointer keeps its entry: the C
   assert.match(game, /### \[`irq_handler`\]/);
   assert.doesNotMatch(game, /### \[`game_loop`\]/, "only code of its own file enters game_loop");
 });
+
+test("the gaps are the routines of the module pages without a comment, the modules with code but no routine and the tables without a name", () => {
+  // game calls draw; draw has a comment, game has none. states.asm has code with labels only; music.asm is a module of data. The jump table at $3000 has no name, the words at $3010 have one.
+  const items = [
+    { start: 0x1000, end: 0x1002, file: "game.asm", line: 2 },
+    { start: 0x1010, end: 0x1010, file: "game.asm", line: 4 },
+    { start: 0x1800, end: 0x1802, file: "states.asm", line: 2 },
+    { start: 0x2000, end: 0x20ff, file: "music.asm", line: 2 },
+    { start: 0x3000, end: 0x3017, file: "tables.asm", line: 2 },
+    { start: 0x4000, end: 0x4000, file: "loader.asm", line: 2 },
+  ];
+  const labels = [
+    { address: 0x1000, name: "game", file: "game.asm", line: 1 },
+    { address: 0x1010, name: "draw", file: "game.asm", line: 3 },
+    { address: 0x1800, name: "chase", file: "states.asm", line: 1 },
+    { address: 0x2000, name: "tune", file: "music.asm", line: 1 },
+    { address: 0x3010, name: "levels", file: "tables.asm", line: 1 },
+    { address: 0x4000, name: "load", file: "loader.asm", line: 1 },
+  ];
+  const map: SourceMap = {
+    directory: "src",
+    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
+    space: "c64",
+    revision: "1",
+    files: ["game.asm", "states.asm", "music.asm", "tables.asm", "loader.asm"],
+    labels,
+    labelOf: (name) => labels.find((label) => label.name === name),
+    lineOf: (address) => items.find((item) => address >= item.start && address <= item.end),
+    pathOf: (file) => `src/${file}`,
+  };
+  const { gaps } = buildReference({
+    out: "docs/reference",
+    map,
+    revision: "1",
+    symbols: [
+      { ...row, address: 0x1000, name: "game", kind: "routine" },
+      { ...row, address: 0x1010, name: "draw", kind: "routine" },
+      { ...row, address: 0x1800, name: "chase", kind: "label" },
+      { ...row, address: 0x2000, name: "tune", kind: "data" },
+      { ...row, address: 0x3010, name: "levels", kind: "data" },
+      // The loader file gets no module page, so its routine is no gap.
+      { ...row, address: 0x4000, name: "load", kind: "routine" },
+    ],
+    regions: [
+      { ...row, start: 0x1000, end: 0x1010, type: "code" },
+      { ...row, start: 0x1800, end: 0x1802, type: "code" },
+      { ...row, start: 0x3000, end: 0x300f, type: "jumps" },
+      { ...row, start: 0x3010, end: 0x3017, type: "words" },
+    ],
+    comments: [{ ...row, address: 0x1010, placement: "line", text: "Draws the screen." }],
+    references: [{ ...row, from: 0x1000, to: 0x1010, kind: "call" }],
+    modules: [
+      { ...row, start: 0x1000, file: "game.asm", title: "The game" },
+      { ...row, start: 0x1800, file: "states.asm", title: "The states" },
+      { ...row, start: 0x2000, file: "music.asm", title: "The music" },
+    ],
+  } as never);
+  assert.deepEqual(gaps, {
+    routinesWithoutComment: [{ name: "game", address: 0x1000, file: "game.asm" }],
+    modulesWithoutRoutines: [{ file: "states.asm", start: 0x1800, title: "The states" }],
+    tablesWithoutName: [{ start: 0x3000, end: 0x300f, type: "jumps" }],
+  });
+});

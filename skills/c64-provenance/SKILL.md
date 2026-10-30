@@ -1,6 +1,6 @@
 ---
 name: c64-provenance
-description: Compares two or more releases of a C64 program byte by byte and tells which releases agree at each difference. It can run each release and tell how the program uses each difference. It gives evidence for each range of the program in the project knowledge. It finds the leftovers in the program, for example texts, assembler source, BASIC lines, unused bytes, copies and dead code. It keeps a library of routines that several programs share, and finds these routines in a program. Use it to separate the program from the changes of a crack or of a release. The bytes that the releases share do not prove the bytes of the commercial original. Use it to find the history of a program in its leftovers. Use it to find known routines, for example a music driver, in a program. It does not disassemble or analyze the code, and it does not change the project knowledge.
+description: Compares two or more releases of a C64 program byte by byte and tells which releases agree at each difference. It can run each release and tell how the program uses each difference. It gives evidence for each range of the program in the project knowledge. It finds the leftovers in the program, for example texts, assembler source, BASIC lines, unused bytes, copies and dead code. It keeps a library of routines that several programs share, and finds these routines in a program. Use it to separate the program from the changes of a crack or of a release. The bytes that the releases share do not prove the bytes of the commercial original. Use it to find the history of a program in its leftovers. Use it to find known routines, for example a music driver, in a program. It does not disassemble or analyze the code. It changes the project knowledge only when it writes the names of the found routines.
 ---
 
 # C64 provenance
@@ -28,9 +28,11 @@ To get the command list, run the script with no arguments.
 | Compare only the bytes in a range | `compare releases/a.prg releases/b.prg --range '$0900-$09ff'` |
 | Map two releases with moved code in blocks of equal bytes | `compare releases/a/image.json releases/b/image.json --align --range '$0400-$bfff'` |
 | Find how each release uses each difference | `compare knowledge .c64-re-tools/local/b/image.json --frames 600 --steps .c64-re-tools/local/start-game.json` |
-| Get the evidence for each range of the program in the project knowledge | `separate --out .c64-re-tools/local/separate.json` |
-| Find the leftovers in the program | `leftovers --out .c64-re-tools/local/leftovers.json` |
+| Get the evidence for each range of the program in the project knowledge | `separate` |
+| Find the leftovers in the program | `leftovers` |
+| Get all items of one list of leftovers | `leftovers --max-listed 1000 --fields deadCode` |
 | Find short texts, for example a group name | `leftovers --min-text 6` |
+| Keep all leftovers in a file for a later step | `leftovers --out .c64-re-tools/local/leftovers.json` |
 | Save a module of the program as a routine of the library | `routine '$1000' --library ../library` |
 | Save a range of the program as a routine with a name | `routine '$1000-$1026' --name play --library ../library` |
 | Find the routines of the library in the program | `match --library ../library` |
@@ -43,7 +45,7 @@ To get the command list, run the script with no arguments.
 - `compare` takes two or more releases. A release is one of these:
   - `knowledge`: the program in the project knowledge.
   - A PRG file. The script puts it at its load address.
-  - The `image.json` of a capture of the unpacked program. Put its `entry_state.json` beside it. Without that file, `--frames` cannot start the release.
+  - The `image.json` of a capture folder. Keep all files of the capture folder together. Without them, `--frames` cannot start the release.
 - Get a PRG out of a disk image before you compare it. The script refuses a disk image, a tape image and a cartridge image.
 - Unpack a packed release before you compare it.
 - The first release on the command line is release 1. `--shift` uses these numbers.
@@ -85,7 +87,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--min-block <n>` | `compare` | With `--align`: the minimum number of bytes in a block, from 8. The default is 16. |
 | `--frames <n>` | `compare` | Run each release for `n` frames, and give each listed difference its runtime evidence. The default is no run. |
 | `--steps <file>` | `compare` | With `--frames`: run the action steps of this file before the frames. The default is no steps. |
-| `--out <file>` | `separate`, `leftovers` | Write all items to this file. The default is no file. |
+| `--out <file>` | `separate`, `leftovers` | Write the fields of the body to this file, with all items of each list. The default is no file. |
 | `--apply` | `match` | Write the changes to the project knowledge as one revision of the LLM. Without it, `match` writes nothing. |
 | `--max-listed <n>` | `separate`, `leftovers`, `match` | List at most `n` items of each list. The default is 50. `count` always gives the full number. |
 | `--min-text <n>` | `leftovers` | The minimum number of characters in a text, from 4. The default is 8. A short text, for example a group name, can need 6. |
@@ -122,7 +124,7 @@ With `--frames`, the body also holds:
   - `changed`: `true` when the bytes at the end of the run are not the bytes of the release.
 - `run`: `frames`, `steps` and `releases`. `releases` tells for each release if it started, or the `reason` that it did not start. `skipped` tells that the releases have no differences, so no release ran.
 
-A PRG starts with RUN after its load. An image starts at its entry, with the state of `entry_state.json`.
+A PRG starts with RUN after its load. An image starts at its entry, with the entry state of its capture.
 
 With `--align`, the body holds a map in place of `differences` and the shift suggestions:
 
@@ -142,7 +144,7 @@ With `--align`, the body holds a map in place of `differences` and the shift sug
 Traps:
 
 - `common` is empty: the releases do not have bytes at the same addresses. Give `--shift`, or a `--range` that all releases have.
-- A release has `started: false`: the PRG has no BASIC start, or the image has no `entry_state.json`. The `reason` tells which. The other releases still give evidence.
+- A release has `started: false`: the PRG has no BASIC start, or the capture folder of the image has no entry state. The `reason` tells which. The other releases still give evidence.
 - Each release writes a range before it reads it: the range is probably runtime state, not a difference of the releases.
 - A range has `first: none` in each release: the run did not use it. Run more frames or other steps before you decide.
 - The script refuses `--align` with `--shift` or `--frames`. It refuses `--min-block` without `--align`, and `--steps` without `--frames`.
@@ -168,11 +170,11 @@ Gives evidence from the program in the project knowledge, its stages and its cov
   - A `read` byte right after executed code, or at a return address, can be a dummy read of the 6502. The program does not use it.
 - `roots`: the addresses where the reachability starts, each with `address` and `from`. The roots are the entry, and the NMI, RESET and IRQ vectors at `$fffa`-`$ffff` when the program holds them. A text in place of the list tells why no code region is reachable.
 - `codeRegions.total`: the number of code regions in the project knowledge.
-- `codeRegions.unreachable`: the code regions that no chain of call and jump references reaches from a root. The CPU also continues into the next code region when the last instruction of a region is not RTS, RTI, JMP, BRK or JAM.
-- `outside`: only with coverage. `read` and `executed` give the RAM outside the program that the program used but did not write. A loader or an earlier stage put these bytes there. `generated` gives the code that the program wrote outside its segments. A `generated` range can have gaps of two bytes or less: these are operand bytes.
-- `out`, `bytes` and `sha256`: the file of `--out`. It holds the roots, and all ranges, code regions and outside ranges.
+- `codeRegions.unreachable`: the code regions that no chain of call and jump references reaches from a root.
+- `outside`: only with coverage. `read` and `executed` give the RAM outside the program that the program used but did not write. A loader or an earlier stage put these bytes there. `generated` gives the code that the program wrote outside its segments.
+- `out`, `bytes` and `sha256`: the `--out` file. It has the fields of the body, with all items of each list.
 
-`hint`: a list is cut. Without `--out`, give a larger `--max-listed`, or give `--out`. With `--out`, read the file.
+`hint`: a list is cut. Run the command again with a larger `--max-listed`.
 
 Traps:
 
@@ -184,7 +186,7 @@ Traps:
 
 Finds what the program in the project knowledge holds in addition to its working code. It gives evidence, not a decision.
 
-`body` holds `entry`, `roots`, and `stages` or `noStages`, as `separate` gives them. `noCoverage` tells that the project knowledge has no coverage. Then `residue` is empty and no finding has `access`. The body also holds these lists:
+`body` holds `entry`, `roots`, and `stages` or `noStages`, as `separate` gives them. `noCoverage` tells that the project knowledge has no coverage. Then `residue` is empty and no finding has `access`. The body also has one list for each kind of finding. Each list holds at most `--max-listed` findings, and its `count` gives all of them:
 
 | List | What it holds |
 |---|---|
@@ -197,9 +199,9 @@ Finds what the program in the project knowledge holds in addition to its working
 
 Each finding has `stages`: the unpack stages that wrote its bytes. A stage before the last stage is a depacker, an intro or a loader. Each finding also has `access`: the accesses of its bytes in the coverage.
 
-`out`, `bytes` and `sha256` give the file of `--out`. It holds all findings with the full texts.
+`out`, `bytes` and `sha256` give the `--out` file. It has the fields of the body, with all findings and the full texts.
 
-`hint`: a list is cut. Without `--out`, give a larger `--max-listed`, or give `--out`. With `--out`, read the file.
+`hint`: a list is cut. Run the command again with a larger `--max-listed`. To get only the lists that you need, give `--fields`, for example `--fields text,deadCode`.
 
 Text from another computer can show the tools of the developer:
 
@@ -226,7 +228,7 @@ Traps:
 
 ### `routine <module|range>`
 
-Saves a routine of the program in the project knowledge to the library. The file keeps the user and LLM names, comments, regions, references and operand expressions in the range. It also keeps the code regions of each origin.
+Saves a routine of the program in the project knowledge to the library. The routine file keeps the user and LLM names, comments, regions, references and operand expressions in the range.
 
 - A module ends at the next module, or at the end of its segment.
 - A routine has at least 16 bytes. Its last instruction must end in the range.
@@ -265,19 +267,12 @@ Finds each routine of the library in the program of the project knowledge.
 - `library` and `routines`: the library folder and the number of routines in it.
 - `matches`: each item has `routine`, `start`, `end` and `shift`. `shift` is the address in the program minus the address in the library.
 - `differing` in each match: each operand that addresses something outside the routine and that is different. It gives the value in the `library` and in the `program`. Examine each one. For example, the program can use other variables or another SID voice.
-- `changes`: with matches. `writes` lists the writes for the project knowledge. `known` counts the writes that the project knowledge has already. `leftOut` lists the writes that the script left out, and why. `check` lists each comment of `writes` that gives an address outside its routine. Each item has `routine`, `address`, `comment` and the `outside` addresses. Such an address can be different in this program. With `--apply`, `revision` gives the revision of the changes.
-
-The changes have the names, regions, comments, references and operand expressions of each routine at its address in the program. The script leaves out a write in these conditions:
-
-- The program has a user or LLM row at that place.
-- The program uses the name at another address.
-- A removal holds at that place.
-- The routine occurs more than one time, and the script did not choose this copy.
-- The script left out the name that an operand expression uses, or the expression does not give the operand in the program.
-
-A routine can occur more than one time. Then the script finds the nearest routines before and after it in the library that occur only one time. The script writes the names at the copy that has the shift of one of these routines. If no copy or more than one copy has such a shift, the script writes no names for the routine. Then `changes.leftOut` gives each copy with the reason `ambiguous`.
-
-An address `$xxxx` in a comment moves with the routine when the address is in the routine. An address outside the routine does not move, and `changes.check` gives the comment.
+- `changes`: with matches.
+  - `writes`: the names, regions, comments, references and operand expressions of each routine at its address in the program. An address in a comment moves with the routine when the address is in the routine.
+  - `known`: the count of the writes that the project knowledge has already.
+  - `leftOut`: the writes that the script left out, each with its `reason`. For example, the program has a user or LLM row at that place. Or the routine has two or more copies, and the script cannot choose one (`ambiguous`).
+  - `check`: each comment of `writes` that gives an address outside its routine. Each item has `routine`, `address`, `comment` and the `outside` addresses. Such an address can be different in this program.
+  - `revision`: with `--apply`, the revision of the changes.
 
 `hint` and `nextAction`:
 
@@ -287,7 +282,8 @@ An address `$xxxx` in a comment moves with the routine when the address is in th
 
 Traps:
 
-- `match` does not change the project knowledge.
+- Without `--apply`, `match` does not change the project knowledge.
+- A copy in `changes.leftOut` with the reason `ambiguous` gets no names. Examine each copy. Record the names of the copy that you prove in the project knowledge.
 - Error `not-found`: the library folder does not exist, or it has no routine files. Save a routine with `routine` first.
 - Error `invalid-input` with "is a project folder": the library folder is a project. Give a folder beside the projects.
 
@@ -306,13 +302,13 @@ Traps:
    - Do not call releases independent when you do not know their relation. Two cracks can come from the same source.
    - Do not call a byte a byte of the commercial original only because one release has it. A majority of releases is also not proof.
 7. Record each release in the project knowledge. The base release is the program in the project knowledge.
-8. Record each difference in the project knowledge as a switch and a patch. Select the kind of the switch:
+8. Record a switch in the project knowledge for each difference. Give the switch the labels of the releases that have it on. Select the kind of the switch:
    - `protection`: a copy protection, or the code that a crack changed to remove it.
    - `trainer` or `cheat`: a trainer or a cheat.
    - `crack`: another change of a cracker in the program, for example a credit text.
    - `fix`: a correction of a bug. Make one switch for each correction, not one switch for each release.
    - `change`: another difference.
-9. Give the switch the labels of the releases that have it on. The patch holds the bytes that the base release does not have.
+9. For each range of a switch, record the patch from the bytes of a release that has the switch on. The patch holds the bytes that the base release does not have.
 10. Record each other conclusion in the project knowledge as a comment or a region. Do not record the full comparison.
 
 ### Find the leftovers
@@ -321,7 +317,7 @@ Traps:
 2. Put the coverage of runs that use many parts of the program into the project knowledge.
 3. Analyze the program for its code regions.
 4. Run `leftovers`. When you have two or more releases, also run `compare`.
-5. Read `text` first: names, dates, greetings and credits. Then read `copies`, `residue`, `basic` and `deadCode`.
+5. Read `text` first: names, dates, greetings and credits. Then read `copies`, `residue`, `basic`, `fill` and `deadCode`.
 6. Examine each important finding. Disassemble or analyze its bytes, or examine them in the emulator.
    - Old code or old source text is evidence of the development. It does not prove the computer of the authors, the order of their work, or the path of a copy through the crackers.
 7. Record each finding that you proved in the project knowledge. Do not record the full list of leftovers.
