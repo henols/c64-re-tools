@@ -28,7 +28,7 @@ To get the command list, run the script with no arguments.
 | Build a source that includes a file that you generated into a folder next to the source root | `build src boot.asm --out build/boot.prg --include ../build` |
 | Build a source that sets no start address | `build src main.a --out build/game.prg --set-pc '$0801'` |
 | Build a generated source with the values of `config.asm` | `build src main.asm` |
-| Build the loader of a generated source. For the packed form, this is only the copier. | `build src loader.asm` |
+| Build a generated source with other switch values, and its loader program | `build src main.asm --switch TRAINER=1` |
 | Check that the rebuild is identical to the program in the project knowledge | `build src main.asm --compare` |
 | Build a release and check it against the bytes of that release | `build src main.asm --release FIRESTAR --compare` |
 | Check the rebuild of a program in another space, for example the drive | `build src main.asm --out build/drive.prg --compare --space drive8` |
@@ -44,7 +44,7 @@ To get the command list, run the script with no arguments.
 - `<entry>` is the main source file, relative to the source root. It normally sets its start address, for example `* = $0801`. If it does not, give `--set-pc`.
 - For a source that you generated from the project knowledge, the source root is the folder of that source. The entry is `main.asm`.
 - `--out` is the path of the program, relative to the project folder. Without `--out`, the script writes `build/<name>.prg`. See "Build names".
-- The script writes the symbols of the program to `symbols/<name>.json` in the folder of the program, for example `build/symbols/clean.json`. Give this file to a test run as the symbols of the rebuild.
+- The script also writes the symbols file of the program. `symbolsFile.out` gives its path. Give this file to a test run as the symbols of the rebuild.
 - Get the label of a release from the releases in the project knowledge. Record a release in the project knowledge before you build it.
 - Before you use `--compare`, put the program bytes into the project knowledge.
 - The target CPU is the 6510. The program is a C64 PRG, or the bytes only with `--plain`.
@@ -54,7 +54,8 @@ To get the command list, run the script with no arguments.
 A source that you generated from the project knowledge has switches in `config.asm`.
 
 - Without `--release`, the build uses the values in `config.asm`. With the default values, the program is the clean program: no copy protection, no trainers, no cheats, no crack changes, and all corrections. This program can be different from the base release. Thus `--compare` can give `FAIL`.
-- To turn a switch on, change its value in `config.asm`, for example `TRAINER = 1`. Do not use `--define` for a switch. ACME then stops with `Symbol already defined`.
+- To build other switch values, give `--switch` for each switch, for example `--switch TRAINER=1`. `config.asm` does not change. Do not use `--define` for a switch.
+- With `--switch` and the entry `main.asm`, a source with `loader.asm` also gives its loader program with these switch values. See "Build".
 - With `--release <label>`, each switch has the value of that release. A release build does not read `config.asm`.
 
 ### Build names
@@ -64,11 +65,11 @@ Without `--out`, the name of the program tells what the build is:
 | Build | Name |
 |---|---|
 | `--release <label>` | `release_<label>.prg`, for example `release_FIRESTAR.prg` |
-| Each value of `config.asm` is its default | `clean.prg` |
-| A value of `config.asm` is not its default | `custom_<switches>.prg`, for example `custom_trainer.prg`. A switch that is off has `no_` before its name, for example `custom_no_start_screen.prg`. |
+| Each switch value is its default | `clean.prg` |
+| A switch value is not its default | `custom_<switches>.prg`, for example `custom_trainer.prg`. A switch that is off has `no_` before its name, for example `custom_no_start_screen.prg`. |
 | A source without `config.asm` | the name of the entry, for example `main.prg` |
 
-An entry other than `main.asm` adds its name, for example `clean_loader.prg` for `loader.asm`. The `loader.asm` of the packed form holds only the copier, so its build is `clean_copier.prg`. The packed loader program `clean_loader.prg` of the generated source stays. With `--plain`, the extension is `.bin`. Do not give `--out` for a build of a generated source. Then the name always tells the build.
+An entry other than `main.asm` adds its name. With `--plain`, the extension is `.bin`. Do not give `--out` for a build of a generated source. Then the name always tells the build.
 
 ### Paths and the project folder
 
@@ -98,6 +99,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--out <file.prg>` | `build` | The path of the program, relative to the project folder. The default is `build/<name>.prg`. See "Build names". |
 | `--include <folder>` | `build` | An include folder: a path relative to the source root, inside the project folder. Give the flag again for each folder. The default is no include folder. |
 | `--define NAME=VALUE` | `build` | An assembler symbol: an integer, also `$` and hex digits, or `true` or `false`. Give the flag again for each symbol. Do not use it for a switch. |
+| `--switch NAME=VALUE` | `build` | A switch of `config.asm` with the value 0 or 1 for this build. Give the flag again for each switch. `config.asm` does not change. The script refuses it with `--release`. |
 | `--set-pc <address>` | `build` | The start address when the source does not set one, for example `'$0801'`. |
 | `--release <label>` | `build` | Build a release of the project knowledge. Each switch gets the value of that release. With `--compare`, the reference is the bytes of the release in the project knowledge. |
 | `--compare` | `build` | Compare the program byte by byte with the program in the project knowledge, or with the file of `--release`, segment by segment. Off by default. |
@@ -112,7 +114,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 ### `build <source-root> <entry>`
 
-Assembles the source and writes the program to `--out`, or to `build/<name>.prg`. It also writes the symbols to `symbols/<name>.json` in the folder of the program. Without `--all-symbols`, that file does not have the constants that the source does not use.
+Assembles the source and writes the program to `--out`, or to `build/<name>.prg`. It also writes the symbols file, which `symbolsFile` gives. Without `--all-symbols`, that file does not have the constants that the source does not use.
 
 `body` holds:
 
@@ -132,10 +134,11 @@ Assembles the source and writes the program to `--out`, or to `build/<name>.prg`
   - `identical`.
   - `different`, with `differences` and `firstDifference`. `firstDifference` gives `address`, and the byte of the build (`built`) and of the reference (`reference`), each as `$` and two hex digits.
   - `not covered`, with `uncovered`: the build does not hold all bytes of the segment.
+- `loader`: only with `--switch`, the entry `main.asm` and a `loader.asm` in the source root. It is the loader program of these switch values, with `out`, `bytes` and `sha256`. `symbolsFile` is its symbols file. `packed` gives `packedBytes` and `unpackedBytes` of the packed form. `verified` is always `false`, because no check of the loader program runs.
 
 Do as the result tells:
 
-- `result` is `PASS`: the program is at `out`. To run or debug the program, load the file at `out` into the emulator. A generated source with a loader is different: the build of `main.asm` does not set the entry state, and it can hold bytes for $d000-$dfff. Load the loader program in its place.
+- `result` is `PASS`: the program is at `out`. To run or debug the program, load the file at `out` into the emulator. A generated source with a loader is different: the build of `main.asm` does not set the entry state, and it can hold bytes for $d000-$dfff. Load the loader program in its place: `loader.program` of the generation of the source with the loader, or `loader.out` of a build with `--switch`. Test the loader program of `loader.out` before you trust it.
 - `result` is `FAIL` and `assembled` is `false`: the source has errors, and the script wrote no program. `hint` tells you to correct the source. Correct the source at the file and the line of each diagnostic. Then run `build` again.
 - `result` is `FAIL` and `assembled` is `true`: the program is not identical to the reference. The script wrote the program. Read the first difference of each segment in `compare.segments`. Without `--release`, read the section "Switches" first.
 - `hint` tells that `symbols` is cut: give a larger `--max-listed`, or read the symbols file for the full list.
@@ -144,6 +147,8 @@ Do as the result tells:
 - Error `invalid-input` names an include folder: the folder is outside the project folder. Give `--include` a folder inside the project folder.
 - Error `not-found` names a release: the project knowledge has no release with that label. Record the release in the project knowledge, or give the label of a recorded release.
 - Error `not-found` tells that the knowledge has no program: put the program bytes into the project knowledge. Then use `--compare` again.
+- Error `invalid-input` names a switch: give `--switch` a switch of `config.asm`, with the value 0 or 1.
+- Error `invalid-input` tells you to set the switch values in `config.asm`: this build cannot make the loader program of these switch values. Set the values in `config.asm`. Then generate the source with the loader.
 - Error `invalid-input`: an option or a path is wrong. Do as `hint` tells. The script refuses `--space` without `--compare` or `--release`.
 
 The script does not keep the diagnostics or the program in the project knowledge.
