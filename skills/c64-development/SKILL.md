@@ -68,9 +68,9 @@ Do these steps for each small part of the program:
 
 1. Find the meaning of each register in the memory map of the C64. Export the platform names as an include file to `src/hw.a`. Include it with `!source`. Do not type the addresses of registers yourself.
 2. Write the code for one part.
-3. Assemble `src/main.a` into `build/<name>.prg`, with the symbols in `build/<name>.json`. Change the source at the file and the line of each error.
+3. Assemble `src/main.a` into `build/<name>.prg`. Change the source at the file and the line of each error.
 4. Start the program in the emulator with an autostart. Look at the screen. Read the screen memory, not only the screen image.
-5. Write the `expect` steps of this part in a run file. Give the symbol file `build/<name>.json` in the run file, so that a step can use the labels of the source.
+5. Write the `expect` steps of this part in a run file. Give the symbols file of the build in the run file, so that a step can use the labels of the source. The result of the build gives the symbols file.
 6. Run all run files in `tests/`. Go to the next part only when each run gives PASS.
 
 To find a defect, debug the program in the emulator:
