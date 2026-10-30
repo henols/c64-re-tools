@@ -6,12 +6,14 @@
 // program with the same values: the build of loader.asm in the plain form,
 // and in the packed form the pack of the build of main.asm with the build of
 // loader.asm, the copier, as generate packs it. No check of that loader runs.
+// When the knowledge or the builds do not permit the pack, the build writes
+// the program of main.asm and no loader program, and tells why.
 
 import { posix } from "node:path";
 
 import { BUILD_DIRECTORY, type BuildKind, buildName, CONFIG_FILE, configValues, COPIER_LINE, symbolsPath, withConfigValues } from "#src/build-name.ts";
 import { type AddressRange, formatC64Address } from "#src/c64.ts";
-import { Refusal } from "#src/errors.ts";
+import { isRefusal, Refusal } from "#src/errors.ts";
 import { readSourceTree, writeReported } from "#src/host-client/transfer.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
@@ -61,13 +63,24 @@ function switchDefaults(space: Space): Map<string, number> {
   }
 }
 
-/** What the packed form needs from the knowledge: the loaded ranges. Refuses a start screen of a captured stage and a segment below $0400. */
-function packedLoaded(leftovers: readonly AddressRange[]): AddressRange[] {
+/** What the packed form needs from the knowledge of the space: the loaded ranges. Refuses a start screen of a captured stage and a segment below $0400. */
+function packedLoaded(leftovers: readonly AddressRange[], space: Space): AddressRange[] {
   const db = openForRead();
   try {
-    return packedRanges(requireProgram(db).segments, leftovers, currentStartScreen(db)?.stage);
+    return packedRanges(requireProgram(db, space).segments, leftovers, currentStartScreen(db, space)?.stage);
   } finally {
     db?.close();
+  }
+}
+
+/** The message of a refusal of `work`, or undefined when it did not refuse: a refusal of the loader program does not stop the build of main.asm. */
+function refusalOf(work: () => void): string | undefined {
+  try {
+    work();
+    return undefined;
+  } catch (error) {
+    if (isRefusal(error)) return error.message;
+    throw error;
   }
 }
 
@@ -146,13 +159,17 @@ await runScript({
         // With --switch, main.asm of a generated source with a loader also gives the loader program of these values.
         const loaderIndex = switches.size > 0 && entry === "main.asm" ? inSource(LOADER_FILE) : -1;
         let loaded: AddressRange[] | undefined;
+        // Why the build writes no loader program.
+        let noLoader: string | undefined;
         if (loaderIndex >= 0 && textOf(loaderIndex).split(/\r?\n/).includes(COPIER_LINE)) {
           // The packed form: the loaded ranges are the segments of the program without the leftover files of the source.
           const folder = posix.join(tree.sourceDir, LEFTOVER_FOLDER);
           const leftovers = tree.files.flatMap((file, index) => (posix.dirname(file.path) === folder ? (leftoverRange(textOf(index)) ?? []) : []));
-          loaded = packedLoaded(leftovers);
+          noLoader = refusalOf(() => {
+            loaded = packedLoaded(leftovers, call.space);
+          });
           // The toolkit never installs a tool: without Exomizer the build refuses by name before ACME runs.
-          findTool(EXOMIZER);
+          if (noLoader === undefined) findTool(EXOMIZER);
         }
 
         const { result, attachments } = await assemble(params, contents, localToolContext());
@@ -165,7 +182,7 @@ await runScript({
 
         // The loader is made before a file is written: a refusal writes nothing.
         let loader: { program: Buffer; symbols: AssembledSymbol[]; packed?: PackedLoader } | undefined;
-        if (loaderIndex >= 0) {
+        if (loaderIndex >= 0 && noLoader === undefined) {
           const copier = await assemble({ ...params, entrySource: LOADER_FILE }, contents, localToolContext());
           if (!copier.result.assembled) {
             const [first] = copier.result.diagnostics;
@@ -178,9 +195,12 @@ await runScript({
           else {
             const at = copier.result.symbols!.find((symbol) => symbol.name === COPIER_SOURCE);
             if (at?.kind !== "address") throw new Refusal("invalid-input", `${LOADER_FILE} has no label ${COPIER_SOURCE} at its copier. Generate the source with the loader again.`);
-            checkPackedBuilds(built, copierBuild, loaded);
-            const packed = await packLoader(built, copierBuild, { loaded, copier: at.address }, localToolContext());
-            loader = { program: packed.program, symbols, packed };
+            const packedFrom = loaded;
+            noLoader = refusalOf(() => checkPackedBuilds(built, copierBuild, packedFrom));
+            if (noLoader === undefined) {
+              const packed = await packLoader(built, copierBuild, { loaded: packedFrom, copier: at.address }, localToolContext());
+              loader = { program: packed.program, symbols, packed };
+            }
           }
         }
 
@@ -196,6 +216,7 @@ await runScript({
           ...(different && label === undefined ? ["Without --release, a source with switches builds with the values of config.asm and --switch, and that program can differ from the base release. To check a release, give --release <label> with --compare."] : []),
           ...(symbols.rest === undefined ? [] : [`symbols is cut. To get all symbols, give ${symbols.rest}.`]),
           ...(loader === undefined ? [] : ["loader.out is the loader program of these switch values. No check of the loader program ran, so loader.verified is false."]),
+          ...(noLoader === undefined ? [] : ["The build wrote the program of main.asm, but no loader program of these switch values: loader.reason tells why."]),
         ];
         return reply({
           result: different ? "FAIL" : "PASS",
@@ -209,6 +230,7 @@ await runScript({
           ...(all ? {} : { unusedConstants: result.symbols!.length - shown.length }),
           diagnostics: result.diagnostics,
           ...(compared === undefined ? {} : { compare: compared }),
+          ...(noLoader !== undefined ? { loader: { written: false, reason: noLoader } } : {}),
           ...(loader === undefined
             ? {}
             : {

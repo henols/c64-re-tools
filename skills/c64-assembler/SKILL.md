@@ -134,7 +134,7 @@ Assembles the source and writes the program to `--out`, or to `build/<name>.prg`
   - `identical`.
   - `different`, with `differences` and `firstDifference`. `firstDifference` gives `address`, and the byte of the build (`built`) and of the reference (`reference`), each as `$` and two hex digits.
   - `not covered`, with `uncovered`: the build does not hold all bytes of the segment.
-- `loader`: only with `--switch`, the entry `main.asm` and a `loader.asm` in the source root. It is the loader program of these switch values, with `out`, `bytes` and `sha256`. `symbolsFile` is its symbols file. `packed` gives `packedBytes` and `unpackedBytes` of the packed form. `verified` is always `false`, because no check of the loader program runs.
+- `loader`: only with `--switch`, the entry `main.asm` and a `loader.asm` in the source root. It is the loader program of these switch values, with `out`, `bytes` and `sha256`. `symbolsFile` is its symbols file. `packed` gives `packedBytes` and `unpackedBytes` of the packed form. `verified` is always `false`, because no check of the loader program runs. When the script cannot make the loader program, `loader` holds only `written`, which is `false`, and `reason`.
 
 Do as the result tells:
 
@@ -142,13 +142,13 @@ Do as the result tells:
 - `result` is `FAIL` and `assembled` is `false`: the source has errors, and the script wrote no program. `hint` tells you to correct the source. Correct the source at the file and the line of each diagnostic. Then run `build` again.
 - `result` is `FAIL` and `assembled` is `true`: the program is not identical to the reference. The script wrote the program. Read the first difference of each segment in `compare.segments`. Without `--release`, read the section "Switches" first.
 - `hint` tells that `symbols` is cut: give a larger `--max-listed`, or read the symbols file for the full list.
+- `loader.written` is `false`: the script wrote the program of `main.asm`, but it cannot make the loader program of these switch values. Do as `loader.reason` tells.
 - Error `not-found` names the entry: give the main source file relative to the source root.
 - Error `not-found` names an include folder: give `--include` a folder with files, relative to the source root.
 - Error `invalid-input` names an include folder: the folder is outside the project folder. Give `--include` a folder inside the project folder.
 - Error `not-found` names a release: the project knowledge has no release with that label. Record the release in the project knowledge, or give the label of a recorded release.
 - Error `not-found` tells that the knowledge has no program: put the program bytes into the project knowledge. Then use `--compare` again.
 - Error `invalid-input` names a switch: give `--switch` a switch of `config.asm`, with the value 0 or 1.
-- Error `invalid-input` tells you to set the switch values in `config.asm`: this build cannot make the loader program of these switch values. Set the values in `config.asm`. Then generate the source with the loader.
 - Error `invalid-input`: an option or a path is wrong. Do as `hint` tells. The script refuses `--space` without `--compare` or `--release`.
 
 The script does not keep the diagnostics or the program in the project knowledge.

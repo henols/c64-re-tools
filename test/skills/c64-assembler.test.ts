@@ -11,6 +11,9 @@ import { after, test } from "node:test";
 
 import { COPIER_LINE } from "../../src/build-name.ts";
 import { COVERAGE } from "../../src/c64.ts";
+import { withWrite } from "../../src/knowledge/database.ts";
+import { setImage } from "../../src/knowledge/program.ts";
+import { setStartScreen } from "../../src/knowledge/write.ts";
 import { packLoader } from "../../src/loader.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
@@ -242,4 +245,17 @@ test("--switch builds other switch values and leaves config.asm as it is; with t
     assert.match(refused.json.error.message, pattern);
   }
   assert.equal(existsSync(join(folder, "build", "custom_leftovers.prg")), false);
+
+  // A start screen of a captured stage: only generate makes that loader program, so the build writes main.asm and tells why it wrote no loader.
+  withWrite((db) => {
+    setImage(db, { origin: "llm" }, { space: "loading", segments: [{ start: 0x0400, end: 0x07e7 }], byteAt: () => 0x20 });
+    setStartScreen(db, { origin: "llm" }, { mode: "text", screen: 0x0400, charset: 0x1000, colour: 1, border: 0, background: 0, stage: "loading" });
+  }, folder);
+  rmSync(join(folder, "build", "custom_trainer.prg"));
+  const staged = buildIn(folder, ["src", "main.asm", "--switch", "TRAINER=1"]);
+  assert.equal(staged.status, 0, JSON.stringify(staged.json));
+  assert.ok(existsSync(join(folder, "build", "custom_trainer.prg")));
+  assert.deepEqual(Object.keys(staged.json.loader), ["written", "reason"]);
+  assert.equal(staged.json.loader.written, false);
+  assert.match(staged.json.loader.reason, /captured stage loading/);
 });
