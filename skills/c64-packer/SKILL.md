@@ -97,7 +97,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 Traps:
 
 - The unpacker starts with `SYS 2061`, at `$080d`. A BASIC program at `$0801` often has its entry at `$080d` too. Then the CPU gets to `$080d` two times: first before the unpack, then at the start of the program. To examine the program at its entry in the emulator, stop at `$080d`, run one frame, and stop at `$080d` again.
-- The unpacker uses `$0334` to `$03ff` and the zero page while it runs. A program that loads into these addresses can fail. Then the command fails with `operation-failed`, or the check gives `FAIL`.
+- A program that loads into `$0334` to `$03ff` or into the zero page can fail, because the unpacker uses these addresses while it runs. Then the command fails with `operation-failed`, or the check gives `FAIL`. Give the result to the user.
 - `invalid-input` for the entry: the entry is below `$0400`. The unpacker runs there. A program with an entry below `$0400` needs a different packer.
 - `invalid-input` with "There is no SYS address": the first input has no BASIC line with `SYS` and a number. Give `--entry`.
 - `operation-failed` with "Exomizer could not pack the program": `hint` gives the last output of Exomizer. Change the inputs, or give the message to the user.

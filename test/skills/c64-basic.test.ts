@@ -69,6 +69,7 @@ test("a BASIC loader gives its listing and a handoff into the code after BASIC",
   assert.deepEqual(json, {
     loadRange: { start: "$0801", end: "$0812" },
     basicEnd: "$080d",
+    machineCode: { start: "$080d", end: "$0812", fileOffset: 14 },
     listing: "10 sys2061",
     handoffs: [{ kind: "sys", line: 10, address: "$080d" }],
   });

@@ -115,7 +115,7 @@ When the list is cut, `hint` gives the full count, and `nextAction` runs `list` 
 
 ### `export`
 
-Writes all platform names to the project file at `--out`, as an ACME include file. Each line gives one name and its meaning as a comment. A zero-page name is `NAME = $xx`. Another name is `NAME = $xxxx`.
+Writes all platform names to the project file at `--out`, as an ACME include file. Each name has its meaning as a comment.
 
 `body` holds `names` (the number of names) and the file as `out`, `bytes` and `sha256`.
 

@@ -92,7 +92,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 For a disk image, `body` holds `diskName`, `diskId`, `dosType`, `freeBlocks` and `entries`. Each entry has `name`, `type`, `blocks`, `closed` and `locked`.
 
-For a tape file, `body` holds `name` and `entries`. Each entry has `name`, `start`, `end` and `bytes`. Many T64 files have a wrong end address. Then the entry has `fixedSize: true`, and the size comes from the position of the next file.
+For a tape file, `body` holds `name` and `entries`. Each entry has `name`, `start`, `end` and `bytes`. Many T64 files have a wrong end address. Then the entry has `fixedSize: true`, and the script gives the correct `end` and `bytes`.
 
 For a cartridge file, `body` holds the header and `chips`. The header is `name`, `type`, `typeName`, `exrom`, `game`, and `mode` for type 0. Each chip has `bank`, `address`, `size` and `space`.
 

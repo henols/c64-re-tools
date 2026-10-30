@@ -60,6 +60,7 @@ To get the command list, run the script with no arguments.
   - A handoff with `computed: true` gets its address from a calculation at run time, for example with `PEEK`. A `sys` handoff of this type gives its argument in `expression`.
 - `loadRange`: the `start` and the `end` of the program in memory.
 - `basicEnd`: the first address after the BASIC, or `null`. From `basicEnd` to the end of `loadRange`, the file holds bytes that are not BASIC. Usually these bytes are the machine code that the handoff calls.
+- `machineCode`: only when the file has bytes after the BASIC. `start` and `end` are their addresses. `fileOffset` is the position of the first byte in the file, after the 2 bytes of the load address.
 
 The addresses are for a load to the load address of the file. A load without `,1` puts a BASIC program at `$0801`. Most loaders have `$0801` as their load address.
 
