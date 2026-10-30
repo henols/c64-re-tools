@@ -72,6 +72,20 @@ test("dead code becomes free; code that ran but that the entry does not reach st
   assert.equal(plan.rooted, true);
 });
 
+test("while a jump through a vector that a run wrote is unresolved, code that nothing reaches stays as unknown; a reference of the LLM from the jump resolves it", () => {
+  // $1000 JMP ($1020); the vector holds $1000. $1003 RTS: no flow reaches it and no run executed it.
+  const base = program([[0x1000, [0x6c, 0x20, 0x10]], [0x1003, [0x60]]], [[0x1020, [0x00, 0x10]]]);
+  const coverage = covered([0x1000]);
+  coverage[0x1020] = coverage[0x1020]! | (1 << 1);
+  const open = planDrops(input(base, { coverage }));
+  assert.deepEqual(open.free, []);
+  assert.deepEqual(open.unknown, [{ start: 0x1003, end: 0x1003 }]);
+  assert.deepEqual(open.unresolved, [{ at: 0x1000, kind: "indirect-jump" }]);
+  const resolved = planDrops(input(base, { coverage, references: [{ from: 0x1000, to: 0x1000, kind: "jump", origin: "llm" }] }));
+  assert.deepEqual(resolved.free, [{ start: 0x1003, end: 0x1003, what: "code" }]);
+  assert.deepEqual(resolved.unknown, []);
+});
+
 test("--drop makes the listed code free, and the code that only it calls goes with it", () => {
   const plan = planDrops(input(BASE, { coverage: RAN, drop: [{ start: 0x1005, end: 0x100a }] }));
   assert.deepEqual(plan.free, [{ start: 0x1005, end: 0x100e, what: "code" }]);

@@ -196,6 +196,7 @@ Finds what the program in the project knowledge holds in addition to its working
 | `residue` | Bytes that no run touched, and that are not text, BASIC, fill or a code region. `bytes` shows the first 16 bytes. |
 | `copies` | At least 32 bytes that are the same as earlier bytes of the program. `copyOf` is the address of the earlier bytes. |
 | `deadCode` | Code regions that no root reaches, as in `codeRegions.unreachable` of `separate`, and that no run executed. |
+| `unknownCode` | Code regions that no root reaches and that no run executed, but that are not dead code. No coverage shows that they did not run, or a flow in `unresolved` can go to them. Each flow has `at` and `kind`. |
 
 Each finding has `stages`: the unpack stages that wrote its bytes. A stage before the last stage is a depacker, an intro or a loader. Each finding also has `access`: the accesses of its bytes in the coverage.
 
@@ -220,6 +221,7 @@ Traps:
 
 - No coverage: `residue` is empty. Put the coverage of runs that use many parts of the program into the project knowledge.
 - No code regions: `deadCode` is empty, and `residue` can include code. Analyze the program for its code regions first.
+- `unknownCode` has items: a flow in `unresolved` can go to the code, or the knowledge has no coverage. Do not call this code dead. Find the targets of each flow in the emulator, and record a jump reference from the flow to each target in the project knowledge. When the flow goes outside the program, record the reference to that address.
 - Error `not-found`: the project knowledge has no program. Put the program into the project knowledge.
 
 ---

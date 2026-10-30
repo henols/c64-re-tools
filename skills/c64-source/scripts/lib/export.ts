@@ -7,13 +7,16 @@
 // decoded instructions. Pass A starts at the entry and the hardware vectors:
 // it tells what the program can reach. Pass B also starts at each block that
 // a run executed, at --keep and at the patches that the export changed: it
-// tells what stays. Without coverage nothing becomes free by itself.
+// tells what stays. Without coverage nothing becomes free by itself. While the
+// program has a flow whose targets the knowledge does not give (an indirect
+// jump through a vector that a run wrote, or a jump whose address a run
+// wrote), code that nothing reaches is unknown: it stays.
 
 import { type AddressRange, COVERAGE, formatC64Address, pointerTableEntries, POINTER_TABLE_TYPES, type PointerTableType } from "#src/c64.ts";
 import { symbolsPath } from "#src/build-name.ts";
 import { Refusal } from "#src/errors.ts";
-import { NO_FALL_THROUGH, type Root, separate } from "#src/knowledge/separate.ts";
-import type { RegionType } from "#src/knowledge/schema.ts";
+import { NO_FALL_THROUGH, type Root, separate, type UnresolvedFlow, unresolvedFlows } from "#src/knowledge/separate.ts";
+import { isSemantic, type RegionType } from "#src/knowledge/schema.ts";
 import { OPCODES } from "#src/opcodes.ts";
 
 /**
@@ -62,7 +65,8 @@ export interface DropInput {
   instructions: ReadonlyMap<number, number>;
   coverage?: Uint8Array;
   regions: ReadonlyArray<{ start: number; end: number; type: RegionType }>;
-  references: ReadonlyArray<{ from: number; to: number; kind: string }>;
+  /** A reference of the user or the LLM resolves the flow of its instruction. */
+  references: ReadonlyArray<{ from: number; to: number; kind: string; origin?: string }>;
   /** The addresses that the operand expression of an instruction names, by the address of each instruction with an operand expression; none for a constant. */
   operandTargets: ReadonlyMap<number, readonly number[]>;
   /** The ranges where the CPU sees ROM and not the RAM of the image: code does not go there, and no address points there. */
@@ -87,6 +91,10 @@ export interface DropPlan {
   unreachableExecuted: Array<AddressRange & { routine?: string }>;
   /** False when the image has no entry and no hardware vectors: then nothing is unreachable. */
   rooted: boolean;
+  /** Code that nothing reaches and that no run executed, which stays because of the flows in `unresolved`. */
+  unknown: AddressRange[];
+  /** The flows whose targets the knowledge does not give. */
+  unresolved: UnresolvedFlow[];
 }
 
 const inside = (address: number, ranges: readonly AddressRange[]) => ranges.some((range) => address >= range.start && address <= range.end);
@@ -318,8 +326,13 @@ export function planDrops(input: DropInput): DropPlan {
   }
   const passB = separate({ segments: [...input.segments], memory: input.memory, ...(input.entry === undefined ? {} : { entry: input.entry }), codeRegions: asRegions(candidates), references, roots: extra });
   const automatic = input.coverage !== undefined && rooted;
-  const stays = candidates.filter((_, index) => !automatic || passB.codeRegions[index]!.reachable !== false);
-  const droppedCode = candidates.filter((_, index) => automatic && passB.codeRegions[index]!.reachable === false);
+  const unreachableCode = candidates.filter((_, index) => automatic && passB.codeRegions[index]!.reachable === false);
+  // A flow that nobody resolved can go to any of that code: it stays, as unknown.
+  const resolvedSites = new Set(input.references.filter((reference) => isSemantic(reference.origin)).map((reference) => reference.from));
+  const unresolved = unreachableCode.length === 0 ? [] : unresolvedFlows({ starts: [...instructions.keys()].sort((a, b) => a - b), memory: input.memory, inImage, coverage: input.coverage, resolvedSites });
+  const droppedCode = unresolved.length === 0 ? unreachableCode : [];
+  const unknown = unresolved.length === 0 ? [] : merged(unreachableCode);
+  const stays = candidates.filter((block) => !droppedCode.includes(block));
   const inStaying = (address: number) => stays.some((block) => address >= block.start && address <= block.end);
   for (const range of input.drop) {
     const into = flows.find((flow) => inStaying(flow.from) && inside(flow.to, [range]));
@@ -378,7 +391,7 @@ export function planDrops(input: DropInput): DropPlan {
     const routine = routines.filter((item) => item.address <= range.start).at(-1)?.name;
     return { ...range, ...(routine === undefined ? {} : { routine }) };
   });
-  return { free, unreachableExecuted, rooted };
+  return { free, unreachableExecuted, rooted, unknown, unresolved };
 }
 
 /** The label of a free range. */
