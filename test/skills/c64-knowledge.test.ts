@@ -422,7 +422,6 @@ test("listing names an address inside a named data region or a platform entry as
   assert.deepEqual(listing(source, 0x4000, 0x4008).map((line) => line.text), ["lda fireball_active+1", "sta NMINV+1", "lda main"]);
 });
 
-
 test("listing writes a table of words or addresses as its values with the names of the targets, as c64-source does", () => {
   // $2000: addresses of $3000 (room_a) and $3010; $2004: an RTS table, split, of $3100 (handler) and $3200; $2008: words with an odd last byte.
   const table = [0x00, 0x30, 0x10, 0x30, 0xff, 0xff, 0x30, 0x31, 0x34, 0x12, 0x56];
@@ -467,6 +466,26 @@ test("listing shows a comment at an operand byte (knowledge of an older version)
     listing(source, 0x1bc9, 0x1bcc).map((line) => [line.text, line.comment]),
     [["lda $0104", "the mode $1bca: mid-instruction comment"], ["rts", undefined]],
   );
+});
+
+test("sample takes the same places for the same seed after a fix of their texts, from the comments of the LLM", () => {
+  const root = project();
+  const writes = [0x2000, 0x2010, 0x2020, 0x2030, 0x2040, 0x2050].map((address) => ({ op: "comment", address: `$${address.toString(16)}`, placement: "line", text: `routine at ${address}` }));
+  writeFileSync(join(root, "comments.json"), JSON.stringify([{ op: "rename", address: "$2010", name: "move_player", kind: "routine" }, ...writes]));
+  assert.equal(knowledge(root, "apply", "comments.json").status, 0);
+  knowledge(root, "comment", "$2060", "side", "the user's own", "--by", "user");
+  const first = knowledge(root, "sample", "--count", "3", "--seed", "1").json as { seed: number; population: number; comments: Array<{ address: string; text: string; name?: string }> };
+  assert.equal(first.seed, 1);
+  assert.equal(first.population, 6, "the default origin is llm");
+  assert.equal(first.comments.length, 3);
+  const fixed = first.comments[0]!;
+  knowledge(root, "comment", fixed.address, "line", "the fixed text");
+  const again = knowledge(root, "sample", "--count", "3", "--seed", "1", "--out", "runs/check/sample.json").json as typeof first & { out: string };
+  assert.deepEqual(again.comments.map((item) => item.address), first.comments.map((item) => item.address));
+  assert.equal(again.comments[0]!.text, "the fixed text");
+  assert.deepEqual(again.comments.map((item) => [item.address, item.name]), [["$2000", undefined], ["$2010", "move_player"], ["$2020", undefined]]);
+  const { out: _out, bytes: _bytes, sha256: _sha256, ...written } = again as typeof again & { bytes: number; sha256: string };
+  assert.deepEqual(JSON.parse(readFileSync(join(root, "runs/check/sample.json"), "utf8")), written);
 });
 
 test("a batch write with an unknown field names every field that the write takes, space too", () => {

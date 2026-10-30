@@ -104,7 +104,7 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 8. Releases and switches | Record the examined reference file, or its capture, as the base release in the project knowledge. The project knowledge keeps the bytes of each release. Record each other release. Compare the releases. Find the leftovers. Record a switch for each copy protection, trainer, cheat, crack change and correction. Record a patch for each range of a switch. Record each leftover as a region with a comment. | The project knowledge lists each switch. Each difference between the releases is in a patch, or the answer gives it as an exception. |
 | 9. Generate | Generate the source from the project knowledge into `src`. For an unpacked program, also generate the loader. | The result of the generation is PASS. A release whose code is at other addresses is a version with a project of its own, or an exception in the answer. See "Versions of one program". |
 | 10. Build and test | Build the base release into `build/`, and compare it with the base release in the project knowledge. The compare includes each segment of the base release. Build the default build. For a generated source with a loader, the default build is `build/clean_loader.prg`. Else it is `build/clean.prg`. Replay each recording on the default build. For each replay, give the checkpoint routine, the state and the random state with the names of stage 7. Then do only the tests that the next paragraph gives. | The criteria of stage 1 are true. |
-| 11. Document | When the criteria ask for documentation, generate it into `README.md` and `docs/`. For versions in a group folder, also write the shared pages of the group folder. Write the reference files and the limits of the evidence in the first paragraph. Then link the pages. | The link check of the documentation gives PASS. Each claim stays in the limits of its evidence. |
+| 11. Document | When the criteria ask for documentation, generate it into `README.md` and `docs/`. For versions in a group folder, also write the shared pages of the group folder. Write the reference files, the limits of the evidence and the result of the last comment check in the first paragraph. Then link the pages. | The link check of the documentation gives PASS. Each claim stays in the limits of its evidence. |
 | 12. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
 
 In stage 5, make the recordings before you change the program. A recording needs no names, and its coverage gives the analysis of stage 6 more code. If you cannot get to a part of the program, ask the user how to get to it. Do stages 7 to 9 again until the source is clear. Each generation writes the source again.
@@ -116,6 +116,13 @@ In stage 10, a build that is identical to the base release proves the source. It
 - Do the other tests of stage 1 only when the user selected them.
 
 After stage 7, save each routine that other programs can have to the routine library of the workspace. Examples are a music driver, a decruncher and a loader. Ask the user before you make a library.
+
+After the last pass of stages 7 to 9, check the comments:
+
+1. Select 30 comments of the LLM at random from the project knowledge. Write the sample to `runs/comment-check-<seed>/sample.json`.
+2. Give the check to an agent that did not write the comments, for example a new subagent. Give it the path of the sample file and the instructions in `<skill>/references/comment-check.md`.
+3. Read `verdicts.json` in the folder of the sample. Correct each `wrong` comment and name in the project knowledge. Give the verdicts file as evidence of each correction.
+4. Generate the source again.
 
 ### Deliverables of a full rebuild
 
@@ -139,6 +146,7 @@ Give the user a short answer at the end. Do not write a report file. Write a rep
 2. The count of the code ranges that no run executed. The ranges are in `.c64-re-tools/local/generated/src/not_executed.json` for the source in `src/`.
 3. The switches: the name, the kind and the default of each, and the releases that have it on. Also a copy protection that a crack removed and that no release has.
 4. Open questions: what the evidence does not explain.
+5. The result of each comment check: the seed, the number of comments in the sample, and the number of `wrong` and `unsure` comments before the corrections.
 
 Keep observed facts apart from your conclusions.
 

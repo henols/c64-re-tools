@@ -2,7 +2,7 @@
 // project folder (--project, or the one found from the working directory).
 // Each command prints one JSON result.
 
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -463,6 +463,9 @@ const originsOf = (call: Call) => {
   return value === undefined ? undefined : originFilter(value);
 };
 
+/** The order of a comment in the samples of a seed: a hash of the seed and the place, so a changed text or another comment does not move it. */
+const sampleKey = (seed: number, row: CommentRow) => createHash("sha256").update(`${seed}:${row.space}:${row.address}:${row.placement}`).digest("hex");
+
 /** A read command: it opens the knowledge for reading, and its answer shows the conflicts that a git merge left. */
 function readCommand(spec: Omit<CommandSpec, "run">, answer: (db: DatabaseSync | undefined, call: Call) => Record<string, unknown>): CommandSpec {
   return {
@@ -569,6 +572,37 @@ const READ_COMMANDS: CommandSpec[] = [
     regions: list(call, listRegions(db, rangeOf(call), call.string("type") as (typeof REGION_TYPES)[number] | undefined, originsOf(call), call.space), region, RANGE_REST),
   })),
   readCommand({ name: "comments", summary: "The comments.", options: { ...FILTER, ...LIST } }, (db, call) => ({ comments: list(call, listComments(db, rangeOf(call), originsOf(call), call.space), comment, RANGE_REST) })),
+  readCommand(
+    {
+      name: "sample",
+      summary: "A random sample of the comments, for a check by an agent that did not write them. The same seed gives the same places.",
+      options: {
+        count: { kind: "count", value: "<n>", min: 1, max: 500, default: 30, help: "the comments in the sample (default 30)" },
+        seed: { kind: "count", value: "<n>", min: 0, max: 999_999, help: "the seed of the sample. Without it, the script selects one" },
+        range: OPTIONS.range,
+        origin: { ...OPTIONS.origin, help: "the origins of the comments: llm (the default), user, semantic, or a comma list" },
+        out: { ...OPTIONS.out, output: "file", value: "<file>", help: "also write the sample as JSON to this file" },
+      },
+      notes: "The sample has each comment of the sample with its address, placement, text and the name at the address. The same seed gives the same places again after a fix of their texts.",
+    },
+    (db, call) => {
+      const seed = call.count("seed") ?? randomInt(1_000_000);
+      const rows = listComments(db, rangeOf(call), originFilter(call.string("origin") ?? "llm"), call.space);
+      const picked = rows
+        .map((row) => ({ row, key: sampleKey(seed, row) }))
+        .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+        .slice(0, call.count("count")!)
+        .map((item) => item.row)
+        .sort((a, b) => a.address - b.address || a.placement.localeCompare(b.placement));
+      const comments = picked.map((row) => {
+        const name = symbolAt(db, row.address, call.space)?.name;
+        return { ...comment(row), ...(name === undefined ? {} : { name }) };
+      });
+      const sample = { seed, revision: currentRevision(db), ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }), population: rows.length, comments };
+      const out = call.string("out");
+      return out === undefined ? sample : { ...sample, ...writeReported(out, `${JSON.stringify(sample, null, 2)}\n`, { what: "--out" }) };
+    },
+  ),
   readCommand({ name: "references", summary: "The references: calls, jumps, reads, writes and pointers.", options: { ...FILTER, kind: REFERENCE_KIND, ...LIST } }, (db, call) => ({
     references: list(call, listReferences(db, rangeOf(call), call.string("kind") as (typeof REFERENCE_KINDS)[number] | undefined, originsOf(call), call.space), reference, RANGE_REST),
   })),

@@ -215,6 +215,7 @@ The terms and the rules of scope are in `<skill>/references/style.md`. Before yo
 - The label, the file and the SHA-256 of each reference file, and the stage of each capture.
 - Find out if somebody examined an authenticated original. When nobody examined one, write this fact in the first paragraph of `README.md`.
 - What each compare included, and what it proves.
+- The result of the last check of the comments: `checked`, `wrong` and `unsure` in `runs/comment-check-<seed>/verdicts.json`. Write it in the first paragraph of `README.md`. When nobody checked the comments, write this fact there.
 
 `link --check` checks the links, the reference pages and the files of the evidence. It does not check if a claim is true. Read each claim against its evidence before you call the documentation complete.
 

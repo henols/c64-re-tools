@@ -32,6 +32,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | List only the facts of the user and the LLM | `symbols --origin semantic` |
 | List the regions, comments or references in a range | `regions --range '$2000-$2fff'` |
 | Show the code of a range with names, comments, access and references | `listing '$0400-$04ff'` |
+| Select comments at random for a check by another agent | `sample --out runs/comment-check-1/sample.json --seed 1` |
 | Write all knowledge to one file | `export --out .c64-re-tools/local/knowledge.json` |
 | Find what the knowledge holds of the program | `program` |
 | Put a captured program into the knowledge | `image .c64-re-tools/local/capture/image.json` |
@@ -112,8 +113,12 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--reason <text>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
 | `--evidence <kind:ref>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
 | `--expect-revision <revision>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
-| `--range <start>-<end>` | `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `uses`, `export` | Only the rows in this range. The default is all addresses. |
+| `--range <start>-<end>` | `symbols`, `regions`, `comments`, `sample`, `references`, `suppressions`, `modules`, `operands`, `patches`, `uses`, `export` | Only the rows in this range. The default is all addresses. |
 | `--origin <origin>` | `search`, `symbols`, `regions`, `comments`, `references`, `modules`, `operands`, `patches`, `macros`, `uses`, `export` | Only the rows of these origins: `user`, `llm`, `dxa`, `decompiler`, `heuristic`, `semantic` (user and llm), `analyzer` (dxa, decompiler and heuristic), or a comma list. The default is all origins. |
+| `--origin <origin>` | `sample` | Only the comments of these origins. The default is `llm`. |
+| `--count <n>` | `sample` | The number of comments in the sample. The default is 30. |
+| `--seed <n>` | `sample` | A whole number from 0 to 999999 that selects the sample. Without it, the script selects one. |
+| `--out <file>` | `sample` | Also write the body to this JSON file. |
 | `--max-listed <n>` | `search`, `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `switches`, `releases`, `macros`, `uses`, `spaces`, `history`, `revisions`, `revision`, `listing`, `join` | The most items in each list of the body. The default is 50. The counts are always complete. |
 | `--kind <kind>` | `symbols`, `rename` | The symbol kind: `label`, `routine`, `variable`, `data` or `vector`. A read gives all kinds by default. A new symbol without `--kind` is a `label`. A `rename` without `--kind` keeps the kind of the symbol. |
 | `--kind <kind>` | `references` | Only references of this kind: `call`, `jump`, `read`, `write`, `reference` or `pointer`. |
@@ -192,6 +197,13 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 ### `comments`
 
 - `body.comments` lists the comments, each with `address`, `placement` and `text`.
+
+### `sample`
+
+- `body` holds `seed`, `revision`, `population` and `comments`. `population` is the number of comments that the script selected from.
+- `comments` lists each comment of the sample with `address`, `placement` and `text`. An item has `name` when the address has a symbol.
+- The same seed selects the same places again, also after you change their text. Another seed selects another sample.
+- Keep the `seed` of the body. Give it to a check again after the corrections.
 
 ### `references`
 
