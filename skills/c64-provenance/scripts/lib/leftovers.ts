@@ -76,6 +76,8 @@ export interface Leftovers {
   residue: ResidueFinding[];
   copies: CopyFinding[];
   deadCode: DeadCodeFinding[];
+  /** Code that nothing reaches and that no run executed, which is not dead: a flow that nobody resolved can go there, or no coverage shows that it did not run. */
+  unknownCode: DeadCodeFinding[];
 }
 
 const MIN_TEXT = 8;
@@ -435,8 +437,11 @@ export function findLeftovers(input: LeftoversInput): Leftovers {
   const explained = [...text, ...basic, ...fill, ...separation.codeRegions];
   const residue = untouched.flatMap((range) => without(range, explained, MIN_RESIDUE));
   // The references miss IRQ vectors and jumps through tables: code that ran is not dead.
-  const deadCode: DeadCodeFinding[] = separation.codeRegions
+  const unreached = separation.codeRegions
     .filter((region) => region.reachable === false && region.executed !== true)
-    .map((region) => ({ start: region.start, end: region.end, type: region.type, ...(region.executed === false ? { executed: false as const } : {}) }));
-  return { text: placed(text), basic: placed(basic), fill: placed(fill), residue: placed(residue), copies: placed(findCopies(memory, segments)), deadCode: placed(deadCode) };
+    .map((region) => ({ start: region.start, end: region.end, type: region.type, ...(region.executed === false ? { executed: false as const } : {}), unknown: region.unknown === true }));
+  const finding = ({ unknown: _, ...region }: (typeof unreached)[number]): DeadCodeFinding => region;
+  const deadCode = unreached.filter((region) => !region.unknown).map(finding);
+  const unknownCode = unreached.filter((region) => region.unknown).map(finding);
+  return { text: placed(text), basic: placed(basic), fill: placed(fill), residue: placed(residue), copies: placed(findCopies(memory, segments)), deadCode: placed(deadCode), unknownCode: placed(unknownCode) };
 }

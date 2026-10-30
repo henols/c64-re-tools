@@ -149,6 +149,22 @@ test("residue is untouched bytes without text and fill; dead code and the placem
   assert.deepEqual(found.deadCode, [{ start: 0x10f0, end: 0x10ff, type: "code", executed: false, stages: [0], access: ["untouched"] }]);
 });
 
+test("code that nothing reaches is unknown, not dead code, while the program has a jump that nobody resolved", () => {
+  const segments = [{ start: 0x1000, end: 0x10ff }];
+  const memory = new Uint8Array(0x10000);
+  memory.set([0x6c, 0x00, 0x20, 0x60], 0x1000); // JMP ($2000): a vector outside the program
+  memory.set([0xa9, 0x00, 0x60], 0x10f0);
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x1000] = COVERAGE.ramExecute;
+  const codeRegions = [{ start: 0x1000, end: 0x1003, type: "code" }, { start: 0x10f0, end: 0x10f2, type: "code" }];
+  const open = findLeftovers({ segments, memory, separation: separate({ segments, memory, entry: 0x1000, coverage, codeRegions, references: [] }) });
+  assert.deepEqual(open.deadCode, []);
+  assert.deepEqual(open.unknownCode.map((item) => [item.start, item.end]), [[0x10f0, 0x10f2]]);
+  const resolved = findLeftovers({ segments, memory, separation: separate({ segments, memory, entry: 0x1000, coverage, codeRegions, references: [], resolvedSites: new Set([0x1000]) }) });
+  assert.deepEqual(resolved.deadCode.map((item) => [item.start, item.end]), [[0x10f0, 0x10f2]]);
+  assert.deepEqual(resolved.unknownCode, []);
+});
+
 test("the leftovers command lists each kind of finding with --max-listed, and --out gets the fields of the body with all findings", () => {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-leftovers-"));
   roots.push(root);

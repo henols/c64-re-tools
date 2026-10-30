@@ -3,7 +3,9 @@
 // region of knowledge, whether call and jump references or the run on from
 // its last instruction reach it from a root (the entry, and the NMI, RESET
 // and IRQ vectors at $fffa-$ffff when the image holds them); and what the program reads
-// or executes outside the image. Evidence only: nothing here decides which
+// or executes outside the image. A region that nothing reaches is unknown, not
+// dead, while the program has a flow whose targets the knowledge does not give,
+// or when no coverage shows what ran. Evidence only: nothing here decides which
 // bytes the publisher shipped.
 
 import { type AddressRange, COVERAGE, executedRamCode, instructionLength } from "../c64.ts";
@@ -21,6 +23,8 @@ export interface SeparationInput {
   coverage?: Uint8Array;
   codeRegions: Array<AddressRange & { type: string }>;
   references: Array<{ from: number; to: number; kind: string }>;
+  /** The instructions with a reference of the user or the LLM from them: the LLM recorded the targets of their flows. */
+  resolvedSites?: ReadonlySet<number>;
   /** More roots after the entry and the hardware vectors, for example code that a run executed. */
   roots?: Root[];
 }
@@ -37,6 +41,18 @@ export interface CodeRegionEvidence extends AddressRange {
   reachable?: boolean;
   /** Absent without coverage. */
   executed?: boolean;
+  /** Not reached and not executed, but an unresolved flow can go there, or no coverage shows that it did not run. */
+  unknown?: true;
+}
+
+/**
+ * A flow whose targets the knowledge does not give: a JMP (indirect) through
+ * a vector that a run wrote or that is not in the image, or a JMP or JSR whose
+ * address bytes a run wrote.
+ */
+export interface UnresolvedFlow {
+  at: number;
+  kind: "indirect-jump" | "written-operand";
 }
 
 /** An address where the reachability starts, and why: the entry, a hardware vector in the image, or a root that the caller gives. */
@@ -57,6 +73,8 @@ export interface Separation {
    * pieces of code with gaps of up to two operand bytes.
    */
   outside: { read: AddressRange[]; executed: AddressRange[]; generated: AddressRange[] };
+  /** The unresolved flows of the code regions: while one exists, an unreached code region is unknown. */
+  unresolved: UnresolvedFlow[];
 }
 
 const SYSTEM_PAGES_END = 0x03ff;
@@ -95,6 +113,73 @@ export function fallThrough(region: AddressRange, memory: Uint8Array): number | 
     at += instructionLength(memory[at]!);
   }
   return NO_FALL_THROUGH.has(memory[last]!) || at > 0xffff ? undefined : at;
+}
+
+/** The instruction starts of code regions: each region runs from its start, one instruction after the other. */
+export function regionStarts(regions: readonly AddressRange[], memory: Uint8Array): number[] {
+  const starts: number[] = [];
+  for (const region of regions) for (let at = region.start; at <= region.end; at += instructionLength(memory[at]!)) starts.push(at);
+  return starts.sort((a, b) => a - b);
+}
+
+/**
+ * The vectors that the program sets with its own immediates: an LDA, LDX or
+ * LDY # and a store to N, and the same to N + 1, in one run of instructions.
+ * A JMP (N) then goes where those immediates point, which the flows of the
+ * stores give.
+ */
+export function immediateVectors(starts: readonly number[], memory: Uint8Array): Set<number> {
+  const stored = new Set<number>();
+  let registers: { a?: number | undefined; x?: number | undefined; y?: number | undefined } = {};
+  let previousEnd = -2;
+  for (const at of [...starts].sort((a, b) => a - b)) {
+    if (at > previousEnd + 1) registers = {};
+    const opcode = memory[at]!;
+    const length = instructionLength(opcode);
+    previousEnd = at + length - 1;
+    const operand = length === 3 ? memory[at + 1]! | (memory[(at + 2) & 0xffff]! << 8) : memory[(at + 1) & 0xffff]!;
+    const store = (value: number | undefined) => {
+      if (value !== undefined) stored.add(operand);
+    };
+    switch (opcode) {
+      case 0xa9: registers.a = operand; break;
+      case 0xa2: registers.x = operand; break;
+      case 0xa0: registers.y = operand; break;
+      case 0x85: case 0x8d: store(registers.a); break;
+      case 0x86: case 0x8e: store(registers.x); break;
+      case 0x84: case 0x8c: store(registers.y); break;
+      case 0xaa: registers.x = registers.a; break;
+      case 0xa8: registers.y = registers.a; break;
+      case 0x8a: registers.a = registers.x; break;
+      case 0x98: registers.a = registers.y; break;
+      default: registers = {};
+    }
+    if (NO_FALL_THROUGH.has(opcode)) registers = {};
+  }
+  return new Set([...stored].filter((address) => stored.has((address + 1) & 0xffff)));
+}
+
+/**
+ * The unresolved flows of the instructions at `starts`. A flow is resolved
+ * when a reference of the user or the LLM goes from it. An indirect jump is
+ * also resolved when the program's own immediates set its vector, or when the
+ * vector is in the image and no run wrote it.
+ */
+export function unresolvedFlows(input: { starts: readonly number[]; memory: Uint8Array; inImage: (address: number) => boolean; coverage?: Uint8Array | undefined; resolvedSites?: ReadonlySet<number> | undefined }): UnresolvedFlow[] {
+  const written = (address: number) => input.coverage !== undefined && (input.coverage[address & 0xffff]! & COVERAGE.ramWrite) !== 0;
+  const vectors = immediateVectors(input.starts, input.memory);
+  const flows: UnresolvedFlow[] = [];
+  for (const at of input.starts) {
+    if (input.resolvedSites?.has(at) === true) continue;
+    const opcode = input.memory[at]!;
+    if (opcode === 0x6c) {
+      const vector = input.memory[(at + 1) & 0xffff]! | (input.memory[(at + 2) & 0xffff]! << 8);
+      if (vectors.has(vector)) continue;
+      if (input.inImage(vector) && input.inImage((vector + 1) & 0xffff) && !written(vector) && !written(vector + 1)) continue;
+      flows.push({ at, kind: "indirect-jump" });
+    } else if ((opcode === 0x4c || opcode === 0x20) && (written(at + 1) || written(at + 2))) flows.push({ at, kind: "written-operand" });
+  }
+  return flows;
 }
 
 /** The most instructions outside the code regions that the run on from a region goes through, for example an instruction in a dual-use region. */
@@ -190,13 +275,15 @@ export function separate(input: SeparationInput): Separation {
       queue.push(to);
     }
   }
+  const unresolved = unresolvedFlows({ starts: regionStarts(regions, input.memory), memory: input.memory, inImage, coverage: input.coverage, resolvedSites: input.resolvedSites });
   const codeRegions = regions.map((region, index): CodeRegionEvidence => {
     let ran: boolean | undefined;
     if (input.coverage !== undefined) {
       ran = false;
       for (let address = region.start; address <= region.end && !ran; address++) ran = executed[address] === 1;
     }
-    return { start: region.start, end: region.end, type: region.type, ...(roots.length === 0 ? {} : { reachable: reached.has(index) }), ...(ran === undefined ? {} : { executed: ran }) };
+    const unreached = roots.length > 0 && !reached.has(index) && ran !== true;
+    return { start: region.start, end: region.end, type: region.type, ...(roots.length === 0 ? {} : { reachable: reached.has(index) }), ...(ran === undefined ? {} : { executed: ran }), ...(unreached && (unresolved.length > 0 || input.coverage === undefined) ? { unknown: true as const } : {}) };
   });
 
   const read: number[] = [];
@@ -216,5 +303,5 @@ export function separate(input: SeparationInput): Separation {
     for (let address = from + 1; address < to; address++) if (inImage(address)) return false;
     return true;
   };
-  return { roots, ranges, codeRegions, outside: { read: merge(read), executed: merge(ranOutside), generated: merge(generated, 2, outsideImage) } };
+  return { roots, ranges, codeRegions, outside: { read: merge(read), executed: merge(ranOutside), generated: merge(generated, 2, outsideImage) }, unresolved };
 }

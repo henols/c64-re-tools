@@ -282,6 +282,8 @@ function programEvidence() {
     ...(coverage === undefined ? {} : { coverage }),
     codeRegions: regions,
     references,
+    // A reference of the user or the LLM from a jump gives the targets of its flow.
+    resolvedSites: new Set(references.filter((reference) => (SEMANTIC_ORIGINS as readonly string[]).includes(reference.origin)).map((reference) => reference.from)),
   });
   return { program, stages, coverage, found };
 }
@@ -383,6 +385,8 @@ function leftoversCommand(call: Call): unknown {
     residue: leftovers.residue.map((range) => ({ ...show(range), bytes: hexBytes([...program.memory.subarray(range.start, Math.min(range.end, range.start + 15) + 1)]) + (range.end - range.start >= 16 ? " ..." : "") })),
     copies: leftovers.copies.map(({ copyOf, ...rest }) => ({ ...show(rest), copyOf: formatC64Address(copyOf) })),
     deadCode: leftovers.deadCode.map(show),
+    unknownCode: leftovers.unknownCode.map(show),
+    unresolved: found.unresolved.map((flow) => ({ at: formatC64Address(flow.at), kind: flow.kind })),
   };
   /** The body with at most `most` items in each list; the file has the full texts. */
   const bodyOf = (most: number) => {
@@ -399,6 +403,7 @@ function leftoversCommand(call: Call): unknown {
       residue: list(all.residue),
       copies: list(all.copies),
       deadCode: list(all.deadCode),
+      ...(all.unknownCode.length === 0 ? {} : { unknownCode: list(all.unknownCode), unresolved: list(all.unresolved) }),
     };
   };
   return withFile(bodyOf, call.count("max-listed")!, out);
