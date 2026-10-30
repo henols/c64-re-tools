@@ -302,6 +302,8 @@ function createSchema(db: DatabaseSync): void {
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         label               TEXT NOT NULL CHECK (length(label) > 0),
         base                INTEGER NOT NULL CHECK (base IN (0, 1)),
+        file                TEXT CHECK (file IS NULL OR length(file) > 0),
+        sha256              TEXT CHECK (sha256 IS NULL OR length(sha256) = 64),
         comment             TEXT CHECK (comment IS NULL OR length(comment) > 0),
         origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
         valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
@@ -423,7 +425,7 @@ function createSchema(db: DatabaseSync): void {
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 15;
+export const INDEX_VERSION = 16;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

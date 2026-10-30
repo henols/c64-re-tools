@@ -172,11 +172,12 @@ export const TABLES: readonly TableSpec[] = [
     ],
   },
   // The releases of the program, and the one whose bytes are the program. The bytes of the other releases are in release_memory.jsonl.
+  // file and sha256 are the file that recorded the release and its SHA-256; a release of an earlier toolkit version has neither.
   {
     table: "releases",
     file: "releases.jsonl",
     sort: "label",
-    fields: [space, field("label", "label", "text"), field("base", "base", "integer"), field("comment", "comment", "text", true), origin],
+    fields: [space, field("label", "label", "text"), field("base", "base", "integer"), field("file", "file", "text", true), field("sha256", "sha256", "text", true), field("comment", "comment", "text", true), origin],
   },
   {
     table: "macros",

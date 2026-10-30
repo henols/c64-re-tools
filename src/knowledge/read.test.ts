@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 
 import { openForRead, openForWrite } from "./database.ts";
-import { historyAt, historyNamed, revision, revisions } from "./history.ts";
-import { at, listComments, listReferences, listRegions, listSymbols, search, sourceRevision } from "./read.ts";
+import { historyAt, historyNamed, revision, revisionCounts, revisions } from "./history.ts";
+import { at, goes, listComments, listReferences, listRegions, listSymbols, referenceCounts, regionCounts, search, sourceRevision, type ReferenceRow } from "./read.ts";
 import { setImage } from "./program.ts";
 import { addReference, classifyRegion, renameSymbol, setComment, setStartScreen } from "./write.ts";
 import { nth } from "./revisions.testkit.ts";
@@ -131,4 +131,26 @@ test("the source revision of a space is its newest revision and that of the stag
     own.close();
     rmSync(folder, { recursive: true, force: true });
   }
+});
+
+test("a reference goes into a range, out of it or inside it, and references count by kind and by target, the most first", () => {
+  const range = { start: 0x2000, end: 0x20ff };
+  const row = (from: number, to: number, kind: ReferenceRow["kind"]): ReferenceRow => ({ space: "c64", from, to, kind, origin: "llm", revision: "0" });
+  const rows = [row(0x1000, 0x2010, "call"), row(0x2010, 0x2020, "jump"), row(0x2020, 0xd020, "write"), row(0x1100, 0x2010, "call"), row(0x2030, 0xd020, "write"), row(0x2040, 0x2010, "call")];
+  const going = (direction: "in" | "out" | "inside") => rows.filter(goes(range, direction)).map((item) => [item.from, item.to]);
+  assert.deepEqual(going("in"), [[0x1000, 0x2010], [0x1100, 0x2010]]);
+  assert.deepEqual(going("out"), [[0x2020, 0xd020], [0x2030, 0xd020]]);
+  assert.deepEqual(going("inside"), [[0x2010, 0x2020], [0x2040, 0x2010]]);
+  assert.deepEqual(referenceCounts(rows), { byKind: { call: 3, jump: 1, write: 2 }, byTarget: [{ to: 0x2010, count: 3 }, { to: 0xd020, count: 2 }, { to: 0x2020, count: 1 }] });
+});
+
+test("regions count by type, with their bytes in the range", () => {
+  assert.deepEqual(regionCounts(listRegions(db)), { code: { count: 1, bytes: 0x1000 }, sprite: { count: 1, bytes: 0x40 } });
+  const range = { start: 0x2f00, end: 0x301f };
+  assert.deepEqual(regionCounts(listRegions(db, range), range), { code: { count: 1, bytes: 0x100 }, sprite: { count: 1, bytes: 0x20 } });
+});
+
+test("a revision counts the rows that it added and closed by kind of row", () => {
+  assert.deepEqual(revisionCounts(revision(db, nth(db, 3))), { symbol: { added: 1, closed: 1 } });
+  assert.deepEqual(revisionCounts(revision(db, "0")), {});
 });
