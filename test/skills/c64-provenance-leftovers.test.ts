@@ -160,7 +160,7 @@ test("code that nothing reaches is unknown, not dead code, while the program has
   const open = findLeftovers({ segments, memory, separation: separate({ segments, memory, entry: 0x1000, coverage, codeRegions, references: [] }) });
   assert.deepEqual(open.deadCode, []);
   assert.deepEqual(open.unknownCode.map((item) => [item.start, item.end]), [[0x10f0, 0x10f2]]);
-  const resolved = findLeftovers({ segments, memory, separation: separate({ segments, memory, entry: 0x1000, coverage, codeRegions, references: [], resolvedSites: new Set([0x1000]) }) });
+  const resolved = findLeftovers({ segments, memory, separation: separate({ segments, memory, entry: 0x1000, coverage, codeRegions, references: [{ from: 0x1000, to: 0x1000, kind: "jump", origin: "llm" }] }) });
   assert.deepEqual(resolved.deadCode.map((item) => [item.start, item.end]), [[0x10f0, 0x10f2]]);
   assert.deepEqual(resolved.unknownCode, []);
 });
@@ -187,7 +187,7 @@ test("the leftovers command lists each kind of finding with --max-listed, and --
   const run = script(provenance, ["leftovers", "--out", ".c64-re-tools/local/leftovers.json", "--max-listed", "1"], root);
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const result = run.json as Record<string, any>;
-  assert.match(run.envelope.hint ?? "", /cut: count gives its full size\. To get the rest, give a larger --max-listed\./);
+  assert.match(run.envelope.hint ?? "", /cut: count gives its full size\. To get the rest, give a larger --max-listed, or read \.c64-re-tools\/local\/leftovers\.json\./);
   assert.equal(result.entry, "$2000");
   assert.equal(result.stages, 2);
   assert.equal(result.noCoverage, undefined);
@@ -195,7 +195,7 @@ test("the leftovers command lists each kind of finding with --max-listed, and --
   for (const kind of kinds) {
     assert.ok(result[kind].count > 0, `${kind} has findings`);
     assert.equal(result[kind].listed.length, 1, `${kind} lists at most --max-listed findings`);
-    assert.equal(result[kind].rest, result[kind].count > 1 ? "a larger --max-listed" : undefined, `${kind}: rest names a larger --max-listed`);
+    assert.equal(result[kind].rest, result[kind].count > 1 ? "a larger --max-listed, or read .c64-re-tools/local/leftovers.json" : undefined, `${kind}: rest names a larger --max-listed and the file`);
   }
   assert.equal(result.text.count, 3);
   assert.deepEqual(result.text.listed, [{ start: "$2010", end: "$2022", encoding: "petscii", text: "CRACKED BY THE GANG", stages: [0], access: ["untouched"] }]);

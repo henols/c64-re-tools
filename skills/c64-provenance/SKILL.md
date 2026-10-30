@@ -169,16 +169,17 @@ Gives evidence from the program in the project knowledge, its stages and its cov
   - `access` is `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs.
   - A `read` byte right after executed code, or at a return address, can be a dummy read of the 6502. The program does not use it.
 - `roots`: the addresses where the reachability starts, each with `address` and `from`. The roots are the entry, and the NMI, RESET and IRQ vectors at `$fffa`-`$ffff` when the program holds them. A text in place of the list tells why no code region is reachable.
-- `codeRegions.total`: the number of code regions in the project knowledge.
+- `codeRegions`: the code regions in the project knowledge, as a list. Each region has `reachable`, and `executed` with coverage. `unknown` is `true` for a region that is not dead code, as in `unknownCode` of `leftovers`.
 - `codeRegions.unreachable`: the code regions that no chain of call and jump references reaches from a root.
+- `unresolved`: only when a code region is unknown. These are the flows whose targets the project knowledge does not give, as in `leftovers`.
 - `outside`: only with coverage. `read` and `executed` give the RAM outside the program that the program used but did not write. A loader or an earlier stage put these bytes there. `generated` gives the code that the program wrote outside its segments.
 - `out`, `bytes` and `sha256`: the `--out` file. It has the fields of the body, with all items of each list.
 
-`hint`: a list is cut. Run the command again with a larger `--max-listed`.
+`hint`: a list is cut. Run the command again with a larger `--max-listed`, or read the `--out` file.
 
 Traps:
 
-- No code regions in the project knowledge: `codeRegions` is empty. Analyze the program for its code regions and its references first.
+- No code regions in the project knowledge: `codeRegions.count` is 0. Analyze the program for its code regions and its references first.
 - Many `untouched` ranges: do more coverage runs for these parts. Put the coverage into the project knowledge before you decide.
 - Error `not-found`: the project knowledge has no program. Put the program into the project knowledge.
 
@@ -196,13 +197,13 @@ Finds what the program in the project knowledge holds in addition to its working
 | `residue` | Bytes that no run touched, and that are not text, BASIC, fill or a code region. `bytes` shows the first 16 bytes. |
 | `copies` | At least 32 bytes that are the same as earlier bytes of the program. `copyOf` is the address of the earlier bytes. |
 | `deadCode` | Code regions that no root reaches, as in `codeRegions.unreachable` of `separate`, and that no run executed. |
-| `unknownCode` | Code regions that no root reaches and that no run executed, but that are not dead code. No coverage shows that they did not run, or a flow in `unresolved` can go to them. Each flow has `at` and `kind`. |
+| `unknownCode` | Code regions that no root reaches and that no run executed, but that are not dead code. No coverage shows that they did not run, or a flow in `unresolved` can go to them. Each flow has `at` and `kind`: `indirect-jump`, `written-operand` or `pushed-return`. |
 
 Each finding has `stages`: the unpack stages that wrote its bytes. A stage before the last stage is a depacker, an intro or a loader. Each finding also has `access`: the accesses of its bytes in the coverage.
 
 `out`, `bytes` and `sha256` give the `--out` file. It has the fields of the body, with all findings and the full texts.
 
-`hint`: a list is cut. Run the command again with a larger `--max-listed`. To get only the lists that you need, give `--fields`, for example `--fields text,deadCode`.
+`hint`: a list is cut. Run the command again with a larger `--max-listed`, or read the `--out` file. To get only the lists that you need, give `--fields`, for example `--fields text,deadCode`.
 
 Text from another computer can show the tools of the developer:
 

@@ -111,7 +111,12 @@ To make the source better, change the project knowledge. Then generate again.
 - `notExecuted`: with coverage, the count of instructions that no run executed, and their ranges. Each range has its source `file` and the `routine` before it.
 - `unusedModules`: modules whose start is in no segment of the program. Often the program does not hold the code that the knowledge describes.
 - `leftovers`: the bytes that nothing uses, with `bytes` and each range with its `file`. See "The leftovers". `noCoverage` tells that the knowledge has no coverage, so no range is a leftover. `changed` gives the ranges that are `added` to the leftovers and `removed` from them since the earlier run in `--out`.
-- `unknownCode`: code that nothing reaches and that no run executed, which is not a leftover. A flow in `unresolved` can go to it: a JMP through a vector that a run wrote, or a jump whose address a run wrote. Each flow has `at` and `kind`. The default build and the loader keep this code. Find the targets of each flow in the emulator. Record a jump reference from the flow to each target in the project knowledge. When the flow goes outside the program, for example a crash through the I/O area, record the reference to that address. Then generate again.
+- `unknownCode`: code that nothing reaches and that no run executed, which is not a leftover. A flow in `unresolved` can go to it. Each flow has `at` and `kind`:
+  - `indirect-jump`: a JMP through a vector. The bytes of the program do not give the value of the vector.
+  - `written-operand`: a JMP or JSR whose address a run wrote.
+  - `pushed-return`: an RTS or RTI to an address that the code pushed.
+
+  The default build and the loader keep this code. Find the targets of each flow in the emulator. Record a jump reference from the flow to each target in the project knowledge. When the flow goes outside the program, for example a crash through the I/O area, record the reference to that address. Then generate again.
 - `operandExpressions`: the count of instructions with an operand expression.
 - `operandsAsNumbers`: each operand expression that the source has as a number, with its `address`, `expression` and `reason`.
 - `macroUses`: the count of macro uses in the source.

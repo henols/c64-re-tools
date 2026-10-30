@@ -8,15 +8,16 @@
 // it tells what the program can reach. Pass B also starts at each block that
 // a run executed, at --keep and at the patches that the export changed: it
 // tells what stays. Without coverage nothing becomes free by itself. While the
-// program has a flow whose targets the knowledge does not give (an indirect
-// jump through a vector that a run wrote, or a jump whose address a run
-// wrote), code that nothing reaches is unknown: it stays.
+// code that stays has a flow whose targets the knowledge does not give (an
+// indirect jump through a vector that the code's own immediates do not set, a
+// jump whose address a run wrote, or an RTS to an address that the code
+// pushed), code that nothing reaches is unknown: it stays.
 
 import { type AddressRange, COVERAGE, formatC64Address, pointerTableEntries, POINTER_TABLE_TYPES, type PointerTableType } from "#src/c64.ts";
 import { symbolsPath } from "#src/build-name.ts";
 import { Refusal } from "#src/errors.ts";
-import { NO_FALL_THROUGH, type Root, separate, type UnresolvedFlow, unresolvedFlows } from "#src/knowledge/separate.ts";
-import { isSemantic, type RegionType } from "#src/knowledge/schema.ts";
+import { computedFlows, NO_FALL_THROUGH, type Root, separate, type UnresolvedFlow, vectorHigh, WRITES_A, WRITES_X, WRITES_Y } from "#src/knowledge/separate.ts";
+import type { RegionType } from "#src/knowledge/schema.ts";
 import { OPCODES } from "#src/opcodes.ts";
 
 /**
@@ -45,10 +46,6 @@ const RAM_ACCESS = 0xff & ~(COVERAGE.romRead | COVERAGE.romExecute);
 /** The I/O area: two immediates stored there are chip values, such as a timer latch, not an address. */
 const IO_AREA: AddressRange = { start: 0xd000, end: 0xdfff };
 
-/** The registers that each instruction changes, other than by a load of an immediate or a transfer. */
-const WRITES_A = new Set(["lda", "adc", "sbc", "and", "ora", "eor", "pla", "lax", "anc", "asr", "arr", "ane", "lxa", "las", "slo", "rla", "sre", "rra", "isc"]);
-const WRITES_X = new Set(["ldx", "inx", "dex", "tsx", "lax", "sbx", "lxa", "las"]);
-const WRITES_Y = new Set(["ldy", "iny", "dey"]);
 /** The registers that a JSR gets an address in, low byte first, as the KERNAL and BASIC routines get a pointer. */
 const CALL_PAIRS = [
   ["x", "y"],
@@ -65,7 +62,7 @@ export interface DropInput {
   instructions: ReadonlyMap<number, number>;
   coverage?: Uint8Array;
   regions: ReadonlyArray<{ start: number; end: number; type: RegionType }>;
-  /** A reference of the user or the LLM resolves the flow of its instruction. */
+  /** A jump or call reference of the user or the LLM resolves the flow of its instruction. */
   references: ReadonlyArray<{ from: number; to: number; kind: string; origin?: string }>;
   /** The addresses that the operand expression of an instruction names, by the address of each instruction with an operand expression; none for a constant. */
   operandTargets: ReadonlyMap<number, readonly number[]>;
@@ -206,10 +203,12 @@ function flowsOf(input: DropInput, inImage: (address: number) => boolean, indexe
       case "rel":
         flows.push({ from: at, to: (at + 2 + (operand < 0x80 ? operand : operand - 0x100)) & 0xffff });
         break;
-      case "ind":
-        reads.push({ from: at, start: operand, end: (operand + 1) & 0xffff });
-        if (inImage(operand) && inImage((operand + 1) & 0xffff)) flows.push({ from: at, to: word(operand) });
+      case "ind": {
+        const high = vectorHigh(operand);
+        reads.push({ from: at, start: operand, end: operand }, { from: at, start: high, end: high });
+        if (inImage(operand) && inImage(high)) flows.push({ from: at, to: memory[operand]! | (memory[high]! << 8) });
         break;
+      }
       case "abs":
       case "zp":
         if (opcode === 0x20 || opcode === 0x4c) {
@@ -327,9 +326,12 @@ export function planDrops(input: DropInput): DropPlan {
   const passB = separate({ segments: [...input.segments], memory: input.memory, ...(input.entry === undefined ? {} : { entry: input.entry }), codeRegions: asRegions(candidates), references, roots: extra });
   const automatic = input.coverage !== undefined && rooted;
   const unreachableCode = candidates.filter((_, index) => automatic && passB.codeRegions[index]!.reachable === false);
-  // A flow that nobody resolved can go to any of that code: it stays, as unknown.
-  const resolvedSites = new Set(input.references.filter((reference) => isSemantic(reference.origin)).map((reference) => reference.from));
-  const unresolved = unreachableCode.length === 0 ? [] : unresolvedFlows({ starts: [...instructions.keys()].sort((a, b) => a - b), memory: input.memory, inImage, coverage: input.coverage, resolvedSites });
+  // A flow that nobody resolved can go to any of that code: it stays, as unknown. Only a flow in code that stays can run.
+  const live = candidates.filter((block) => !unreachableCode.includes(block));
+  const unresolved =
+    unreachableCode.length === 0
+      ? []
+      : computedFlows({ starts: [...instructions.keys()], memory: input.memory, inImage, coverage: input.coverage, references: input.references }).unresolved.filter((flow) => live.some((block) => flow.at >= block.start && flow.at <= block.end));
   const droppedCode = unresolved.length === 0 ? unreachableCode : [];
   const unknown = unresolved.length === 0 ? [] : merged(unreachableCode);
   const stays = candidates.filter((block) => !droppedCode.includes(block));

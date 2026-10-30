@@ -9,7 +9,9 @@ import { after, test } from "node:test";
 
 import { COVERAGE, formatC64Address } from "../../src/c64.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
+import { withWrite } from "../../src/knowledge/database.ts";
 import { separate } from "../../src/knowledge/separate.ts";
+import { classifyRegion } from "../../src/knowledge/write.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
 
@@ -329,6 +331,11 @@ test("the separate command reads the program with its stages and the coverage fr
   const coverage = new Uint8Array(0x10000);
   for (const address of [0xc000, 0xc010, 0xc020]) coverage[address] = COVERAGE.ramWrite | COVERAGE.ramExecute;
   importCoverage(root, { "cov.bin": coverage });
+  // The entry, and code that nothing reaches.
+  withWrite((db) => {
+    classifyRegion(db, { origin: "llm" }, { start: 0x2000, end: 0x2000, type: "code" });
+    classifyRegion(db, { origin: "llm" }, { start: 0x20f0, end: 0x20f0, type: "code" });
+  }, root);
   const run = provenance(["separate", "--out", "separate.json", "--max-listed", "1"], root);
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const result = run.json as Record<string, any>;
@@ -336,17 +343,18 @@ test("the separate command reads the program with its stages and the coverage fr
   assert.equal(result.bytesByAccess.untouched, 256);
   assert.equal(result.ranges.count, 2);
   assert.equal(result.ranges.listed.length, 1);
-  assert.equal(result.ranges.rest, "a larger --max-listed");
-  assert.match(run.envelope.hint ?? "", /cut: count gives its full size\. To get the rest, give a larger --max-listed\./);
+  assert.equal(result.ranges.rest, "a larger --max-listed, or read separate.json");
+  assert.match(run.envelope.hint ?? "", /cut: count gives its full size\. To get the rest, give a larger --max-listed, or read separate\.json\./);
   assert.equal(result.outside.generated.count, 3);
   assert.deepEqual(result.outside.generated.listed, [{ start: "$c000", end: "$c000" }], "--max-listed caps the outside lists too");
   assert.deepEqual(result.outside.read, { count: 0, listed: [] });
-  assert.deepEqual(result.codeRegions, { total: 0, unreachable: { count: 0, listed: [] } }, "unreachable is a list like the others");
+  assert.deepEqual([result.codeRegions.count, result.codeRegions.listed.length, result.codeRegions.unreachable.listed], [2, 1, [{ start: "$20f0", end: "$20f0", type: "code", reachable: false, executed: false }]]);
   const written = JSON.parse(readFileSync(join(root, "separate.json"), "utf8")) as Record<string, any>;
   const { out: _out, bytes: _bytes, sha256: _sha256, ...fields } = result;
   assert.deepEqual(Object.keys(written), Object.keys(fields));
   assert.deepEqual([written.ranges.count, written.ranges.listed.length, written.ranges.rest], [2, 2, undefined]);
   assert.equal(written.outside.generated.listed.length, 3);
+  assert.deepEqual(written.codeRegions.listed.map((region: { start: string; reachable: boolean }) => [region.start, region.reachable]), [["$2000", true], ["$20f0", false]], "the file holds each code region");
 });
 
 test("separate says when the program has no stage log, and a run of releases without differences says why nothing ran", () => {

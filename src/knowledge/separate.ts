@@ -9,6 +9,8 @@
 // bytes the publisher shipped.
 
 import { type AddressRange, COVERAGE, executedRamCode, instructionLength } from "../c64.ts";
+import { OPCODES } from "../opcodes.ts";
+import { isSemantic } from "./schema.ts";
 
 export type Access = "executed" | "read" | "written" | "read-written" | "untouched";
 
@@ -22,9 +24,8 @@ export interface SeparationInput {
   /** Joined coverage files. */
   coverage?: Uint8Array;
   codeRegions: Array<AddressRange & { type: string }>;
-  references: Array<{ from: number; to: number; kind: string }>;
-  /** The instructions with a reference of the user or the LLM from them: the LLM recorded the targets of their flows. */
-  resolvedSites?: ReadonlySet<number>;
+  /** A jump or call reference of the user or the LLM also resolves the flow of its instruction. */
+  references: Array<{ from: number; to: number; kind: string; origin?: string | undefined }>;
   /** More roots after the entry and the hardware vectors, for example code that a run executed. */
   roots?: Root[];
 }
@@ -47,12 +48,19 @@ export interface CodeRegionEvidence extends AddressRange {
 
 /**
  * A flow whose targets the knowledge does not give: a JMP (indirect) through
- * a vector that a run wrote or that is not in the image, or a JMP or JSR whose
- * address bytes a run wrote.
+ * a vector that the code's own immediates do not set, a JMP or JSR whose
+ * address bytes a run wrote, or an RTS or RTI to an address that the code
+ * pushed.
  */
 export interface UnresolvedFlow {
   at: number;
-  kind: "indirect-jump" | "written-operand";
+  kind: "indirect-jump" | "written-operand" | "pushed-return";
+}
+
+/** The computed flows of the code: the targets that the bytes of the program give, and the flows that stay open. */
+export interface ComputedFlows {
+  targets: Array<{ from: number; to: number }>;
+  unresolved: UnresolvedFlow[];
 }
 
 /** An address where the reachability starts, and why: the entry, a hardware vector in the image, or a root that the caller gives. */
@@ -73,7 +81,7 @@ export interface Separation {
    * pieces of code with gaps of up to two operand bytes.
    */
   outside: { read: AddressRange[]; executed: AddressRange[]; generated: AddressRange[] };
-  /** The unresolved flows of the code regions: while one exists, an unreached code region is unknown. */
+  /** The unresolved flows of the code regions that a root reaches or that a run executed: while one exists, an unreached code region is unknown. */
   unresolved: UnresolvedFlow[];
 }
 
@@ -122,64 +130,116 @@ export function regionStarts(regions: readonly AddressRange[], memory: Uint8Arra
   return starts.sort((a, b) => a - b);
 }
 
-/**
- * The vectors that the program sets with its own immediates: an LDA, LDX or
- * LDY # and a store to N, and the same to N + 1, in one run of instructions.
- * A JMP (N) then goes where those immediates point, which the flows of the
- * stores give.
- */
-export function immediateVectors(starts: readonly number[], memory: Uint8Array): Set<number> {
-  const stored = new Set<number>();
-  let registers: { a?: number | undefined; x?: number | undefined; y?: number | undefined } = {};
-  let previousEnd = -2;
-  for (const at of [...starts].sort((a, b) => a - b)) {
-    if (at > previousEnd + 1) registers = {};
-    const opcode = memory[at]!;
-    const length = instructionLength(opcode);
-    previousEnd = at + length - 1;
-    const operand = length === 3 ? memory[at + 1]! | (memory[(at + 2) & 0xffff]! << 8) : memory[(at + 1) & 0xffff]!;
-    const store = (value: number | undefined) => {
-      if (value !== undefined) stored.add(operand);
-    };
-    switch (opcode) {
-      case 0xa9: registers.a = operand; break;
-      case 0xa2: registers.x = operand; break;
-      case 0xa0: registers.y = operand; break;
-      case 0x85: case 0x8d: store(registers.a); break;
-      case 0x86: case 0x8e: store(registers.x); break;
-      case 0x84: case 0x8c: store(registers.y); break;
-      case 0xaa: registers.x = registers.a; break;
-      case 0xa8: registers.y = registers.a; break;
-      case 0x8a: registers.a = registers.x; break;
-      case 0x98: registers.a = registers.y; break;
-      default: registers = {};
-    }
-    if (NO_FALL_THROUGH.has(opcode)) registers = {};
-  }
-  return new Set([...stored].filter((address) => stored.has((address + 1) & 0xffff)));
-}
+/** The address of the high byte of the vector of a JMP (N): the 6510 reads it from N + 1 in the same page, so JMP ($10ff) reads $1000. */
+export const vectorHigh = (vector: number) => (vector & 0xff00) | ((vector + 1) & 0xff);
+
+/** The registers that each instruction changes, other than by a load of an immediate or a transfer. */
+export const WRITES_A = new Set(["lda", "adc", "sbc", "and", "ora", "eor", "pla", "lax", "anc", "asr", "arr", "ane", "lxa", "las", "slo", "rla", "sre", "rra", "isc"]);
+export const WRITES_X = new Set(["ldx", "inx", "dex", "tsx", "lax", "sbx", "lxa", "las"]);
+export const WRITES_Y = new Set(["ldy", "iny", "dey"]);
+
+/** The instructions that change the byte at their operand with a value that no immediate gives. */
+const CHANGES_MEMORY = new Set(["inc", "dec", "asl", "lsr", "rol", "ror", "sax", "slo", "rla", "sre", "rra", "dcp", "isc"]);
 
 /**
- * The unresolved flows of the instructions at `starts`. A flow is resolved
- * when a reference of the user or the LLM goes from it. An indirect jump is
- * also resolved when the program's own immediates set its vector, or when the
- * vector is in the image and no run wrote it.
+ * The computed flows of the instructions at `starts`: a JMP (N), a JMP or JSR
+ * whose address bytes a run wrote, and an RTS or RTI after pushes in its run
+ * of instructions. A jump or call reference of the user or the LLM from the
+ * instruction resolves its flow; for a pushed return, also one of the idiom
+ * pass, which reads the table of an RTS dispatch. Else the bytes resolve it:
+ * each byte holds its image byte and the immediates that the code stores
+ * there, and the flow goes to each word of these values. A byte that another
+ * write of the code changes, or that a run wrote while no store of the code
+ * does, or that is outside the image without such a store, leaves the flow
+ * unresolved.
  */
-export function unresolvedFlows(input: { starts: readonly number[]; memory: Uint8Array; inImage: (address: number) => boolean; coverage?: Uint8Array | undefined; resolvedSites?: ReadonlySet<number> | undefined }): UnresolvedFlow[] {
+export function computedFlows(input: { starts: readonly number[]; memory: Uint8Array; inImage: (address: number) => boolean; coverage?: Uint8Array | undefined; references: ReadonlyArray<{ from: number; kind: string; origin?: string | undefined }> }): ComputedFlows {
+  const { memory } = input;
   const written = (address: number) => input.coverage !== undefined && (input.coverage[address & 0xffff]! & COVERAGE.ramWrite) !== 0;
-  const vectors = immediateVectors(input.starts, input.memory);
-  const flows: UnresolvedFlow[] = [];
-  for (const at of input.starts) {
-    if (input.resolvedSites?.has(at) === true) continue;
-    const opcode = input.memory[at]!;
-    if (opcode === 0x6c) {
-      const vector = input.memory[(at + 1) & 0xffff]! | (input.memory[(at + 2) & 0xffff]! << 8);
-      if (vectors.has(vector)) continue;
-      if (input.inImage(vector) && input.inImage((vector + 1) & 0xffff) && !written(vector) && !written(vector + 1)) continue;
-      flows.push({ at, kind: "indirect-jump" });
-    } else if ((opcode === 0x4c || opcode === 0x20) && (written(at + 1) || written(at + 2))) flows.push({ at, kind: "written-operand" });
+  const jumpsFrom = (origins: (origin: string | undefined) => boolean) => new Set(input.references.filter((reference) => (reference.kind === "jump" || reference.kind === "call") && origins(reference.origin)).map((reference) => reference.from));
+  const resolved = jumpsFrom(isSemantic);
+  const fromTable = jumpsFrom((origin) => isSemantic(origin) || origin === "heuristic");
+  const starts = [...input.starts].sort((a, b) => a - b);
+
+  // The immediates that the code stores at each address; null when another write changes it.
+  const stored = new Map<number, Set<number> | null>();
+  const store = (address: number, value: number | undefined) => {
+    const known = stored.get(address);
+    if (known === null) return;
+    stored.set(address, value === undefined ? null : (known ?? new Set<number>()).add(value));
+  };
+  // The return addresses that the code pushed before an RTS or RTI, as far as immediates give them.
+  const returns: Array<{ at: number; low: number | undefined; high: number | undefined; offset: 0 | 1 }> = [];
+  let registers: { a?: number | undefined; x?: number | undefined; y?: number | undefined } = {};
+  let pushes: Array<number | undefined> = [];
+  let previousEnd = -2;
+  for (const at of starts) {
+    if (at > previousEnd + 1) {
+      registers = {};
+      pushes = [];
+    }
+    const opcode = memory[at]!;
+    const { mnemonic, mode } = OPCODES[opcode]!;
+    const length = instructionLength(opcode);
+    previousEnd = at + length - 1;
+    const operand = length === 3 ? memory[(at + 1) & 0xffff]! | (memory[(at + 2) & 0xffff]! << 8) : memory[(at + 1) & 0xffff]!;
+    if (mode === "zp" || mode === "abs") {
+      const register = mnemonic === "sta" ? "a" : mnemonic === "stx" ? "x" : mnemonic === "sty" ? "y" : undefined;
+      if (register !== undefined) store(operand, registers[register]);
+      else if (CHANGES_MEMORY.has(mnemonic)) store(operand, undefined);
+    }
+    if (mnemonic === "pha") pushes.push(registers.a);
+    if (mnemonic === "php") pushes.push(undefined);
+    if (mnemonic === "pla" || mnemonic === "plp") pushes.pop();
+    if (mnemonic === "txs") pushes = [];
+    if (mnemonic === "rts" && pushes.length >= 2) returns.push({ at, low: pushes.at(-1), high: pushes.at(-2), offset: 1 });
+    if (mnemonic === "rti" && pushes.length >= 3) returns.push({ at, low: pushes.at(-2), high: pushes.at(-3), offset: 0 });
+    const loaded = mode === "imm" ? operand : undefined;
+    if (WRITES_A.has(mnemonic) || (mode === "imp" && ["asl", "lsr", "rol", "ror"].includes(mnemonic))) registers.a = mnemonic === "lda" ? loaded : undefined;
+    if (WRITES_X.has(mnemonic)) registers.x = mnemonic === "ldx" ? loaded : undefined;
+    if (WRITES_Y.has(mnemonic)) registers.y = mnemonic === "ldy" ? loaded : undefined;
+    if (mnemonic === "tax") registers.x = registers.a;
+    if (mnemonic === "tay") registers.y = registers.a;
+    if (mnemonic === "txa") registers.a = registers.x;
+    if (mnemonic === "tya") registers.a = registers.y;
+    if (mnemonic === "jsr") registers = {};
+    if (NO_FALL_THROUGH.has(opcode)) {
+      registers = {};
+      pushes = [];
+    }
   }
-  return flows;
+
+  /** The values of a byte when the code reads it, or undefined when they are not known. */
+  const valuesAt = (address: number): number[] | undefined => {
+    const own = stored.get(address);
+    if (own === null || (own === undefined && (written(address) || !input.inImage(address)))) return undefined;
+    return [...new Set([...(own ?? []), ...(input.inImage(address) ? [memory[address]!] : [])])];
+  };
+  const targets: ComputedFlows["targets"] = [];
+  /** Adds a flow from `from` to each word of the bytes at `low` and `high`; false when a byte is not known. */
+  const wordsAt = (from: number, low: number, high: number) => {
+    const lows = valuesAt(low);
+    const highs = valuesAt(high);
+    if (lows === undefined || highs === undefined) return false;
+    for (const lowByte of lows) for (const highByte of highs) targets.push({ from, to: lowByte | (highByte << 8) });
+    return true;
+  };
+  const unresolved: UnresolvedFlow[] = [];
+  for (const at of starts) {
+    if (resolved.has(at)) continue;
+    const opcode = memory[at]!;
+    if (opcode === 0x6c) {
+      const vector = memory[(at + 1) & 0xffff]! | (memory[(at + 2) & 0xffff]! << 8);
+      if (!wordsAt(at, vector, vectorHigh(vector))) unresolved.push({ at, kind: "indirect-jump" });
+    } else if ((opcode === 0x4c || opcode === 0x20) && (written(at + 1) || written(at + 2))) {
+      if (!wordsAt(at, (at + 1) & 0xffff, (at + 2) & 0xffff)) unresolved.push({ at, kind: "written-operand" });
+    }
+  }
+  for (const pushed of returns) {
+    if (pushed.low !== undefined && pushed.high !== undefined) targets.push({ from: pushed.at, to: ((pushed.low | (pushed.high << 8)) + pushed.offset) & 0xffff });
+    else if (!fromTable.has(pushed.at)) unresolved.push({ at: pushed.at, kind: "pushed-return" });
+  }
+  return { targets, unresolved: unresolved.sort((a, b) => a.at - b.at) };
 }
 
 /** The most instructions outside the code regions that the run on from a region goes through, for example an instruction in a dual-use region. */
@@ -252,9 +312,11 @@ export function separate(input: SeparationInput): Separation {
     const to = next === undefined ? undefined : runOn(next);
     return to === undefined ? [] : [{ from: region.end, to }];
   });
-  // From the regions that hold a root, through call and jump references and the run on, to every region they reach.
+  // A store anywhere in the code can change a vector, so the computed flows read every region.
+  const computed = computedFlows({ starts: regionStarts(regions, input.memory), memory: input.memory, inImage, coverage: input.coverage, references: input.references });
+  // From the regions that hold a root, through call and jump references, the targets of computed flows and the run on, to every region they reach.
   const next = regions.map((): number[] => []);
-  for (const flow of [...input.references.filter((reference) => reference.kind === "call" || reference.kind === "jump"), ...runsOn]) {
+  for (const flow of [...input.references.filter((reference) => reference.kind === "call" || reference.kind === "jump"), ...computed.targets, ...runsOn]) {
     const from = holding(flow.from);
     const to = holding(flow.to);
     if (from >= 0 && to >= 0) next[from]!.push(to);
@@ -275,15 +337,20 @@ export function separate(input: SeparationInput): Separation {
       queue.push(to);
     }
   }
-  const unresolved = unresolvedFlows({ starts: regionStarts(regions, input.memory), memory: input.memory, inImage, coverage: input.coverage, resolvedSites: input.resolvedSites });
+  // Undefined without coverage.
+  const ran = regions.map((region): boolean | undefined => {
+    if (input.coverage === undefined) return undefined;
+    for (let address = region.start; address <= region.end; address++) if (executed[address] === 1) return true;
+    return false;
+  });
+  // Only a flow in code that a root reaches or that a run executed can run: a flow in dead code goes nowhere.
+  const unresolved = computed.unresolved.filter((flow) => {
+    const index = holding(flow.at);
+    return index >= 0 && (reached.has(index) || ran[index] === true);
+  });
   const codeRegions = regions.map((region, index): CodeRegionEvidence => {
-    let ran: boolean | undefined;
-    if (input.coverage !== undefined) {
-      ran = false;
-      for (let address = region.start; address <= region.end && !ran; address++) ran = executed[address] === 1;
-    }
-    const unreached = roots.length > 0 && !reached.has(index) && ran !== true;
-    return { start: region.start, end: region.end, type: region.type, ...(roots.length === 0 ? {} : { reachable: reached.has(index) }), ...(ran === undefined ? {} : { executed: ran }), ...(unreached && (unresolved.length > 0 || input.coverage === undefined) ? { unknown: true as const } : {}) };
+    const unreached = roots.length > 0 && !reached.has(index) && ran[index] !== true;
+    return { start: region.start, end: region.end, type: region.type, ...(roots.length === 0 ? {} : { reachable: reached.has(index) }), ...(ran[index] === undefined ? {} : { executed: ran[index] }), ...(unreached && (unresolved.length > 0 || input.coverage === undefined) ? { unknown: true as const } : {}) };
   });
 
   const read: number[] = [];

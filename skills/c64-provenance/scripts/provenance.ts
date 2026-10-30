@@ -282,8 +282,6 @@ function programEvidence() {
     ...(coverage === undefined ? {} : { coverage }),
     codeRegions: regions,
     references,
-    // A reference of the user or the LLM from a jump gives the targets of its flow.
-    resolvedSites: new Set(references.filter((reference) => (SEMANTIC_ORIGINS as readonly string[]).includes(reference.origin)).map((reference) => reference.from)),
   });
   return { program, stages, coverage, found };
 }
@@ -302,14 +300,15 @@ function separateCommand(call: Call): unknown {
   const loaded = { entry: program.entry, stages };
   const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
   const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
-  const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }) }));
+  const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }), ...(region.unknown === undefined ? {} : { unknown: true }) }));
+  const unresolved = found.unresolved.map((flow) => ({ at: formatC64Address(flow.at), kind: flow.kind }));
   const outside = { read: found.outside.read.map(show), executed: found.outside.executed.map(show), generated: found.outside.generated.map(show) };
   const roots = showRoots(found.roots);
   const bytes = (filter: (range: (typeof found.ranges)[number]) => boolean) => found.ranges.filter(filter).reduce((sum, range) => sum + range.end - range.start + 1, 0);
   const lastStage = loaded.stages === undefined ? undefined : loaded.stages.length - 1;
-  /** The body with at most `most` items in each list. */
-  const bodyOf = (most: number) => {
-    const list = <T>(items: T[]) => listed(items, most);
+  /** The body with at most `most` items in each list; `rest` tells where the other items are. */
+  const bodyOf = (most: number, rest: string) => {
+    const list = <T>(items: T[]) => listed(items, most, undefined, rest);
     return {
       ...(loaded.entry === undefined ? {} : { entry: formatC64Address(loaded.entry) }),
       ...(lastStage === undefined
@@ -322,11 +321,12 @@ function separateCommand(call: Call): unknown {
       ranges: list(ranges),
       // The roots of the reachability: the entry and the hardware vectors in the image.
       roots: roots.length === 0 ? NO_ROOTS : roots,
-      // total counts every code region; unreachable is a list like the others.
+      // Each code region with its evidence, and the ones that no root reaches.
       codeRegions: {
-        total: codeRegions.length,
+        ...list(codeRegions),
         ...(roots.length === 0 ? {} : { unreachable: list(codeRegions.filter((region) => region.reachable === false)) }),
       },
+      ...(unresolved.length === 0 ? {} : { unresolved: list(unresolved) }),
       ...(coverage === undefined ? {} : { outside: { read: list(outside.read), executed: list(outside.executed), generated: list(outside.generated) } }),
     };
   };
@@ -348,12 +348,12 @@ function cutNote(body: unknown): string | undefined {
 
 /**
  * The body with at most `max` items in each list, and with --out the file of
- * the same fields with all items. A cut list names a larger --max-listed: the
- * envelope gives that note.
+ * the same fields with all items. A cut list names a larger --max-listed, and
+ * the file of --out or --out itself: the envelope gives that note.
  */
-function withFile(bodyOf: (most: number) => Record<string, unknown>, max: number, out: string | undefined): Record<string, unknown> {
-  const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify(bodyOf(Number.POSITIVE_INFINITY), null, 1)}\n`, { what: "--out" });
-  return { ...bodyOf(max), ...(written === undefined ? {} : written) };
+function withFile(bodyOf: (most: number, rest: string) => Record<string, unknown>, max: number, out: string | undefined): Record<string, unknown> {
+  const written = out === undefined ? undefined : writeReported(out, `${JSON.stringify(bodyOf(Number.POSITIVE_INFINITY, ""), null, 1)}\n`, { what: "--out" });
+  return { ...bodyOf(max, out === undefined ? "a larger --max-listed, or --out <file>" : `a larger --max-listed, or read ${out}`), ...(written === undefined ? {} : written) };
 }
 
 /** The longest text that the result shows; --out has all of it. */
@@ -389,8 +389,8 @@ function leftoversCommand(call: Call): unknown {
     unresolved: found.unresolved.map((flow) => ({ at: formatC64Address(flow.at), kind: flow.kind })),
   };
   /** The body with at most `most` items in each list; the file has the full texts. */
-  const bodyOf = (most: number) => {
-    const list = <T>(items: T[]) => listed(items, most);
+  const bodyOf = (most: number, rest: string) => {
+    const list = <T>(items: T[]) => listed(items, most, undefined, rest);
     const shown = Number.isFinite(most) ? SHOWN_TEXT : Number.POSITIVE_INFINITY;
     return {
       ...(program.entry === undefined ? {} : { entry: formatC64Address(program.entry) }),

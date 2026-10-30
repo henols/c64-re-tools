@@ -86,6 +86,15 @@ test("while a jump through a vector that a run wrote is unresolved, code that no
   assert.deepEqual(resolved.unknown, []);
 });
 
+test("a jump through an unknown vector in code that nothing reaches and that no run executed keeps no code", () => {
+  // $1000 RTS (the entry). $1001 JMP ($2000) and $1004 RTS: no flow reaches them and no run executed them.
+  const base = program([[0x1000, [0x60]], [0x1001, [0x6c, 0x00, 0x20]], [0x1004, [0x60]]]);
+  const plan = planDrops(input(base, { coverage: covered([0x1000]) }));
+  assert.deepEqual(plan.free, [{ start: 0x1001, end: 0x1004, what: "code" }]);
+  assert.deepEqual(plan.unknown, []);
+  assert.deepEqual(plan.unresolved, []);
+});
+
 test("--drop makes the listed code free, and the code that only it calls goes with it", () => {
   const plan = planDrops(input(BASE, { coverage: RAN, drop: [{ start: 0x1005, end: 0x100a }] }));
   assert.deepEqual(plan.free, [{ start: 0x1005, end: 0x100e, what: "code" }]);
