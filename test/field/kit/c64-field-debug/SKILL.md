@@ -19,16 +19,17 @@ node .claude/skills/c64-field-debug/scripts/note.ts --kind <kind> --component <n
 
 | Option | Meaning |
 |---|---|
-| `--kind` | `bug`, `confusion`, `doc`, `missing`, `workaround`, `thought`, `comprehension` or `praise`. |
-| `--component` | The skill, the script or the MCP tool. Examples: `emulator`, `assembler.ts`, `c64_screen`. Default: `general`. |
+| `--kind` | `bug`, `confusion`, `doc`, `missing`, `workaround`, `thought`, `comprehension`, `praise` or `quote`. |
+| `--component` | The skill, the script or the MCP tool. Examples: `emulator`, `assembler.ts`, `c64_screen`. Default: `general`. For `quote`: the skill that has the words. |
 | `--severity` | `low`, `medium` or `high`. Default: `medium`. |
 | `--by` | `llm` (default) or `user`. |
 | `--intent` | What you wanted to do. |
 | `--choice` | Which skill or tool you chose, and why. |
 | `--expected` | What you expected. |
 | `--actual` | What you got. |
+| `--effect` | `quote` only: what you did or did not do because of the words. Three words or more. |
 
-The script appends one JSON line to `field-test/notes.jsonl` in the project root. It prints the file and the line number. The exit status is 0 for a note and 2 for a wrong argument.
+The script appends one JSON line to `field-test/notes.jsonl` in the project root. It prints the file and the line number. The exit status is 0 for a note. It is 2 for a wrong argument or a quote that the script refuses.
 
 ## When to write a note
 
@@ -62,6 +63,17 @@ When the user writes a message that starts with `note:`, save the text after `no
 | `workaround` | What you did instead. |
 | `thought` | A step is complete, or a reflection on a problem. |
 | `praise` | Something that worked well. |
+| `quote` | Words of a skill that changed what you did. The debrief prompt tells when to write these. |
+
+## Quote notes
+
+A quote note records words of a skill that changed what you did.
+
+- Copy the words exactly from the `SKILL.md` or a `references/*.md` file of the skill. Copy four words or more.
+- The script ignores whitespace, backticks and asterisks when it compares the words. Upper case and lower case must agree.
+- Give the skill in `--component` and the change in `--effect`.
+- The script refuses words that it cannot find in the skill. It refuses a sixth quote note.
+- When no skill text changed what you did, write one quote note with the text `None.`. After `None.`, the script refuses more quote notes.
 
 ## Rules
 
