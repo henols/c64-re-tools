@@ -155,7 +155,7 @@ const COMMANDS: CommandSpec[] = [
   {
     name: "test",
     summary: "Runs a scenario on the reference and then on the rebuild in one emulator. result is PASS, FAIL with the differences, or INCONCLUSIVE with the reason.",
-    subjects: [{ name: "<scenario.json>", help: "a scenario file, relative to the project folder. See references/scenario-format.md" }],
+    subjects: [{ name: "<scenario.json>", help: "a scenario file, relative to the project folder. See <skill>/references/scenario-format.md" }],
     options: {
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write both screens, the difference image and memory.json into this folder: each differing memory item with all its bytes, and each byte that differs" },
       "max-listed": { ...OPTIONS["max-listed"], help: "list at most n differing bytes of each memory item (default 50). The count is always given" },
@@ -165,7 +165,7 @@ const COMMANDS: CommandSpec[] = [
   {
     name: "run",
     summary: "Runs the steps of a run file in its own emulator and writes what they ask for into --out: screens, coverage maps, snapshot files, traces, and results.json with the observations and the expectations. result is FAIL when a step did not run or an expect step found a value that differs.",
-    subjects: [{ name: "<run.json>", help: "a run file, relative to the project folder. See references/scenario-format.md, section Runs" }],
+    subjects: [{ name: "<run.json>", help: "a run file, relative to the project folder. See <skill>/references/scenario-format.md, section Runs" }],
     options: { out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the folder for the files of the steps and results.json" } },
     notes: 'A run file is one JSON object. It must have name, start and steps. name is a non-empty string. start is { "program": "<file.prg>" }, { "program": "<file.prg>", "load": true } or { "snapshot": "<file.vsf>" }. steps is a list with at least one step. Optional: symbols ("knowledge", "none" (default) or a JSON file) and videoStandard ("pal" (default) or "ntsc"). The script refuses other keys.',
     run: async (call) => {
@@ -178,7 +178,7 @@ const COMMANDS: CommandSpec[] = [
   {
     name: "record",
     summary: "Plays the steps of a record file on the reference, and writes the session as a recording folder: recording.json, reads.txt and coverage.bin. result is FAIL when the session did not complete.",
-    subjects: [{ name: "<record.json>", help: "a record file, relative to the project folder. See references/recording-format.md" }],
+    subjects: [{ name: "<record.json>", help: "a record file, relative to the project folder. See <skill>/references/recording-format.md" }],
     options: {
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", required: true, help: "the recording folder, for example tests/recordings/<name>" },
       play: { kind: "flag", help: "a person plays after the steps: the script prints the address of a page on stderr. The page shows the start screen frozen until Start (Enter). End (F12) saves the recording, Cancel (F11) ends without one" },

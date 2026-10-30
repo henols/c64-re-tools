@@ -41,11 +41,10 @@ To get the command list, run the script with no arguments.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- The script refuses an `--out` path in `.c64-re-tools/knowledge/` and the index of the knowledge. Change the project knowledge only with the commands that change it.
+- The script refuses an `--out` path in `.c64-re-tools/knowledge/`. Change the project knowledge only with the commands that change it.
 - The script refuses a folder where the command writes a file. It refuses a file where the command writes a folder.
 - When a test or another file is the evidence for a finding in the project knowledge, move it out of `.c64-re-tools/local/` first. The project knowledge refuses that evidence in that folder.
-- A coverage map can stay in `.c64-re-tools/local/`. The project knowledge keeps its ranges and its SHA-256.
-- Do not move a coverage map after you put it into the project knowledge. The knowledge refers to the map by its path at that time.
+- A coverage map can stay in `.c64-re-tools/local/`. Do not move a coverage map after you put it into the project knowledge.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and its snapshot files. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
@@ -85,24 +84,15 @@ Failure:
 
 Each command prints one JSON envelope on one line on stdout. Notes go to stderr.
 
-On success, the exit code is 0:
-
-```json
-{"ok": true, "command": "<command>", "body": {}, "hint": "...", "nextAction": "..."}
-```
-
-On failure, the exit code is 2:
-
-```json
-{"ok": false, "command": "<command>", "code": "<code>", "error": "...", "hint": "...", "nextAction": "..."}
-```
-
+- On success, the exit code is 0: `{"ok": true, "command": "<command>", "body": {}, "hint": "...", "nextAction": "..."}`
+- On failure, the exit code is 2: `{"ok": false, "command": "<command>", "code": "<code>", "error": "...", "hint": "...", "nextAction": "..."}`
 - `body` holds the result. The section of each command gives the fields of its body.
 - A check gives its verdict in `body.result`: `PASS`, `FAIL` or `INCONCLUSIVE`. The exit code is 0 for each verdict. Thus read `body.result`, not the exit code.
-- `error` is one sentence. It tells what is wrong.
-- `hint` tells what to do or what to examine. Read it before your next step. Some envelopes have no `hint`.
-- `nextAction` is a full command line. It runs from any directory. Run it when it agrees with your task. Some envelopes have no `nextAction`.
-- `code` does not change between versions. Do the action for the code:
+- `error` is one sentence. It tells what is wrong. `hint` tells what to do or what to examine. Read it before your next step.
+- `nextAction` is a full command line. It runs from any directory. Run it when it agrees with your task.
+- A list has `count`, `listed` and `rest`. `listed` holds at most `--max-listed` items. `rest` tells how to get the other items. A file that the command wrote has `out`, `bytes` and `sha256`.
+- To get only some fields of `body`, give `--fields <path>,<path>`, for example `--fields count,listed.start`. A path through a list gives that field of each item. Do not write code to filter an envelope.
+- To get the command list, run the script with no arguments. To get the subjects and the flags of one command, run `<command> --help`.
 
 | `code` | Action |
 |---|---|
@@ -110,14 +100,3 @@ On failure, the exit code is 2:
 | `invalid-input`, `not-found` | Correct the call as `hint` tells. Then run the command again. |
 | `operation-failed` | Give `error` and `hint` to the user. |
 | Another code | Do as `hint` tells. |
-
-These fields have the same meaning in each body:
-
-| Field | Meaning |
-|---|---|
-| `out`, `bytes`, `sha256` | A file that the command wrote: its path, its size and its SHA-256. |
-| `count`, `listed`, `rest` | A list. `count` is the number of items. `listed` holds the first items, at most `--max-listed`. `rest` tells how to get the other items. |
-
-To get the command list, run the script with no arguments. The envelope has `command: "help"`, and `body.commands` gives the name, the summary and the synopsis of each command.
-To get the subjects and the flags of one command, run `<command> --help`. Then `body.subjects` and `body.options` give them.
-

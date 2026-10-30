@@ -11,7 +11,7 @@ import { pathToFileURL } from "node:url";
 
 import { isRefusal } from "./errors.ts";
 import { useProject } from "./project.ts";
-import { CONVENTIONS, listed, parseCall, shellWord, takeProject, UsageError } from "./script.ts";
+import { CONVENTIONS, listed, parseCall, pickFields, shellWord, takeFields, takeProject, UsageError } from "./script.ts";
 import { DEMO } from "./script.testkit.ts";
 
 const url = (file: string) => JSON.stringify(pathToFileURL(join(import.meta.dirname, file)).href);
@@ -221,6 +221,37 @@ test("takeProject takes --project in both forms out of the command line, up to -
   assert.throws(() => takeProject(["--project", "--out", "x"]), UsageError);
   assert.throws(() => takeProject(["--project="]), UsageError);
   assert.throws(() => takeProject(["--project", "a", "--project", "b"]), /only once/);
+});
+
+test("takeFields takes --fields in both forms out of the command line, up to --, as dotted paths", () => {
+  assert.deepEqual(takeFields(["at", "$c000", "--fields", "revision,region.type"]), { fields: ["revision", "region.type"], argv: ["at", "$c000"] });
+  assert.deepEqual(takeFields(["--fields=revision", "at"]), { fields: ["revision"], argv: ["at"] });
+  assert.deepEqual(takeFields(["comment", "--", "--fields", "x"]), { argv: ["comment", "--", "--fields", "x"] });
+  assert.throws(() => takeFields(["at", "--fields"]), UsageError);
+  assert.throws(() => takeFields(["at", "--fields", "a,,b"]), /empty path/);
+  assert.throws(() => takeFields(["at", "--fields", "a..b"]), /empty path/);
+  assert.throws(() => takeFields(["--fields", "a", "--fields", "b"]), /only once/);
+});
+
+test("pickFields keeps the dotted paths with their nesting, takes a path through a list from each item, and names the paths that the body lacks", () => {
+  const body = { revision: "r1", regions: { count: 2, listed: [{ start: "$c000", type: "code", origin: "llm" }, { start: "$d000", type: "bytes" }] }, note: null };
+  assert.deepEqual(pickFields(body, ["revision", "regions.listed.start", "regions.listed.type", "regions.count"]), {
+    body: { revision: "r1", regions: { listed: [{ start: "$c000", type: "code" }, { start: "$d000", type: "bytes" }], count: 2 } },
+    missing: [],
+  });
+  assert.deepEqual(pickFields(body, ["regions", "regions.count"]), { body: { regions: body.regions }, missing: [] });
+  assert.deepEqual(pickFields(body, ["regions.listed.origin"]), { body: { regions: { listed: [{ origin: "llm" }, {}] } }, missing: [] });
+  assert.deepEqual(pickFields(body, ["revision", "nothing", "note.deeper"]), { body: { revision: "r1" }, missing: ["nothing", "note.deeper"] });
+});
+
+test("--fields prints only those parts of the body, and a path that the body lacks gives a hint, not a failure", () => {
+  const picked = run(["echo", "a", "b", "--flag", "--fields", "subjects,flag"]);
+  assert.equal(picked.status, 0, picked.stderr);
+  assert.deepEqual(picked.envelope, { ok: true, command: "echo", body: { subjects: ["a", "b"], flag: true } });
+  const lacking = run(["echo", "a", "--fields", "subjects,nothing"]);
+  assert.equal(lacking.status, 0, lacking.stderr);
+  assert.deepEqual(lacking.json, { subjects: ["a"] });
+  assert.equal(lacking.envelope.hint, "The body has no nothing. Its fields are subjects, out, flag, items and maxListed.");
 });
 
 test("--project sets the project of the script", () => {

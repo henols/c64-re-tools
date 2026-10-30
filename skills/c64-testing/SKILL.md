@@ -62,11 +62,10 @@ To get the command list, run the script with no arguments.
 - A range is `<start>-<end>`, for example `'$c000-$cfff'`. In a JSON file, a range is `start` and `end`.
 - Bytes in a JSON file are hex in a field `data`, for example `"data": "a900"`.
 - Write each file that you make for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. Examples are results, batches, step files, runs, snapshots and memory dumps.
-- The script refuses an `--out` path in `.c64-re-tools/knowledge/` and the index of the knowledge. Change the project knowledge only with the commands that change it.
+- The script refuses an `--out` path in `.c64-re-tools/knowledge/`. Change the project knowledge only with the commands that change it.
 - The script refuses a folder where the command writes a file. It refuses a file where the command writes a folder.
 - When a test or another file is the evidence for a finding in the project knowledge, move it out of `.c64-re-tools/local/` first. The project knowledge refuses that evidence in that folder.
-- A coverage map can stay in `.c64-re-tools/local/`. The project knowledge keeps its ranges and its SHA-256.
-- Do not move a coverage map after you put it into the project knowledge. The knowledge refers to the map by its path at that time.
+- A coverage map can stay in `.c64-re-tools/local/`. Do not move a coverage map after you put it into the project knowledge.
 - Put a run that is evidence in `runs/<name>/`, with its run file, its results and its snapshot files. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
@@ -104,7 +103,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 ### `test <scenario.json>`
 
 The script runs the scenario on the reference and then on the rebuild. Before each side, it does a hard reset. The CPU then stops at the reset vector.
-Before the test starts, the script examines the scenario and each file that it names. The section "Checks" of `references/scenario-format.md` gives each refusal.
+Before the test starts, the script examines the scenario and each file that it names. The section "Checks" of `<skill>/references/scenario-format.md` gives each refusal.
 
 `body` holds:
 
@@ -151,8 +150,8 @@ A run file must have `name`, `start` and `steps`:
 { "name": "rooms", "start": { "program": "game.prg" }, "steps": [{ "frames": 100 }, { "screen": "title" }] }
 ```
 
-`symbols` and `videoStandard` are optional. The section "Runs" of `references/scenario-format.md` gives each key and step.
-Before the run starts, the script examines the run file, each file that it names and each name of the steps. The section "Checks" of `references/scenario-format.md` gives each refusal.
+`symbols` and `videoStandard` are optional. The section "Runs" of `<skill>/references/scenario-format.md` gives each key and step.
+Before the run starts, the script examines the run file, each file that it names and each name of the steps. The section "Checks" of `<skill>/references/scenario-format.md` gives each refusal.
 
 `body` holds:
 
@@ -225,7 +224,7 @@ With `--play`, a person plays the program after the steps. The steps can start t
 - The script writes the address of a page to stderr. Give the address to the user.
 - The page shows the screen after the steps. The C64 is frozen until the user pushes Enter or clicks Start. Tell the user to read the screen first.
 - Tell the user that F9 changes the joystick port.
-- The page has the full C64 keyboard and the joystick. F10 changes the arrow keys and space between the joystick and the C64 keys. A gamepad is always the joystick. The key maps are in `references/recording-format.md`.
+- The page has the full C64 keyboard and the joystick. F10 changes the arrow keys and space between the joystick and the C64 keys. A gamepad is always the joystick. The key maps are in `<skill>/references/recording-format.md`.
 - End (F12) stops the C64 and freezes the screen. Then the script writes the recording folder. Run the command in the background.
 - Cancel (F11) stops the session. The script writes no folder.
 
@@ -247,7 +246,7 @@ A rebuild can be a loader with a start screen that RUN starts. If the symbols of
 
 A rebuild can be the loader program of a generated source. Give its symbols. Then the replay counts from the entry of the program, where the loader jumps to. The checkpoints of both sides start at that entry. At the entry, the rebuild gets the raster position, the CIA timers and the interrupt state of the reference. The loader cannot set them as the reference has them in the replay. A runUntil step to an address does not count the code of the loader, or the code that the reference runs before that entry. If another step of the recording runs before the entry, the result is INCONCLUSIVE. Then start the steps of the record file after the entry.
 
-`body` holds `result`, `side`, `firstDifference`, `reason` and `files`. The section "Replay" of `references/recording-format.md` gives each field.
+`body` holds `result`, `side`, `firstDifference`, `reason` and `files`. The section "Replay" of `<skill>/references/recording-format.md` gives each field.
 
 Do this for each result:
 
@@ -314,24 +313,15 @@ Give the checklist to the human tester. Do not put the results of the playtest i
 
 Each command prints one JSON envelope on one line on stdout. Notes go to stderr.
 
-On success, the exit code is 0:
-
-```json
-{"ok": true, "command": "<command>", "body": {}, "hint": "...", "nextAction": "..."}
-```
-
-On failure, the exit code is 2:
-
-```json
-{"ok": false, "command": "<command>", "code": "<code>", "error": "...", "hint": "...", "nextAction": "..."}
-```
-
+- On success, the exit code is 0: `{"ok": true, "command": "<command>", "body": {}, "hint": "...", "nextAction": "..."}`
+- On failure, the exit code is 2: `{"ok": false, "command": "<command>", "code": "<code>", "error": "...", "hint": "...", "nextAction": "..."}`
 - `body` holds the result. The section of each command gives the fields of its body.
 - A check gives its verdict in `body.result`: `PASS`, `FAIL` or `INCONCLUSIVE`. The exit code is 0 for each verdict. Thus read `body.result`, not the exit code.
-- `error` is one sentence. It tells what is wrong.
-- `hint` tells what to do or what to examine. Read it before your next step. Some envelopes have no `hint`.
-- `nextAction` is a full command line. It runs from any directory. Run it when it agrees with your task. Some envelopes have no `nextAction`.
-- `code` does not change between versions. Do the action for the code:
+- `error` is one sentence. It tells what is wrong. `hint` tells what to do or what to examine. Read it before your next step.
+- `nextAction` is a full command line. It runs from any directory. Run it when it agrees with your task.
+- A list has `count`, `listed` and `rest`. `listed` holds at most `--max-listed` items. `rest` tells how to get the other items. A file that the command wrote has `out`, `bytes` and `sha256`.
+- To get only some fields of `body`, give `--fields <path>,<path>`, for example `--fields count,listed.start`. A path through a list gives that field of each item. Do not write code to filter an envelope.
+- To get the command list, run the script with no arguments. To get the subjects and the flags of one command, run `<command> --help`.
 
 | `code` | Action |
 |---|---|
@@ -340,19 +330,7 @@ On failure, the exit code is 2:
 | `operation-failed` | Give `error` and `hint` to the user. |
 | Another code | Do as `hint` tells. |
 
-These fields have the same meaning in each body:
-
-| Field | Meaning |
-|---|---|
-| `out`, `bytes`, `sha256` | A file that the command wrote: its path, its size and its SHA-256. |
-| `count`, `listed`, `rest` | A list. `count` is the number of items. `listed` holds the first items, at most `--max-listed`. `rest` tells how to get the other items. |
-
-To get the command list, run the script with no arguments. The envelope has `command: "help"`, and `body.commands` gives the name, the summary and the synopsis of each command.
-To get the subjects and the flags of one command, run `<command> --help`. Then `body.subjects` and `body.options` give them.
-
----
-
 ## Reference
 
-- `references/scenario-format.md`: the scenario file of `test` and the run file of `run`. It gives each step, each observation, the expected values, and the checks before a test or a run.
-- `references/recording-format.md`: the record file of `record`, the play page and its key maps, and the files of a recording folder. It also gives the fields of the body of `replay`.
+- `<skill>/references/scenario-format.md`: the scenario file of `test` and the run file of `run`. It gives each step, each observation, the expected values, and the checks before a test or a run.
+- `<skill>/references/recording-format.md`: the record file of `record`, the play page and its key maps, and the files of a recording folder. It also gives the fields of the body of `replay`.
