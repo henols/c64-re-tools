@@ -27,8 +27,10 @@ To get the command list, run the script with no arguments.
 | Keep the screens and all differing bytes of a FAIL | `test tests/moves-left.json --out .c64-re-tools/local/results/moves-left` |
 | Do many steps on one program and keep the results as files | `run .c64-re-tools/local/runs/rooms/run.json --out .c64-re-tools/local/runs/rooms` |
 | Test a new program or a correction with expected values | `run tests/title.json --out .c64-re-tools/local/runs/title` |
+| Keep a run as evidence in a folder that git keeps | `keep .c64-re-tools/local/runs/rooms/run.json .c64-re-tools/local/runs/rooms runs/rooms` |
 | Record a play session of a person on the reference | `record tests/record/start.json --out tests/recordings/play1 --play --joystick 1` |
 | Record a session from steps only | `record tests/record/rooms.json --out tests/recordings/rooms` |
+| Find the input sites and the coverage of a recording | `show tests/recordings/rooms` |
 | Make sure that a recording replays on the reference | `replay tests/recordings/rooms` |
 | Keep the screen at the end of a recorded session | `replay tests/recordings/final --screen .c64-re-tools/local/results/final.png` |
 | Compare the rebuild with a recording | `replay tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/clean.prg --symbols build/symbols/clean.json --out .c64-re-tools/local/results/rooms` |
@@ -43,6 +45,7 @@ To get the command list, run the script with no arguments.
 - The reference program and the rebuild are PRG files in the project. The script refuses a disk, tape or cartridge image. Extract the program file from the image first.
 - The reference gets its names from the project knowledge. Give `"symbols": "knowledge"` for the reference.
 - The rebuild gets its names from the symbol file of its build. Build the rebuild with a symbol file that has all symbols, also the constants that the source does not use.
+- The loader program of a generated source can show a start screen that waits for a key. If the symbols of the program have the labels of that start screen, `test`, `run` and `replay` start the program after the start screen. Do not add a step for the start screen.
 - You write the scenario file, the run file and the record file. Their formats are in the files of the section "Reference".
 - A file in `tests/` is a scenario or a run file with expected values. Give a scenario to `test` and a run file to `run`. `test` refuses a run file.
 - `<recording>` is the `--out` folder of `record`.
@@ -66,7 +69,7 @@ To get the command list, run the script with no arguments.
 - The script refuses a folder where the command writes a file. It refuses a file where the command writes a folder.
 - When a test or another file is the evidence for a finding in the project knowledge, move it out of `.c64-re-tools/local/` first. The project knowledge refuses that evidence in that folder.
 - A coverage map can stay in `.c64-re-tools/local/`. Do not move a coverage map after you put it into the project knowledge.
-- Put a run that is evidence in `runs/<name>/`, with its run file, its results and its snapshot files. Change the paths in the run file to the new paths. Then git keeps them, and another person can do the run again.
+- To keep a run as evidence, use the command that keeps a run. It copies the run, its results and its snapshot files into `runs/<name>/`, and it changes the paths in the copy. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
 ## Flags
@@ -82,6 +85,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--play` | `record` | A person plays after the steps. Off by default. |
 | `--joystick <1\|2>` | `record` | With `--play`: the joystick port at the start. The default is 2. |
 | `--http-port <n>` | `record` | With `--play`: the port of the page. The default is 6465. |
+| `--max-listed <n>` | `show` | List at most n input sites. The default is 50. The count is always in the body. |
 | `--checkpoint <routine>` | `replay` | The routine of the checkpoints. Each entry of the routine is a checkpoint. The default is the comparison of the record file. |
 | `--state <item>` | `replay` | A memory item to compare at each checkpoint. Give it again for each item. |
 | `--pin <item>` | `replay` | Random state in RAM. At each checkpoint, the rebuild gets the values of the reference there. Give it again for each item. |
@@ -113,7 +117,7 @@ Before the test starts, the script examines the scenario and each file that it n
   - A memory item gives `bytes`. `bytes.count` is the number of differing bytes. `bytes.listed` gives the first bytes, each with `address`, `reference` and `rebuild`.
   - Another item gives the `reference` value and the `rebuild` value.
 - `excluded`: each byte that an `exclude` left out of the comparison, with its `reason`.
-- `files`: with `--out` and a FAIL, the files that the script wrote. These are both screens and the difference image for each screen difference. `memory.json` has all bytes of each memory item that differs, and each byte that differs.
+- `files`: with `--out` and a FAIL, the files that the script wrote. These are both screens, the difference image for each screen difference, and all bytes of each memory item that differs.
 - `reason`: with an INCONCLUSIVE, why the script could not compare.
 
 The pc and each address are `$xxxx`. Memory is lowercase hex. Other register values and chip values are decimal numbers.
@@ -159,8 +163,9 @@ Before the run starts, the script examines the run file, each file that it names
 - `completed`, `steps` and `done`: if the run completed, the number of steps, and the number of steps that ran.
 - `reason`: why a step did not run.
 - `pc`: the pc at the end of the run.
+- `startScreen`: `skipped` when the run started the program after its start screen.
 - `files`: each file that the run wrote.
-- `observations`: the names of the observations. `results.json` in `--out` has their values.
+- `observations`: the values of each observation, by its name. Memory is hex. A memory item of more than 4096 bytes, and `"memory": "all"`, give the name of their file in `file`.
 - `expectations`: for each `expect` step, `pass`, `count` and at most 16 `mismatches` with the expected and the actual value.
 - `failedExpectations`: the names of the `expect` steps that did not pass.
 - `traces`: for each `trace` step, its file, the count of hits, the frames and why the trace ended.
@@ -171,6 +176,20 @@ Traps:
 
 - A long run can need more time than one shell call. Then run the command in the background.
 - Add each coverage map of a run to the project knowledge as coverage.
+
+### `keep <run.json> <out> <folder>`
+
+The script keeps a run as evidence in a new folder that git keeps, for example `runs/rooms`. `<out>` is the `--out` folder of the run.
+The script copies the run file, the files of the run in `<out>`, and each file in `.c64-re-tools/local/` that the run file names. In the copy of the run file, it changes only the paths of the copied files.
+
+`body` holds:
+
+- `out`: the new folder. The copy of the run file is `run.json` in it.
+- `files`: each file that the script wrote.
+- `paths`: each path that changed in the run file, with its `field`, the old path in `from` and the new path in `to`.
+
+Commit the folder, and give its files as evidence, as `hint` tells. The script refuses a folder that exists, a folder that git ignores, and an `<out>` with the results of another run.
+If you changed the run file after the run, run it again before you keep it. The results must agree with the run file.
 
 ---
 
@@ -184,13 +203,11 @@ A recording keeps a session of the reference program, for example a play through
 - Replay each recording on the default build. Do not replay a release build or a build with a switch that is not at its default.
 - When the generated source has a loader, the default build is `build/clean_loader.prg`. Give `--symbols build/symbols/clean_loader.json` with it. Else the default build is `build/clean.prg`, with `--symbols build/symbols/clean.json`.
 - Commit the recording folder with the scenarios. Do not put a recording into the project knowledge. Do not put test results, screenshots or playtest results into it.
-- A finding that a recording shows can go into the project knowledge. Give the `recording.json` of the recording as its test evidence.
+- A finding that a recording shows can go into the project knowledge. Give `evidence` of `show` as its test evidence.
 - The C64 of a recording has no disk drive. For a program that loads more files from a disk, use a scenario with `test`.
 - The emulator cannot examine the C64 of a recording or a replay. To keep the screen at the end of a recorded session, use `--screen` of `replay`.
 
-A replay is deterministic. The same recording gives the same session, to the cycle. The n-th read of an input at each instruction gets the value of the n-th read in the recording. Thus a rebuild with different timing gets the same input, also the same random values from the SID.
-
-Control each source of random numbers:
+A replay gives the rebuild the same input as the reference, also when the timing of the rebuild is different. Control each source of random numbers:
 
 - A program that reads a seed from the SID gets the recorded value. You do not need to do more.
 - A program that reads a seed from the raster line or a CIA timer: add the address to `inputs` of the record file. Do this only when the program does not wait in a loop on that address.
@@ -198,7 +215,7 @@ Control each source of random numbers:
 
 ### `record <record.json>`
 
-The script does the steps of the record file on the reference program. Then it writes the recording folder into `--out`: `recording.json`, `reads.txt` and `coverage.bin`. The program must be a PRG file.
+The script does the steps of the record file on the reference program. Then it writes the recording into the folder `--out`. The program must be a PRG file.
 
 `body` holds:
 
@@ -213,20 +230,18 @@ The script does the steps of the record file on the reference program. Then it w
 
 Do this for each result:
 
-- `PASS`: for a folder in `tests/recordings/`, `hint` tells you to commit the folder and to add its `coverage.bin` to the project knowledge as coverage. Git ignores `.c64-re-tools/local/`, thus the project knowledge must not name a file in it. For a folder there, `hint` tells you to record again with `--out tests/recordings/<name>`. `nextAction` replays the recording on the reference. Run it to make sure that the recording replays.
-- `PASS` with `evidence`: you recorded into the folder of an earlier recording. Put the new `coverage.bin` into the project knowledge as coverage. It replaces the map of the earlier recording. For another file in `evidence`, examine the facts of its revisions against the new recording.
+- `PASS`: for a folder in `tests/recordings/`, `hint` tells you to commit the folder and to add its coverage map to the project knowledge as coverage. Git ignores `.c64-re-tools/local/`, thus the project knowledge must not name a file in it. For a folder there, `hint` tells you to record again with `--out tests/recordings/<name>`. `nextAction` replays the recording on the reference. Run it to make sure that the recording replays.
+- `PASS` with `evidence`: you recorded into the folder of an earlier recording. Put the new coverage map into the project knowledge as coverage, as `hint` tells. It replaces the map of the earlier recording. For another file in `evidence`, examine the facts of its revisions against the new recording.
 - `FAIL` after a cancel on the page: `hint` tells you to ask the user what to do. Do not record a session from steps in place of the session of the user.
 - Another `FAIL`: `reason` names the step that did not complete. Examples are a `runUntil` step that did not get to its target, and a `type` step with too many keys. Change the step, then run `record` again.
 - `coverageFrom` is `null` and `executed` is 0: the coverage did not start, so the coverage map is empty. The recording can still replay.
 
 With `--play`, a person plays the program after the steps. The steps can start the program, for example a key for an intro.
 
-- The script writes the address of a page to stderr. Give the address to the user.
-- The page shows the screen after the steps. The C64 is frozen until the user pushes Enter or clicks Start. Tell the user to read the screen first.
-- Tell the user that F9 changes the joystick port.
-- The page has the full C64 keyboard and the joystick. F10 changes the arrow keys and space between the joystick and the C64 keys. A gamepad is always the joystick. The key maps are in `<skill>/references/recording-format.md`.
-- End (F12) stops the C64 and freezes the screen. Then the script writes the recording folder. Run the command in the background.
-- Cancel (F11) stops the session. The script writes no folder.
+- The script writes the address of a page to stderr. Give the address to the user. Run the command in the background.
+- The page shows the screen after the steps. The C64 is frozen until the user pushes Enter or clicks Start. Tell the user to read the screen first, and that F9 changes the joystick port.
+- The page sends the full C64 keyboard and the joystick, also from a gamepad. It shows its buttons and its key maps.
+- End (F12) stops the C64. Then the script writes the recording folder. Cancel (F11) stops the session, and the script writes no folder.
 
 Traps:
 
@@ -234,19 +249,39 @@ Traps:
 - Put a `runUntil` step with the checkpoint routine before a `registers` step. A `registers` step that sets the pc during an interrupt stops the program.
 - A record file has no `raster` target and no `condition`. The script refuses them.
 
+### `show <recording>`
+
+The script tells what a recording holds. It does not replay the recording. Use it in place of your own read of the files of a recording.
+
+`body` holds:
+
+- `name`, `program`, `symbols`, `load` and `inputs`: the values of the record file. `checkpoint`, `state` and `pin`: its comparison, if it has one.
+- `frames` and `events`: the length of the session, and the number of events.
+- `inputSites`: each instruction that read input, in the order of its address. Each item has the `site`, the `address` that it read, the number of `reads`, and the number of `changes` of the value. A site with 0 `changes` got the same value at each read.
+- `coverage`: the number of RAM addresses in the coverage map that the session `executed`, `read` and `written`.
+- `evidence`: the test evidence for a finding that the recording shows.
+
 ### `replay <recording>`
 
 The script first replays the recording on the reference. The reference must end the session with the recorded state. With `--rebuild`, the script then replays the recording on the rebuild and compares the state at each checkpoint. Without `--rebuild`, it replays only on the reference.
 
 `--checkpoint` and `--state` go together. `--pin` needs both of them. `--symbols` needs `--rebuild`. Give at most 16 `--state` and `--pin` items. Without `--checkpoint`, the script uses the comparison of the record file.
-A `$` address is an address of the reference. On the rebuild, it moves with the name before it.
+A `$` address is an address of the reference. On the rebuild, it moves with the name before it. Give each state item a name when you can.
 `--screen` writes the screen of the reference at the end of the session into a PNG file. The screen is the same on each replay. The script writes it only when the reference ends the session with the recorded state.
 
-A rebuild can be a loader with a start screen that RUN starts. If the symbols of the rebuild have `loader_start_screen_wait` and `loader_start_screen_continue`, the script runs the rebuild to the wait. Then it sets the PC to `loader_start_screen_continue`. The cycles before the wait do not count.
+`body` holds:
 
-A rebuild can be the loader program of a generated source. Give its symbols. Then the replay counts from the entry of the program, where the loader jumps to. The checkpoints of both sides start at that entry. At the entry, the rebuild gets the raster position, the CIA timers and the interrupt state of the reference. The loader cannot set them as the reference has them in the replay. A runUntil step to an address does not count the code of the loader, or the code that the reference runs before that entry. If another step of the recording runs before the entry, the result is INCONCLUSIVE. Then start the steps of the record file after the entry.
-
-`body` holds `result`, `side`, `firstDifference`, `reason` and `files`. The section "Replay" of `<skill>/references/recording-format.md` gives each field.
+- `result`: `PASS`, `FAIL` or `INCONCLUSIVE`.
+- `side`: `reference` for the check of the reference only, `rebuild` with `--rebuild`.
+- `checkpoint`: the routine of the comparison.
+- `checkpoints` and `compared`: the checkpoints of the reference, and the checkpoints of the rebuild that were the same.
+- `firstDifference`: with a FAIL, the checkpoint (1 is the first), the cycle on each side, and each state item that is different. An item has `address`, and the `reference` and `rebuild` values as hex.
+- `reason`: why the result is FAIL or INCONCLUSIVE.
+- `movedSites`: the number of input sites at a different address in the rebuild.
+- `startScreen`: `skipped` when the rebuild started after its start screen.
+- `idleReads`: the number of input reads of the rebuild that the recording had no value for.
+- `files`: with `--out` and a FAIL, the RAM of each side at the first different checkpoint.
+- `screen`: with `--screen`, the PNG file of the screen of the reference at the end of the session.
 
 Do this for each result:
 
@@ -258,11 +293,12 @@ Do this for each result:
   - "does not reproduce": the reference does not end the session with the recorded state. Record the session again.
   - "never came to the checkpoint": the reference did not execute the checkpoint routine in the session. Give another routine.
   - "is not the program of the recording": the program file changed after the recording. Record the session again.
+  - "ran before the program came to its entry": a step of the recording ran in the loader of the rebuild. Make the steps of the record file start after the entry of the program. Then record the session again.
 
 Traps:
 
 - A run does not have the timing of a recording. The same steps in a run can give a different session, for example a lost fight. To show the screen of a recorded session, use `replay --screen`. Do not do the steps again in a run.
-- `idleReads` counts the input reads of the rebuild that the recording had no value for. On the reference, such a read makes the result INCONCLUSIVE. The rebuild can read input where the reference does not, for example in its loader before the start screen. Such reads do not change a PASS of the rebuild.
+- On the reference, an input read with no recorded value makes the result INCONCLUSIVE. The rebuild can read input where the reference does not, for example in its loader before the start screen. `idleReads` counts these reads. They do not change a PASS of the rebuild.
 - The script refuses a recording of an older version in an old form with `invalid-input`. Record the session again.
 
 ---
@@ -333,4 +369,4 @@ Each command prints one JSON envelope on one line on stdout. Notes go to stderr.
 ## Reference
 
 - `<skill>/references/scenario-format.md`: the scenario file of `test` and the run file of `run`. It gives each step, each observation, the expected values, and the checks before a test or a run.
-- `<skill>/references/recording-format.md`: the record file of `record`, the play page and its key maps, and the files of a recording folder. It also gives the fields of the body of `replay`.
+- `<skill>/references/recording-format.md`: the record file of `record` and its steps.

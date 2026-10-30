@@ -12,14 +12,15 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { isRefusal, Refusal } from "#src/errors.ts";
-import { c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { c64AddressOf, COVERAGE, formatC64Address, parseC64Address } from "#src/c64.ts";
 import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, renamedField, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
-import { LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
+import { LOADER_JUMP, startScreenLabels } from "#src/knowledge/start-screen.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
+import { listed } from "#src/script.ts";
 import { namesOf, type Outcome } from "./scenario.ts";
 
 export const RECORDING_FORMAT = 1;
@@ -381,12 +382,11 @@ export interface EntryPoint {
  * undefined when the rebuild has no start screen.
  */
 async function passStartScreen(core: C64RunSession, own: Map<string, number>, limit: number): Promise<number | string | undefined> {
-  const wait = own.get(START_SCREEN_WAIT);
-  const resume = own.get(START_SCREEN_CONTINUE);
-  if (wait === undefined || resume === undefined) return undefined;
-  const reached = await core.status(`run-pc ${hex(wait)} ${limit}`);
-  if (reached.word !== "reached") return `the rebuild did not come to the wait of its start screen at ${formatC64Address(wait)}`;
-  await core.status(`goto ${hex(resume)}`);
+  const labels = startScreenLabels(own);
+  if (labels === undefined) return undefined;
+  const reached = await core.status(`run-pc ${hex(labels.wait)} ${limit}`);
+  if (reached.word !== "reached") return `the rebuild did not come to the wait of its start screen at ${formatC64Address(labels.wait)}`;
+  await core.status(`goto ${hex(labels.continue)}`);
   return reached.tick;
 }
 
@@ -896,4 +896,68 @@ export interface ReplayResult {
   files?: Written[];
   /** The screen of the reference at the end of the session (--screen). */
   screen?: Written;
+}
+
+/** An input site of a recording: the instruction that reads, the address that it reads, its reads, and how often the value changed. */
+export interface InputSite {
+  site: Location;
+  address: Location;
+  reads: number;
+  changes: number;
+}
+
+/** What `show` gives of a recording folder: the program, the session, the input sites and the coverage counts. */
+export interface RecordingSummary {
+  recording: string;
+  name: string;
+  program: string;
+  symbols: string;
+  load: boolean;
+  checkpoint?: Location;
+  state?: StateItem[];
+  pin?: StateItem[];
+  inputs: string[];
+  frames: number;
+  events: number;
+  inputSites: { count: number; listed: InputSite[]; rest?: string };
+  /** The RAM addresses that the session executed, read and wrote, from the start of the coverage map. */
+  coverage: { executed: number; read: number; written: number };
+  /** The test evidence of a finding that the recording shows: the --evidence value of a knowledge write. */
+  evidence: string;
+}
+
+/**
+ * What a recording folder holds, without a replay: recording.json, the value
+ * changes of each site in reads.txt (each line `<site> <addr> <from> <value>`
+ * after the first read is a change), and the counts of coverage.bin.
+ */
+export function showRecording(folder: string, max: number): RecordingSummary {
+  const recording = readRecording(folder);
+  const changes = new Map<string, number>();
+  for (const line of readProjectFile(`${folder}/${RECORDING_FILES.reads}`).bytes.toString("utf8").split("\n")) {
+    const [site, addr, from] = line.split(" ");
+    if (site === undefined || site === "end" || addr === undefined || from === undefined || Number(from) === 0) continue;
+    const key = `${site} ${addr}`;
+    changes.set(key, (changes.get(key) ?? 0) + 1);
+  }
+  const sites = recording.sites
+    .map((site): InputSite => ({ site: site.site, address: site.addr, reads: site.reads, changes: changes.get(`${hex(parseC64Address(site.site))} ${hex(parseC64Address(site.addr))}`) ?? 0 }))
+    .sort((a, b) => parseC64Address(a.site) - parseC64Address(b.site) || parseC64Address(a.address) - parseC64Address(b.address));
+  const map = readProjectFile(`${folder}/${RECORDING_FILES.coverage}`).bytes;
+  const count = (bit: number) => map.reduce((total, byte) => total + ((byte & bit) === 0 ? 0 : 1), 0);
+  const compare = recording.compare;
+  return {
+    recording: folder,
+    name: recording.name,
+    program: recording.program,
+    symbols: recording.symbols,
+    load: recording.load,
+    ...(compare === undefined ? {} : { checkpoint: compare.checkpoint, state: compare.state, ...(compare.pin === undefined ? {} : { pin: compare.pin }) }),
+    inputs: recording.inputs,
+    frames: Math.round(recording.ticks / PAL_FRAME_CYCLES),
+    events: recording.events.length,
+    inputSites: listed(sites, max),
+    coverage: { executed: count(COVERAGE.ramExecute), read: count(COVERAGE.ramRead), written: count(COVERAGE.ramWrite) },
+    evidence: `test:${folder}/${RECORDING_FILES.recording}`,
+  };
 }

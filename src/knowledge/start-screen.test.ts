@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { capturedColourRam, startScreenOfStage } from "./start-screen.ts";
+import { capturedColourRam, startScreenLabels, startScreenOfStage } from "./start-screen.ts";
 
 /** An entry state with the VIC-II values, $dd00 and the colour RAM. */
 function captured(values: { d011: number; d016: number; d018: number; dd00: number; colour?: boolean }): Record<string, unknown> {
@@ -45,4 +45,14 @@ test("a capture that shows no start screen is refused by name", () => {
   assert.throws(() => startScreenOfStage(captured({ d011: 0x5b, d016: 0x08, d018: 0x14, dd00: 3 }), "bank1"), /extended colour mode/);
   assert.throws(() => startScreenOfStage(captured({ d011: 0x1b, d016: 0x18, d018: 0x14, dd00: 3 }), "bank1"), /multicolour text screen/);
   assert.throws(() => startScreenOfStage(captured({ d011: 0x3b, d016: 0x18, d018: 0x38, dd00: 0, colour: false }), "bank1"), /has no colour RAM: it is from an older version/);
+});
+
+test("a build shows its start screen when its symbols have both labels and the switches leave the screen on", () => {
+  const labels: Array<[string, number]> = [["loader_start_screen_wait", 0x0900], ["loader_start_screen_continue", 0x0930]];
+  assert.deepEqual(startScreenLabels(new Map(labels)), { wait: 0x0900, continue: 0x0930 });
+  assert.deepEqual(startScreenLabels(new Map([...labels, ["START_SCREEN", 1], ["LEFTOVERS", 0]])), { wait: 0x0900, continue: 0x0930 });
+  assert.equal(startScreenLabels(new Map([...labels, ["START_SCREEN", 0]])), undefined);
+  assert.equal(startScreenLabels(new Map([...labels, ["LEFTOVERS", 1]])), undefined);
+  assert.equal(startScreenLabels(new Map([labels[0]!])), undefined);
+  assert.equal(startScreenLabels(new Map()), undefined);
 });

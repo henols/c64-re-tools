@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
@@ -15,7 +15,8 @@ import { changedRanges, diffStates } from "../../skills/c64-testing/scripts/lib/
 import { isRefusal, Refusal } from "../../src/errors.ts";
 import { compare, namesOf, readScenario, resolve, runScenario, scenarioNames } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 import { diffFiles, snapshotCpuPort, snapshotRam } from "../../skills/c64-testing/scripts/lib/diff-files.ts";
-import { runFile } from "../../skills/c64-testing/scripts/lib/runs.ts";
+import { keepRun, runFile } from "../../skills/c64-testing/scripts/lib/runs.ts";
+import { passStartScreen } from "../../skills/c64-testing/scripts/lib/start-screen.ts";
 import { readEnvelope } from "../kit.ts";
 
 // No host listens at port 1: a run that got past its checks would fail to connect, not reach a real emulator.
@@ -539,4 +540,64 @@ test("diff refuses --address for snapshots and observations, and --ntsc for memo
   assert.equal(await differ("a.vsf", "b.vsf", { at: 0x0400 }), "--address is only for two memory files (.bin). A snapshot file holds all 64 KiB: leave out --address.");
   assert.equal(await differ("part1.bin", "part2.bin", { ntsc: true }), "--ntsc is only for two snapshot files (.vsf), which restore in an emulator. Memory files compare as they are: leave out --ntsc.");
   assert.equal(await differ("obs.json:a", "obs.json:b", { ntsc: true }), "--ntsc is only for two snapshot files (.vsf), which restore in an emulator. Observations compare as they are: leave out --ntsc.");
+});
+
+test("keep copies a run, its results and the files of the local folder that it starts from, and changes only the paths of those files", async () => {
+  const files: Record<string, string> = {
+    ".c64-re-tools/local/snapshots/room0.vsf": "first",
+    ".c64-re-tools/local/other/room0.vsf": "second",
+    ".c64-re-tools/local/names.json": JSON.stringify({ main: "$c000" }),
+    ".c64-re-tools/local/runs/rooms/results.json": JSON.stringify({ name: "rooms", files: ["room1.png", "room2.vsf"] }),
+    ".c64-re-tools/local/runs/rooms/room1.png": "png",
+    ".c64-re-tools/local/runs/rooms/room2.vsf": "save",
+    ".c64-re-tools/local/runs/other/results.json": JSON.stringify({ name: "other", files: [] }),
+  };
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(join(project, path, ".."), { recursive: true });
+    writeFileSync(join(project, path), text);
+  }
+  const steps = [
+    { frames: 10 },
+    { screen: "room1" },
+    { snapshot: ".c64-re-tools/local/snapshots/room0.vsf" },
+    { snapshot: ".c64-re-tools/local/other/room0.vsf" },
+    { snapshot: "snapshots/shared.vsf" },
+    { save: "room2" },
+  ];
+  const run = scenarioFile("rooms-run.json", { name: "rooms", start: { snapshot: ".c64-re-tools/local/snapshots/room0.vsf" }, symbols: ".c64-re-tools/local/names.json", steps });
+  const kept = keepRun(run, ".c64-re-tools/local/runs/rooms", "runs/rooms/");
+  assert.equal(kept.out, "runs/rooms");
+  const first = "runs/rooms/inputs/room0.vsf";
+  const second = "runs/rooms/inputs/room0-2.vsf";
+  assert.deepEqual(
+    kept.paths.map((path) => [path.field, path.to]),
+    [["start.snapshot", first], ["symbols", "runs/rooms/inputs/names.json"], ["step 3: snapshot", first], ["step 4: snapshot", second]],
+  );
+  const copy = JSON.parse(readFileSync(join(project, "runs/rooms/run.json"), "utf8"));
+  assert.deepEqual(copy, { name: "rooms", start: { snapshot: first }, symbols: "runs/rooms/inputs/names.json", steps: [steps[0], steps[1], { snapshot: first }, { snapshot: second }, steps[4], steps[5]] });
+  for (const [path, text] of [[first, "first"], [second, "second"], ["runs/rooms/room1.png", "png"], ["runs/rooms/room2.vsf", "save"]]) assert.equal(readFileSync(join(project, path!), "utf8"), text);
+  assert.ok(existsSync(join(project, "runs/rooms/results.json")));
+  assert.deepEqual(kept.files.map((file) => file.out).sort(), [first, second, "runs/rooms/inputs/names.json", "runs/rooms/results.json", "runs/rooms/room1.png", "runs/rooms/room2.vsf", "runs/rooms/run.json"].sort());
+  // A folder that exists, a folder that git ignores, and results of another run are refused before a write.
+  const refused = (out: string, target: string) => refusal(() => keepRun(run, out, target));
+  assert.equal((await refused(".c64-re-tools/local/runs/rooms", "runs/rooms")).code, "conflict");
+  assert.equal((await refused(".c64-re-tools/local/runs/rooms", ".c64-re-tools/local/kept")).code, "invalid-input");
+  assert.equal((await refused(".c64-re-tools/local/runs/other", "runs/other")).code, "invalid-input");
+  assert.equal((await refused(".c64-re-tools/local/runs/none", "runs/none")).code, "not-found");
+  assert.equal(existsSync(join(project, "runs/other")) || existsSync(join(project, "runs/none")), false);
+});
+
+test("test and run go past a start screen that the symbols show: the program runs to the wait, then the pc goes to the code after it", async () => {
+  const calls: unknown[] = [];
+  const client = (reached: boolean) => ({
+    runUntil: async (params: unknown) => (calls.push(["runUntil", params]), { reached, pc: 0x0812 }),
+    registersSet: async (space: string, values: unknown) => (calls.push(["registersSet", space, values]), {}),
+  }) as unknown as Parameters<typeof passStartScreen>[0];
+  const symbols = new Map([["loader_start_screen_wait", 0x0900], ["loader_start_screen_continue", 0x0930]]);
+  assert.equal(await passStartScreen(client(true), symbols), "skipped");
+  assert.deepEqual(calls, [["runUntil", { target: { kind: "address", address: 0x0900, space: "c64" }, timeoutFrames: 3000 }], ["registersSet", "c64", { pc: 0x0930 }]]);
+  calls.length = 0;
+  assert.equal(await passStartScreen(client(true), new Map()), "none");
+  assert.equal(typeof (await passStartScreen(client(false), symbols)), "object");
+  assert.deepEqual(calls.map((call) => (call as unknown[])[0]), ["runUntil"]);
 });

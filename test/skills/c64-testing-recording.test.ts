@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { replay } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
@@ -155,6 +155,51 @@ test("a record into the folder of an earlier recording names each file that the 
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const evidence = (readEnvelope(run.stdout, run.status).json.evidence as Array<{ file: string; state: string }>).map((change) => [change.file, change.state]);
   assert.deepEqual(evidence, [["tests/recordings/cited/coverage.bin", "changed"], ["tests/recordings/cited/recording.json", "changed"]]);
+});
+
+test("show gives the input sites of a recording with their reads and value changes, and the counts of its coverage map", () => {
+  const folder = "tests/recordings/shown";
+  mkdirSync(join(project, folder), { recursive: true });
+  const sites = [
+    { site: "$c123", addr: "$dc00", reads: 100, rom: false },
+    { site: "$0437", addr: "$d41b", reads: 3, rom: false },
+    { site: "$ea87", addr: "$dc01", reads: 50, rom: true },
+  ];
+  const runUntil = { runUntil: { target: { kind: "address", address: "$c015" }, timeoutFrames: 5 } };
+  const compare = { checkpoint: "$c015", state: [{ address: "$c100", size: 1 }] };
+  writeFileSync(
+    join(project, folder, "recording.json"),
+    JSON.stringify({ format: 1, name: "shown", program: "game.prg", sha256: "0".repeat(64), symbols: "none", load: false, compare, inputs: ["$dc00", "$dc01", "$d41b"], events: [{ step: 2, action: runUntil, key: { pc: "$c015", count: 1 } }], sites, ticks: 100 * 19_656, hash: "0123abcd" }),
+  );
+  // The first line of a site gives its first value; each later line is a change.
+  writeFileSync(join(project, folder, "reads.txt"), ["c123 dc00 0 ff", "c123 dc00 40 fb", "c123 dc00 60 ff", "0437 d41b 0 12", "0437 d41b 1 34", "ea87 dc01 0 ff", "end c123 dc00 100", "end 0437 d41b 3", "end ea87 dc01 50", ""].join("\n"));
+  const map = new Uint8Array(0x10000);
+  map[0x0801] = 0x04 | 0x01;
+  map[0x0802] = 0x04;
+  map[0xc000] = 0x02 | 0x01;
+  map[0xe000] = 0x10;
+  writeFileSync(join(project, folder, "coverage.bin"), map);
+  assert.deepEqual(showRecording(folder, 2), {
+    recording: folder,
+    name: "shown",
+    program: "game.prg",
+    symbols: "none",
+    load: false,
+    ...compare,
+    inputs: ["$dc00", "$dc01", "$d41b"],
+    frames: 100,
+    events: 1,
+    inputSites: {
+      count: 3,
+      listed: [
+        { site: "$0437", address: "$d41b", reads: 3, changes: 1 },
+        { site: "$c123", address: "$dc00", reads: 100, changes: 2 },
+      ],
+      rest: "a larger --max-listed",
+    },
+    coverage: { executed: 2, read: 2, written: 1 },
+    evidence: `test:${folder}/recording.json`,
+  });
 });
 
 test("a state item of the command line is a name or an address with an optional size", () => {

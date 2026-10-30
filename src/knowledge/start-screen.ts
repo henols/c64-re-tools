@@ -4,13 +4,28 @@
 // stage needs no address from the user.
 
 import { Refusal } from "../errors.ts";
-import type { StartScreenMode } from "./schema.ts";
+import { LEFTOVERS_SWITCH, START_SCREEN_SWITCH, type StartScreenMode } from "./schema.ts";
 
 /** The labels of the start screen in a generated loader: its wait for a key or a fire button, and the code after the wait. */
 export const START_SCREEN_WAIT = "loader_start_screen_wait";
 export const START_SCREEN_CONTINUE = "loader_start_screen_continue";
 /** The label of the loader's jump to the entry, in ACME's symbol list. */
 export const LOADER_JUMP = "c64_source_loader_jump";
+
+/**
+ * The wait and the code after the wait of the start screen that a build shows,
+ * from the symbols of the build; undefined when the build shows none. A build
+ * with START_SCREEN = 0 or LEFTOVERS = 1 has both labels but skips the screen
+ * (the start screen code of the generated source). A symbol file without the
+ * constants is a build with the default values: the screen is on.
+ */
+export function startScreenLabels(symbols: ReadonlyMap<string, number>): { wait: number; continue: number } | undefined {
+  const wait = symbols.get(START_SCREEN_WAIT);
+  const resume = symbols.get(START_SCREEN_CONTINUE);
+  if (wait === undefined || resume === undefined) return undefined;
+  if ((symbols.get(START_SCREEN_SWITCH) ?? 1) === 0 || (symbols.get(LEFTOVERS_SWITCH) ?? 0) !== 0) return undefined;
+  return { wait, continue: resume };
+}
 
 /** The fields of a start screen that the capture of a stage gives. */
 export interface StageScreen {
