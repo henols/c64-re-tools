@@ -1,6 +1,6 @@
 ---
 name: c64-knowledge
-description: Reads and changes the durable knowledge of a C64 project in .c64-re-tools/knowledge/. The knowledge holds the program and the coverage of the runs. It holds the names, regions, comments and references, and the releases, switches, patches and macros of the source. It keeps the history of each change. Use it to find the knowledge at an address or a name. Use it to record a name, a region, a comment or a reference after you interpret the evidence. Use it to put a program or the coverage of runs into the project. Use it to record the releases, switches, patches and macros of the generated source. Use it to read the history, to revert to an earlier revision, or to decide the conflicts of a git merge. It does not run the program, analyze the machine code or generate the source.
+description: Reads and changes the durable knowledge of a C64 project in .c64-re-tools/knowledge/. The knowledge holds the program and the coverage of the runs. It holds the names, regions, comments and references, and the releases, switches, patches and macros of the source. It keeps the history of each change. Use it to find the knowledge at an address or a name. Use it to record a name, a region, a comment or a reference after you interpret the evidence. Use it to put a program or the coverage of runs into the project. Use it to record the releases, switches, patches and macros of the generated source. Use it to read the history, to revert to an earlier revision, or to decide the conflicts of a git merge. Use it to start a check of the comments by another agent, to record the verdicts of the check and to get its result. It does not run the program, analyze the machine code or generate the source.
 ---
 
 # C64 knowledge
@@ -32,7 +32,10 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | List only the facts of the user and the LLM | `symbols --origin semantic` |
 | List the regions, comments or references in a range | `regions --range '$2000-$2fff'` |
 | Show the code of a range with names, comments, access and references | `listing '$0400-$04ff'` |
-| Select comments at random for a check by another agent | `sample --out runs/comment-check-1/sample.json --seed 1` |
+| Start a check of 30 comments, selected at random | `sample` |
+| Get the comments and the verdicts of a check | `checks 4711` |
+| Record the verdict of one comment of a check | `verdict 4711 '$2100' wrong --class callers --why 'JSR at $1f00 calls it too' --text 'Moves the player.'` |
+| List the checks of the comments, with their results | `checks` |
 | Write all knowledge to one file | `export --out .c64-re-tools/local/knowledge.json` |
 | Find what the knowledge holds of the program | `program` |
 | Put a captured program into the knowledge | `image .c64-re-tools/local/capture/image.json` |
@@ -104,7 +107,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 | Flag | Command | Effect |
 |---|---|---|
-| `--space <space>` | All commands | The space of the command: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. The default is `c64`. Without `--space`, `revert` reverts all spaces. |
+| `--space <space>` | All commands except `verdict` and `checks` | The space of the command: `c64`, `drive8`, `loading`, or `bank0` to `bank255`. The default is `c64`. Without `--space`, `revert` reverts all spaces. |
 | `--by <user\|llm>` | All commands in "Change the knowledge" | Who decided the change. The default is `llm`. Give `user` only when the user decided the change. |
 | `--reason <text>` | All commands in "Change the knowledge" | Why you make the change. The revision keeps it, and `history` shows it. |
 | `--evidence <kind:ref>` | All commands in "Change the knowledge" | One thing that the change rests on: `coverage:<map>`, `test:<file>`, `file:<file>` or `note:<text>`. You can give it more than one time. |
@@ -118,8 +121,12 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--origin <origin>` | `sample` | Only the comments of these origins. The default is `llm`. |
 | `--count <n>` | `sample` | The number of comments in the sample. The default is 30. |
 | `--seed <n>` | `sample` | A whole number from 0 to 999999 that selects the sample. Without it, the script selects one. |
-| `--out <file>` | `sample` | Also write the body to this JSON file. |
-| `--max-listed <n>` | `search`, `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `switches`, `releases`, `macros`, `uses`, `spaces`, `history`, `revisions`, `revision`, `listing`, `join` | The most items in each list of the body. The default is 50. The counts are always complete. |
+| `--placement <line\|side>` | `verdict` | The placement of the comment. Give it when the sample has a line and a side comment at the address. |
+| `--class <class>` | `verdict` | With `wrong`: the class of the error: `callers`, `bits`, `registers`, `bounds`, `units`, `paths`, `tables`, `hardware`, `place` or `scope`. |
+| `--why <text>` | `verdict` | With `wrong`: the evidence, with the addresses and the instructions. With `unsure`: the run that can show the claim. |
+| `--text <text>` | `verdict` | With `wrong`: the correct comment. |
+| `--name <name>` | `verdict` | With `wrong`: the correct name at the address. |
+| `--max-listed <n>` | `search`, `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `switches`, `releases`, `macros`, `uses`, `spaces`, `history`, `revisions`, `revision`, `listing`, `join`, `checks` | The most items in each list of the body. The default is 50. The counts are always complete. |
 | `--kind <kind>` | `symbols`, `rename` | The symbol kind: `label`, `routine`, `variable`, `data` or `vector`. A read gives all kinds by default. A new symbol without `--kind` is a `label`. A `rename` without `--kind` keeps the kind of the symbol. |
 | `--kind <kind>` | `references` | Only references of this kind: `call`, `jump`, `read`, `write`, `reference` or `pointer`. |
 | `--kind <kind>` | `switch` | Necessary. The switch kind: `protection`, `trainer`, `cheat`, `crack`, `fix` or `change`. |
@@ -197,13 +204,6 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 ### `comments`
 
 - `body.comments` lists the comments, each with `address`, `placement` and `text`.
-
-### `sample`
-
-- `body` holds `seed`, `revision`, `population` and `comments`. `population` is the number of comments that the script selected from.
-- `comments` lists each comment of the sample with `address`, `placement` and `text`. An item has `name` when the address has a symbol.
-- The same seed selects the same places again, also after you change their text. Another seed selects another sample.
-- Keep the `seed` of the body. Give it to a check again after the corrections.
 
 ### `references`
 
@@ -626,6 +626,32 @@ When more agents name the program at the same time, give each agent one range of
 - A name from a batch stays when another batch removes the symbol at that address.
 - When one name or one module file is at two addresses, `join` writes nothing and gives the error `conflict`. The `error` names the addresses and the batches. Correct the batches. Then do `join` again.
 - Without `--apply`, the `hint` tells you to examine `choices` and `writes`. `nextAction` is the same `join` with `--apply`. Run it when the choices agree with your task.
+
+---
+
+## Check the comments
+
+A check measures how many comments are wrong. An agent that did not write the comments gives a verdict for each comment of a sample: `correct`, `wrong` or `unsure`. A check writes no knowledge.
+
+### `sample`
+
+- Starts a check. `body` holds `seed`, `revision`, `population` and `sampled`. `population` is the number of comments that the script selected from. `sampled` is the number of comments of the check.
+- Keep the `seed`. It identifies the check.
+- If the check of the seed has verdicts, the script refuses. Give another seed.
+
+### `verdict <seed> <address> <verdict>`
+
+- Records the verdict of one comment of the check. A new verdict of a comment replaces its earlier verdict.
+- A `wrong` verdict needs `--class`, `--why`, and `--text` or `--name`. An `unsure` verdict needs `--why`. A `correct` verdict takes no `--class`, `--text` or `--name`.
+- The script refuses an address that is not in the sample of the check.
+- `body` holds `seed`, `verdict`, `checked` and `sampled`. `checked` is the number of comments that have a verdict.
+
+### `checks [<seed>]`
+
+- Without a seed, `body.checks` lists each check, newest first. Each item has `seed`, `createdAt`, `revision`, `sampled`, `checked`, `correct`, `wrong` and `unsure`.
+- With a seed, `body` holds the same fields for that check, and `files` and `items`.
+- `items` lists each comment of the sample with `address`, `placement` and `text`, and `name` when the address has a symbol. A comment with a verdict also has `verdict` and `why`. A `wrong` comment also has `class` and `correction`, with the correct `text` or `name`.
+- `files.verdicts` is the file of the verdicts. Give it as `--evidence file:<file>` of each correction.
 
 ---
 

@@ -225,8 +225,12 @@ test("the Flags table of a SKILL.md gives each flag of each command, and only fl
       assert.ok(option !== undefined, `${skill}: a Flags row without a flag: ${flagCell}`);
       let names: string[];
       const group = /^All commands in "([^"]+)"$/.exec(commandCell ?? "")?.[1];
+      const except = /^All commands except (.+)$/.exec(commandCell ?? "")?.[1];
       if (commandCell === "All commands") names = own.map((command) => command.name);
-      else if (group !== undefined) {
+      else if (except !== undefined) {
+        const left = [...except.matchAll(/`([a-z][a-z0-9-]*)`/g)].map((match) => match[1]!);
+        names = own.map((command) => command.name).filter((name) => !left.includes(name));
+      } else if (group !== undefined) {
         names = sections.filter((item) => item.group === group).map((item) => item.command);
         assert.ok(names.length > 0, `${skill}: no command sections under ## ${group}`);
       } else names = [...(commandCell ?? "").matchAll(/`([a-z][a-z0-9-]*)`/g)].map((match) => match[1]!);

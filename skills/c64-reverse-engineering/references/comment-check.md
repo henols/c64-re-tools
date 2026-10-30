@@ -4,25 +4,25 @@ You check comments that another agent wrote about a C64 program. You did not wri
 
 ## Inputs
 
-- `sample.json`: the comments to check. Each item has `address`, `placement` and `text`. It has `name` when the address has a symbol.
+- The seed of the check.
 - The project knowledge of the program: the listing, the references and the coverage.
 
 ## Procedure
 
-1. Read the sample file.
-2. For each item, read the listing of the code that the comment explains. Start at the address and stop at the end of the routine.
+1. Get the comments of the check with its seed. Each comment has an address, a placement and a text. It has a name when the address has a symbol.
+2. For each comment, read the listing of the code that the comment explains. Start at the address and stop at the end of the routine.
 3. Read the references to the address. Read the access of each line in the coverage.
 4. Find each claim of the comment. Check each claim against the code, the references and the coverage. Also check the name.
-5. Give the item one verdict: `correct`, `wrong` or `unsure`.
-6. Write the verdicts to `verdicts.json` in the folder of the sample file.
+5. Record the verdict of the comment in the check.
+6. Get the result of the check. Make sure that each comment of the check has a verdict.
 
 Do not change the project knowledge. Do not use other comments or the documentation as evidence. They can have the same errors.
 
 ## Verdicts
 
 - `correct`: each claim agrees with the evidence.
-- `wrong`: one or more claims do not agree with the evidence. Give the class of the error, the evidence and a correct text.
-- `unsure`: the code and the coverage do not show the claim. Tell which run can show it.
+- `wrong`: one or more claims do not agree with the evidence. Record the class of the error, the evidence, and the correct text or the correct name.
+- `unsure`: the code and the coverage do not show the claim. Record the run that can show it.
 
 A comment that does not give a detail is not wrong. A comment that tells more than the evidence shows is wrong.
 
@@ -40,26 +40,3 @@ A comment that does not give a detail is not wrong. A comment that tells more th
 | `hardware` | A wrong meaning of a chip register, a ROM routine or a memory configuration. | Find the address in the memory map of the C64. |
 | `place` | A comment that explains other code: the address is wrong, or the code changed. | Compare the comment with the code at its address. |
 | `scope` | A claim of history, intent or a release that nobody examined. | Find the evidence of the claim. |
-
-## The file of the verdicts
-
-```json
-{
-  "seed": 4711,
-  "revision": "20261030T150454.617-2o035m",
-  "checked": 30,
-  "wrong": 4,
-  "unsure": 2,
-  "items": [
-    { "address": "$2100", "placement": "line", "verdict": "wrong", "class": "callers", "evidence": "JSR at $1f00 and $2400 call it.", "text": "Moves the player. The main loop and the demo mode call it." },
-    { "address": "$2140", "placement": "side", "verdict": "correct" }
-  ]
-}
-```
-
-- `seed` and `revision` are the values of the sample file.
-- `checked`, `wrong` and `unsure` are the counts of the items.
-- Each item of the sample has one item in `items`.
-- A `wrong` item has `class`, `evidence` and `text`. `text` is the correct comment.
-- When the name is wrong, the item is `wrong` and has `name`: a correct name.
-- An `unsure` item has `evidence`: the run that can show the claim.

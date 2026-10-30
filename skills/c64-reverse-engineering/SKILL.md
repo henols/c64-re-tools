@@ -119,9 +119,9 @@ After stage 7, save each routine that other programs can have to the routine lib
 
 After the last pass of stages 7 to 9, check the comments:
 
-1. Select 30 comments of the LLM at random from the project knowledge. Write the sample to `runs/comment-check-<seed>/sample.json`.
-2. Give the check to an agent that did not write the comments, for example a new subagent. Give it the path of the sample file and the instructions in `<skill>/references/comment-check.md`.
-3. Read `verdicts.json` in the folder of the sample. Correct each `wrong` comment and name in the project knowledge. Give the verdicts file as evidence of each correction.
+1. Start a check of 30 comments of the LLM in the project knowledge. Keep the seed of the check.
+2. Give the check to an agent that did not write the comments, for example a new subagent. Give it the seed and the instructions in `<skill>/references/comment-check.md`.
+3. Get the result of the check. Correct each `wrong` comment and name in the project knowledge. Give the file of the verdicts as evidence of each correction.
 4. Generate the source again.
 
 ### Deliverables of a full rebuild

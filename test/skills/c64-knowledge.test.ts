@@ -12,6 +12,7 @@ import { after, test } from "node:test";
 import { COVERAGE } from "../../src/c64.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
 import { listing, type ListingSource } from "../../skills/c64-knowledge/scripts/lib/listing.ts";
+import { checkResult, pickSample, withVerdict } from "../../skills/c64-knowledge/scripts/lib/check.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
 const projects: string[] = [];
@@ -468,24 +469,51 @@ test("listing shows a comment at an operand byte (knowledge of an older version)
   );
 });
 
-test("sample takes the same places for the same seed after a fix of their texts, from the comments of the LLM", () => {
+test("pickSample takes the same places for the same seed, also after their texts change", () => {
+  const rows = [0x2000, 0x2010, 0x2020, 0x2030, 0x2040, 0x2050].map((address) => ({ space: "c64", address, placement: "line", text: `at ${address}` }));
+  const first = pickSample(rows, 1, 3).map((row) => row.address);
+  assert.equal(first.length, 3);
+  assert.deepEqual(first, [...first].sort((a, b) => a - b), "in address order");
+  assert.deepEqual(pickSample(rows.map((row) => ({ ...row, text: "changed" })), 1, 3).map((row) => row.address), first);
+  assert.deepEqual(pickSample([...rows, { space: "c64", address: 0x2060, placement: "side", text: "new" }], 1, 7).filter((row) => first.includes(row.address)).length, 3);
+  assert.notDeepEqual(pickSample(rows, 2, 3).map((row) => row.address), first, "another seed takes other places");
+});
+
+test("withVerdict refuses a comment outside the sample and a verdict without the fields that it needs, and checkResult counts the verdicts", () => {
+  const comment = (address: string, placement: string) => ({ address, placement, text: "t" });
+  const sample = { seed: 3, createdAt: "2026-10-30T16:00:00.000+01:00", revision: "r", population: 9, comments: [comment("$2000", "line"), comment("$2000", "side"), comment("$2100", "line")] };
+  const refused = (request: Parameters<typeof withVerdict>[2], pattern: RegExp) => assert.throws(() => withVerdict(sample, undefined, request), pattern);
+  refused({ address: "$2200", verdict: "correct" }, /has no comment at \$2200/);
+  refused({ address: "$2000", verdict: "correct" }, /Give --placement line or --placement side/);
+  refused({ address: "$2100", verdict: "correct", class: "bits" }, /takes no --class/);
+  refused({ address: "$2100", verdict: "wrong", why: "x", text: "y" }, /needs --class/);
+  refused({ address: "$2100", verdict: "wrong", class: "bits", text: "y" }, /needs --why/);
+  refused({ address: "$2100", verdict: "wrong", class: "bits", why: "x" }, /needs --text .*--name/);
+  refused({ address: "$2100", verdict: "wrong", class: "bits", why: "x", name: "2bad" }, /is not a label/);
+  const one = withVerdict(sample, undefined, { address: "$2100", verdict: "unsure", why: "a run of room 2" });
+  const two = withVerdict(sample, one, { address: "$2000", placement: "side", verdict: "wrong", class: "bits", why: "AND #$7f", text: "Clears bit 7." });
+  const again = withVerdict(sample, two, { address: "$2100", verdict: "correct" });
+  assert.deepEqual(again.items.map((item) => [item.address, item.placement, item.verdict]), [["$2000", "side", "wrong"], ["$2100", "line", "correct"]], "a new verdict replaces the earlier one, in the order of the sample");
+  const result = checkResult(sample, again);
+  assert.deepEqual([result.sampled, result.checked, result.correct, result.wrong, result.unsure], [3, 2, 1, 1, 0]);
+  assert.equal(result.items[0]!.verdict, undefined, "an open item has no verdict");
+  assert.deepEqual([result.items[1]!.text, result.items[1]!.correction], ["t", { text: "Clears bit 7." }], "the correction does not hide the comment");
+});
+
+test("a comment check: sample starts it, verdict records a judgement, checks gives the items, the counts and the files", () => {
   const root = project();
   const writes = [0x2000, 0x2010, 0x2020, 0x2030, 0x2040, 0x2050].map((address) => ({ op: "comment", address: `$${address.toString(16)}`, placement: "line", text: `routine at ${address}` }));
   writeFileSync(join(root, "comments.json"), JSON.stringify([{ op: "rename", address: "$2010", name: "move_player", kind: "routine" }, ...writes]));
   assert.equal(knowledge(root, "apply", "comments.json").status, 0);
-  knowledge(root, "comment", "$2060", "side", "the user's own", "--by", "user");
-  const first = knowledge(root, "sample", "--count", "3", "--seed", "1").json as { seed: number; population: number; comments: Array<{ address: string; text: string; name?: string }> };
-  assert.equal(first.seed, 1);
-  assert.equal(first.population, 6, "the default origin is llm");
-  assert.equal(first.comments.length, 3);
-  const fixed = first.comments[0]!;
-  knowledge(root, "comment", fixed.address, "line", "the fixed text");
-  const again = knowledge(root, "sample", "--count", "3", "--seed", "1", "--out", "runs/check/sample.json").json as typeof first & { out: string };
-  assert.deepEqual(again.comments.map((item) => item.address), first.comments.map((item) => item.address));
-  assert.equal(again.comments[0]!.text, "the fixed text");
-  assert.deepEqual(again.comments.map((item) => [item.address, item.name]), [["$2000", undefined], ["$2010", "move_player"], ["$2020", undefined]]);
-  const { out: _out, bytes: _bytes, sha256: _sha256, ...written } = again as typeof again & { bytes: number; sha256: string };
-  assert.deepEqual(JSON.parse(readFileSync(join(root, "runs/check/sample.json"), "utf8")), written);
+  const started = knowledge(root, "sample", "--count", "3", "--seed", "1").json;
+  assert.deepEqual([started.seed, started.population, started.sampled], [1, 6, 3]);
+  const items = (knowledge(root, "checks", "1").json.items as { listed: Array<{ address: string; name?: string }> }).listed;
+  assert.deepEqual(items.map((item) => [item.address, item.name]), [["$2000", undefined], ["$2010", "move_player"], ["$2020", undefined]]);
+  assert.equal(knowledge(root, "verdict", "1", "move_player", "wrong", "--class", "callers", "--why", "JSR at $3000 calls it too", "--name", "move_actor").status, 0);
+  const result = knowledge(root, "checks").json.checks as { listed: Array<Record<string, unknown>> };
+  assert.deepEqual([result.listed[0]!.seed, result.listed[0]!.checked, result.listed[0]!.wrong], [1, 1, 1]);
+  assert.deepEqual(knowledge(root, "checks", "1").json.files, { sample: "runs/comment-check-1/sample.json", verdicts: "runs/comment-check-1/verdicts.json" });
+  assert.equal(knowledge(root, "sample", "--seed", "1").status, 2, "a seed whose check has verdicts is refused");
 });
 
 test("a batch write with an unknown field names every field that the write takes, space too", () => {

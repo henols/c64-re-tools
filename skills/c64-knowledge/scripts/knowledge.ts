@@ -3,7 +3,7 @@
 // Each command prints one JSON result.
 
 import { createHash, randomInt } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
@@ -99,6 +99,8 @@ import {
 import { platformNames } from "#src/platform.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
+import { isoCet } from "#src/time.ts";
+import { CHECK_CLASSES, CHECK_VERDICTS, checkFolder, checkResult, pickSample, seedOfFolder, withVerdict, type CheckClass, type Sample, type Verdicts } from "./lib/check.ts";
 import { listing, listingText, type ListingSource } from "./lib/listing.ts";
 
 function oneOf<T extends string>(values: readonly T[], value: string | undefined, what: string): T {
@@ -463,8 +465,27 @@ const originsOf = (call: Call) => {
   return value === undefined ? undefined : originFilter(value);
 };
 
-/** The order of a comment in the samples of a seed: a hash of the seed and the place, so a changed text or another comment does not move it. */
-const sampleKey = (seed: number, row: CommentRow) => createHash("sha256").update(`${seed}:${row.space}:${row.address}:${row.placement}`).digest("hex");
+/** A file of the check of a seed, or undefined when the project has none. */
+function checkFile<T>(seed: number, file: "sample.json" | "verdicts.json"): T | undefined {
+  const path = `${checkFolder(seed)}/${file}`;
+  if (!existsSync(resolveProjectPath(path))) return undefined;
+  try {
+    return JSON.parse(readProjectFile(path).bytes.toString("utf8")) as T;
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Refusal("invalid-input", `${path} is not JSON. Start a check with another seed.`);
+    throw error;
+  }
+}
+
+/** The sample of the check of a seed; refuses a seed without a check. */
+function sampleOf(seed: number): Sample {
+  const sample = checkFile<Sample>(seed, "sample.json");
+  if (sample === undefined) throw new Refusal("not-found", `The project has no check of seed ${seed}. Get the seeds of the checks with checks, or start a check with sample --seed ${seed}.`);
+  return sample;
+}
+
+const SEED: SubjectSpec = { name: "<seed>", help: "the seed of a check" };
+const seedOf = (call: Call) => call.parseCount(call.subject(0), "<seed>", 0, 999_999);
 
 /** A read command: it opens the knowledge for reading, and its answer shows the conflicts that a git merge left. */
 function readCommand(spec: Omit<CommandSpec, "run">, answer: (db: DatabaseSync | undefined, call: Call) => Record<string, unknown>): CommandSpec {
@@ -575,32 +596,26 @@ const READ_COMMANDS: CommandSpec[] = [
   readCommand(
     {
       name: "sample",
-      summary: "A random sample of the comments, for a check by an agent that did not write them. The same seed gives the same places.",
+      summary: "Selects comments at random for a check by an agent that did not write them, and starts the check of the seed.",
       options: {
         count: { kind: "count", value: "<n>", min: 1, max: 500, default: 30, help: "the comments in the sample (default 30)" },
         seed: { kind: "count", value: "<n>", min: 0, max: 999_999, help: "the seed of the sample. Without it, the script selects one" },
         range: OPTIONS.range,
         origin: { ...OPTIONS.origin, help: "the origins of the comments: llm (the default), user, semantic, or a comma list" },
-        out: { ...OPTIONS.out, output: "file", value: "<file>", help: "also write the sample as JSON to this file" },
       },
-      notes: "The sample has each comment of the sample with its address, placement, text and the name at the address. The same seed gives the same places again after a fix of their texts.",
+      notes: "Record the verdict of each comment with verdict. Get the comments and the result with checks <seed>. A seed whose check has verdicts is refused.",
     },
     (db, call) => {
       const seed = call.count("seed") ?? randomInt(1_000_000);
+      if (checkFile(seed, "verdicts.json") !== undefined) throw new Refusal("conflict", `The check of seed ${seed} has verdicts. Give another seed.`);
       const rows = listComments(db, rangeOf(call), originFilter(call.string("origin") ?? "llm"), call.space);
-      const picked = rows
-        .map((row) => ({ row, key: sampleKey(seed, row) }))
-        .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
-        .slice(0, call.count("count")!)
-        .map((item) => item.row)
-        .sort((a, b) => a.address - b.address || a.placement.localeCompare(b.placement));
-      const comments = picked.map((row) => {
+      const comments = pickSample(rows, seed, call.count("count")!).map((row) => {
         const name = symbolAt(db, row.address, call.space)?.name;
         return { ...comment(row), ...(name === undefined ? {} : { name }) };
       });
-      const sample = { seed, revision: currentRevision(db), ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }), population: rows.length, comments };
-      const out = call.string("out");
-      return out === undefined ? sample : { ...sample, ...writeReported(out, `${JSON.stringify(sample, null, 2)}\n`, { what: "--out" }) };
+      const sample: Sample = { seed, createdAt: isoCet(), revision: currentRevision(db), ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }), population: rows.length, comments };
+      writeReported(`${checkFolder(seed)}/sample.json`, `${JSON.stringify(sample, null, 2)}\n`, { what: "sample" });
+      return { seed, revision: sample.revision, population: rows.length, sampled: comments.length };
     },
   ),
   readCommand({ name: "references", summary: "The references: calls, jumps, reads, writes and pointers.", options: { ...FILTER, kind: REFERENCE_KIND, ...LIST } }, (db, call) => ({
@@ -1171,6 +1186,62 @@ function applied(db: DatabaseSync, context: WriteContext, operations: BatchOpera
   return { revision: result.revision, writes: result.steps.length, replaced };
 }
 
+/** verdict: records the verdict of one comment of a check. It writes no knowledge. */
+const VERDICT: CommandSpec = {
+  name: "verdict",
+  summary: "Records the verdict of one comment of the sample of a check: correct, wrong or unsure.",
+  subjects: [SEED, ADDRESS, { name: "<verdict>", help: `one of ${CHECK_VERDICTS.join(", ")}` }],
+  options: {
+    placement: { kind: "choice", value: "<line|side>", choices: COMMENT_PLACEMENTS, help: "the placement of the comment, when the sample has a line and a side comment at the address" },
+    class: { kind: "choice", value: "<class>", choices: CHECK_CLASSES, help: `with wrong: the class of the error, one of ${CHECK_CLASSES.join(", ")}` },
+    why: { kind: "text", value: "<text>", help: "with wrong: the evidence, with the addresses and the instructions. With unsure: the run that can show the claim" },
+    text: { kind: "text", value: "<text>", help: "with wrong: the correct comment" },
+    name: { kind: "text", value: "<name>", help: "with wrong: the correct name at the address" },
+  },
+  notes: "A wrong verdict needs --class, --why, and --text or --name. An unsure verdict needs --why. A new verdict of a comment replaces its earlier verdict.",
+  run: (call) => {
+    const seed = seedOf(call);
+    const sample = sampleOf(seed);
+    const request = {
+      address: formatC64Address(call.parseAddress(call.subject(1), "<address>")),
+      verdict: oneOf(CHECK_VERDICTS, call.subject(2), "<verdict>"),
+      ...Object.fromEntries((["placement", "class", "why", "text", "name"] as const).flatMap((option) => (call.string(option) === undefined ? [] : [[option, call.string(option)]]))),
+    } as Parameters<typeof withVerdict>[2] & { class?: CheckClass };
+    const verdicts = withVerdict(sample, checkFile<Verdicts>(seed, "verdicts.json"), request);
+    writeReported(`${checkFolder(seed)}/verdicts.json`, `${JSON.stringify(verdicts, null, 2)}\n`, { what: "verdict" });
+    const written = verdicts.items.find((item) => item.address === request.address && (request.placement === undefined || item.placement === request.placement))!;
+    return { seed, verdict: written, checked: verdicts.items.length, sampled: sample.comments.length };
+  },
+};
+
+/** checks: the comment checks of the project, or one check with its items. */
+const CHECKS: CommandSpec = {
+  name: "checks",
+  summary: "The comment checks of the project, newest first, with their counts. With a seed: that check, with each comment of its sample and its verdict.",
+  subjects: [{ ...SEED, optional: true }],
+  options: LIST,
+  run: (call) => {
+    if (call.subjects.length > 0) {
+      const seed = seedOf(call);
+      const verdicts = checkFile<Verdicts>(seed, "verdicts.json");
+      const { items, ...counts } = checkResult(sampleOf(seed), verdicts);
+      const folder = checkFolder(seed);
+      return { ...counts, files: { sample: `${folder}/sample.json`, ...(verdicts === undefined ? {} : { verdicts: `${folder}/verdicts.json` }) }, items: list(call, items, (item) => item, MORE) };
+    }
+    const runs = resolveProjectPath("runs");
+    const seeds = existsSync(runs) ? readdirSync(runs).flatMap((name) => ((seed) => (seed === undefined ? [] : [seed]))(seedOfFolder(name))) : [];
+    const checks = seeds
+      .flatMap((seed) => {
+        const sample = checkFile<Sample>(seed, "sample.json");
+        if (sample === undefined) return [];
+        const { items: _items, ...counts } = checkResult(sample, checkFile<Verdicts>(seed, "verdicts.json"));
+        return [counts];
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return { checks: list(call, checks, (check) => check, MORE) };
+  },
+};
+
 /** join: the batches of agents that worked in parallel, as one list of writes. With --apply, it writes them as one revision. */
 const JOIN: CommandSpec = {
   name: "join",
@@ -1302,5 +1373,5 @@ await runScript({
   name: "knowledge",
   summary: "Reads and writes the knowledge of the project: names, regions, comments, references, the program and its coverage, and the source knowledge. A read needs no knowledge folder. Every command takes --space: c64 (the default), drive8 for 1541 drive code, loading for a captured stage of the loading, or bank0 to bank255 for cartridge banks. revert without --space reverts all spaces.",
   names: knowledgeNames,
-  commands: [...READ_COMMANDS, ...WRITE_COMMANDS, JOIN],
+  commands: [...READ_COMMANDS, ...WRITE_COMMANDS, JOIN, VERDICT, CHECKS],
 });
