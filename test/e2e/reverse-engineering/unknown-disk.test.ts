@@ -75,7 +75,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   assert.equal((await run("c64-knowledge", "knowledge.ts", "image", "extracted/game.prg")).status, 0);
   const first = await run("c64-static-analysis", "static-analysis.ts", "analyze", "--analyzer", "dxa", "--out-listing", "analysis/game.lst");
   assert.equal(first.status, 0, first.stdout);
-  assert.deepEqual(first.json.regions, [
+  assert.deepEqual((first.json.regions as { listed: unknown[] }).listed, [
     { start: "$0801", end: "$080c", classification: "data" },
     { start: "$080d", end: "$0823", classification: "code" },
   ]);
