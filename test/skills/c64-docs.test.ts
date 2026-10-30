@@ -148,7 +148,13 @@ test("docs.ts generate writes the reference: module pages with anchors and links
   assert.equal(result.status, 0, JSON.stringify(result.json));
   assert.equal(result.json.revision, revision);
   assert.equal(result.json.program, "the knowledge");
-  assert.match(String(result.envelope.hint), /^Write the pages of the documentation\. Then run nextAction/);
+  // main and the two handlers have no comment: the knowledge does not have them yet. The module of the tables holds no code, so it needs no routine.
+  assert.deepEqual(result.json.gaps, {
+    routinesWithoutComment: { count: 3, listed: [{ name: "main", address: "$1000", file: "main_code.asm" }, { name: "handler_a", address: "$1020", file: "main_code.asm" }, { name: "handler_b", address: "$1028", file: "main_code.asm" }] },
+    modulesWithoutRoutines: { count: 0, listed: [] },
+    tablesWithoutName: { count: 0, listed: [] },
+  });
+  assert.match(String(result.envelope.hint), /^gaps lists what the project knowledge does not have yet\. .* Write the pages of the documentation\. Then run nextAction/);
   assert.match(String(result.envelope.nextAction), /^node \/.*\/docs\.ts link README\.md docs --source src --reference docs\/reference --project \//);
   const read = (page: string) => readFileSync(join(root, "docs/reference", page), "utf8");
   const main = read("modules/main_code.md");

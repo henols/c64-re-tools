@@ -94,29 +94,32 @@ Each flag applies only to the commands in the table. On another command, the scr
 
 ### `generate <source-dir>`
 
-Writes the reference pages from the project knowledge, the source map and the program bytes in the project knowledge. Before it writes, it removes the pages of an earlier run in `--out`.
+Writes the reference pages from the project knowledge, the generated source and the program bytes in the project knowledge. Before it writes, it removes the pages of an earlier run in `--out`.
 
 `body` holds:
 
 - `out`: the folder of the reference. `index`: the path of `index.md`. `revision`: the revision of the project knowledge.
 - `pages`, `entries`, `tables`, `images` and `edges`: the counts of the reference.
 - `files`: the pages and images that it wrote, each with `out`, `bytes` and `sha256`.
+- `gaps`: what the project knowledge does not have yet. Each list holds at most `--max-listed` items.
+  - `routinesWithoutComment`: each routine of the module pages without a comment, with `name`, `address` and `file`.
+  - `modulesWithoutRoutines`: each module whose file has code but no routine, with `file`, `start` and `title`.
+  - `tablesWithoutName`: each table of addresses, jumps or words without a name, with `start`, `end` and `type`.
 - `program`: `the knowledge`, or `none` when the project knowledge has no program bytes. Without them, the tables are not decoded, and the graphics page has no images.
 
 `hint` and `nextAction`:
 
 - `hint` tells you to write the pages. `nextAction` is the `link` command for `README.md` and the folder above `--out`. Run it after you write the pages.
+- `gaps` has items: record a comment for each routine, the routines of each module, and a name for each table in the project knowledge. Then generate the source again, and run `generate` again.
 - When `program` is `none`, `hint` tells you to put the program bytes into the project knowledge. Then run `generate` again.
 
-The reference has these pages:
+The reference has these pages. Each page tells how to read its tables and its graphs.
 
 - `index.md`: each file of the source, with its range, its title, the count of routines and the count of names.
-- `modules/<file>.md`: first a table of the routines of the file. Each row has the callers and the first sentence of the comment. Then the data regions with their readers and writers, and a call graph. Then an entry for each routine and each data name. An entry has the comment, the callers and the table that holds the name. For a routine, it also has the calls, the jumps, the reads and the writes. A label that only code of its own file goes to is a row in a table under its routine.
-- `tables.md`: each table of addresses, jumps and words, entry by entry, with its target. An RTS table holds each target minus 1. The page gives the target.
-- `memory-map.md`: each region in address order. Then each variable outside the program, with its comment and the routines that read it and write it. A platform name, for example a chip register, has a routine only where the source line uses that name. `(indexed)` after a routine tells that the line adds X or Y to the address. That access can also go to the addresses after it, which can have no row.
-- `graphics.md`: each `sprite`, `bitmap`, `charset` and `screen` region. The project knowledge has no graphics mode. Thus a sprite, a bitmap or a charset shows in hires and in multicolour. A charset shows 16 characters in each row. A screen shows as text.
-
-In a call graph, a solid arrow is a call, and a thick arrow is a table entry. The graph does not show the jumps. A table entry goes from each routine that reads the table to each target in code. A table of data addresses gives no arrow.
+- `modules/<file>.md`: the routines, the data regions and a call graph of one file. Then an entry for each routine and each data name, with its comment and its references.
+- `tables.md`: each table of addresses, jumps and words, entry by entry, with its target.
+- `memory-map.md`: each region in address order. Then each variable outside the program, with its comment and the routines that read it and write it.
+- `graphics.md`: each `sprite`, `bitmap` and `charset` region as images, and each `screen` region as text.
 
 Errors and their actions:
 
@@ -211,10 +214,10 @@ Errors:
 
 The terms and the rules of scope are in `<skill>/references/style.md`. Before you write a claim about the history or the rebuild, find these facts:
 
-- The label, the file and the SHA-256 of each reference file, and the stage of each capture.
+- Read the releases with their SHA-256 from the project knowledge. They give the label, the file and the SHA-256 of each reference file. Find the stage of each capture.
 - Find out if somebody examined an authenticated original. When nobody examined one, write this fact in the first paragraph of `README.md`.
 - What each compare included, and what it proves.
-- The result of the last check of the comments: get the checks of the comments in the project. Write the number of comments in the check, and the number of `wrong` and `unsure` comments, in the first paragraph of `README.md`. When the project has no check, write this fact there.
+- Read the results of the checks of the comments from the project knowledge. Write the number of comments in the last check, and the number of `wrong` and `unsure` comments, in the first paragraph of `README.md`. When the project has no check, write this fact there.
 
 `link --check` checks the links, the reference pages and the files of the evidence. It does not check if a claim is true. Read each claim against its evidence before you call the documentation complete.
 
@@ -222,9 +225,9 @@ The terms and the rules of scope are in `<skill>/references/style.md`. Before yo
 
 ## Workflow
 
-1. Read the project knowledge. The documentation can only be as good as the knowledge. Each routine needs a name and a comment. Each table needs a region and a name. Each file of the source needs a module with a title. Record what is missing in the project knowledge.
-2. Generate the source from the project knowledge. Make sure that the check of the source gives identical bytes. This also writes the source map.
-3. Run `generate`. Read `index.md` of the reference. A module with no routines, or a routine with no comment, shows what the knowledge does not have yet.
+1. Read the project knowledge. The documentation can only be as good as the knowledge. Each routine needs a name, each table needs a region, and each file of the source needs a module with a title. Record what is missing in the project knowledge.
+2. Generate the source from the project knowledge. Make sure that the check of the source gives identical bytes.
+3. Run `generate`. When `gaps` has items, record what is missing in the project knowledge. Then do steps 2 and 3 again.
 4. Make the plan of the pages. Start from the modules and the call graphs. Find the main loop, the interrupt chain, the dispatch tables, the state machines and the data formats. Each subsystem gets one page in `docs/`. The entry page `README.md` lists the pages. Use the page types in `<skill>/references/page-types.md`.
 5. Collect the facts about the development and the copy protection. Collect them from the reference files, not from a commercial original that nobody examined. These facts are the most interesting parts for a reader, so look for them carefully.
    - Read the leftover spaces and their comments in the project knowledge. If the knowledge has none, find the leftovers of the development in the program.
@@ -270,5 +273,5 @@ Each command prints one JSON envelope on one line on stdout. Notes go to stderr.
 
 ## Reference
 
-- `<skill>/references/page-types.md`: the page types, with the parts of each type and a template. The types are the entry page, the workspace index, the group entry page, the subsystem page and the entity sections. Other types are the data-format page, the development page and the copy protection page. It also has the conventions block.
+- `<skill>/references/page-types.md`: the page types, with the parts of each type and a template. The types are the entry page, the workspace index, the group entry page, the subsystem page and the entity sections. Other types are the data-format page, the development page and the copy protection page.
 - `<skill>/references/style.md`: the rules for the text of the pages. They tell how to explain, and how to write the names and the links. They also give the evidence marks, the diagrams and the images.

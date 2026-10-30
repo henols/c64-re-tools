@@ -319,7 +319,7 @@ test("generated code outside the image joins over gaps of up to two operand byte
   ]);
 });
 
-test("the separate command reads the program with its stages and the coverage from the knowledge and writes all ranges to --out", () => {
+test("the separate command reads the program with its stages and the coverage from the knowledge, and --out gets the fields of the body with all items", () => {
   const memory = new Uint8Array(0x10000);
   memory.fill(0xea, 0x2000, 0x20ff);
   const root = fresh();
@@ -336,15 +336,17 @@ test("the separate command reads the program with its stages and the coverage fr
   assert.equal(result.bytesByAccess.untouched, 256);
   assert.equal(result.ranges.count, 2);
   assert.equal(result.ranges.listed.length, 1);
-  assert.equal(result.ranges.rest, "separate.json");
-  assert.match(run.envelope.hint ?? "", /cut: count gives its full size\. separate\.json holds all items\./);
+  assert.equal(result.ranges.rest, "a larger --max-listed");
+  assert.match(run.envelope.hint ?? "", /cut: count gives its full size\. To get the rest, give a larger --max-listed\./);
   assert.equal(result.outside.generated.count, 3);
   assert.deepEqual(result.outside.generated.listed, [{ start: "$c000", end: "$c000" }], "--max-listed caps the outside lists too");
   assert.deepEqual(result.outside.read, { count: 0, listed: [] });
   assert.deepEqual(result.codeRegions, { total: 0, unreachable: { count: 0, listed: [] } }, "unreachable is a list like the others");
-  const written = JSON.parse(readFileSync(join(root, "separate.json"), "utf8")) as { ranges: unknown[]; outside: { generated: unknown[] } };
-  assert.equal(written.ranges.length, 2);
-  assert.equal(written.outside.generated.length, 3);
+  const written = JSON.parse(readFileSync(join(root, "separate.json"), "utf8")) as Record<string, any>;
+  const { out: _out, bytes: _bytes, sha256: _sha256, ...fields } = result;
+  assert.deepEqual(Object.keys(written), Object.keys(fields));
+  assert.deepEqual([written.ranges.count, written.ranges.listed.length, written.ranges.rest], [2, 2, undefined]);
+  assert.equal(written.outside.generated.listed.length, 3);
 });
 
 test("separate says when the program has no stage log, and a run of releases without differences says why nothing ran", () => {
