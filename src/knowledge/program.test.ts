@@ -8,9 +8,9 @@ import { Refusal } from "../errors.ts";
 import { COVERAGE } from "../c64.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
 import { coverageRuns, listSpaces } from "./read.ts";
-import { addCoverage, analyzedBytes, programCoverage, programImage, setImage, type ImageRequest } from "./program.ts";
+import { addCoverage, analyzedBytes, coverageAccess, memoryRows, programCoverage, programImage, releaseCode, setImage, type ImageRequest } from "./program.ts";
 import { revision as revisionChanges } from "./history.ts";
-import { revert } from "./write.ts";
+import { revert, setRelease } from "./write.ts";
 
 const projects: string[] = [];
 after(() => {
@@ -325,6 +325,53 @@ test("a revision of an image or of coverage lists the memory, entry and coverage
     const two = shown(second.revision!);
     assert.deepEqual([two.added.length, two.closed.length], [3, 3], "the new bytes and entry, and the old ones closed");
     assert.deepEqual(shown(covered.revision!).added, [["coverage", { space: "c64", map: "a.bin", kind: "x", ranges: 1, origin: "llm", revision: covered.revision }]]);
+  } finally {
+    db.close();
+  }
+});
+
+test("the access at an address gives the access of each coverage map and the joined access, where an execute wins", () => {
+  const root = project();
+  const map = (...marks: Array<[number, number]>) => {
+    const bytes = new Uint8Array(0x10000);
+    for (const [address, flags] of marks) bytes[address] = flags;
+    return bytes;
+  };
+  const maps = [
+    { name: "runs/a/coverage.bin", bytes: map([0x1000, COVERAGE.ramRead], [0x2000, COVERAGE.ramWrite]) },
+    { name: "runs/b/coverage.bin", bytes: map([0x1000, COVERAGE.ramExecute], [0x2000, COVERAGE.ramRead], [0xd020, COVERAGE.ioWrite]) },
+    { name: "runs/c/coverage.bin", bytes: map() },
+  ];
+  withWrite((db) => addCoverage(db, llm, { maps }), root);
+  const db = openForRead(root)!;
+  try {
+    const access = coverageAccess(db)!;
+    assert.deepEqual(access(0x1000), {
+      maps: [
+        { map: "runs/a/coverage.bin", access: "r" },
+        { map: "runs/b/coverage.bin", access: "x" },
+        { map: "runs/c/coverage.bin", access: "-" },
+      ],
+      access: "x",
+    });
+    assert.deepEqual([access(0x2000).access, access(0xd020).access, access(0x3000).access], ["rw", "w", "-"]);
+    assert.equal(coverageAccess(db, "drive8"), undefined, "a space without coverage maps has no access");
+  } finally {
+    db.close();
+  }
+});
+
+test("the bytes of a release in a range are patch code as !byte lines; the base release and a range outside the bytes of the release are refused", () => {
+  const root = project();
+  withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x100f }])), root);
+  withWrite((db) => setRelease(db, llm, { label: "BASE", base: true }), root);
+  withWrite((db) => setRelease(db, llm, { label: "V2", rows: memoryRows([{ start: 0x1000, end: 0x100b }], (address) => (address * 3) & 0xff) }), root);
+  const db = openForRead(root)!;
+  try {
+    assert.equal(releaseCode(db, "V2", 0x1000, 0x1009), "!byte $00,$03,$06,$09,$0c,$0f,$12,$15\n!byte $18,$1b");
+    assert.throws(() => releaseCode(db, "BASE", 0x1000, 0x1001), /BASE is the base release: its bytes are the program/);
+    assert.throws(() => releaseCode(db, "V2", 0x100a, 0x100c), /The release V2 has no byte at \$100c, in the range \$100a-\$100c/);
+    assert.throws(() => releaseCode(db, "V3", 0x1000, 0x1001), /There is no release V3/);
   } finally {
     db.close();
   }

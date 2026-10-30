@@ -27,7 +27,7 @@ test("from a clean project: a read, the first write, several changes, the curren
   // A C64 project with its original program and no toolkit state.
   writeFileSync(join(root, "game.prg"), Buffer.from([0x01, 0x08, 0x00]));
 
-  assert.deepEqual(knowledge("at", "$2100"), { address: "$2100", comments: [], referencesFrom: [], referencesTo: [], revision: "0" });
+  assert.deepEqual(knowledge("at", "$2100"), { revision: "0", addresses: [{ address: "$2100", comments: [], referencesFrom: [], referencesTo: [] }] });
   assert.deepEqual(readdirSync(root), ["game.prg"], "a read creates nothing");
 
   knowledge("rename", "$2100", "FUN_2100", "--kind", "routine", "--reason", "entry found by tracing");
@@ -40,13 +40,14 @@ test("from a clean project: a read, the first write, several changes, the curren
   knowledge("reference", "$2100", "$dc00", "read");
   knowledge("rename", "$2800", "player_sprite", "--kind", "data");
 
-  const current = knowledge("at", "$2100") as { symbol: { name: string; origin: string }; region: { start: string; end: string }; comments: unknown[]; referencesFrom: unknown[]; revision: string };
+  const read = knowledge("at", "$2100") as { revision: string; addresses: Array<{ symbol: { name: string; origin: string }; region: { start: string; end: string }; comments: unknown[]; referencesFrom: unknown[] }> };
+  const current = read.addresses[0]!;
   assert.equal(current.symbol.name, "update_player");
   assert.equal(current.symbol.origin, "user");
   assert.deepEqual([current.region.start, current.region.end], ["$2000", "$27ff"], "the sprite split the code region");
   assert.equal(current.comments.length, 1);
   assert.equal(current.referencesFrom.length, 1);
-  assert.equal(current.revision, nthIn(root, 7));
+  assert.equal(read.revision, nthIn(root, 7));
   assert.deepEqual(
     (knowledge("regions") as { regions: { listed: Array<{ start: string; end: string; type: string }> } }).regions.listed.map((region) => `${region.start}-${region.end} ${region.type}`),
     ["$2000-$27ff code", "$2800-$283f sprite", "$2840-$2fff code"],
@@ -65,7 +66,7 @@ test("from a clean project: a read, the first write, several changes, the curren
 
   // A revert restores revision 3 as revision 8, and every revision stays reviewable.
   knowledge("revert", nthIn(root, 3), "--reason", "re-examine the routine");
-  assert.equal((knowledge("at", "$2100") as { symbol: { name: string } }).symbol.name, "FUN_2100");
+  assert.equal((knowledge("at", "$2100") as { addresses: Array<{ symbol: { name: string } }> }).addresses[0]!.symbol.name, "FUN_2100");
   assert.equal((knowledge("revisions") as { revisions: { count: number } }).revisions.count, 8);
   assert.equal((knowledge("revision", nthIn(root, 4)) as { added: { count: number } }).added.count, 1);
 

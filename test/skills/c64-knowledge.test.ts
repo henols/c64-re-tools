@@ -26,6 +26,11 @@ function project(): string {
   return root;
 }
 
+/** The item of one address in a result of at. */
+function atOne(root: string, address: string): Record<string, unknown> {
+  return (knowledge(root, "at", address).json.addresses as Array<Record<string, unknown>>)[0]!;
+}
+
 /** The items of a list in a result: {count, listed, rest?}. */
 function items<T = Record<string, unknown>>(list: unknown): T[] {
   return (list as { listed: T[] }).listed;
@@ -78,7 +83,7 @@ test("a removal shows as a suppression with its reason, in at and in the history
       ],
     },
   });
-  assert.deepEqual(knowledge(root, "at", "$0480").json.suppressions, [{ suppresses: "region", start: "$0480", end: "$04ff", origin: "llm", revision: unclassified }]);
+  assert.deepEqual(atOne(root, "$0480").suppressions, [{ suppresses: "region", start: "$0480", end: "$04ff", origin: "llm", revision: unclassified }]);
   const history = items(knowledge(root, "history", "$0410").json.history);
   assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "reference", from: "$0410", to: "$ef29", kind: "jump", origin: "llm", fromRevision: unreferenced, reason: "the vector is written at run time" }, "the history gives the reason of the revision");
 });
@@ -261,9 +266,9 @@ test("a command takes a start of a revision id that only one revision has, and 0
   assert.match(first, /^\d{8}T\d{6}\.\d{3}-[0-9a-z]{6}$/);
   // The date, the time and part of the random characters.
   assert.equal(knowledge(root, "revert", first.slice(0, 26)).status, 0);
-  assert.equal((knowledge(root, "at", "$2100").json.symbol as { name: string }).name, "main");
+  assert.equal((atOne(root, "$2100").symbol as { name: string }).name, "main");
   const reverted = knowledge(root, "revert", "0").json;
-  assert.equal(knowledge(root, "at", "$2100").json.symbol, undefined);
+  assert.equal(atOne(root, "$2100").symbol, undefined);
   // A revert keeps the revision that it restored.
   assert.equal((knowledge(root, "revision", String(reverted.revision)).json.revision as { restores: string }).restores, "0");
   const help = knowledge(root, "revert", "--help");
@@ -288,7 +293,7 @@ test("release, switch, patch, macro and use write the source knowledge, and swit
   const original = knowledge(root, "release", "FIRESTAR", "--file", "game.prg", "--base", "--comment", "The first release.").json;
   assert.deepEqual(original, {
     revision: original.revision,
-    release: { label: "FIRESTAR", base: true, define: "--define RELEASE_FIRESTAR=1", comment: "The first release.", origin: "llm", revision: original.revision },
+    release: { label: "FIRESTAR", base: true, define: "--define RELEASE_FIRESTAR=1", file: "game.prg", sha256: createHash("sha256").update(readFileSync(join(root, "game.prg"))).digest("hex"), comment: "The first release.", origin: "llm", revision: original.revision },
     bytes: 11,
   });
   // The knowledge keeps the bytes of the release: its file can be a scratch file that git ignores.
@@ -317,7 +322,7 @@ test("release, switch, patch, macro and use write the source knowledge, and swit
     revision: used.revision,
     use: { start: "$8100", end: "$8105", macro: "inc16", args: ["ptr"], text: "+inc16 ptr", origin: "llm", revision: used.revision },
   });
-  assert.equal((knowledge(root, "at", "$8103").json as { macroUse: { text: string } }).macroUse.text, "+inc16 ptr");
+  assert.equal((atOne(root, "$8103") as { macroUse: { text: string } }).macroUse.text, "+inc16 ptr");
 });
 
 test("join shows the batches of parallel agents as one list of writes, and with --apply writes it as one revision", () => {
@@ -467,6 +472,80 @@ test("listing shows a comment at an operand byte (knowledge of an older version)
     listing(source, 0x1bc9, 0x1bcc).map((line) => [line.text, line.comment]),
     [["lda $0104", "the mode $1bca: mid-instruction comment"], ["rts", undefined]],
   );
+});
+
+test("listing with code only gives the instructions of the code regions and no data lines", () => {
+  // $1000 LDA #$01, $1002 RTS, then two bytes of data, then $1006 RTS in a JMP table region.
+  const bytes = new Map([0xa9, 0x01, 0x60, 0x07, 0x08, 0x00, 0x60].map((value, offset) => [0x1000 + offset, value]));
+  const source: ListingSource = {
+    byteAt: (address) => bytes.get(address),
+    nameOf: () => undefined,
+    secondNames: () => [],
+    regions: [{ start: 0x1000, end: 0x1002, type: "code" }, { start: 0x1003, end: 0x1004, type: "bytes" }, { start: 0x1006, end: 0x1006, type: "jumps" }],
+    comments: () => ({ line: [] }),
+    operand: () => undefined,
+    references: () => ({ in: 0, out: 0 }),
+  };
+  assert.deepEqual(listing(source, 0x1000, 0x1006).map((line) => line.text), ["lda #$01", "rts", "!byte $07,$08", "!byte $00", "rts"]);
+  assert.deepEqual(listing(source, 0x1000, 0x1006, { code: true }).map((line) => line.text), ["lda #$01", "rts", "rts"]);
+});
+
+test("at reads many addresses with the access of each coverage map, and coverage takes the map of a recording folder", () => {
+  const root = project();
+  writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x10, 0xa9, 0x01, 0x60]));
+  assert.equal(knowledge(root, "image", "game.prg").status, 0);
+  const folder = join(root, "tests", "recordings", "walk");
+  mkdirSync(folder, { recursive: true });
+  const run = new Uint8Array(0x10000);
+  run[0x1000] = COVERAGE.ramExecute;
+  run[0x1001] = COVERAGE.ramRead;
+  writeFileSync(join(folder, "coverage.bin"), run);
+  writeFileSync(join(folder, "recording.json"), "{}");
+  assert.deepEqual(knowledge(root, "coverage", "tests/recordings/walk").json.imported, ["tests/recordings/walk/coverage.bin"]);
+  const read = knowledge(root, "at", "$1000", "$1001", "$1002").json as { revision: string; addresses: Array<{ address: string; coverage: unknown; access: string }> };
+  assert.equal(typeof read.revision, "string");
+  assert.deepEqual(read.addresses[0]!.coverage, [{ map: "tests/recordings/walk/coverage.bin", access: "x" }]);
+  assert.deepEqual(read.addresses.map((item) => [item.address, item.access]), [["$1000", "x"], ["$1001", "r"], ["$1002", "-"]]);
+  const refused = knowledge(root, "references", "--direction", "in");
+  assert.equal(refused.status, 2);
+  assert.match((refused.json.error as { message: string }).message, /--direction needs --range/);
+});
+
+test("patch takes the bytes of a release with --from-release, and start-screen takes the screen in the program from a capture", () => {
+  const root = project();
+  // The program: $1000-$17ff, with 1000 colour bytes at $1400. The release V2 has other bytes at $1000-$1002.
+  const program = Buffer.alloc(0x800, 0xea);
+  program.fill(0x0e, 0x400, 0x400 + 500);
+  program.fill(0x01, 0x400 + 500, 0x400 + 1000);
+  writeFileSync(join(root, "game.prg"), Buffer.concat([Buffer.from([0x00, 0x10]), program]));
+  const other = Buffer.from(program);
+  other.set([0xa9, 0x00, 0x60]);
+  writeFileSync(join(root, "v2.prg"), Buffer.concat([Buffer.from([0x00, 0x10]), other]));
+  assert.equal(knowledge(root, "image", "game.prg").status, 0);
+  assert.equal(knowledge(root, "release", "BASE", "--file", "game.prg", "--base").status, 0);
+  assert.equal(knowledge(root, "release", "V2", "--file", "v2.prg").status, 0);
+  assert.equal(knowledge(root, "switch", "FIX", "--kind", "fix", "--releases", "V2").status, 0);
+  const patched = knowledge(root, "patch", "$1000-$1002", "FIX", "--from-release", "V2").json as { patch: { code: string } };
+  assert.equal(patched.patch.code, "!byte $a9,$00,$60");
+  assert.equal(knowledge(root, "patch", "$1000-$1002", "FIX", "--from-release", "V2", "--nop").status, 2, "one source of the code");
+
+  // Captures of the program with a text screen at $0400 and the character ROM, each with its colour RAM.
+  const capture = (name: string, colours: string) => {
+    const folder = join(root, ".c64-re-tools", "local", name);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "image.bin"), Buffer.alloc(0x10000));
+    writeFileSync(join(folder, "image.json"), JSON.stringify({ entry: "$1000", segments: [{ start: "$1000", end: "$17ff" }], image: "image.bin" }));
+    const vic = Buffer.alloc(0x2f);
+    [vic[0x11], vic[0x16], vic[0x18], vic[0x20], vic[0x21]] = [0x1b, 0x08, 0x14, 0xf2, 0xf0];
+    const io = { vic: { from: "$d000", bytes: vic.toString("hex") }, cia2: { from: "$dd00", bytes: "033f" }, colour: { from: "$d800", bytes: colours } };
+    const pages = Object.fromEntries(["$0000", "$0100", "$0200", "$0300"].map((page) => [page, "00".repeat(256)]));
+    writeFileSync(join(folder, "entry_state.json"), JSON.stringify({ registers: { pc: "$1000", a: 0, x: 0, y: 0, sp: 0xf6, flags: { i: true } }, cpuPort: { $00: 0x2f, $01: 0x37 }, pages, io, differsFromReset: [] }));
+    return `.c64-re-tools/local/${name}/image.json`;
+  };
+  const refused = knowledge(root, "start-screen", "--capture", capture("other", "f1".repeat(500) + "fe".repeat(500)));
+  assert.match((refused.json.error as { message: string }).message, /has more than one colour, and the program of the knowledge has no 1000 bytes with these colours/);
+  const screen = knowledge(root, "start-screen", "--capture", capture("title", "fe".repeat(500) + "f1".repeat(500)), "--border", "5").json as { startScreen: Record<string, unknown> };
+  assert.deepEqual({ ...screen.startScreen, revision: undefined }, { mode: "text", screen: "$0400", charset: "$1000", colours: "$1400", border: 5, background: 0, origin: "llm", revision: undefined });
 });
 
 test("pickSample takes the same places for the same seed, also after their texts change", () => {

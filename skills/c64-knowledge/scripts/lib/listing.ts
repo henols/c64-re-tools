@@ -110,9 +110,14 @@ function tableValues(region: Region, source: ListingSource): Map<number, { lengt
   return values;
 }
 
-/** The lines of start..end: instructions in code regions, decoded from the region start, tables as their values, and bytes elsewhere. */
-export function listing(source: ListingSource, start: number, end: number): ListingLine[] {
+/**
+ * The lines of start..end: instructions in code regions, decoded from the
+ * region start, tables as their values, and bytes elsewhere. With `code`, only
+ * the instructions of the code regions.
+ */
+export function listing(source: ListingSource, start: number, end: number, options: { code?: boolean } = {}): ListingLine[] {
   const lines: ListingLine[] = [];
+  const data = options.code !== true;
   const line = (address: number, length: number, text: string): ListingLine => {
     const bytes = Array.from({ length }, (_, offset) => source.byteAt(address + offset)!.toString(16).padStart(2, "0")).join(" ");
     const label = source.nameOf(address);
@@ -183,7 +188,7 @@ export function listing(source: ListingSource, start: number, end: number): List
         at += size;
       }
       if (texts.length > 0) {
-        lines.push(line(address, at - address, `${size === 2 ? "!word" : "!byte"} ${texts.join(",")}`));
+        if (data) lines.push(line(address, at - address, `${size === 2 ? "!word" : "!byte"} ${texts.join(",")}`));
         address = at;
         continue;
       }
@@ -195,7 +200,7 @@ export function listing(source: ListingSource, start: number, end: number): List
       values.push(source.byteAt(at)!);
       at++;
     }
-    lines.push(line(address, values.length, `!byte ${values.map(formatC64Byte).join(",")}`));
+    if (data) lines.push(line(address, values.length, `!byte ${values.map(formatC64Byte).join(",")}`));
     address = at;
   }
   return lines;

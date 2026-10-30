@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
-import { type AddressRange, COVERAGE, formatC64Address } from "../c64.ts";
+import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte } from "../c64.ts";
 
 import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
 import { coverageRuns } from "./read.ts";
@@ -241,6 +241,52 @@ export function addCoverage(
   });
 }
 
+/** What the runs did at an address: executed (x wins), read and written (rw), read, written, or nothing (-). */
+export type Access = "x" | "rw" | "r" | "w" | "-";
+
+/** The kinds of coverage ranges that count as an execute, a read and a write: RAM, ROM and the I/O area. */
+const EXECUTES: readonly CoverageKind[] = ["x", "rom-x", "io-x"];
+const READS: readonly CoverageKind[] = ["r", "rom-r", "io-r"];
+const WRITES: readonly CoverageKind[] = ["w", "io-w"];
+
+/** The access of a set of coverage kinds: an execute wins, then a read and a write together. */
+function accessOf(kinds: ReadonlySet<CoverageKind>): Access {
+  const has = (list: readonly CoverageKind[]) => list.some((kind) => kinds.has(kind));
+  if (has(EXECUTES)) return "x";
+  if (has(READS)) return has(WRITES) ? "rw" : "r";
+  return has(WRITES) ? "w" : "-";
+}
+
+/** True when an address is in ranges as text: "$1000-$1002 $1005". */
+function inRanges(text: string, address: number): boolean {
+  for (const item of text.split(" ")) {
+    const [start, end] = item.split("-");
+    if (address >= Number.parseInt(start!.slice(1), 16) && address <= Number.parseInt((end ?? start)!.slice(1), 16)) return true;
+  }
+  return false;
+}
+
+/**
+ * The access of the runs at an address in a space: the access of each coverage
+ * map that the space has (by its path, also a map without accesses), and the
+ * joined access of all maps. Undefined when the space has no coverage map.
+ */
+export function coverageAccess(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ((address: number) => { maps: Array<{ map: string; access: Access }>; access: Access }) | undefined {
+  if (db === undefined) return undefined;
+  const maps = [...new Set(coverageRuns(db).filter((run) => run.space === space).map((run) => run.name))];
+  if (maps.length === 0) return undefined;
+  const rows = db.prepare("SELECT map, kind, ranges FROM current_coverage WHERE space = ?").all(space) as Array<{ map: string; kind: CoverageKind; ranges: string }>;
+  return (address) => {
+    const all = new Set<CoverageKind>();
+    const each = maps.map((map) => {
+      const kinds = new Set(rows.filter((row) => row.map === map && inRanges(row.ranges, address)).map((row) => row.kind));
+      for (const kind of kinds) all.add(kind);
+      return { map, access: accessOf(kinds) };
+    });
+    return { maps: each, access: accessOf(all) };
+  };
+}
+
 /** The program of a space, or undefined when the knowledge has no bytes for it. */
 export function programImage(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage | undefined {
   if (db === undefined) return undefined;
@@ -368,4 +414,30 @@ export function releaseImage(db: DatabaseSync | undefined, label: string, space:
     else segments.push({ start: row.address, end });
   }
   return { segments, byteAt: (address) => memory[address]! };
+}
+
+/** The bytes of one !byte line of patch code. */
+const PATCH_LINE_BYTES = 8;
+
+/**
+ * The bytes of a release in [start, end] as patch code: !byte lines. The base
+ * release is refused: its bytes are the program, and a patch holds the other
+ * state. A release without a byte at each address of the range is refused.
+ */
+export function releaseCode(db: DatabaseSync | undefined, label: string, start: number, end: number, space: Space = DEFAULT_SPACE): string {
+  const range = `${formatC64Address(start)}-${formatC64Address(end)}`;
+  const release = db?.prepare("SELECT base FROM current_releases WHERE space = ? AND label = ?").get(space, label) as { base: number } | undefined;
+  if (release === undefined) throw new Refusal("not-found", `There is no release ${label}${space === DEFAULT_SPACE ? "" : ` in ${space}`}. Record it first with its file.`);
+  if (release.base === 1) throw new Refusal("invalid-input", `${label} is the base release: its bytes are the program, and a patch holds the bytes of the other state. Give the release that has the other bytes in ${range}.`);
+  const image = releaseImage(db, label, space)!;
+  const inside = (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end);
+  for (let address = start; address <= end; address++) {
+    if (!inside(address)) throw new Refusal("invalid-input", `The release ${label} has no byte at ${formatC64Address(address)}, in the range ${range}. Give a range inside the bytes of the release.`);
+  }
+  const lines: string[] = [];
+  for (let at = start; at <= end; at += PATCH_LINE_BYTES) {
+    const bytes = Array.from({ length: Math.min(PATCH_LINE_BYTES, end - at + 1) }, (_, offset) => formatC64Byte(image.byteAt(at + offset)));
+    lines.push(`!byte ${bytes.join(",")}`);
+  }
+  return lines.join("\n");
 }

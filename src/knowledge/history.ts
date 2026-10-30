@@ -251,6 +251,14 @@ export interface RevisionChanges {
   closed: HistoryEntry[];
 }
 
+/** The rows that a revision added and closed, counted by kind of row: only the kinds that it changed. */
+export function revisionCounts(changes: Pick<RevisionChanges, "added" | "closed">): Partial<Record<HistoryEntry["entity"], { added: number; closed: number }>> {
+  const counts: Partial<Record<HistoryEntry["entity"], { added: number; closed: number }>> = {};
+  for (const entry of changes.added) (counts[entry.entity] ??= { added: 0, closed: 0 }).added++;
+  for (const entry of changes.closed) (counts[entry.entity] ??= { added: 0, closed: 0 }).closed++;
+  return counts;
+}
+
 /** One revision and exactly what it changed. */
 export function revision(db: DatabaseSync | undefined, text: string): RevisionChanges {
   const id = resolveRevision(db, text);

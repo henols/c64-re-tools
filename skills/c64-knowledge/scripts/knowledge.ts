@@ -14,11 +14,11 @@ import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { operandText } from "#src/knowledge/expression.ts";
-import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
+import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionCounts, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { addCoverage, coverageRangeCounts, memoryRows, operandImages as programImages, programCoverage, programImage, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
-import { startScreenOfStage } from "#src/knowledge/start-screen.ts";
+import { addCoverage, coverageAccess, coverageRangeCounts, memoryRows, operandImages as programImages, programCoverage, programImage, releaseCode, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
+import { coloursOfCapture, startScreenOfCapture, startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
   analyzerNamesAt,
   at,
@@ -27,6 +27,7 @@ import {
   coverageRuns,
   currentRevision,
   currentStartScreen,
+  goes,
   listAnalyzerNames,
   listComments,
   listMacros,
@@ -42,8 +43,11 @@ import {
   listSuppressions,
   listSymbols,
   operandAt,
+  REFERENCE_DIRECTIONS,
+  referenceCounts,
   referencesFrom,
   referencesTo,
+  regionCounts,
   search,
   symbolAt,
   type CommentRow,
@@ -53,6 +57,7 @@ import {
   type OperandRow,
   type PatchRow,
   type ReferenceRow,
+  type ReferenceDirection,
   type RegionRow,
   type ReleaseRow,
   type StartScreenRow,
@@ -97,6 +102,7 @@ import {
   type WriteContext,
 } from "#src/knowledge/write.ts";
 import { platformNames } from "#src/platform.ts";
+import { coverageMapOf } from "#src/knowledge/recording-files.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
 import { isoCet } from "#src/time.ts";
@@ -163,6 +169,8 @@ const release = (row: ReleaseRow) => ({
   label: row.label,
   base: row.base,
   define: `--define ${RELEASE_DEFINE}${row.label}=1`,
+  ...(row.file === undefined ? {} : { file: row.file }),
+  ...(row.sha256 === undefined ? {} : { sha256: row.sha256 }),
   ...(row.comment === undefined ? {} : { comment: row.comment }),
   origin: row.origin,
   revision: row.revision,
@@ -267,21 +275,30 @@ function reasonsOf(db: DatabaseSync | undefined, rows: SuppressionRow[]): Map<st
   return reasons;
 }
 
+/** The bytes of a program: the byte at an address inside a segment, else undefined. */
+function programBytes(image: { segments: ReadonlyArray<{ start: number; end: number }>; byteAt: (address: number) => number }): (address: number) => number | undefined {
+  return (at) => (image.segments.some((segment) => at >= segment.start && at <= segment.end) ? image.byteAt(at) : undefined);
+}
+
+/** The name of an address: a user or LLM name, else the platform name; an analyzer name in symbols (knowledge from an older version) gives way to it. */
+function nameOf(db: DatabaseSync | undefined, space: string): (at: number) => string | undefined {
+  const platform = new Map(space === DEFAULT_SPACE ? platformNames().map((entry) => [entry.address, entry.name]) : []);
+  return (at) => {
+    const own = symbolAt(db, at, space);
+    return own !== undefined && isSemantic(own.origin) ? own.name : (platform.get(at) ?? own?.name);
+  };
+}
+
 /** The lookups of a listing: the program and the coverage in the knowledge, the knowledge of the space and the platform names of the C64. */
 function listingSource(db: DatabaseSync | undefined, space: string): ListingSource {
   const image = requireProgram(db, space);
   const coverage = programCoverage(db, space)?.map;
-  const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
-  const platform = new Map(space === DEFAULT_SPACE ? platformNames().map((entry) => [entry.address, entry.name]) : []);
+  const byteAt = programBytes(image);
   const entries = space === DEFAULT_SPACE ? platformNames().filter((entry) => entry.end > entry.address) : [];
   return {
-    byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined),
-    entryStart: (at) => (inside(at) ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),
-    // A user or LLM name, else the platform name; an analyzer name in symbols (knowledge from an older version) gives way to it.
-    nameOf: (at) => {
-      const own = symbolAt(db, at, space);
-      return own !== undefined && isSemantic(own.origin) ? own.name : (platform.get(at) ?? own?.name);
-    },
+    byteAt,
+    entryStart: (at) => (byteAt(at) !== undefined ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),
+    nameOf: nameOf(db, space),
     secondNames: (at) => analyzerNamesAt(db, at, space).map((row) => row.name),
     regions: listRegions(db, undefined, undefined, undefined, space),
     comments: (at) => {
@@ -410,6 +427,14 @@ const BATCH_FIELDS: Record<BatchOperation["op"], string[]> = {
   use: ["start", "end", "macro", "args"],
   unuse: ["start"],
 };
+
+/** The fields of a batch write that it can leave out. */
+const BATCH_OPTIONAL = new Set(["rename.kind", "classify.element", "module.title", "operand.symbol", "operand.offset", "operand.expression", "patch.code", "patch.comment", "unpatch.switch", "macro.params", "macro.comment", "use.args"]);
+
+/** The fields of each op of a batch, for the help of apply: the optional ones in brackets. */
+const BATCH_OPS = Object.entries(BATCH_FIELDS)
+  .map(([op, fields]) => `${op}: ${fields.map((name) => (BATCH_OPTIONAL.has(`${op}.${name}`) ? `[${name}]` : name)).join(", ")}`)
+  .join("; ");
 
 /** A write of a batch as JSON again: addresses as $ and four hex digits, the C64 space left out. */
 function batchJson(write: BatchOperation): Record<string, unknown> {
@@ -550,24 +575,35 @@ function textOrFile(call: Call, option: string): string | undefined {
 const commaList = (value: string) => (value.trim() === "" ? [] : value.split(",").map((item) => item.trim()));
 
 const READ_COMMANDS: CommandSpec[] = [
-  readCommand({ name: "at", summary: "Everything known at one address.", subjects: [ADDRESS] }, (db, call) => {
-    const known = at(db, call.parseAddress(call.subject(0), "<address>"), call.space);
-    return {
-      ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }),
-      address: formatC64Address(known.address),
-      ...(known.symbol === undefined ? {} : { symbol: symbol(known.symbol) }),
-      ...(known.analyzerNames.length === 0 ? {} : { analyzerNames: known.analyzerNames.map(symbol) }),
-      ...(known.region === undefined ? {} : { region: region(known.region) }),
-      comments: known.comments.map(comment),
-      referencesFrom: known.referencesFrom.map(reference),
-      referencesTo: known.referencesTo.map(reference),
-      ...(known.operand === undefined ? {} : { operand: operand(known.operand) }),
-      ...(known.patch === undefined ? {} : { patch: patch(known.patch) }),
-      ...(known.macroUse === undefined ? {} : { macroUse: macroUse(known.macroUse) }),
-      ...(known.suppressions.length === 0 ? {} : { suppressions: known.suppressions.map(suppression) }),
-      revision: known.revision,
-    };
-  }),
+  readCommand(
+    {
+      name: "at",
+      summary: "Everything known at each address, with the access of the runs in each coverage map of the space and the joined access (x executed, rw read and written, r read, w written, - none).",
+      subjects: [{ ...ADDRESS, list: true }],
+    },
+    (db, call) => {
+      const access = coverageAccess(db, call.space);
+      const addresses = call.subjects.map((text) => {
+        const known = at(db, call.parseAddress(text, "<address>"), call.space);
+        const runs = access?.(known.address);
+        return {
+          address: formatC64Address(known.address),
+          ...(known.symbol === undefined ? {} : { symbol: symbol(known.symbol) }),
+          ...(known.analyzerNames.length === 0 ? {} : { analyzerNames: known.analyzerNames.map(symbol) }),
+          ...(known.region === undefined ? {} : { region: region(known.region) }),
+          comments: known.comments.map(comment),
+          referencesFrom: known.referencesFrom.map(reference),
+          referencesTo: known.referencesTo.map(reference),
+          ...(known.operand === undefined ? {} : { operand: operand(known.operand) }),
+          ...(known.patch === undefined ? {} : { patch: patch(known.patch) }),
+          ...(known.macroUse === undefined ? {} : { macroUse: macroUse(known.macroUse) }),
+          ...(known.suppressions.length === 0 ? {} : { suppressions: known.suppressions.map(suppression) }),
+          ...(runs === undefined ? {} : { coverage: runs.maps, access: runs.access }),
+        };
+      });
+      return { ...(call.space === DEFAULT_SPACE ? {} : { space: call.space }), revision: currentRevision(db), addresses };
+    },
+  ),
   readCommand(
     {
       name: "search",
@@ -589,9 +625,17 @@ const READ_COMMANDS: CommandSpec[] = [
       return { symbols: list(call, listSymbols(db, rangeOf(call), kind, originsOf(call), call.space), symbol, RANGE_REST) };
     },
   ),
-  readCommand({ name: "regions", summary: "The regions: code, data, tables and the other types.", options: { ...FILTER, type: { kind: "choice", value: "<type>", choices: REGION_TYPES, help: `one of ${REGION_TYPES.join(", ")}` }, ...LIST } }, (db, call) => ({
-    regions: list(call, listRegions(db, rangeOf(call), call.string("type") as (typeof REGION_TYPES)[number] | undefined, originsOf(call), call.space), region, RANGE_REST),
-  })),
+  readCommand(
+    {
+      name: "regions",
+      summary: "The regions: code, data, tables and the other types, with the count and the bytes in the range of each type.",
+      options: { ...FILTER, type: { kind: "choice", value: "<type>", choices: REGION_TYPES, help: `one of ${REGION_TYPES.join(", ")}` }, ...LIST },
+    },
+    (db, call) => {
+      const rows = listRegions(db, rangeOf(call), call.string("type") as (typeof REGION_TYPES)[number] | undefined, originsOf(call), call.space);
+      return { regions: list(call, rows, region, RANGE_REST), byType: regionCounts(rows, rangeOf(call)) };
+    },
+  ),
   readCommand({ name: "comments", summary: "The comments.", options: { ...FILTER, ...LIST } }, (db, call) => ({ comments: list(call, listComments(db, rangeOf(call), originsOf(call), call.space), comment, RANGE_REST) })),
   readCommand(
     {
@@ -618,9 +662,28 @@ const READ_COMMANDS: CommandSpec[] = [
       return { seed, revision: sample.revision, population: rows.length, sampled: comments.length };
     },
   ),
-  readCommand({ name: "references", summary: "The references: calls, jumps, reads, writes and pointers.", options: { ...FILTER, kind: REFERENCE_KIND, ...LIST } }, (db, call) => ({
-    references: list(call, listReferences(db, rangeOf(call), call.string("kind") as (typeof REFERENCE_KINDS)[number] | undefined, originsOf(call), call.space), reference, RANGE_REST),
-  })),
+  readCommand(
+    {
+      name: "references",
+      summary: "The references: calls, jumps, reads, writes and pointers, with their counts by kind and by target.",
+      options: {
+        ...FILTER,
+        kind: REFERENCE_KIND,
+        direction: { kind: "choice", value: "<in|out|inside>", choices: REFERENCE_DIRECTIONS, help: "with --range: in from outside the range, out of the range, or inside it at both ends" },
+        ...LIST,
+      },
+    },
+    (db, call) => {
+      const direction = call.string("direction") as ReferenceDirection | undefined;
+      const range = call.range("range");
+      if (direction !== undefined && range === undefined) throw new UsageError(`--direction needs --range: the direction is seen from that range. Give --range <start>-<end> --direction ${direction}.`);
+      const rows = listReferences(db, rangeOf(call), call.string("kind") as (typeof REFERENCE_KINDS)[number] | undefined, originsOf(call), call.space).filter(direction === undefined ? () => true : goes(range!, direction));
+      const { byKind, byTarget } = referenceCounts(rows);
+      const named = nameOf(db, call.space);
+      const target = ({ to, count }: { to: number; count: number }) => ((name) => ({ to: formatC64Address(to), ...(name === undefined ? {} : { name }), count }))(named(to));
+      return { references: list(call, rows, reference, RANGE_REST), byKind, byTarget: list(call, byTarget, target, MORE) };
+    },
+  ),
   readCommand({ name: "suppressions", summary: "The places that removals keep free of analyzer facts, with the reason of each.", options: { range: OPTIONS.range, ...LIST } }, (db, call) => {
     const rows = listSuppressions(db, rangeOf(call), call.space);
     const reasons = reasonsOf(db, rows.slice(0, call.count("max-listed")!));
@@ -700,10 +763,13 @@ const READ_COMMANDS: CommandSpec[] = [
       return { revisions: list(call, rows, (row) => row, "a larger --max-listed, or --before <revision> with the oldest revision in listed") };
     },
   ),
-  readCommand({ name: "revision", summary: "The rows that one revision added and closed: knowledge rows, and memory, entry and coverage rows of the program.", subjects: [REVISION], options: LIST }, (db, call) => {
-    const changes = revision(db, call.subject(0));
-    return { revision: changes.revision, added: list(call, changes.added, historyEntry, MORE), closed: list(call, changes.closed, historyEntry, MORE) };
-  }),
+  readCommand(
+    { name: "revision", summary: "The rows that one revision added and closed, with their counts by kind of row: knowledge rows, and memory, entry and coverage rows of the program.", subjects: [REVISION], options: LIST },
+    (db, call) => {
+      const changes = revision(db, call.subject(0));
+      return { revision: changes.revision, counts: revisionCounts(changes), added: list(call, changes.added, historyEntry, MORE), closed: list(call, changes.closed, historyEntry, MORE) };
+    },
+  ),
   readCommand({ name: "export", summary: "All current knowledge to a project file as JSON.", options: { ...FILTER, out: { ...OPTIONS.out, output: "file", value: "<file>", help: "the JSON file, relative to the project folder", required: true } } }, (db, call) => {
     const range = rangeOf(call);
     const origins = originsOf(call);
@@ -734,11 +800,15 @@ const READ_COMMANDS: CommandSpec[] = [
       name: "listing",
       summary: "The program as ACME lines with names, operand expressions, comments, the access of each line in the coverage (x executed, r read, w written) and the references in and out.",
       subjects: [RANGE],
-      options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the listing as text to this file in place of the lines in the result" }, ...LIST },
+      options: {
+        code: { kind: "flag", help: "only the instructions of the code regions: no data lines" },
+        out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the listing as text to this file in place of the lines in the result" },
+        ...LIST,
+      },
     },
     (db, call) => {
       const { start, end } = call.parseRange(call.subject(0), "<range>");
-      const lines = listing(listingSource(db, call.space), start, end);
+      const lines = listing(listingSource(db, call.space), start, end, { code: call.flag("code") });
       const out = call.string("out");
       if (out !== undefined) return { lines: lines.length, ...writeReported(out, listingText(lines), { what: "--out" }) };
       return { lines: list(call, lines, (row) => ({ ...row, address: formatC64Address(row.address) }), "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
@@ -871,17 +941,23 @@ const WRITE_COMMANDS: CommandSpec[] = [
         code: { kind: "text", value: "<text>", help: "the ACME code" },
         "code-file": { kind: "path", value: "<file>", help: "a project file with the ACME code" },
         nop: { kind: "flag", help: "put only NOP" },
+        "from-release": { kind: "text", value: "<label>", help: "the code is the bytes of this release in the range, as !byte lines. Not the base release" },
         comment: { kind: "text", value: "<text>", help: "a comment for the patch" },
       },
-      notes: "Give exactly one of --code, --code-file and --nop. Write the switch first (switch). The program holds the bytes of the base release: when the base release has the switch on, the code is the bytes with the switch off. Another switch can have a patch at the same range, as an alternative.",
+      notes: "Give exactly one of --code, --code-file, --nop and --from-release. Write the switch first (switch). The program holds the bytes of the base release: when the base release has the switch on, the code is the bytes with the switch off. Another switch can have a patch at the same range, as an alternative.",
     },
     (call) => {
       const context = contextOf(call);
       const code = textOrFile(call, "code");
-      if ((code === undefined) === !call.flag("nop")) throw new UsageError("patch needs exactly one of --code, --code-file or --nop.");
+      const from = call.string("from-release");
+      if ([code !== undefined, call.flag("nop"), from !== undefined].filter(Boolean).length !== 1) throw new UsageError("patch needs exactly one of --code, --code-file, --nop or --from-release.");
       const commentText = call.string("comment");
-      const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>"), switch: call.subject(1), code: code ?? "", ...(commentText === undefined ? {} : { comment: commentText }) };
-      return (db) => shown(setPatch(db, { ...context, image: operandImages(db) }, request), "patch", patch);
+      const range = call.parseRange(call.subject(0), "<range>");
+      const request = (text: string) => ({ space: call.space, ...range, switch: call.subject(1), code: text, ...(commentText === undefined ? {} : { comment: commentText }) });
+      return (db) => {
+        const text = from === undefined ? (code ?? "") : releaseCode(db, from, range.start, range.end, call.space);
+        return shown(setPatch(db, { ...context, image: operandImages(db) }, request(text)), "patch", patch);
+      };
     },
   ),
   writeCommand(
@@ -939,7 +1015,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "release",
-      summary: "Records a release of the program from its PRG or the image.json of its capture: the knowledge keeps the bytes of the release. The base release is the one whose bytes are the program of the knowledge.",
+      summary: "Records a release of the program from its PRG or the image.json of its capture: the knowledge keeps the bytes of the release, and the path and the SHA-256 of the file. The base release is the one whose bytes are the program of the knowledge.",
       subjects: [{ name: "<label>", help: "the release label, for example FIRESTAR or V2" }],
       options: {
         file: { kind: "path", value: "<file>", help: "the PRG or image.json of the release. After the write, the knowledge does not need the file", required: true },
@@ -952,10 +1028,11 @@ const WRITE_COMMANDS: CommandSpec[] = [
       const context = contextOf(call);
       const file = knowledgePath(call.string("file")!, "--file");
       const image = readImage(file);
+      const sha256 = createHash("sha256").update(readProjectFile(file).bytes).digest("hex");
       const commentText = call.string("comment");
       const base = call.flag("base");
       // The base release has no bytes of its own: its bytes are the program.
-      const request = { space: call.space, label: call.subject(0), ...(base ? { base } : { rows: memoryRows(image.segments, image.byteAt) }), ...(commentText === undefined ? {} : { comment: commentText }) };
+      const request = { space: call.space, label: call.subject(0), file, sha256, ...(base ? { base } : { rows: memoryRows(image.segments, image.byteAt) }), ...(commentText === undefined ? {} : { comment: commentText }) };
       return (db) => {
         if (base) {
           const program = requireProgram(db, call.space);
@@ -980,19 +1057,24 @@ const WRITE_COMMANDS: CommandSpec[] = [
       name: "start-screen",
       summary: "Records the start screen of the program: a loading, title or presentation screen of the program itself, in memory at the entry or in a captured stage of the loading. The loader of the generated source shows it and waits for a key or a fire button before the entry.",
       options: {
-        mode: { kind: "choice", value: "<mode>", choices: START_SCREEN_MODES, help: `one of ${START_SCREEN_MODES.join(", ")}. Necessary without --stage` },
-        screen: { kind: "address", value: "<address>", help: "the screen: the 1000 characters of a text screen, or the 1000 colour bytes of a bitmap. Necessary without --stage" },
+        mode: { kind: "choice", value: "<mode>", choices: START_SCREEN_MODES, help: `one of ${START_SCREEN_MODES.join(", ")}. Necessary without --stage and --capture` },
+        screen: { kind: "address", value: "<address>", help: "the screen: the 1000 characters of a text screen, or the 1000 colour bytes of a bitmap. Necessary without --stage and --capture" },
         bitmap: { kind: "address", value: "<address>", help: "the 8000 bytes of the bitmap. hires and multicolour need it" },
         charset: { kind: "address", value: "<address>", help: "the 2048 bytes of the charset, or '$1000' or '$1800' for the character ROM in VIC bank 0. text needs it" },
         colours: { kind: "address", value: "<address>", help: "the 1000 bytes that the loader copies to the colour RAM" },
         colour: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "one colour for all of the colour RAM, in place of --colours" },
-        border: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the border colour. Necessary without --stage" },
-        background: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the background colour. Necessary without --stage" },
+        border: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the border colour. Necessary without --stage and --capture" },
+        background: { kind: "count", value: "<0-15>", min: 0, max: 15, help: "the background colour. Necessary without --stage and --capture" },
         stage: { kind: "text", value: "<space>", help: "the space of the captured stage that shows the screen: loading. The script takes the mode, the addresses and the colours from the capture of the stage. Without it, the bytes are in the program at the entry" },
+        capture: {
+          kind: "path",
+          value: "<image.json>",
+          help: "a capture of the program while it shows the screen: the script takes the mode, the addresses and the border and background colours from it, and the colours from 1000 bytes of the program with the colour RAM of the capture, or one colour",
+        },
         call: { kind: "address", value: "<address>", help: "a routine of the stage that the start screen calls before it waits, for example the routine that starts the loading tune. It must return with RTS. Needs --stage" },
         comment: { kind: "text", value: "<text>", help: "what the screen is" },
       },
-      notes: "Record only a screen of the program itself, never a screen of a crack. If a release changed the screen, for example with the text of a crack, stop and ask the user how to deal with it. text and multicolour need --colours or --colour; hires uses neither. With --stage, the script takes the screen from the capture of the stage: give only --stage, and --call for a tune. A flag that you give too replaces the value of the capture. A write replaces the start screen of the knowledge.",
+      notes: "Record only a screen of the program itself, never a screen of a crack. If a release changed the screen, for example with the text of a crack, stop and ask the user how to deal with it. text and multicolour need --colours or --colour; hires uses neither. With --stage, the script takes the screen from the capture of the stage: give only --stage, and --call for a tune. With --capture, the script takes the screen in the program from a capture of the program while it shows the screen. A flag that you give too replaces the value of the capture. A write replaces the start screen of the knowledge.",
     },
     (call) => {
       const context = contextOf(call);
@@ -1010,6 +1092,8 @@ const WRITE_COMMANDS: CommandSpec[] = [
         if (value !== undefined) given[key] = value;
       }
       const stage = call.string("stage");
+      const capture = call.string("capture");
+      if (stage !== undefined && capture !== undefined) throw new UsageError("Give --stage or --capture, not both. --stage takes the screen of a captured stage of the loading; --capture takes the screen in the program from a capture of the program.");
       const routine = call.address("call");
       const extra = {
         space: call.space,
@@ -1022,8 +1106,20 @@ const WRITE_COMMANDS: CommandSpec[] = [
         if (missing.length > 0) throw new UsageError(`Give ${missing.map((key) => `--${key}`).join(", ")}, ${remedy}`);
         return { ...values, mode: values.mode!, screen: values.screen!, border: values.border!, background: values.background!, ...extra };
       };
+      if (capture !== undefined) {
+        // The capture gives the VIC-II values; the colours come from the program. A flag of the call replaces a value of the capture.
+        const state = readImage(capture).state?.raw;
+        const fromCapture = mode === undefined ? startScreenOfCapture(state, capture) : {};
+        const wanted = { ...fromCapture, ...given };
+        const ownColours = given.colours !== undefined || given.colour !== undefined;
+        return (db) => {
+          const colours = wanted.mode === "hires" || ownColours ? {} : coloursOfCapture(state, capture, programBytes(requireProgram(db, call.space)));
+          const request = complete({ ...colours, ...wanted }, "or give --capture alone to take the screen from the capture.");
+          return shown(setStartScreen(db, context, request), "startScreen", startScreen);
+        };
+      }
       if (stage === undefined) {
-        const request = complete(given, "or give --stage with the space of a captured stage that shows the screen.");
+        const request = complete(given, "or give --stage with the space of a captured stage that shows the screen, or --capture with a capture of the program while it shows the screen.");
         return (db) => shown(setStartScreen(db, context, request), "startScreen", startScreen);
       }
       return (db) => {
@@ -1109,12 +1205,16 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "coverage",
-      summary: "Puts coverage maps of the emulator or of a run into the coverage of the knowledge. Each map is named by its path: a new map of a path replaces the earlier map of that path, and --evidence coverage:<path> cites it.",
-      subjects: [{ name: "<map>", help: "a 64 KiB coverage map", list: true }],
+      summary: "Puts coverage maps of the emulator, of a run or of a recording folder into the coverage of the knowledge. Each map is named by its path: a new map of a path replaces the earlier map of that path, and --evidence coverage:<path> cites it.",
+      subjects: [{ name: "<map>", help: "a 64 KiB coverage map, or a recording folder: then its coverage map", list: true }],
     },
     (call) => {
       const context = contextOf(call);
-      const maps = call.subjects.map((path) => ({ bytes: readProjectFile(path).bytes, name: knowledgePath(path, "<map>") }));
+      const maps = call.subjects.map((given) => {
+        // A recording folder gives its coverage map: the knowledge names it by the path of the map in the folder.
+        const path = coverageMapOf(given);
+        return { bytes: readProjectFile(path).bytes, name: knowledgePath(path, "<map>") };
+      });
       return (db) => {
         const { revision, current } = addCoverage(db, context, { space: call.space, maps });
         const body = { revision, ...spaceOf(current), imported: current.imported, replaced: current.replaced, known: current.known, added: current.added, removed: current.removed };
@@ -1159,7 +1259,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       name: "apply",
       summary: "Many writes from a JSON file, all as one revision, or none when one is refused.",
       subjects: [{ name: "<file>", help: "the batch: a JSON list of writes, or - for standard input" }],
-      notes: 'A write is {"op": "<command>", ...}, for example {"op": "rename", "address": "$2100", "name": "update_player"}. A range is "start" and "end". A write can name its own "space". operand, patch and use writes are checked against the program of their space.',
+      notes: `A write is {"op": "<command>", ...} with the fields of the command, for example {"op": "rename", "address": "$2100", "name": "update_player"}. A range is "start" and "end". A write can name its own "space". The fields of each op, the optional ones in brackets: ${BATCH_OPS}. operand: select is lo, hi or value with symbol and [offset], or expr with expression. patch: an empty or no code is NOP only. macro params and use args: a JSON list of strings or a comma list. operand, patch and use writes are checked against the program of their space.`,
     },
     (call) => {
       const context = contextOf(call);
