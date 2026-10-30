@@ -105,13 +105,17 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
       }
       if (targets.length === 0) continue;
       const n = targets.length;
-      const written = interleaved
-        ? addRegions("rts-table", [{ start: low, end: low + 2 * n - 1, type: "rts-addresses" }])
+      const parts: Parameters<typeof addRegions>[1] = interleaved
+        ? [{ start: low, end: low + 2 * n - 1, type: "rts-addresses" }]
         : low + n === high
-          ? addRegions("rts-table", [{ start: low, end: high + n - 1, type: "rts-addresses-split" }])
-          : addRegions("rts-table", [{ start: low, end: low + n - 1, type: "bytes" }, { start: high, end: high + n - 1, type: "bytes" }]);
-      if (!written) continue;
-      counts.rtsTables++;
+          ? [{ start: low, end: high + n - 1, type: "rts-addresses-split" }]
+          : [{ start: low, end: low + n - 1, type: "bytes" }, { start: high, end: high + n - 1, type: "bytes" }];
+      // Another dispatch through the same table: the table is recorded, and this RTS goes to its targets too.
+      const known = parts.every((part) => regions.some((region) => region.start === part.start && region.end === part.end && region.type === part.type));
+      if (!known) {
+        if (!addRegions("rts-table", parts)) continue;
+        counts.rtsTables++;
+      }
       for (const target of targets) {
         references.push({ from: at + 8, to: target, kind: "jump" });
         entryPoints.add(target);
@@ -123,13 +127,16 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
   for (let at = range.start; at + 3 * MIN_JUMPS - 1 <= range.end; at++) {
     let n = 0;
     while (at + 3 * n + 2 <= range.end && byteAt(at + 3 * n) === 0x4c) n++;
-    if (n < MIN_JUMPS || !addRegions("jump-table", [{ start: at, end: at + 3 * n - 1, type: "jumps" }])) continue;
-    counts.jumpTables++;
-    for (let index = 0; index < n; index++) {
-      entryPoints.add(at + 3 * index);
-      const target = word(byteAt, at + 3 * index + 1)!;
-      if (plausible(byteAt, target, range)) entryPoints.add(target);
+    if (n < MIN_JUMPS) continue;
+    if (addRegions("jump-table", [{ start: at, end: at + 3 * n - 1, type: "jumps" }])) {
+      counts.jumpTables++;
+      for (let index = 0; index < n; index++) {
+        entryPoints.add(at + 3 * index);
+        const target = word(byteAt, at + 3 * index + 1)!;
+        if (plausible(byteAt, target, range)) entryPoints.add(target);
+      }
     }
+    // The JMPs inside the run are the same table: a run that is left out is left out once.
     at += 3 * n - 1;
   }
 

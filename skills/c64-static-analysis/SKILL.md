@@ -133,7 +133,7 @@ The `hint` gives each of these cases:
 
 - `conflicts` is not empty. Find the correct answer in the emulator. Then correct the project knowledge.
 - `coverageConflicts` is not empty. Classify each range as code in the project knowledge, or as `dual-use` when its bytes are also data. For many ranges, write all classifications in one batch of changes.
-- `seeds.refused` is not empty. See "Refused seeds and coverage gaps".
+- `seeds.refused` has a seed with a reason that is not `outside-program`, or an `--entry` outside the program. See "Refused seeds and coverage gaps".
 - `writtenNotExecuted` is not empty. A wrong entry point leads an analyzer from code into data. Examine the routine that holds the instructions in `from`. Correct the routine or its region in the project knowledge. Then run `analyze` again.
 - `idioms.candidates.macros` has candidates, and the run had no `--apply-macros`. Examine the candidates. To write the correct candidates to the project knowledge, run the analysis again with `--apply-macros`. Give `--skip` with the start of each candidate that is not correct. Then generate the source again.
 - The last analysis of the same program bytes used another analyzer version. Thus a change in `revision` can come from the new analyzer, and not from the program or the project knowledge.
@@ -151,7 +151,8 @@ Each item of `seeds.refused` and `coverageGaps` has a `reason`. `at` gives the i
 | `inside-instruction` | Another instruction holds the address. Examine both in the listing. If the address is a wrong routine or region in the project knowledge, correct it. If both instructions run, classify the bytes as `dual-use`. |
 | `into-instruction` | The instruction at the address runs into the instruction at `at`. Do as for `inside-instruction`. |
 | `in-data`, `into-data` | A data range of the analysis holds the address or its instruction. `range` gives the data range of a gap. If the code runs, correct the data region in the project knowledge. |
-| `outside-program`, `past-end` | The address or its instruction is not in the program. Correct the entry point or the routine. |
+| `outside-program` | The address is not in the program. If the program copies the routine to this address when it runs, the routine is correct. If not, correct the entry point or the routine. |
+| `past-end` | The instruction at the address runs past the end of the program. Correct the entry point or the routine. |
 | `not-decodable` | No instruction decodes at the address. Correct the entry point or the routine. |
 | `not-reached` | Only in `coverageGaps`: no flow and no seed reached the start. Give it with `--entry`, or record a routine there. |
 

@@ -9,10 +9,10 @@ import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
-import { openForRead, openForWrite } from "../../src/knowledge/database.ts";
+import { openForRead, openForWrite, withWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
-import { classifyRegion } from "../../src/knowledge/write.ts";
+import { classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
 import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, explainGaps, imageReader, romOnlyRanges, writtenNotExecuted } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
@@ -201,6 +201,18 @@ test("with coverage, a branch target after an RTS is no decompiler function, and
   const json = bodyOf(run) as { functions: { listed: Array<{ entry: string }> }; coverageGaps: { count: number } };
   assert.deepEqual(json.functions.listed.map((fn) => fn.entry), ["$0810"], run.stdout);
   assert.equal(json.coverageGaps.count, 0, run.stdout);
+});
+
+test("a routine of the knowledge outside the program is a refused seed, but only an --entry outside the program asks to correct the knowledge", { timeout: 120_000 }, () => {
+  // $0810 RTS. The program copies a routine to $c000 when it runs: the knowledge names it there.
+  const root = fresh();
+  importPrg(root, Buffer.from([0x10, 0x08, 0x60]));
+  withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0xc000, name: "copied_routine", kind: "routine" }), root);
+  const copied = analyzeIn(root, "--entry", "$0810");
+  assert.deepEqual((bodyOf(copied) as { seeds: { refused: { listed: unknown[] } } }).seeds.refused.listed, [{ address: "$c000", reason: "outside-program" }], copied.stdout);
+  assert.doesNotMatch(readEnvelope(copied.stdout, copied.status).envelope.hint ?? "", /did not decode/);
+  const wrong = analyzeIn(root, "--entry", "$0810", "--entry", "$c100");
+  assert.match(readEnvelope(wrong.stdout, wrong.status).envelope.hint ?? "", /did not decode 1 seeds/);
 });
 
 test("with coverage, the decompiler makes a function of the code that only a vector reaches", { timeout: 120_000 }, () => {

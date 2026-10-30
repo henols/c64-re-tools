@@ -42,6 +42,10 @@ test("the seeds of an analysis are the entry points inside its range and the dat
         { address: 0x07ff, reason: "outside-program" },
         { address: 0x0900, reason: "outside-program" },
       ],
+      dataRanges: [
+        { start: 0x0801, end: 0x0805 },
+        { start: 0x0820, end: 0x0827 },
+      ],
       dataRangesLeftOut: [{ start: 0x080c, end: 0x0812, code: 0x0810 }],
     },
   });

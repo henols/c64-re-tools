@@ -63,6 +63,17 @@ test("an idiom whose bytes another idiom already holds is left out with its reas
   assert.deepEqual(found.leftOut, [{ start: 0x1302, end: 0x1303, kind: "rts-table", reason: "overlaps-idiom" }]);
 });
 
+test("a second RTS dispatch through the same table adds its jump references, and a JMP run inside a table is left out once", () => {
+  const dispatch = [0xbd, 0x00, 0x11, 0x48, 0xbd, 0x00, 0x12, 0x48, 0x60];
+  const both = findIdioms(image({ 0x1000: dispatch, 0x1010: dispatch, 0x1100: [0x14, 0x15, 0x00], 0x1200: [0xff, 0xff, 0x00] }).byteAt, RANGE);
+  assert.equal(both.counts.rtsTables, 1);
+  assert.deepEqual(both.leftOut, []);
+  assert.deepEqual(both.findings.references.map((reference) => [reference.from, reference.to]), [[0x1008, 0x1500], [0x1008, 0x1600], [0x1018, 0x1500], [0x1018, 0x1600]]);
+  // The low bytes are five JMP abs: the JMP run overlaps the table of the RTS dispatch.
+  const jumps = findIdioms(image({ 0x1000: dispatch, 0x1100: [...Array<number>(15).fill(0x14), 0x00], 0x1200: Array.from({ length: 5 }, () => [0x4c, 0x00, 0x15]).flat() }).byteAt, RANGE);
+  assert.deepEqual(jumps.leftOut, [{ start: 0x1200, end: 0x120e, kind: "jump-table", reason: "overlaps-idiom" }]);
+});
+
 test("three JMP abs in a row are a JMP table; a BIT skip is dual-use bytes with the reference to its inner entry", () => {
   const jumps = findIdioms(image({ 0x1400: [0x4c, 0x00, 0x15, 0x4c, 0x00, 0x16, 0x4c, 0x00, 0x17] }).byteAt, RANGE);
   assert.deepEqual(jumps.findings.regions, [{ start: 0x1400, end: 0x1408, type: "jumps" }]);

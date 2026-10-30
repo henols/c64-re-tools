@@ -259,9 +259,11 @@ export interface RefusedSeed {
   at?: number;
 }
 
-/** What an analysis did with its seeds: the seeds that it did not decode, and the data ranges that it left out because code starts in them. */
+/** What an analysis did with its seeds: the seeds that it did not decode, the data ranges that it used, and the data ranges that it left out because code starts in them. */
 export interface SeedReport {
   refused: RefusedSeed[];
+  /** The data ranges that the analysis kept as data, cut to the program. */
+  dataRanges: Array<{ start: number; end: number }>;
   dataRangesLeftOut: Array<{ start: number; end: number; code: number }>;
 }
 
@@ -286,5 +288,5 @@ export function seedsInside(params: Pick<DecompilerParams, "entryPoints" | "data
       return held === undefined;
     });
   const outside = [...new Set([...params.entryPoints, ...(params.codeStarts ?? [])])].filter((address) => !inside(address)).sort((a, b) => a - b);
-  return { entryPoints, codeStarts, dataRanges, report: { refused: outside.map((address) => ({ address, reason: "outside-program" })), dataRangesLeftOut } };
+  return { entryPoints, codeStarts, dataRanges, report: { refused: outside.map((address) => ({ address, reason: "outside-program" })), dataRanges, dataRangesLeftOut } };
 }

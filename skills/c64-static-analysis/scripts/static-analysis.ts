@@ -40,7 +40,7 @@ const ALL_REGIONS = "a larger --max-listed. The project knowledge has all of the
  */
 function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }, version: { now: string | undefined; last: string | undefined; revision: string | null }, retiredReferences: number, guards: { refused: number; writtenNotExecuted: number }) {
   const hints: string[] = [];
-  if (guards.refused > 0) hints.push(`The analysis did not decode ${guards.refused} of its seeds: seeds.refused gives each one with its reason. A seed inside an instruction or in data is often a wrong routine or region in the project knowledge. Examine it in the listing, and correct the project knowledge.`);
+  if (guards.refused > 0) hints.push(`The analysis did not decode ${guards.refused} seeds in the program or of --entry: seeds.refused gives each refused seed with its reason. A seed inside an instruction or in data is often a wrong routine or region in the project knowledge. Examine it in the listing, and correct the project knowledge.`);
   if (guards.writtenNotExecuted > 0) hints.push("Each range in writtenNotExecuted is code of the analyzer on bytes that the runs wrote and never executed. Its from gives the instructions that reach it. Examine the routine that holds them: a wrong entry point leads the analyzer into data. Correct the project knowledge, and run the analysis again.");
   if (version.revision !== null && version.now !== undefined && version.last !== undefined && version.now !== version.last) {
     hints.push(`The last analysis of this program used ${version.last}. Thus a change in revision ${version.revision} can come from the new analyzer version, and not from the program or the project knowledge.`);
@@ -53,6 +53,15 @@ function withHint(body: Record<string, unknown>, conflicts: number, coverageConf
   else if (!macros.applied && macros.candidates > 0) hints.push("Examine idioms.candidates.macros. To write them to the project knowledge, run the analysis again with --apply-macros.");
   if (hints.length === 0) return body;
   return reply(body, { hint: hints.join(" ") });
+}
+
+/**
+ * The refused seeds that can be a fault of the project knowledge: a routine
+ * outside the program can be code that the program copies there when it
+ * runs, so only an --entry outside the program counts.
+ */
+function toCorrect(refused: readonly RefusedSeed[], entries: readonly number[]): number {
+  return refused.filter((seed) => seed.reason !== "outside-program" || entries.includes(seed.address)).length;
 }
 
 /** A refused seed with $ addresses. */
@@ -355,7 +364,7 @@ async function analyze(call: Call): Promise<unknown> {
       labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), ALL_NAMES),
       ...(written === undefined ? {} : { listing: written }),
     };
-    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired, { refused: report.refused.length, writtenNotExecuted: runOnWritten.length });
+    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired, { refused: toCorrect(report.refused, entries), writtenNotExecuted: runOnWritten.length });
   }
 
   const { result, seeds: report } = await analyzeWithDecompiler({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
@@ -369,7 +378,8 @@ async function analyze(call: Call): Promise<unknown> {
   const overlaps = listRegions(overlapDb, undefined, "dual-use", undefined, space);
   overlapDb?.close();
   const gaps = coverage === undefined ? [] : executedStarts(coverage, inProgram).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address) && !overlaps.some((region) => address >= region.start && address <= region.end));
-  const explained = explainGaps(gaps, result.instructions, report.refused, seeds.dataRanges);
+  // The data ranges that the decompiler used: not the ranges that hold a seed, and only the part in the program.
+  const explained = explainGaps(gaps, result.instructions, report.refused, report.dataRanges);
   const runOnWritten = writtenNotExecutedOf("decompiler", space, coverage);
   let instructions: Record<string, unknown> | undefined;
   if (instructionsPath !== undefined) {
@@ -394,7 +404,7 @@ async function analyze(call: Call): Promise<unknown> {
       ? {}
       : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: item.reason })) }),
   };
-  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired, { refused: report.refused.length, writtenNotExecuted: runOnWritten.length });
+  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired, { refused: toCorrect(report.refused, entries), writtenNotExecuted: runOnWritten.length });
 }
 
 /** A coverage gap with $ addresses. */

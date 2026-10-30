@@ -45,7 +45,7 @@ export async function analyze(
     context.log?.(`Decompiler result rejected: ${describeError(error)}`);
     throw new WireFailure("operation-failed", `The decompiler returned an incomplete or inconsistent result. Nothing was imported. The check found: ${describeError(error)}.`);
   }
-  return { result, seeds: { refused: [...report.refused, ...refusedSeeds].sort((a, b) => a.address - b.address), dataRangesLeftOut: report.dataRangesLeftOut } };
+  return { result, seeds: { refused: [...report.refused, ...refusedSeeds].sort((a, b) => a.address - b.address), dataRanges: report.dataRanges, dataRangesLeftOut: report.dataRangesLeftOut } };
 }
 
 /** The requested routines as C text, within the character bounds; the labels name routines and data. */
