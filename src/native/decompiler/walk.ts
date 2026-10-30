@@ -6,7 +6,7 @@
 // code before it, or else from the pointer in the image.
 
 import { SYMBOL_NAME } from "../../c64.ts";
-import type { DecompilerInstruction, DecompilerResult } from "../types.ts";
+import type { DecompilerInstruction, DecompilerResult, RefusedSeed } from "../types.ts";
 import { PcodeState } from "./pcode.ts";
 import { decode, type Decoded, type Varnode } from "./wasm.ts";
 
@@ -39,7 +39,7 @@ function operandValue(bytes: readonly number[]): number | undefined {
 }
 
 /** Decodes [start, end] from the seeds; the image bytes are already loaded at start. */
-export function walk(image: Uint8Array, start: number, end: number, seeds: WalkSeeds): Omit<DecompilerResult, "decompilations" | "completeness" | "toolVersion"> {
+export function walk(image: Uint8Array, start: number, end: number, seeds: WalkSeeds): Omit<DecompilerResult, "decompilations" | "completeness" | "toolVersion"> & { refusedSeeds: RefusedSeed[] } {
   const isData = new Uint8Array(0x10000);
   for (const range of seeds.dataRanges) isData.fill(1, range.start, range.end + 1);
   const imageByte = (address: number) => (address >= start && address <= end ? image[address - start] : undefined);
@@ -140,6 +140,12 @@ export function walk(image: Uint8Array, start: number, end: number, seeds: WalkS
     if (instruction.fallthrough) work.push(last + 1);
   }
 
+  // Read before the bytes that operands access become data: the data ranges then are the seeds' own.
+  const refusedSeeds = [...new Set([...seeds.entryPoints, ...seeds.codeStarts])]
+    .filter((address) => !instructions.has(address))
+    .sort((a, b) => a - b)
+    .map((address) => refusal(address, end, owner, isData));
+
   for (const instruction of instructions.values()) {
     for (const address of instruction.accessed) if (address >= start && address <= end && owner[address] === -1) isData[address] = 1;
   }
@@ -157,6 +163,7 @@ export function walk(image: Uint8Array, start: number, end: number, seeds: WalkS
     }
   }
   return {
+    refusedSeeds,
     coverage: [{ start, end }],
     functions: [...functions]
       .filter((entry) => instructions.has(entry))
@@ -172,6 +179,29 @@ export function walk(image: Uint8Array, start: number, end: number, seeds: WalkS
       return { address, bytes: decoded.bytes.map((byte) => byte.toString(16).padStart(2, "0")).join(""), mnemonic: decoded.mnemonic.toLowerCase(), operands: decoded.operands, flows };
     }),
   };
+}
+
+/**
+ * Why the walk did not decode a seed inside the program: its byte is in an
+ * instruction or a data range, no instruction decodes there, or its instruction
+ * runs past the end, into an instruction or into a data range.
+ */
+function refusal(address: number, end: number, owner: Int32Array, isData: Uint8Array): RefusedSeed {
+  if (owner[address] !== -1) return { address, reason: "inside-instruction", at: owner[address]! };
+  if (isData[address]) return { address, reason: "in-data" };
+  let decoded: Decoded;
+  try {
+    decoded = decode(address);
+  } catch {
+    return { address, reason: "not-decodable" };
+  }
+  const last = address + decoded.length - 1;
+  if (last > end) return { address, reason: "past-end" };
+  for (let at = address + 1; at <= last; at++) {
+    if (owner[at] !== -1) return { address, reason: "into-instruction", at: owner[at]! };
+    if (isData[at]) return { address, reason: "into-data" };
+  }
+  return { address, reason: "not-decodable" };
 }
 
 /** The target of the indirect jump at address, or undefined; a zero pointer is no target. */

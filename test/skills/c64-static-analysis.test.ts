@@ -70,7 +70,7 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.analyzer, "dxa");
   assert.equal((json.listing as { out: string }).out, "analysis/game.lst");
-  assert.deepEqual(json.regions, [
+  assert.deepEqual((json.regions as { listed: unknown[] }).listed, [
     { start: "$0801", end: "$080c", classification: "data" },
     { start: "$080d", end: "$0815", classification: "code" },
     { start: "$0816", end: "$0817", classification: "data" },

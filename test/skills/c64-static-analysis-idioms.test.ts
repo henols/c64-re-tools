@@ -56,6 +56,13 @@ test("an RTS dispatch on a word table is one rts-addresses region, and on adjace
   assert.deepEqual(split.findings.regions, [{ start: 0x1300, end: 0x1303, type: "rts-addresses-split" }]);
 });
 
+test("an idiom whose bytes another idiom already holds is left out with its reason", () => {
+  // Two RTS dispatches on word tables: $1300-$1303 for the first, $1302-$1303 for the second.
+  const found = findIdioms(image({ 0x1000: [0xbd, 0x01, 0x13, 0x48, 0xbd, 0x00, 0x13, 0x48, 0x60], 0x1010: [0xbd, 0x03, 0x13, 0x48, 0xbd, 0x02, 0x13, 0x48, 0x60], 0x1300: [0xff, 0x14, 0xff, 0x15, 0x00, 0x00] }).byteAt, RANGE);
+  assert.equal(found.counts.rtsTables, 1);
+  assert.deepEqual(found.leftOut, [{ start: 0x1302, end: 0x1303, kind: "rts-table", reason: "overlaps-idiom" }]);
+});
+
 test("three JMP abs in a row are a JMP table; a BIT skip is dual-use bytes with the reference to its inner entry", () => {
   const jumps = findIdioms(image({ 0x1400: [0x4c, 0x00, 0x15, 0x4c, 0x00, 0x16, 0x4c, 0x00, 0x17] }).byteAt, RANGE);
   assert.deepEqual(jumps.findings.regions, [{ start: 0x1400, end: 0x1408, type: "jumps" }]);
