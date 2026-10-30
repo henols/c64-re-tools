@@ -281,8 +281,8 @@ export class Change {
 
   insertRelease(row: Omit<ReleaseRow, "revision">): void {
     this.#db
-      .prepare("INSERT INTO releases (id, space, label, base, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.label, row.base ? 1 : 0, row.comment ?? null, row.origin, this.id());
+      .prepare("INSERT INTO releases (id, space, label, base, file, sha256, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.label, row.base ? 1 : 0, row.file ?? null, row.sha256 ?? null, row.comment ?? null, row.origin, this.id());
   }
 
   /** Bytes of a release other than the base release, as a memory row of the program holds them. */
@@ -1032,9 +1032,10 @@ function unswitchStep(db: DatabaseSync, change: Change, _origin: Origin, request
 /**
  * A release. `rows` are the bytes of a release other than the base release,
  * as memoryRows gives them: the address of each row and its bytes as hex. The
- * base release has no bytes of its own: its bytes are the program.
+ * base release has no bytes of its own: its bytes are the program. `file` and
+ * `sha256` are the project file that the bytes come from and its SHA-256.
  */
-type ReleaseRequest = InSpace & { label: string; base?: boolean; comment?: string; rows?: ReadonlyMap<number, string> };
+type ReleaseRequest = InSpace & { label: string; base?: boolean; file?: string; sha256?: string; comment?: string; rows?: ReadonlyMap<number, string> };
 
 function checkRelease(request: ReleaseRequest): void {
   checkSpace(request);
@@ -1046,6 +1047,8 @@ function checkRelease(request: ReleaseRequest): void {
       throw new Refusal("invalid-input", `The bytes of a release at ${formatC64Address(address & 0xffff)} are not a memory row.`);
     }
   }
+  if (request.file !== undefined && (typeof request.file !== "string" || request.file.length === 0)) throw new Refusal("invalid-input", "The file of a release is a project path.");
+  if (request.sha256 !== undefined && (typeof request.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(request.sha256))) throw new Refusal("invalid-input", "The SHA-256 of a release file is 64 lowercase hex digits.");
   checkCommentText(request.comment, "A release comment");
 }
 
@@ -1054,12 +1057,16 @@ function releaseStep(db: DatabaseSync, change: Change, origin: Origin, request: 
   const existing = releaseLabeled(db, request.label, space);
   const base = request.base ?? existing?.base ?? false;
   const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
+  // A release that is recorded again without its file keeps the file that it has.
+  const file = request.file ?? existing?.file;
+  const sha256 = request.file === undefined ? existing?.sha256 : request.sha256;
+  const sameFile = existing?.file === file && existing?.sha256 === sha256;
   const held = db.prepare("SELECT id, address, bytes FROM current_release_memory WHERE space = ? AND label = ?").all(space, request.label) as Array<{ id: string; address: number; bytes: string }>;
   // A release without new bytes keeps its bytes. The base release has none: its bytes are the program.
   const wanted = base ? new Map<number, string>() : (request.rows ?? new Map(held.map((row) => [row.address, row.bytes])));
   if (!base && wanted.size === 0) throw new Refusal("invalid-input", `The release ${request.label} has no bytes. Give the file of the release.`);
   const sameBytes = held.length === wanted.size && held.every((row) => wanted.get(row.address) === row.bytes);
-  if (existing !== undefined && existing.base === base && existing.comment === comment && sameBytes && !confirms(existing.origin, origin)) return { current: existing };
+  if (existing !== undefined && existing.base === base && existing.comment === comment && sameFile && sameBytes && !confirms(existing.origin, origin)) return { current: existing };
   const other = baseLabel(db, space);
   if (base && other !== undefined && other !== request.label) throw new Refusal("conflict", `The release ${other} is the base release. A space has one base release.`);
   // Every switch takes its base value from the base release: it cannot change under them.
@@ -1069,9 +1076,9 @@ function releaseStep(db: DatabaseSync, change: Change, origin: Origin, request: 
   }
   const symbol = symbolNamed(db, `${RELEASE_DEFINE}${request.label}`, space);
   if (symbol !== undefined) throw new Refusal("conflict", `The build of the release defines ${RELEASE_DEFINE}${request.label}, and that is the name of the symbol at ${formatC64Address(symbol.address)}. Give the release another label.`);
-  if (existing === undefined || existing.base !== base || existing.comment !== comment || confirms(existing.origin, origin)) {
+  if (existing === undefined || existing.base !== base || existing.comment !== comment || !sameFile || confirms(existing.origin, origin)) {
     if (existing !== undefined) change.close("releases", "space = ? AND label = ?", space, request.label);
-    change.insertRelease({ space, label: request.label, base, ...(comment === undefined ? {} : { comment }), origin: origin as ReleaseRow["origin"] });
+    change.insertRelease({ space, label: request.label, base, ...(file === undefined ? {} : { file }), ...(sha256 === undefined ? {} : { sha256 }), ...(comment === undefined ? {} : { comment }), origin: origin as ReleaseRow["origin"] });
   }
   // Only the rows that changed: a changed byte changes one short line of the text.
   const kept = new Set<number>();
@@ -1667,7 +1674,7 @@ const KEYS = {
   releases: {
     columns: RELEASE_COLUMNS,
     map: toRelease,
-    key: (row: ReleaseRow) => `${row.space}|${row.label}|${row.base}|${row.comment ?? ""}|${row.origin}`,
+    key: (row: ReleaseRow) => `${row.space}|${row.label}|${row.base}|${row.file ?? ""}|${row.sha256 ?? ""}|${row.comment ?? ""}|${row.origin}`,
   },
   start_screens: {
     columns: START_SCREEN_COLUMNS,

@@ -101,12 +101,12 @@ test("a routine saved from program A is found in program B at another address, a
   assert.deepEqual(matched.changes.writes.listed[0], { op: "rename", address: "$3000", name: "play", kind: "routine" });
   assert.match(matchRun.envelope.hint!, /Then nextAction writes the changes to the project knowledge\. Then examine changes\.check:/);
   assert.match(matchRun.envelope.nextAction!, / match --library \.\.\/library --apply /);
-  assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]).symbol, undefined, "without --apply, match writes nothing");
+  assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]).addresses[0].symbol, undefined, "without --apply, match writes nothing");
 
   // With --apply, match writes the changes as one revision of the LLM.
   const applied = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--apply", "--project", "game-b"]);
   assert.equal(typeof applied.changes.revision, "string");
-  const at = ok("c64-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]);
+  const at = ok("c64-knowledge", "knowledge.ts", ["at", "$3014", "--project", "game-b"]).addresses[0];
   assert.equal(at.symbol.name, "set_pointer");
   assert.equal(at.symbol.origin, "llm");
   // The address in the comment moved with the routine.
