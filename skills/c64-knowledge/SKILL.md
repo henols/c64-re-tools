@@ -248,13 +248,14 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 
 ### `listing <range>`
 
-- `body.lines` has `count` and `listed`. `listed` holds one line for each instruction of a code region, and one `!byte` line for other bytes.
+- `body.lines` has `count` and `listed`. `listed` holds one line for each instruction of a code region.
+- A table of addresses or words shows its values as `!word` lines. Each address has the name of its target. A split table shows the low and the high byte of each target as `!byte` lines. The other bytes show as `!byte` lines.
 - Each line has `address`, `bytes`, `text`, `referencesIn` and `referencesOut`. It can also have `label`, `analyzerNames`, `lineComments` and `comment`. `lineComments` are the line comments before the line. `comment` is the side comment.
 - `text` is the instruction with the names of its target. An operand expression of the knowledge replaces the operand.
 - `access` is there when the knowledge has coverage. It tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line. `-` tells that no run did. An `r` on code can come from a read of the 6502 that the program does not do. Examples are the third byte of a JSR and the opcode after a branch that the CPU takes. Another example is the opcode at the PC when an interrupt starts. An indexed read (`lda table,x`) that crosses a page also reads the byte $100 below its target. A read watchpoint does not stop at these reads.
 - With `--out`, the body has `lines` as a number, and `out`, `bytes` and `sha256` of the text file.
 - If the knowledge has no program in the space, the script refuses. Put the program in with `image` first.
-- Use `listing` in place of your own disassembler.
+- Use `listing` in place of your own disassembler. To find the targets of a table, classify the table with its type. Then read its listing. Do not decode the bytes of a table yourself.
 
 ### `export`
 

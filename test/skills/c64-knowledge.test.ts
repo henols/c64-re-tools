@@ -423,6 +423,33 @@ test("listing names an address inside a named data region or a platform entry as
 });
 
 
+test("listing writes a table of words or addresses as its values with the names of the targets, as c64-source does", () => {
+  // $2000: addresses of $3000 (room_a) and $3010; $2004: an RTS table, split, of $3100 (handler) and $3200; $2008: words with an odd last byte.
+  const table = [0x00, 0x30, 0x10, 0x30, 0xff, 0xff, 0x30, 0x31, 0x34, 0x12, 0x56];
+  const bytes = new Map(table.map((value, offset) => [0x2000 + offset, value]));
+  const names = new Map([[0x3000, "room_a"], [0x3100, "handler"]]);
+  const source: ListingSource = {
+    byteAt: (address) => bytes.get(address),
+    nameOf: (address) => names.get(address),
+    secondNames: () => [],
+    regions: [{ start: 0x2000, end: 0x2003, type: "addresses" }, { start: 0x2004, end: 0x2007, type: "rts-addresses-split" }, { start: 0x2008, end: 0x200a, type: "words" }],
+    comments: () => ({ line: [] }),
+    operand: () => undefined,
+    references: () => ({ in: 0, out: 0 }),
+  };
+  assert.deepEqual(
+    listing(source, 0x2000, 0x200a).map((line) => [line.address, line.text]),
+    [
+      [0x2000, "!word room_a,$3010"],
+      [0x2004, "!byte <(handler-1),<($3200-1),>(handler-1),>($3200-1)"],
+      [0x2008, "!word $1234"],
+      [0x200a, "!byte $56"],
+    ],
+  );
+  assert.deepEqual(listing(source, 0x2001, 0x2003).map((line) => [line.address, line.text]), [[0x2002, "!word $3010"]], "a start inside a word starts at the next word");
+});
+
+
 test("listing shows a comment at an operand byte (knowledge of an older version) with its address, as c64-source does", () => {
   // $1bc9 LDA $0104, $1bcc RTS; a side comment at $1bc9 and one at the operand byte $1bca.
   const bytes = new Map([0xad, 0x04, 0x01, 0x60].map((value, offset) => [0x1bc9 + offset, value]));

@@ -2,7 +2,8 @@
 // into one report under field-reports/: the files, and summary.md with the
 // builds and the clock difference, the failures, the slow operations, the
 // host connections, the VICE events, the notes with the trace around each
-// one, and the agent's comprehension next to each description.
+// one, the agent's comprehension next to each description, and the detours
+// of the agent in its transcripts.
 //
 //   node test/field/report.ts <bundle.tgz|bundle-dir> [--host-trace <dir> ...] [--out <dir>]
 
@@ -19,6 +20,7 @@ import { mediaTools } from "../../src/mcp/tools/media.ts";
 import { memoryTools } from "../../src/mcp/tools/memory.ts";
 import { videoTools } from "../../src/mcp/tools/video.ts";
 import { isoCet } from "../../src/time.ts";
+import { detoursSection } from "./detours.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -220,6 +222,9 @@ function summary(dir: string, events: Event[], notes: Note[], skew: { skewMs: nu
     if (described !== undefined) lines.push(`- Description: ${described}`);
     lines.push(`- The agent: ${note.text}`);
   }
+
+  h(2, "Detours");
+  lines.push(...detoursSection(join(dir, "transcripts")));
 
   h(2, "Knowledge");
   lines.push("```json", JSON.stringify(knowledge, null, 2), "```");

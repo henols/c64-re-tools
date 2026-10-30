@@ -3,7 +3,7 @@
 // the bytes from coverage files, and the references in and out. Nothing here
 // reads files: knowledge.ts gives the lookups.
 
-import { COVERAGE, formatC64Address, formatC64Byte } from "#src/c64.ts";
+import { COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
 import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
@@ -42,7 +42,10 @@ export interface ListingLine {
   comment?: string;
 }
 
+type Region = ListingSource["regions"][number];
+
 const CODE = new Set(["code", "jumps"]);
+const TABLES = new Set<string>(["words", ...POINTER_TABLE_TYPES]);
 const DATA_PER_LINE = 8;
 
 /** The access class of bytes from the coverage: x, r and w as they occur, or - for none. */
@@ -76,7 +79,38 @@ function operandOf(mode: Mode, address: number, low: number, high: number, sourc
   return MODE_LENGTH[mode] === 3 ? named(low | (high << 8), 4) : named(low, 2);
 }
 
-/** The lines of start..end: instructions in code regions, decoded from the region start, and bytes elsewhere. */
+/**
+ * The values of a table region as c64-source writes them: a word of a words or an address table
+ * as one !word value, and each byte of a split table as <target or >target. A byte of no entry has no value.
+ */
+function tableValues(region: Region, source: ListingSource): Map<number, { length: 1 | 2; text: string }> {
+  const values = new Map<number, { length: 1 | 2; text: string }>();
+  const present = (address: number) => source.byteAt(address) !== undefined;
+  const byteAt = (address: number) => source.byteAt(address) ?? 0;
+  if (region.type === "words") {
+    for (let address = region.start; address + 1 <= region.end; address += 2) {
+      if (present(address) && present(address + 1)) values.set(address, { length: 2, text: formatC64Address(byteAt(address) | (byteAt(address + 1) << 8)) });
+    }
+    return values;
+  }
+  const rts = region.type === "rts-addresses" || region.type === "rts-addresses-split";
+  const split = region.type === "addresses-split" || region.type === "rts-addresses-split";
+  for (const entry of pointerTableEntries({ start: region.start, end: region.end, type: region.type as PointerTableType }, byteAt)) {
+    if (!present(entry.low) || !present(entry.high)) continue;
+    const target = targetName(entry.target, source) ?? formatC64Address(entry.target);
+    const text = rts ? `${target}-1` : target;
+    if (!split) {
+      values.set(entry.low, { length: 2, text });
+      continue;
+    }
+    const part = /^[$A-Za-z_.0-9]+$/.test(text) ? text : `(${text})`;
+    values.set(entry.low, { length: 1, text: `<${part}` });
+    values.set(entry.high, { length: 1, text: `>${part}` });
+  }
+  return values;
+}
+
+/** The lines of start..end: instructions in code regions, decoded from the region start, tables as their values, and bytes elsewhere. */
 export function listing(source: ListingSource, start: number, end: number): ListingLine[] {
   const lines: ListingLine[] = [];
   const line = (address: number, length: number, text: string): ListingLine => {
@@ -107,9 +141,11 @@ export function listing(source: ListingSource, start: number, end: number): List
     };
   };
   const regionAt = (address: number) => source.regions.find((region) => address >= region.start && address <= region.end);
-  // Start at the code region that holds the first address, so the instructions keep their boundaries.
+  const tables = new Map<Region, ReturnType<typeof tableValues>>();
+  const valuesOf = (region: Region) => tables.get(region) ?? tables.set(region, tableValues(region, source)).get(region)!;
+  // Start at the code or table region that holds the first address, so the instructions and the words keep their boundaries.
   const first = regionAt(start);
-  let address = first !== undefined && CODE.has(first.type) ? first.start : start;
+  let address = first !== undefined && (CODE.has(first.type) || TABLES.has(first.type)) ? first.start : start;
   while (address <= end) {
     const byte = source.byteAt(address);
     if (byte === undefined) {
@@ -129,14 +165,37 @@ export function listing(source: ListingSource, start: number, end: number): List
         continue;
       }
     }
-    // Bytes up to the next label, region edge or end of the line.
+    // Table values of one size up to the next label, region edge or end of the line. A label inside a word gives its bytes.
+    const table = region !== undefined && TABLES.has(region.type) ? valuesOf(region) : undefined;
+    // Before the start, step over the values of a table one at a time, so the first line starts at the first value from the start.
+    if (address < start) {
+      address += table?.get(address)?.length ?? 1;
+      continue;
+    }
+    if (table !== undefined) {
+      const size = table.get(address)?.length;
+      const texts: string[] = [];
+      let at = address;
+      while (size !== undefined && at <= end && texts.length * size < DATA_PER_LINE) {
+        const value = table.get(at);
+        if (value?.length !== size || (at !== address && source.nameOf(at) !== undefined) || (size === 2 && source.nameOf(at + 1) !== undefined)) break;
+        texts.push(value.text);
+        at += size;
+      }
+      if (texts.length > 0) {
+        lines.push(line(address, at - address, `${size === 2 ? "!word" : "!byte"} ${texts.join(",")}`));
+        address = at;
+        continue;
+      }
+    }
+    // Bytes up to the next label, table value, region edge or end of the line.
     const values: number[] = [];
     let at = address;
-    while (at <= end && values.length < DATA_PER_LINE && source.byteAt(at) !== undefined && (at === address || (source.nameOf(at) === undefined && regionAt(at) === region))) {
+    while (at <= end && values.length < DATA_PER_LINE && source.byteAt(at) !== undefined && (at === address || (source.nameOf(at) === undefined && regionAt(at) === region && table?.has(at) !== true))) {
       values.push(source.byteAt(at)!);
       at++;
     }
-    if (address >= start) lines.push(line(address, values.length, `!byte ${values.map(formatC64Byte).join(",")}`));
+    lines.push(line(address, values.length, `!byte ${values.map(formatC64Byte).join(",")}`));
     address = at;
   }
   return lines;
