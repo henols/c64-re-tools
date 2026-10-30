@@ -77,19 +77,27 @@ canvas{image-rendering:pixelated;width:min(784px,100%);aspect-ratio:392/272;back
 button{font:inherit;font-size:12px;padding:3px 8px}
 .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center}
 .gap{width:12px}
-table{border-collapse:collapse;font-size:13px}td{padding:2px 10px;border-top:1px solid #333}
+table{border-collapse:collapse;font-size:13px;max-width:784px}th{text-align:left;padding:2px 10px}td{padding:2px 10px;border-top:1px solid #333;vertical-align:top}
 </style></head><body>
 <div class="row"><button id="start" disabled>Start (Enter)</button><button id="end" disabled>End and save (F12)</button><button id="cancel" disabled>Cancel (F11)</button><span class="gap"></span><button id="port">Port 2 (F9)</button><button id="arrows">Arrows: joystick (F10)</button><button id="map">Keys: symbolic</button></div>
 <canvas id="screen" width="392" height="272"></canvas>
 <div id="state">connecting</div>
 <table>
-<tr><td>Start, End, Cancel</td><td>Enter (on the start screen), F12, F11</td></tr>
-<tr><td>Joystick</td><td>arrow keys and space (when F10 sets joystick), or a gamepad</td></tr>
-<tr><td>RUN/STOP, RESTORE</td><td>Esc, Page Up</td></tr>
-<tr><td>CTRL, C=</td><td>Tab, left Alt</td></tr>
-<tr><td>CLR/HOME, INST/DEL</td><td>Home, Backspace</td></tr>
-<tr><td>Symbolic map</td><td>the characters on the PC keys; £, ^ (up arrow) and the backquote (left arrow)</td></tr>
-<tr><td>Positional map</td><td>the C64 keys at the places of the PC keys; each SHIFT alone; Insert £, Delete up arrow, the backquote left arrow</td></tr>
+<tr><th>Page</th><th>C64</th></tr>
+<tr><td>Start, End and save, Cancel</td><td>Enter (on the start screen), F12, F11. The time before Start is not in the recording. End freezes the screen and the script saves the recording. Cancel saves none.</td></tr>
+<tr><td>Port, Arrows, Keys</td><td>F9 changes the joystick port. F10 changes the arrow keys and space between the joystick (at the start) and the C64 keys. Keys changes between the symbolic map (the default) and the positional map.</td></tr>
+<tr><td>Arrow keys and space as the joystick</td><td>the joystick: directions and fire</td></tr>
+<tr><td>A gamepad</td><td>the joystick: the left stick or the cross for directions, button 1 or 2 for fire</td></tr>
+<tr><td>Arrow keys and space as C64 keys</td><td>CRSR up, down, left and right, and SPACE</td></tr>
+<tr><td>Escape, Shift+Escape</td><td>RUN/STOP, RUN</td></tr>
+<tr><td>Page Up</td><td>RESTORE</td></tr>
+<tr><td>Tab, left Alt</td><td>CTRL, C=</td></tr>
+<tr><td>Home, Shift+Home</td><td>CLR/HOME, CLR</td></tr>
+<tr><td>Backspace, Shift+Backspace</td><td>INST/DEL, INST</td></tr>
+<tr><td>F1-F8</td><td>F1-F8</td></tr>
+<tr><td>Symbolic map</td><td>the character on the PC key: a-z are the C64 letters, A-Z the letters with SHIFT, and the digits and the symbols the same characters. £ is the pound key, ^ the up arrow, and the backquote the left arrow.</td></tr>
+<tr><td>Positional map</td><td>the C64 key at the place of the PC key. Each SHIFT key is a C64 SHIFT key, also alone. The C64 keys + - @ * : ; = are on the PC keys - = [ ] ; ' \. Insert is the pound key, Delete the up arrow, and the backquote the left arrow. Use it when the program reads SHIFT alone or a key with SHIFT.</td></tr>
+<tr><td>Ctrl, Cmd</td><td>no C64 key: they keep their function in the browser</td></tr>
 </table>
 <script>
 const KEYS = __KEYS__;

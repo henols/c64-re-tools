@@ -78,6 +78,10 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     const side = (subject: ReplaySubject, options: Parameters<typeof replaySide>[5]) => replaySide(core, recording, folder, subject, workspace, options);
     const rebuildSymbols = values.symbols ?? referenceSymbols;
     // A rebuild with a generated loader starts the program where its loader jumps to. The reference comes to that entry by the same name.
+    // The checkpoints of both sides count from that entry, and at the entry the rebuild gets the raster position, the CIA timers and
+    // the interrupt state of the reference, which the loader cannot set as the reference has them. A runUntil to an address counts
+    // neither the code of the loader nor the code of the reference before the entry; another event before the entry has no point in
+    // the rebuild, and the result is INCONCLUSIVE.
     let loader: { entry: number; reference: number } | undefined;
     if (values.rebuild !== undefined && !recording.load && namesOf(rebuildSymbols).has(LOADER_JUMP)) {
       const entry = await loaderEntry(core, recording, { side: "rebuild", program: values.rebuild, symbols: rebuildSymbols });

@@ -1,6 +1,6 @@
 # Recording format
 
-This file gives the format of a record file and of a recording folder. For the commands, see the sections ``### `record <record.json>` `` and ``### `replay <recording>` `` of `SKILL.md`.
+This file gives the format of a record file. For the commands, see the sections ``### `record <record.json>` `` and ``### `replay <recording>` `` of `SKILL.md`.
 
 ## Record file
 
@@ -43,7 +43,7 @@ A record file has no `raster` target and no `condition`. `write` and `runUntil` 
 
 | Step | Effect |
 |---|---|
-| `{ "frames": 300 }` | Run 300 frames (19656 cycles each). |
+| `{ "frames": 300 }` | Run 300 frames. |
 | `{ "joystick": { "port": 2, "direction": "left", "fire": true } }` | Set a joystick. It stays in this state until the next joystick step. |
 | `{ "press": { "keys": "RUN\n" } }` | Press the keys of the keyboard matrix. Each tap holds its keys for 3 frames, then releases them for 3 frames. `frames` sets a different number, from 1 to 3000. |
 | `{ "type": { "mode": "text", "text": "RUN\n" } }` | Put at most 10 keys into the keyboard queue of the KERNAL, after the keys that wait there. |
@@ -68,85 +68,10 @@ To hold keys together in one tap, join them with `+` in braces. For example, `{ 
 
 The keyboard queue of the KERNAL holds 10 keys. If the keys of a `type` step and the keys that wait in the queue do not fit, the session stops. A program that reads the keyboard hardware does not see the keys of a `type` step. Use `press` for that program.
 
-`joystick`, `press` and `frames` steps are input and time. The recording keeps their effect in the reads, so a replay does not do these steps again.
+`joystick`, `press` and `frames` steps are input and time. The recording keeps the input that the program read, so a replay does not do these steps again.
 
-RESTORE starts an NMI and is not a read. The recording keeps each RESTORE of a `press` step as an event of that step. The replay presses RESTORE again at the same read of the program.
+RESTORE starts an NMI and is not an input read. A replay presses each RESTORE of a `press` step again at the same point of the program.
 
-`type`, `write`, `registers` and `runUntil` steps are events. The recording keeps a point in the program for each event. A replay does the event again at the same point:
-
-- A `runUntil` step to an address: the point is the number of times that the CPU got to that address. This step does not need an input read.
-- An event that comes directly after another event runs at once after that event.
-- Each other event: the point is the next read at the input site with the most reads. That site is not in ROM. If the program does not read input in 600 frames, the session stops.
+`type`, `write`, `registers` and `runUntil` steps are events. A replay does each event again at the same point of the program. A `runUntil` step to an address needs no input. Another event needs an input read of the program.
 
 Some parts of a program read no input, for example an intro or a bonus screen. To do an event in such a part, put a `runUntil` step to an address before the event.
-
-## Play
-
-With `--play`, `record` does the steps, then a person plays. The page on `http://localhost:<port>/` (`--http-port`) shows the screen at 50 frames each second. It has no sound.
-
-| Button | Key | Effect |
-|---|---|---|
-| Start | Enter, on the start screen | The C64 runs. Before Start, the page shows the screen after the steps, and the C64 is frozen. The time before Start is not in the recording. |
-| End and save | F12 | The C64 stops at the frame on the page, and the screen stays frozen. The script writes the recording folder. |
-| Cancel | F11 | The session stops before or during the play. The script writes no folder and gives `recorded: false`. |
-| Port | F9 | The joystick goes to the other port. `--joystick` gives the first port. |
-| Arrows | F10 | The arrow keys and space change between the joystick and the C64 keys. At the start, they are the joystick. |
-| Keys | | The keyboard changes between the symbolic map (the default) and the positional map. |
-
-The buttons are in one row above the screen.
-
-| Page input | C64 input |
-|---|---|
-| Arrow keys and space, when they are the joystick | The joystick: directions and fire. |
-| A gamepad | The joystick: the left stick or the cross for directions, button 1 or 2 for fire. |
-| Arrow keys and space, when they are C64 keys | CRSR up, down, left and right, and SPACE. |
-| Escape, Shift+Escape | RUN/STOP, RUN |
-| Page Up | RESTORE |
-| Tab, left Alt | CTRL, C= |
-| Home, Shift+Home | CLR/HOME, CLR |
-| Backspace, Shift+Backspace | INST/DEL, INST |
-| F1-F8 | F1-F8 |
-
-In the symbolic map, a key gives the character on the PC key. a-z give the C64 letters, and A-Z give the letters with SHIFT. The digits and the symbols give the same characters. `£` gives the pound key, `^` gives the up arrow, and the backquote gives the left arrow.
-
-In the positional map, a key gives the C64 key at the same place on the keyboard. Each SHIFT key is a C64 SHIFT key, also alone. The C64 keys `+ - @ * : ; =` are on the PC keys `- = [ ] ; ' \`. Insert gives the pound key, Delete gives the up arrow, and the backquote gives the left arrow. Use the positional map when the program reads SHIFT alone or a key with SHIFT.
-
-Ctrl and Cmd are not C64 keys. They keep their function in the browser.
-
-The page sends input only between Start and End. The input of the page goes into the reads, as the input of the steps does. RESTORE starts an NMI and is not a read. The recording keeps each RESTORE as an event without a step number. The replay presses RESTORE again at the same read of the program.
-
-## Recording folder
-
-`record` writes these files into the `--out` folder:
-
-| File | Content |
-|---|---|
-| `recording.json` | The program and its SHA-256, the symbols, and the comparison of the record file. Also the inputs, the events, the input sites, the cycles of the session and the state hash at its end. |
-| `reads.txt` | One line `<site> <addr> <from> <value>` for each change of the value at a site. From the read with the index `<from>`, the reads at `<site>` from `<addr>` get `<value>`. One line `end <site> <addr> <count>` for each site gives its number of reads. |
-| `coverage.bin` | The coverage map of the session: 65536 bytes, one for each address, in the format of the coverage maps of the emulator. It starts where the key `coverage` of the record file tells. The code before that point has no marks. |
-
-A site is the address of the instruction that reads. The values are hex. `<from>` and `<count>` are decimal.
-
-`replay` examines `recording.json` before the replay starts. A recording of an older version can have events or a comparison in an old form. For example, `"at"` is in place of `"address"`, or a `runUntil` step to an address has no count of the CPU at its target. The script refuses such a recording with `invalid-input`, and the message names the event. Record the session again.
-
-## Replay
-
-`replay` replays the recording on the reference program first. The session must end with the recorded cycles and state hash. Else the result is INCONCLUSIVE. With `--rebuild`, `replay` then replays the recording on the rebuild. At each checkpoint, the rebuild first gets the pinned values of the reference. Then the script compares the state. The cycles can be different.
-
-A recording without names (`symbols` is `none`) takes the names of the project knowledge at the time of the replay.
-
-For the rebuild, the script finds each name with the names of the rebuild (`--symbols`). A `$` address is an address of the reference. It moves with the name before it in the reference: the script finds the same name in the rebuild and adds the same offset. Code moves with a code label, and data with any name. A site in ROM does not move. Give a state item a name, or the state moves with the code before it.
-
-The body of the envelope of `replay` has these fields:
-
-- `result`: PASS, FAIL or INCONCLUSIVE.
-- `side`: `reference` for the check of the reference only, `rebuild` with `--rebuild`.
-- `checkpoint`: the routine of the comparison.
-- `checkpoints` and `compared`: the checkpoints of the reference, and the checkpoints of the rebuild that were the same.
-- `firstDifference`: on a FAIL, the checkpoint (1 is the first), the cycle on each side, and each state item that is different. An item has `address`, and the `reference` and `rebuild` values as hex.
-- `reason`: why the result is FAIL or INCONCLUSIVE.
-- `movedSites`: the number of sites at a different address in the rebuild.
-- `startScreen`: `skipped` when the rebuild went past the wait of its start screen.
-- `idleReads`: the input reads of the rebuild that the recording had no value for. Such a read is at a site that the recording does not have, or after its end. Each got the fixed value `$FF` (joystick, keyboard, paddles) or `$00`. An input site that the site map did not find shows here.
-- `files`: with `--out`, the RAM of each side at the first different checkpoint, `reference-<n>.bin` and `rebuild-<n>.bin`.
-- `screen`: with `--screen`, the PNG file of the screen of the reference at the end of the session.

@@ -4,6 +4,9 @@
 // side, no comparison with another program: an expect step checks the memory
 // and registers against the values that the run file gives.
 
+import { existsSync } from "node:fs";
+import { posix } from "node:path";
+
 import { formatC64Address, formatC64Byte, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { screenText } from "#src/graphics.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
@@ -15,7 +18,9 @@ import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TR
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { checkSnapshotFile } from "#src/media.ts";
+import { checkOutputPath, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, resolveProjectPath } from "#src/project.ts";
 import { namesOf } from "./scenario.ts";
+import { passStartScreen } from "./start-screen.ts";
 
 type RunStep =
   | ActionStep
@@ -335,6 +340,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
   const client = await ViceSessionClient.open({ videoStandard: run.videoStandard ?? "pal" });
   let done = 0;
   let reason: string | undefined;
+  let startScreen: "skipped" | "none" = "none";
   try {
     await client.reset({ mode: "hard", run: false });
     if ("snapshot" in run.start) {
@@ -345,6 +351,11 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
     } else {
       const failed = await runProgram(client, run.start.program, readProjectFile(run.start.program).bytes);
       if (failed !== undefined) reason = failed === "not-loaded" ? "The program was not in memory after autostart." : "The program did not start after RUN; it needs a BASIC start line.";
+      else {
+        const screen = await passStartScreen(client, symbols);
+        if (typeof screen === "object") reason = `${screen.problem[0]!.toUpperCase()}${screen.problem.slice(1)}.`;
+        else startScreen = screen;
+      }
     }
     await client.memmap({ action: "clear" });
     for (const step of reason === undefined ? run.steps : []) {
@@ -421,14 +432,114 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
       done,
       ...(reason === undefined ? {} : { reason }),
       pc: formatC64Address(pc),
+      ...(startScreen === "skipped" ? { startScreen } : {}),
       files: [...files],
       observations,
       ...(expectations.length === 0 ? {} : { expectations, failedExpectations }),
       ...(Object.keys(traces).length === 0 ? {} : { traces }),
     };
     write("results.json", Buffer.from(`${JSON.stringify(results, null, 2)}\n`));
-    return { output: { ...results, files: written, observations: Object.keys(observations), out }, failed: reason !== undefined || failedExpectations.length > 0 };
+    return { output: { ...results, files: written, out }, failed: reason !== undefined || failedExpectations.length > 0 };
   } finally {
     await client.close();
   }
+}
+
+/** The name of the run file in a kept run, and the folder of the files that it starts from. */
+const KEPT_RUN = "run.json";
+const KEPT_INPUTS = "inputs";
+/** A file name that a run wrote into --out: no folder, no "." or "..". */
+const RESULT_FILE = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
+
+/** A path of a run file that keep changed: the field, the old path and the new path. */
+export interface KeptPath {
+  field: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * Keeps a run as evidence in a folder that git keeps: the run file as
+ * run.json, results.json and each file that the run wrote into `out`, and
+ * each file in .c64-re-tools/local/ that the run file starts from (the
+ * program, the snapshot, the symbols and the snapshot steps) in inputs/. The
+ * run file gets the new paths of those files only; another path stays as it
+ * is. All files are read before the first write, and the target must not
+ * exist, so a refusal leaves nothing behind.
+ */
+export function keepRun(path: string, out: string, target: string): { out: string; files: Written[]; paths: KeptPath[] } {
+  const run = readRun(path);
+  const raw = JSON.parse(readProjectFile(path).bytes.toString("utf8")) as { start: Record<string, unknown>; symbols?: unknown; steps: Array<Record<string, unknown>> };
+  const kept = projectRelative(target);
+  if (kept === PROJECT_DIRECTORY || kept.startsWith(`${PROJECT_DIRECTORY}/`)) {
+    throw new Refusal("invalid-input", `${target} is in ${PROJECT_DIRECTORY}/, and git does not keep a run there. Give a new folder outside it, for example runs/${run.name.replace(/[^A-Za-z0-9._-]+/g, "_")}.`);
+  }
+  if (existsSync(resolveProjectPath(kept))) throw new Refusal("conflict", `${target} exists. Give a new folder, or remove the old folder first.`);
+  checkOutputPath(kept, "folder", { what: target });
+  const results = (() => {
+    const file = `${out}/results.json`;
+    let value: unknown;
+    try {
+      value = JSON.parse(readProjectFile(file).bytes.toString("utf8"));
+    } catch (error) {
+      if (isRefusal(error) && error.code === "not-found") throw new Refusal("not-found", `${out} has no results.json. Give the --out folder of a run of ${path}.`);
+      if (isRefusal(error)) throw error;
+      throw new Refusal("invalid-input", `${file} is not JSON: ${(error as Error).message}`);
+    }
+    if (!isObject(value) || value.name !== run.name || !Array.isArray(value.files) || !value.files.every((name) => typeof name === "string" && RESULT_FILE.test(name))) {
+      throw new Refusal("invalid-input", `${file} is not the result of the run ${run.name}. Give the --out folder of a run of ${path}.`);
+    }
+    return { file, names: value.files as string[] };
+  })();
+  if (results.names.includes(KEPT_RUN)) throw new Refusal("invalid-input", `the run wrote ${out}/${KEPT_RUN}, which is the name of the run file in a kept run. Give the step that writes it another name, and run again.`);
+  // The files of the project that the run file names in the local folder: each one once, in inputs/ with its own name.
+  const local = `${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/`;
+  const inputs = new Map<string, { to: string; bytes: Buffer }>();
+  const used = new Set<string>();
+  const paths: KeptPath[] = [];
+  const keep = (field: string, file: unknown): string | undefined => {
+    if (typeof file !== "string" || file === "knowledge" || file === "none") return undefined;
+    let from: string;
+    try {
+      from = projectRelative(file);
+    } catch (error) {
+      // A path into another project of the group is not in this local folder.
+      if (isRefusal(error)) return undefined;
+      throw error;
+    }
+    if (!from.startsWith(local)) return undefined;
+    let input = inputs.get(from);
+    if (input === undefined) {
+      let bytes: Buffer;
+      try {
+        bytes = readProjectFile(file).bytes;
+      } catch (error) {
+        if (isRefusal(error)) throw new Refusal(error.code, `run ${path}: ${field}: ${error.message}`);
+        throw error;
+      }
+      const name = posix.basename(from);
+      const extension = posix.extname(name);
+      let unique = name;
+      for (let count = 2; used.has(unique.toLowerCase()); count++) unique = `${name.slice(0, name.length - extension.length)}-${count}${extension}`;
+      used.add(unique.toLowerCase());
+      input = { to: `${kept}/${KEPT_INPUTS}/${unique}`, bytes };
+      inputs.set(from, input);
+    }
+    paths.push({ field, from: file, to: input.to });
+    return input.to;
+  };
+  const moved = (holder: Record<string, unknown>, key: string, field: string) => {
+    const to = keep(field, holder[key]);
+    if (to !== undefined) holder[key] = to;
+  };
+  moved(raw.start, "program", "start.program");
+  moved(raw.start, "snapshot", "start.snapshot");
+  moved(raw as Record<string, unknown>, "symbols", "symbols");
+  raw.steps.forEach((step, index) => {
+    if (isObject(step) && "snapshot" in step) moved(step, "snapshot", `step ${index + 1}: snapshot`);
+  });
+  const outputs = [results.file, ...results.names.map((name) => `${out}/${name}`)].map((file) => ({ to: `${kept}/${posix.basename(file)}`, bytes: readProjectFile(file).bytes }));
+  const files = [...inputs.values(), ...outputs].map((file) => writeReported(file.to, file.bytes, { what: target }));
+  files.push(writeReported(`${kept}/${KEPT_RUN}`, `${JSON.stringify(raw, null, 1)}\n`, { what: target }));
+  return { out: kept, files, paths };
 }
