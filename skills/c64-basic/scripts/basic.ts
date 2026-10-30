@@ -25,10 +25,13 @@ await runScript({
         const size = statSync(resolveProjectPath(program)).size - 2;
         const end = result.loadAddress + size - 1;
         const handoffs = result.handoffs.map((handoff) => ("address" in handoff ? { ...handoff, address: formatC64Address(handoff.address) } : handoff));
+        const after = result.basicEnd <= end;
         const body = {
           loadRange: { start: formatC64Address(result.loadAddress), end: formatC64Address(end) },
           // From here to the end of the load range, the file holds no BASIC (often machine code).
-          basicEnd: result.basicEnd <= end ? formatC64Address(result.basicEnd) : null,
+          basicEnd: after ? formatC64Address(result.basicEnd) : null,
+          // The same bytes in the file: 2 bytes of load address come before the program.
+          ...(after ? { machineCode: { start: formatC64Address(result.basicEnd), end: formatC64Address(end), fileOffset: result.basicEnd - result.loadAddress + 2 } } : {}),
           listing: result.listing,
           handoffs,
         };

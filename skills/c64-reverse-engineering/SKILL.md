@@ -98,12 +98,12 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 2. Get | List the disk image. Extract the start file into `releases/`. | The start file is in the project. |
 | 3. Start | Find the SYS address of the BASIC start. | You have the entry address. |
 | 4. Unpack | Examine the program for a packer. Trace it and find its stages. Capture a packed program into `.c64-re-tools/local/`. When a segment is the data of a cracktro and the program does not read it, capture again and exclude that range. Put the capture, or the PRG of a program without a packer, into the project knowledge. | The program in the project knowledge has the segments and the entry. |
-| 5. Run | First, record. Ask the user to play each part that the scope names, in a recording session. Tell the user which parts. Record a part yourself only when the sessions of the user do not have it. Put the recordings in `tests/recordings/`. Then run the parts that a recording cannot have, in the emulator or as test runs. Write a coverage map for each part into `.c64-re-tools/local/`. Add the maps and the `coverage.bin` of each recording to the project knowledge. | The program in the project knowledge has a coverage map for each part that the scope names. |
+| 5. Run | First, record. Ask the user to play each part that the scope names, in a recording session. Tell the user which parts. Record a part yourself only when the sessions of the user do not have it. Put the recordings in `tests/recordings/`. Then run the parts that a recording cannot have, in the emulator or as test runs. Write a coverage map for each part into `.c64-re-tools/local/`. Put each map and the coverage of each recording into the project knowledge. | The program in the project knowledge has a coverage map for each part that the scope names. |
 | 6. Analyze | Analyze the program statically. The analysis reads the program and the coverage from the project knowledge. | No coverage conflict is open. |
 | 7. Name | If the workspace has a routine library, match the program against it. Write the names of the matches to the project knowledge. Then name each routine in the scope and give it a comment. Find the platform addresses in the memory map of the C64. Record the modules. Put the modules of one part of the program in one folder, for example `music/`, `irq/` or `graphics/`. When the scope has hundreds of routines, ask the user which routines to name. The source gives the other routines an `l_xxxx` label. | Each routine that the user selected has a name and a comment. |
 | 8. Releases and switches | Record the examined reference file, or its capture, as the base release in the project knowledge. The project knowledge keeps the bytes of each release. Record each other release. Compare the releases. Find the leftovers. Record a switch for each copy protection, trainer, cheat, crack change and correction. Record a patch for each range of a switch. Record each leftover as a region with a comment. | The project knowledge lists each switch. Each difference between the releases is in a patch, or the answer gives it as an exception. |
 | 9. Generate | Generate the source from the project knowledge into `src`. For an unpacked program, also generate the loader. | The result of the generation is PASS. A release whose code is at other addresses is a version with a project of its own, or an exception in the answer. See "Versions of one program". |
-| 10. Build and test | Build the base release into `build/`, and compare it with the base release in the project knowledge. The compare includes each segment of the base release. Build the default build. For a generated source with a loader, the default build is `build/clean_loader.prg`. Else it is `build/clean.prg`. Replay each recording on the default build. For each replay, give the checkpoint routine, the state and the random state with the names of stage 7. Then do only the tests that the next paragraph gives. | The criteria of stage 1 are true. |
+| 10. Build and test | Build the base release into `build/`, and compare it with the base release in the project knowledge. The compare includes each segment of the base release. Build the default build: the loader program when the source has a loader, else the clean build. The result of the generation gives its file. Replay each recording on the default build. For each replay, give the checkpoint routine, the state and the random state with the names of stage 7. Then do only the tests that the next paragraph gives. | The criteria of stage 1 are true. |
 | 11. Document | When the criteria ask for documentation, generate it into `README.md` and `docs/`. For versions in a group folder, also write the shared pages of the group folder. Write the reference files, the limits of the evidence and the result of the last comment check in the first paragraph. Then link the pages. | The link check of the documentation gives PASS. Each claim stays in the limits of its evidence. |
 | 12. Hand over | Find each file that you made outside `.c64-re-tools/local/` and that is not a deliverable. Move it into `.c64-re-tools/local/`. Then give the answer (below). | Each file that you made outside `.c64-re-tools/local/` is a deliverable. |
 
@@ -111,7 +111,7 @@ In stage 5, make the recordings before you change the program. A recording needs
 
 In stage 10, a build that is identical to the base release proves the source. It proves only the bytes of the base release. Do not test the base release more. The capture of stage 4 can leave out ranges, for example the data of a cracktro. Give each such range in the answer. The default build is different from the base release only in its patches, its leftovers and its loader. The replays on the default build test these differences:
 
-- Replay only the default build: `build/clean_loader.prg` for a source with a loader, else `build/clean.prg`. Do not replay a release build or a build with a switch that is not at its default.
+- Replay only the default build. Do not replay a release build or a build with a switch that is not at its default.
 - Write a test scenario only for a test that a replay cannot do. Examples are a program that loads more files from a disk, and a criterion of the user.
 - Do the other tests of stage 1 only when the user selected them.
 
@@ -143,56 +143,16 @@ All other files that you made are not deliverables. Keep them in `.c64-re-tools/
 Give the user a short answer at the end. Do not write a report file. Write a report file only when the user asks for it. The knowledge, `docs/` and the scenarios keep the durable results. The answer has:
 
 1. Each criterion of stage 1 and its result, and each exception that the user accepted.
-2. The count of the code ranges that no run executed. The ranges are in `.c64-re-tools/local/generated/src/not_executed.json` for the source in `src/`.
+2. The count of the code ranges that no run executed. The result of the generation gives the count and the ranges.
 3. The switches: the name, the kind and the default of each, and the releases that have it on. Also a copy protection that a crack removed and that no release has.
 4. Open questions: what the evidence does not explain.
 5. The result of each comment check: the seed, the number of comments in the sample, and the number of `wrong` and `unsure` comments before the corrections.
 
 Keep observed facts apart from your conclusions.
 
-### Project layout
+### Project layout and versions
 
-If the project has no layout, use this one. No script checks it. Each script takes the paths that you give.
-
-```
-releases/      the disk image or the program as you got it
-src/           the generated source
-build/         the built programs. Do not commit them: each build writes them again.
-tests/         the test scenarios, and the recordings in tests/recordings/
-runs/          the runs that the knowledge gives as evidence
-docs/          the documentation, with the reference in docs/reference/
-tools/         scripts for the formats of this program only
-README.md      the entry page of the documentation
-```
-
-Commit each folder of the layout other than `build/`, and `.c64-re-tools/knowledge/`. The knowledge holds the program, the entry state, the bytes of each release and the coverage, so the project needs no other folder for them. Put all other files that you make in `.c64-re-tools/local/`, also the captures and the coverage maps after you put them into the knowledge. Do not let git ignore a folder of the layout other than `build/`. Do not change the `.gitignore` files of the project.
-
-If the project has a layout, use that layout.
-
-A workspace with several projects keeps its routine library in `library/` beside the projects. The library is not a project folder.
-
-### Versions of one program
-
-Some releases of a program have a different layout. Their code is at different addresses, so patches cannot hold the differences. Each of these releases is a version of the program. Give each version a project of its own in a group folder:
-
-```
-<game>/          the group folder: not a project
-  README.md      the shared entry page: the program, each version, and how the versions differ
-  docs/          the shared pages: the development, the changes between the versions, the releases, the disk layout
-  library/       the routine library of the versions
-  tools/         the scripts for the formats of the program, for all versions
-  v1/            the project of the first version, with the project layout
-  v2/            the project of the second version, with the project layout
-```
-
-1. Make the group folder in the git repository. Do not put `.c64-re-tools/` in it.
-2. Ask the user before you move a project folder. Then move the current project into `<game>/v1/`. The project knowledge keeps its paths relative to the project folder. Thus the knowledge stays valid after the move.
-3. Make a project folder for the new version, for example `<game>/v2/`. Start at stage 2 with the file of that release. From the group folder, give `--project v2`. In the empty folder `v2/`, give `--project .`. The first write makes the project.
-4. Keep the releases with the same layout in one version. Record them as releases with switches. For example, `v2` holds a base release and a second release from a different crack.
-5. Save the routines of `v1` to the routine library in `<game>/library/`. Give `--library ../library`, because `--library` is relative to the project folder. In stage 7 of `v2`, match the program against that library. Then `v2` gets the names of `v1` for the same routines.
-6. Use the same folders in each version, for example `src` and `docs/reference`.
-7. From the group folder, give `--project v1` or `--project v2` to each script. A script can read a file of another version, for example `../v1/releases/<file>`. Use this to compare the releases of two versions. Record each release only in the project of its version.
-8. Write the facts that the versions share one time, in the pages of the group folder. The pages of each version tell only how that version works.
+For a project without a layout, and for a release whose code is at other addresses, read `<skill>/references/versions.md`. It gives the project layout and the group folder of the versions of one program.
 
 ## Knowledge
 
@@ -222,3 +182,8 @@ A clear answer for the scope, with the durable conclusions in the project knowle
 
 - To add a feature or a correction to the rebuilt program, develop it as a change of a rebuilt program.
 - To start a new program from the rebuilt program, export the rebuilt program as a new project.
+
+## Reference
+
+- `<skill>/references/versions.md`: the project layout, and the group folder for the versions of one program.
+- `<skill>/references/comment-check.md`: the instructions for the agent that checks a sample of comments.

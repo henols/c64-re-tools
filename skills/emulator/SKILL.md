@@ -13,17 +13,11 @@ This skill does not analyse code statically. It does not write project knowledge
 
 The MCP server knows the machine and the emulator. Its instructions, its tool descriptions, its result fields and its error messages give the facts of the machine and the known flaws of the emulator. This skill tells how to use the tools for a task. If this skill and a tool description do not agree, obey the tool description.
 
-## Inputs
-
-- The machine action or the runtime question.
-- The target address, state or condition, when the question needs one.
-- The project path of the program or disk to load, when the question needs one.
-
-A tool takes addresses, not names. The server instructions give the address format. Get the address of a name from the project knowledge.
-
 ## Tools
 
 Use only the MCP tools. Each MCP session has its own machine. Nothing else can change that machine.
+
+A tool takes addresses, not names. The server instructions give the address format. To get the address of a name, read the name in the project knowledge.
 
 | Need | C64 tool |
 |---|---|
@@ -35,6 +29,7 @@ Use only the MCP tools. Each MCP session has its own machine. Nothing else can c
 | Run to a place and read the machine there in one call | `c64_run_until` with `observe` and `history` |
 | Each access or routine entry over many frames | `c64_trace` |
 | Stop on an instruction address, stop on a memory access | `c64_breakpoint`, `c64_watchpoint` |
+| Find the instruction that reads or writes an address, and when | `c64_watchpoint` with the access, then `c64_execution` or `c64_run_until`. The stop gives `pc`. |
 | Memory | `c64_memory_read`, `c64_memory_write`, `c64_memory_search`, `c64_memory_compare` |
 | CPU registers | `c64_registers` |
 | Code as it is in memory now | `c64_disassemble` |
@@ -88,28 +83,11 @@ The emulator has no window. When the user must type, play or look at the machine
 
 The result field `notCarried` names the data that the open or the close cleared.
 
-## Knowledge
+## Knowledge and result
 
-Read:
-- the current knowledge for each address and range that the question touches.
-
-Automatic write:
-- none.
-
-Write after interpretation:
-- a symbol, a region or a comment that the runtime evidence justifies. Record it in the project knowledge.
-
-Do not store:
-- breakpoints or watchpoints
-- memory reads
-- temporary machine state
-- a screen capture, unless the user asks for it as an artifact
-
-## Result
-
-The result is the runtime state or evidence that the question asks for.
-
-If you cannot get the machine into the necessary state, say which state you could not get. Say what you tried.
+- Record in the project knowledge only a symbol, a region or a comment that the runtime evidence justifies.
+- Do not record breakpoints, watchpoints, memory reads or machine state. Record a screen capture only when the user asks for it.
+- If you cannot get the machine into the necessary state, tell the user which state. Tell what you tried.
 
 ## Failure and conflicts
 
@@ -124,10 +102,3 @@ An error is `{"error": {"code": "...", "message": "..."}}`. The message tells wh
 - A different code: the message names the cause. Change the call, or report the cause.
 
 If the runtime evidence does not agree with the current knowledge, do not change the knowledge. Report the conflict with the runtime evidence. Then resolve the conflict in the project knowledge.
-
-## Other tasks
-
-- To explain code without a run, analyze the program statically.
-- Record a durable conclusion in the project knowledge.
-- To compare runs or to assert values in a run, write a test run file.
-- To find the meaning of a C64 address or register, read the memory map of the C64.
