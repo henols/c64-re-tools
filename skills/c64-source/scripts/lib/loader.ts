@@ -19,17 +19,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { COPIER_LINE } from "#src/build-name.ts";
-import { type AddressRange, formatC64Address, formatC64Byte, prgRange } from "#src/c64.ts";
-import { compareBuild, mergedPrograms } from "#src/compare.ts";
+import { type AddressRange, formatC64Address, formatC64Byte } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState } from "#src/host-client/entry-state.ts";
 import { isRomFont, startScreenRanges, type StartScreenRow } from "#src/knowledge/read.ts";
 import { capturedColourRam, LOADER_JUMP } from "#src/knowledge/start-screen.ts";
+import { COPIER_SOURCE } from "#src/loader.ts";
 import { romUseOfPort } from "#src/platform.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
-import { pack } from "#src/native/exomizer.ts";
-import type { ToolContext } from "#src/native/run.ts";
-import type { AssembledSymbol } from "#src/native/types.ts";
 
 export interface EntryState {
   pc: number;
@@ -506,8 +503,6 @@ function settingsLines(input: LoaderInput): string[] {
 /** The label of a block: its first byte and the byte after it in the loader file, and its first address where it runs. */
 const blockLabel = (start: number, part: "from" | "end" | "to") => `loader_${part}_${start.toString(16).padStart(4, "0")}`;
 const plus = (label: string, offset: number) => (offset === 0 ? label : `${label}+${offset}`);
-/** The label of the copier in the loader file, which the stub moves to its two pages. */
-export const COPIER_SOURCE = "loader_copier_src";
 
 /** A block of the loader: a segment with its files, or bytes of pages 0-3. */
 interface Block {
@@ -596,7 +591,7 @@ function planForm(input: LoaderInput, colours: Uint8Array | undefined): LoaderPl
   const order = copyOrder(plain);
   if (order === undefined) {
     const clashing = plain.filter((copy) => plain.some((other) => other !== copy && overlaps(copy.target, other.source))).map((copy) => `${copy.what} (packed at ${show(copy.source)})`);
-    throw new WireFailure("invalid-input", `No copy order exists: each of these copies writes over the packed bytes of another one: ${clashing.join(", ")}. Write the loader by hand.`);
+    throw new WireFailure("invalid-input", `No copy order exists: each of these copies writes over the packed bytes of another one: ${clashing.join(", ")}. Give this reason to the user.`);
   }
   const loaded = { start: LOAD, end };
   const areas = copierAreas(state.port);
@@ -763,7 +758,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
       placed.refusal === "copies"
         ? `A packed loader needs more than ${MAX_PACKED_COPIES} copies for the ${lowBytes} bytes of pages 0-3 in the free ranges.`
         : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier in ${areas.map(show).join(" or ")}, and ${lowBytes} more free bytes for pages 0-3 in ${show(PIECE_AREA)}, outside the segments. The copier runs with $01 = $35 and then with the $01 of the entry, so it is in RAM that both show.${screen === undefined ? "" : ` The start screen takes ${START_SCREEN_SIZES[screen.colourMode]} bytes of the copier: without it (unstart-screen), the copier is smaller.`}`;
-    throw new WireFailure("invalid-input", `${tooLarge} ${why} ${ranges} Write the loader by hand.`);
+    throw new WireFailure("invalid-input", `${tooLarge} ${why} ${ranges} Give this reason to the user.`);
   }
   const { copier, pieces } = placed;
   const copierEnd = copier + codeSize + COPY_ENTRY * pieces.length + 2 - 1;
@@ -904,59 +899,6 @@ function placePacked(copierFree: AddressRange[], free: AddressRange[], low: Para
     copies = best.pieces.length;
   }
   return { refusal: "copies" };
-}
-
-/** What Exomizer makes of a packed loader. */
-export interface PackedLoader {
-  /** The loader program: it loads at $0801 and starts with RUN. */
-  program: Buffer;
-  packedBytes: number;
-  unpackedBytes: number;
-  /** The CPU cycles of the unpack, when Exomizer gives them. */
-  cycles?: number;
-}
-
-/**
- * Packs the loaded ranges of the build of main.asm from $0400 and the build of
- * loader.asm (the copier wins where they overlap) with the entry at the copier
- * and $01 = $34, and checks the unpack in the emulator of Exomizer: every byte
- * of the two builds, and the jump to the copier. Refuses by name when it does
- * not hold.
- */
-export async function packLoader(main: Uint8Array, copier: Uint8Array, plan: LoaderPlan, context: ToolContext): Promise<PackedLoader> {
-  return packParts(packedParts(main, copier, plan), plan.copier, 0x34, "main.asm and loader.asm", "the copier", context);
-}
-
-/** What Exomizer packs in the packed form: the loaded ranges of the build of main.asm from $0400, and the build of loader.asm. */
-function packedParts(main: Uint8Array, copier: Uint8Array, plan: Pick<LoaderPlan, "loaded">): Array<{ start: number; body: Uint8Array }> {
-  // The unpacker uses pages 0-3; the copier writes them. The leftovers between the loaded ranges are not packed.
-  const program = prgRange(main);
-  const ranges = plan.loaded.flatMap((range) => {
-    const start = Math.max(range.start, 0x0400, program.start);
-    const end = Math.min(range.end, program.start + program.body.length - 1);
-    return start <= end ? [{ start, body: program.body.subarray(start - program.start, end - program.start + 1) }] : [];
-  });
-  return [...ranges, prgRange(copier)];
-}
-
-/**
- * Packs parts (a later one wins where they overlap) into one program that
- * unpacks itself, starts at `entry` with $01 = `exitMemory`, and checks the
- * unpack in the emulator of Exomizer: every byte of the parts, and the jump
- * to the entry. Refuses by name when it does not hold.
- */
-export async function packParts(parts: ReadonlyArray<{ start: number; body: Uint8Array }>, entry: number, exitMemory: number, what: string, entryName: string, context: ToolContext): Promise<PackedLoader> {
-  const prg = (part: { start: number; body: Uint8Array }) => Buffer.concat([Buffer.from([part.start & 0xff, part.start >> 8]), part.body]);
-  const packed = await pack({ programs: parts.map(prg), entry, exitMemory }, context);
-  if (packed.entry !== entry) throw new WireFailure("operation-failed", `The unpack in the emulator of Exomizer jumps to ${formatC64Address(packed.entry)}, not to ${entryName} at ${formatC64Address(entry)}.`);
-  const reference = mergedPrograms(parts);
-  const wrong = compareBuild(packed.unpacked, reference).segments.find((segment) => segment.result !== "identical");
-  if (wrong !== undefined) {
-    const first = wrong.firstDifference === undefined ? "" : `: the first is ${wrong.firstDifference.address}, ${wrong.firstDifference.built} and not ${wrong.firstDifference.reference}`;
-    throw new WireFailure("operation-failed", `The unpack in the emulator of Exomizer does not give ${wrong.start}-${wrong.end} of ${what} (${wrong.result}${first}).`);
-  }
-  const unpackedBytes = reference.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
-  return { program: packed.program, packedBytes: packed.program.length, unpackedBytes, ...(packed.cycles === undefined ? {} : { cycles: packed.cycles }) };
 }
 
 /**
@@ -1103,24 +1045,4 @@ function vicLines(state: EntryState, earlier: number): string[] {
     `        cmp #${formatC64Byte((line >> 1) & 0x80)}`,
     "        bne .raster",
   ];
-}
-
-/**
- * The symbols of the loader program: the labels of the build of loader.asm, which
- * includes main.asm, and of start_screen_stage.asm when the loader has a show
- * stage. A test takes one symbols file. Refuses a name with two values.
- */
-export function loaderSymbols(...builds: ReadonlyArray<readonly AssembledSymbol[]>): AssembledSymbol[] {
-  const valueOf = (symbol: AssembledSymbol) => (symbol.kind === "address" ? symbol.address : symbol.value);
-  const byName = new Map<string, AssembledSymbol>();
-  for (const symbol of builds.flat()) {
-    const known = byName.get(symbol.name);
-    if (known !== undefined && valueOf(known) !== valueOf(symbol)) {
-      throw new WireFailure("operation-failed", `The builds of the loader program give ${symbol.name} two values, ${valueOf(known)} and ${valueOf(symbol)}. This is a defect of the script.`);
-    }
-    // An address in one build can be outside the load range of the other build, where it is a constant.
-    const kept = known === undefined || (known.kind === "constant" && symbol.kind === "address") ? symbol : known;
-    byName.set(symbol.name, { ...kept, used: symbol.used || (known?.used ?? false) });
-  }
-  return [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }

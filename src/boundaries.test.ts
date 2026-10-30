@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["build-name", "c64", "c64-keys", "compare", "errors", "graphics", "media", "opcodes", "package", "platform", "project", "reference-pages", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
+      return ["build-name", "c64", "c64-keys", "compare", "errors", "graphics", "loader", "media", "opcodes", "package", "platform", "project", "reference-pages", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -36,6 +36,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   "build-name": [],
   // The byte check of a PRG against a reference: the build of c64-assembler and the unpack of c64-packer.
   compare: ["c64"],
+  // The packed loader program and the symbols of a loader program: c64-source packs it for its checked loader, c64-assembler for other switch values.
+  loader: ["c64", "compare", "native"],
   // The ACME spelling of each 6510 opcode: c64-source and the listing of c64-knowledge decode with one table.
   opcodes: ["c64"],
   // The platform memory map: names and meanings of C64 addresses.
@@ -74,7 +76,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   distribution: ["package"],
   convert: ["knowledge"],
 };
-const SKILL_ALLOWED = ["build-name", "host-client", "native", "knowledge", "project", "c64", "c64-keys", "compare", "graphics", "opcodes", "package", "platform", "reference-pages", "script", "time", "media", "vsf", "zip"];
+const SKILL_ALLOWED = ["build-name", "loader", "host-client", "native", "knowledge", "project", "c64", "c64-keys", "compare", "graphics", "opcodes", "package", "platform", "reference-pages", "script", "time", "media", "vsf", "zip"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

@@ -4,7 +4,8 @@
 // name when it is on, no_<name> when it is off. A build of an entry other
 // than main.asm adds the entry, for example clean_loader. The loader of the
 // packed form alone is only its copier, so its build is clean_copier: the loader
-// program, which generate packs, keeps clean_loader. A source without
+// program, which generate or a build with switch values packs, keeps
+// clean_loader. A source without
 // config.asm and without a release keeps the name of its entry. The symbols
 // of a build go into symbols/ next to the program, so the program folder
 // holds only programs.
@@ -28,6 +29,16 @@ export function configValues(text: string): Map<string, 0 | 1> {
     if (match !== null) values.set(match[1]!, match[2] === "1" ? 1 : 0);
   }
   return values;
+}
+
+/**
+ * The config.asm text with other values for some switches: the value line of
+ * each given name gets the given value, and the other lines stay as they are.
+ * A build takes the switch values this way: ACME refuses a define of a symbol
+ * that config.asm also sets.
+ */
+export function withConfigValues(text: string, values: ReadonlyMap<string, 0 | 1>): string {
+  return text.replace(/^([ \t]*([A-Z][A-Z0-9_]*)[ \t]*=[ \t]*)[01](?=[ \t]*(?:;[^\r\n]*)?\r?$)/gm, (line: string, head: string, name: string) => (values.has(name) ? `${head}${values.get(name)}` : line));
 }
 
 /** What a build is made of: a release, or the values of config.asm with the default of each switch (0 when the defaults do not have it). */
