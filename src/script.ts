@@ -14,6 +14,8 @@
 // command that worked. error is one sentence: what is wrong. hint tells what to
 // do. nextAction is a full command line that runs from any directory. With no
 // arguments or with --help, the command is "help" and the body is the usage.
+// --fields <path>,<path> prints only those parts of the body, so that an agent
+// reads a result without code of its own.
 // Nothing is thrown out of a script: every failure becomes an error envelope.
 
 import { resolve } from "node:path";
@@ -343,7 +345,8 @@ export function listed<T, U = T>(items: readonly T[], max: number, show: (item: 
 /** The conventions in the help of every script. */
 export const CONVENTIONS = `Addresses are $ and 1 to 4 hex digits, for example '$c000' or '$fb', or a name: a symbol, else an analyzer name that only one analyzer gives. A range is <start>-<end>, for example '$c000-$cfff'. Quote them in a shell.
 Paths are relative to the project folder. Every script takes --project <folder>: the project folder, relative to the working directory. Without it, the script uses the nearest folder at or above the working directory that holds .c64-re-tools/. In a group folder, give --project with a project of the group. A path that a command only reads can go into another project of the group, for example ../v1/releases/game.prg.
-Each command prints one JSON envelope: {ok: true, command, body, hint?, nextAction?} with exit status 0, or {ok: false, command?, code, error, hint?, nextAction?} with exit status 2.`;
+Each command prints one JSON envelope: {ok: true, command, body, hint?, nextAction?} with exit status 0, or {ok: false, command?, code, error, hint?, nextAction?} with exit status 2.
+Every script takes --fields <path>,<path>: the body then has only those dotted paths, for example --fields revision,regions.listed.start. A path through a list gives that field of each item.`;
 
 function optionLabel(name: string, spec: OptionSpec): string {
   return spec.kind === "flag" ? `--${name}` : `--${name} ${spec.value ?? "<value>"}`;
@@ -400,7 +403,7 @@ function commandOptions(command: CommandSpec): Record<string, OptionSpec> {
   for (const [name, spec] of Object.entries(options)) {
     const shared = (OPTIONS as Record<string, OptionSpec>)[name];
     if (shared !== undefined && shared.kind !== spec.kind) throw fault(`--${name} of ${command.name} is a ${spec.kind}, but OPTIONS has it as a ${shared.kind}`);
-    if (name === "help" || name === "project") throw fault(`--${name} of ${command.name}: the contract owns this option`);
+    if (name === "help" || name === "project" || name === "fields") throw fault(`--${name} of ${command.name}: the contract owns this option`);
     if (spec.kind === "path" && (name === "out" || name.startsWith("out-")) && spec.output === undefined) throw fault(`--${name} of ${command.name} has no output kind (file or folder)`);
     if (spec.output !== undefined && spec.kind !== "path") throw fault(`--${name} of ${command.name} has an output kind, but it is a ${spec.kind}, not a path`);
   }
@@ -408,12 +411,12 @@ function commandOptions(command: CommandSpec): Record<string, OptionSpec> {
 }
 
 /**
- * Takes --project <folder> and --project=<folder> out of a command line, up to "--".
- * Returns the folder and the other arguments. Refuses a --project without a folder or a second --project.
+ * Takes an option of the contract, --<name> <value> or --<name>=<value>, out of a command line, up to "--".
+ * Returns the value and the other arguments. Refuses the option without a value or a second one.
  */
-export function takeProject(argv: readonly string[]): { project?: string; argv: string[] } {
+function takeContractOption(argv: readonly string[], name: string, needs: string): { value?: string; argv: string[] } {
   const rest: string[] = [];
-  let project: string | undefined;
+  let found: string | undefined;
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index]!;
     if (argument === "--") {
@@ -421,21 +424,76 @@ export function takeProject(argv: readonly string[]): { project?: string; argv: 
       break;
     }
     let value: string | undefined;
-    if (argument === "--project") {
+    if (argument === `--${name}`) {
       value = argv[index + 1];
-      if (value === undefined || value.startsWith("-")) throw new UsageError("--project needs a folder");
+      if (value === undefined || value.startsWith("-")) throw new UsageError(`--${name} needs ${needs}`);
       index++;
-    } else if (argument.startsWith("--project=")) {
-      value = argument.slice("--project=".length);
-      if (value === "") throw new UsageError("--project needs a folder");
+    } else if (argument.startsWith(`--${name}=`)) {
+      value = argument.slice(`--${name}=`.length);
+      if (value === "") throw new UsageError(`--${name} needs ${needs}`);
     } else {
       rest.push(argument);
       continue;
     }
-    if (project !== undefined) throw new UsageError("give --project only once");
-    project = value;
+    if (found !== undefined) throw new UsageError(`give --${name} only once`);
+    found = value;
   }
-  return project === undefined ? { argv: rest } : { project, argv: rest };
+  return found === undefined ? { argv: rest } : { value: found, argv: rest };
+}
+
+/**
+ * Takes --project <folder> and --project=<folder> out of a command line, up to "--".
+ * Returns the folder and the other arguments. Refuses a --project without a folder or a second --project.
+ */
+export function takeProject(argv: readonly string[]): { project?: string; argv: string[] } {
+  const { value, argv: rest } = takeContractOption(argv, "project", "a folder");
+  return value === undefined ? { argv: rest } : { project: value, argv: rest };
+}
+
+/**
+ * Takes --fields <path>,<path> out of a command line, up to "--": the dotted
+ * paths of the body to print. Refuses --fields without paths, an empty path
+ * and a second --fields.
+ */
+export function takeFields(argv: readonly string[]): { fields?: string[]; argv: string[] } {
+  const { value, argv: rest } = takeContractOption(argv, "fields", "one or more dotted paths of the body, for example --fields revision,regions.listed.start");
+  if (value === undefined) return { argv: rest };
+  const fields = value.split(",").map((path) => path.trim());
+  if (fields.some((path) => path === "" || path.split(".").some((part) => part === ""))) throw new UsageError(`--fields ${value} has an empty path: give the paths as a,b.c, without spaces or empty parts`);
+  return { fields, argv: rest };
+}
+
+/**
+ * The parts of a body at the dotted paths, with their nesting. A path through
+ * a list takes the rest of the path from each item, and two paths through one
+ * list give one list. `missing` holds the paths that no part of the body has.
+ */
+export function pickFields(body: unknown, paths: readonly string[]): { body: unknown; missing: string[] } {
+  const found = new Set<string>();
+  interface Wanted {
+    path: string;
+    rest: readonly string[];
+  }
+  const pick = (node: unknown, wanted: readonly Wanted[]): unknown => {
+    if (Array.isArray(node)) return node.map((item) => pick(item, wanted));
+    if (typeof node !== "object" || node === null) return undefined;
+    const out: Record<string, unknown> = {};
+    const groups = new Map<string, Wanted[]>();
+    for (const item of wanted) groups.set(item.rest[0]!, [...(groups.get(item.rest[0]!) ?? []), item]);
+    for (const [key, group] of groups) {
+      if (!(key in node)) continue;
+      const value = (node as Record<string, unknown>)[key];
+      const ends = group.filter((item) => item.rest.length === 1);
+      for (const item of ends) found.add(item.path);
+      const deeper = group.filter((item) => item.rest.length > 1).map((item) => ({ path: item.path, rest: item.rest.slice(1) }));
+      const part = deeper.length > 0 ? pick(value, deeper) : undefined;
+      if (ends.length > 0) out[key] = value;
+      else if (part !== undefined) out[key] = part;
+    }
+    return out;
+  };
+  const picked = pick(body, paths.map((path) => ({ path, rest: path.split(".") })));
+  return { body: picked ?? {}, missing: paths.filter((path) => !found.has(path)) };
 }
 
 /** True when --help comes before "--". */
@@ -710,15 +768,27 @@ async function envelope(script: Envelope): Promise<void> {
   process.on("unhandledRejection", fatal);
 
   try {
-    const { project, argv } = takeProject(process.argv.slice(2));
+    const { project, argv: withFields } = takeProject(process.argv.slice(2));
+    const { fields, argv } = takeFields(withFields);
     if (project !== undefined) useProject(project);
     const result = await script.perform(argv, (command) => {
       commandName = command;
     });
     const { body, hint, nextAction } = result instanceof Reply ? result : { body: result ?? {}, hint: undefined, nextAction: undefined };
     const cut = cutListHint(body);
-    const shownHint = hint === undefined ? cut : cut === undefined || hint.includes("--max-listed") ? hint : `${sentence(hint)} ${cut}`;
-    print({ ok: true, command: commandName ?? "help", body: body ?? {}, ...(shownHint === undefined ? {} : { hint: shownHint }), ...(nextAction === undefined ? {} : { nextAction }) }, 0);
+    let shownHint = hint === undefined ? cut : cut === undefined || hint.includes("--max-listed") ? hint : `${sentence(hint)} ${cut}`;
+    let shownBody: unknown = body ?? {};
+    // The fields are a view of the result: the command has done its work, so a path that the body lacks is no failure.
+    if (fields !== undefined) {
+      const picked = pickFields(shownBody, fields);
+      shownBody = picked.body;
+      if (picked.missing.length > 0) {
+        const top = typeof body === "object" && body !== null && !Array.isArray(body) ? Object.keys(body) : [];
+        const lacks = `The body has no ${wordList(picked.missing)}. ${top.length === 0 ? "It has no fields." : `Its fields are ${wordList(top)}.`}`;
+        shownHint = shownHint === undefined ? lacks : `${sentence(shownHint)} ${lacks}`;
+      }
+    }
+    print({ ok: true, command: commandName ?? "help", body: shownBody, ...(shownHint === undefined ? {} : { hint: shownHint }), ...(nextAction === undefined ? {} : { nextAction }) }, 0);
     trace().event("script.end", { ms: elapsedMs(started), status: 0, result: body });
   } catch (error) {
     fail(error);

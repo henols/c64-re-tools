@@ -4,12 +4,13 @@
 // src/script.test.ts tests each rule of the command line. No code that a
 // script reaches throws a bare Error. The skill docs follow the skill
 // standard: one run line, a command table and a Flags table that agree with
-// the scripts, one section for each command, shared blocks word for word, and
-// no name of another skill.
+// the scripts, one section for each command, shared blocks word for word, a
+// heading for each section and a file for each path that a skill names, and no
+// name of another skill.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -201,7 +202,7 @@ test("a SKILL.md has one section for each command, and the command table names o
         assert.ok(command !== undefined, `${skill}: ${code[1]} names no command`);
         for (const word of words.filter((item) => /^--[a-z]/.test(item))) {
           const option = word.split("=")[0]!;
-          if (option === "--project" || option === "--help") continue;
+          if (option === "--project" || option === "--help" || option === "--fields") continue;
           assert.ok(command.options.some(([known]) => known === option), `${skill}: ${name} has no ${option}`);
         }
       }
@@ -242,6 +243,34 @@ test("the Flags table of a SKILL.md gives each flag of each command, and only fl
     }
     for (const pair of declared) assert.ok(given.has(pair), `${skill}: the Flags table has no row for ${pair}`);
   }
+});
+
+/** The Markdown files of a skill that the agent reads, as paths in the skill folder: SKILL.md and references/*.md. */
+function skillDocs(skill: string): string[] {
+  const directory = join(ROOT, "skills", skill);
+  return ["SKILL.md", ...readdirSync(directory, { recursive: true, encoding: "utf8" }).filter((file) => file.startsWith("references/") && file.endsWith(".md"))];
+}
+
+test("each section that a skill names in quotes is a heading of its files, and each file that it names is in its folder as <skill>/...", () => {
+  const problems: string[] = [];
+  for (const skill of SKILLS) {
+    const docs = skillDocs(skill);
+    const texts = new Map(docs.map((file) => [file, readFileSync(join(ROOT, "skills", skill, file), "utf8")]));
+    const headings = new Map(docs.map((file) => [file, new Set([...texts.get(file)!.matchAll(/^#{1,6} (.+?)\s*$/gm)].map((match) => match[1]!))]));
+    for (const [file, text] of texts) {
+      text.split("\n").forEach((line, index) => {
+        const where = `${skill}/${file}:${index + 1}`;
+        for (const match of line.matchAll(/(?:[Ss]ee(?: the section)?|[Ss]ection|[Ii]n) "([^"]+)"(?: of `?(?:<skill>\/)?([\w./-]+\.md)`?)?/g)) {
+          const [, title, named] = match;
+          const places = named === undefined ? docs : [named];
+          if (!places.some((place) => headings.get(place)?.has(title!))) problems.push(`${where}: no heading "${title}"${named === undefined ? "" : ` in ${named}`}`);
+        }
+        for (const match of line.matchAll(/<skill>\/([\w./-]+)/g)) if (!existsSync(join(ROOT, "skills", skill, match[1]!))) problems.push(`${where}: <skill>/${match[1]} does not exist`);
+        for (const match of line.matchAll(/(?<!<skill>\/)(?<![\w/])references\/[\w.-]+\.md/g)) problems.push(`${where}: ${match[0]} without <skill>/`);
+      });
+    }
+  }
+  assert.deepEqual(problems, []);
 });
 
 test("no skill names another skill or the script of another skill", () => {
