@@ -14,7 +14,7 @@ import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
 import { classifyRegion } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, explainGaps, imageReader, romOnlyRanges, writtenNotExecuted } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importCoverage, importImage, importPrg } from "../fixtures/program.ts";
 import { readEnvelope } from "../kit.ts";
@@ -93,6 +93,37 @@ test("code regions and JMP tables are entry points, and analyzer data over execu
   const conflicts = coverageConflicts(db, mapWith([0x5010, 0x5012, 0x4000]));
   assert.deepEqual(conflicts.map(({ region, executed }) => [region.start, region.end, region.origin, executed]), [[0x5000, 0x50ff, "dxa", 2]], "the user's code region is no conflict");
   db.close();
+});
+
+test("analyzer code on bytes that a run wrote and never executed is listed with the instructions that reach it", () => {
+  const db = openForWrite(fresh());
+  importFindings(db, {
+    analyzer: "decompiler",
+    coverage: [{ start: 0x4000, end: 0x6fff }],
+    authoritative: { symbols: true, regions: true, references: true },
+    symbols: [],
+    regions: [{ start: 0x4000, end: 0x400f, type: "code" }, { start: 0x5000, end: 0x500f, type: "code" }, { start: 0x6000, end: 0x600f, type: "code" }],
+    references: [{ from: 0x4003, to: 0x5000, kind: "call" }, { from: 0x5004, to: 0x5008, kind: "jump" }],
+  });
+  const map = mapWith([0x4000, 0x6000]);
+  for (const address of [0x5001, 0x5002, 0x6004]) map[address] = (map[address] ?? 0) | COVERAGE.ramWrite;
+  assert.deepEqual(writtenNotExecuted(db, "decompiler", map), [{ start: 0x5000, end: 0x500f, from: [0x4003] }], "executed code and code that no run wrote are not listed");
+  db.close();
+});
+
+test("each coverage gap gets the reason of its refused seed, the instruction that holds it, the data range that holds it, or not-reached", () => {
+  const gaps = explainGaps(
+    [0x1001, 0x2000, 0x3000, 0x4000],
+    [{ address: 0x1000, bytes: "ad3412" }],
+    [{ address: 0x2000, reason: "into-data" }],
+    [{ start: 0x3000, end: 0x30ff }],
+  );
+  assert.deepEqual(gaps, [
+    { address: 0x1001, reason: "inside-instruction", at: 0x1000 },
+    { address: 0x2000, reason: "into-data" },
+    { address: 0x3000, reason: "in-data", range: { start: 0x3000, end: 0x30ff } },
+    { address: 0x4000, reason: "not-reached" },
+  ]);
 });
 
 /**

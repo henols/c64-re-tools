@@ -4,7 +4,7 @@
 // before the script imports it.
 
 import { describeError, WireFailure } from "../../protocol/messages.ts";
-import { checkDecompilerResult, checkRequestBounds, DECOMPILER_LIMITS, imageRange, seedsInside, type DecompilerParams, type DecompilerResult } from "../types.ts";
+import { checkDecompilerResult, checkRequestBounds, DECOMPILER_LIMITS, imageRange, seedsInside, type DecompilerParams, type DecompilerResult, type SeedReport } from "../types.ts";
 import type { ToolContext } from "../run.ts";
 import { walk } from "./walk.ts";
 import { decompile, loadImage, setName, SLEIGH_VERSION } from "./wasm.ts";
@@ -16,21 +16,22 @@ export async function analyze(
   params: DecompilerParams,
   image: Buffer,
   context: ToolContext,
-): Promise<{ result: DecompilerResult }> {
+): Promise<{ result: DecompilerResult; seeds: SeedReport }> {
   checkRequestBounds(params);
   const { start, end, body } = imageRange(params.imageKind, image);
 
   // The decoder sees only the loaded bytes; labels may name any address.
-  const { entryPoints, codeStarts, dataRanges } = seedsInside(params, start, end);
+  const { entryPoints, codeStarts, dataRanges, report } = seedsInside(params, start, end);
   if (entryPoints.length === 0) {
     throw new WireFailure("invalid-input", "Give at least one entry point inside the program, for example the SYS address of its BASIC loader.");
   }
   context.signal.throwIfAborted();
 
-  let walked: ReturnType<typeof walk>;
+  let walked: Omit<ReturnType<typeof walk>, "refusedSeeds">;
+  let refusedSeeds: ReturnType<typeof walk>["refusedSeeds"];
   try {
     loadImage(body, start);
-    walked = walk(body, start, end, { entryPoints, codeStarts, dataRanges, labels: params.labels });
+    ({ refusedSeeds, ...walked } = walk(body, start, end, { entryPoints, codeStarts, dataRanges, labels: params.labels }));
   } catch (error) {
     context.log?.(`The decoder failed: ${describeError(error)}`);
     throw new WireFailure("operation-failed", `The decoder failed: ${describeError(error)}. Nothing was imported.`);
@@ -44,7 +45,7 @@ export async function analyze(
     context.log?.(`Decompiler result rejected: ${describeError(error)}`);
     throw new WireFailure("operation-failed", `The decompiler returned an incomplete or inconsistent result. Nothing was imported. The check found: ${describeError(error)}.`);
   }
-  return { result };
+  return { result, seeds: { refused: [...report.refused, ...refusedSeeds].sort((a, b) => a.address - b.address), dataRangesLeftOut: report.dataRangesLeftOut } };
 }
 
 /** The requested routines as C text, within the character bounds; the labels name routines and data. */
