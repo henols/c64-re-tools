@@ -17,6 +17,7 @@ import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, renamedField, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
+import { RECORDING_FILES } from "#src/knowledge/recording-files.ts";
 import { LOADER_JUMP, startScreenLabels } from "#src/knowledge/start-screen.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
@@ -135,7 +136,7 @@ export interface Recording {
   hash: string;
 }
 
-export const RECORDING_FILES = { recording: "recording.json", reads: "reads.txt", coverage: "coverage.bin" } as const;
+export { RECORDING_FILES };
 
 /** Steps that are input or time: the replay gives the program the reads that they caused, and does not do them again. */
 const INPUT_KINDS = new Set(["joystick", "press", "frames"]);

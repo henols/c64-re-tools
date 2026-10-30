@@ -114,11 +114,18 @@ export interface SwitchRow {
   revision: string;
 }
 
-/** A release of the program, and whether its bytes are the program of the knowledge. The bytes of another release are in release_memory. */
+/**
+ * A release of the program, and whether its bytes are the program of the
+ * knowledge. The bytes of another release are in release_memory. `file` and
+ * `sha256` are the file that recorded the release and its SHA-256; a release
+ * of an earlier toolkit version has neither.
+ */
 export interface ReleaseRow {
   space: Space;
   label: string;
   base: boolean;
+  file?: string;
+  sha256?: string;
   comment?: string;
   origin: Extract<Origin, "user" | "llm">;
   revision: string;
@@ -199,7 +206,7 @@ export const MODULE_COLUMNS = "space, start_address, file, title, origin, valid_
 export const OPERAND_COLUMNS = "space, address, selector, symbol, offset, expression, origin, valid_from_revision";
 export const PATCH_COLUMNS = "space, start_address, end_address, switch_name, code, comment, origin, valid_from_revision";
 export const SWITCH_COLUMNS = "space, name, kind, default_value, releases, comment, origin, valid_from_revision";
-export const RELEASE_COLUMNS = "space, label, base, comment, origin, valid_from_revision";
+export const RELEASE_COLUMNS = "space, label, base, file, sha256, comment, origin, valid_from_revision";
 export const MACRO_COLUMNS = "space, name, params, body, comment, origin, valid_from_revision";
 export const MACRO_USE_COLUMNS = "space, start_address, end_address, macro, args, origin, valid_from_revision";
 export const START_SCREEN_COLUMNS = "space, mode, screen, bitmap, charset, colours, colour, border, background, stage, call_address, colour_ram, comment, origin, valid_from_revision";
@@ -306,6 +313,8 @@ export function toRelease(row: Raw): ReleaseRow {
     origin: row.origin as ReleaseRow["origin"],
     revision: row.valid_from_revision as string,
   };
+  if (row.file !== null && row.file !== undefined) release.file = row.file as string;
+  if (row.sha256 !== null && row.sha256 !== undefined) release.sha256 = row.sha256 as string;
   if (row.comment !== null && row.comment !== undefined) release.comment = row.comment as string;
   return release;
 }
@@ -704,6 +713,41 @@ export function listReferences(db: DatabaseSync | undefined, range: AddressRange
     .all(space, range.start, range.end, range.start, range.end)
     .map((row) => toReference(row as Raw))
     .filter((reference) => (kind === undefined || reference.kind === kind) && kept(origins)(reference));
+}
+
+/** Where a reference goes, seen from a range: into it from outside, out of it, or with both ends inside it. */
+export const REFERENCE_DIRECTIONS = ["in", "out", "inside"] as const;
+export type ReferenceDirection = (typeof REFERENCE_DIRECTIONS)[number];
+
+/** True for a reference that goes in the direction, seen from the range. */
+export function goes(range: AddressRange, direction: ReferenceDirection): (row: Pick<ReferenceRow, "from" | "to">) => boolean {
+  const inside = (address: number) => address >= range.start && address <= range.end;
+  if (direction === "in") return (row) => inside(row.to) && !inside(row.from);
+  if (direction === "out") return (row) => inside(row.from) && !inside(row.to);
+  return (row) => inside(row.from) && inside(row.to);
+}
+
+/** The references counted by kind, and by target with the target that most references go to first. */
+export function referenceCounts(rows: readonly ReferenceRow[]): { byKind: Partial<Record<ReferenceKind, number>>; byTarget: Array<{ to: number; count: number }> } {
+  const byKind: Partial<Record<ReferenceKind, number>> = {};
+  const targets = new Map<number, number>();
+  for (const row of rows) {
+    byKind[row.kind] = (byKind[row.kind] ?? 0) + 1;
+    targets.set(row.to, (targets.get(row.to) ?? 0) + 1);
+  }
+  const byTarget = [...targets].map(([to, count]) => ({ to, count })).sort((a, b) => b.count - a.count || a.to - b.to);
+  return { byKind, byTarget };
+}
+
+/** The regions counted by type, with their bytes in the range. */
+export function regionCounts(rows: readonly RegionRow[], range: AddressRange = ALL): Partial<Record<RegionType, { count: number; bytes: number }>> {
+  const counts: Partial<Record<RegionType, { count: number; bytes: number }>> = {};
+  for (const row of rows) {
+    const item = (counts[row.type] ??= { count: 0, bytes: 0 });
+    item.count++;
+    item.bytes += Math.min(row.end, range.end) - Math.max(row.start, range.start) + 1;
+  }
+  return counts;
 }
 
 /** Current suppressions whose place lies in the range: a reference by its source or target. */

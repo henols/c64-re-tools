@@ -106,8 +106,8 @@ test("two versions in a group folder: each script runs on its version, v2 reads 
   // The names of v1 go to v2 through the library, at the moved addresses.
   const matched = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--apply", "--project", "v2"]);
   assert.deepEqual(matched.matches.listed.map((match: Record<string, unknown>) => ({ routine: match.routine, start: match.start, shift: match.shift })), [{ routine: "play", start: "$1015", shift: 5 }]);
-  assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$1029", "--project", "v2"]).symbol.name, "set_pointer");
-  assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$1024"], join(group, "v1")).symbol.name, "set_pointer");
+  assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$1029", "--project", "v2"]).addresses[0].symbol.name, "set_pointer");
+  assert.equal(ok("c64-knowledge", "knowledge.ts", ["at", "$1024"], join(group, "v1")).addresses[0].symbol.name, "set_pointer");
 
   // The scripts ran from the group folder, and none of them made it a project.
   assert.equal(existsSync(join(group, ".c64-re-tools")), false);

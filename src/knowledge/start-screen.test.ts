@@ -5,10 +5,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { capturedColourRam, startScreenLabels, startScreenOfStage } from "./start-screen.ts";
+import { capturedColourRam, coloursOfCapture, startScreenLabels, startScreenOfCapture, startScreenOfStage } from "./start-screen.ts";
 
-/** An entry state with the VIC-II values, $dd00 and the colour RAM. */
-function captured(values: { d011: number; d016: number; d018: number; dd00: number; colour?: boolean }): Record<string, unknown> {
+/** An entry state with the VIC-II values, $dd00 and the colour RAM: colour n at place n mod 16, one colour for all, or none. */
+function captured(values: { d011: number; d016: number; d018: number; dd00: number; colour?: false | number }): Record<string, unknown> {
   const vic = new Uint8Array(0x2f);
   vic[0x11] = values.d011;
   vic[0x16] = values.d016;
@@ -19,7 +19,8 @@ function captured(values: { d011: number; d016: number; d018: number; dd00: numb
     vic: { from: "$d000", bytes: Buffer.from(vic).toString("hex") },
     cia2: { from: "$dd00", bytes: Buffer.from([values.dd00, 0x3f]).toString("hex") },
   };
-  if (values.colour !== false) io.colour = { from: "$d800", bytes: Buffer.from(Array.from({ length: 1000 }, (_, index) => 0xf0 | (index & 0x0f))).toString("hex") };
+  const { colour } = values;
+  if (colour !== false) io.colour = { from: "$d800", bytes: Buffer.from(Array.from({ length: 1000 }, (_, index) => 0xf0 | (colour ?? index & 0x0f))).toString("hex") };
   return { registers: { pc: "$9000" }, io };
 }
 
@@ -45,6 +46,23 @@ test("a capture that shows no start screen is refused by name", () => {
   assert.throws(() => startScreenOfStage(captured({ d011: 0x5b, d016: 0x08, d018: 0x14, dd00: 3 }), "bank1"), /extended colour mode/);
   assert.throws(() => startScreenOfStage(captured({ d011: 0x1b, d016: 0x18, d018: 0x14, dd00: 3 }), "bank1"), /multicolour text screen/);
   assert.throws(() => startScreenOfStage(captured({ d011: 0x3b, d016: 0x18, d018: 0x38, dd00: 0, colour: false }), "bank1"), /has no colour RAM: it is from an older version/);
+});
+
+test("a capture of the program gives the screen, and its colours as 1000 bytes of the program or as one colour", () => {
+  const state = captured({ d011: 0x3b, d016: 0x18, d018: 0x38, dd00: 0x00 });
+  assert.deepEqual(startScreenOfCapture(state, "c/image.json"), { mode: "multicolour", screen: 0xcc00, bitmap: 0xe000, border: 3, background: 1 });
+  assert.throws(() => startScreenOfCapture(undefined, "c/image.json"), /The capture c\/image\.json has no entry state with the VIC-II and CIA 2\. Capture the program again while it shows the screen/);
+  // The colours at $4000 with other high bits; the copy at $3000 differs in its last byte, and the one at $d000 is in the I/O area.
+  const program = new Map<number, number>();
+  for (let index = 0; index < 1000; index++) {
+    program.set(0x3000 + index, index === 999 ? 0 : index & 0x0f);
+    program.set(0x4000 + index, 0x50 | (index & 0x0f));
+    program.set(0xd000 + index, index & 0x0f);
+  }
+  assert.deepEqual(coloursOfCapture(state, "c/image.json", (address) => program.get(address)), { colours: 0x4000 });
+  for (let index = 0; index < 1000; index++) program.delete(0x4000 + index);
+  assert.throws(() => coloursOfCapture(state, "c/image.json", (address) => program.get(address)), /has more than one colour, and the program of the knowledge has no 1000 bytes with these colours/);
+  assert.deepEqual(coloursOfCapture(captured({ d011: 0x3b, d016: 0x18, d018: 0x38, dd00: 0x00, colour: 6 }), "c/image.json", () => undefined), { colour: 6 });
 });
 
 test("a build shows its start screen when its symbols have both labels and the switches leave the screen on", () => {

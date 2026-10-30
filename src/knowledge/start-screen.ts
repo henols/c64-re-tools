@@ -52,6 +52,39 @@ export function capturedColourRam(state: Record<string, unknown> | undefined): U
   return bytes === undefined || bytes.length !== 1000 ? undefined : Uint8Array.from(bytes, (value) => value & 0x0f);
 }
 
+/** How a refusal names the capture: the program that has no entry state, the capture, and how to capture it again. */
+interface Named {
+  program: string;
+  capture: string;
+  again: string;
+}
+
+/**
+ * The screen that the VIC-II of an entry state shows: its mode, its screen, its
+ * bitmap or charset and its colours of the border and the background, from the
+ * VIC-II registers and the VIC bank of CIA 2. Refuses by name when the capture
+ * does not show a screen that the loader can show.
+ */
+function vicScreen(state: Record<string, unknown> | undefined, named: Named): Omit<StageScreen, "colourRam"> {
+  const vic = ioBytes(state, "vic");
+  const cia2 = ioBytes(state, "cia2");
+  if (state === undefined || vic === undefined || vic.length < 0x2f || cia2 === undefined) throw new Refusal("not-found", `${named.program} has no entry state with the VIC-II and CIA 2. ${named.again}`);
+  const [d011, d016, d018] = [vic[0x11]!, vic[0x16]!, vic[0x18]!];
+  if ((d011 & 0x10) === 0) throw new Refusal("invalid-input", `${named.capture} has the display off ($d011 = $${d011.toString(16).padStart(2, "0")}). ${named.again}`);
+  if ((d011 & 0x40) !== 0) throw new Refusal("invalid-input", `${named.capture} shows a screen in the extended colour mode, which a start screen does not have.`);
+  const bitmap = (d011 & 0x20) !== 0;
+  const multicolour = (d016 & 0x10) !== 0;
+  if (!bitmap && multicolour) throw new Refusal("invalid-input", `${named.capture} shows a multicolour text screen, which a start screen does not have.`);
+  const bank = (3 - (cia2[0]! & 0x03)) << 14;
+  return {
+    mode: bitmap ? (multicolour ? "multicolour" : "hires") : "text",
+    screen: bank + ((d018 >> 4) & 0x0f) * 0x400,
+    ...(bitmap ? { bitmap: bank + ((d018 >> 3) & 1) * 0x2000 } : { charset: bank + ((d018 >> 1) & 7) * 0x800 }),
+    border: vic[0x20]! & 0x0f,
+    background: vic[0x21]! & 0x0f,
+  };
+}
+
 /**
  * The start screen that the capture of a stage shows: its mode, its screen,
  * its bitmap or charset, its colours and the colour RAM. Refuses by name when
@@ -59,27 +92,61 @@ export function capturedColourRam(state: Record<string, unknown> | undefined): U
  */
 export function startScreenOfStage(state: Record<string, unknown> | undefined, stage: string): StageScreen {
   const again = `Capture the stage again while it shows the screen, and put the capture into the project knowledge with image --space ${stage}.`;
-  const vic = ioBytes(state, "vic");
-  const cia2 = ioBytes(state, "cia2");
-  if (state === undefined || vic === undefined || vic.length < 0x2f || cia2 === undefined) throw new Refusal("not-found", `The program in ${stage} has no entry state with the VIC-II and CIA 2. ${again}`);
-  const [d011, d016, d018] = [vic[0x11]!, vic[0x16]!, vic[0x18]!];
-  if ((d011 & 0x10) === 0) throw new Refusal("invalid-input", `The capture in ${stage} has the display off ($d011 = $${d011.toString(16).padStart(2, "0")}). ${again}`);
-  if ((d011 & 0x40) !== 0) throw new Refusal("invalid-input", `The capture in ${stage} shows a screen in the extended colour mode, which a start screen does not have.`);
-  const bitmap = (d011 & 0x20) !== 0;
-  const multicolour = (d016 & 0x10) !== 0;
-  if (!bitmap && multicolour) throw new Refusal("invalid-input", `The capture in ${stage} shows a multicolour text screen, which a start screen does not have.`);
-  const bank = (3 - (cia2[0]! & 0x03)) << 14;
-  const mode: StartScreenMode = bitmap ? (multicolour ? "multicolour" : "hires") : "text";
-  const screen = bank + ((d018 >> 4) & 0x0f) * 0x400;
-  const colourRam = mode === "hires" ? undefined : capturedColourRam(state);
-  if (mode !== "hires" && colourRam === undefined) throw new Refusal("not-found", `The capture in ${stage} has no colour RAM: it is from an older version. ${again}`);
-  return {
-    mode,
-    screen,
-    ...(bitmap ? { bitmap: bank + ((d018 >> 3) & 1) * 0x2000 } : { charset: bank + ((d018 >> 1) & 7) * 0x800 }),
-    border: vic[0x20]! & 0x0f,
-    background: vic[0x21]! & 0x0f,
-    ...(colourRam === undefined ? {} : { colourRam: true as const }),
-  };
+  const shown = vicScreen(state, { program: `The program in ${stage}`, capture: `The capture in ${stage}`, again });
+  const colourRam = shown.mode === "hires" ? undefined : capturedColourRam(state);
+  if (shown.mode !== "hires" && colourRam === undefined) throw new Refusal("not-found", `The capture in ${stage} has no colour RAM: it is from an older version. ${again}`);
+  return { ...shown, ...(colourRam === undefined ? {} : { colourRam: true as const }) };
 }
 
+/** The bytes of the colour RAM. */
+const COLOURS = 1000;
+
+/**
+ * The first address of the program from $0400 where 1000 bytes hold the
+ * colours (the low 4 bits of each byte), outside $d000-$dfff, where the loader
+ * sees the I/O area. Undefined when the program has no such bytes.
+ */
+export function findColours(colours: Uint8Array, byteAt: (address: number) => number | undefined): number | undefined {
+  for (let start = 0x0400; start + COLOURS - 1 <= 0xffff; start++) {
+    if (start <= 0xdfff && start + COLOURS - 1 >= 0xd000) continue;
+    let offset = 0;
+    while (offset < COLOURS) {
+      const byte = byteAt(start + offset);
+      if (byte === undefined || (byte & 0x0f) !== colours[offset]) break;
+      offset++;
+    }
+    if (offset === COLOURS) return start;
+  }
+  return undefined;
+}
+
+const CAPTURE_AGAIN = "Capture the program again while it shows the screen. Then give the image.json of that capture.";
+
+/**
+ * The start screen in the program that a capture of the program shows: the
+ * mode, the addresses and the border and background colours from the VIC-II
+ * and CIA 2 of the capture. Refuses by name when the capture does not show a
+ * start screen that the loader can show.
+ */
+export function startScreenOfCapture(state: Record<string, unknown> | undefined, path: string): Omit<StageScreen, "colourRam"> {
+  return vicScreen(state, { program: `The capture ${path}`, capture: `The capture ${path}`, again: CAPTURE_AGAIN });
+}
+
+/**
+ * The colour RAM of a capture as the program gives it: one colour, or the
+ * address of 1000 bytes that the program has (findColours). Refuses with the
+ * reason when the program cannot give the colours.
+ */
+export function coloursOfCapture(state: Record<string, unknown> | undefined, path: string, byteAt: (address: number) => number | undefined): { colour: number } | { colours: number } {
+  const colours = capturedColourRam(state);
+  if (colours === undefined) throw new Refusal("not-found", `The capture ${path} has no colour RAM: it is from an older version. ${CAPTURE_AGAIN}`);
+  if (colours.every((colour) => colour === colours[0])) return { colour: colours[0]! };
+  const found = findColours(colours, byteAt);
+  if (found === undefined) {
+    throw new Refusal(
+      "not-found",
+      `The colour RAM of the capture ${path} has more than one colour, and the program of the knowledge has no 1000 bytes with these colours from $0400, outside $d000-$dfff. Thus the loader cannot set the colours. If a stage of the loading shows the screen, record the start screen of that stage.`,
+    );
+  }
+  return { colours: found };
+}

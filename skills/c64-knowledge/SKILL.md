@@ -1,6 +1,6 @@
 ---
 name: c64-knowledge
-description: Reads and changes the durable knowledge of a C64 project in .c64-re-tools/knowledge/. The knowledge holds the program and the coverage of the runs. It holds the names, regions, comments and references, and the releases, switches, patches and macros of the source. It keeps the history of each change. Use it to find the knowledge at an address or a name. Use it to record a name, a region, a comment or a reference after you interpret the evidence. Use it to put a program or the coverage of runs into the project. Use it to record the releases, switches, patches and macros of the generated source. Use it to read the history, to revert to an earlier revision, or to decide the conflicts of a git merge. Use it to start a check of the comments by another agent, to record the verdicts of the check and to get its result. It does not run the program, analyze the machine code or generate the source.
+description: Reads and changes the durable knowledge of a C64 project. The knowledge holds the program and the coverage of the runs. It holds the names, regions, comments and references, and the releases, switches, patches, macros and start screen of the source. It keeps the history of each change. Use it to find the knowledge and the access of the runs at addresses or names. Use it to record a name, a region, a comment or a reference after you interpret the evidence. Use it to put a program, the coverage of runs or a recording into the project. Use it to record the releases, switches, patches, macros and start screen of the generated source. Use it to read the history, to revert to an earlier revision, or to decide the conflicts of a git merge. Use it to start a check of the comments by another agent, to record the verdicts of the check and to get its result. It does not run the program, analyze the machine code or generate the source.
 ---
 
 # C64 knowledge
@@ -17,7 +17,7 @@ Each command in this skill, for example `at '$2100'`, goes in the place of `<com
 Each command prints one JSON envelope on stdout. See the section "JSON output".
 To get the command list, run the script with no arguments.
 
-The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that folder with git. Do not edit its files yourself. The script checks each change.
+Commit the folder `.c64-re-tools/knowledge/` of the project with git.
 
 ---
 
@@ -25,23 +25,24 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 
 | Goal | Command |
 |---|---|
-| Find all knowledge at one address | `at '$2100'` |
+| Find all knowledge and the access of the runs at addresses | `at '$2100' '$2104' '$3000'` |
 | Find names and comment text | `search player` |
 | List the symbols in a range | `symbols --range '$2000-$2fff'` |
 | List the names that the analyzers gave | `symbols --analyzer` |
-| List only the facts of the user and the LLM | `symbols --origin semantic` |
-| List the regions, comments or references in a range | `regions --range '$2000-$2fff'` |
+| List the regions in a range, and count the bytes of each type | `regions --range '$2000-$2fff'` |
+| Find the references into a range, counted by kind and target | `references --range '$2000-$2fff' --direction in` |
+| Find the routines that a range calls | `references --range '$2000-$2fff' --direction out --kind call` |
 | Show the code of a range with names, comments, access and references | `listing '$0400-$04ff'` |
+| Show only the instructions of a range | `listing '$0400-$04ff' --code` |
 | Start a check of 30 comments, selected at random | `sample` |
 | Get the comments and the verdicts of a check | `checks 4711` |
 | Record the verdict of one comment of a check | `verdict 4711 '$2100' wrong --class callers --why 'JSR at $1f00 calls it too' --text 'Moves the player.'` |
-| List the checks of the comments, with their results | `checks` |
 | Write all knowledge to one file | `export --out .c64-re-tools/local/knowledge.json` |
 | Find what the knowledge holds of the program | `program` |
 | Put a captured program into the knowledge | `image .c64-re-tools/local/capture/image.json` |
 | Put a PRG into the knowledge | `image releases/game.prg` |
-| Put drive code into the knowledge | `image drive.prg --space drive8` |
 | Add the coverage of runs | `coverage .c64-re-tools/local/runs/rooms/room0.bin` |
+| Add the coverage of a recording | `coverage tests/recordings/walk` |
 | Name the symbol at an address | `rename '$2100' update_player --kind routine --reason 'reads joystick 2'` |
 | Remove a symbol | `remove-symbol '$2100'` |
 | Classify memory | `classify '$3000-$303f' sprite` |
@@ -49,16 +50,16 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Make memory unknown, and keep the analyzers out of it | `unclassify '$3000-$303f'` |
 | Write a comment | `comment '$2100' line Reads joystick 2.` |
 | Add a reference | `reference '$2000' '$2100' call` |
-| Find the places that a removal blocks | `suppressions --range '$2000-$2fff'` |
 | Start a file of the generated source | `module '$2000' game/player.asm --title 'Player movement'` |
 | Write the operand of an instruction as an expression | `operand '$8079' --lo irq_handler` |
 | Record a release of the program | `release FIRESTAR --file releases/game.prg --base` |
+| Get the files of the releases and their SHA-256 | `releases` |
 | Write a switch | `switch PROTECTION --kind protection --releases FIRESTAR` |
 | Write the code of a switch for a range | `patch '$100e-$1010' PROTECTION --code-file no-check.asm` |
-| List the releases, switches and patches | `switches` |
-| Record the start screen of the program | `start-screen --mode multicolour --screen '$5c00' --bitmap '$6000' --colours '$8328' --border 0 --background 0` |
+| Record the patch from the bytes of a release | `patch '$100e-$1010' FIX_LIVES --from-release V2` |
+| List the switches and the ranges of their patches | `switches` |
+| Record the start screen in the program from a capture | `start-screen --capture .c64-re-tools/local/title/image.json` |
 | Record the start screen of a captured stage, and its tune | `start-screen --stage loading --call '$9000'` |
-| Remove the start screen | `unstart-screen` |
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` |
 | Write instructions as one use of a macro | `use '$1005-$100a' inc16 --args ptr` |
 | Do many writes as one revision | `apply .c64-re-tools/local/batch.json` |
@@ -66,6 +67,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 | Write the batches of parallel agents as one revision | `join a.json b.json --apply` |
 | Read the history of an address or a name | `history '$2100'` |
 | Read the last revisions | `revisions` |
+| See what one revision changed | `revision 20261015T2145` |
 | Go back to an earlier state | `revert 20261015T2145` |
 | Decide the conflicts after a git merge | `merge --reason 'merge of two computers'` |
 
@@ -77,8 +79,8 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 - An analyzer name is a second name from DXA, the decompiler or an idiom search, for example `FUN_17e2`. Each analyzer keeps its own name at an address. Get them from `at`, `search` or `symbols --analyzer`.
 - The generated source uses only the symbols. To use an analyzer name in the source, give the address that name with `rename`.
 - A symbol name is a label for ACME: a letter or an underscore, then letters, digits or underscores. The knowledge refuses the name of a 6502 instruction, for example `lda`, in upper or lower case.
-- A space is `c64` (the default), `drive8` for code in the 1541 drive, `loading` or `bank0` to `bank255`. `loading` is the captured stage of the loading that shows the start screen. `bank0` to `bank255` are cartridge banks, or other memory images of the program, for example a file that the program loads later. Drive code, the stage and banks use the same addresses as the C64. Thus each space has its own knowledge. A name is unique in one space.
-- A revision id has the form `20261015T214501.123-k3f9qz`. It starts with the date and the time. Give the full id, or a start of the id that only one revision has. Get the ids from `revisions`, or from the `revision` field of a result. The revision `0` is the knowledge before the first revision.
+- A space is `c64` (the default), `drive8` for code in the 1541 drive, `loading` or `bank0` to `bank255`. `loading` is the captured stage of the loading that shows the start screen. `bank0` to `bank255` are cartridge banks, or other memory images of the program, for example a file that the program loads later. Each space has its own knowledge. A name is unique in one space.
+- A revision id has the form `20261015T214501.123-k3f9qz`. Give the full id, or a start of the id that only one revision has. Get the ids from `revisions`, or from the `revision` field of a result. The revision `0` is the knowledge before the first revision.
 - A file of a capture is the `image.json` that the capture of a packed program wrote. The other files of the capture must be next to it.
 
 ### Paths and the project folder
@@ -98,6 +100,7 @@ The knowledge is text in `.c64-re-tools/knowledge/` of the project. Commit that 
 - To keep a run as evidence, use the command that keeps a run. It copies the run, its results and its snapshot files into `runs/<name>/`, and it changes the paths in the copy. Then git keeps them, and another person can do the run again.
 - A shell redirect (`>`) is relative to the working directory, not to the project folder. From the folder above the project, write `<folder>/.c64-re-tools/local/result.json`.
 
+
 ---
 
 ## Flags
@@ -111,10 +114,6 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--reason <text>` | All commands in "Change the knowledge" | Why you make the change. The revision keeps it, and `history` shows it. |
 | `--evidence <kind:ref>` | All commands in "Change the knowledge" | One thing that the change rests on: `coverage:<map>`, `test:<file>`, `file:<file>` or `note:<text>`. You can give it more than one time. |
 | `--expect-revision <revision>` | All commands in "Change the knowledge" | Refuse the change when the knowledge changed after this revision. Give the `revision` of your last read. |
-| `--by <user\|llm>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
-| `--reason <text>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
-| `--evidence <kind:ref>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
-| `--expect-revision <revision>` | `join` | With `--apply`: the same as for the commands in "Change the knowledge". |
 | `--range <start>-<end>` | `symbols`, `regions`, `comments`, `sample`, `references`, `suppressions`, `modules`, `operands`, `patches`, `uses`, `export` | Only the rows in this range. The default is all addresses. |
 | `--origin <origin>` | `search`, `symbols`, `regions`, `comments`, `references`, `modules`, `operands`, `patches`, `macros`, `uses`, `export` | Only the rows of these origins: `user`, `llm`, `dxa`, `decompiler`, `heuristic`, `semantic` (user and llm), `analyzer` (dxa, decompiler and heuristic), or a comma list. The default is all origins. |
 | `--origin <origin>` | `sample` | Only the comments of these origins. The default is `llm`. |
@@ -129,6 +128,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--kind <kind>` | `symbols`, `rename` | The symbol kind: `label`, `routine`, `variable`, `data` or `vector`. A read gives all kinds by default. A new symbol without `--kind` is a `label`. A `rename` without `--kind` keeps the kind of the symbol. |
 | `--kind <kind>` | `references` | Only references of this kind: `call`, `jump`, `read`, `write`, `reference` or `pointer`. |
 | `--kind <kind>` | `switch` | Necessary. The switch kind: `protection`, `trainer`, `cheat`, `crack`, `fix` or `change`. |
+| `--direction <in\|out\|inside>` | `references` | With `--range`: `in` from outside into the range, `out` from the range to outside, or `inside` with both ends in the range. |
 | `--analyzer` | `symbols` | List the analyzer names in place of the symbols. |
 | `--type <type>` | `regions` | Only regions of this type. |
 | `--switch <switch>` | `patches`, `unpatch` | Only the patches of this switch. For `unpatch`, the switch of the patch to remove. |
@@ -139,6 +139,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--before <revision>` | `revisions` | Only the revisions before this one. |
 | `--out <file>` | `export` | Necessary. The JSON file to write. |
 | `--apply` | `join` | Write the joined writes to the project knowledge as one revision. Without it, `join` writes nothing. |
+| `--code` | `listing` | Only the instructions of the code regions. No data lines. |
 | `--out <file>` | `listing` | Write the listing as text to this file in place of the lines in the body. |
 | `--element <n>` | `classify` | The bytes of one element of a table. The length of the range must be a multiple of it. |
 | `--title <text>` | `module` | The title of the file. A `module` write without a title keeps the title that the module has. |
@@ -150,55 +151,55 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--code <text>` | `patch` | The ACME code of the patch. |
 | `--code-file <file>` | `patch` | A project file with the ACME code of the patch. |
 | `--nop` | `patch` | The patch is NOP only. |
+| `--from-release <label>` | `patch` | The code is the bytes of this release in the range. The base release is not permitted. |
 | `--comment <text>` | `patch`, `switch`, `release`, `macro`, `start-screen` | A comment for the row. A `patch`, `switch`, `macro` or `start-screen` write without `--comment` keeps the comment that the row has. |
-| `--default <0\|1>` | `switch` | The value in the default build. See the section of `switch`. |
+| `--default <0\|1>` | `switch` | The value in the default build. See "Switches" of `<skill>/references/source-knowledge.md`. |
 | `--releases <A,B>` | `switch` | The labels of the releases that have the switch on, as a comma list. A write without it keeps the releases that the switch has. |
-| `--file <file>` | `release` | Necessary. The PRG or `image.json` of the release, in a folder that git keeps. |
+| `--file <file>` | `release` | Necessary. The PRG or `image.json` of the release. |
 | `--base` | `release` | This release is the program of the knowledge. |
 | `--params <a,b>` | `macro` | The params of the macro, as a comma list without a dot. The default is no params. |
 | `--body <text>` | `macro` | The body of the macro. |
 | `--body-file <file>` | `macro` | A project file with the body of the macro. |
 | `--args <x, y>` | `use` | One expression for each param of the macro, as a comma list. |
-| `--mode <mode>` | `start-screen` | The mode of the VIC-II: `text`, `hires` or `multicolour`. Necessary without `--stage`. |
-| `--screen <address>` | `start-screen` | The address of the screen memory: 1000 bytes. Necessary without `--stage`. |
+| `--capture <image.json>` | `start-screen` | A capture of the program while it shows the screen. The script takes the screen and its colours from it. |
+| `--stage <space>` | `start-screen` | The space of the captured stage that shows the screen: `loading`. The script takes the screen and its colours from the capture of the stage. |
+| `--call <address>` | `start-screen` | A routine of the stage that the start screen calls before it waits, for example the start of the loading tune. It must return with RTS. It needs `--stage`. |
+| `--mode <mode>` | `start-screen` | The mode of the VIC-II: `text`, `hires` or `multicolour`. Necessary without `--capture` and `--stage`. |
+| `--screen <address>` | `start-screen` | The address of the screen memory: 1000 bytes. Necessary without `--capture` and `--stage`. |
 | `--bitmap <address>` | `start-screen` | The address of the bitmap: 8000 bytes. `hires` and `multicolour` need it. |
 | `--charset <address>` | `start-screen` | The address of the charset: 2048 bytes. `text` needs it. |
 | `--colours <address>` | `start-screen` | The address of the 1000 bytes that the loader copies to the colour RAM. |
 | `--colour <0-15>` | `start-screen` | One colour for all of the colour RAM, in place of `--colours`. |
-| `--border <0-15>` | `start-screen` | The border colour. Necessary without `--stage`. |
-| `--background <0-15>` | `start-screen` | The background colour. Necessary without `--stage`. |
-| `--stage <space>` | `start-screen` | The space of the captured stage that shows the screen: `loading`. The script takes the mode, the addresses and the colours from the capture. Without it, the bytes are in the program at the entry. |
-| `--call <address>` | `start-screen` | A routine of the stage that the start screen calls before it waits, for example the start of the loading tune. It must return with RTS. It needs `--stage`. |
+| `--border <0-15>` | `start-screen` | The border colour. Necessary without `--capture` and `--stage`. |
+| `--background <0-15>` | `start-screen` | The background colour. Necessary without `--capture` and `--stage`. |
 
 ---
 
 ## Read the knowledge
 
-A read writes nothing. A project without knowledge gives empty lists and the revision `0`.
+A read writes nothing. A project without knowledge gives empty lists and the revision `0`. Each row in a body has `origin` and `revision`. A row of a space other than `c64` also has `space`.
 
-Each row in a body has `origin` and `revision`. A row of a space other than `c64` also has `space`.
+When a git merge left conflicts in the knowledge, each read body also has `conflicts`. Each item gives the `conflict` and its `rows`. Each write stops until you run `merge`, the `nextAction` of the read.
 
-When a git merge left conflicts in the knowledge, each read body also has `conflicts`. Each item gives the `conflict` and its `rows`. The `hint` tells you to decide the conflicts, and `nextAction` is the `merge` command. Each write stops until you run `merge`.
+### `at <address>...`
 
-### `at <address>`
-
-- `body` holds `address`, `comments`, `referencesFrom`, `referencesTo` and `revision`. When the knowledge has them, it also holds `symbol`, `analyzerNames`, `region`, `operand`, `patch`, `macroUse` and `suppressions`.
-- `revision` is the current revision of the knowledge. Give it to `--expect-revision` of your next write.
-- Use `at` for the addresses of the question before other work.
+- Give all addresses of the question to one `at`. Do not run `at` in a loop.
+- `body.revision` is the current revision of the knowledge. Give it to `--expect-revision` of your next write.
+- `body.addresses` has one item for each address, with `address`, `comments`, `referencesFrom` and `referencesTo`. When the knowledge has them, an item also has `symbol`, `analyzerNames`, `region`, `operand`, `patch`, `macroUse` and `suppressions`.
+- When the space has coverage maps, an item also has `coverage` and `access`. `coverage` gives the `map` and the `access` of each map. `access` is the access of all maps: `x`, `rw`, `r`, `w` or `-`. See "Access" of `<skill>/references/coverage.md`.
 
 ### `search <text>`
 
-- `body` holds the lists `symbols`, `analyzerNames` and `comments` with the text in their names or comment text.
-- If a list is long, give a longer text.
+- `body` holds the lists `symbols`, `analyzerNames` and `comments` with the text in their names or comment text. If a list is long, give a longer text.
 
 ### `symbols`
 
-- `body.symbols` lists the symbols, each with `address`, `name` and `kind`.
-- With `--analyzer`, `body.analyzerNames` lists the analyzer names in place of the symbols.
+- `body.symbols` lists the symbols, each with `address`, `name` and `kind`. With `--analyzer`, `body.analyzerNames` lists the analyzer names in place of the symbols.
 
 ### `regions`
 
 - `body.regions` lists the regions, each with `start`, `end` and `type`. A table also has `element` and `count`.
+- `body.byType` gives the `count` of the regions of each type, and their `bytes` in the range. It counts all regions that the flags select, also the regions that `listed` does not show.
 
 ### `comments`
 
@@ -206,15 +207,14 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 
 ### `references`
 
-- `body.references` lists the references, each with `from`, `to` and `kind`.
+- `body.references` lists the references, each with `from`, `to` and `kind`. Without `--direction`, a reference with one end in the range is in the list.
+- `body.byKind` gives the number of references of each kind. `body.byTarget` lists the targets, the target of the most references first. Each item has `to`, `count`, and `name` when the target has a name.
 
 ### `suppressions`
 
 - `body.suppressions` lists the places that a removal blocks. Each item has `suppresses` (`symbol`, `region` or `reference`), the place, and the `reason` of the removal.
-- `unclassify` and `unreference` block the place for DXA and the decompiler. A later analysis does not add a region in that range or that reference again. This is also true for a fact from the LLM.
-- `remove-symbol` does not block the address, because an analyzer name never becomes a symbol.
+- `unclassify` and `unreference` block the place for the analyzers. A later analysis does not add a region in that range or that reference again. This is also true for a fact from the LLM.
 - A `rename`, `classify` or `reference` at a blocked place ends the block there. A `revert` to a revision before the removal also ends the block.
-- `at` and `history` also show the blocks.
 
 ### `modules`
 
@@ -230,13 +230,12 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 
 ### `switches`
 
-- `body.switches` lists the switches. Each item has `name`, `kind`, `default`, `base`, `releases`, `comment` and the ranges of its `patches`.
-- `base` is the value of the switch in the program of the knowledge.
+- `body.switches` lists the switches. Each item has `name`, `kind`, `default`, `base`, `releases`, `comment` and the ranges of its `patches`. `base` is the value of the switch in the program of the knowledge.
 
 ### `releases`
 
-- `body.releases` lists the releases, the base release first. Each item has `label`, `base` and `define`.
-- `define` is the assembler define that builds the release.
+- `body.releases` lists the releases, the base release first. Each item has `label`, `base`, `define`, `file` and `sha256`. `define` is the assembler define that builds the release.
+- `file` is the path of the file of the release, and `sha256` is the SHA-256 of that file. Use them for the facts of a release, for example in a README. Do not calculate a SHA-256 yourself.
 
 ### `macros`
 
@@ -259,19 +258,17 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 
 ### `listing <range>`
 
-- `body.lines` has `count` and `listed`. `listed` holds one line for each instruction of a code region.
-- A table of addresses or words shows its values as `!word` lines. Each address has the name of its target. A split table shows the low and the high byte of each target as `!byte` lines. The other bytes show as `!byte` lines.
-- Each line has `address`, `bytes`, `text`, `referencesIn` and `referencesOut`. It can also have `label`, `analyzerNames`, `lineComments` and `comment`. `lineComments` are the line comments before the line. `comment` is the side comment.
-- `text` is the instruction with the names of its target. An operand expression of the knowledge replaces the operand.
-- `access` is there when the knowledge has coverage. It tells if a run executed (`x`), read (`r`) or wrote (`w`) the bytes of the line. `-` tells that no run did. An `r` on code can come from a read of the 6502 that the program does not do. Examples are the third byte of a JSR and the opcode after a branch that the CPU takes. Another example is the opcode at the PC when an interrupt starts. An indexed read (`lda table,x`) that crosses a page also reads the byte $100 below its target. A read watchpoint does not stop at these reads.
-- With `--out`, the body has `lines` as a number, and `out`, `bytes` and `sha256` of the text file.
-- If the knowledge has no program in the space, the script refuses. Put the program in with `image` first.
+- `body.lines` has `count` and `listed`. Each line has `address`, `bytes`, `text`, `referencesIn` and `referencesOut`. It can also have `label`, `analyzerNames`, `lineComments` (the line comments before the line), `comment` (the side comment) and `access`.
+- `text` is the instruction with the names of its target. An operand expression of the knowledge replaces the operand. A table of addresses or words shows its values as `!word` lines, with the name of each target. A split table and the other bytes show as `!byte` lines.
+- `access` is there when the knowledge has coverage: `x`, `r`, `w` or `-`. See "Reads that the program does not do" of `<skill>/references/coverage.md`.
+- With `--code`, `lines` has only the instructions of the code regions.
+- With `--out`, `body.lines` is a number, and the body has `out`, `bytes` and `sha256` of the text file.
 - Use `listing` in place of your own disassembler. To find the targets of a table, classify the table with its type. Then read its listing. Do not decode the bytes of a table yourself.
 
 ### `export`
 
 - `body` holds `counts`, `revision`, `out`, `bytes` and `sha256`. `counts` gives the number of rows of each kind in the file.
-- The file has all current knowledge of the space in the range, with the analyzer names and the source knowledge. `startScreen` is the start screen, when the knowledge has one.
+- The file has all current knowledge of the space in the range, with the analyzer names, the source knowledge and the start screen.
 
 ---
 
@@ -290,14 +287,15 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 
 ### `revision <revision>`
 
-- `body.revision` gives the revision. `body.added` and `body.closed` list the rows that it added and closed.
-- The rows include the memory, entry and coverage rows of the program. A coverage row gives the `map`, the access `kind` and the number of `ranges` of that kind in the map.
+- `body.revision` gives the revision. `body.counts` gives the number of rows that it `added` and `closed`, for each kind of row.
+- `body.added` and `body.closed` list the rows. They include the memory, entry and coverage rows of the program. A coverage row gives the `map`, the access `kind` and the number of `ranges` of that kind in the map.
+- Use `revision` to see what one revision changed.
 
 ---
 
 ## Change the knowledge
 
-Each command in this group writes one revision. The first accepted write makes `.c64-re-tools/knowledge/`. A refused write writes nothing.
+Each command in this group writes one revision. A refused write writes nothing.
 
 - `body.revision` is the new revision. A `revision` of `null` tells that nothing changed.
 - When the write replaced a row of a different origin, `body.previous` gives that row as it was before. For example, an `llm` write over a `user` name gives `previous`. Read `previous` and tell the user about the change.
@@ -315,8 +313,7 @@ Errors of this group:
 
 ### `rename <address> <name>`
 
-- `body.symbol` gives the symbol after the write.
-- A `rename` changes the name in each operand expression and in each argument of a macro use.
+- `body.symbol` gives the symbol after the write. A `rename` changes the name in each operand expression and in each argument of a macro use.
 
 ### `remove-symbol <address>`
 
@@ -325,7 +322,6 @@ Errors of this group:
 ### `classify <range> <type>`
 
 - `body.regions` gives the regions after the write. A classification inside a region splits that region. Thus regions never overlap.
-- With `--element`, each region item also has `element` and `count`.
 
 | Type | Meaning |
 |---|---|
@@ -363,13 +359,9 @@ Errors of this group:
 
 ### `module <start> <file.asm>`
 
-- A module tells where a file of the generated source starts. The file runs to the next module or to the end of its segment.
+- A module tells where a file of the generated source starts. The file runs to the next module or to the end of its segment. The title becomes the first line of the file.
+- A file name ends in `.asm` and can have one folder, for example `music/driver.asm`. Put the modules of one part of the program in one folder, for example `music/`, `irq/` or `graphics/`.
 - Each address has one module, and each file name has one module.
-- A file name has letters, digits, underscores or hyphens, and ends in `.asm`. It can have one folder, for example `music/driver.asm`. A folder name has lower-case letters, digits, underscores or hyphens.
-- Put the modules of one part of the program in one folder, for example `music/`, `irq/` or `graphics/`.
-- The generated source has the files `main.asm`, `loader.asm`, `switches.asm`, `config.asm`, `constants.asm`, `macros.asm` and `start_screen.asm` already. It also has the folders `leftovers/` and `segments/`. Thus a module cannot have one of these files, also in a folder, or one of these folders, in upper or lower case.
-- Two modules cannot have file names that are different only in upper or lower case.
-- The title becomes the first line of the file.
 - `body.module` gives the module after the write.
 
 ### `unmodule <start>`
@@ -387,12 +379,9 @@ An operand expression tells the generated source how to write the operand of one
 | `--value bar_colours --offset=-1` | `lda bar_colours-1,x` |
 | `--expr '(sprite_bank + 5*64) / 64'` | `lda #(sprite_bank + 5*64) / 64` |
 
-- Give exactly one of `--lo`, `--hi`, `--value` and `--expr`.
-- The knowledge must have the program of the space. Else the script refuses. Put the program in with `image` first.
-- The address is the start of an instruction in a code region, as `listing` shows it. The script refuses an address in no code region. Classify the code first.
-- A name is a symbol of the knowledge or a platform name of the C64 memory map.
-- `--expr` takes `$`, `%` and decimal numbers, names, brackets, the operators `+ - * / % << >> >>> & | XOR`, and `<`, `>`, `-` and `!` before an operand.
-- The script compares the value of the expression with the operand in the program. If they are not equal, the script refuses the write. The `error` gives both values.
+- Give exactly one of `--lo`, `--hi`, `--value` and `--expr`. A name is a symbol of the knowledge or a platform name of the C64 memory map.
+- The address is the start of an instruction in a code region, as `listing` shows it.
+- The script refuses an expression whose value is not the operand in the program. The `error` gives both values.
 - Each name in the expression gets a `pointer` reference from the instruction. Thus `at` on the named address shows the code that uses the address.
 - `body.operand` gives the expression after the write, with its `text`.
 - Write an operand expression for each immediate that is a byte of an address. Also write one for each table read through the byte before the table. The pointer candidates of a static analysis show many of these places.
@@ -403,61 +392,16 @@ An operand expression tells the generated source how to write the operand of one
 
 ### `release <label>`
 
-A rebuild keeps all of the program in the source: unused bytes, dead code, old copies and leftovers of the development. The default build and the loader do not have the leftovers. The build of a release has them. It keeps a copy protection, a trainer and a cheat in the source. A switch puts each of them in or out of the build. A start screen of the program stays too: record it with `start-screen`. Only a cracktro and the other screens of a crack are not in the rebuild.
-
-Do not write a file of the rebuild by hand, for example a boot file, a packed picture or a script that changes bytes. Record each change in the knowledge, and generate the source.
-
-- `--file` is a PRG or the `image.json` of a capture. The project knowledge keeps the bytes of the release. After the write, the project does not need the file. A capture can stay in `.c64-re-tools/local/`.
-- A label is upper case, for example `FIRESTAR`, `TBC` or `V2`.
-- The base release is the release whose bytes are the program of the knowledge. Record it with `--base`. The script refuses `--base` when the segments or the bytes of the file are not the program.
-- A space has one base release. Record the base release before the first switch.
-- The build of a release gives each switch the value of that release. The check of the generated source compares that build with the bytes of the release in the project knowledge.
-- To change the bytes of a release, record the release again with its new file.
-- `body.release` gives the release, with its `define`. `body.bytes` gives the number of bytes of the file.
+- `body.release` gives the release, with its `define`, `file` and `sha256`. `body.bytes` gives the number of bytes of the file.
+- See "Releases" of `<skill>/references/source-knowledge.md`.
 
 ### `unrelease <label>`
 
-- The knowledge refuses a release that a switch names. It also refuses the base release while the knowledge has switches.
+- The knowledge refuses a release that a switch names, and the base release while the knowledge has switches.
 
 ### `start-screen`
 
-A start screen is a loading screen, a title screen or a presentation screen of the program itself. The loader of the generated source shows it before the program starts. Then the loader waits for a key, or for a fire button on joystick port 1 or 2.
-
-- Record only a screen of the program itself. Do not record a screen of a crack, for example a picture, an intro or a credit screen of a crack group.
-- If a release changed the screen of the program, stop and ask the user how to deal with it. An example is a picture with the text of a crack in it. Do not decide alone. Give the user these options:
-  1. Record patches under a switch that take out the change.
-  2. Use the screen as it is.
-  3. Do not record a start screen.
-- The bytes of the screen must be in the program of the knowledge at the entry, or in a captured stage.
-
-#### A start screen of a captured stage
-
-Use this when a stage of the loading shows the screen, and the program at the entry does not have it. Do these steps:
-
-1. Capture the stage while it shows the screen. Do not exclude the memory of the screen.
-2. Put the capture into the knowledge in the space `loading`: `image stage/image.json --space loading`. Do not use another space for it.
-3. If the stage plays a tune or does other work during the screen, find the routine that starts it. Run the stage with coverage while that routine runs. Put the map into the knowledge with `coverage <map> --space loading`.
-4. Record the start screen with `start-screen --stage loading`, and with `--call` for the routine.
-
-- The script takes the mode, the screen, the bitmap or the charset, the colours and the colour RAM from the capture. Do not find the addresses or the colours yourself.
-- The generated source puts the screen in memory. It does not matter where the stage keeps its bytes, if the memory has enough room.
-- A flag that you give replaces the value of the capture. Give a flag only to correct a value.
-- A capture of an older version has no colour RAM. Then capture the stage again.
-
-#### A start screen in the program
-
-- Capture the program while the bytes of the screen are in memory.
-- Get the mode, the addresses and the colours from the VIC-II while the program of the base release shows the screen.
-- Find the 1000 colour bytes in the program: compare them with the colour RAM at $d800 while that program shows the screen. Give their address with `--colours`. If the program does not have them, give one colour with `--colour`.
-
-#### The rules of the VIC-II
-
-- `text` needs `--charset`. `hires` and `multicolour` need `--bitmap`. `text` and `multicolour` need `--colours` or `--colour`. `hires` uses neither.
-- The screen is at a step of $0400, the bitmap at a step of $2000 and the charset at a step of $0800. They must be in one VIC bank of 16 KB.
-- In VIC bank 0 and 2, the VIC-II reads the character ROM at $1000-$1fff of the bank. A screen or a bitmap cannot be there. A charset at $1000 or $1800 of the bank is the character ROM.
-- No part can be in $0000-$03ff. The colours cannot be in $d000-$dfff.
-- A space has one start screen, and only the space `c64` has one. A write replaces the start screen of the knowledge.
-- The generated source has the switches `START_SCREEN` and `LEFTOVERS`. Thus no symbol and no switch can have these names.
+- When the program at the entry has the screen, give `--capture` with a capture of the program while it shows the screen. When a stage of the loading shows the screen, give `--stage loading`. See "Start screens" of `<skill>/references/start-screen.md`.
 - `body.startScreen` gives the start screen after the write.
 
 ### `unstart-screen`
@@ -466,24 +410,7 @@ Use this when a stage of the loading shows the screen, and the program at the en
 
 ### `switch <name>`
 
-A switch has a kind, a default, and the releases that have it on. The generated source writes all switches with their defaults.
-
-| Kind | What it changes | Default |
-|---|---|---|
-| `protection` | A copy protection | 0 (off) |
-| `trainer` | A trainer, for example infinite lives | 0 (off) |
-| `cheat` | A cheat | 0 (off) |
-| `crack` | A change that a cracker made in the program, for example a credit text | 0 (off) |
-| `fix` | A correction that one or more releases have | 1 (on). Give `--default 0` only for an alternative (see `patch`). |
-| `change` | Another difference between releases | Give `--default 0` or `--default 1`. |
-
-- The default build is the clean program. It has no copy protection, trainer, cheat or crack change, and it has all corrections. Thus the script refuses `--default 1` for `protection`, `trainer`, `cheat` and `crack`.
-- A switch that no release has on, for example a trainer of your own, has no `--releases`.
-- The base value of a switch is 1 when the base release has it on, else 0. The program of the knowledge has the base value of each switch.
-- A switch name is upper case, for example `PROTECTION`, `TRAINER` or `FIX_LIVES`. It cannot start with `RELEASE_`. It cannot be the name of a symbol or a platform name.
-- The script refuses a change of the base value while the switch has patches. Remove the patches first, because they hold the other state.
-- The script refuses defaults that put in two alternatives.
-- `body.switch` gives the switch after the write, with its `base`.
+- `body.switch` gives the switch after the write, with its `base`. See "Switches" of `<skill>/references/source-knowledge.md`.
 
 ### `unswitch <name>`
 
@@ -491,26 +418,7 @@ A switch has a kind, a default, and the releases that have it on. The generated 
 
 ### `patch <range> <switch>`
 
-A patch is ACME code for a range of the program. The code is the bytes of the switch in the state that the base release does not have. Examples:
-
-- The base release has a copy protection. The switch `PROTECTION` names the base release. The code is the program without the protection, for example NOP in place of the `JSR` to the check.
-- The base release has the protection already removed, and another release has it. The code is the bytes of the protection from that release. When no release has these bytes, write in a comment that the crack removed the protection.
-- A correction is only in release `V2`. The switch `FIX_LIVES` names `V2`, and the code is the bytes of `V2`.
-- A correction is in the base release and not in `V1`. The switch names the base release, and the code is the bytes of `V1`.
-
-Rules:
-
-- Give exactly one of `--code`, `--code-file` and `--nop`.
-- Write the switch first. `patch` refuses a switch that the knowledge does not have.
-- Many patches can have the same switch.
-- The code must fit in the range. NOP (`$EA`) fills the bytes after the code.
-- `patch` refuses code that is longer than the range when each line is a 6510 instruction, `!byte`, `!word`, `!fill` or a comment. It does not check the length of other code, for example code with a label or a macro. The check of the generated source finds these errors.
-- The code can use the labels and the macros of the source, and local labels with a dot, for example `.skip`.
-- The braces in the code must be pairs.
-- Patches of different switches can have the same range. They are alternatives, for example two releases with two different corrections of one bug. The default build can put in only one of them.
-- The knowledge refuses all other overlaps of patches. A patch cannot overlap a macro use.
-- A patch with the same start and the same switch replaces the patch.
-- Each byte of the range must be in the program of the knowledge.
+- The code is the bytes of the switch in the state that the base release does not have. When another release has these bytes, give `--from-release` with its label. See "Patches" of `<skill>/references/source-knowledge.md`.
 - `body.patch` gives the patch after the write.
 
 ### `unpatch <start>`
@@ -519,11 +427,7 @@ Rules:
 
 ### `macro <name>`
 
-A macro writes a run of instructions as one line of the source, for example `+inc16 ptr`. Use macros to make the source shorter and easier to read.
-
-- Give `--body` or `--body-file`. The body uses each param with a dot, for example `.dst`.
-- The knowledge refuses a change of the number of params while the macro has uses.
-- `body.macro` gives the macro after the write.
+- `body.macro` gives the macro after the write. See "Macros" of `<skill>/references/source-knowledge.md`.
 
 ### `unmacro <name>`
 
@@ -531,11 +435,7 @@ A macro writes a run of instructions as one line of the source, for example `+in
 
 ### `use <range> <macro>`
 
-- The range is complete instructions of the program of the knowledge.
-- Each name in an argument is a symbol of the knowledge or a platform name.
-- A use cannot overlap a patch or another use.
-- The generated source writes a use only when the use gives the bytes of the program. Else it writes the instructions and gives the reason.
-- `body.use` gives the use after the write.
+- `body.use` gives the use after the write. See "Macro uses" of `<skill>/references/source-knowledge.md`.
 
 ### `unuse <start>`
 
@@ -546,85 +446,39 @@ A macro writes a run of instructions as one line of the source, for example `+in
 - `<file>` is the `image.json` of a capture, or a PRG. A PRG has the extension `.prg` or no extension. The script refuses a file with another extension.
 - For drive code or a cartridge bank, give `--space drive8` or `--space bank0`.
 - `body` holds `revision`, `bytes`, `rowsAdded`, `rowsClosed` and `entryChanged`.
-- `image` writes only the bytes that changed. The same image again writes nothing. A new image replaces the program of the space. The history keeps the old bytes.
-- After the import, you do not need the file of the capture. Keep it in `.c64-re-tools/local/`.
+- A new image replaces the program of the space. After the import, the project does not need the file of the capture.
 
 ### `coverage <map>...`
 
-- `<map>` is a 64 KiB coverage map of a run. Write each map in `.c64-re-tools/local/`.
-- `body` holds `revision`, `imported`, `replaced`, `known`, `added` and `removed`. `imported` lists the new maps. `replaced` lists the new maps that replace an earlier map of the same path. `known` lists the maps that are the latest map of their path in the space already. `added` and `removed` count the ranges of accesses that the coverage gets and loses. When both are 0, the source and the reference do not change.
-- The knowledge keeps one map for each path in a space. A new map of a path replaces the earlier map of that path. Thus, after you record a run again into the same folder, put its new map into the project knowledge. Then the coverage has only the new run of that folder.
-- The coverage of a space is the union of its maps. It has each address that a run executed, read or wrote. It also has each address that one run wrote and executed: self-modified code.
-- `coverage` puts each map into the space of `--space`. You can add the same map to each space.
-- `--evidence coverage:<map>` names a map by its path at the import. It refers to the last import of that map into the space of the write.
+- `<map>` is a 64 KiB coverage map of a run, or a recording folder. For a recording folder, the script takes the coverage map of the recording.
+- `body` holds `revision`, `imported`, `replaced`, `known`, `added` and `removed`. `imported` lists the new maps. `replaced` lists the new maps that replace an earlier map of the same path. `known` lists the maps that the space has already. `added` and `removed` count the ranges of accesses that the coverage gets and loses.
+- When `added` or `removed` is not 0, do as `hint` tells.
+- After you record a run again into the same place, put its map into the knowledge again. See "Maps and their paths" of `<skill>/references/coverage.md`.
 
 ### `apply <file>`
 
-- `<file>` is a JSON list of writes. Give `-` to read the list from standard input.
-- `body` holds `revision`, `writes` and `replaced`. `replaced` lists each write that replaced a row of a different origin, for example an `llm` write over a `user` row. Each item has the number of the `write`, its `op` and its `previous`. A write over a row of the same origin is not in `replaced`.
-- All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the `error` names the write.
-- Each write has `op` and the fields of the command with the same name. Each write can also have `space`. For example:
+- `<file>` is a JSON list of writes. Give `-` to read the list from standard input. See "Writes of a batch" of `<skill>/references/batches.md`.
+- `body` holds `revision`, `writes` and `replaced`. `replaced` lists each write that replaced a row of a different origin. Each item has the number of the `write`, its `op` and its `previous`.
+- If the knowledge refuses one write, the script writes nothing, and the `error` names the write.
 
-```json
-[
-  { "op": "rename", "address": "$2100", "name": "update_player", "kind": "routine" },
-  { "op": "classify", "start": "$3000", "end": "$303b", "type": "bytes", "element": 6 },
-  { "op": "comment", "address": "$2100", "placement": "line", "text": "Reads joystick 2." }
-]
-```
+### `join <batch>...`
 
-| op | Fields |
-|---|---|
-| `rename` | `address`, `name`, `kind` (optional) |
-| `remove-symbol` | `address` |
-| `classify` | `start`, `end`, `type`, `element` (optional) |
-| `unclassify` | `start`, `end` |
-| `comment` | `address`, `placement` (`line` or `side`), `text` |
-| `uncomment` | `address`, `placement` |
-| `reference`, `unreference` | `from`, `to`, `kind` |
-| `module` | `start`, `file`, `title` (optional) |
-| `unmodule` | `start` |
-| `operand` | `address`, `select` (`lo`, `hi`, `value` or `expr`), `symbol` and `offset` (optional), or `expression` for `expr` |
-| `unoperand` | `address` |
-| `patch` | `start`, `end`, `switch`, `code` (empty for NOP only), `comment` (optional) |
-| `unpatch` | `start`, `switch` (optional) |
-| `macro` | `name`, `params` (a list or a comma list), `body`, `comment` (optional) |
-| `unmacro` | `name` |
-| `use` | `start`, `end`, `macro`, `args` (a list or a comma list) |
-| `unuse` | `start` |
-
-- The script checks an `operand`, `patch` or `use` write against the program of its space.
+- `join` joins the batches of agents that name the program at the same time. See "Batches of parallel agents" of `<skill>/references/batches.md`.
+- Without `--apply`, `join` writes no knowledge. `body` holds `writes`, `repeated` and `choices`. `writes` lists the joined writes. `choices` lists each place where the batches gave different values, with the value that stays.
+- Examine `choices` and `writes`. `nextAction` is the same `join` with `--apply`. Run it when the choices agree with your task.
+- With `--apply`, `join` writes the joined writes as one revision, or nothing when the knowledge refuses one write. Then `body` holds `revision`, `writes`, `replaced`, `repeated` and `choices`, as for `apply`.
+- When one name or one module file is at two addresses, `join` writes nothing and gives the error `conflict`. Correct the batches that the `error` names. Then do `join` again.
 
 ### `revert <revision>`
 
 - Makes the knowledge the same as at the revision. Without `--space`, all spaces revert. With `--space`, only that space reverts.
 - `body` holds `revision`, `restores`, and `spaces: "all"` or `space`.
-- A revert is a new revision. The history stays complete.
-- A revert also gives back the coverage maps of that revision. A revert to a revision before an import removes the map and its ranges. Then `--evidence coverage:<map>` refuses the map until you import it again.
+- A revert is a new revision. The history stays complete. A revert also gives back the coverage maps of that revision.
 
 ### `merge`
 
 - Decides each conflict that a git merge left. Of the rows of one conflict, the newest row stays. All choices become one revision.
 - `body.choices` lists each choice, with the `conflict`, the row that is `kept` and the rows that are `closed`. Tell the user the choices.
-
----
-
-## Batches of parallel agents
-
-When more agents name the program at the same time, give each agent one range of addresses. Each agent writes one batch file in `.c64-re-tools/local/` and does not apply it. A batch has the form `{"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}`. `ops` holds the writes, as for `apply`. The owner ranges must not overlap.
-
-### `join <batch>...`
-
-- `join` makes one list of writes from two or more batch files. Without `--apply`, it writes no knowledge.
-- Without `--apply`, `body` holds `writes`, `repeated` and `choices`. `writes` lists the joined writes.
-- With `--apply`, `join` writes the joined writes as one revision, or nothing when the knowledge refuses one write. Then `body` holds `revision`, `writes`, `replaced`, `repeated` and `choices`, as for `apply`.
-- `choices` lists each place where the batches gave different values, with the value that stays.
-- At an address in the owner range of a batch, the name, the comment, the operand and the module of that batch stay. At an address that no batch owns, the first batch in the command stays.
-- A batch can give an address a name that `join` replaces. Then `join` also replaces that name in the operand expressions and macro arguments of that batch.
-- The regions of the owner come after the regions of the other batches. Thus the regions of the owner stay where they overlap.
-- A name from a batch stays when another batch removes the symbol at that address.
-- When one name or one module file is at two addresses, `join` writes nothing and gives the error `conflict`. The `error` names the addresses and the batches. Correct the batches. Then do `join` again.
-- Without `--apply`, the `hint` tells you to examine `choices` and `writes`. `nextAction` is the same `join` with `--apply`. Run it when the choices agree with your task.
 
 ---
 
@@ -635,8 +489,7 @@ A check measures how many comments are wrong. An agent that did not write the co
 ### `sample`
 
 - Starts a check. `body` holds `seed`, `revision`, `population` and `sampled`. `population` is the number of comments that the script selected from. `sampled` is the number of comments of the check.
-- Keep the `seed`. It identifies the check.
-- If the check of the seed has verdicts, the script refuses. Give another seed.
+- Keep the `seed`. It identifies the check. If the check of the seed has verdicts, the script refuses. Give another seed.
 
 ### `verdict <seed> <address> <verdict>`
 
@@ -656,10 +509,7 @@ A check measures how many comments are wrong. An agent that did not write the co
 
 ## Workflow
 
-Read:
-
-1. Run `at` for the addresses of the question.
-2. Run `history` when the current knowledge is surprising or disputed. Each row gives the `reason` and the `evidence` of the revision that wrote it.
+Read: run `at` with all addresses of the question. Run `history` when the current knowledge is surprising or disputed.
 
 Write:
 
@@ -672,21 +522,16 @@ Put the program into the knowledge:
 
 1. For a packed program, capture the unpacked program into `.c64-re-tools/local/`. Then run `image` with its `image.json`.
 2. For a program without a packer, drive code or a cartridge bank, run `image` with the PRG.
-3. Write the coverage map of each run into `.c64-re-tools/local/`. Then run `coverage` with the maps.
+3. Run `coverage` with the coverage map of each run and with each recording folder.
 4. Run `program` to see the segments, the entry and the coverage maps.
 
 Write knowledge only after interpretation:
 
 - a symbol name that tells what a routine or a variable does
-- a region type that the evidence supports
-- a comment that explains behavior that a name cannot show
-- a reference that the evidence supports.
+- a region type or a reference that the evidence supports
+- a comment that explains behavior that a name cannot show.
 
-Do not write:
-
-- temporary investigation state
-- a guess, only because a routine needs a temporary name
-- confidence or status words in comment text.
+Do not write temporary investigation state, a guess only because a routine needs a temporary name, or confidence or status words in comment text.
 
 For runtime evidence, examine the program in the emulator. For static evidence, analyze the machine code. To make the source from the knowledge, generate the source. To name the routines that other programs share, match the program against a routine library.
 
@@ -710,3 +555,10 @@ Each command prints one JSON envelope on one line on stdout. Notes go to stderr.
 | `invalid-input`, `not-found` | Correct the call as `hint` tells. Then run the command again. |
 | `operation-failed` | Give `error` and `hint` to the user. |
 | Another code | Do as `hint` tells. |
+
+## Reference
+
+- `<skill>/references/source-knowledge.md`: the rules of the releases, the switches, the patches, the macros and the macro uses.
+- `<skill>/references/start-screen.md`: how to record the start screen from a capture of the program or of a stage. It also gives the flags that correct a capture, and the rules of the VIC-II.
+- `<skill>/references/batches.md`: the writes of a batch for `apply`, and the batches of parallel agents for `join`.
+- `<skill>/references/coverage.md`: the coverage maps and their paths, the access at an address, and the reads that the program does not do.
