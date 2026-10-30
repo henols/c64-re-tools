@@ -11,7 +11,7 @@ import { stripVTControlCharacters } from "node:util";
 import { Refusal } from "../errors.ts";
 import { SYMBOL_NAME } from "../c64.ts";
 import { describeError, WireFailure } from "../protocol/messages.ts";
-import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaParams, type DxaResult } from "./types.ts";
+import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaParams, type DxaResult, type SeedReport } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
 import { outputTail, runTool, runToolOrFail, type ToolContext } from "./run.ts";
@@ -118,11 +118,11 @@ export async function analyze(
   params: DxaParams,
   image: Buffer,
   context: ToolContext,
-): Promise<{ result: DxaResult; attachments: Buffer[] }> {
+): Promise<{ result: DxaResult; attachments: Buffer[]; seeds: SeedReport }> {
   checkRequestBounds(params);
   const executable = findTool(DXA, context.env);
   const { start, end } = imageRange(params.imageKind, image);
-  const { entryPoints, dataRanges } = seedsInside(params, start, end);
+  const { entryPoints, dataRanges, report } = seedsInside(params, start, end);
 
   const workspace = Workspace.create(context.supervisor);
   try {
@@ -171,7 +171,7 @@ export async function analyze(
       const tail = outputTail("dxa", { stdout: "", stderr: run.stderr }, workspace.root);
       throw new WireFailure("operation-failed", `dxa returned an incomplete or inconsistent listing. Nothing was imported. The check found: ${describeError(error)}.${tail}`);
     }
-    return { result, attachments: [listing] };
+    return { result, attachments: [listing], seeds: report };
   } finally {
     workspace.remove();
   }

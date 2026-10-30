@@ -11,7 +11,7 @@ import { knowledgeNames } from "#src/knowledge/names.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithDecompiler } from "#src/native/decompiler/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
-import { DECOMPILER_LIMITS } from "#src/native/types.ts";
+import { DECOMPILER_LIMITS, type RefusedSeed, type SeedReport } from "#src/native/types.ts";
 import { openForRead, withWrite } from "#src/knowledge/database.ts";
 import { analyzedBytes, operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
@@ -20,7 +20,7 @@ import { currentRevision, listMacros, listMacroUses, listPatches, listReferences
 import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
-import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, type ImageByte } from "./lib/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, writtenNotExecuted, explainGaps, type GapReason, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, decompilerFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList } from "./lib/instructions.ts";
@@ -30,14 +30,18 @@ import { findPointers, type PointerCandidate } from "./lib/pointers.ts";
 
 /** The rest of a cut label or function list: the knowledge has all of them as analyzer names. */
 const ALL_NAMES = "a larger --max-listed. The project knowledge has all of them as analyzer names";
+/** The rest of a cut region list: the knowledge has all of them. */
+const ALL_REGIONS = "a larger --max-listed. The project knowledge has all of them as regions";
 
 /**
  * The result with a hint for what the agent does next: conflicts to examine,
  * analyzer data over executed code to classify, and macro candidates to write.
  * The envelope adds the sentence for a cut list.
  */
-function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }, version: { now: string | undefined; last: string | undefined; revision: string | null }, retiredReferences: number) {
+function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }, version: { now: string | undefined; last: string | undefined; revision: string | null }, retiredReferences: number, guards: { refused: number; writtenNotExecuted: number }) {
   const hints: string[] = [];
+  if (guards.refused > 0) hints.push(`The analysis did not decode ${guards.refused} of its seeds: seeds.refused gives each one with its reason. A seed inside an instruction or in data is often a wrong routine or region in the project knowledge. Examine it in the listing, and correct the project knowledge.`);
+  if (guards.writtenNotExecuted > 0) hints.push("Each range in writtenNotExecuted is code of the analyzer on bytes that the runs wrote and never executed. Its from gives the instructions that reach it. Examine the routine that holds them: a wrong entry point leads the analyzer into data. Correct the project knowledge, and run the analysis again.");
   if (version.revision !== null && version.now !== undefined && version.last !== undefined && version.now !== version.last) {
     hints.push(`The last analysis of this program used ${version.last}. Thus a change in revision ${version.revision} can come from the new analyzer version, and not from the program or the project knowledge.`);
   }
@@ -49,6 +53,35 @@ function withHint(body: Record<string, unknown>, conflicts: number, coverageConf
   else if (!macros.applied && macros.candidates > 0) hints.push("Examine idioms.candidates.macros. To write them to the project knowledge, run the analysis again with --apply-macros.");
   if (hints.length === 0) return body;
   return reply(body, { hint: hints.join(" ") });
+}
+
+/** A refused seed with $ addresses. */
+function showRefused(seed: RefusedSeed) {
+  return { address: formatC64Address(seed.address), reason: seed.reason, ...(seed.at === undefined ? {} : { at: formatC64Address(seed.at) }) };
+}
+
+/** The seeds part of a result: the counts that the analyzer got, the counts over its limits, and the seeds and data ranges that it left out. */
+function seedsResult(given: Record<string, number>, overLimit: Record<string, number>, report: SeedReport, max: number) {
+  const over = Object.fromEntries(Object.entries(overLimit).filter(([, count]) => count > 0));
+  const byReason: Record<string, number> = {};
+  for (const seed of report.refused) byReason[seed.reason] = (byReason[seed.reason] ?? 0) + 1;
+  return {
+    ...given,
+    ...(Object.keys(over).length === 0 ? {} : { overLimit: over }),
+    ...(report.refused.length === 0 ? {} : { refused: { ...listed(report.refused, max, showRefused), byReason } }),
+    ...(report.dataRangesLeftOut.length === 0 ? {} : { dataRangesLeftOut: listed(report.dataRangesLeftOut, max, (range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end), code: formatC64Address(range.code) })) }),
+  };
+}
+
+/** The code regions of the analyzer on bytes that the runs wrote and never executed, from the knowledge after the import. */
+function writtenNotExecutedOf(analyzer: Analyzer, space: string, coverage: Uint8Array | undefined) {
+  if (coverage === undefined) return [];
+  const db = openForRead();
+  try {
+    return writtenNotExecuted(db, analyzer, coverage, space);
+  } finally {
+    db?.close();
+  }
 }
 
 /** A pitfall with $ addresses and what goes wrong. */
@@ -216,13 +249,16 @@ async function analyze(call: Call): Promise<unknown> {
   const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, inProgram);
   const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines])];
   seeds.entryPoints = ordered.slice(0, DECOMPILER_LIMITS.entryPoints).sort((a, b) => a - b);
-  const codeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry)).slice(0, DECOMPILER_LIMITS.codeStarts);
+  const allCodeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry));
+  const codeStarts = allCodeStarts.slice(0, DECOMPILER_LIMITS.codeStarts);
   // Idiom tables and the RAM under ROM that the runs never used are data for this run too; semantic data ranges come first.
   // A range with an entry point of the knowledge or --entry in it is left out: that code stays code.
   const fromRom = coverage === undefined ? [] : romOnlyRanges(coverage, byteAt).filter((range) => !known.some((entry) => entry >= range.start && entry <= range.end));
   const dataRanges = [...seeds.dataRanges];
   for (const range of [...idioms.dataRanges, ...fromRom]) if (!dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start)) dataRanges.push(range);
   seeds.dataRanges = dataRanges.slice(0, DECOMPILER_LIMITS.dataRanges);
+  // The seeds over the limits of the analyzer: it never sees them.
+  const overLimit = { entryPoints: Math.max(0, ordered.length - DECOMPILER_LIMITS.entryPoints), codeStarts: allCodeStarts.length - codeStarts.length, dataRanges: Math.max(0, dataRanges.length - DECOMPILER_LIMITS.dataRanges) };
   const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
   const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry)).length;
   // Platform names are C64 names: drive code and banks get none.
@@ -253,6 +289,7 @@ async function analyze(call: Call): Promise<unknown> {
         revision: imported.revision,
         changes: { regions: imported.regions, references: imported.references },
         conflicts: imported.conflicts.map((conflict) => showConflict(conflict, "heuristic")),
+        ...(idioms.leftOut.length === 0 ? {} : { leftOut: listed(idioms.leftOut, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), kind: item.kind, reason: item.reason })) }),
         // Candidates are not knowledge: a larger --max-listed gives more of them.
         candidates: {
           dop: listed(idioms.candidates.dop, max, formatC64Address, "a larger --max-listed"),
@@ -289,7 +326,7 @@ async function analyze(call: Call): Promise<unknown> {
     };
   };
   if (analyzer === "dxa") {
-    const { result, attachments } = await analyzeWithDxa({ imageKind, ...seeds }, bytes, localToolContext());
+    const { result, attachments, seeds: report } = await analyzeWithDxa({ imageKind, ...seeds }, bytes, localToolContext());
     const listing = attachments[0]!.toString("utf8");
     // The listing is written only after the import: a refused import leaves no new file.
     const imported = record({ ...dxaFindings(result), space, ...executed }, revision, "DXA analysis of the program", runProvenance(bytes, result.toolVersion));
@@ -303,22 +340,25 @@ async function analyze(call: Call): Promise<unknown> {
       }
     }
     const found = idiomsResult();
+    const runOnWritten = writtenNotExecutedOf("dxa", space, coverage);
     const body = {
       analyzer: "dxa",
       ...(result.toolVersion === undefined ? {} : { analyzerVersion: result.toolVersion }),
       ...(space === DEFAULT_SPACE ? {} : { space }),
-      ...found,
-      ...coverageResult(),
-      coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
       ...imported,
-      regions: result.regions.map((region) => ({ start: formatC64Address(region.start), end: formatC64Address(region.end), classification: region.classification })),
+      seeds: seedsResult({ entryPoints: seeds.entryPoints.length, dataRanges: seeds.dataRanges.length }, { entryPoints: overLimit.entryPoints, dataRanges: overLimit.dataRanges }, report, max),
+      ...coverageResult(),
+      ...(runOnWritten.length === 0 ? {} : { writtenNotExecuted: listed(runOnWritten, max, showWritten) }),
+      ...found,
+      coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
+      regions: listed(result.regions, max, (region) => ({ start: formatC64Address(region.start), end: formatC64Address(region.end), classification: region.classification }), ALL_REGIONS),
       labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), ALL_NAMES),
       ...(written === undefined ? {} : { listing: written }),
     };
-    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired);
+    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired, { refused: report.refused.length, writtenNotExecuted: runOnWritten.length });
   }
 
-  const { result } = await analyzeWithDecompiler({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
+  const { result, seeds: report } = await analyzeWithDecompiler({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
   // Executed instruction starts that the decompiler did not decode: the instruction list and the source miss them.
   const decoded = new Set(result.instructions.map((instruction) => instruction.address));
   const imported = record({ ...decompilerFindings(result), space, ...executed }, revision, "Decompiler analysis of the program", runProvenance(bytes, result.toolVersion));
@@ -329,6 +369,8 @@ async function analyze(call: Call): Promise<unknown> {
   const overlaps = listRegions(overlapDb, undefined, "dual-use", undefined, space);
   overlapDb?.close();
   const gaps = coverage === undefined ? [] : executedStarts(coverage, inProgram).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address) && !overlaps.some((region) => address >= region.start && address <= region.end));
+  const explained = explainGaps(gaps, result.instructions, report.refused, seeds.dataRanges);
+  const runOnWritten = writtenNotExecutedOf("decompiler", space, coverage);
   let instructions: Record<string, unknown> | undefined;
   if (instructionsPath !== undefined) {
     const list = instructionList(result.instructions, coverage);
@@ -338,19 +380,31 @@ async function analyze(call: Call): Promise<unknown> {
     analyzer: "decompiler",
     ...(result.toolVersion === undefined ? {} : { analyzerVersion: result.toolVersion }),
     ...(space === DEFAULT_SPACE ? {} : { space }),
-    ...(instructions === undefined ? {} : { instructions }),
-    ...found,
-    ...coverageResult(),
-    ...(coverage === undefined ? {} : { coverageGaps: listed(gaps, max, formatC64Address, "a larger --max-listed") }),
-    coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     ...imported,
+    seeds: seedsResult({ entryPoints: seeds.entryPoints.length, codeStarts: codeStarts.length, dataRanges: seeds.dataRanges.length }, overLimit, report, max),
+    ...coverageResult(),
+    ...(coverage === undefined ? {} : { coverageGaps: listed(explained, max, showGap, "a larger --max-listed") }),
+    ...(runOnWritten.length === 0 ? {} : { writtenNotExecuted: listed(runOnWritten, max, showWritten) }),
+    ...found,
+    ...(instructions === undefined ? {} : { instructions }),
+    coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), ALL_NAMES),
     decompilations: result.decompilations.map((item) => ({ entry: formatC64Address(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
     ...((result.notDecompiled ?? []).length === 0
       ? {}
       : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: item.reason })) }),
   };
-  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired);
+  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired, { refused: report.refused.length, writtenNotExecuted: runOnWritten.length });
+}
+
+/** A coverage gap with $ addresses. */
+function showGap(gap: GapReason) {
+  return { address: formatC64Address(gap.address), reason: gap.reason, ...(gap.at === undefined ? {} : { at: formatC64Address(gap.at) }), ...(gap.range === undefined ? {} : { range: { start: formatC64Address(gap.range.start), end: formatC64Address(gap.range.end) } }) };
+}
+
+/** A range of writtenNotExecuted with $ addresses. */
+function showWritten(range: { start: number; end: number; from: number[] }) {
+  return { start: formatC64Address(range.start), end: formatC64Address(range.end), from: range.from.map(formatC64Address) };
 }
 
 await runScript({

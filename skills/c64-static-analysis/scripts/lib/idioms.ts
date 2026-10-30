@@ -20,6 +20,14 @@ const DOPS = new Set([0x04, 0x14, 0x34, 0x44, 0x54, 0x64, 0x74, 0x80, 0x82, 0x89
 /** "CBM80" in PETSCII at $8004: the KERNAL then starts the cartridge through the vectors at $8000 (cold) and $8002 (warm). */
 const CBM80 = [0xc3, 0xc2, 0xcd, 0x38, 0x30];
 
+/** An idiom that the pass found but could not record: its bytes leave the program, or an idiom found before holds some of them. */
+export interface LeftOutIdiom {
+  start: number;
+  end: number;
+  kind: "cartridge-header" | "rts-table" | "jump-table" | "bit-skip";
+  reason: "leaves-program" | "overlaps-idiom";
+}
+
 export interface Idioms {
   findings: NormalizedFindings;
   /** Entry points for the same analysis run: analyzer facts are never seeds. */
@@ -27,6 +35,8 @@ export interface Idioms {
   /** Table ranges for the same run: they are data. */
   dataRanges: Array<{ start: number; end: number }>;
   counts: { cartridgeHeaders: number; rtsTables: number; jumpTables: number; bitSkips: number };
+  /** The idioms that were found but not recorded, with the reason. */
+  leftOut: LeftOutIdiom[];
   /** Seen in the coverage, not written: the LLM decides. All of them: the result lists the first ones. */
   candidates: { dop: number[]; selfModified: number[] };
 }
@@ -54,16 +64,24 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
   const references: NormalizedFindings["references"] = [];
   const entryPoints = new Set<number>();
   const counts = { cartridgeHeaders: 0, rtsTables: 0, jumpTables: 0, bitSkips: 0 };
+  const leftOut: LeftOutIdiom[] = [];
   const taken = (start: number, end: number) => regions.some((region) => start <= region.end && end >= region.start);
-  const addRegion = (start: number, end: number, type: NormalizedFindings["regions"][number]["type"]) => {
-    if (start < range.start || end > range.end || taken(start, end)) return false;
-    regions.push({ start, end, type });
+  const blocked = (start: number, end: number): LeftOutIdiom["reason"] | undefined => (start < range.start || end > range.end ? "leaves-program" : taken(start, end) ? "overlaps-idiom" : undefined);
+  /** Records the region of an idiom when all of its parts fit; else records why the idiom is left out. */
+  const addRegions = (kind: LeftOutIdiom["kind"], parts: ReadonlyArray<{ start: number; end: number; type: NormalizedFindings["regions"][number]["type"] }>) => {
+    for (const part of parts) {
+      const reason = blocked(part.start, part.end) ?? (parts.some((other) => other !== part && part.start <= other.end && part.end >= other.start) ? "overlaps-idiom" : undefined);
+      if (reason === undefined) continue;
+      leftOut.push({ start: Math.min(...parts.map((item) => item.start)), end: Math.max(...parts.map((item) => item.end)), kind, reason });
+      return false;
+    }
+    regions.push(...parts);
     return true;
   };
 
   if (range.start <= 0x8000 && range.end >= 0x8008 && CBM80.every((byte, index) => byteAt(0x8004 + index) === byte)) {
     const vectors = [word(byteAt, 0x8000)!, word(byteAt, 0x8002)!].filter((target) => plausible(byteAt, target, range));
-    if (addRegion(0x8000, 0x8003, "addresses") && addRegion(0x8004, 0x8008, "petscii")) {
+    if (addRegions("cartridge-header", [{ start: 0x8000, end: 0x8003, type: "addresses" }, { start: 0x8004, end: 0x8008, type: "petscii" }])) {
       counts.cartridgeHeaders++;
       for (const target of vectors) entryPoints.add(target);
     }
@@ -88,10 +106,10 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
       if (targets.length === 0) continue;
       const n = targets.length;
       const written = interleaved
-        ? addRegion(low, low + 2 * n - 1, "rts-addresses")
+        ? addRegions("rts-table", [{ start: low, end: low + 2 * n - 1, type: "rts-addresses" }])
         : low + n === high
-          ? addRegion(low, high + n - 1, "rts-addresses-split")
-          : addRegion(low, low + n - 1, "bytes") && addRegion(high, high + n - 1, "bytes");
+          ? addRegions("rts-table", [{ start: low, end: high + n - 1, type: "rts-addresses-split" }])
+          : addRegions("rts-table", [{ start: low, end: low + n - 1, type: "bytes" }, { start: high, end: high + n - 1, type: "bytes" }]);
       if (!written) continue;
       counts.rtsTables++;
       for (const target of targets) {
@@ -105,7 +123,7 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
   for (let at = range.start; at + 3 * MIN_JUMPS - 1 <= range.end; at++) {
     let n = 0;
     while (at + 3 * n + 2 <= range.end && byteAt(at + 3 * n) === 0x4c) n++;
-    if (n < MIN_JUMPS || !addRegion(at, at + 3 * n - 1, "jumps")) continue;
+    if (n < MIN_JUMPS || !addRegions("jump-table", [{ start: at, end: at + 3 * n - 1, type: "jumps" }])) continue;
     counts.jumpTables++;
     for (let index = 0; index < n; index++) {
       entryPoints.add(at + 3 * index);
@@ -123,7 +141,7 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
   if (coverage !== undefined) for (let address = range.start; address <= range.end; address++) if ((coverage[address]! & COVERAGE.ramExecute) !== 0) entered.add(address);
   for (let at = range.start; at + 2 <= range.end; at++) {
     if (byteAt(at) !== 0x2c || !entered.has(at + 1) || !plausible(byteAt, at + 1, range)) continue;
-    if (!addRegion(at + 1, at + 2, "dual-use")) continue;
+    if (!addRegions("bit-skip", [{ start: at + 1, end: at + 2, type: "dual-use" }])) continue;
     counts.bitSkips++;
     entryPoints.add(at);
     entryPoints.add(at + 1);
@@ -157,6 +175,7 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
     entryPoints: [...entryPoints].sort((a, b) => a - b),
     dataRanges,
     counts,
+    leftOut,
     candidates,
   };
 }

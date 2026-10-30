@@ -16,7 +16,7 @@ test("an analyzer image is a PRG at its load address or 64 KiB from $0000", () =
   }
 });
 
-test("the seeds of an analysis are the entry points inside its range and the data ranges cut to it", () => {
+test("the seeds of an analysis are the entry points inside its range and the data ranges cut to it; the report gives the seeds outside it and the data ranges that hold a seed", () => {
   const seeds = seedsInside(
     {
       entryPoints: [0x07ff, 0x0810, 0x0900],
@@ -37,6 +37,13 @@ test("the seeds of an analysis are the entry points inside its range and the dat
       { start: 0x0801, end: 0x0805 },
       { start: 0x0820, end: 0x0827 },
     ],
+    report: {
+      refused: [
+        { address: 0x07ff, reason: "outside-program" },
+        { address: 0x0900, reason: "outside-program" },
+      ],
+      dataRangesLeftOut: [{ start: 0x080c, end: 0x0812, code: 0x0810 }],
+    },
   });
 });
 

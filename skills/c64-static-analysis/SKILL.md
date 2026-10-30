@@ -45,12 +45,11 @@ To get the command list, run the script with no arguments.
   - A vector or an interrupt target that you found in the emulator.
   - An address in `functions` of an earlier decompiler result.
 - The decompiler needs at least one entry point. DXA finds the SYS address of a BASIC start without help.
-- Each routine, each `code` region and each entry of a `jumps` table in the project knowledge is also an entry point. Each name in the project knowledge is a label in the listing and in the decompiled code.
+- Each routine, each `code` region and each entry of a `jumps` table that the user or the LLM recorded is also an entry point. Each name in the project knowledge is a label in the listing and in the decompiled code.
 - The two start vectors of a `CBM80` header at `$8000` are entry points without help.
-- Each region that is not code in the project knowledge stays data. Each `data` or `variable` symbol also keeps its region as data. If the region holds an entry point or executed code, only the byte of the symbol stays data.
+- A region of the user or the LLM that is not code stays data in the analysis. A `data` or `variable` symbol keeps its region as data.
 - If an analyzer decodes data as code, classify the region as data in the project knowledge. Then run `analyze` again.
-- The facts of an analyzer are not entry points or data for the next analysis. Thus a new analysis can correct them.
-- With coverage, the analysis keeps as data the RAM under ROM that the runs did not read or execute. A call into the KERNAL thus does not decode the RAM under it. If the program has code there, give its address with `--entry`.
+- With coverage, the RAM under ROM that the runs did not read or execute stays data. If the program has code there, give its address with `--entry`.
 - The decompiler does not follow BRK. If the program removes the KERNAL and uses the BRK vector, give the target of the vector with `--entry`.
 - `--decompile` takes the address of a routine. Get it from `functions` of an earlier decompiler result, or from the routines in the project knowledge.
 
@@ -103,72 +102,92 @@ The script records only structure: code and data regions, analyzer names, and th
 
 - `analyzer`: `dxa` or `decompiler`. `analyzerVersion` gives the version of the analyzer when the analyzer tells it. `space` is in `body` only for a space that is not `c64`.
 - `revision`: the revision of the findings, or `null` when the knowledge did not change.
-- `coverage`: the ranges that the analyzer examined.
-- `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `references.inData` counts the references that the script did not record, because they start in a data region of the user, the LLM or a heuristic. The analyzer decoded these data bytes as code. `symbols.retired` counts the old symbols of the analyzer that became analyzer names.
+- `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `references.inData` counts the references that start in a data region of the user, the LLM or an idiom. The analyzer decoded these data bytes as code.
 - `conflicts`: each place where the analyzer and the project knowledge disagree. `problem` tells the disagreement.
+- `seeds`: what the analyzer got and what it did not use.
+  - `entryPoints`, `codeStarts` (decompiler only) and `dataRanges` count the seeds that the analyzer got.
+  - `overLimit` counts the seeds over the limit of the analyzer. The analyzer did not get them.
+  - `refused` lists each seed that the analyzer did not decode, with `address` and `reason`. `byReason` counts the seeds for each reason. See "Refused seeds and coverage gaps".
+  - `dataRangesLeftOut` lists each data range that the analyzer did not keep as data, because the seed at `code` is in it.
 - `coverageSeeds`: only with coverage. `entryPoints` and `used` give how many entry points the coverage gave, and how many the analysis used. `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
 - `coverageConflicts`: only with coverage. Each analyzer data region where the coverage shows executed code.
-- `idioms`: the 6502 idioms that the script found by pattern. The counts are `rtsTables`, `jumpTables`, `bitSkips` and `cartridgeHeaders`. `revision`, `changes` and `conflicts` are for the idioms, as above. `candidates` holds what the script did not record.
+- `writtenNotExecuted`: only with coverage. Each code region of the analyzer on bytes that the runs wrote and never executed, with `start` and `end`. `from` gives the call and jump instructions outside the region that reach it.
+- `idioms`: the 6502 idioms that the script found by pattern. The counts are `rtsTables`, `jumpTables`, `bitSkips` and `cartridgeHeaders`. `revision`, `changes` and `conflicts` are for the idioms, as above. `leftOut` lists each idiom that the script found but did not record, with `kind` and `reason`: `overlaps-idiom` or `leaves-program`. `candidates` holds what the script did not record. See "The candidates".
+- `coverage`: the ranges that the analyzer examined.
 
 DXA also gives:
 
-- `regions`: the code and data regions, each with `start`, `end` and `classification`.
+- `regions`: the code and data regions as a list, each with `start`, `end` and `classification`.
 - `labels`: the names that DXA found, as a list.
 - `listing`: the listing file, with `--out-listing`.
 
 The decompiler also gives:
 
+- `coverageGaps`: only with coverage. Each executed instruction start that is not an instruction of the decompiler, with `address` and `reason`. See "Refused seeds and coverage gaps".
 - `functions`: the routines that the decompiler found, as a list, each with `entry` and `name`.
 - `decompilations`: the C-like code of each `--decompile` routine, with `entry` and `text`. `truncated` tells that the text is cut.
 - `notDecompiled`: the routines that the decompiler did not decompile, each with a `reason`.
 - `instructions`: the file and the `count`, with `--out-instructions`. Each instruction has `address`, `bytes`, `mnemonic`, `mode` and `operand` in 6502 syntax. A branch, a jump or a call also has `target`. With coverage, `executed` tells if the instruction ran.
-- `coverageGaps`: only with coverage. The executed instruction starts that are not in the instructions of the decompiler.
 
 The `hint` gives each of these cases:
 
 - `conflicts` is not empty. Find the correct answer in the emulator. Then correct the project knowledge.
 - `coverageConflicts` is not empty. Classify each range as code in the project knowledge, or as `dual-use` when its bytes are also data. For many ranges, write all classifications in one batch of changes.
+- `seeds.refused` is not empty. See "Refused seeds and coverage gaps".
+- `writtenNotExecuted` is not empty. A wrong entry point leads an analyzer from code into data. Examine the routine that holds the instructions in `from`. Correct the routine or its region in the project knowledge. Then run `analyze` again.
 - `idioms.candidates.macros` has candidates, and the run had no `--apply-macros`. Examine the candidates. To write the correct candidates to the project knowledge, run the analysis again with `--apply-macros`. Give `--skip` with the start of each candidate that is not correct. Then generate the source again.
 - The last analysis of the same program bytes used another analyzer version. Thus a change in `revision` can come from the new analyzer, and not from the program or the project knowledge.
 - `changes.references.retired` is more than 0. A data range that only a retired reference used can be a leftover now. Generate the source again, and examine the leftovers that changed.
-- A list is cut. Give a larger `--max-listed`. The project knowledge has all `labels` and `functions` as analyzer names.
+- A list is cut. Give a larger `--max-listed`. The project knowledge has all `labels`, `functions` and DXA `regions`.
 
 There is no `nextAction`.
+
+#### Refused seeds and coverage gaps
+
+Each item of `seeds.refused` and `coverageGaps` has a `reason`. `at` gives the instruction that holds the address, or that its instruction runs into.
+
+| `reason` | Action |
+|---|---|
+| `inside-instruction` | Another instruction holds the address. Examine both in the listing. If the address is a wrong routine or region in the project knowledge, correct it. If both instructions run, classify the bytes as `dual-use`. |
+| `into-instruction` | The instruction at the address runs into the instruction at `at`. Do as for `inside-instruction`. |
+| `in-data`, `into-data` | A data range of the analysis holds the address or its instruction. `range` gives the data range of a gap. If the code runs, correct the data region in the project knowledge. |
+| `outside-program`, `past-end` | The address or its instruction is not in the program. Correct the entry point or the routine. |
+| `not-decodable` | No instruction decodes at the address. Correct the entry point or the routine. |
+| `not-reached` | Only in `coverageGaps`: no flow and no seed reached the start. Give it with `--entry`, or record a routine there. |
+
+A start in a `dual-use` region is a known overlap, for example a BIT skip. It is not a gap.
 
 #### The candidates
 
 The script does not record the candidates. Examine each candidate and decide.
 
 - `dop`: DOP padding.
-- `selfModified`: opcodes that the program wrote and then executed. The write and the execution must be in one coverage file. A coverage file does not record the order. Thus a candidate can also be code that ran first, and that the program then wrote over. To prevent this, save one coverage file for each part of the program, for example the intro, the game, or a loader that copies code. Clear the memory map between the parts.
+- `selfModified`: opcodes that the program wrote and then executed in one coverage map. A candidate can also be code that ran first and that the program then wrote over. To prevent this, save one coverage map for each part of the program, for example the intro, the game, or a loader that copies code. Clear the memory map between the parts.
 - `pointers`: code that makes an address from immediates. A `vector` or a `zero-page pointer` candidate stores a low byte (`low`) and a high byte (`high`) to a vector or to a zero-page pair. A `sprite pointer` candidate stores an immediate (`at`) to a sprite pointer of the screen at `$0400` in VIC bank 0. For each correct candidate, record a low and a high operand expression to its `target` in the project knowledge. Then a rebuild can move the target.
 - `pitfalls`: code that a C64 runs in a different way than it reads. For `raster-bit-8`, the instruction at `at` reads `$D011`, and the instruction at `store` writes the value back. The write can move the raster interrupt to line 256 or later. On PAL, past line 311, the interrupt never comes. Where the code must not keep bit 7, add a comment and test the program.
 - `macros`: runs of instructions that one macro line can replace, for example `+inc16 ptr`. Each candidate has `macro`, `start`, `end`, `args` and `text`. The macros are `inc16`, `dec16`, `add16_8`, `add16`, `sub16`, `set16`, `mov16` and `wait_line`. An arg is a name of the user or the LLM, or a platform name of a ROM that the program uses. A value of `set16` below $0100 is a number. `known` counts the uses that the project knowledge has. `leftOut` counts the candidates with a label inside, or with a patch over them, or with another use of the project knowledge over them. With `--apply-macros`, `revision` gives the revision of the writes, and `writes` counts them. The writes hold the macros that the project knowledge does not have, with their bodies, and the uses. Do not write these macros yourself. `otherMacros` names each macro that the project knowledge has with another body. The writes do not have the uses of that macro. `skipped` counts the candidates that `--skip` left out. `notCandidates` lists each `--skip` address that starts no candidate.
 
-#### Which facts the analysis replaces
+#### What the analysis replaces
 
-- The analysis never replaces a name or a region of the user or the LLM. Each disagreement shows in `conflicts`.
-- DXA and the decompiler do not replace the facts of each other, with one exception. With coverage, a code finding replaces DXA or decompiler data where a run executed an instruction start. Thus put all coverage maps into the project knowledge first. Then run DXA, then the decompiler.
-- An analyzer can find data where a run executed an instruction start, or at a `label` or `routine` symbol of the user or the LLM. Then the script does not record that data region, and the earlier region stays. The conflict has `executed` or `knowledge`.
-- An idiom region (origin `heuristic`) replaces the part of a DXA or decompiler region where it lies. DXA and the decompiler never replace an idiom region. If they find code there, the result shows a conflict.
+- The analysis never replaces a name or a region of the user or the LLM. Each disagreement shows in `conflicts`. A conflict with `executed` or `knowledge` shows data where a run executed code, or where the user or the LLM named code.
+- Put all coverage maps into the project knowledge first. Then run DXA, then the decompiler.
 - An idiom table can be too long or too short. Correct its region in the project knowledge. Your region replaces it.
-- A new analysis replaces the earlier facts of the same analyzer in its `coverage`, also its analyzer names. The history keeps the earlier facts.
+- A new analysis replaces the earlier findings of the same analyzer in its `coverage`.
 - A fact that the user or the LLM removed does not come back. To remove a wrong fact, remove it in the project knowledge.
-- An analyzer name is a second name of the address, not a symbol. Each analyzer keeps its own name at an address. The generated source does not use an analyzer name by default. To use a name in the source, give the address a name in the project knowledge.
+- An analyzer name is a second name of the address, not a symbol. The generated source does not use it. To use a name in the source, give the address a name in the project knowledge.
 - A decompiler function that only branches and jumps reach is a `label`, not a `routine`.
 
 #### Traps
 
 - A conflict with the problem "another address has this name": the project knowledge has the generated name at a different address. The knowledge stays unchanged.
 - A false reference through a vector: the code jumps through a vector, for example `JMP ($0408)`, and the program writes the vector at run time. The analyzer follows the bytes that the program has there. Do these steps:
-  1. Find the real targets in the emulator, or in a coverage file.
+  1. Find the real targets in the emulator, or in a coverage map.
   2. If the vector bytes are also code at another time, classify them as `dual-use` in the project knowledge.
   3. Remove the false reference in the project knowledge. It does not come back.
   4. Record a `jump` reference from the JMP to each real target in the project knowledge. Record each target as a routine.
-- `coverageGaps` has starts. Normally its count is 0. Each start is not in `--out-instructions` and not in the generated source. Examine the code at the start. Overlapped instructions and self-modified code can cause a gap. A start in a `dual-use` region is a known overlap, for example a BIT skip, and is not in the list.
-- `coverageSeeds.used` is smaller than `coverageSeeds.entryPoints`. The analysis did not use all entry points of the coverage. Give the important entry points with `--entry`, or record them as routines in the project knowledge. These come first.
+- `coverageSeeds.used` is smaller than `coverageSeeds.entryPoints`, or `seeds.overLimit` is not empty. The analysis did not use all seeds. Give the important entry points with `--entry`, or record them as routines in the project knowledge. These come first.
 - `romOnlyUsed` is smaller than `romOnlyRanges`. The analysis did not keep all RAM under ROM as data. Classify the RAM under ROM that is not code as data in the project knowledge.
-- `notDecompiled` has a routine. The `reason` tells why the decompiler did not decompile it. Read the instructions of that routine in the file of `--out-instructions`.
+- `notDecompiled` has a routine. The `reason` tells why the decompiler did not decompile it. Read the lines of that routine in the listing of the project knowledge.
 
 #### Failures
 

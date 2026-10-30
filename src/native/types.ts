@@ -245,18 +245,46 @@ export function imageRange(kind: ImageKind, image: Uint8Array): { start: number;
 }
 
 /**
+ * Why an analysis did not decode an entry point or a code start that it got:
+ * outside the program, in a data range, inside an instruction that it decoded
+ * (`at`), no instruction decodes there, or the instruction runs past the end
+ * of the program, into an instruction (`at`) or into a data range.
+ */
+export type RefusedSeedReason = "outside-program" | "in-data" | "inside-instruction" | "not-decodable" | "past-end" | "into-instruction" | "into-data";
+
+export interface RefusedSeed {
+  address: number;
+  reason: RefusedSeedReason;
+  /** The start of the instruction that holds the seed or that the seed runs into. */
+  at?: number;
+}
+
+/** What an analysis did with its seeds: the seeds that it did not decode, and the data ranges that it left out because code starts in them. */
+export interface SeedReport {
+  refused: RefusedSeed[];
+  dataRangesLeftOut: Array<{ start: number; end: number; code: number }>;
+}
+
+/**
  * The seeds that an analysis of [start, end] can use: the entry points inside
  * it, and the data ranges cut to it. A data range that holds an entry point
- * is left out, so that the entry point is disassembled.
+ * is left out, so that the entry point is disassembled. `report` gives what
+ * was left out.
  */
-export function seedsInside(params: Pick<DecompilerParams, "entryPoints" | "dataRanges" | "codeStarts">, start: number, end: number): { entryPoints: number[]; codeStarts: number[]; dataRanges: DecompilerParams["dataRanges"] } {
+export function seedsInside(params: Pick<DecompilerParams, "entryPoints" | "dataRanges" | "codeStarts">, start: number, end: number): { entryPoints: number[]; codeStarts: number[]; dataRanges: DecompilerParams["dataRanges"]; report: SeedReport } {
   const inside = (address: number) => address >= start && address <= end;
   const entryPoints = params.entryPoints.filter(inside);
   const codeStarts = (params.codeStarts ?? []).filter(inside);
   const code = [...entryPoints, ...codeStarts];
+  const dataRangesLeftOut: SeedReport["dataRangesLeftOut"] = [];
   const dataRanges = params.dataRanges
     .filter((range) => range.end >= start && range.start <= end)
     .map((range) => ({ start: Math.max(range.start, start), end: Math.min(range.end, end) }))
-    .filter((range) => !code.some((entry) => entry >= range.start && entry <= range.end));
-  return { entryPoints, codeStarts, dataRanges };
+    .filter((range) => {
+      const held = code.find((entry) => entry >= range.start && entry <= range.end);
+      if (held !== undefined) dataRangesLeftOut.push({ ...range, code: held });
+      return held === undefined;
+    });
+  const outside = [...new Set([...params.entryPoints, ...(params.codeStarts ?? [])])].filter((address) => !inside(address)).sort((a, b) => a - b);
+  return { entryPoints, codeStarts, dataRanges, report: { refused: outside.map((address) => ({ address, reason: "outside-program" })), dataRangesLeftOut } };
 }
