@@ -103,7 +103,10 @@ The script records only structure: code and data regions, analyzer names, and th
 - `analyzer`: `dxa` or `decompiler`. `analyzerVersion` gives the version of the analyzer when the analyzer tells it. `space` is in `body` only for a space that is not `c64`.
 - `revision`: the revision of the findings, or `null` when the knowledge did not change.
 - `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `references.inData` counts the references that start in a data region of the user, the LLM or an idiom. The analyzer decoded these data bytes as code.
-- `conflicts`: each place where the analyzer and the project knowledge disagree. `problem` tells the disagreement.
+- `conflicts`: each place where the analyzer and the project knowledge disagree. `problem` tells the disagreement. A conflict of code and data also gives these facts about its range:
+  - `access`: only with coverage. `executed` counts the instructions in the range that a run executed. `read` and `written` count the bytes that a run read and wrote.
+  - `references`: the references of the project knowledge into the range from outside it, each with `from` and `kind`.
+  - `reachable`: only with coverage. `true` tells that static flow from executed code goes into the range, also through a branch that no run took. The flow follows branches, jumps, calls and the jump and call references of the user, the LLM and the idioms. It does not follow a reference that the user or the LLM removed. It stops at data of the user or the LLM.
 - `seeds`: what the analyzer got and what it did not use.
   - `entryPoints`, `codeStarts` (decompiler only) and `dataRanges` count the seeds that the analyzer got.
   - `overLimit` counts the seeds over the limit of the analyzer. The analyzer did not get them.
@@ -131,7 +134,7 @@ The decompiler also gives:
 
 The `hint` gives each of these cases:
 
-- `conflicts` is not empty. Find the correct answer in the emulator. Then correct the project knowledge.
+- `conflicts` is not empty. Use `access`, `references` and `reachable` of each conflict. Code that a run executed is code. A range that static flow reaches and that no run executed is usually code on a branch that no run took. A range that no flow reaches and that a run read or wrote is usually data. If these facts do not decide, find the answer in the emulator. Then correct the project knowledge.
 - `coverageConflicts` is not empty. Classify each range as code in the project knowledge, or as `dual-use` when its bytes are also data. For many ranges, write all classifications in one batch of changes.
 - `seeds.refused` has a seed with a reason that is not `outside-program`, or an `--entry` outside the program. See "Refused seeds and coverage gaps".
 - `writtenNotExecuted` is not empty. A wrong entry point leads an analyzer from code into data. Examine the routine that holds the instructions in `from`. Correct the routine or its region in the project knowledge. Then run `analyze` again.
@@ -172,7 +175,8 @@ The script does not record the candidates. Examine each candidate and decide.
 
 - The analysis never replaces a name or a region of the user or the LLM. Each disagreement shows in `conflicts`. A conflict with `executed` or `knowledge` shows data where a run executed code, or where the user or the LLM named code.
 - Put all coverage maps into the project knowledge first. Then run DXA, then the decompiler.
-- An idiom table can be too long or too short. Correct its region in the project knowledge. Your region replaces it.
+- An idiom table can be too long or too short. Correct its region in the project knowledge. Your region replaces it, and the table stops at the end of your region. The next analysis removes the references and the entry points of the idiom after that end.
+- The idioms obey the regions of the user and the LLM. An example is a `code` region over the bytes of a BIT skip. Where your region has a different type, the idiom gives no region, no reference and no entry point. A reference that you removed gives no entry point.
 - A new analysis replaces the earlier findings of the same analyzer in its `coverage`.
 - A fact that the user or the LLM removed does not come back. To remove a wrong fact, remove it in the project knowledge.
 - An analyzer name is a second name of the address, not a symbol. The generated source does not use it. To use a name in the source, give the address a name in the project knowledge.

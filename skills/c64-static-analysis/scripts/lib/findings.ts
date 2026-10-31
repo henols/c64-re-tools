@@ -4,9 +4,10 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
-import { listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, type Space } from "#src/knowledge/schema.ts";
+import { listRegions, listSuppressions, listSymbols } from "#src/knowledge/read.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, SEMANTIC_ORIGINS, type Space } from "#src/knowledge/schema.ts";
 import type { DxaResult, DecompilerParams, DecompilerResult } from "#src/native/types.ts";
+import type { Decided } from "./idioms.ts";
 
 export type Seeds = Pick<DecompilerParams, "entryPoints" | "dataRanges" | "labels">;
 
@@ -44,6 +45,17 @@ export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoint
     entryPoints,
     dataRanges: dataRanges.sort((a, b) => a.start - b.start),
     labels: symbols.map((symbol) => ({ address: symbol.address, name: symbol.name })),
+  };
+}
+
+/** What the user and the LLM decided in a space, for the idiom pass: their regions, their region removals and their reference removals. */
+export function decidedFromKnowledge(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): Decided {
+  const suppressions = listSuppressions(db, undefined, space);
+  const removed = new Set(suppressions.filter((row) => row.entity === "reference").map((row) => `${row.start}|${row.to}|${row.kind}`));
+  return {
+    regions: listRegions(db, undefined, undefined, [...SEMANTIC_ORIGINS], space).map(({ start, end, type }) => ({ start, end, type })),
+    removedRegions: suppressions.filter((row) => row.entity === "region").map(({ start, end }) => ({ start, end })),
+    removedReference: (reference) => removed.has(`${reference.from}|${reference.to}|${reference.kind}`),
   };
 }
 

@@ -63,22 +63,35 @@ async function analyze(root: string, dxa: string, ...args: string[]): Promise<{ 
   return { status, ...readEnvelope(stdout, status) };
 }
 
-test("an accepted DXA import records the findings, writes the listing, and names a conflict with what DXA found under the key dxa", { timeout: 60_000 }, async () => {
+test("an accepted DXA import records the findings, writes the listing, and names a conflict with what DXA found under the key dxa and the facts of its range", { timeout: 60_000 }, async () => {
   const root = project("conflict");
   const db = openForWrite(root);
   classifyRegion(db, { origin: "user" }, { start: 0x1000, end: 0x1002, type: "bytes" });
+  // A run executed the LDA at $1000 and read $1001.
+  const map = new Uint8Array(0x10000);
+  map[0x1000] = COVERAGE.ramExecute;
+  map[0x1001] = COVERAGE.ramRead;
+  addCoverage(db, { origin: "user" }, { maps: [{ name: "runs/a/coverage.bin", bytes: map }] });
   db.close();
   const { status, json, envelope } = await analyze(root, fakeDxa("dxa-ok", LISTING), "--out-listing", "analysis/game.lst");
   assert.equal(status, 0, JSON.stringify(json));
-  // The image is revision 1, the user's region revision 2.
-  assert.equal(json.revision, nthIn(root, 3));
+  // The image is revision 1, the user's region revision 2, the coverage revision 3.
+  assert.equal(json.revision, nthIn(root, 4));
   assert.equal((json.listing as { out: string }).out, "analysis/game.lst");
   assert.equal(existsSync(join(root, "analysis", "game.lst")), true);
   assert.deepEqual(json.conflicts, [
-    { range: { start: "$1000", end: "$1002" }, knowledge: { type: "bytes", origin: "user" }, dxa: { type: "code" }, problem: "code and data disagree" },
+    {
+      range: { start: "$1000", end: "$1002" },
+      knowledge: { type: "bytes", origin: "user" },
+      dxa: { type: "code" },
+      problem: "code and data disagree",
+      access: { executed: 1, read: 1, written: 0 },
+      references: { count: 0, listed: [] },
+      reachable: true,
+    },
   ]);
   // The hint gives the task for a conflict, and names no other script.
-  assert.match(envelope.hint ?? "", /^The analysis and the project knowledge disagree at each place in conflicts\. Find the correct answer in the emulator\./);
+  assert.match(envelope.hint ?? "", /^The analysis and the project knowledge disagree at each place in conflicts\. Use access, references and reachable of each conflict\./);
   assert.equal(envelope.nextAction, undefined);
 });
 
