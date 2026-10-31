@@ -19,7 +19,8 @@ const root = resolve(import.meta.dirname, "..");
 
 /**
  * A new scratch folder (its real path), removed after the test that calls
- * this, or after the tests of the file when a module or a hook calls it.
+ * this, or after the tests of the file when the module calls it. Never call it
+ * in a before hook: there the folder goes when the hook ends.
  */
 export function scratchDir(prefix: string): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), `c64-re-tools-${prefix}-`)));
