@@ -7,7 +7,7 @@
 // loaded ranges are the segments of the program without the leftovers: a
 // leftover file of the source gives its range in its first line.
 
-import { type AddressRange, formatC64Address, prgRange } from "./c64.ts";
+import { type AddressRange, formatC64Address, formatC64Range, prgOf, prgRange, subtract } from "./c64.ts";
 import { compareBuild, mergedPrograms } from "./compare.ts";
 import { Refusal } from "./errors.ts";
 import { pack } from "./native/exomizer.ts";
@@ -32,23 +32,6 @@ export function leftoverRange(text: string): AddressRange | undefined {
   return found === null ? undefined : { start: Number.parseInt(found[1]!.slice(1), 16), end: Number.parseInt(found[2]!.slice(1), 16) };
 }
 
-const show = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
-
-/** The parts of `range` outside every hole, in address order. */
-function without(range: AddressRange, holes: readonly AddressRange[]): AddressRange[] {
-  let pieces = [range];
-  for (const hole of holes) {
-    pieces = pieces.flatMap((piece) => {
-      if (hole.end < piece.start || hole.start > piece.end) return [piece];
-      return [
-        ...(hole.start > piece.start ? [{ start: piece.start, end: hole.start - 1 }] : []),
-        ...(hole.end < piece.end ? [{ start: hole.end + 1, end: piece.end }] : []),
-      ];
-    });
-  }
-  return pieces;
-}
-
 /**
  * The ranges that the packed loader loads from a build of main.asm: the
  * segments of the program without the leftovers. Refuses what only the loader
@@ -60,10 +43,10 @@ export function packedRanges(segments: readonly AddressRange[], leftovers: reado
   if (stage !== undefined) {
     throw new Refusal("invalid-input", `The start screen is of the captured stage ${stage}, and only the generation of the source with the loader makes that loader program. Set the switch values in config.asm, and generate the source with the loader.`);
   }
-  const loaded = [...segments].sort((a, b) => a.start - b.start).flatMap((segment) => without(segment, leftovers));
+  const loaded = [...segments].sort((a, b) => a.start - b.start).flatMap((segment) => subtract(segment, leftovers));
   const low = loaded.find((range) => range.start < PACKED_FROM);
   if (low !== undefined) {
-    throw new Refusal("invalid-input", `The segment ${show(low)} starts below $0400, and loader.asm holds its bytes there with the switch values of generate. Set the switch values in config.asm, and generate the source with the loader.`);
+    throw new Refusal("invalid-input", `The segment ${formatC64Range(low)} starts below $0400, and loader.asm holds its bytes there with the switch values of generate. Set the switch values in config.asm, and generate the source with the loader.`);
   }
   return loaded;
 }
@@ -79,7 +62,7 @@ export function checkPackedBuilds(main: Uint8Array, copier: Uint8Array, loaded: 
   const program = prgRange(main);
   const outside = loaded.find((range) => range.start < program.start || range.end > program.end);
   if (outside !== undefined) {
-    throw new Refusal("invalid-input", `The build of main.asm does not hold ${show(outside)} of the program in the knowledge. Generate the source again from the knowledge.`);
+    throw new Refusal("invalid-input", `The build of main.asm does not hold ${formatC64Range(outside)} of the program in the knowledge. Generate the source again from the knowledge.`);
   }
   const build = prgRange(copier);
   for (const range of loaded) {
@@ -87,7 +70,7 @@ export function checkPackedBuilds(main: Uint8Array, copier: Uint8Array, loaded: 
       if (build.body[address - build.start] === program.body[address - program.start]) continue;
       throw new Refusal(
         "invalid-input",
-        `These switch values change the byte at ${formatC64Address(address)}, between the free ranges of loader.asm (${show(build)}), and loader.asm holds the byte of generate there. Set the switch values in config.asm, and generate the source with the loader.`,
+        `These switch values change the byte at ${formatC64Address(address)}, between the free ranges of loader.asm (${formatC64Range(build)}), and loader.asm holds the byte of generate there. Set the switch values in config.asm, and generate the source with the loader.`,
       );
     }
   }
@@ -133,8 +116,7 @@ function packedParts(main: Uint8Array, copier: Uint8Array, loaded: readonly Addr
  * to the entry. Refuses by name when it does not hold.
  */
 export async function packParts(parts: ReadonlyArray<{ start: number; body: Uint8Array }>, entry: number, exitMemory: number, what: string, entryName: string, context: ToolContext): Promise<PackedLoader> {
-  const prg = (part: { start: number; body: Uint8Array }) => Buffer.concat([Buffer.from([part.start & 0xff, part.start >> 8]), part.body]);
-  const packed = await pack({ programs: parts.map(prg), entry, exitMemory }, context);
+  const packed = await pack({ programs: parts.map((part) => prgOf(part.start, part.body)), entry, exitMemory }, context);
   if (packed.entry !== entry) throw new Refusal("operation-failed", `The unpack in the emulator of Exomizer jumps to ${formatC64Address(packed.entry)}, not to ${entryName} at ${formatC64Address(entry)}.`);
   const reference = mergedPrograms(parts);
   const wrong = compareBuild(packed.unpacked, reference).segments.find((segment) => segment.result !== "identical");

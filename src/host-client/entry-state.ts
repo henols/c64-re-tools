@@ -6,7 +6,7 @@
 import { c64AddressOf } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { MAX_MEMORY_WRITE } from "./tools.ts";
-import { readProjectFile } from "./transfer.ts";
+import { readProjectJson } from "./transfer.ts";
 import type { ViceSessionClient } from "./vice-session.ts";
 
 /** Frames from a hard reset to the READY prompt, with margin. */
@@ -64,14 +64,7 @@ export function parseEntryState(value: unknown, where: string): EntryState {
 
 /** Reads an entry_state.json of the project. Refuses a missing file with the remedy, and a file that is no entry state. */
 export function readEntryState(path: string): EntryState {
-  const { bytes } = readProjectFile(path);
-  let value: unknown;
-  try {
-    value = JSON.parse(bytes.toString("utf8"));
-  } catch (error) {
-    throw new Refusal("invalid-input", `${path} is not JSON: ${(error as Error).message}`);
-  }
-  return parseEntryState(value, path);
+  return parseEntryState(readProjectJson(path), path);
 }
 
 /** A hard reset, then the frames until the KERNAL shows READY. */

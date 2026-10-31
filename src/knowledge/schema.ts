@@ -40,6 +40,8 @@ export const REGION_TYPES = [
 export type RegionType = (typeof REGION_TYPES)[number];
 /** Region types that are code: a JMP table is code too. dual-use is neither code nor data. */
 export const CODE_REGION_TYPES: readonly RegionType[] = ["code", "jumps"];
+/** Region types whose bytes are instructions: the code types and dual-use. */
+export const INSTRUCTION_REGION_TYPES: readonly RegionType[] = [...CODE_REGION_TYPES, "dual-use"];
 /** Region types that take no element size: their elements are instructions. */
 export const NO_ELEMENT_TYPES: readonly RegionType[] = ["code", "jumps"];
 export const MAX_ELEMENT = 256;

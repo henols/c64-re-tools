@@ -30,7 +30,7 @@ import {
   type RunTarget,
   type RunUntilResult,
 } from "../protocol/vice.ts";
-import { readProjectFile } from "./transfer.ts";
+import { readProjectJson } from "./transfer.ts";
 import type { ViceSessionClient } from "./vice-session.ts";
 
 /** A "$xxxx" address or a name, which the caller resolves. */
@@ -426,14 +426,7 @@ export function readActionSteps(path: string, option: string, at?: (location: Lo
   const fail = (message: string): never => {
     throw new Refusal("invalid-input", `${option} ${path}: ${message}`);
   };
-  let value: unknown;
-  try {
-    value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
-  } catch (error) {
-    if (error instanceof SyntaxError) return fail(`it is not JSON: ${error.message}`);
-    throw error;
-  }
-  const steps = checkActionSteps(value, fail);
+  const steps = checkActionSteps(readProjectJson(path, (message) => `${option} ${path}: it is not JSON: ${message}`), fail);
   if (at !== undefined) checkStepNames(steps, at, `${option} ${path}`);
   return steps;
 }

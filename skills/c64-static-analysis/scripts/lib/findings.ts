@@ -3,6 +3,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
+import { hexWord } from "#src/c64.ts";
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
 import { listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, type Space } from "#src/knowledge/schema.ts";
@@ -81,7 +82,7 @@ export function decompilerFindings(result: DecompilerResult): NormalizedFindings
   const uses = new Map<string, number>();
   for (const fn of result.functions) uses.set(fn.name, (uses.get(fn.name) ?? 0) + 1);
   const nameOf = (fn: DecompilerResult["functions"][number]) =>
-    fn.nameSource !== "seed" && uses.get(fn.name)! > 1 ? `${fn.name}_${fn.entry.toString(16).padStart(4, "0")}` : fn.name;
+    fn.nameSource !== "seed" && uses.get(fn.name)! > 1 ? `${fn.name}_${hexWord(fn.entry)}` : fn.name;
   // A function that branches and jumps reach, and no call, is a place in a routine: a label.
   const called = new Set(result.references.filter((reference) => reference.type === "call").map((reference) => reference.to));
   const jumped = new Set(result.references.filter((reference) => reference.type === "jump").map((reference) => reference.to));

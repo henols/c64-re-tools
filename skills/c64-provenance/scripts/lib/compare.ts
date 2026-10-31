@@ -7,7 +7,7 @@
 // bytes. It never decides which bytes the publisher shipped: that needs evidence
 // beyond one comparison.
 
-import { type AddressRange, formatC64Address } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, formatC64Range } from "#src/c64.ts";
 
 export interface Release {
   name: string;
@@ -54,7 +54,7 @@ export function identicalShare(identical: number, differing: number): number {
 }
 
 /** The ranges where every release has bytes, inside from..to. */
-export function commonRanges(releases: Release[], from = 0x0000, to = 0xffff): AddressRange[] {
+function commonRanges(releases: Release[], from = 0x0000, to = 0xffff): AddressRange[] {
   return rangesOf(Array.from({ length: to - from + 1 }, (_, offset) => from + offset).filter((address) => releases.every((release) => covers(release, address))));
 }
 
@@ -127,7 +127,7 @@ function indexWindows(release: Release, addresses: number[]): Map<string, number
 }
 
 /** Most shifts that suggestShifts gives: data that did not move can outvote code that did. */
-export const MAX_SUGGESTED_SHIFTS = 3;
+const MAX_SUGGESTED_SHIFTS = 3;
 
 /**
  * The shifts that put `other` over `base` best: the most common address
@@ -275,7 +275,7 @@ export type ShiftSuggestion = { release: number; shift: number; matchingSequence
 export function shiftSuggestion(releases: Release[], applied: number[], index: number, found: { shift: number; matches: number }): ShiftSuggestion {
   const outside = (release: Release, by: number) => release.segments.find((segment) => segment.start + by < 0 || segment.end + by > 0xffff);
   const why = (number: number, by: number, segment: AddressRange) =>
-    `release ${number} moved by ${by} puts ${formatC64Address(segment.start)}-${formatC64Address(segment.end)} ${segment.start + by < 0 ? "below $0000" : "past $ffff"}`;
+    `release ${number} moved by ${by} puts ${formatC64Range(segment)} ${segment.start + by < 0 ? "below $0000" : "past $ffff"}`;
   const own = outside(releases[index]!, found.shift);
   if (own === undefined) return { release: index + 1, shift: applied[index]! + found.shift, matchingSequences: found.matches };
   const reasons = [why(index + 1, found.shift, own)];

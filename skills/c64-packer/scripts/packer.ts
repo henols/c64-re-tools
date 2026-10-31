@@ -5,7 +5,7 @@
 
 import { posix } from "node:path";
 
-import { findHandoffs, formatC64Address, parseTokenized, prgRange } from "#src/c64.ts";
+import { findHandoffs, formatC64Address, formatC64Byte, formatC64RangeFields, parseTokenized, prgRange } from "#src/c64.ts";
 import { compareBuild, mergedPrograms } from "#src/compare.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
@@ -84,9 +84,9 @@ await runScript({
           unpackedBytes,
           percent: Math.round((packed.program.length / unpackedBytes) * 1000) / 10,
           entry: formatC64Address(entry),
-          ...(exitMemory === undefined ? {} : { exitMemory: `$${exitMemory.toString(16)}` }),
+          ...(exitMemory === undefined ? {} : { exitMemory: formatC64Byte(exitMemory) }),
           ...(packed.cycles === undefined ? {} : { unpackSeconds: Math.round((packed.cycles / PAL_CYCLES_PER_SECOND) * 10) / 10 }),
-          inputs: programs.map((program) => ({ file: program.file, loadRange: { start: formatC64Address(program.start), end: formatC64Address(program.end) }, bytes: program.body.length })),
+          inputs: programs.map((program) => ({ file: program.file, loadRange: formatC64RangeFields(program), bytes: program.body.length })),
           check: { entry: formatC64Address(packed.entry), ...check },
         };
         const hint =

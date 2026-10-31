@@ -129,6 +129,16 @@ export function openForRead(root: string = projectRoot()): DatabaseSync | undefi
   return open(indexPath(root), true);
 }
 
+/** Runs `work` on the knowledge opened for a read (undefined when the project has none), and closes it. */
+export function withRead<T>(work: (db: DatabaseSync | undefined) => T, root: string = projectRoot()): T {
+  const db = openForRead(root);
+  try {
+    return work(db);
+  } finally {
+    db?.close();
+  }
+}
+
 /**
  * Opens the project's knowledge for a write: it creates
  * .c64-re-tools/knowledge/ with its .gitattributes when needed, and the index.

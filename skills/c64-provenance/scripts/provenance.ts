@@ -10,7 +10,7 @@
 
 import { basename } from "node:path";
 
-import { type AddressRange, c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { type AddressRange, c64AddressOf, formatC64Address, formatC64Byte, formatC64Range, formatC64RangeFields, parseC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
 import { readImage } from "#src/host-client/image.ts";
@@ -18,7 +18,7 @@ import { readActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { openForRead, withWrite } from "#src/knowledge/database.ts";
+import { withRead, withWrite } from "#src/knowledge/database.ts";
 import { operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import {
@@ -40,7 +40,7 @@ import {
   symbolSuppressed,
 } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
-import { platformNames } from "#src/platform.ts";
+import { platformAddresses } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
@@ -73,13 +73,8 @@ function readRelease(name: string, shift: number): LoadedRelease {
   let image: { segments: AddressRange[]; byteAt: (address: number) => number; memory?: Uint8Array; entry?: number; stages?: Array<Record<string, unknown>>; state?: EntryState };
   let noState: string;
   if (name === "knowledge") {
-    const db = openForRead();
-    try {
-      const program = requireProgram(db);
-      image = { ...program, ...(program.state === undefined ? {} : { state: parseEntryState(program.state, "the entry state of the knowledge") }) } as typeof image;
-    } finally {
-      db?.close();
-    }
+    const program = withRead(requireProgram);
+    image = { ...program, ...(program.state === undefined ? {} : { state: parseEntryState(program.state, "the entry state of the knowledge") }) } as typeof image;
     noState = "The knowledge has no entry state. Put a capture of the unpacked program, with its entry state, into the project knowledge.";
   } else {
     image = readImage(name);
@@ -135,7 +130,7 @@ async function compare(call: Call): Promise<unknown> {
   const range = call.range("range");
   const comparison = compareReleases(releases, range === undefined ? {} : { from: range.start, to: range.end });
   const share = identicalShare(comparison.identicalBytes, comparison.differingBytes);
-  const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const show = formatC64RangeFields;
   const compared = {
     releases: loaded.map((item) => ({ name: item.release.name, shift: item.shift, segments: item.release.segments.map(show) })),
     common: comparison.common.map(show),
@@ -199,7 +194,7 @@ async function compare(call: Call): Promise<unknown> {
   }
 
   // The next compare: the best suggested shift that the run does not have yet, else --align for two releases.
-  const rangeArgs = range === undefined ? [] : ["--range", `${formatC64Address(range.start)}-${formatC64Address(range.end)}`];
+  const rangeArgs = range === undefined ? [] : ["--range", formatC64Range(range)];
   const runArgs = frames === undefined ? [] : ["--frames", String(frames), ...(stepsFile === undefined ? [] : ["--steps", stepsFile])];
   const best = suggested.find((suggestion) => !("current" in suggestion));
   const hints: string[] = [];
@@ -260,19 +255,12 @@ function stagesOf(stages: Array<Record<string, unknown>> | undefined, where = "t
 
 /** The program in the knowledge with its stages and coverage, and the separation of its bytes. */
 function programEvidence() {
-  const db = openForRead();
-  let program: ReturnType<typeof requireProgram>;
-  let coverage: Uint8Array | undefined;
-  let regions: ReturnType<typeof listRegions>;
-  let references: ReturnType<typeof listReferences>;
-  try {
-    program = requireProgram(db);
-    coverage = programCoverage(db)?.map;
-    regions = listRegions(db).filter((region) => CODE_REGION_TYPES.includes(region.type));
-    references = listReferences(db);
-  } finally {
-    db?.close();
-  }
+  const { program, coverage, regions, references } = withRead((db) => ({
+    program: requireProgram(db),
+    coverage: programCoverage(db)?.map,
+    regions: listRegions(db).filter((region) => CODE_REGION_TYPES.includes(region.type)),
+    references: listReferences(db),
+  }));
   const stages = stagesOf(program.stages);
   const found = separate({
     segments: program.segments,
@@ -298,7 +286,7 @@ function separateCommand(call: Call): unknown {
   const out = call.string("out");
   const { program, stages, coverage, found } = programEvidence();
   const loaded = { entry: program.entry, stages };
-  const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const show = formatC64RangeFields;
   const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
   const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }), ...(region.unknown === undefined ? {} : { unknown: true }) }));
   const unresolved = found.unresolved.map((flow) => ({ at: formatC64Address(flow.at), kind: flow.kind }));
@@ -409,14 +397,11 @@ function leftoversCommand(call: Call): unknown {
   return withFile(bodyOf, call.count("max-listed")!, out);
 }
 
-const platform = () => new Map(platformNames().map((entry) => [entry.name, entry.address]));
-
 /** routine: saves a module or a range of the program in the knowledge, with its knowledge, as a routine of the library. */
 function routineCommand(call: Call): unknown {
   const given = call.subject(0);
   const library = call.string("library")!;
-  const db = openForRead();
-  try {
+  return withRead((db) => {
     const image = requireProgram(db);
     const segmentOf = (at: number) => image.segments.find((segment) => at >= segment.start && at <= segment.end);
     let start: number;
@@ -433,7 +418,7 @@ function routineCommand(call: Call): unknown {
       title ??= module.title;
     } else {
       ({ start, end } = call.parseRange(given, "<range>"));
-      if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Address(start)}-${formatC64Address(end)} is not inside one segment of the program.`, { hint: "Give a range in one segment of the program." });
+      if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Range({ start, end })} is not inside one segment of the program.`, { hint: "Give a range in one segment of the program." });
     }
     const range = { start, end };
     const name = call.string("name") ?? listSymbols(db, { start, end: start }, undefined, SEMANTIC_ORIGINS)[0]?.name;
@@ -452,7 +437,7 @@ function routineCommand(call: Call): unknown {
       comments: listComments(db, range, SEMANTIC_ORIGINS),
       references: listReferences(db, range, undefined, SEMANTIC_ORIGINS),
       operands: listOperands(db, range, SEMANTIC_ORIGINS),
-      platform: platform(),
+      platform: platformAddresses(),
     });
     const written = saveRoutine(libraryFolder(library, { create: true, cwd: projectRoot() }), routine, call.flag("replace"), projectRoot());
     return {
@@ -467,9 +452,7 @@ function routineCommand(call: Call): unknown {
       counts: { symbols: routine.symbols.length, regions: routine.regions.length, comments: routine.comments.length, references: routine.references.length, operands: routine.operands.length },
       ...(leftOut.length === 0 ? {} : { leftOut }),
     };
-  } finally {
-    db?.close();
-  }
+  });
 }
 
 /**
@@ -484,15 +467,30 @@ function matchCommand(call: Call): unknown {
   const list = <T>(items: T[]) => listed(items, max);
   const routines = readLibrary(libraryFolder(library, { create: false, cwd: projectRoot() }));
   if (routines.length === 0) throw new Refusal("not-found", `The library ${library} has no routine files. Save a routine with routine first.`);
-  const programDb = openForRead();
-  let image: ReturnType<typeof requireProgram>;
-  try {
-    image = requireProgram(programDb);
-  } finally {
-    programDb?.close();
-  }
-  const found = routines.map((routine) => ({ routine, matches: findRoutine(routine, image) }));
-  const show = (value: number, size: 1 | 2) => `$${value.toString(16).padStart(2 * size, "0")}`;
+  // One read of the knowledge: the program to search, and the knowledge that the suggestions of the matches check.
+  const { found, suggestions } = withRead((db) => {
+    const image = requireProgram(db);
+    const found = routines.map((routine) => ({ routine, matches: findRoutine(routine, image) }));
+    if (found.every((item) => item.matches.length === 0)) return { found, suggestions: undefined };
+    const suggestions = suggest(
+      found,
+      {
+        symbolAt: (at) => symbolAt(db, at),
+        symbolNamed: (name) => symbolNamed(db, name),
+        regionsOverlapping: (start, end) => regionsOverlapping(db, start, end),
+        commentsAt: (at) => commentsAt(db, at),
+        referencesFrom: (at) => referencesFrom(db, at),
+        operandAt: (at) => operandAt(db, at),
+        symbolSuppressed: (at) => symbolSuppressed(db, at),
+        regionSuppressed: (start, end) => suppressionsOverlapping(db, "region", start, end).length > 0,
+        referenceSuppressed: (reference) => referenceSuppressed(db, reference),
+      },
+      image,
+      platformAddresses(),
+    );
+    return { found, suggestions };
+  });
+  const show = (value: number, size: 1 | 2) => (size === 1 ? formatC64Byte(value) : formatC64Address(value));
   const matches = found
     .flatMap(({ routine, matches: each }) =>
       each.map((match) => ({
@@ -507,29 +505,7 @@ function matchCommand(call: Call): unknown {
   const result: Record<string, unknown> = { library, routines: routines.length, matches: list(matches) };
   const noMatch = "No routine of the library is in the program. A packed program can hold a routine in a packed form. Unpack the program, put the unpacked program into the project knowledge, and run match again.";
   const withNote = (shown: unknown, hint: string) => [cutNote(shown), hint].filter((part) => part !== undefined).join(" ");
-  if (matches.length === 0) return reply(result, { hint: noMatch });
-  const db = openForRead();
-  let suggestions: ReturnType<typeof suggest>;
-  try {
-    suggestions = suggest(
-      found,
-      {
-        symbolAt: (at) => symbolAt(db, at),
-        symbolNamed: (name) => symbolNamed(db, name),
-        regionsOverlapping: (start, end) => regionsOverlapping(db, start, end),
-        commentsAt: (at) => commentsAt(db, at),
-        referencesFrom: (at) => referencesFrom(db, at),
-        operandAt: (at) => operandAt(db, at),
-        symbolSuppressed: (at) => symbolSuppressed(db, at),
-        regionSuppressed: (start, end) => suppressionsOverlapping(db, "region", start, end).length > 0,
-        referenceSuppressed: (reference) => referenceSuppressed(db, reference),
-      },
-      image,
-      platform(),
-    );
-  } finally {
-    db?.close();
-  }
+  if (suggestions === undefined) return reply(result, { hint: noMatch });
   const { writes, known, leftOut, check } = suggestions;
   const changes: Record<string, unknown> = { writes: list(writes), known, leftOut: list(leftOut), check: list(check) };
   const body = { ...result, changes };
@@ -538,8 +514,7 @@ function matchCommand(call: Call): unknown {
   if (!apply) {
     return reply(body, { hint: withNote(body, `Examine differing of each match, and changes.writes and changes.leftOut. Then nextAction writes the changes to the project knowledge.${review}`), nextAction: call.next("match", "--library", library, "--apply") });
   }
-  const platformNamed = new Map(platformNames().map((entry) => [entry.name, entry.address]));
-  const applied = withWrite((write) => applyBatch(write, { origin: "llm", description: `Names of the routines of the library ${library}`, image: operandImages(write, platformNamed) }, writes.map(toOperation)));
+  const applied = withWrite((write) => applyBatch(write, { origin: "llm", description: `Names of the routines of the library ${library}`, image: operandImages(write, platformAddresses()) }, writes.map(toOperation)));
   changes.revision = applied.revision;
   return reply(body, { hint: withNote(body, `The project knowledge has the changes in revision ${applied.revision}.${review}`) });
 }

@@ -1,7 +1,7 @@
 // Local evidence of packing for the c64-unpacker script: where BASIC hands
 // over and how compressed the bytes look. It never names a packer.
 
-import { basicLineText, findHandoffs, formatC64Address, instructionLength, parseTokenized, prgRange } from "#src/c64.ts";
+import { basicLineText, findHandoffs, formatC64Address, instructionLength, parseTokenized, prgRange, underRom } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 
 /** A 256-byte block above this many bits per byte looks compressed. */
@@ -178,9 +178,6 @@ export async function readMemoryMap(read: (start: number) => Promise<{ ranges: A
   }
   return ranges;
 }
-
-/** ROM areas: an address here can be written (RAM below) and executed (ROM) without one being the other. */
-export const underRom = (address: number) => (address >= 0xa000 && address <= 0xbfff) || address >= 0xe000;
 
 /**
  * The memory that the program wrote and then executed, in pieces of code.

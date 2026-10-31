@@ -8,23 +8,23 @@
 // replays the same session. A recording needs no names: the checkpoint and the
 // state can be chosen at replay time, with the names that the knowledge has then.
 
-import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
-import { isRefusal, Refusal } from "#src/errors.ts";
-import { c64AddressOf, COVERAGE, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { Refusal } from "#src/errors.ts";
+import { c64AddressOf, COVERAGE, formatC64Address, hexWord, parseC64Address } from "#src/c64.ts";
 import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, isInteger, isObject, keyboardBytes, renamedField, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
-import { readProjectFile, type Written } from "#src/host-client/transfer.ts";
+import { readProjectFile, readProjectJson, type Written } from "#src/host-client/transfer.ts";
 import { RECORDING_FILES } from "#src/knowledge/recording-files.ts";
 import { LOADER_JUMP, startScreenLabels } from "#src/knowledge/start-screen.ts";
+import { sha256 } from "#src/knowledge/text.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
 import { listed } from "#src/script.ts";
 import { namesOf, type Outcome } from "./scenario.ts";
 
-export const RECORDING_FORMAT = 1;
+const RECORDING_FORMAT = 1;
 /**
  * CIA 1 ports A and B (joystick 2, joystick 1 and the keyboard matrix); the
  * four SID registers that a program can read: the paddles ($D419, $D41A) and
@@ -32,10 +32,10 @@ export const RECORDING_FORMAT = 1;
  * random seeds; and I/O 1 and I/O 2 ($DE00-$DFFF), where a C64 without a
  * cartridge gives the last byte on the bus.
  */
-export const DEFAULT_INPUTS = ["$dc00", "$dc01", "$d419", "$d41a", "$d41b", "$d41c", "$de00-$dfff"];
+const DEFAULT_INPUTS = ["$dc00", "$dc01", "$d419", "$d41a", "$d41b", "$d41c", "$de00-$dfff"];
 
 /** The inputs argument of the replay core: hex addresses and ranges without $. */
-export function inputsArgument(inputs: string[]): string {
+function inputsArgument(inputs: string[]): string {
   return inputs.map((input) => input.replace(/\$/g, "")).join(",");
 }
 /** Frames that a pressed key is held, and then released. */
@@ -61,7 +61,7 @@ export interface RecordFile {
   /** "knowledge", "none", or a project JSON file (the symbol file of a build or a name → "$xxxx" map). */
   symbols: string;
   /** true: load the program with the CPU at READY and no RUN; a registers step starts it. */
-  load?: boolean;
+  load: boolean;
   /** The comparison that a replay uses when it gets none: the checkpoint routine and the state. */
   compare?: Comparison;
   inputs: string[];
@@ -136,16 +136,12 @@ export interface Recording {
   hash: string;
 }
 
-export { RECORDING_FILES };
-
 /** Steps that are input or time: the replay gives the program the reads that they caused, and does not do them again. */
 const INPUT_KINDS = new Set(["joystick", "press", "frames"]);
 /** The KERNAL keyboard queue: $0277, its length in $c6, at most 10 keys. */
 const QUEUE = 0x0277;
 const QUEUE_LENGTH = 0x00c6;
 const QUEUE_SIZE = 10;
-
-const hex = (address: number) => address.toString(16).padStart(4, "0");
 
 /** The key code of the replay core for a matrix place: 80 + the place. RESTORE is ff. */
 const coreKey = (place: number) => (0x80 + place).toString(16);
@@ -165,7 +161,7 @@ export function parseStateItem(text: string, option = "--state"): StateItem {
 }
 
 /** Checks the memory items of state or pin (`what`): names, $ addresses, or { address, size }. */
-export function checkState(value: unknown, fail: (message: string) => never, what = "state"): StateItem[] {
+function checkState(value: unknown, fail: (message: string) => never, what = "state"): StateItem[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_STATE_ITEMS) fail(`${what} must be a list of 1 to ${MAX_STATE_ITEMS} memory items`);
   return (value as unknown[]).map((item, index) => {
     const spec = typeof item === "string" ? { address: item } : item;
@@ -196,13 +192,7 @@ export function readRecordFile(path: string): RecordFile {
   const fail = (message: string): never => {
     throw new Refusal("invalid-input", `record file ${path}: ${message}`);
   };
-  let value: unknown;
-  try {
-    value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
-  } catch (error) {
-    if (isRefusal(error)) throw error;
-    return fail((error as Error).message);
-  }
+  const value = readProjectJson(path, (message) => `record file ${path}: ${message}`);
   if (!isObject(value)) return fail("it must be a JSON object");
   const known = ["name", "program", "symbols", "load", "checkpoint", "state", "pin", "inputs", "coverage", "steps"];
   for (const key of Object.keys(value)) if (!known.includes(key)) fail(`it has the key ${key}; a record file has ${known.join(", ")}`);
@@ -247,7 +237,7 @@ function addressTarget(step: ActionStep | RestoreAction): Location[] {
 /** Starts the counts of the replay core at the addresses. */
 async function countAt(core: C64RunSession, addresses: number[]): Promise<void> {
   const unique = [...new Set(addresses)];
-  if (unique.length > 0) await core.command(`count-pc ${unique.map(hex).join(",")}`);
+  if (unique.length > 0) await core.command(`count-pc ${unique.map(hexWord).join(",")}`);
 }
 
 /** What the replay core cannot do of a step that is right for VICE: it has the C64 alone, no raster wait and no conditions. */
@@ -268,13 +258,7 @@ function checkCoreStep(step: ActionStep, at: string, fail: (message: string) => 
 /** Reads and checks recording.json of a recording folder. */
 export function readRecording(folder: string): Recording {
   const path = `${folder}/${RECORDING_FILES.recording}`;
-  let value: unknown;
-  try {
-    value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
-  } catch (error) {
-    if (isRefusal(error)) throw error;
-    throw new Refusal("invalid-input", `recording ${path}: ${(error as Error).message}`);
-  }
+  const value = readProjectJson(path, (message) => `recording ${path}: ${message}`);
   const fail = (message: string): never => {
     throw new Refusal("invalid-input", `recording ${path}: ${message}`);
   };
@@ -385,9 +369,9 @@ export interface EntryPoint {
 async function passStartScreen(core: C64RunSession, own: Map<string, number>, limit: number): Promise<number | string | undefined> {
   const labels = startScreenLabels(own);
   if (labels === undefined) return undefined;
-  const reached = await core.status(`run-pc ${hex(labels.wait)} ${limit}`);
+  const reached = await core.status(`run-pc ${hexWord(labels.wait)} ${limit}`);
   if (reached.word !== "reached") return `the rebuild did not come to the wait of its start screen at ${formatC64Address(labels.wait)}`;
-  await core.status(`goto ${hex(labels.continue)}`);
+  await core.status(`goto ${hexWord(labels.continue)}`);
   return reached.tick;
 }
 
@@ -395,15 +379,15 @@ async function passStartScreen(core: C64RunSession, own: Map<string, number>, li
  * The entry that the generated loader of a rebuild jumps to: the operand of its jump, from a short run of the
  * rebuild. Gives a problem when the rebuild does not come to the jump.
  */
-export async function loaderEntry(core: C64RunSession, recording: Recording, subject: ReplaySubject): Promise<number | string> {
-  const own = namesOf(subject.symbols);
+export async function loaderEntry(core: C64RunSession, recording: Recording, subject: ReplaySubject, names: typeof namesOf): Promise<number | string> {
+  const own = names(subject.symbols);
   const jump = own.get(LOADER_JUMP)!;
   const limit = recording.ticks * REBUILD_TIME_FACTOR;
   await core.init();
   await startProgram(core, readProjectFile(subject.program).bytes, false);
   const screen = await passStartScreen(core, own, limit);
   if (typeof screen === "string") return screen;
-  if ((await core.status(`run-pc ${hex(jump)} ${limit}`)).word !== "reached") return `the rebuild did not come to the jump of its loader at ${formatC64Address(jump)}`;
+  if ((await core.status(`run-pc ${hexWord(jump)} ${limit}`)).word !== "reached") return `the rebuild did not come to the jump of its loader at ${formatC64Address(jump)}`;
   const operand = await core.peek((jump + 1) & 0xffff, 2);
   return operand[0]! | (operand[1]! << 8);
 }
@@ -444,7 +428,7 @@ function busiestSite(answer: string): { site: number; addr: number; count: numbe
 async function runToKey(core: C64RunSession, key: RecordedEvent["key"], until: number, map: Map<number, number>, skipped: number, at: SideAddresses): Promise<"reached" | "not-reached" | "halted"> {
   if ("previous" in key) return (await core.status("status")).word === "halted" ? "halted" : "reached";
   if ("pc" in key) {
-    const status = await core.status(`run-pc ${hex(at.code(key.pc))} ${until} ${key.count}`);
+    const status = await core.status(`run-pc ${hexWord(at.code(key.pc))} ${until} ${key.count}`);
     return status.word === "halted" ? "halted" : status.word === "reached" ? "reached" : "not-reached";
   }
   if ("tick" in key) {
@@ -452,11 +436,10 @@ async function runToKey(core: C64RunSession, key: RecordedEvent["key"], until: n
     return status.word === "halted" ? "halted" : "reached";
   }
   const site = parseC64Address(key.site);
-  const status = await core.status(`run-reads ${hex(map.get(site) ?? site)} ${hex(parseC64Address(key.addr))} ${key.count} ${until}`);
+  const status = await core.status(`run-reads ${hexWord(map.get(site) ?? site)} ${hexWord(parseC64Address(key.addr))} ${key.count} ${until}`);
   return status.word === "halted" ? "halted" : status.word === "reached" ? "reached" : "not-reached";
 }
 
-/** Does a step that is not input. Gives a reason when a runUntil does not reach its target. */
 /** The status flags in the order of the P register, bit 7 to bit 0; bit 5 is always 1. */
 const FLAG_BITS: Record<string, number> = { n: 0x80, v: 0x40, b: 0x10, d: 0x08, i: 0x04, z: 0x02, c: 0x01 };
 
@@ -470,6 +453,7 @@ const COMPARE: Record<string, (value: number, wanted: number) => boolean> = {
   gte: (value, wanted) => value >= wanted,
 };
 
+/** Does a step that is not input. Gives a reason when a runUntil does not reach its target. */
 async function doAction(core: C64RunSession, step: ActionStep | RestoreAction, at: SideAddresses): Promise<string | undefined> {
   if ("restore" in step) {
     // The NMI line is low while RESTORE is down: hold it as a press step holds a key.
@@ -493,7 +477,7 @@ async function doAction(core: C64RunSession, step: ActionStep | RestoreAction, a
     for (const [name, set] of Object.entries(flags ?? {})) if (set !== undefined) p = set ? p | FLAG_BITS[name]! : p & ~FLAG_BITS[name]!;
     const values = [step.registers.a ?? now.a, step.registers.x ?? now.x, step.registers.y ?? now.y, step.registers.sp ?? now.s, p].map((n) => n.toString(16));
     await core.status(`regs ${values.join(" ")}`);
-    if (pc !== undefined) await core.status(`goto ${hex(at.code(pc))}`);
+    if (pc !== undefined) await core.status(`goto ${hexWord(at.code(pc))}`);
   } else if ("runUntil" in step) {
     const { target, timeoutFrames } = step.runUntil;
     const start = (await core.status("status")).tick;
@@ -506,14 +490,14 @@ async function doAction(core: C64RunSession, step: ActionStep | RestoreAction, a
       }
     }
     if (target.kind !== "address") return "a recording has no raster target";
-    const reached = await core.status(`run-pc ${hex(at.code(target.address))} ${until}`);
+    const reached = await core.status(`run-pc ${hexWord(at.code(target.address))} ${until}`);
     if (reached.word !== "reached") return `the program did not reach ${target.address} within ${timeoutFrames} frames`;
   }
   return undefined;
 }
 
 function rangesArgument(state: StateItem[], at: SideAddresses): string {
-  return state.map((item) => `${hex(at.data(item.address))}:${item.size}`).join(",");
+  return state.map((item) => `${hexWord(at.data(item.address))}:${item.size}`).join(",");
 }
 
 export interface RecordOutcome {
@@ -554,9 +538,9 @@ export async function record(
   await core.command(`inputs ${inputsArgument(file.inputs)}`);
   await core.command(`record ${reads}`);
   await countAt(core, targets);
-  await startProgram(core, prg, file.load ?? false);
+  await startProgram(core, prg, file.load);
   // From READY on: the start of the C64 itself is never in the map.
-  await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hex(parseC64Address(file.coverage))}`);
+  await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hexWord(parseC64Address(file.coverage))}`);
   const events: RecordedEvent[] = [];
   const masks = [0, 0];
   let reason: string | undefined;
@@ -568,7 +552,7 @@ export async function record(
     if ("runUntil" in action && action.runUntil.target.kind === "address") {
       // The next opcode fetch at the target: its count from the start is the point, on each replay.
       const { address } = action.runUntil.target;
-      const pc = hex(at.code(address));
+      const pc = hexWord(at.code(address));
       const count = Number(/count=(\d+)/.exec(await core.command(`hits ${pc}`))![1]) + 1;
       const reached = await core.status(`run-pc ${pc} ${tick + action.runUntil.timeoutFrames * PAL_FRAME_CYCLES} ${count}`);
       if (reached.word !== "reached") return `the program did not reach ${address} within ${action.runUntil.timeoutFrames} frames`;
@@ -642,9 +626,9 @@ export async function record(
     format: RECORDING_FORMAT,
     name: file.name,
     program: file.program,
-    sha256: createHash("sha256").update(prg).digest("hex"),
+    sha256: sha256(prg),
     symbols: file.symbols,
-    load: file.load ?? false,
+    load: file.load,
     ...(file.compare === undefined ? {} : { compare: file.compare }),
     inputs: file.inputs,
     events,
@@ -699,25 +683,26 @@ export async function replaySide(
   folder: string,
   subject: ReplaySubject,
   workspace: Workspace,
+  names: typeof namesOf,
   options: { compare?: Comparison; stop?: number; dump?: number; pins?: string[]; entry?: number; handover?: { entry: number; reference: EntryPoint } } = {},
 ): Promise<SideRun & { ram?: Uint8Array }> {
   const prg = readProjectFile(subject.program).bytes;
   const reference = subject.side === "reference";
   // The names of the reference: a recording without names takes those of the knowledge.
-  const names = recording.symbols === "none" ? "knowledge" : recording.symbols;
+  const referenceSymbols = recording.symbols === "none" ? "knowledge" : recording.symbols;
   const same = (address: number) => address;
   const move = reference
     ? { code: same, data: same }
-    : { code: mover(namesOf(names, "code"), namesOf(subject.symbols, "code")), data: mover(namesOf(names), namesOf(subject.symbols)) };
-  const own = namesOf(subject.symbols);
+    : { code: mover(names(referenceSymbols, "code"), names(subject.symbols, "code")), data: mover(names(referenceSymbols), names(subject.symbols)) };
+  const own = names(subject.symbols);
   const at = sideAddresses(own, subject.side, move);
-  const moved = reference ? [] : siteMap(recording.sites, namesOf(names, "code"), namesOf(subject.symbols, "code"));
+  const moved = reference ? [] : siteMap(recording.sites, names(referenceSymbols, "code"), names(subject.symbols, "code"));
   const map = new Map(moved);
   const reads = workspace.path(`${subject.side}-${RECORDING_FILES.reads}`);
   writeFileSync(reads, readProjectFile(`${folder}/${RECORDING_FILES.reads}`).bytes);
   const samples = workspace.path(`${subject.side}-checkpoints.txt`);
   const mapFile = workspace.path(`${subject.side}-sites.map`);
-  writeFileSync(mapFile, moved.map(([from, to]) => `${hex(from)} ${hex(to)}\n`).join(""));
+  writeFileSync(mapFile, moved.map(([from, to]) => `${hexWord(from)} ${hexWord(to)}\n`).join(""));
   await core.init();
   await core.command(`inputs ${inputsArgument(recording.inputs)}`);
   await core.command(`site-map ${mapFile}`);
@@ -733,14 +718,14 @@ export async function replaySide(
       await core.command(`pin ${pinFile} ${rangesArgument(pinned, at)}`);
     }
     // The samples hold the state, then the pinned items.
-    await core.command(`sample ${hex(at.code(compare.checkpoint))} ${samples} ${rangesArgument([...compare.state, ...pinned], at)}${stop > 0 ? ` ${stop}` : ""}`);
+    await core.command(`sample ${hexWord(at.code(compare.checkpoint))} ${samples} ${rangesArgument([...compare.state, ...pinned], at)}${stop > 0 ? ` ${stop}` : ""}`);
     sampling = true;
   };
   // A rebuild with a loader takes its checkpoints from its entry on, as the reference leaves out those before its own.
   if (options.compare !== undefined && options.handover === undefined) await startSampling(options.compare);
   const targets = recording.events.flatMap((event) => ("pc" in event.key ? [at.code(event.key.pc)] : []));
   await countAt(core, targets);
-  if (options.entry !== undefined) await core.command(`mark ${hex(options.entry)}`);
+  if (options.entry !== undefined) await core.command(`mark ${hexWord(options.entry)}`);
   await startProgram(core, prg, recording.load);
   const base = reference ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
   let limit = base;
@@ -763,10 +748,10 @@ export async function replaySide(
   const { handover } = options;
   if (problem === undefined && handover !== undefined) {
     const jump = own.get(LOADER_JUMP)!;
-    if ((await core.status(`run-pc ${hex(jump)} ${limit}`)).word !== "reached") problem = `the rebuild did not come to the jump of its loader at ${formatC64Address(jump)}`;
+    if ((await core.status(`run-pc ${hexWord(jump)} ${limit}`)).word !== "reached") problem = `the rebuild did not come to the jump of its loader at ${formatC64Address(jump)}`;
     else {
       await countAt(core, targets);
-      const reached = await core.status(`run-pc ${hex(handover.entry)} ${limit}`);
+      const reached = await core.status(`run-pc ${hexWord(handover.entry)} ${limit}`);
       if (reached.word !== "reached") problem = `the rebuild did not come to its entry at ${formatC64Address(handover.entry)}`;
       else {
         // The loader sets the entry state of the capture, but the phase of the frame and of the CIA timers at the entry
@@ -830,7 +815,7 @@ export async function replaySide(
     const counts = new Map<string, number>();
     for (const event of recording.events) {
       if (!("pc" in event.key) || counts.has(event.key.pc)) continue;
-      const before = /marked=(\d+)/.exec(await core.command(`hits ${hex(at.code(event.key.pc))}`));
+      const before = /marked=(\d+)/.exec(await core.command(`hits ${hexWord(at.code(event.key.pc))}`));
       if (before !== null) counts.set(event.key.pc, Number(before[1]));
     }
     // A checkpoint at the first fetch at the entry has the tick of the mark. The rebuild starts its checkpoints after that fetch.
@@ -944,7 +929,7 @@ export function showRecording(folder: string, max: number): RecordingSummary {
     changes.set(key, (changes.get(key) ?? 0) + 1);
   }
   const sites = recording.sites
-    .map((site): InputSite => ({ site: site.site, address: site.addr, reads: site.reads, changes: changes.get(`${hex(parseC64Address(site.site))} ${hex(parseC64Address(site.addr))}`) ?? 0 }))
+    .map((site): InputSite => ({ site: site.site, address: site.addr, reads: site.reads, changes: changes.get(`${hexWord(parseC64Address(site.site))} ${hexWord(parseC64Address(site.addr))}`) ?? 0 }))
     .sort((a, b) => parseC64Address(a.site) - parseC64Address(b.site) || parseC64Address(a.address) - parseC64Address(b.address));
   const map = readProjectFile(`${folder}/${RECORDING_FILES.coverage}`).bytes;
   const count = (bit: number) => map.reduce((total, byte) => total + ((byte & bit) === 0 ? 0 : 1), 0);

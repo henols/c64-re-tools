@@ -3,7 +3,9 @@
 // from current knowledge and the coverage of the knowledge, and imports the
 // structural findings into .c64-re-tools/knowledge/.
 
-import { COVERAGE, formatC64Address, prgRange } from "#src/c64.ts";
+import type { DatabaseSync } from "node:sqlite";
+
+import { COVERAGE, coverageEntries, coverageSeedKinds, executedStarts, formatC64Address, formatC64Byte, formatC64RangeFields, inRanges, prgRange, rangesOverlap, romOnlyRanges } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
@@ -12,15 +14,15 @@ import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithDecompiler } from "#src/native/decompiler/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { DECOMPILER_LIMITS, type RefusedSeed, type SeedReport } from "#src/native/types.ts";
-import { openForRead, withWrite } from "#src/knowledge/database.ts";
+import { openForRead, withRead, withWrite } from "#src/knowledge/database.ts";
 import { analyzedBytes, operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import { importFindings, lastToolVersion, runProvenance, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
-import { platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
+import { platformAddresses, platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
-import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, imageReader, romOnlyRanges, writtenNotExecuted, explainGaps, type GapReason, type ImageByte } from "./lib/coverage.ts";
+import { codeEntries, coverageConflicts, imageReader, writtenNotExecuted, explainGaps, type GapReason, type ImageByte } from "./lib/coverage.ts";
 import { dxaFindings, decompilerFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList } from "./lib/instructions.ts";
@@ -38,7 +40,11 @@ const ALL_REGIONS = "a larger --max-listed. The project knowledge has all of the
  * analyzer data over executed code to classify, and macro candidates to write.
  * The envelope adds the sentence for a cut list.
  */
-function withHint(body: Record<string, unknown>, conflicts: number, coverageConflicts: number, macros: { candidates: number; applied: boolean; revision: string | null | undefined }, version: { now: string | undefined; last: string | undefined; revision: string | null }, retiredReferences: number, guards: { refused: number; writtenNotExecuted: number }) {
+function withHint(
+  body: Record<string, unknown>,
+  facts: { conflicts: number; coverageConflicts: number; macros: { candidates: number; applied: boolean; revision: string | null | undefined }; version: { now: string | undefined; last: string | undefined; revision: string | null }; retiredReferences: number; guards: { refused: number; writtenNotExecuted: number } },
+) {
+  const { conflicts, coverageConflicts, macros, version, retiredReferences, guards } = facts;
   const hints: string[] = [];
   if (guards.refused > 0) hints.push(`The analysis did not decode ${guards.refused} seeds in the program or of --entry: seeds.refused gives each refused seed with its reason. A seed inside an instruction or in data is often a wrong routine or region in the project knowledge. Examine it in the listing, and correct the project knowledge.`);
   if (guards.writtenNotExecuted > 0) hints.push("Each range in writtenNotExecuted is code of the analyzer on bytes that the runs wrote and never executed. Its from gives the instructions that reach it. Examine the routine that holds them: a wrong entry point leads the analyzer into data. Correct the project knowledge, and run the analysis again.");
@@ -78,19 +84,8 @@ function seedsResult(given: Record<string, number>, overLimit: Record<string, nu
     ...given,
     ...(Object.keys(over).length === 0 ? {} : { overLimit: over }),
     ...(report.refused.length === 0 ? {} : { refused: { ...listed(report.refused, max, showRefused), byReason } }),
-    ...(report.dataRangesLeftOut.length === 0 ? {} : { dataRangesLeftOut: listed(report.dataRangesLeftOut, max, (range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end), code: formatC64Address(range.code) })) }),
+    ...(report.dataRangesLeftOut.length === 0 ? {} : { dataRangesLeftOut: listed(report.dataRangesLeftOut, max, (range) => ({ ...formatC64RangeFields(range), code: formatC64Address(range.code) })) }),
   };
-}
-
-/** The code regions of the analyzer on bytes that the runs wrote and never executed, from the knowledge after the import. */
-function writtenNotExecutedOf(analyzer: Analyzer, space: string, coverage: Uint8Array | undefined) {
-  if (coverage === undefined) return [];
-  const db = openForRead();
-  try {
-    return writtenNotExecuted(db, analyzer, coverage, space);
-  } finally {
-    db?.close();
-  }
 }
 
 /** A pitfall with $ addresses and what goes wrong. */
@@ -106,7 +101,7 @@ function showPitfall(pitfall: Pitfall) {
 /** A pointer candidate with $ addresses, and the operand writes that would name it. */
 function showPointer(candidate: PointerCandidate) {
   if (candidate.kind === "sprite pointer") {
-    return { kind: candidate.kind, at: formatC64Address(candidate.at), to: formatC64Address(candidate.to), value: `$${candidate.value.toString(16).padStart(2, "0")}`, target: formatC64Address(candidate.target), assumes: "VIC bank 0 and the screen at $0400" };
+    return { kind: candidate.kind, at: formatC64Address(candidate.at), to: formatC64Address(candidate.to), value: formatC64Byte(candidate.value), target: formatC64Address(candidate.target), assumes: "VIC bank 0 and the screen at $0400" };
   }
   return { kind: candidate.kind, to: formatC64Address(candidate.to), target: formatC64Address(candidate.target), low: formatC64Address(candidate.low), high: formatC64Address(candidate.high) };
 }
@@ -126,53 +121,47 @@ function showMacro(candidate: MacroCandidate) {
  * candidates that start at an address of `skip`. A macro of the catalogue that
  * the knowledge has with another body leaves its candidates out of the writes.
  */
-function macroCandidates(space: string, byteAt: ImageByte, romUse: RomUse, skip: ReadonlySet<number>) {
-  const db = openForRead();
-  try {
-    // The platform names that c64-source uses: a name of a ROM that the program does not use is no arg.
-    const platform = space === DEFAULT_SPACE ? new Map(platformNamesFor(romUse).map((entry) => [entry.address, entry.name])) : new Map<number, string>();
-    const semantic = new Map(listSymbols(db, undefined, undefined, [...SEMANTIC_ORIGINS], space).map((symbol) => [symbol.address, symbol.name]));
-    const code = listRegions(db, undefined, "code", undefined, space);
-    const found = findMacroUses(byteAt, code, (address) => semantic.get(address) ?? platform.get(address));
-    const named = new Set([...listSymbols(db, undefined, undefined, undefined, space).map((symbol) => symbol.address), ...listReferences(db, undefined, undefined, undefined, space).map((reference) => reference.to)]);
-    const patches = listPatches(db, undefined, undefined, undefined, space);
-    const uses = listMacroUses(db, undefined, undefined, undefined, space);
-    const overlaps = (a: { start: number; end: number }, b: { start: number; end: number }) => a.start <= b.end && b.start <= a.end;
-    const candidates: MacroCandidate[] = [];
-    let known = 0;
-    let leftOut = 0;
-    for (const candidate of found) {
-      const same = uses.find((use) => use.start === candidate.start && use.end === candidate.end && use.macro === candidate.macro && use.args.join(",") === candidate.args.join(","));
-      if (same !== undefined) known++;
-      else if ([...named].some((address) => address > candidate.start && address <= candidate.end) || patches.some((patch) => overlaps(patch, candidate)) || uses.some((use) => overlaps(use, candidate))) leftOut++;
-      else candidates.push(candidate);
-    }
-    // A macro of the catalogue goes into the writes unless the knowledge has it; with another body, its uses stay out.
-    const macros = new Map(listMacros(db, undefined, space).map((macro) => [macro.name, macro]));
-    const writes: BatchOperation[] = [];
-    const other = new Set<string>();
-    const chosen = candidates.filter((candidate) => !skip.has(candidate.start));
-    for (const idiom of CATALOGUE.filter((item) => chosen.some((candidate) => candidate.macro === item.name))) {
-      const existing = macros.get(idiom.name);
-      if (existing === undefined) writes.push({ op: "macro", space, name: idiom.name, params: [...idiom.params], body: idiom.body, comment: idiom.comment });
-      else if (existing.params.join(",") !== idiom.params.join(",") || existing.body !== idiom.body) other.add(idiom.name);
-    }
-    for (const candidate of chosen) {
-      if (other.has(candidate.macro)) continue;
-      writes.push({ op: "use", space, start: candidate.start, end: candidate.end, macro: candidate.macro, args: candidate.args });
-    }
-    const notCandidates = [...skip].filter((address) => !candidates.some((candidate) => candidate.start === address)).sort((a, b) => a - b);
-    return { candidates, known, leftOut, writes, skipped: candidates.length - chosen.length, notCandidates, otherMacros: [...other].map((name) => `The knowledge has another macro ${name}: its candidates are not written.`) };
-  } finally {
-    db?.close();
+function macroCandidates(db: DatabaseSync | undefined, space: string, byteAt: ImageByte, romUse: RomUse, skip: ReadonlySet<number>) {
+  // The platform names that c64-source uses: a name of a ROM that the program does not use is no arg.
+  const platform = space === DEFAULT_SPACE ? new Map(platformNamesFor(romUse).map((entry) => [entry.address, entry.name])) : new Map<number, string>();
+  const semantic = new Map(listSymbols(db, undefined, undefined, [...SEMANTIC_ORIGINS], space).map((symbol) => [symbol.address, symbol.name]));
+  const code = listRegions(db, undefined, "code", undefined, space);
+  const found = findMacroUses(byteAt, code, (address) => semantic.get(address) ?? platform.get(address));
+  const named = new Set([...listSymbols(db, undefined, undefined, undefined, space).map((symbol) => symbol.address), ...listReferences(db, undefined, undefined, undefined, space).map((reference) => reference.to)]);
+  const patches = listPatches(db, undefined, undefined, undefined, space);
+  const uses = listMacroUses(db, undefined, undefined, undefined, space);
+  const candidates: MacroCandidate[] = [];
+  let known = 0;
+  let leftOut = 0;
+  for (const candidate of found) {
+    const same = uses.find((use) => use.start === candidate.start && use.end === candidate.end && use.macro === candidate.macro && use.args.join(",") === candidate.args.join(","));
+    if (same !== undefined) known++;
+    else if ([...named].some((address) => address > candidate.start && address <= candidate.end) || patches.some((patch) => rangesOverlap(patch, candidate)) || uses.some((use) => rangesOverlap(use, candidate))) leftOut++;
+    else candidates.push(candidate);
   }
+  // A macro of the catalogue goes into the writes unless the knowledge has it; with another body, its uses stay out.
+  const macros = new Map(listMacros(db, undefined, space).map((macro) => [macro.name, macro]));
+  const writes: BatchOperation[] = [];
+  const other = new Set<string>();
+  const chosen = candidates.filter((candidate) => !skip.has(candidate.start));
+  for (const idiom of CATALOGUE.filter((item) => chosen.some((candidate) => candidate.macro === item.name))) {
+    const existing = macros.get(idiom.name);
+    if (existing === undefined) writes.push({ op: "macro", space, name: idiom.name, params: [...idiom.params], body: idiom.body, comment: idiom.comment });
+    else if (existing.params.join(",") !== idiom.params.join(",") || existing.body !== idiom.body) other.add(idiom.name);
+  }
+  for (const candidate of chosen) {
+    if (other.has(candidate.macro)) continue;
+    writes.push({ op: "use", space, start: candidate.start, end: candidate.end, macro: candidate.macro, args: candidate.args });
+  }
+  const notCandidates = [...skip].filter((address) => !candidates.some((candidate) => candidate.start === address)).sort((a, b) => a - b);
+  return { candidates, known, leftOut, writes, skipped: candidates.length - chosen.length, notCandidates, otherMacros: [...other].map((name) => `The knowledge has another macro ${name}: its candidates are not written.`) };
 }
 
 /** One conflict: what the knowledge has, and what the analyzer found, under the analyzer's name. */
 function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<string, unknown> {
   if (conflict.category === "code-evidence") {
     return {
-      range: { start: formatC64Address(conflict.start), end: formatC64Address(conflict.end) },
+      range: formatC64RangeFields(conflict),
       [analyzer]: conflict.finding,
       ...(conflict.executed === undefined ? {} : { executed: formatC64Address(conflict.executed) }),
       ...(conflict.symbol === undefined ? {} : { knowledge: { ...conflict.symbol, address: formatC64Address(conflict.symbol.address) } }),
@@ -188,7 +177,7 @@ function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<stri
     };
   }
   return {
-    range: { start: formatC64Address(conflict.start), end: formatC64Address(conflict.end) },
+    range: formatC64RangeFields(conflict),
     knowledge: conflict.current,
     [analyzer]: conflict.finding,
     problem: "code and data disagree",
@@ -240,7 +229,7 @@ async function analyze(call: Call): Promise<unknown> {
   const { bytes, kind: imageKind } = analyzedBytes(program);
   // The analyzer sees all bytes it gets; the coverage seeds only the program, as c64-source does.
   const byteAt = imageReader(bytes, imageKind);
-  const inProgram: ImageByte = (address) => (program.segments.some((segment) => address >= segment.start && address <= segment.end) ? program.byteAt(address) : undefined);
+  const inProgram: ImageByte = (address) => (inRanges(program.segments, address) ? program.byteAt(address) : undefined);
   // With coverage, a code finding over an executed instruction start replaces the data of the other analyzer.
   const executed = coverage === undefined ? {} : { executed: (address: number) => (coverage[address]! & COVERAGE.ramExecute) !== 0 };
   const loaded = imageKind === "flat64k" ? { start: 0x0000, end: 0xffff } : prgRange(bytes);
@@ -275,30 +264,28 @@ async function analyze(call: Call): Promise<unknown> {
   /** The analyzer version of the last analysis of these bytes: a new version can change the findings by itself. */
   const lastVersion = reader === undefined ? undefined : lastToolVersion(reader, analyzer, bytes);
   reader?.close();
-  /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
-  const idiomsResult = () => {
-    const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: "Idioms in the program" }));
+  /** Imports the idioms as their own revision, after the analyzer's. */
+  const importIdioms = () => withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: "Idioms in the program" }));
+  /** The idioms part of a result, from the knowledge after both imports. */
+  const idiomsResult = (db: DatabaseSync | undefined, imported: ImportResult) => {
     // The macro candidates read the code regions after both imports.
-    const macros = macroCandidates(space, byteAt, romUseOfProgram(coverage, program.state), skip);
-    // With --apply-macros, the candidates and their macros are a third revision of the LLM.
-    const platformNamed = new Map(platformNames().map((entry) => [entry.name, entry.address]));
-    const written = applyMacros && macros.writes.length > 0 ? withWrite((db) => applyBatch(db, { origin: "llm", description: "Macro candidates in the program", image: operandImages(db, platformNamed) }, macros.writes)) : undefined;
+    const macros = macroCandidates(db, space, byteAt, romUseOfProgram(coverage, program.state), skip);
+    // With --apply-macros, the candidates and their macros are a third revision of the LLM. It writes only macros and their uses, which the reads below do not read.
+    const written = applyMacros && macros.writes.length > 0 ? withWrite((write) => applyBatch(write, { origin: "llm", description: "Macro candidates in the program", image: operandImages(write, platformAddresses()) }, macros.writes)) : undefined;
     // Platform pitfalls are C64 facts: drive code and banks get none. Pitfalls and pointers read the code regions after both imports.
-    const codeDb = openForRead();
-    const code = listRegions(codeDb, undefined, "code", undefined, space);
+    const code = listRegions(db, undefined, "code", undefined, space);
     const pitfalls = space === DEFAULT_SPACE ? findPitfalls(byteAt, code) : [];
     const pointers = findPointers(byteAt, { start: loaded.start, end: loaded.end }, code, {
       platform: (address) => platform.some((entry) => address >= entry.address && address <= entry.end),
-      sprites: listRegions(codeDb, undefined, "sprite", undefined, space),
+      sprites: listRegions(db, undefined, "sprite", undefined, space),
     });
-    codeDb?.close();
     return {
       idioms: {
         ...idioms.counts,
         revision: imported.revision,
         changes: { regions: imported.regions, references: imported.references },
         conflicts: imported.conflicts.map((conflict) => showConflict(conflict, "heuristic")),
-        ...(idioms.leftOut.length === 0 ? {} : { leftOut: listed(idioms.leftOut, max, (item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), kind: item.kind, reason: item.reason })) }),
+        ...(idioms.leftOut.length === 0 ? {} : { leftOut: listed(idioms.leftOut, max, (item) => ({ ...formatC64RangeFields(item), kind: item.kind, reason: item.reason })) }),
         // Candidates are not knowledge: a larger --max-listed gives more of them.
         candidates: {
           dop: listed(idioms.candidates.dop, max, formatC64Address, "a larger --max-listed"),
@@ -319,20 +306,49 @@ async function analyze(call: Call): Promise<unknown> {
     };
   };
   /** The coverage part of a result: its seeds, and the analyzer data that it shows to be code. */
-  const coverageResult = () => {
+  const coverageResult = (db: DatabaseSync | undefined) => {
     if (coverage === undefined) return {};
-    const db = openForRead();
     const conflicts = coverageConflicts(db, coverage);
-    db?.close();
     return {
       coverageSeeds: { entryPoints: fromCoverage.length, used: coverageUsed, romOnlyRanges: fromRom.length, romOnlyUsed: romUsed },
       coverageConflicts: conflicts.map(({ region, executed }) => ({
-        range: { start: formatC64Address(region.start), end: formatC64Address(region.end) },
+        range: formatC64RangeFields(region),
         knowledge: { type: region.type, origin: region.origin },
         executed,
         problem: "coverage shows code",
       })),
     };
+  };
+  /**
+   * The result from the knowledge after both imports: the fields of both
+   * analyzers around the fields that only one gives (`gaps` after the
+   * coverage, `tail` after the idioms), and the hint.
+   */
+  const resultOf = (
+    db: DatabaseSync | undefined,
+    run: { toolVersion: string | undefined; imported: ReturnType<typeof record>; report: SeedReport; seeds: ReturnType<typeof seedsResult>; found: ReturnType<typeof idiomsResult>; gaps?: Record<string, unknown>; tail: Record<string, unknown> },
+  ) => {
+    const runOnWritten = coverage === undefined ? [] : writtenNotExecuted(db, analyzer, coverage, space);
+    const body = {
+      analyzer,
+      ...(run.toolVersion === undefined ? {} : { analyzerVersion: run.toolVersion }),
+      ...(space === DEFAULT_SPACE ? {} : { space }),
+      ...run.imported,
+      seeds: run.seeds,
+      ...coverageResult(db),
+      ...run.gaps,
+      ...(runOnWritten.length === 0 ? {} : { writtenNotExecuted: listed(runOnWritten, max, showWritten) }),
+      ...run.found,
+      ...run.tail,
+    };
+    return withHint(body, {
+      conflicts: run.imported.conflicts.length + run.found.idioms.conflicts.length,
+      coverageConflicts: body.coverageConflicts?.length ?? 0,
+      macros: { candidates: run.found.idioms.candidates.macros.count, applied: applyMacros, revision: run.found.idioms.candidates.macros.revision },
+      version: { now: run.toolVersion, last: lastVersion, revision: run.imported.revision },
+      retiredReferences: run.imported.changes.references.retired,
+      guards: { refused: toCorrect(run.report.refused, entries), writtenNotExecuted: runOnWritten.length },
+    });
   };
   if (analyzer === "dxa") {
     const { result, attachments, seeds: report } = await analyzeWithDxa({ imageKind, ...seeds }, bytes, localToolContext());
@@ -348,73 +364,70 @@ async function analyze(call: Call): Promise<unknown> {
         throw new WireFailure(isRefusal(error) ? error.code : "operation-failed", `The script did not write the listing to ${listingPath}: ${(error as Error).message.replace(/\.$/, "")}. ${recorded}`);
       }
     }
-    const found = idiomsResult();
-    const runOnWritten = writtenNotExecutedOf("dxa", space, coverage);
-    const body = {
-      analyzer: "dxa",
-      ...(result.toolVersion === undefined ? {} : { analyzerVersion: result.toolVersion }),
-      ...(space === DEFAULT_SPACE ? {} : { space }),
-      ...imported,
-      seeds: seedsResult({ entryPoints: seeds.entryPoints.length, dataRanges: seeds.dataRanges.length }, { entryPoints: overLimit.entryPoints, dataRanges: overLimit.dataRanges }, report, max),
-      ...coverageResult(),
-      ...(runOnWritten.length === 0 ? {} : { writtenNotExecuted: listed(runOnWritten, max, showWritten) }),
-      ...found,
-      coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
-      regions: listed(result.regions, max, (region) => ({ start: formatC64Address(region.start), end: formatC64Address(region.end), classification: region.classification }), ALL_REGIONS),
-      labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), ALL_NAMES),
-      ...(written === undefined ? {} : { listing: written }),
-    };
-    return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired, { refused: toCorrect(report.refused, entries), writtenNotExecuted: runOnWritten.length });
+    const idiomsImported = importIdioms();
+    return withRead((db) =>
+      resultOf(db, {
+        toolVersion: result.toolVersion,
+        imported,
+        report,
+        seeds: seedsResult({ entryPoints: seeds.entryPoints.length, dataRanges: seeds.dataRanges.length }, { entryPoints: overLimit.entryPoints, dataRanges: overLimit.dataRanges }, report, max),
+        found: idiomsResult(db, idiomsImported),
+        tail: {
+          coverage: result.coverage.map(formatC64RangeFields),
+          regions: listed(result.regions, max, (region) => ({ ...formatC64RangeFields(region), classification: region.classification }), ALL_REGIONS),
+          labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), ALL_NAMES),
+          ...(written === undefined ? {} : { listing: written }),
+        },
+      }),
+    );
   }
 
   const { result, seeds: report } = await analyzeWithDecompiler({ imageKind, ...seeds, codeStarts, decompile }, bytes, localToolContext());
   // Executed instruction starts that the decompiler did not decode: the instruction list and the source miss them.
   const decoded = new Set(result.instructions.map((instruction) => instruction.address));
   const imported = record({ ...decompilerFindings(result), space, ...executed }, revision, "Decompiler analysis of the program", runProvenance(bytes, result.toolVersion));
-  const found = idiomsResult();
-  // A start inside a dual-use region is a known overlap, for example the second instruction of a BIT skip: one list cannot hold both.
-  // Read after the idioms, which write those regions.
-  const overlapDb = coverage === undefined ? undefined : openForRead();
-  const overlaps = listRegions(overlapDb, undefined, "dual-use", undefined, space);
-  overlapDb?.close();
-  const gaps = coverage === undefined ? [] : executedStarts(coverage, inProgram).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address) && !overlaps.some((region) => address >= region.start && address <= region.end));
-  // The data ranges that the decompiler used: not the ranges that hold a seed, and only the part in the program.
-  const explained = explainGaps(gaps, result.instructions, report.refused, report.dataRanges);
-  const runOnWritten = writtenNotExecutedOf("decompiler", space, coverage);
-  let instructions: Record<string, unknown> | undefined;
-  if (instructionsPath !== undefined) {
-    const list = instructionList(result.instructions, coverage);
-    instructions = { count: list.length, ...writeReported(instructionsPath, `${JSON.stringify(list, null, 1)}\n`, { what: "--out-instructions" }) };
-  }
-  const body = {
-    analyzer: "decompiler",
-    ...(result.toolVersion === undefined ? {} : { analyzerVersion: result.toolVersion }),
-    ...(space === DEFAULT_SPACE ? {} : { space }),
-    ...imported,
-    seeds: seedsResult({ entryPoints: seeds.entryPoints.length, codeStarts: codeStarts.length, dataRanges: seeds.dataRanges.length }, overLimit, report, max),
-    ...coverageResult(),
-    ...(coverage === undefined ? {} : { coverageGaps: listed(explained, max, showGap, "a larger --max-listed") }),
-    ...(runOnWritten.length === 0 ? {} : { writtenNotExecuted: listed(runOnWritten, max, showWritten) }),
-    ...found,
-    ...(instructions === undefined ? {} : { instructions }),
-    coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
-    functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), ALL_NAMES),
-    decompilations: result.decompilations.map((item) => ({ entry: formatC64Address(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
-    ...((result.notDecompiled ?? []).length === 0
-      ? {}
-      : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: item.reason })) }),
-  };
-  return withHint(body, imported.conflicts.length + found.idioms.conflicts.length, body.coverageConflicts?.length ?? 0, { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision }, { now: result.toolVersion, last: lastVersion, revision: imported.revision }, imported.changes.references.retired, { refused: toCorrect(report.refused, entries), writtenNotExecuted: runOnWritten.length });
+  const idiomsImported = importIdioms();
+  return withRead((db) => {
+    const found = idiomsResult(db, idiomsImported);
+    // A start inside a dual-use region is a known overlap, for example the second instruction of a BIT skip: one list cannot hold both.
+    // Read after the idioms, which write those regions.
+    const overlaps = coverage === undefined ? [] : listRegions(db, undefined, "dual-use", undefined, space);
+    const gaps = coverage === undefined ? [] : executedStarts(coverage, inProgram).filter((address) => address >= loaded.start && address <= loaded.end && !decoded.has(address) && !inRanges(overlaps, address));
+    // The data ranges that the decompiler used: not the ranges that hold a seed, and only the part in the program.
+    const explained = explainGaps(gaps, result.instructions, report.refused, report.dataRanges);
+    let instructions: Record<string, unknown> | undefined;
+    if (instructionsPath !== undefined) {
+      const list = instructionList(result.instructions, coverage);
+      instructions = { count: list.length, ...writeReported(instructionsPath, `${JSON.stringify(list, null, 1)}\n`, { what: "--out-instructions" }) };
+    }
+    return resultOf(db, {
+      toolVersion: result.toolVersion,
+      imported,
+      report,
+      seeds: seedsResult({ entryPoints: seeds.entryPoints.length, codeStarts: codeStarts.length, dataRanges: seeds.dataRanges.length }, overLimit, report, max),
+      found,
+      gaps: coverage === undefined ? {} : { coverageGaps: listed(explained, max, showGap, "a larger --max-listed") },
+      tail: {
+        ...(instructions === undefined ? {} : { instructions }),
+        coverage: result.coverage.map(formatC64RangeFields),
+        functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), ALL_NAMES),
+        decompilations: result.decompilations.map((item) => ({ entry: formatC64Address(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
+        ...((result.notDecompiled ?? []).length === 0
+          ? {}
+          : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: item.reason })) }),
+      },
+    });
+  });
 }
 
 /** A coverage gap with $ addresses. */
 function showGap(gap: GapReason) {
-  return { address: formatC64Address(gap.address), reason: gap.reason, ...(gap.at === undefined ? {} : { at: formatC64Address(gap.at) }), ...(gap.range === undefined ? {} : { range: { start: formatC64Address(gap.range.start), end: formatC64Address(gap.range.end) } }) };
+  return { address: formatC64Address(gap.address), reason: gap.reason, ...(gap.at === undefined ? {} : { at: formatC64Address(gap.at) }), ...(gap.range === undefined ? {} : { range: formatC64RangeFields(gap.range) }) };
 }
 
 /** A range of writtenNotExecuted with $ addresses. */
 function showWritten(range: { start: number; end: number; from: number[] }) {
-  return { start: formatC64Address(range.start), end: formatC64Address(range.end), from: range.from.map(formatC64Address) };
+  return { ...formatC64RangeFields(range), from: range.from.map(formatC64Address) };
 }
 
 await runScript({

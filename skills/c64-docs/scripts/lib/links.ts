@@ -71,7 +71,7 @@ const relative = (page: string, target: string) => {
   return fragment === undefined ? shown : `${shown}#${fragment}`;
 };
 /** The project path of a link target, without its fragment; undefined for a link out of the project (a URL, or a page anchor only). */
-export function targetPath(page: string, target: string): string | undefined {
+function targetPath(page: string, target: string): string | undefined {
   if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith("#")) return undefined;
   const raw = target.split("#")[0]!;
   let path = raw;

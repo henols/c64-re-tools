@@ -14,8 +14,8 @@ import { isRefusal, Refusal } from "#src/errors.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { ACTION_STEP_KINDS, aStep, checkActionStep, checkLocation, checkStepNames, isInteger, isObject, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { readPrg } from "#src/host-client/image.ts";
-import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, WireFailure, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
-import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
+import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
+import { readProjectFile, readProjectJson, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { checkSnapshotFile } from "#src/media.ts";
 import { checkOutputPath, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, resolveProjectPath } from "#src/project.ts";
@@ -115,13 +115,7 @@ function checkFileNames(steps: RunStep[], fail: (message: string) => never): voi
 }
 
 function readRun(path: string): Run {
-  let value: unknown;
-  try {
-    value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
-  } catch (error) {
-    if (error instanceof WireFailure) throw error;
-    throw new Refusal("invalid-input", `the run ${path} is not JSON: ${(error as Error).message}`);
-  }
+  const value = readProjectJson(path, (message) => `the run ${path} is not JSON: ${message}`);
   const fail = (message: string): never => {
     throw new Refusal("invalid-input", `run ${path}: ${message}`);
   };
@@ -469,7 +463,7 @@ export interface KeptPath {
  */
 export function keepRun(path: string, out: string, target: string): { out: string; files: Written[]; paths: KeptPath[] } {
   const run = readRun(path);
-  const raw = JSON.parse(readProjectFile(path).bytes.toString("utf8")) as { start: Record<string, unknown>; symbols?: unknown; steps: Array<Record<string, unknown>> };
+  const raw = readProjectJson(path) as { start: Record<string, unknown>; symbols?: unknown; steps: Array<Record<string, unknown>> };
   const kept = projectRelative(target);
   if (kept === PROJECT_DIRECTORY || kept.startsWith(`${PROJECT_DIRECTORY}/`)) {
     throw new Refusal("invalid-input", `${target} is in ${PROJECT_DIRECTORY}/, and git does not keep a run there. Give a new folder outside it, for example runs/${run.name.replace(/[^A-Za-z0-9._-]+/g, "_")}.`);
@@ -480,11 +474,10 @@ export function keepRun(path: string, out: string, target: string): { out: strin
     const file = `${out}/results.json`;
     let value: unknown;
     try {
-      value = JSON.parse(readProjectFile(file).bytes.toString("utf8"));
+      value = readProjectJson(file);
     } catch (error) {
       if (isRefusal(error) && error.code === "not-found") throw new Refusal("not-found", `${out} has no results.json. Give the --out folder of a run of ${path}.`);
-      if (isRefusal(error)) throw error;
-      throw new Refusal("invalid-input", `${file} is not JSON: ${(error as Error).message}`);
+      throw error;
     }
     if (!isObject(value) || value.name !== run.name || !Array.isArray(value.files) || !value.files.every((name) => typeof name === "string" && RESULT_FILE.test(name))) {
       throw new Refusal("invalid-input", `${file} is not the result of the run ${run.name}. Give the --out folder of a run of ${path}.`);

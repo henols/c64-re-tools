@@ -513,9 +513,11 @@ export function referencesFrom(db: DatabaseSync | undefined, address: number, sp
 export function referencesTo(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): ReferenceRow[] {
   if (db === undefined) return [];
   return db
-    .prepare(`SELECT ${REFERENCE_COLUMNS} FROM current_references WHERE space = ? AND to_address = ? ORDER BY from_address, kind`)
+    .prepare(`SELECT ${REFERENCE_COLUMNS} FROM current_references WHERE space = ? AND to_address = ?`)
     .all(space, address)
-    .map((row) => toReference(row as Raw));
+    .map((row) => toReference(row as Raw))
+    // Sorted here: with ORDER BY from_address, SQLite reads the whole space by the from_address index instead of the few rows of the to_address index.
+    .sort((a, b) => a.from - b.from || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 }
 
 /** Current suppressions of one entity that share at least one address with [start, end], in address order. */
@@ -607,6 +609,11 @@ export function listReleases(db: DatabaseSync | undefined, origins?: OriginFilte
     .all(space)
     .map((row) => toRelease(row as Raw))
     .filter(kept(origins));
+}
+
+/** The label of the base release of a space, whose bytes are the program of the knowledge; undefined without one. */
+export function baseLabel(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): string | undefined {
+  return listReleases(db, undefined, space).find((release) => release.base)?.label;
 }
 
 /** The current start screen of a space, if the knowledge has one. */

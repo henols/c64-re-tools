@@ -8,7 +8,7 @@
 // to the stage, is the stage's own code too: a packer hands off by JMP,
 // RTS or RTI and never runs its own code again.
 
-import { type AddressRange, COVERAGE } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, inRanges, subtract } from "#src/c64.ts";
 import { writtenBlocks } from "#src/host-client/coverage.ts";
 
 const contains = (range: AddressRange, address: number) => address >= range.start && address <= range.end;
@@ -58,11 +58,6 @@ export function stagePoints(blocks: readonly AddressRange[], own: ReadonlySet<nu
     }
   }
   return { exec, watch };
-}
-
-/** True when the address lies in one of the ranges. */
-export function inRanges(ranges: readonly AddressRange[], address: number): boolean {
-  return ranges.some((range) => contains(range, address));
 }
 
 /**
@@ -149,12 +144,5 @@ export function captureSegments(
 
 /** The segments without the bytes of `holes`: a segment that a hole cuts gives its parts, each with the fields of the segment. */
 export function withoutRanges<T extends AddressRange>(segments: readonly T[], holes: readonly AddressRange[]): T[] {
-  let pieces = [...segments];
-  for (const hole of holes) {
-    pieces = pieces.flatMap((piece) => {
-      if (hole.end < piece.start || hole.start > piece.end) return [piece];
-      return [...(hole.start > piece.start ? [{ ...piece, end: hole.start - 1 }] : []), ...(hole.end < piece.end ? [{ ...piece, start: hole.end + 1 }] : [])];
-    });
-  }
-  return pieces;
+  return segments.flatMap((segment) => subtract(segment, holes).map((piece) => ({ ...segment, ...piece })));
 }
