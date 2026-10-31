@@ -121,6 +121,8 @@ export interface ScriptOptions {
   env?: NodeJS.ProcessEnv;
   /** The text on stdin. */
   input?: string;
+  /** Kills a script that runs longer, so a hung tool fails its test. */
+  timeoutMs?: number;
 }
 
 /** One run of a skill script, read with readEnvelope. */
@@ -147,6 +149,7 @@ export function runScriptSync(script: string, args: readonly string[], options: 
     encoding: "utf8",
     env: scriptEnv(options),
     ...(options.input === undefined ? {} : { input: options.input }),
+    ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
   });
   return scriptRun(run.status, run.stdout, run.stderr);
 }
@@ -157,6 +160,7 @@ export async function runScript(script: string, args: readonly string[], options
     cwd: options.cwd,
     env: scriptEnv(options),
     stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+    ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
   });
   child.stdin?.end(options.input);
   let stdout = "";

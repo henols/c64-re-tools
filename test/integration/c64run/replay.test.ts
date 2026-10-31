@@ -42,7 +42,7 @@ function symbols(base: number) {
 
 /** Runs a command of the c64-testing script; `result` is its body or its refusal. */
 function script(name: string, args: string[], cwd = project): { status: number | null; result: Record<string, unknown> } {
-  const { status, json } = runScriptSync(skillScript("c64-testing", "testing.ts"), [name, ...args], { cwd });
+  const { status, json } = runScriptSync(skillScript("c64-testing", "testing.ts"), [name, ...args], { cwd, timeoutMs: 120_000 });
   return { status, result: json };
 }
 
