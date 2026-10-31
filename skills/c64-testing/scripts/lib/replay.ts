@@ -5,7 +5,9 @@
 // comparison, else the record file gave it.
 
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 
+import { symbolsPath } from "#src/build-name.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
@@ -15,6 +17,7 @@ import { LOADER_JUMP } from "#src/knowledge/start-screen.ts";
 import { C64RunSession } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
+import { resolveProjectPath } from "#src/project.ts";
 import { UsageError } from "#src/script.ts";
 import { firstDifference, loaderEntry, mover, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./recording.ts";
 import { namesOf } from "./scenario.ts";
@@ -31,6 +34,16 @@ export interface ReplayOptions {
   out?: string;
   /** A PNG file for the screen of the reference at the end of the session. */
   screen?: string;
+}
+
+/**
+ * The names of the rebuild: the given symbol file, else the symbol file of its build when the build wrote one,
+ * else the names of the reference. The labels of a loader and of a start screen are only in the build's own file.
+ */
+export function rebuildNames(rebuild: string, symbols: string | undefined, reference: string): string {
+  if (symbols !== undefined) return symbols;
+  const own = symbolsPath(rebuild);
+  return existsSync(resolveProjectPath(own)) ? own : reference;
 }
 
 /** Replays the recording on the reference, and with `rebuild` on the rebuild: PASS, FAIL or INCONCLUSIVE. */
@@ -76,7 +89,8 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     const referenceSymbols = recording.symbols === "none" ? "knowledge" : recording.symbols;
     const reference: ReplaySubject = { side: "reference", program: recording.program, symbols: referenceSymbols };
     const side = (subject: ReplaySubject, options: Parameters<typeof replaySide>[5]) => replaySide(core, recording, folder, subject, workspace, options);
-    const rebuildSymbols = values.symbols ?? referenceSymbols;
+    const rebuildSymbols = values.rebuild === undefined ? referenceSymbols : rebuildNames(values.rebuild, values.symbols, referenceSymbols);
+    const named = { symbols: rebuildSymbols };
     // A rebuild with a generated loader starts the program where its loader jumps to. The reference comes to that entry by the same name.
     // The checkpoints of both sides count from that entry, and at the entry the rebuild gets the raster position, the CIA timers and
     // the interrupt state of the reference, which the loader cannot set as the reference has them. A runUntil to an address counts
@@ -85,7 +99,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     let loader: { entry: number; reference: number } | undefined;
     if (values.rebuild !== undefined && !recording.load && namesOf(rebuildSymbols).has(LOADER_JUMP)) {
       const entry = await loaderEntry(core, recording, { side: "rebuild", program: values.rebuild, symbols: rebuildSymbols });
-      if (typeof entry === "string") return result("FAIL", "rebuild", { reason: entry });
+      if (typeof entry === "string") return result("FAIL", "rebuild", { ...named, reason: entry });
       loader = { entry, reference: mover(namesOf(rebuildSymbols, "code"), namesOf(referenceSymbols, "code"))(entry) };
     }
     // The self-check: the reference ends the session with the recorded state, to the cycle.
@@ -130,7 +144,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     const replayed = await side(rebuild, { compare: compare!, stop: expected.length, pins, ...(handover === undefined ? {} : { handover }) });
     const difference = firstDifference(expected, replayed.samples, compare!.state);
     // A read that the recording has no value for gets the idle value: it is in the result, never silent.
-    const base = { checkpoints: expected.length, movedSites, ...(replayed.startScreenSkipped === true ? { startScreen: "skipped" } : {}), ...(replayed.unknown > 0 ? { idleReads: replayed.unknown } : {}) };
+    const base = { checkpoints: expected.length, ...named, movedSites, ...(replayed.startScreenSkipped === true ? { startScreen: "skipped" } : {}), ...(replayed.unknown > 0 ? { idleReads: replayed.unknown } : {}) };
     if (difference === undefined && replayed.samples.length >= expected.length) return result("PASS", "rebuild", { ...base, compared: expected.length });
     const reason =
       difference !== undefined

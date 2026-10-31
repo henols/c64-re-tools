@@ -5,6 +5,7 @@
 // show tells what a recording holds; diff shows what changed between two
 // states; checklist gives the Markdown list for a human tester.
 
+import { symbolsPath } from "#src/build-name.ts";
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
@@ -217,7 +218,7 @@ const COMMANDS: CommandSpec[] = [
       state: { kind: "text", value: "<item>", multiple: true, help: `the state to compare at each checkpoint: ${STATE_ITEM}` },
       pin: { kind: "text", value: "<item>", multiple: true, help: `random state in RAM, in the form of --state: at each checkpoint the rebuild gets the reference's values there` },
       rebuild: { kind: "path", value: "<prg>", help: "the rebuild to compare with the reference" },
-      symbols: { ...OPTIONS.symbols, help: "the names of the rebuild: the symbol file of its build (default: the symbols of the recording)" },
+      symbols: { ...OPTIONS.symbols, help: "the names of the rebuild (default: the symbol file of its build, else the names of the recording)" },
       out: { ...OPTIONS.out, output: "folder", value: "<dir>", help: "with a FAIL, write the RAM of both sides at the first different checkpoint into this folder" },
       screen: { ...OPTIONS.out, output: "file", value: "<png>", help: "write the screen of the reference at the end of the session into this PNG file" },
     },
@@ -231,7 +232,12 @@ const COMMANDS: CommandSpec[] = [
       if (reference !== undefined && rebuilt !== undefined) {
         return reply(result, { hint: "files holds the RAM of each side at the first different checkpoint. Run nextAction to compare them. Then examine the first different state item in the emulator.", nextAction: call.next("diff", reference.out, rebuilt.out) });
       }
-      if (result.firstDifference === undefined) return reply(result, { hint: "reason tells how many checkpoints the rebuild came to. Examine the rebuild in the emulator after its last checkpoint." });
+      if (result.firstDifference === undefined) {
+        // Without --symbols and without a symbol file of its build, the rebuild has the names of the recording: no loader or start-screen labels.
+        const own = rebuild === undefined ? undefined : symbolsPath(rebuild);
+        const unnamed = symbols === undefined && own !== undefined && result.symbols !== own;
+        return reply(result, { hint: unnamed ? `The rebuild has the names of the recording, as ${own} does not exist. Give --symbols with the symbol file of the rebuild.` : "reason tells how many checkpoints the rebuild came to. Examine the rebuild in the emulator after its last checkpoint." });
+      }
       return reply(result, { hint: `A difference in a random value with the same input often shows a missing --pin.${out === undefined ? " Give --out to get the RAM of each side at the first different checkpoint." : ""}` });
     },
   },

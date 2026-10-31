@@ -891,6 +891,8 @@ export interface ReplayResult {
   compared: number;
   reason?: string;
   firstDifference?: CheckpointDifference;
+  /** The names of the rebuild: a symbol file, or knowledge. */
+  symbols?: string;
   movedSites?: number;
   /** Input reads of the rebuild that the recording had no value for: they got the idle value. */
   idleReads?: number;

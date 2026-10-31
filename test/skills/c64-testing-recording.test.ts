@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
-import { replay } from "../../skills/c64-testing/scripts/lib/replay.ts";
+import { rebuildNames, replay } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
@@ -265,6 +265,14 @@ test("replay gives INCONCLUSIVE before the replay core starts when the program c
   const result = await replay({ folder: "tests/recordings/walk", state: [], pin: [] });
   assert.equal(result.result, "INCONCLUSIVE");
   assert.match(result.reason ?? "", /is not the program of the recording/);
+});
+
+test("the rebuild of a replay has the symbol file of its build, else the names of the recording, and --symbols before both", () => {
+  mkdirSync(join(project, "build/symbols"), { recursive: true });
+  writeFileSync(join(project, "build/symbols/clean_loader.json"), "{}");
+  assert.equal(rebuildNames("build/clean_loader.prg", undefined, "knowledge"), "build/symbols/clean_loader.json");
+  assert.equal(rebuildNames("build/clean.prg", undefined, "knowledge"), "knowledge");
+  assert.equal(rebuildNames("build/clean_loader.prg", "names.json", "knowledge"), "names.json");
 });
 
 test("a record file names itself and the step of a key that the replay core does not have, and refuses the 2.0 forms", () => {

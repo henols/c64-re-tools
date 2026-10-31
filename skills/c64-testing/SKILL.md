@@ -33,7 +33,7 @@ To get the command list, run the script with no arguments.
 | Find the input sites and the coverage of a recording | `show tests/recordings/rooms` |
 | Make sure that a recording replays on the reference | `replay tests/recordings/rooms` |
 | Keep the screen at the end of a recorded session | `replay tests/recordings/final --screen .c64-re-tools/local/results/final.png` |
-| Compare the rebuild with a recording | `replay tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/clean.prg --symbols build/symbols/clean.json --out .c64-re-tools/local/results/rooms` |
+| Compare the rebuild with a recording | `replay tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/clean.prg --out .c64-re-tools/local/results/rooms` |
 | Find what changed between two snapshot files | `diff .c64-re-tools/local/runs/rooms/before.vsf .c64-re-tools/local/runs/rooms/after.vsf` |
 | Find what changed between two observations of runs | `diff .c64-re-tools/local/runs/rooms/results.json:room0 .c64-re-tools/local/runs/rooms/results.json:room3` |
 | Find what changed between two memory files of runs | `diff .c64-re-tools/local/runs/a/all.bin .c64-re-tools/local/runs/b/all.bin --gap 4` |
@@ -90,7 +90,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--state <item>` | `replay` | A memory item to compare at each checkpoint. Give it again for each item. |
 | `--pin <item>` | `replay` | Random state in RAM. At each checkpoint, the rebuild gets the values of the reference there. Give it again for each item. |
 | `--rebuild <prg>` | `replay` | The rebuild to compare with the reference. Without it, the script replays only on the reference. |
-| `--symbols <file>` | `replay` | The symbol file of the rebuild. The default is the symbols of the recording. |
+| `--symbols <file>` | `replay` | The symbol file of the rebuild. The default is the symbol file of its build. When its build has no symbol file, the default is the names of the recording. |
 | `--out <dir>` | `replay` | With a FAIL, write the RAM of each side at the first different checkpoint into this folder. |
 | `--screen <png>` | `replay` | Write the screen of the reference at the end of the session into this PNG file. |
 | `--gap <n>` | `diff` | Join changed ranges across at most n equal bytes. The default is 0. |
@@ -201,7 +201,7 @@ A recording keeps a session of the reference program, for example a play through
 - Ask the user to play first. Tell the user which parts of the program the recordings must have, for example each room, a fight and a lost life.
 - Record a session from steps only for a part that the sessions of the user do not have, or when the user cannot play.
 - Replay each recording on the default build. Do not replay a release build or a build with a switch that is not at its default.
-- When the generated source has a loader, the default build is `build/clean_loader.prg`. Give `--symbols build/symbols/clean_loader.json` with it. Else the default build is `build/clean.prg`, with `--symbols build/symbols/clean.json`.
+- When the generated source has a loader, the default build is `build/clean_loader.prg`. Else the default build is `build/clean.prg`.
 - Commit the recording folder with the scenarios. Do not put a recording into the project knowledge. Do not put test results, screenshots or playtest results into it.
 - A finding that a recording shows can go into the project knowledge. Give `evidence` of `show` as its test evidence.
 - The C64 of a recording has no disk drive. For a program that loads more files from a disk, use a scenario with `test`.
@@ -277,6 +277,7 @@ A `$` address is an address of the reference. On the rebuild, it moves with the 
 - `checkpoints` and `compared`: the checkpoints of the reference, and the checkpoints of the rebuild that were the same.
 - `firstDifference`: with a FAIL, the checkpoint (1 is the first), the cycle on each side, and each state item that is different. An item has `address`, and the `reference` and `rebuild` values as hex.
 - `reason`: why the result is FAIL or INCONCLUSIVE.
+- `symbols`: the names of the rebuild, a symbol file or `knowledge`.
 - `movedSites`: the number of input sites at a different address in the rebuild.
 - `startScreen`: `skipped` when the rebuild started after its start screen.
 - `idleReads`: the number of input reads of the rebuild that the recording had no value for.
@@ -288,7 +289,7 @@ Do this for each result:
 - `PASS`: each checkpoint of the rebuild has the state of the reference. Without `--rebuild`, the recording replays on the reference.
 - `FAIL` with `--out`: `files` has the RAM of each side at the first different checkpoint. `nextAction` compares the two files with `diff`. Then examine the first different state item in the emulator.
 - `FAIL` without `--out`: `hint` tells you to give `--out`. A FAIL where an enemy or an event is different, but the input is the same, often shows that a `--pin` is missing.
-- `FAIL` with no `firstDifference`: the rebuild did not get to all checkpoints. `reason` gives the number. Examine the rebuild in the emulator after its last checkpoint.
+- `FAIL` with no `firstDifference`: the rebuild did not get to all checkpoints. `reason` gives the number. When the rebuild has the names of the recording, `hint` tells you to give `--symbols`. Else examine the rebuild in the emulator after its last checkpoint.
 - `INCONCLUSIVE`: `reason` gives the cause:
   - "does not reproduce": the reference does not end the session with the recorded state. Record the session again.
   - "never came to the checkpoint": the reference did not execute the checkpoint routine in the session. Give another routine.
