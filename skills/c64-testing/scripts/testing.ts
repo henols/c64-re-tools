@@ -23,7 +23,7 @@ import { OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, typ
 import { diffFiles } from "./lib/diff-files.ts";
 import { CANCELLED, play } from "./lib/play.ts";
 import { readRecordFile, record, RECORDING_FILES, showRecording } from "./lib/recording.ts";
-import { replay } from "./lib/replay.ts";
+import { replay, replayAll } from "./lib/replay.ts";
 import { keepRun, runFile } from "./lib/runs.ts";
 import { namesOf, readScenario, runScenario, scenarioNames, type Scenario, type ScenarioResult } from "./lib/scenario.ts";
 
@@ -211,8 +211,8 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "replay",
-    summary: "Replays a recording on the reference, which must end with the recorded state, and with --rebuild on the rebuild, which must have the state of the reference at each checkpoint. result is PASS, FAIL or INCONCLUSIVE.",
-    subjects: [{ name: "<recording>", help: "a folder that record wrote, relative to the project folder" }],
+    summary: "Replays a recording on the reference, which must end with the recorded state, and with --rebuild on the rebuild, which must have the state of the reference at each checkpoint. result is PASS, FAIL or INCONCLUSIVE. More than one recording replay one after the other.",
+    subjects: [{ name: "<recording>", help: "a folder that record wrote, relative to the project folder. Give more than one to replay each of them in turn", list: true }],
     options: {
       checkpoint: { kind: "text", value: "<routine>", help: "the name or $ address of a routine: each entry is a checkpoint. Without it, the comparison of the record file" },
       state: { kind: "text", value: "<item>", multiple: true, help: `the state to compare at each checkpoint: ${STATE_ITEM}` },
@@ -225,7 +225,25 @@ const COMMANDS: CommandSpec[] = [
     notes: "A recording without names takes the names of the knowledge for the reference. A $ address is an address of the reference: on the rebuild it moves with the name before it.",
     run: async (call) => {
       const [checkpoint, rebuild, symbols, out, screen] = [call.string("checkpoint"), call.string("rebuild"), call.string("symbols"), call.string("out"), call.string("screen")];
-      const result = await replay({ folder: call.subject(0), state: call.strings("state"), pin: call.strings("pin"), ...(checkpoint === undefined ? {} : { checkpoint }), ...(rebuild === undefined ? {} : { rebuild }), ...(symbols === undefined ? {} : { symbols }), ...(out === undefined ? {} : { out }), ...(screen === undefined ? {} : { screen }) });
+      const values = { state: call.strings("state"), pin: call.strings("pin"), ...(checkpoint === undefined ? {} : { checkpoint }), ...(rebuild === undefined ? {} : { rebuild }), ...(symbols === undefined ? {} : { symbols }), ...(out === undefined ? {} : { out }) };
+      const folders = call.rest(0);
+      if (folders.length > 1) {
+        if (screen !== undefined) throw new UsageError("--screen needs one recording. Give one recording, or leave out --screen.");
+        const all = await replayAll(folders, values);
+        const first = all.recordings.find((item) => item.result !== "PASS");
+        if (first === undefined) return all;
+        // The same comparison, alone: its own result gives the hint and the nextAction of that recording.
+        const flags = [
+          ...(checkpoint === undefined ? [] : ["--checkpoint", checkpoint]),
+          ...values.state.flatMap((item) => ["--state", item]),
+          ...values.pin.flatMap((item) => ["--pin", item]),
+          ...(rebuild === undefined ? [] : ["--rebuild", rebuild]),
+          ...(symbols === undefined ? [] : ["--symbols", symbols]),
+          ...(out === undefined ? [] : ["--out", `${out}/${first.recording.replace(/\/+$/, "").split("/").at(-1)!}`]),
+        ];
+        return reply(all, { hint: "Each item of recordings has the result of one recording. Run nextAction: it replays the first recording that did not pass alone, and its result gives the hint for it.", nextAction: call.next("replay", first.recording, ...flags) });
+      }
+      const result = await replay({ ...values, folder: call.subject(0), ...(screen === undefined ? {} : { screen }) });
       if (result.result === "INCONCLUSIVE") return reply(result, { hint: INCONCLUSIVE_HINT });
       if (result.result !== "FAIL") return result;
       const [reference, rebuilt] = result.files ?? [];
