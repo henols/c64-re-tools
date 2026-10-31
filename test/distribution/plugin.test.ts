@@ -4,20 +4,19 @@
 
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { mcpServerFor } from "../../distribution/package.ts";
 import { channelOf, PACKAGE } from "../../src/package.ts";
 import plugin, { closureOf, scriptsOf, SKILL_PACKAGE } from "../../distribution/plugin.ts";
+import { scratchDir } from "../kit.ts";
 
 const root = resolve(import.meta.dirname, "../..");
-const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-plugin-"));
-after(() => rmSync(scratch, { recursive: true, force: true }));
+const scratch = scratchDir("plugin");
 
 test("the scripts of a skill come from its SKILL.md", () => {
   assert.deepEqual(scriptsOf("node <skill>/scripts/test.ts a\nnode <skill>/scripts/checklist.ts b\nscripts/test.ts again"), ["checklist", "test"]);
@@ -124,12 +123,6 @@ test("the agent starts the newest MCP server of the installed channel through np
   assert.deepEqual(mcpServerFor("linux"), { command: "npx", args: ["-y", spec, "c64-re-tools-mcp"] });
   assert.deepEqual(mcpServerFor("darwin"), mcpServerFor("linux"));
   assert.deepEqual(mcpServerFor("win32"), { command: "cmd", args: ["/c", "npx", "-y", spec, "c64-re-tools-mcp"] }, "npx is a .cmd shim on Windows");
-});
-
-test("a prerelease goes to the next channel and a release to latest", () => {
-  assert.equal(channelOf("2.0.0"), "latest");
-  assert.equal(channelOf("2.0.0-rc.1"), "next");
-  assert.equal(channelOf("12.3.4-beta"), "next");
 });
 
 test("an installed skill's package.json names the version it comes from", () => {

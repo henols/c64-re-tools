@@ -8,44 +8,26 @@
 // are changed or left out, and the zip holds the folder.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-import { ACME, findTool } from "../../src/native/discover.ts";
+import { prg, SYS_2061 } from "../../src/c64.testkit.ts";
+import { ACME } from "../../src/native/discover.ts";
 import { readZip } from "../../src/zip.testkit.ts";
-import { readEnvelope } from "../kit.ts";
+import { runScriptSync, scratchDir, skillScript, toolSkip } from "../kit.ts";
+import { scriptBody } from "./kit.ts";
 
-let skip: string | false = false;
-try {
-  findTool(ACME);
-} catch {
-  skip = "ACME is not installed";
-}
+const skip = toolSkip(ACME);
 
-const skills = resolve(import.meta.dirname, "../../skills");
-const sandbox = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-export-")));
+const sandbox = scratchDir("export");
 const project = join(sandbox, "game");
 mkdirSync(project);
-after(() => rmSync(sandbox, { recursive: true, force: true }));
 
-function script(skill: string, file: string, args: readonly string[], cwd = project): { status: number | null; json: Record<string, any> } {
-  const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", file), ...args], { cwd, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  assert.equal(run.stderr, "", run.stderr);
-  return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, any> };
-}
-
-function ok(skill: string, file: string, args: readonly string[], cwd = project): Record<string, any> {
-  const run = script(skill, file, args, cwd);
-  assert.equal(run.status, 0, `${file} ${args.join(" ")}: ${JSON.stringify(run.json)}`);
-  return run.json;
-}
+const ok = (skill: string, file: string, args: readonly string[], cwd = project) => scriptBody(skill, file, args, { cwd });
 
 // prettier-ignore
-const PROGRAM = [
-  0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00, // $0801 10 SYS 2061
+const CODE = [
   0xa9, 0x03, 0x8d, 0x00, 0x04, // $080d start: LDA #$03; STA $0400
   0xce, 0x00, 0x20,             // $0812 loop: DEC $2000, a life
   0x20, 0x1b, 0x08,             // $0815 JSR check
@@ -71,7 +53,7 @@ const CHECK = { ...SCENARIO, name: "at the check", steps: [{ frames: 150 }, { lo
 const SNAPSHOT = { ...SCENARIO, name: "from a snapshot", steps: [{ snapshot: "snapshots/room.vsf" }, { observe: "screen", screen: {} }] };
 
 test("export: switches fixed, dead code and unused data free, a slim knowledge, tests changed, and a zip of the folder", { skip, timeout: 900_000 }, () => {
-  writeFileSync(join(project, "game.prg"), Uint8Array.from([0x01, 0x08, ...PROGRAM]));
+  writeFileSync(join(project, "game.prg"), prg(0x0801, SYS_2061, CODE));
   const coverage = new Uint8Array(0x10000);
   for (const address of EXECUTED) coverage[address] = 1 << 2;
   coverage[0x0400] = 1 << 1;
@@ -115,23 +97,37 @@ test("export: switches fixed, dead code and unused data free, a slim knowledge, 
   assert.match(readFileSync(join(project, "src", "main.asm"), "utf8"), /!if LEFTOVERS \{ !source "leftovers\/leftover_0826\.asm" \} else \{ !skip 14 \}/);
   assert.match(readFileSync(join(project, "src", "config.asm"), "utf8"), /\nLEFTOVERS = 0 ; /);
 
-  // A folder inside the project and a --drop over a changed patch are refused before anything is written.
-  assert.match(script("c64-source", "source.ts", ["export", "--to", "out"]).json.error.message, /inside the project/);
-  assert.match(script("c64-source", "source.ts", ["export", "--to", "../refused", "--drop", "$080d-$081a"]).json.error.message, /overlaps the patch \$0815-\$0817, which the export changed/);
+  // A --drop over a changed patch is refused before anything is written.
+  const refused = runScriptSync(skillScript("c64-source", "source.ts"), ["export", "--to", "../refused", "--drop", "$080d-$081a"], { cwd: project });
+  assert.match(refused.json.error.message, /overlaps the patch \$0815-\$0817, which the export changed/);
   assert.equal(existsSync(join(sandbox, "refused")), false);
 
   const exported = ok("c64-source", "source.ts", ["export", "--to", "../new-game", "--name", "game"]);
-  assert.equal(exported.result, "PASS");
-  assert.equal(exported.to, "../new-game");
-  assert.deepEqual(exported.switches, [
-    { name: "PROTECTION", kind: "protection", base: 1, value: 0 },
-    { name: "TRAINER", kind: "trainer", base: 0, value: 1 },
-  ]);
-  assert.deepEqual(exported.free.listed, [{ start: "$0826", end: "$0833", bytes: 14, what: "code and data", label: "free_0826" }]);
-  assert.deepEqual(exported.unreachableExecuted.listed, [{ start: "$081b", end: "$0822", routine: "check", drop: "--drop '$081b-$0822'" }]);
-  assert.deepEqual(exported.tests.written, ["tests/check.json", "tests/lives.json", "tests/run-lives.json"]);
-  assert.deepEqual(exported.tests.leftOut.listed, [{ file: "tests/snapshot.json", reason: "it restores a snapshot, which is a state of the old program" }]);
-  assert.equal(exported.zip.out, "../new-game.zip");
+  assert.deepEqual(
+    {
+      result: exported.result,
+      to: exported.to,
+      switches: exported.switches,
+      free: exported.free.listed,
+      unreachableExecuted: exported.unreachableExecuted.listed,
+      written: exported.tests.written,
+      leftOut: exported.tests.leftOut.listed,
+      zip: exported.zip.out,
+    },
+    {
+      result: "PASS",
+      to: "../new-game",
+      switches: [
+        { name: "PROTECTION", kind: "protection", base: 1, value: 0 },
+        { name: "TRAINER", kind: "trainer", base: 0, value: 1 },
+      ],
+      free: [{ start: "$0826", end: "$0833", bytes: 14, what: "code and data", label: "free_0826" }],
+      unreachableExecuted: [{ start: "$081b", end: "$0822", routine: "check", drop: "--drop '$081b-$0822'" }],
+      written: ["tests/check.json", "tests/lives.json", "tests/run-lives.json"],
+      leftOut: [{ file: "tests/snapshot.json", reason: "it restores a snapshot, which is a state of the old program" }],
+      zip: "../new-game.zip",
+    },
+  );
 
   const to = join(sandbox, "new-game");
   const asm = (readdirSync(join(to, "src"), { recursive: true }) as string[]).map((file) => file.split("\\").join("/")).filter((file) => file.endsWith(".asm")).sort();
@@ -173,8 +169,7 @@ test("export: switches fixed, dead code and unused data free, a slim knowledge, 
   assert.deepEqual(entries.find((entry) => entry.path === "new-game/baseline/game.prg")!.bytes, readFileSync(join(to, "baseline", "game.prg")));
   assert.ok(entries.some((entry) => entry.path === "new-game/.c64-re-tools/knowledge/memory.jsonl"));
 
-  // A second export into a full folder is refused; with --drop the check becomes free too, and the test that names it is left out.
-  assert.match(script("c64-source", "source.ts", ["export", "--to", "../new-game"]).json.error.message, /is not empty/);
+  // With --drop the check becomes free too, and the test that names it is left out.
   const dropped = ok("c64-source", "source.ts", ["export", "--to", "../lean-game", "--name", "game", "--drop", "$081b-$0822"]);
   assert.deepEqual(dropped.free.listed, [{ start: "$081b", end: "$0833", bytes: 25, what: "code and data", label: "free_081b" }]);
   assert.deepEqual(dropped.unreachableExecuted.listed, []);

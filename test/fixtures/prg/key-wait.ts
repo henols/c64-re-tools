@@ -5,8 +5,6 @@
 //   $0812  STA $c000                  <- the key, as PETSCII
 //   $0815  done: JMP done
 
-export const KEY_SEEN = 0xc000;
-
 export const keyWaitPrg = Uint8Array.from([
   0x01, 0x08, // load address $0801
   0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, // 10 SYS2061

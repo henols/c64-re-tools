@@ -5,27 +5,18 @@
 // Needs real VICE (C64RT_LIVE_VICE) and ACME.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { ACME, findTool } from "../../../src/native/discover.ts";
+import { prg, SYS_2061 } from "../../../src/c64.testkit.ts";
+import { ACME } from "../../../src/native/discover.ts";
 import { liveSkip, startHost, stopHosts } from "../../integration/vice/live.ts";
-import { readEnvelope } from "../../kit.ts";
+import { runScript, skillScript, toolSkip } from "../../kit.ts";
 
-let skip: string | false = liveSkip;
-if (skip === false) {
-  try {
-    findTool(ACME);
-  } catch (error) {
-    skip = `a native tool is missing: ${(error as Error).message}`;
-  }
-}
+const skip = liveSkip || toolSkip(ACME);
 
-const root = resolve(import.meta.dirname, "../../..");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-timer-"));
 after(async () => {
   try {
@@ -41,25 +32,16 @@ after(async () => {
  * to one block that the stage guard counts.
  */
 function timerPrg(): Buffer {
-  const basic = [0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00];
   const copy = [0xa2, 0x00, 0xbd, 0x1d, 0x08, 0x9d, 0x00, 0xc0, 0xe8, 0xe0, 0x80, 0xd0, 0xf5, 0x4c, 0x00, 0xc0];
   const payload = [0xad, 0x04, 0xdc, 0x8d, 0x00, 0xc1, 0xad, 0x05, 0xdc, 0x8d, 0x01, 0xc1, 0x4c, 0x0c, 0xc0];
-  return Buffer.from([0x01, 0x08, ...basic, ...copy, ...payload, ...new Array<number>(128 - payload.length).fill(0xea)]);
-}
-
-async function skill(address: string, name: string, file: string, ...args: string[]): Promise<{ status: number | null; stdout: string; json: Record<string, any> }> {
-  const child = spawn(process.execPath, [...process.execArgv, join(root, "skills", name, "scripts", file), ...args], { cwd: project, env: { ...process.env, C64RT_HOST: address }, stdio: ["ignore", "pipe", "inherit"] });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  return { status, stdout, json: readEnvelope(stdout, status).json as Record<string, any> };
+  return prg(0x0801, SYS_2061, copy, payload, new Array<number>(128 - payload.length).fill(0xea));
 }
 
 test("a rebuild whose loader sets the CIA timers reads the timer value of the reference at the entry", { skip, timeout: 900_000 }, async () => {
   mkdirSync(join(project, "releases"));
   writeFileSync(join(project, "releases", "timer.prg"), timerPrg());
   const { address } = await startHost();
-  const run = (name: string, file: string, ...args: string[]) => skill(address, name, file, ...args);
+  const run = (name: string, file: string, ...args: string[]) => runScript(skillScript(name, file), args, { cwd: project, host: address });
 
   const captured = await run("c64-unpacker", "unpacker.ts", "capture", "releases/timer.prg", "--until", "$c000", "--out", "unpacked");
   assert.equal(captured.status, 0, captured.stdout);

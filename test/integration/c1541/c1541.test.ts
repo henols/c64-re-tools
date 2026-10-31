@@ -3,29 +3,25 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
+import { prg, SYS_2061 } from "../../../src/c64.testkit.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { inspect } from "../../../src/host/tools/c1541.ts";
 import { C1541, findTool } from "../../../src/native/discover.ts";
 import { WireFailure } from "../../../src/protocol/messages.ts";
 import { type C1541Params, type C1541Result } from "../../../src/protocol/tools.ts";
+import { offsetOf } from "../../fixtures/d64.ts";
+import { scratchDir, toolSkip } from "../../kit.ts";
 
-let c1541 = "";
-let skip: string | false = false;
-try {
-  c1541 = findTool(C1541);
-} catch {
-  skip = "c1541 is not installed: install VICE or set C64RT_C1541 to run these tests";
-}
+const skip = toolSkip(C1541);
+const c1541 = skip === false ? findTool(C1541) : "";
 
-const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-c1541-"));
+const scratch = scratchDir("c1541");
 const supervisor = new ProcessSupervisor();
 supervisor.installExitGuard();
-after(() => rmSync(scratch, { recursive: true, force: true }));
 
 /** Runs the real c1541 in the scratch directory, to make fixture images. */
 function make(...args: string[]): void {
@@ -33,7 +29,7 @@ function make(...args: string[]): void {
   assert.equal(run.status, 0, run.stdout + run.stderr);
 }
 
-const loader = Buffer.from([0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00, 0xee, 0x20, 0xd0, 0x4c, 0x0d, 0x08]);
+const loader = prg(0x0801, SYS_2061, [0xee, 0x20, 0xd0, 0x4c, 0x0d, 0x08]);
 const log = Buffer.from(Array.from({ length: 3000 }, (_, index) => (index * 7) & 0xff));
 
 function d64(): Buffer {
@@ -44,13 +40,6 @@ function d64(): Buffer {
   return readFileSync(join(scratch, "probe.d64"));
 }
 const image = d64();
-
-/** The byte offset of a block in a D64. */
-function offset(track: number, sector: number): number {
-  let at = 0;
-  for (let t = 1; t < track; t++) at += (t <= 17 ? 21 : t <= 24 ? 19 : t <= 30 ? 18 : 17) * 256;
-  return at + sector * 256;
-}
 
 function run(params: C1541Params, bytes = image): Promise<{ result: C1541Result; attachments?: Buffer[] }> {
   return inspect(params, bytes, { supervisor, signal: new AbortController().signal });
@@ -103,7 +92,7 @@ test("bam names the used sectors that no file holds", { skip }, async () => {
   const cut = Buffer.from(image);
   const sectors = chain.result.sectors;
   const before = sectors.at(-2)!;
-  const at = offset(before.track, before.sector);
+  const at = offsetOf(before.track, before.sector);
   cut[at] = 0;
   cut[at + 1] = 255;
   const { result } = await run({ action: "bam", imageType: "d64" }, cut);
@@ -136,9 +125,7 @@ test("a 1581 image works with its own header layout", { skip }, async () => {
   const bytes = readFileSync(join(scratch, "big.d81"));
   const { result } = await run({ action: "directory", imageType: "d81" }, bytes);
   assert.ok(result.action === "directory");
-  assert.equal(result.diskName, "BIG DISK");
-  assert.equal(result.dosType, "3D");
-  assert.deepEqual(result.entries.map((entry) => entry.name), ["X"]);
+  assert.deepEqual({ diskName: result.diskName, dosType: result.dosType, names: result.entries.map((entry) => entry.name) }, { diskName: "BIG DISK", dosType: "3D", names: ["X"] });
   const read = await run({ action: "read", imageType: "d81", name: "X" }, bytes);
   assert.ok(read.attachments![0]!.equals(loader));
 });
@@ -150,8 +137,8 @@ test("a sector chain that loops and a file that is no disk image are media error
   // Point the last block of LOG back to its first block.
   const last = chain.result.sectors.at(-1)!;
   const first = chain.result.sectors[0]!;
-  looped[offset(last.track, last.sector)] = first.track;
-  looped[offset(last.track, last.sector) + 1] = first.sector;
+  looped[offsetOf(last.track, last.sector)] = first.track;
+  looped[offsetOf(last.track, last.sector) + 1] = first.sector;
   await assert.rejects(run({ action: "read", imageType: "d64", name: "LOG" }, looped), (error: unknown) => {
     assert.ok(error instanceof WireFailure && error.code === "media-error", String(error));
     assert.match(error.message, /loops/);

@@ -5,7 +5,6 @@
 //   $9e00: INC $4101 ; RTS, NOP-padded to 128 bytes
 
 const BLOCK = 128;
-export const ROUTINE = 0x9e00;
 const source = 0x0826;
 
 const routine = [0xee, 0x01, 0x41, 0x60, ...new Array<number>(BLOCK - 4).fill(0xea)];

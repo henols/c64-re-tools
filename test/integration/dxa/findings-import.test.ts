@@ -4,14 +4,9 @@
 // obsolete DXA facts, keeps the history and protects the semantic knowledge.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
-import { DXA, findTool } from "../../../src/native/discover.ts";
+import { DXA } from "../../../src/native/discover.ts";
 import { openForRead, withWrite } from "../../../src/knowledge/database.ts";
 import { historyAt } from "../../../src/knowledge/history.ts";
 import { regionsOverlapping, symbolAt } from "../../../src/knowledge/read.ts";
@@ -19,27 +14,14 @@ import { classifyRegion, renameSymbol } from "../../../src/knowledge/write.ts";
 import { analysisSubjectPrg } from "../../fixtures/prg/analysis-subject.ts";
 import { importPrg } from "../../fixtures/program.ts";
 import { nthIn } from "../../../src/knowledge/revisions.testkit.ts";
-import { readEnvelope } from "../../kit.ts";
+import { runScriptSync, scratchDir, skillScript, toolSkip } from "../../kit.ts";
 
-let skip: string | false = false;
-try {
-  findTool(DXA);
-} catch {
-  skip = "dxa is not installed: install dxa or set C64RT_DXA to run this test";
-}
+const skip = toolSkip(DXA);
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-static-analysis/scripts/static-analysis.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m7-"));
-after(() => rmSync(project, { recursive: true, force: true }));
+const project = scratchDir("dxa-import");
 
-async function analyzeDxa(): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  // No Host Runtime: the script would fail if it asked one for DXA.
-  const child = spawn(process.execPath, [...process.execArgv, script, "analyze", "--analyzer", "dxa"], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "inherit"] });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
-}
+/** The DXA analysis through the skill script. No Host Runtime: the script would fail if it asked one for DXA. */
+const analyzeDxa = () => runScriptSync(skillScript("c64-static-analysis", "static-analysis.ts"), ["analyze", "--analyzer", "dxa"], { cwd: project });
 
 const regions = () => {
   const db = openForRead(project);
@@ -48,10 +30,10 @@ const regions = () => {
   return list;
 };
 
-test("DXA findings reconcile through the importer and protect semantic knowledge", { skip, timeout: 300_000 }, async () => {
+test("DXA findings reconcile through the importer and protect semantic knowledge", { skip, timeout: 300_000 }, () => {
   // 1. The program goes into the knowledge; the first DXA pass makes its regions and labels DXA knowledge.
   importPrg(project, analysisSubjectPrg);
-  const first = await analyzeDxa();
+  const first = analyzeDxa();
   assert.equal(first.status, 0, JSON.stringify(first.json));
   assert.equal(first.json.revision, nthIn(project, 2));
   assert.deepEqual(regions(), [
@@ -71,11 +53,11 @@ test("DXA findings reconcile through the importer and protect semantic knowledge
   const changed = Buffer.from(analysisSubjectPrg);
   changed.set([0xea, 0xea, 0xea, 0xea, 0xea], 0x0813 - 0x0801 + 2);
   importPrg(project, changed);
-  const second = await analyzeDxa();
+  const second = analyzeDxa();
   assert.equal(second.status, 0, JSON.stringify(second.json));
   assert.equal(second.json.revision, nthIn(project, 6));
   assert.deepEqual(second.json.conflicts, [], "a finer data type from the user is no conflict");
-  assert.deepEqual((second.json.changes as { regions: unknown }).regions, { added: 1, changed: 0, retired: 3, unchanged: 1, suppressed: 0 });
+  assert.deepEqual(second.json.changes.regions, { added: 1, changed: 0, retired: 3, unchanged: 1, suppressed: 0 });
   assert.deepEqual(regions(), [
     [0x0801, 0x080c, "bytes", "dxa"],
     [0x080d, 0x0823, "code", "dxa"],

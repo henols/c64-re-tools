@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import { MANIFESTS, mismatches, packageVersion, releaseOf, set, versionsIn, withVersion } from "../../distribution/version.ts";
+import { scratchDir } from "../kit.ts";
 
 const root = resolve(import.meta.dirname, "../..");
-const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-version-"));
-after(() => rmSync(scratch, { recursive: true, force: true }));
+const scratch = scratchDir("version");
 
 test("every plugin manifest names the version of package.json", () => {
   assert.deepEqual(mismatches(root), []);

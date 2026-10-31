@@ -2,22 +2,18 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import { openForRead, textPath } from "../../src/knowledge/database.ts";
 import { historyAt, revision, revisions } from "../../src/knowledge/history.ts";
 import { listRegions, operandAt, referencesFrom, symbolAt } from "../../src/knowledge/read.ts";
 import { REVISION_ID } from "../../src/knowledge/text.ts";
+import { scratchDir } from "../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../distribution/convert-knowledge.ts");
-const roots: string[] = [];
-after(() => {
-  for (const root of roots) rmSync(root, { recursive: true, force: true });
-});
 
 /** The tables of schema 7 with the columns that the conversion reads. */
 const OLD_SCHEMA = `
@@ -36,8 +32,7 @@ const OLD_SCHEMA = `
 
 /** A project with a schema 7 knowledge.db: four revisions, a renamed symbol and a row in every table. Two revisions have the same time. */
 function oldProject(): string {
-  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-convert-"));
-  roots.push(root);
+  const root = scratchDir("convert");
   mkdirSync(join(root, ".c64-re-tools"));
   const db = new DatabaseSync(join(root, ".c64-re-tools", "knowledge.db"));
   db.exec(OLD_SCHEMA);

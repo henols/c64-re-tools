@@ -7,14 +7,14 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export interface ToolUse {
+interface ToolUse {
   id: string;
   name: string;
   input: Record<string, unknown>;
 }
 
 /** Every tool use in the .jsonl files under dir, the transcripts of subagents too, once each. */
-export function toolUses(dir: string): ToolUse[] {
+function toolUses(dir: string): ToolUse[] {
   const uses = new Map<string, ToolUse>();
   const files = existsSync(dir) ? readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((file) => file.endsWith(".jsonl")) : [];
   for (const file of files.sort()) {

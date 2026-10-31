@@ -7,38 +7,20 @@
 // candidates of the analyzer, applied, keep the source identical.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-import { ACME, findTool } from "../../src/native/discover.ts";
+import { ACME } from "../../src/native/discover.ts";
 import { CATALOGUE } from "../../skills/c64-static-analysis/scripts/lib/macros.ts";
-import { readEnvelope } from "../kit.ts";
+import { scratchDir, toolSkip } from "../kit.ts";
+import { scriptBody } from "./kit.ts";
 
-let skip: string | false = false;
-try {
-  findTool(ACME);
-} catch {
-  skip = "ACME is not installed";
-}
+const skip = toolSkip(ACME);
 
-const skills = resolve(import.meta.dirname, "../../skills");
-const project = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-switches-")));
-after(() => rmSync(project, { recursive: true, force: true }));
+const project = scratchDir("switches");
 
-function script(skill: string, file: string, args: readonly string[]): { status: number | null; json: Record<string, any> } {
-  const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", file), ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  assert.equal(run.stderr, "", run.stderr);
-  return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, any> };
-}
-
-function ok(skill: string, file: string, args: readonly string[]): Record<string, any> {
-  const run = script(skill, file, args);
-  assert.equal(run.status, 0, `${file} ${args.join(" ")}: ${JSON.stringify(run.json)}`);
-  return run.json;
-}
+const ok = (skill: string, file: string, args: readonly string[]) => scriptBody(skill, file, args, { cwd: project });
 
 // prettier-ignore
 const CODE = [
@@ -85,13 +67,26 @@ test("switches and macros: the base release stays identical, each switch fits, a
   ok("c64-knowledge", "knowledge.ts", ["patch", "$100b-$100d", "TRAINER", "--nop", "--comment", "Lives stay."]);
 
   const generated = ok("c64-source", "source.ts", ["generate", "--out", "src"]);
-  assert.equal(generated.check.identical, true);
-  assert.deepEqual(generated.files.map((file: { out: string }) => file.out).filter((path: string) => path.endsWith(".asm")), ["src/segments/segment_1000.asm", "src/switches.asm", "src/config.asm", "src/constants.asm", "src/macros.asm", "src/main.asm"]);
-  assert.deepEqual(generated.switches.map((item: { name: string; result: string; changedBytes: number }) => [item.name, item.result, item.changedBytes]), [["PROTECTION", "fits", 8], ["TRAINER", "fits", 3]]);
-  assert.deepEqual(generated.default, { in: ["PROTECTION"], result: "fits", changedBytes: 8 });
-  assert.deepEqual(generated.releases.map((item: { label: string; result: string }) => [item.label, item.result]), [["FIRESTAR", "identical"]]);
-  assert.equal(generated.macroUses, 1);
-  assert.deepEqual(generated.macrosAsInstructions.listed, [{ start: "$1011", end: "$1016", macro: "inc16", reason: "The source has a label at $1013, inside the use." }]);
+  assert.deepEqual(
+    {
+      identical: generated.check.identical,
+      files: generated.files.map((file: { out: string }) => file.out).filter((path: string) => path.endsWith(".asm")),
+      switches: generated.switches.map((item: { name: string; result: string; changedBytes: number }) => [item.name, item.result, item.changedBytes]),
+      default: generated.default,
+      releases: generated.releases.map((item: { label: string; result: string }) => [item.label, item.result]),
+      macroUses: generated.macroUses,
+      macrosAsInstructions: generated.macrosAsInstructions.listed,
+    },
+    {
+      identical: true,
+      files: ["src/segments/segment_1000.asm", "src/switches.asm", "src/config.asm", "src/constants.asm", "src/macros.asm", "src/main.asm"],
+      switches: [["PROTECTION", "fits", 8], ["TRAINER", "fits", 3]],
+      default: { in: ["PROTECTION"], result: "fits", changedBytes: 8 },
+      releases: [["FIRESTAR", "identical"]],
+      macroUses: 1,
+      macrosAsInstructions: [{ start: "$1011", end: "$1016", macro: "inc16", reason: "The source has a label at $1013, inside the use." }],
+    },
+  );
   const text = readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8");
   assert.match(text, /^loop\n {8}\+inc16 ptr\n/m);
   assert.match(text, /^!zone patch_TRAINER_100b \{\n\.patch_start\n!if TRAINER \{\n/m);
@@ -102,17 +97,16 @@ test("switches and macros: the base release stays identical, each switch fits, a
   assert.match(config, /^; Trainers: off by default\nTRAINER {4}= 0 ; on in no release\. \$100b-\$100d\. Infinite lives\.$/m);
 
   // The agent builds the default program with c64-assembler: only the bytes of the PROTECTION ranges differ from the base release.
-  const clean = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/clean.prg", "--compare"]);
-  assert.equal(clean.status, 0, JSON.stringify(clean.json));
-  assert.equal(clean.json.result, "FAIL", JSON.stringify(clean.json));
-  const [segment] = clean.json.compare.segments as Array<{ differences: number; firstDifference: { address: string } }>;
+  const clean = ok("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/clean.prg", "--compare"]);
+  assert.equal(clean.result, "FAIL", JSON.stringify(clean));
+  const [segment] = clean.compare.segments as Array<{ differences: number; firstDifference: { address: string } }>;
   assert.deepEqual([segment!.differences, segment!.firstDifference.address], [8, "$100e"]);
   const built = readFileSync(join(project, "build", "clean.prg"));
   assert.deepEqual([...built.subarray(2 + 0x0e, 2 + 0x11)], [0xea, 0xea, 0xea], "no JSR check");
   assert.deepEqual([...built.subarray(2 + 0x2a, 2 + 0x2d)], [0x60, 0xea, 0xea], "fail returns");
   assert.deepEqual([...built.subarray(2 + 0x0b, 2 + 0x0e)], [0xce, 0x00, 0x20], "the trainer is off");
-  const base = script("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/game.prg", "--release", "FIRESTAR", "--compare"]);
-  assert.equal(base.json.compare.identical, true, "the build of the base release is the program");
+  const base = ok("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/game.prg", "--release", "FIRESTAR", "--compare"]);
+  assert.equal(base.compare.identical, true, "the build of the base release is the program");
   // The user turns the trainer on in config.asm.
   writeFileSync(configPath, config.replace(/^TRAINER {4}= 0/m, "TRAINER    = 1"));
   const trained = ok("c64-assembler", "assembler.ts", ["build", "src", "main.asm", "--out", "build/trained.prg"]);

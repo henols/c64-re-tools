@@ -6,13 +6,10 @@
 // Stage 1 and the program are 128 bytes each, NOP-padded, so each is one
 // written block that a stage guard of 64 bytes counts.
 
-const KEY = 0x5a;
+import { xorDecoder, xorPacked } from "./xor-packed.ts";
+
 const BLOCK = 128;
 const pad = (code: number[]) => [...code, ...new Array<number>(BLOCK - code.length).fill(0xea)];
-
-export const STAGE_1 = 0xc000;
-export const PROGRAM = 0x4000;
-export const STAGE_0 = 0x080d;
 
 const stage1Source = 0x081f; // in the file, right after stage 0
 const programSource = stage1Source + BLOCK;
@@ -36,15 +33,9 @@ const stage1 = pad([
 export const stagedPrg = Uint8Array.from([
   0x01, 0x08, // load address $0801
   0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00, // 10 SYS2061
-  // Stage 0 at $080d: LDX #0 ; loop: LDA src,X ; EOR #KEY ; STA $C000,X ; INX ; CPX #128 ; BNE loop ; JMP $C000.
-  0xa2, 0x00,
-  0xbd, stage1Source & 0xff, stage1Source >> 8,
-  0x49, KEY,
-  0x9d, 0x00, 0xc0,
-  0xe8,
-  0xe0, BLOCK,
-  0xd0, 0xf3,
+  // Stage 0 at $080d: the XOR decoder of stage 1, then JMP $C000.
+  ...xorDecoder(stage1Source, BLOCK),
   0x4c, 0x00, 0xc0,
-  ...stage1.map((byte) => byte ^ KEY),
+  ...xorPacked(stage1),
   ...program,
 ]);
