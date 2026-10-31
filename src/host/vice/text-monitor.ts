@@ -21,6 +21,7 @@
 
 import type { Socket } from "node:net";
 
+import { hexWord } from "../../c64.ts";
 import { connectWithTimeout } from "./connect.ts";
 
 export class TextMonitorError extends Error {
@@ -46,8 +47,7 @@ const ANY_SENTINEL_ANSWER = /\+\d+\n\$[0-9a-f]{4}\n[0-7]+\n%[01 ]+\n/g;
 const STEP_MESSAGE = /^Stepping through the next \d+ instruction\(s\)\.\n/gm;
 
 function sentinelPattern(nonce: number): RegExp {
-  const hex = nonce.toString(16).padStart(4, "0");
-  return new RegExp(`\\+${nonce}\\n\\$${hex}\\n[0-7]+\\n%[01 ]+\\n\\((?:C|\\d+):\\$[0-9a-f]{4}\\) `);
+  return new RegExp(`\\+${nonce}\\n\\$${hexWord(nonce)}\\n[0-7]+\\n%[01 ]+\\n\\((?:C|\\d+):\\$[0-9a-f]{4}\\) `);
 }
 
 /** Strips prompts, stray sentinel answers, step messages and surrounding blank space from a command's raw output. */
