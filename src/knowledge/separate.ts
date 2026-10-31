@@ -1,8 +1,9 @@
 // Evidence from one release: for each range of the image, the unpack
 // stage that wrote it and the access class from coverage; for each code
-// region of knowledge, whether call and jump references or the run on from
-// its last instruction reach it from a root (the entry, and the NMI, RESET
-// and IRQ vectors at $fffa-$ffff when the image holds them); and what the program reads
+// region of knowledge, whether call and jump references, the handlers that
+// the code stores in an interrupt vector, or the run on from its last
+// instruction reach it from a root (the entry, and the NMI, RESET and IRQ
+// vectors at $fffa-$ffff when the image holds them); and what the program reads
 // or executes outside the image. A region that nothing reaches is unknown, not
 // dead, while the program has a flow whose targets the knowledge does not give,
 // or when no coverage shows what ran. Evidence only: nothing here decides which
@@ -59,6 +60,7 @@ export interface UnresolvedFlow {
 
 /** The computed flows of the code: the targets that the bytes of the program give, and the flows that stay open. */
 export interface ComputedFlows {
+  /** Also from each store of a handler into an interrupt vector to the handler. */
   targets: Array<{ from: number; to: number }>;
   unresolved: UnresolvedFlow[];
 }
@@ -142,6 +144,13 @@ export const WRITES_Y = new Set(["ldy", "iny", "dey"]);
 const CHANGES_MEMORY = new Set(["inc", "dec", "asl", "lsr", "rol", "ror", "sax", "slo", "rla", "sre", "rra", "dcp", "isc"]);
 
 /**
+ * The low bytes of the interrupt vectors: the KERNAL goes through the IRQ, BRK
+ * and NMI vectors at $0314-$0319, and the CPU through $fffa-$ffff when the
+ * KERNAL is banked out. No instruction of the program goes to their handlers.
+ */
+const INTERRUPT_VECTORS = [0x0314, 0x0316, 0x0318, 0xfffa, 0xfffc, 0xfffe];
+
+/**
  * The computed flows of the instructions at `starts`: a JMP (N), a JMP or JSR
  * whose address bytes a run wrote, and an RTS or RTI after pushes in its run
  * of instructions. A jump or call reference of the user or the LLM from the
@@ -151,7 +160,11 @@ const CHANGES_MEMORY = new Set(["inc", "dec", "asl", "lsr", "rol", "ror", "sax",
  * there, and the flow goes to each word of these values. A byte that another
  * write of the code changes, or that a run wrote while no store of the code
  * does, or that is outside the image without such a store, leaves the flow
- * unresolved.
+ * unresolved. An immediate that the code stores in an interrupt vector
+ * installs a handler: a flow goes from each such store to each word of the
+ * immediates of the two bytes, or of the image byte where the code stores
+ * none. Another write of the vector, for example a restore of the KERNAL
+ * handler, does not remove the handler.
  */
 export function computedFlows(input: { starts: readonly number[]; memory: Uint8Array; inImage: (address: number) => boolean; coverage?: Uint8Array | undefined; references: ReadonlyArray<{ from: number; kind: string; origin?: string | undefined }> }): ComputedFlows {
   const { memory } = input;
@@ -168,6 +181,9 @@ export function computedFlows(input: { starts: readonly number[]; memory: Uint8A
     if (known === null) return;
     stored.set(address, value === undefined ? null : (known ?? new Set<number>()).add(value));
   };
+  // The immediates that the code stores in each byte of an interrupt vector, with the address of the store.
+  const installs = new Map<number, Array<{ at: number; value: number }>>();
+  const vectorBytes = new Set(INTERRUPT_VECTORS.flatMap((vector) => [vector, vector + 1]));
   // The return addresses that the code pushed before an RTS or RTI, as far as immediates give them.
   const returns: Array<{ at: number; low: number | undefined; high: number | undefined; offset: 0 | 1 }> = [];
   let registers: { a?: number | undefined; x?: number | undefined; y?: number | undefined } = {};
@@ -187,6 +203,8 @@ export function computedFlows(input: { starts: readonly number[]; memory: Uint8A
       const register = mnemonic === "sta" ? "a" : mnemonic === "stx" ? "x" : mnemonic === "sty" ? "y" : undefined;
       if (register !== undefined) store(operand, registers[register]);
       else if (CHANGES_MEMORY.has(mnemonic)) store(operand, undefined);
+      const value = register === undefined ? undefined : registers[register];
+      if (value !== undefined && vectorBytes.has(operand)) installs.set(operand, [...(installs.get(operand) ?? []), { at, value }]);
     }
     if (mnemonic === "pha") pushes.push(registers.a);
     if (mnemonic === "php") pushes.push(undefined);
@@ -238,6 +256,16 @@ export function computedFlows(input: { starts: readonly number[]; memory: Uint8A
   for (const pushed of returns) {
     if (pushed.low !== undefined && pushed.high !== undefined) targets.push({ from: pushed.at, to: ((pushed.low | (pushed.high << 8)) + pushed.offset) & 0xffff });
     else if (!fromTable.has(pushed.at)) unresolved.push({ at: pushed.at, kind: "pushed-return" });
+  }
+  for (const vector of INTERRUPT_VECTORS) {
+    const stores = [...(installs.get(vector) ?? []), ...(installs.get(vector + 1) ?? [])];
+    if (stores.length === 0) continue;
+    const valuesOf = (address: number) => {
+      const own = installs.get(address);
+      return own !== undefined ? [...new Set(own.map((item) => item.value))] : input.inImage(address) ? [memory[address]!] : [];
+    };
+    const handlers = valuesOf(vector).flatMap((low) => valuesOf(vector + 1).map((high) => low | (high << 8)));
+    for (const from of new Set(stores.map((item) => item.at))) for (const to of handlers) targets.push({ from, to });
   }
   return { targets, unresolved: unresolved.sort((a, b) => a.at - b.at) };
 }
