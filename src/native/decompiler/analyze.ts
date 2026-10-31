@@ -3,7 +3,8 @@
 // in, the structural result comes out, and the result is checked completely
 // before the script imports it.
 
-import { describeError, WireFailure } from "../../protocol/messages.ts";
+import { describeError } from "../../errors.ts";
+import { WireFailure } from "../../protocol/messages.ts";
 import { checkDecompilerResult, checkRequestBounds, DECOMPILER_LIMITS, imageRange, seedsInside, type DecompilerParams, type DecompilerResult, type SeedReport } from "../types.ts";
 import type { ToolContext } from "../run.ts";
 import { walk } from "./walk.ts";

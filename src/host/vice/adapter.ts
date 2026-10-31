@@ -105,9 +105,6 @@ export function inRasterWindow(position: { line: number; cycle: number }, line: 
   return ahead > 0 && ahead < RASTER_WINDOW_LINES;
 }
 
-/** The 12 opcodes that jam an NMOS 6502/6510. */
-export const JAM_OPCODES = new Set([0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
-
 const DIRECTION_BITS: Record<JoystickState["direction"], number> = {
   center: 0,
   up: 0x01,

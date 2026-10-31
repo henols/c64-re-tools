@@ -8,9 +8,9 @@
 import { writeFileSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 
-import { Refusal } from "../errors.ts";
+import { describeError, Refusal } from "../errors.ts";
 import { SYMBOL_NAME } from "../c64.ts";
-import { describeError, WireFailure } from "../protocol/messages.ts";
+import { WireFailure } from "../protocol/messages.ts";
 import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaParams, type DxaResult, type SeedReport } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";

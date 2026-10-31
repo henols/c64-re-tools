@@ -21,7 +21,7 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import { c64AddressOf, formatC64Address, SPACE_PATTERN, SYMBOL_NAME, type AddressRange } from "./c64.ts";
+import { c64AddressOf, formatC64Address, isAddressText, SPACE_PATTERN, SYMBOL_NAME, type AddressRange } from "./c64.ts";
 import { isRefusal, Refusal, splitMessage, type ErrorCode } from "./errors.ts";
 import { checkOutputPath, projectRoot, resolveProjectPath, resolveReadPath, useProject, type OutputKind } from "./project.ts";
 import { STOP_AND_ASK } from "./protocol/messages.ts";
@@ -181,11 +181,6 @@ export function numberOf(text: string): number | undefined {
   if (binary !== undefined) return Number.parseInt(binary, 2);
   if (decimal !== undefined) return Number(decimal);
   return undefined;
-}
-
-/** True when the text has the form of an address: $ and 1 to 4 hex digits, or a name. */
-export function isAddressText(text: string): boolean {
-  return c64AddressOf(text) !== undefined || SYMBOL_NAME.test(text);
 }
 
 /** Splits <start>-<end>. A name has no hyphen, so the first hyphen is the split. */

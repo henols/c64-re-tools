@@ -96,7 +96,6 @@ export class ProtocolError extends Error {
   override name = "ProtocolError";
 }
 
-/** Thrown by parameter/result validators; carries the wire code to answer with. */
 /**
  * The instruction at the end of a refusal that only the user can fix: a
  * missing or broken tool, or a Host Runtime that does not run.
@@ -120,11 +119,6 @@ export class WireFailure extends Refusal implements WireError {
   toWire(): WireError {
     return { code: this.code, message: this.message };
   }
-}
-
-/** The message of a caught value, which may not be an Error. */
-export function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export type Fields = Record<string, unknown>;

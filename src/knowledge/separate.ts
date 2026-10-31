@@ -8,8 +8,8 @@
 // or when no coverage shows what ran. Evidence only: nothing here decides which
 // bytes the publisher shipped.
 
-import { type AddressRange, COVERAGE, executedRamCode, instructionLength } from "../c64.ts";
-import { OPCODES } from "../opcodes.ts";
+import { type AddressRange, COVERAGE, executedRamCode, instructionLength, NO_FALL } from "../c64.ts";
+import { JAM_OPCODES, OPCODES } from "../opcodes.ts";
 import { isSemantic } from "./schema.ts";
 
 export type Access = "executed" | "read" | "written" | "read-written" | "untouched";
@@ -106,7 +106,7 @@ export function reachabilityRoots(segments: readonly AddressRange[], memory: Uin
 }
 
 /** BRK, JMP, RTI, RTS, JMP (indirect) and the JAM opcodes: the CPU does not run on to the next instruction after them. */
-export const NO_FALL_THROUGH = new Set([0x00, 0x4c, 0x40, 0x60, 0x6c, 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
+export const NO_FALL_THROUGH: ReadonlySet<number> = new Set([...NO_FALL, ...JAM_OPCODES]);
 
 /**
  * The address after a code region where the CPU runs on, or undefined when

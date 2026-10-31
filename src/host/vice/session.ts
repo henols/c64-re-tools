@@ -14,7 +14,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { formatC64Address, instructionLength } from "../../c64.ts";
 import { matrixRows } from "../../c64-keys.ts";
 import { encodePng, type IndexedFrame } from "../../graphics.ts";
-import { accessedValue, instructionText, operandAddress } from "../../opcodes.ts";
+import { accessedValue, instructionText, JAM_OPCODES, operandAddress } from "../../opcodes.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
 import { trace } from "../../trace.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
@@ -22,7 +22,6 @@ import {
   backtraceFromStack,
   conditionExpression,
   inRasterWindow,
-  JAM_OPCODES,
   rasterLinesExpression,
   rasterWindowExpression,
   RUNNING_COMMAND_TIMEOUT_MS,

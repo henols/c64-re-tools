@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
-import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte } from "../c64.ts";
+import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, rangesWhere } from "../c64.ts";
 
 import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
 import { coverageRuns } from "./read.ts";
@@ -58,18 +58,6 @@ export interface ImageRequest {
 export interface CoverageMap {
   name: string;
   bytes: Uint8Array;
-}
-
-/** The address ranges where `has` is true, in address order. */
-function rangesWhere(has: (address: number) => boolean): AddressRange[] {
-  const ranges: AddressRange[] = [];
-  for (let address = 0; address < SIZE; address++) {
-    if (!has(address)) continue;
-    const start = address;
-    while (address + 1 < SIZE && has(address + 1)) address++;
-    ranges.push({ start, end: address });
-  }
-  return ranges;
 }
 
 /** The memory rows of the segments: at most MEMORY_ROW bytes, never across a multiple of MEMORY_ROW. */

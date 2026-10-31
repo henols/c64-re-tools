@@ -52,6 +52,11 @@ export function splitMessage(message: string, hint?: string): { error: string; h
   return rest === "" ? { error } : { error, hint: rest };
 }
 
+/** The message of a caught value, which may not be an Error. */
+export function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** True for an Error with a code from ERROR_CODES: a refusal, whatever its class. */
 export function isRefusal(error: unknown): error is Error & { code: ErrorCode } {
   const code = (error as { code?: unknown } | undefined)?.code;

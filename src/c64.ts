@@ -31,6 +31,11 @@ export function hexWord(value: number): string {
   return value.toString(16).padStart(4, "0");
 }
 
+/** A byte as 2 hex digits without $. */
+export function hexByte(value: number): string {
+  return value.toString(16).padStart(2, "0");
+}
+
 /** An inclusive span of C64 addresses. */
 export interface AddressRange {
   start: number;
@@ -78,6 +83,18 @@ export function subtract(range: AddressRange, holes: readonly AddressRange[]): A
     });
   }
   return pieces;
+}
+
+/** The address ranges of the C64 space where `has` is true, in address order. */
+export function rangesWhere(has: (address: number) => boolean): AddressRange[] {
+  const ranges: AddressRange[] = [];
+  for (let address = 0; address < 0x10000; address++) {
+    if (!has(address)) continue;
+    const start = address;
+    while (address + 1 < 0x10000 && has(address + 1)) address++;
+    ranges.push({ start, end: address });
+  }
+  return ranges;
 }
 
 /** True when a read of the address with $01 = $37, as RUN leaves it, gives a ROM byte: RAM is below, so a write there and code that runs there are not the same bytes. */
@@ -159,6 +176,11 @@ export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
 
 /** A symbol or label name: assembler label syntax, at most 64 characters; a leading dot marks a local label. */
 export const SYMBOL_NAME = /^\.?[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
+/** True when the text has the form of an address: $ and 1 to 4 hex digits, or a name. */
+export function isAddressText(text: string): boolean {
+  return c64AddressOf(text) !== undefined || SYMBOL_NAME.test(text);
+}
 
 /** The VIC-II's 16 KiB bank base, from CIA 2 port A bits 0-1 (inverted); undriven lines read high. */
 export function vicBankBase(cia2PortA: number, cia2DdrA = 0xff): number {
@@ -562,14 +584,7 @@ const RAM_USE = COVERAGE.ramRead | COVERAGE.ramExecute;
  * flat image, so the ranges are data for an analysis run.
  */
 export function romOnlyRanges(map: Uint8Array, image: (address: number) => number | undefined): AddressRange[] {
-  const ranges: AddressRange[] = [];
-  for (let address = 0; address < 0x10000; address++) {
-    if ((map[address]! & ROM_ACCESS) === 0 || (map[address]! & RAM_USE) !== 0 || image(address) === undefined) continue;
-    const last = ranges.at(-1);
-    if (last !== undefined && last.end === address - 1) last.end = address;
-    else ranges.push({ start: address, end: address });
-  }
-  return ranges;
+  return rangesWhere((address) => (map[address]! & ROM_ACCESS) !== 0 && (map[address]! & RAM_USE) === 0 && image(address) !== undefined);
 }
 
 /** Every executed instruction start in RAM inside the image: VICE marks the opcode byte of an instruction as executed, not its operand. */
@@ -581,8 +596,8 @@ export function executedStarts(map: Uint8Array, image: (address: number) => numb
 
 const BRANCHES = new Set([0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xf0]);
 
-/** Instructions that never fall through to the next one. */
-const NO_FALL = new Set([0x00, 0x40, 0x4c, 0x60, 0x6c]);
+/** Instructions that never fall through to the next one (BRK, RTI, JMP, RTS, JMP indirect); the JAM opcodes are in opcodes.ts. */
+export const NO_FALL = new Set([0x00, 0x40, 0x4c, 0x60, 0x6c]);
 
 /**
  * The coverage flow starts split for the decompiler. A start is a code start, a
