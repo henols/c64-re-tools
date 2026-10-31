@@ -1,7 +1,7 @@
 import { createServer, type Server, type Socket } from "node:net";
 
 import { encodeFrame, FrameTooLarge, MessageReader } from "../protocol/framing.ts";
-import { isRefusal } from "../errors.ts";
+import { describeError, isRefusal } from "../errors.ts";
 import { PACKAGE } from "../package.ts";
 import { checkHello, isOneOf, HEARTBEAT_TIMEOUT_MS, parseClientMessage, ProtocolError, type HostMessage, type ReceivedRequest, type VideoStandard, type WireError, WireFailure } from "../protocol/messages.ts";
 import { TOOL_OPERATIONS, validateToolParams, type ToolOperation, type ToolOperations } from "../protocol/tools.ts";
@@ -247,7 +247,7 @@ class Connection {
     try {
       return await this.#options.createViceSession({ videoStandard, log: this.#log });
     } catch (error) {
-      this.#log(`VICE session failed to start: ${error instanceof Error ? error.message : String(error)}`);
+      this.#log(`VICE session failed to start: ${describeError(error)}`);
       trace().event("connection.session-failed", { connection: this.#id, error });
       this.#send({
         type: "error",
@@ -294,7 +294,7 @@ class Connection {
       record({ ok: true, result });
     } catch (error) {
       if (!isRefusal(error)) {
-        this.#log(`operation ${request.op} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+        this.#log(`operation ${request.op} failed: ${describe(error)}`);
       }
       const wire = toWireError(error, { code: "operation-failed", message: "The operation failed inside the host runtime." });
       this.#send({ type: "reply", id: request.id, error: wire });
@@ -318,7 +318,7 @@ class Connection {
     try {
       await session?.close();
     } catch (error) {
-      this.#log(`session close failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.#log(`session close failed: ${describeError(error)}`);
     }
     this.#log("closed");
     this.#resolveClosed();
@@ -361,7 +361,7 @@ export class ListenError extends Error {
   readonly port: number;
 
   constructor(cause: unknown, address: string, port: number) {
-    super(`cannot listen on ${address} port ${port}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    super(`cannot listen on ${address} port ${port}: ${describeError(cause)}`, { cause });
     this.name = "ListenError";
     this.code = (cause as NodeJS.ErrnoException | undefined)?.code;
     this.address = address;
