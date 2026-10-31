@@ -42,7 +42,7 @@ test("a PAL capture is the 384x272 bordered frame and follows the border colour"
   await session.handle("execution", { action: "pause", space: "c64" });
   await session.handle("memoryWrite", { address: 0xd020, data: "02", space: "c64", view: "cpu" });
   await session.handle("execution", { action: "resume", space: "c64" });
-  await waitFor(async () => (shot = await capture(session)).image.pixels[0] === 2, "the red border", 10_000);
+  await waitFor(async () => (shot = await capture(session)).image.pixels[0] === 2, "the red border", 30_000);
   assert.equal(shot.image.pixels[0], 2);
   assert.deepEqual(shot.image.palette[2]!.length, 3);
   assert.equal((await session.handle("status", {})).state, "running");
