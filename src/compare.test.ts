@@ -31,3 +31,25 @@ test("each segment of the program is checked, and a segment the build does not h
   ]);
   assert.equal(checked.identical, false, "a segment the build does not hold is no proof");
 });
+
+test("a different byte in a left-out leftover names that leftover, and the first difference is the first byte outside the leftovers", () => {
+  const leftover = { start: 0xc001, end: 0xc002, file: "leftovers/leftover_c001.asm" };
+  assert.deepEqual(compareBuild(prg(0xc000, [1, 0, 0, 4]), program([0xc000, [1, 2, 3, 4]]), [leftover]).segments, [
+    { start: "$c000", end: "$c003", result: "different", differences: 2, leftovers: [{ start: "$c001", end: "$c002", file: "leftovers/leftover_c001.asm", differences: 2 }] },
+  ]);
+  assert.deepEqual(compareBuild(prg(0xc000, [1, 0, 3, 9]), program([0xc000, [1, 2, 3, 4]]), [leftover]).segments, [
+    {
+      start: "$c000",
+      end: "$c003",
+      result: "different",
+      differences: 2,
+      firstDifference: { address: "$c003", built: "$09", reference: "$04" },
+      leftovers: [{ start: "$c001", end: "$c002", file: "leftovers/leftover_c001.asm", differences: 1 }],
+    },
+  ]);
+  assert.deepEqual(
+    compareBuild(prg(0xc000, [1]), program([0xc000, [1, 2, 3]]), [leftover]).segments[0]!.leftovers,
+    [{ start: "$c001", end: "$c002", file: "leftovers/leftover_c001.asm", differences: 2 }],
+    "a leftover at the end that the build does not hold",
+  );
+});
