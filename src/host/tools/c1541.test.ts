@@ -1,16 +1,15 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { failsWith } from "../../errors.testkit.ts";
 import { ProcessSupervisor } from "../../native/processes.ts";
 import { Workspace } from "../../native/staging.ts";
-import { WireFailure } from "../../protocol/messages.ts";
+import { shellStandIn } from "../../native/standin.testkit.ts";
 import { MAX_DISK_SECTORS } from "../../protocol/tools.ts";
 import { C1541Session, fileData, parseBam, parseChain, parseDirectory, parseFreeBlocks, parseInfo, READS_PER_CALL, sectorsToRead, unreferencedSectors } from "./c1541.ts";
-
-const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
 
 // c1541 output for a disk with one file.
 const OVERVIEW = `D64 disk image recognised: probe.d64, 35 tracks.
@@ -39,11 +38,7 @@ test("a chain lists its sectors; a loop or a block outside the disk is a media e
     { track: 17, sector: 2 },
   ]);
   assert.deepEqual(parseChain("(18, 1) -> 255\n", { track: 18, sector: 1 }), [{ track: 18, sector: 1 }]);
-  assert.throws(() => parseChain("(17, 1) -> (17,11) -> cyclic reference found to (17,1)!\n1\n", start), (error: unknown) => {
-    assert.ok(failsWith("media-error")(error));
-    assert.match((error as Error).message, /loops/);
-    return true;
-  });
+  assert.throws(() => parseChain("(17, 1) -> (17,11) -> cyclic reference found to (17,1)!\n1\n", start), failsWith("media-error", /loops/));
   assert.throws(() => parseChain("(17, 1) -> (99, 0) -> <unknown error>\nError - Track 99, Sector 0 out of bounds.\n", start), /leaves the disk/);
 });
 
@@ -81,7 +76,7 @@ test("a sectors request reads the given sectors in their order, then the unrefer
   ]);
   assert.deepEqual(sectorsToRead([], [], tracks), []);
   for (const outside of [{ track: 1, sector: 3 }, { track: 3, sector: 0 }, { track: 0, sector: 0 }]) {
-    assert.throws(() => sectorsToRead([outside], [], tracks), (error: unknown) => failsWith("invalid-input")(error) && /The disk has no track/.test((error as Error).message), JSON.stringify(outside));
+    assert.throws(() => sectorsToRead([outside], [], tracks), failsWith("invalid-input", /The disk has no track/), JSON.stringify(outside));
   }
   const many = Array.from({ length: MAX_DISK_SECTORS + 1 }, () => ({ track: 1, sector: 0 }));
   assert.throws(() => sectorsToRead(many, [], tracks), failsWith("limit-exceeded"));
@@ -168,12 +163,13 @@ test("many blocks are read in several c1541 calls with a bounded number of reads
   try {
     // Writes each block as its track and sector, padded to 256 bytes, and logs the number of reads of each call.
     const calls = join(scratch, "calls.log");
-    const c1541 = join(scratch, "c1541");
-    writeFileSync(
-      c1541,
-      `#!/bin/sh\nreads=0\nwhile [ $# -gt 0 ]; do\n  if [ "$1" = "-bread" ]; then printf '%-256s' "$3 $4" > "$2"; reads=$((reads + 1)); shift 4; else shift; fi\ndone\necho $reads >> '${calls}'\n`,
-    );
-    chmodSync(c1541, 0o755);
+    const c1541 = shellStandIn(scratch, "c1541", [
+      "reads=0",
+      "while [ $# -gt 0 ]; do",
+      `  if [ "$1" = "-bread" ]; then printf '%-256s' "$3 $4" > "$2"; reads=$((reads + 1)); shift 4; else shift; fi`,
+      "done",
+      `echo $reads >> '${calls}'`,
+    ]);
     const sectors = Array.from({ length: 2 * READS_PER_CALL + 88 }, (_, index) => ({ track: 1 + Math.floor(index / 21), sector: index % 21 }));
     const session = new C1541Session(c1541, workspace, "input/image.d64", { supervisor, signal: new AbortController().signal });
     const blocks = await session.blocks(sectors);

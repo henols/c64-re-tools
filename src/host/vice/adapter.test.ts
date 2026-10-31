@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { COVERAGE } from "../../c64.ts";
-import { WireFailure } from "../../protocol/messages.ts";
+import { failsWith } from "../../errors.testkit.ts";
 import {
   conditionExpression,
   flagsFromStatusRegister,
@@ -18,7 +18,7 @@ import {
   ViceAdapter,
 } from "./adapter.ts";
 import { Command } from "./binary-monitor.ts";
-import { FakeVice } from "./fake-vice.testkit.ts";
+import { startFake } from "./fake-vice.testkit.ts";
 
 test("typed conditions become parenthesized VICE expressions", () => {
   assert.equal(conditionExpression({ kind: "register", register: "a", operator: "eq", value: 66 }, "c64"), "(A == $42)");
@@ -37,7 +37,7 @@ test("typed conditions become parenthesized VICE expressions", () => {
 test("a memory condition on drive8 memory is unsupported", () => {
   assert.throws(
     () => conditionExpression({ kind: "memory", address: 0, operator: "eq", value: 0, space: "drive8", view: "cpu" }, "drive8"),
-    (error: unknown) => error instanceof WireFailure && error.code === "unsupported-in-space",
+    failsWith("unsupported-in-space"),
   );
 });
 
@@ -158,7 +158,7 @@ test("memmap keeps RAM, ROM and I/O apart in the coverage byte", () => {
   assert.equal(parseMemmap(rows, 10).ranges.length, 2, "KERNAL code and code in the RAM below it do not merge");
 });
 
-const unknownForm = (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && /does not read/.test(error.message);
+const unknownForm = failsWith("operation-failed", /does not read/);
 
 test("disassembly, CPU history and search answers in an unknown form are refused, not read as empty", () => {
   assert.throws(() => parseDisassembly("ERROR -- Wrong syntax:", 0xc000), unknownForm);
@@ -175,26 +175,16 @@ test("search answers parse into addresses up to the limit; an empty answer is no
 });
 
 test("the adapter asks VICE once for the registers of each memory space", async () => {
-  const fake = new FakeVice();
-  const process = await fake.start();
-  try {
-    await ViceAdapter.create(process.monitor, process.text);
-    assert.equal(fake.commands.filter((command) => command === Command.registersAvailable).length, 2);
-  } finally {
-    await process.stop();
-  }
+  const { fake, process } = await startFake();
+  await ViceAdapter.create(process.monitor, process.text);
+  assert.equal(fake.commands.filter((command) => command === Command.registersAvailable).length, 2);
 });
 
 test("a snapshot path longer than VICE takes is refused before VICE sees it", async () => {
-  const fake = new FakeVice();
-  const process = await fake.start();
-  try {
-    const adapter = await ViceAdapter.create(process.monitor, process.text);
-    fake.commands.length = 0;
-    await assert.rejects(adapter.restoreSnapshot(`/${"x".repeat(300)}.vsf`), /too long/);
-    await assert.rejects(adapter.saveSnapshot(`/${"x".repeat(300)}.vsf`), /too long/);
-    assert.ok(!fake.commands.includes(Command.undump) && !fake.commands.includes(Command.dump));
-  } finally {
-    await process.stop();
-  }
+  const { fake, process } = await startFake();
+  const adapter = await ViceAdapter.create(process.monitor, process.text);
+  fake.commands.length = 0;
+  await assert.rejects(adapter.restoreSnapshot(`/${"x".repeat(300)}.vsf`), /too long/);
+  await assert.rejects(adapter.saveSnapshot(`/${"x".repeat(300)}.vsf`), /too long/);
+  assert.ok(!fake.commands.includes(Command.undump) && !fake.commands.includes(Command.dump));
 });

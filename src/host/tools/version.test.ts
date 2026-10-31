@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 import { WireFailure } from "../../protocol/messages.ts";
 import { C1541, isOlderThanMinimum, viceFlaws, viceVersionOf } from "../../native/discover.ts";
 import { ProcessSupervisor } from "../../native/processes.ts";
-import { standIn } from "../../native/standin.testkit.ts";
+import { shellStandIn, standIn } from "../../native/standin.testkit.ts";
 import { requireMinimumVersion } from "./version.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-version-"));
@@ -55,9 +55,7 @@ test("a c1541 from an older VICE or with an unreadable version is refused by nam
 });
 
 test("a caller that cancels does not cancel the version check that another caller waits for", { skip: posixOnly, timeout: 30_000 }, async () => {
-  const slow = join(scratch, "c1541-slow");
-  writeFileSync(slow, "#!/bin/sh\nsleep 0.5\necho 'c1541 (VICE 3.10)'\n");
-  chmodSync(slow, 0o755);
+  const slow = shellStandIn(scratch, "c1541-slow", ["sleep 0.1", "echo 'c1541 (VICE 3.10)'"]);
   const leaving = new AbortController();
   const first = requireMinimumVersion(C1541, slow, { supervisor, signal: leaving.signal });
   const second = requireMinimumVersion(C1541, slow, { supervisor, signal: new AbortController().signal });
