@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { WireFailure } from "../protocol/messages.ts";
+import { failsWith } from "../errors.testkit.ts";
 import { writeOut } from "./output.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-out-"));
@@ -15,7 +15,7 @@ const outside = join(scratch, "outside");
 mkdirSync(project);
 mkdirSync(outside);
 
-const refused = (error: unknown) => error instanceof WireFailure && error.code === "invalid-input";
+const refused = failsWith("invalid-input");
 
 test("out writes the bytes to a project file, makes its directories and overwrites", () => {
   const first = writeOut("dumps/ram.bin", Buffer.from([1, 2, 3]), project);

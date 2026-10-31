@@ -1,38 +1,15 @@
 import assert from "node:assert/strict";
-import { once } from "node:events";
-import { createServer, type Server, type Socket } from "node:net";
-import { after, test } from "node:test";
+import type { Socket } from "node:net";
+import { test } from "node:test";
 
+import { failsWith } from "../errors.testkit.ts";
 import { encodeFrame, MAX_FRAME_BYTES } from "../protocol/framing.ts";
-import { WireFailure, type Request } from "../protocol/messages.ts";
-import { FrameDecoder } from "../protocol/framing.testkit.ts";
-import { PACKAGE } from "../package.ts";
+import type { Request } from "../protocol/messages.ts";
+import { readyHost } from "./fake-host.testkit.ts";
 import { LostBeforeAnswer, ViceSessionClient } from "./vice-session.ts";
 
-const servers: Server[] = [];
-after(() => {
-  for (const server of servers) server.close();
-});
-
 /** A fake host: answers hello with ready, then hands each request to `onRequest`. */
-async function fakeHost(onRequest: (socket: Socket, request: Request) => void): Promise<NodeJS.ProcessEnv> {
-  const server = createServer((socket) => {
-    const decoder = new FrameDecoder();
-    socket.on("data", (chunk) => {
-      for (const message of decoder.push(chunk) as Array<{ type: string }>) {
-        if (message.type === "hello") socket.write(encodeFrame({ type: "ready", release: PACKAGE.version }));
-        else onRequest(socket, message as Request);
-      }
-    });
-    socket.on("error", () => {});
-  });
-  servers.push(server);
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  return { C64RT_HOST: `127.0.0.1:${(server.address() as { port: number }).port}` };
-}
-
-const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
+const fakeHost = (onRequest: (socket: Socket, request: Request) => void) => readyHost((socket, message) => onRequest(socket, message as Request));
 
 test("a malformed result is refused and the connection dropped", async () => {
   const env = await fakeHost((socket, request) => socket.write(encodeFrame({ type: "reply", id: request.id, result: { state: "dancing" } })));
@@ -76,11 +53,7 @@ test("trace hits that are malformed, or not as many as the reply tells, are refu
 test("losing the host before the emulator answered fails pending and later operations as a call to do again", async () => {
   const env = await fakeHost((socket) => socket.destroy());
   const client = await ViceSessionClient.open({ videoStandard: "pal", env });
-  await assert.rejects(client.registersGet("c64"), (error: unknown) => {
-    assert.ok(error instanceof LostBeforeAnswer && failsWith("machine-unavailable")(error));
-    assert.match((error as Error).message, /No machine state was lost/);
-    return true;
-  });
+  await assert.rejects(client.registersGet("c64"), (error: unknown) => error instanceof LostBeforeAnswer && failsWith("machine-unavailable", /No machine state was lost/)(error));
   await assert.rejects(client.memoryRead({ address: 0, size: 1, space: "c64", view: "cpu" }), (error: unknown) => error instanceof LostBeforeAnswer);
   assert.equal(client.lost, true);
 });
@@ -111,8 +84,7 @@ test("a lost session tells whether it served calls and whether a call got the lo
   await idle.warp(true);
   socketOf.destroy();
   await idle.closed;
-  assert.ok(failsWith("machine-state-lost")(idle.unreportedLoss));
-  assert.match(idle.unreportedLoss!.message, /next call starts a new machine/);
+  assert.ok(failsWith("machine-state-lost", /next call starts a new machine/)(idle.unreportedLoss));
 });
 
 test("closing the session fails an open request and later ones as closed, not as lost machine state", async () => {
@@ -120,7 +92,7 @@ test("closing the session fails an open request and later ones as closed, not as
   const requestReceived = new Promise<void>((resolve) => (received = resolve));
   const env = await fakeHost(() => received());
   const client = await ViceSessionClient.open({ videoStandard: "pal", env });
-  const isClosed = (error: unknown) => failsWith("machine-unavailable")(error) && /session is closed/.test((error as Error).message);
+  const isClosed = failsWith("machine-unavailable", /session is closed/);
   const open = assert.rejects(client.status(), isClosed);
   await requestReceived;
   await client.close();

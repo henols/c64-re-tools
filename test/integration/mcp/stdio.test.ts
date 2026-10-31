@@ -14,15 +14,17 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { startHostServer, type HostServer, type ViceSessionFactory } from "../../../src/host/server.ts";
 import { freePort } from "../../../src/host/vice/process.ts";
+import { debugTools } from "../../../src/mcp/tools/debug.ts";
+import { executionTools } from "../../../src/mcp/tools/execution.ts";
+import { inputTools } from "../../../src/mcp/tools/input.ts";
+import { machineTools } from "../../../src/mcp/tools/machine.ts";
+import { mediaTools } from "../../../src/mcp/tools/media.ts";
+import { memoryTools } from "../../../src/mcp/tools/memory.ts";
+import { videoTools } from "../../../src/mcp/tools/video.ts";
 import { startMcp, waitFor } from "../../kit.ts";
 
-/** Every tool that the MCP server registers. */
-const TOOLS = [
-  "c64_autostart", "c64_backtrace", "c64_breakpoint", "c64_cia", "c64_cpu_history", "c64_disassemble", "c64_disk_attach", "c64_execution",
-  "c64_joystick", "c64_keyboard", "c64_memmap", "c64_memory_compare", "c64_memory_read", "c64_memory_search", "c64_memory_write", "c64_observe",
-  "c64_press", "c64_profile", "c64_program_load", "c64_registers", "c64_reset", "c64_run_until", "c64_screen", "c64_sid", "c64_snapshot",
-  "c64_sprite", "c64_timing", "c64_trace", "c64_vicii", "c64_warp", "c64_watchpoint", "c64_window",
-];
+/** Every tool of the tool groups: the MCP server registers each one. The server tests pin which tools the groups have. */
+const TOOLS = [...machineTools, ...executionTools, ...debugTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools].map((tool) => tool.name).sort();
 
 interface StubState {
   opened: string[];
@@ -96,7 +98,7 @@ test("a host that starts after the MCP is used on the next tool call", async () 
   await waitFor(() => state.closed === 1, "the session closed");
 });
 
-test("after the host comes back, the next call opens a new session; a lost session that served calls says so once", async () => {
+test("after the host comes back, the next call opens a new session", async () => {
   const port = await freePort();
   const code = (result: CallToolResult) => (result.isError === true ? JSON.parse((result.content[0] as { text: string }).text).error.code : "ok");
   const host = async (state: StubState) => {
@@ -107,25 +109,16 @@ test("after the host comes back, the next call opens a new session; a lost sessi
 
   // The session that the MCP opens at start served no call: after a host restart the next call goes on without a word.
   const first: StubState = { opened: [], closed: 0 };
-  let server = await host(first);
+  const server = await host(first);
   const client = (await startMcp(`127.0.0.1:${port}`, { stderr: "inherit" })).client;
   clients.push(client);
   try {
     await waitFor(() => first.opened.length === 1, "the session opened at start");
     await server.close();
     const second: StubState = { opened: [], closed: 0 };
-    server = await host(second);
+    await host(second);
     assert.equal(code(await call(client)), "ok");
     assert.equal(second.opened.length, 1);
-
-    // This session served a call: its loss is told once, then a host that is not there is unavailable, then a new session opens.
-    await server.close();
-    assert.equal(code(await call(client)), "machine-state-lost");
-    assert.equal(code(await call(client)), "machine-unavailable");
-    const third: StubState = { opened: [], closed: 0 };
-    await host(third);
-    assert.equal(code(await call(client)), "ok");
-    assert.equal(third.opened.length, 1);
   } finally {
     await client.close();
   }

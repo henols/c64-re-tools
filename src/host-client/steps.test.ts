@@ -51,14 +51,6 @@ test("a step has the input of its MCP tool, with names and the defaults of the t
 });
 
 test("a step in a form of the 2.0 files is refused with the field and the 2.1 step to write", () => {
-  const message = (steps: unknown[]) => {
-    try {
-      checkActionSteps(steps, refuse);
-    } catch (error) {
-      return (error as Error).message;
-    }
-    return assert.fail(`${JSON.stringify(steps)} is not refused`);
-  };
   for (const [old, expected] of [
     [{ runUntil: { at: "cold_start" }, timeoutFrames: 900 }, 'step 1 has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "cold_start"}, "timeoutFrames": 900}}'],
     [{ runUntil: { at: "$0400", timeoutFrames: 100 } }, 'step 1 has the 2.0 form (runUntil.at). Write {"runUntil": {"target": {"kind": "address", "address": "$0400"}, "timeoutFrames": 100}}'],
@@ -73,8 +65,7 @@ test("a step in a form of the 2.0 files is refused with the field and the 2.1 st
     [{ runUntil: { target: { kind: "memory", at: "room", operator: "eq", value: 0 } } }, /runUntil\.target has the field at, which it does not take\. at is a 2\.0 field\. Write address in place of at\./],
     [{ runUntil: { target: { kind: "memory", address: "room", equals: 0 } } }, /has the field equals, which it does not take\. equals is a 2\.0 field\. Write "operator": "eq" and "value" in place of equals\./],
   ] as const) {
-    if (typeof expected === "string") assert.equal(message([old]), expected);
-    else assert.match(message([old]), expected);
+    assert.throws(() => checkActionSteps([old], refuse), { message: expected }, JSON.stringify(old));
   }
   // The 2.1 step that the refusal gives is a step that checks.
   assert.doesNotThrow(() => checkActionSteps([{ runUntil: { target: { kind: "address", address: "cold_start" }, timeoutFrames: 900 } }, { type: { mode: "text", text: " " } }, { write: { address: "next_room", data: "01ff" } }, { registers: { pc: "$0400", a: 16 } }], refuse));

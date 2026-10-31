@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { failsWith } from "../errors.testkit.ts";
 import type { ViceSessionClient } from "../host-client/vice-session.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { sessionSource } from "./session-source.ts";
@@ -26,8 +27,6 @@ function answeredSession(): { client: ViceSessionClient; lose: () => Promise<voi
   };
 }
 
-const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
-
 test("after a lost session, a host of another release gives its refusal, not the lost machine state", async () => {
   const first = answeredSession();
   const opens: Array<() => Promise<ViceSessionClient>> = [
@@ -39,7 +38,7 @@ test("after a lost session, a host of another release gives its refusal, not the
   const source = sessionSource(() => opens.shift()!(), () => {});
   assert.equal(await source.get(), first.client);
   await first.lose();
-  await assert.rejects(source.get(), (error: unknown) => failsWith("installation-incomplete")(error) && /older release/.test((error as Error).message));
+  await assert.rejects(source.get(), failsWith("installation-incomplete", /older release/));
   await source.close();
 });
 

@@ -4,11 +4,25 @@ import { test } from "node:test";
 import { encodeFrame, MAX_ATTACHMENT_BYTES, MAX_FRAME_BYTES, MessageReader } from "./protocol/framing.ts";
 import { checkHello, checkRelease, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseClientMessage, parseHostMessage, ProtocolError, shownMessage, STOP_AND_ASK, WireFailure, withStopAndAsk } from "./protocol/messages.ts";
 import { isRelativePath, MAX_DISK_SECTORS, validateToolParams, validateToolResult } from "./protocol/tools.ts";
-import { attachmentCount, MAX_MASK_RECTANGLES, validateViceParams, validateViceResult } from "./protocol/vice.ts";
-import { FrameDecoder } from "./protocol/framing.testkit.ts";
+import { attachmentCount, MAX_MASK_RECTANGLES, validateViceParams, validateViceResult, type ViceOperation } from "./protocol/vice.ts";
+import { failsWith } from "./errors.testkit.ts";
+import { FrameDecoder, rawFrame } from "./protocol/framing.testkit.ts";
 
 const RELEASE = "2.1.4";
 const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release: RELEASE, role: "vice-session" } as const;
+
+/** The parameter check of one emulator operation. */
+const vice = (op: ViceOperation) => (params: unknown) => validateViceParams(op, params);
+
+/** Asserts that `validate` gives each input back as it is. */
+function accepts<T>(validate: (input: T) => unknown, ...inputs: T[]): void {
+  for (const input of inputs) assert.deepEqual(validate(input), input, JSON.stringify(input));
+}
+
+/** Asserts that `validate` refuses each input as invalid-input. */
+function refuses<T>(validate: (input: T) => unknown, ...inputs: T[]): void {
+  for (const input of inputs) assert.throws(() => validate(input), failsWith("invalid-input"), JSON.stringify(input).slice(0, 120));
+}
 
 test("a frame is a 4-byte big-endian length followed by UTF-8 JSON", () => {
   const frame = encodeFrame({ type: "ready", release: RELEASE });
@@ -33,13 +47,8 @@ test("the decoder refuses an oversized length before buffering the body", () => 
 });
 
 test("the decoder refuses a body that is not JSON or not UTF-8", () => {
-  const frameOf = (body: Buffer) => {
-    const header = Buffer.alloc(4);
-    header.writeUInt32BE(body.length, 0);
-    return Buffer.concat([header, body]);
-  };
-  assert.throws(() => new FrameDecoder().push(frameOf(Buffer.from("{nope", "utf8"))), /not valid JSON/);
-  assert.throws(() => new FrameDecoder().push(frameOf(Buffer.from([0x22, 0xff, 0x22]))), /not valid UTF-8/);
+  assert.throws(() => new FrameDecoder().push(rawFrame("{nope")), /not valid JSON/);
+  assert.throws(() => new FrameDecoder().push(rawFrame(Buffer.from([0x22, 0xff, 0x22]))), /not valid UTF-8/);
 });
 
 test("the encoder refuses a frame larger than the limit", () => {
@@ -123,39 +132,30 @@ test("a release mismatch at the same protocol version names the older side; a de
 });
 
 test("operation parameters are validated with invalid-input", () => {
-  assert.deepEqual(validateViceParams("memoryRead", { address: 0xe000, size: 16, space: "c64", view: "cpu" }), {
-    address: 0xe000,
-    size: 16,
-    space: "c64",
-    view: "cpu",
-  });
-  assert.deepEqual(validateViceParams("registersGet", { space: "drive8" }), { space: "drive8" });
-  assert.deepEqual(validateViceParams("status", {}), {});
-  for (const params of [
+  accepts(vice("memoryRead"), { address: 0xe000, size: 16, space: "c64", view: "cpu" });
+  accepts(vice("registersGet"), { space: "drive8" });
+  accepts(vice("status"), {});
+  refuses(
+    vice("memoryRead"),
     { address: 0x10000, size: 1, space: "c64", view: "cpu" },
     { address: 0, size: 0, space: "c64", view: "cpu" },
     { address: 0, size: 4097, space: "c64", view: "cpu" },
     { address: 0xfff0, size: 17, space: "c64", view: "cpu" },
     { address: 0, size: 1, space: "drive9", view: "cpu" },
     { address: 0, size: 1, space: "c64", view: "rom" },
-  ]) {
-    assert.throws(
-      () => validateViceParams("memoryRead", params),
-      (error: unknown) => error instanceof WireFailure && error.code === "invalid-input",
-    );
-  }
+  );
   assert.throws(() => validateViceParams("reboot" as never, {}), WireFailure);
 });
 
 test("an operation refuses a field it does not take, also inside a nested object", () => {
-  const unknown = (field: string) => (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message.endsWith(`: ${field}`);
+  const unknown = (field: string) => failsWith("invalid-input", new RegExp(`: ${field}$`));
   const range = { address: 0, size: 1, space: "c64", view: "cpu" };
   assert.throws(() => validateViceParams("status", { verbose: true }), unknown("verbose"));
   assert.throws(() => validateViceParams("memoryRead", { ...range, format: "hex" }), unknown("format"));
   assert.throws(() => validateViceParams("snapshot", { action: "list", name: "a" }), unknown("name"));
   assert.throws(() => validateViceParams("breakpoint", { action: "list", space: "c64" }), unknown("space"));
   assert.throws(() => validateViceParams("breakpoint", { action: "add", address: 0, space: "c64", access: "read" }), unknown("access"));
-  assert.deepEqual(validateViceParams("breakpoint", { action: "add", address: 0xc000, space: "c64", size: 128 }), { action: "add", address: 0xc000, space: "c64", size: 128 }, "a breakpoint over a range");
+  accepts(vice("breakpoint"), { action: "add", address: 0xc000, space: "c64", size: 128 });
   assert.throws(() => validateViceParams("breakpoint", { action: "add", address: 0xffff, space: "c64", size: 2 }), /inside \$0000-\$ffff/);
   assert.throws(() => validateViceParams("observe", { memory: [{ ...range, extra: 1 }] }), unknown("extra"));
   assert.throws(() => validateViceParams("memoryCompare", { left: { address: 0, space: "c64", view: "cpu", bank: 1 }, right: { address: 0, space: "c64", view: "cpu" }, size: 1 }), unknown("bank"));
@@ -178,10 +178,7 @@ test("a screen comparison mask holds at most the rectangle limit", () => {
   const compare = (count: number) =>
     validateViceParams("screenCompare", { baseline: "b", maxMismatchRatio: 0, mask: Array.from({ length: count }, () => ({ x: 0, y: 0, width: 1, height: 1 })), includeDiff: false });
   assert.equal(compare(MAX_MASK_RECTANGLES).mask.length, MAX_MASK_RECTANGLES);
-  assert.throws(
-    () => compare(MAX_MASK_RECTANGLES + 1),
-    (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message === `mask must be a list of at most ${MAX_MASK_RECTANGLES} rectangles`,
-  );
+  assert.throws(() => compare(MAX_MASK_RECTANGLES + 1), failsWith("invalid-input", new RegExp(`^mask must be a list of at most ${MAX_MASK_RECTANGLES} rectangles$`)));
 });
 
 test("operation results are validated on the client", () => {
@@ -210,27 +207,16 @@ test("operation results are validated on the client", () => {
 });
 
 test("write parameters are validated with invalid-input", () => {
-  assert.deepEqual(validateViceParams("memoryWrite", { address: 0x2000, data: "a900", space: "c64", view: "ram" }), {
-    address: 0x2000,
-    data: "a900",
-    space: "c64",
-    view: "ram",
-  });
-  for (const params of [
+  accepts(vice("memoryWrite"), { address: 0x2000, data: "a900", space: "c64", view: "ram" });
+  refuses(
+    vice("memoryWrite"),
     { address: 0x2000, data: "", space: "c64", view: "cpu" },
     { address: 0x2000, data: "A9", space: "c64", view: "cpu" },
     { address: 0xffff, data: "a900", space: "c64", view: "cpu" },
     { address: 0, data: "00".repeat(4097), space: "c64", view: "cpu" },
-  ]) {
-    assert.throws(() => validateViceParams("memoryWrite", params), WireFailure);
-  }
-  assert.deepEqual(validateViceParams("registersSet", { space: "c64", values: { pc: 0x2100, flags: { c: true } } }), {
-    space: "c64",
-    values: { pc: 0x2100, flags: { c: true } },
-  });
-  for (const values of [{}, { q: 1 }, { a: 256 }, { pc: -1 }, { flags: { q: true } }, { flags: { c: 1 } }]) {
-    assert.throws(() => validateViceParams("registersSet", { space: "c64", values }), WireFailure, JSON.stringify(values));
-  }
+  );
+  accepts(vice("registersSet"), { space: "c64", values: { pc: 0x2100, flags: { c: true } } });
+  refuses((values: object) => validateViceParams("registersSet", { space: "c64", values }), {}, { q: 1 }, { a: 256 }, { pc: -1 }, { flags: { q: true } }, { flags: { c: 1 } });
 });
 
 test("attachments follow their message as raw frames and reassemble at any split", () => {
@@ -255,31 +241,20 @@ test("an attachment larger than one frame is split and rejoined", () => {
 });
 
 test("bad attachment announcements and empty or overlong attachment frames are refused", () => {
-  const raw = (value: unknown, ...extra: Buffer[]) => {
-    const body = Buffer.from(JSON.stringify(value));
-    const header = Buffer.alloc(4);
-    header.writeUInt32BE(body.length, 0);
-    return Buffer.concat([header, body, ...extra]);
-  };
-  const frameOf = (body: Buffer) => {
-    const header = Buffer.alloc(4);
-    header.writeUInt32BE(body.length, 0);
-    return Buffer.concat([header, body]);
-  };
+  const raw = (value: unknown, ...extra: Buffer[]) => Buffer.concat([rawFrame(JSON.stringify(value)), ...extra]);
   assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [-1] })), ProtocolError);
   assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: "3" })), ProtocolError);
   assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [MAX_ATTACHMENT_BYTES, 1] })), ProtocolError);
-  assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [2] }, frameOf(Buffer.from("abc")))), /runs past/);
-  assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [2] }, frameOf(Buffer.alloc(0)))), /attachment frame is empty/);
+  assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [2] }, rawFrame("abc"))), /runs past/);
+  assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [2] }, rawFrame(Buffer.alloc(0)))), /attachment frame is empty/);
   assert.throws(() => encodeFrame({ type: "ready", release: RELEASE }, [Buffer.alloc(MAX_ATTACHMENT_BYTES + 1)]), ProtocolError);
   assert.throws(() => new FrameDecoder().push(encodeFrame({ type: "ready", release: RELEASE }, [Buffer.from("x")])), /unexpected attachments/);
 });
 
 test("media parameters are validated with invalid-input", () => {
-  assert.deepEqual(validateViceParams("autostart", { type: "d64", index: 0, run: true }), { type: "d64", index: 0, run: true });
-  assert.deepEqual(validateViceParams("diskAttach", { type: "g64" }), { type: "g64" });
-  assert.deepEqual(validateViceParams("programLoad", {}), {});
-  assert.deepEqual(validateViceParams("programLoad", { address: 0xc000 }), { address: 0xc000 });
+  accepts(vice("autostart"), { type: "d64", index: 0, run: true });
+  accepts(vice("diskAttach"), { type: "g64" });
+  accepts(vice("programLoad"), {}, { address: 0xc000 });
   assert.throws(() => validateViceParams("autostart", { type: "exe", index: 0, run: true }), /\.prg/);
   assert.throws(() => validateViceParams("diskAttach", { type: "prg" }), /\.d64/);
   assert.throws(() => validateViceParams("programLoad", { address: 0x10000 }), WireFailure);
@@ -288,27 +263,10 @@ test("media parameters are validated with invalid-input", () => {
 });
 
 test("checkpoint parameters and typed conditions are validated", () => {
-  assert.deepEqual(validateViceParams("breakpoint", { action: "list" }), { action: "list" });
-  assert.deepEqual(validateViceParams("breakpoint", { action: "disable", id: 4 }), { action: "disable", id: 4 });
-  assert.deepEqual(
-    validateViceParams("watchpoint", {
-      action: "add",
-      address: 0xc020,
-      size: 2,
-      access: "write",
-      space: "c64",
-      condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
-    }),
-    {
-      action: "add",
-      address: 0xc020,
-      size: 2,
-      access: "write",
-      space: "c64",
-      condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
-    },
-  );
-  for (const params of [
+  accepts(vice("breakpoint"), { action: "list" }, { action: "disable", id: 4 });
+  accepts(vice("watchpoint"), { action: "add", address: 0xc020, size: 2, access: "write", space: "c64", condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" } });
+  refuses(
+    vice("breakpoint"),
     { action: "add", address: 0x2100, space: "c64", condition: { kind: "register", register: "pc", operator: "eq", value: 1 } },
     { action: "add", address: 0x2100, space: "c64", condition: { kind: "register", register: "a", operator: "==", value: 1 } },
     { action: "add", address: 0x2100, space: "c64", condition: { kind: "register", register: "a", operator: "eq", value: 256 } },
@@ -316,64 +274,49 @@ test("checkpoint parameters and typed conditions are validated", () => {
     { action: "add", address: 0x2100, space: "c64", condition: { kind: "expression", text: "A == 1" } },
     { action: "remove", id: 0 },
     { action: "toggle", id: 1 },
-  ]) {
-    assert.throws(() => validateViceParams("breakpoint", params), WireFailure, JSON.stringify(params));
-  }
-  for (const params of [
+  );
+  refuses(
+    vice("watchpoint"),
     { action: "add", address: 0xfff0, size: 17, access: "write", space: "c64" },
     { action: "add", address: 0x1000, size: 257, access: "write", space: "c64" },
     { action: "add", address: 0x1000, size: 1, access: "exec", space: "c64" },
-  ]) {
-    assert.throws(() => validateViceParams("watchpoint", params), WireFailure, JSON.stringify(params));
-  }
+  );
 });
 
 test("advance-frames needs a count and run-until targets are validated", () => {
   assert.throws(() => validateViceParams("execution", { action: "advance-frames", space: "c64" }), /needs count/);
-  assert.deepEqual(validateViceParams("execution", { action: "advance-frames", count: 20, space: "c64" }), {
-    action: "advance-frames",
-    count: 20,
-    space: "c64",
-  });
+  accepts(vice("execution"), { action: "advance-frames", count: 20, space: "c64" });
   // An anchor keeps the frames of one timeline across stops.
   assert.deepEqual(validateViceParams("execution", { action: "advance-frames", count: 2, space: "c64", anchor: { line: 251, cycle: 3 } }).anchor, { line: 251, cycle: 3 });
   assert.throws(() => validateViceParams("execution", { action: "step", space: "c64", anchor: { line: 1, cycle: 1 } }), /anchor is not used with action step/);
   assert.throws(() => validateViceParams("execution", { action: "advance-frames", count: 1, space: "c64", anchor: { line: 512, cycle: 0 } }), /anchor needs line/);
   assert.throws(() => validateViceParams("execution", { action: "advance-frames", count: 1, space: "c64", anchor: { line: 1, cycle: 1, x: 1 } }), /unknown field/);
-  assert.deepEqual(validateViceParams("runUntil", { target: { kind: "raster", line: 100, cycle: 20 }, timeoutFrames: 3000 }), {
-    target: { kind: "raster", line: 100, cycle: 20 },
-    timeoutFrames: 3000,
-  });
-  assert.deepEqual(
-    validateViceParams("runUntil", {
-      target: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
-      timeoutFrames: 1,
-    }),
+  accepts(
+    vice("runUntil"),
+    { target: { kind: "raster", line: 100, cycle: 20 }, timeoutFrames: 3000 },
     { target: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" }, timeoutFrames: 1 },
   );
-  for (const params of [
+  refuses(
+    vice("runUntil"),
     { target: { kind: "address", address: 0xc000, space: "c64" }, timeoutFrames: 0 },
     { target: { kind: "address", address: 0xc000, space: "c64" }, timeoutFrames: 30001 },
     { target: { kind: "pc", address: 0xc000 }, timeoutFrames: 10 },
     { target: { kind: "memory", address: 0xc020, operator: "eq", value: 300, space: "c64", view: "cpu" }, timeoutFrames: 10 },
-  ]) {
-    assert.throws(() => validateViceParams("runUntil", params), WireFailure, JSON.stringify(params));
-  }
+  );
 });
 
 test("search, compare and disassemble parameters are validated", () => {
   const search = { start: 0x0800, end: 0xffff, pattern: [0xa9, null, 0x8d], space: "c64", view: "cpu", maxResults: 100 };
-  assert.deepEqual(validateViceParams("memorySearch", search), search);
-  for (const bad of [
+  accepts(vice("memorySearch"), search);
+  refuses(
+    vice("memorySearch"),
     { ...search, pattern: [] },
     { ...search, pattern: [null, null] },
     { ...search, pattern: Array(257).fill(1) },
     { ...search, pattern: [256] },
     { ...search, end: 0x0700 },
     { ...search, maxResults: 1001 },
-  ]) {
-    assert.throws(() => validateViceParams("memorySearch", bad), WireFailure, JSON.stringify(bad).slice(0, 80));
-  }
+  );
   assert.throws(
     () =>
       validateViceParams("memoryCompare", {
@@ -402,10 +345,11 @@ test("relative paths are validated", () => {
 });
 
 test("c1541.inspect parameters and results are validated", () => {
-  const image = [Buffer.alloc(174848)];
-  assert.deepEqual(validateToolParams("c1541.inspect", { action: "directory", imageType: "d64" }, image), { action: "directory", imageType: "d64" });
-  assert.deepEqual(validateToolParams("c1541.inspect", { action: "read", imageType: "d81", name: "game{$c1}" }, image).name, "game{$c1}");
-  for (const params of [
+  const inspect = (params: unknown) => validateToolParams("c1541.inspect", params, [Buffer.alloc(174848)]);
+  accepts(inspect, { action: "directory", imageType: "d64" });
+  assert.deepEqual(inspect({ action: "read", imageType: "d81", name: "game{$c1}" }).name, "game{$c1}");
+  refuses(
+    inspect,
     { action: "format", imageType: "d64" },
     { action: "directory", imageType: "t64" },
     { action: "directory", imageType: "d64", name: "X" },
@@ -413,9 +357,7 @@ test("c1541.inspect parameters and results are validated", () => {
     { action: "read", imageType: "d64", name: "café" },
     { action: "read", imageType: "d64", name: "SEVENTEEN LETTERS" },
     { action: "bam", imageType: "d64", command: "-format" },
-  ]) {
-    assert.throws(() => validateToolParams("c1541.inspect", params, image), WireFailure, JSON.stringify(params));
-  }
+  );
   assert.throws(() => validateToolParams("c1541.inspect", { action: "bam", imageType: "d64" }, []), WireFailure, "the image is necessary");
   const read = { action: "read", found: true, name: "GAME", bytes: 3 };
   assert.deepEqual(validateToolResult("c1541.inspect", read, [Buffer.alloc(3)]), read);
@@ -433,12 +375,11 @@ test("c1541.inspect parameters and results are validated", () => {
 });
 
 test("c1541.inspect sectors takes sectors, unreferenced or both, and its blocks come as the one attachment", () => {
-  const image = [Buffer.alloc(174848)];
+  const inspect = (params: unknown) => validateToolParams("c1541.inspect", params, [Buffer.alloc(174848)]);
   const sectors = [{ track: 18, sector: 0 }, { track: 1, sector: 0 }];
-  assert.deepEqual(validateToolParams("c1541.inspect", { action: "sectors", imageType: "d64", sectors }, image), { action: "sectors", imageType: "d64", sectors });
-  assert.deepEqual(validateToolParams("c1541.inspect", { action: "sectors", imageType: "d64", unreferenced: true }, image), { action: "sectors", imageType: "d64", unreferenced: true });
-  assert.deepEqual(validateToolParams("c1541.inspect", { action: "sectors", imageType: "d64", sectors, unreferenced: true }, image), { action: "sectors", imageType: "d64", sectors, unreferenced: true });
-  for (const params of [
+  accepts(inspect, { action: "sectors", imageType: "d64", sectors }, { action: "sectors", imageType: "d64", unreferenced: true }, { action: "sectors", imageType: "d64", sectors, unreferenced: true });
+  refuses(
+    inspect,
     { action: "sectors", imageType: "d64" },
     { action: "sectors", imageType: "d64", sectors: [] },
     { action: "sectors", imageType: "d64", unreferenced: false },
@@ -449,9 +390,7 @@ test("c1541.inspect sectors takes sectors, unreferenced or both, and its blocks 
     { action: "sectors", imageType: "d64", sectors: Array.from({ length: MAX_DISK_SECTORS + 1 }, () => ({ track: 18, sector: 0 })) },
     { action: "bam", imageType: "d64", sectors },
     { action: "read", imageType: "d64", name: "GAME", unreferenced: true },
-  ]) {
-    assert.throws(() => validateToolParams("c1541.inspect", params, image), WireFailure, JSON.stringify(params).slice(0, 120));
-  }
+  );
   const result = { action: "sectors", sectors, bytes: 512 };
   assert.deepEqual(validateToolResult("c1541.inspect", result, [Buffer.alloc(512)]), result);
   assert.deepEqual(validateToolResult("c1541.inspect", { action: "sectors", sectors: [], bytes: 0 }, [Buffer.alloc(0)]).action, "sectors");
@@ -462,8 +401,7 @@ test("c1541.inspect sectors takes sectors, unreferenced or both, and its blocks 
 
 test("c1541.inspect and petcat.decode refuse an empty attachment in the same words", () => {
   const empty = [Buffer.alloc(0)];
-  const refused = (what: string) => (error: unknown) =>
-    error instanceof WireFailure && error.code === "invalid-input" && error.message === `${what} must be the one attachment, and it must not be empty`;
+  const refused = (what: string) => failsWith("invalid-input", new RegExp(`^${what} must be the one attachment, and it must not be empty$`));
   assert.throws(() => validateToolParams("c1541.inspect", { action: "directory", imageType: "d64" }, empty), refused("the disk image"));
   assert.throws(() => validateToolParams("petcat.decode", {}, empty), refused("the program"));
 });

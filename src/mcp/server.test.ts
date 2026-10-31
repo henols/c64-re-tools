@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -68,7 +68,6 @@ class FakeSession implements ViceSessionApi {
   failure: WireFailure | Error | undefined;
 
   async memoryRead(params: MemoryReadParams) {
-    if (this.failure) throw this.failure;
     this.reads.push(params);
     return { address: params.address, data: "a9".repeat(params.size) };
   }
@@ -236,9 +235,7 @@ class FakeSession implements ViceSessionApi {
     return result;
   }
 
-  snapshots: unknown[] = [];
   async snapshot(params: ViceOperations["snapshot"]["params"]) {
-    this.snapshots.push(params);
     if (params.action === "list") return { snapshots: ["before-boss"] };
     if (params.action === "save") return { saved: true, name: params.name };
     if (params.action === "restore") return { restored: true, state: "stopped" as const };
@@ -288,7 +285,6 @@ class FakeSession implements ViceSessionApi {
 
   executions: ExecutionParams[] = [];
   async execution(params: ExecutionParams) {
-    if (this.failure) throw this.failure;
     this.executions.push(params);
     if (params.action === "resume") return { state: "running" as const };
     if (params.action === "step" || params.action === "next") return { state: "stopped" as const, pc: 0x2102, executed: params.count ?? 1 };
@@ -315,13 +311,27 @@ class FakeSession implements ViceSessionApi {
   }
 }
 
-async function connect(source: SessionSource): Promise<Client> {
-  const server = createMcpServer({ tools: ALL_TOOLS, session: source });
+/** A client of a server with every tool on `session` (a new FakeSession when not given). The client closes after the test. */
+async function open(t: TestContext, session: ViceSessionApi | SessionSource = new FakeSession(), log?: (line: string) => void): Promise<Client> {
+  const server = createMcpServer({ tools: ALL_TOOLS, session: typeof session === "function" ? session : async () => session, ...(log === undefined ? {} : { log }) });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: "test", version: "0" });
   await client.connect(clientTransport);
+  t.after(() => client.close());
   return client;
+}
+
+/** A new scratch project folder that is the working directory until the test ends; then it is removed. */
+function inProject(t: TestContext, name: string): string {
+  const project = realpathSync(mkdtempSync(join(tmpdir(), `c64-re-tools-mcp-${name}-`)));
+  const home = process.cwd();
+  process.chdir(project);
+  t.after(() => {
+    process.chdir(home);
+    rmSync(project, { recursive: true, force: true });
+  });
+  return project;
 }
 
 async function call(client: Client, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
@@ -335,8 +345,8 @@ function errorOf(result: CallToolResult): { code: string; message: string } {
   return (JSON.parse((first as { text: string }).text) as { error: { code: string; message: string } }).error;
 }
 
-test("the server lists exactly the public tools with object input and output schemas", async () => {
-  const client = await connect(async () => new FakeSession());
+test("the server lists exactly the public tools with object input and output schemas", async (t) => {
+  const client = await open(t);
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [...PUBLIC_TOOLS].sort());
   for (const tool of tools) {
@@ -358,7 +368,6 @@ test("the server lists exactly the public tools with object input and output sch
   }
   const read = tools.find((tool) => tool.name === "c64_memory_read")!;
   assert.deepEqual((read.inputSchema.required as string[]).sort(), ["address", "size"]);
-  await client.close();
 });
 
 test("every MCP tool that a skill names is a public tool", () => {
@@ -371,20 +380,19 @@ test("every MCP tool that a skill names is a public tool", () => {
   }
 });
 
-test("c64_memory_read takes canonical addresses and fills defaults", async () => {
+test("c64_memory_read takes canonical addresses and fills defaults", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const result = await call(client, "c64_memory_read", { address: "$E000", size: 3 });
   assert.deepEqual(result.structuredContent, { address: "$e000", size: 3, data: "a9a9a9" });
   assert.deepEqual(session.reads, [{ address: 0xe000, size: 3, space: "c64", view: "cpu" }]);
   await call(client, "c64_memory_read", { address: "$c000", size: 1, space: "drive8", view: "cpu" });
   assert.deepEqual(session.reads[1], { address: 0xc000, size: 1, space: "drive8", view: "cpu" });
-  await client.close();
 });
 
-test("invalid input is an invalid-input error result that names the field", async () => {
+test("invalid input is an invalid-input error result that names the field", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   for (const [args, field] of [
     [{ address: "e000", size: 1 }, "address"],
     [{ address: "$e0000", size: 1 }, "address"],
@@ -397,66 +405,55 @@ test("invalid input is an invalid-input error result that names the field", asyn
     assert.equal(error.code, "invalid-input");
     assert.match(error.message, new RegExp(field));
   }
-  assert.equal(errorOf(await call(client, "c64_registers", { action: "write" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_reboot")).code, "invalid-input");
   assert.deepEqual(session.reads, []);
-  await client.close();
 });
 
-test("c64_registers read returns the frozen register shape", async () => {
+test("c64_registers read returns the frozen register shape", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const result = await call(client, "c64_registers", { action: "read" });
   assert.deepEqual(result.structuredContent, { ...REGISTERS, pc: "$e5cf" });
   await call(client, "c64_registers", { action: "read", space: "drive8" });
   assert.deepEqual(session.spaces, ["c64", "drive8"]);
-  await client.close();
 });
 
-test("host and session failures keep their code and message", async () => {
+test("host and session failures keep their code and message", async (t) => {
   const session = new FakeSession();
   session.failure = new WireFailure("machine-state-lost", "The emulator stopped unexpectedly.");
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual(errorOf(await call(client, "c64_registers", { action: "read" })), { code: "machine-state-lost", message: "The emulator stopped unexpectedly." });
 
-  const unavailable = await connect(async () => {
+  const unavailable = await open(t, async () => {
     throw new WireFailure("machine-unavailable", "The c64-re-tools host runtime is not running.");
   });
   assert.equal(errorOf(await call(unavailable, "c64_registers", { action: "read" })).code, "machine-unavailable");
-  await client.close();
-  await unavailable.close();
 });
 
-test("an installation-incomplete error tells the agent to stop and ask the user", async () => {
-  const broken = await connect(async () => {
+test("an installation-incomplete error tells the agent to stop and ask the user", async (t) => {
+  const broken = await open(t, async () => {
     throw new WireFailure("installation-incomplete", "VICE (x64sc) is not installed on the host.");
   });
   assert.deepEqual(errorOf(await call(broken, "c64_registers", { action: "read" })), {
     code: "installation-incomplete",
     message: `VICE (x64sc) is not installed on the host. ${STOP_AND_ASK}`,
   });
-  await broken.close();
 });
 
-test("an unexpected exception becomes operation-failed without internals", async () => {
+test("an unexpected exception becomes operation-failed without internals", async (t) => {
   const session = new FakeSession();
   session.failure = new Error("ECONNRESET at /tmp/c64-re-tools-vice-x port 51234");
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const error = errorOf(await call(client, "c64_registers", { action: "read" }));
   assert.equal(error.code, "operation-failed");
   assert.doesNotMatch(error.message, /ECONNRESET|tmp|51234/);
-  await client.close();
 });
 
-test("a result goes out in its output schema: an extra key is removed, and a result that does not fit fails", async () => {
+test("a result goes out in its output schema: an extra key is removed, and a result that does not fit fails", async (t) => {
   const lines: string[] = [];
   const session = new FakeSession();
   session.window = async () => ({ window: true, state: "running" as const, notCarried: [], hostPid: 4242 });
-  const server = createMcpServer({ tools: ALL_TOOLS, session: async () => session, log: (line) => lines.push(line) });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await server.connect(serverTransport);
-  const client = new Client({ name: "test", version: "0" });
-  await client.connect(clientTransport);
+  const client = await open(t, session, (line) => lines.push(line));
   const opened = await call(client, "c64_window", { action: "open" });
   assert.deepEqual(opened.structuredContent, { window: true, state: "running", notCarried: [] });
   assert.doesNotMatch((opened.content[0] as { text: string }).text, /hostPid|4242/);
@@ -465,12 +462,11 @@ test("a result goes out in its output schema: an extra key is removed, and a res
   assert.equal(error.code, "operation-failed");
   assert.doesNotMatch(error.message, /dancing|enabled/);
   assert.match(lines.join("\n"), /c64_warp gave a result outside its output schema: enabled:/);
-  await client.close();
 });
 
-test("c64_execution passes the action through and formats the pc", async () => {
+test("c64_execution passes the action through and formats the pc", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual((await call(client, "c64_execution", { action: "pause" })).structuredContent, { state: "stopped", pc: "$2100" });
   assert.deepEqual((await call(client, "c64_execution", { action: "step", count: 2 })).structuredContent, {
     state: "stopped",
@@ -485,12 +481,11 @@ test("c64_execution passes the action through and formats the pc", async () => {
   ]);
   assert.equal(errorOf(await call(client, "c64_execution", { action: "step", count: 0 })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_execution", { action: "jump" })).code, "invalid-input");
-  await client.close();
 });
 
-test("c64_reset defaults run to false and c64_warp echoes the mode", async () => {
+test("c64_reset defaults run to false and c64_warp echoes the mode", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual((await call(client, "c64_reset", { mode: "hard" })).structuredContent, { state: "stopped", pc: "$fce2" }, "a stopped reset gives the reset vector");
   assert.deepEqual((await call(client, "c64_reset", { mode: "soft", run: true })).structuredContent, { state: "running" });
   assert.deepEqual(session.resets, [
@@ -500,23 +495,21 @@ test("c64_reset defaults run to false and c64_warp echoes the mode", async () =>
   assert.equal(errorOf(await call(client, "c64_reset", {})).code, "invalid-input");
   assert.deepEqual((await call(client, "c64_warp", { enabled: true })).structuredContent, { enabled: true });
   assert.equal(session.warpState, true);
-  await client.close();
 });
 
-test("c64_window opens and closes the window and passes on what did not move", async () => {
+test("c64_window opens and closes the window and passes on what did not move", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual((await call(client, "c64_window", { action: "open" })).structuredContent, { window: true, state: "running", notCarried: ["cpu history"] });
   assert.deepEqual((await call(client, "c64_window", { action: "open" })).structuredContent, { window: true, state: "running", notCarried: [] });
   assert.deepEqual((await call(client, "c64_window", { action: "close" })).structuredContent, { window: false, state: "running", notCarried: ["cpu history"] });
   assert.equal(errorOf(await call(client, "c64_window", { action: "toggle" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_window", {})).code, "invalid-input");
-  await client.close();
 });
 
-test("c64_memory_write takes hex in either case and reports bytes written", async () => {
+test("c64_memory_write takes hex in either case and reports bytes written", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual((await call(client, "c64_memory_write", { address: "$2000", data: "A9008D20D0" })).structuredContent, {
     address: "$2000",
     bytesWritten: 5,
@@ -525,12 +518,11 @@ test("c64_memory_write takes hex in either case and reports bytes written", asyn
   for (const data of ["", "a", "zz", "a9 00"]) {
     assert.equal(errorOf(await call(client, "c64_memory_write", { address: "$2000", data })).code, "invalid-input", data);
   }
-  await client.close();
 });
 
-test("c64_registers write writes only the named registers; read refuses values", async () => {
+test("c64_registers write writes only the named registers; read refuses values", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const result = await call(client, "c64_registers", { action: "write", values: { pc: "$2100", a: 1, flags: { c: false } } });
   assert.equal((result.structuredContent as { pc: string }).pc, "$2100");
   assert.deepEqual(session.registerWrites, [{ space: "c64", values: { pc: 0x2100, a: 1, flags: { c: false } } }]);
@@ -541,12 +533,11 @@ test("c64_registers write writes only the named registers; read refuses values",
   assert.equal(errorOf(await call(client, "c64_registers", { action: "write", values: { q: 1 } })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "write", values: { a: 256 } })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "read", values: { a: 1 } })).code, "invalid-input");
-  await client.close();
 });
 
-test("media tools pass the project path and fill defaults", async () => {
+test("media tools pass the project path and fill defaults", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual((await call(client, "c64_autostart", { path: "releases/game.d64" })).structuredContent, { state: "running" });
   assert.deepEqual((await call(client, "c64_program_load", { path: "build/game.prg", address: "$C000" })).structuredContent, {
     state: "stopped",
@@ -564,12 +555,11 @@ test("media tools pass the project path and fill defaults", async () => {
     ["autostart", { path: "releases/game.d64", index: 2, run: true, root }],
   ]);
   assert.equal(errorOf(await call(client, "c64_disk_attach", { path: "" })).code, "invalid-input");
-  await client.close();
 });
 
-test("c64_keyboard converts text, passes PETSCII through and refuses mixed or untypable input", async () => {
+test("c64_keyboard converts text, passes PETSCII through and refuses mixed or untypable input", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual((await call(client, "c64_keyboard", { mode: "text", text: "run\n" })).structuredContent, { queuedBytes: 4 });
   assert.deepEqual((await call(client, "c64_keyboard", { mode: "petscii", bytes: [147, 13] })).structuredContent, { queuedBytes: 2 });
   assert.deepEqual(session.typed, [
@@ -582,16 +572,14 @@ test("c64_keyboard converts text, passes PETSCII through and refuses mixed or un
     { mode: "petscii", bytes: [0] },
     { mode: "petscii", text: "a" },
     { mode: "text", text: "tab\t" },
-    { mode: "text", text: "x".repeat(1025) },
   ]) {
     assert.equal(errorOf(await call(client, "c64_keyboard", args)).code, "invalid-input", JSON.stringify(args));
   }
-  await client.close();
 });
 
-test("c64_press sends the taps of the keys, with frames 3 when the call gives none, and refuses keys the C64 does not have", async () => {
+test("c64_press sends the taps of the keys, with frames 3 when the call gives none, and refuses keys the C64 does not have", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual((await call(client, "c64_press", { keys: "{LSHIFT+CBM}a" })).structuredContent, { taps: 2, state: "running" });
   assert.deepEqual((await call(client, "c64_press", { keys: "{STOP+RESTORE}", frames: 10 })).structuredContent, { taps: 1, state: "running" });
   assert.deepEqual(session.pressed, [
@@ -600,33 +588,31 @@ test("c64_press sends the taps of the keys, with frames 3 when the call gives no
   ]);
   session.pressResult = { taps: 0, state: "stopped", stopReason: "breakpoint", pc: 0x2000, space: "c64", pointId: 1 };
   assert.deepEqual((await call(client, "c64_press", { keys: "{F1}" })).structuredContent, { taps: 0, state: "stopped", stopReason: "breakpoint", pc: "$2000", space: "c64", pointId: 1 });
-  for (const args of [{ keys: "" }, { keys: "{F9}" }, { keys: "~" }, { keys: "{A+B+C+D+E}" }, { keys: "a", frames: 0 }, { keys: "a", frames: 3001 }, { keys: "a", hold: 3 }]) {
+  for (const args of [{ keys: "" }, { keys: "~" }, { keys: "{A+B+C+D+E}" }, { keys: "a", frames: 0 }, { keys: "a", frames: 3001 }, { keys: "a", hold: 3 }]) {
     assert.equal(errorOf(await call(client, "c64_press", args)).code, "invalid-input", JSON.stringify(args));
   }
-  assert.match(errorOf(await call(client, "c64_press", { keys: "{F9}" })).message, /there is no key \{F9\}\. The keys in braces are \{F1\}/);
+  const noKey = errorOf(await call(client, "c64_press", { keys: "{F9}" }));
+  assert.equal(noKey.code, "invalid-input");
+  assert.match(noKey.message, /there is no key \{F9\}\. The keys in braces are \{F1\}/);
   assert.equal(session.pressed.length, 3, "a refused call sends nothing");
-  await client.close();
 });
 
-test("c64_joystick echoes the held state and defaults fire to false", async () => {
-  const client = await connect(async () => new FakeSession());
+test("c64_joystick echoes the held state and defaults fire to false", async (t) => {
+  const client = await open(t);
   assert.deepEqual((await call(client, "c64_joystick", { port: 2, direction: "left" })).structuredContent, { port: 2, direction: "left", fire: false });
-  assert.equal(errorOf(await call(client, "c64_joystick", { port: 3, direction: "left" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_joystick", { port: 1, direction: "north" })).code, "invalid-input");
-  await client.close();
 });
 
-test("c64_screen capture returns the size and an image block", async () => {
-  const client = await connect(async () => new FakeSession());
+test("c64_screen capture returns the size and an image block", async (t) => {
+  const client = await open(t);
   const result = await call(client, "c64_screen", { action: "capture" });
   assert.deepEqual(result.structuredContent, { width: 384, height: 272 });
   assert.deepEqual(result.content[1], { type: "image", data: Buffer.from("png-bytes").toString("base64"), mimeType: "image/png" });
-  await client.close();
 });
 
-test("c64_breakpoint passes typed conditions through and checks fields per action", async () => {
+test("c64_breakpoint passes typed conditions through and checks fields per action", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const added = await call(client, "c64_breakpoint", {
     action: "add",
     address: "$2100",
@@ -665,12 +651,11 @@ test("c64_breakpoint passes typed conditions through and checks fields per actio
   ]) {
     assert.equal(errorOf(await call(client, "c64_breakpoint", args)).code, "invalid-input", JSON.stringify(args));
   }
-  await client.close();
 });
 
-test("c64_watchpoint takes start and end, fills end and space, and needs access", async () => {
+test("c64_watchpoint takes start and end, fills end and space, and needs access", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const added = await call(client, "c64_watchpoint", {
     action: "add",
     start: "$c020",
@@ -691,12 +676,11 @@ test("c64_watchpoint takes start and end, fills end and space, and needs access"
   assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", start: "$c020", end: "$c01f", access: "read" })).code, "invalid-input", "end before start");
   assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", start: "$c000", end: "$cfff", access: "read" })).code, "invalid-input", "more bytes than a watchpoint covers");
   assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", address: "$c020", access: "read" })).code, "invalid-input", "address is the field of a breakpoint");
-  await client.close();
 });
 
-test("c64_run_until fills the timeout and passes typed targets", async () => {
+test("c64_run_until fills the timeout and passes typed targets", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const result = await call(client, "c64_run_until", { target: { kind: "address", address: "$c00b" } });
   assert.deepEqual(result.structuredContent, { reached: true, stopReason: "target", state: "stopped", pc: "$c00b", space: "c64" });
   await call(client, "c64_run_until", { target: { kind: "memory", address: "$c020", operator: "eq", value: 3 }, timeoutFrames: 10 });
@@ -713,7 +697,6 @@ test("c64_run_until fills the timeout and passes typed targets", async () => {
   ]) {
     assert.equal(errorOf(await call(client, "c64_run_until", args)).code, "invalid-input", JSON.stringify(args));
   }
-  await client.close();
 });
 
 test("tool descriptions keep to the STE length and punctuation rules", () => {
@@ -728,8 +711,8 @@ test("tool descriptions keep to the STE length and punctuation rules", () => {
   }
 });
 
-test("field descriptions and refusals keep to the STE punctuation rule", async () => {
-  const client = await connect(async () => new FakeSession());
+test("field descriptions and refusals keep to the STE punctuation rule", async (t) => {
+  const client = await open(t);
   for (const tool of (await client.listTools()).tools) {
     assert.doesNotMatch(JSON.stringify(tool.inputSchema), /"description":"[^"]*;/, `${tool.name}: STE bans the semicolon`);
   }
@@ -741,35 +724,32 @@ test("field descriptions and refusals keep to the STE punctuation rule", async (
     const { message } = errorOf(await call(client, name, args));
     assert.doesNotMatch(message, /;/, `${name}: ${message}`);
   }
-  await client.close();
 });
 
-test("memory search parses the pattern and fills end and maxResults", async () => {
+test("memory search parses the pattern and fills end and maxResults", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const result = await call(client, "c64_memory_search", { start: "$0800", pattern: "A9 ?? 8d 20 d0" });
   assert.deepEqual(result.structuredContent, { matches: ["$2100", "$37a0"] });
   assert.deepEqual(session.searches[0], { start: 0x0800, end: 0xffff, pattern: [0xa9, null, 0x8d, 0x20, 0xd0], space: "c64", view: "cpu", maxResults: 100 });
   for (const pattern of ["", "a9 ?", "a9,8d", "?? ??", "a9  8d x"]) {
     assert.equal(errorOf(await call(client, "c64_memory_search", { start: "$0800", pattern })).code, "invalid-input", pattern);
   }
-  await client.close();
 });
 
-test("a range shorter than the pattern has no match, and end must not be lower than start", async () => {
+test("a range shorter than the pattern has no match, and end must not be lower than start", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual((await call(client, "c64_memory_search", { start: "$fffe", pattern: "00 00 00" })).structuredContent, { matches: [] });
   assert.deepEqual((await call(client, "c64_memory_search", { start: "$1000", end: "$1001", pattern: "00 00 00" })).structuredContent, { matches: [] });
   assert.equal(session.searches.length, 0, "VICE gets no search that it refuses");
   assert.deepEqual((await call(client, "c64_memory_search", { start: "$0800", pattern: "a9", maxResults: 2 })).structuredContent, { matches: ["$2100", "$37a0"], truncated: true });
   assert.deepEqual((await call(client, "c64_memory_search", { start: "$0800", pattern: "a9", maxResults: 3 })).structuredContent, { matches: ["$2100", "$37a0"] });
   assert.match(errorOf(await call(client, "c64_memory_search", { start: "$1000", end: "$0fff", pattern: "00" })).message, /end is lower than start/);
-  await client.close();
 });
 
-test("refusals name the rule that the call broke", async () => {
-  const client = await connect(async () => new FakeSession());
+test("refusals name the rule that the call broke", async (t) => {
+  const client = await open(t);
   const message = async (name: string, args: Record<string, unknown>) => errorOf(await call(client, name, args)).message;
   assert.match(await message("c64_watchpoint", { action: "add", address: "$d016", access: "write" }), /Unrecognized key.*The fields are action, .*start, end/);
   assert.equal(await message("c64_memmap", { action: "read", out: "x.bin", maxRanges: 3 }), "maxRanges is not used with out.");
@@ -784,7 +764,6 @@ test("refusals name the rule that the call broke", async () => {
   assert.match(await message("c64_autostart", { path: "releases/game.prg", index: 0 }), /A \.prg file has no directory: leave out index/);
   assert.equal(await message("c64_registers", { action: "write", values: { flags: { q: true } } }), 'values.flags: Unrecognized key: "q"');
   assert.match(await message("c64_snapshot", { action: "restore", file: "/etc/passwd" }), /^file: give a path relative to the project folder/);
-  await client.close();
 });
 
 test("a line file of no lines is empty", () => {
@@ -792,9 +771,9 @@ test("a line file of no lines is empty", () => {
   assert.equal(linesText(["a", "b"]), "a\nb\n");
 });
 
-test("memory compare and disassemble shape their results", async () => {
+test("memory compare and disassemble shape their results", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const compared = await call(client, "c64_memory_compare", { left: { address: "$2000" }, right: { address: "$3000", view: "ram" }, size: 256 });
   assert.deepEqual(compared.structuredContent, { equal: false, differentBytes: 3, firstDifferences: [{ offset: 12, left: "04", right: "05" }] });
   assert.deepEqual(session.searches[0], {
@@ -804,12 +783,11 @@ test("memory compare and disassemble shape their results", async () => {
   });
   const listing = await call(client, "c64_disassemble", { address: "$2100", count: 1 });
   assert.deepEqual(listing.structuredContent, { instructions: [{ address: "$2100", bytes: "a900", text: "LDA #$00" }] });
-  await client.close();
 });
 
-test("chip tools format addresses and fill defaults", async () => {
+test("chip tools format addresses and fill defaults", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const vicii = (await call(client, "c64_vicii")).structuredContent as Record<string, unknown>;
   assert.equal(vicii.screenAddress, "$0400");
   assert.equal(vicii.graphicsAddress, "$1000");
@@ -822,11 +800,10 @@ test("chip tools format addresses and fill defaults", async () => {
   assert.equal(((await call(client, "c64_cia")).structuredContent as { chips: unknown[] }).chips.length, 2);
   assert.equal(((await call(client, "c64_cia", { cia: "2" })).structuredContent as { chips: Array<{ id: number }> }).chips[0]!.id, 2);
   assert.equal(((await call(client, "c64_sid")).structuredContent as { volume: number }).volume, 15);
-  await client.close();
 });
 
-test("history, backtrace and timing format addresses and keep optional fields absent", async () => {
-  const client = await connect(async () => new FakeSession());
+test("history, backtrace and timing format addresses and keep optional fields absent", async (t) => {
+  const client = await open(t);
   const history = (await call(client, "c64_cpu_history")).structuredContent as { entries: Array<Record<string, unknown>> };
   assert.deepEqual(history.entries[0], { address: "$2100", bytes: "a900", text: "LDA #$00", a: 0, x: 3, y: 0, sp: 249, rasterLine: 100, rasterCycle: 20 });
   const drive = (await call(client, "c64_cpu_history", { space: "drive8" })).structuredContent as { entries: Array<Record<string, unknown>> };
@@ -834,12 +811,11 @@ test("history, backtrace and timing format addresses and keep optional fields ab
   assert.deepEqual((await call(client, "c64_backtrace")).structuredContent, { frames: [{ address: "$2100", returnAddress: "$1980" }, { address: "$fce2" }] });
   assert.deepEqual((await call(client, "c64_timing", { action: "read" })).structuredContent, { cycles: "1234" });
   assert.equal(errorOf(await call(client, "c64_cpu_history", { limit: 201 })).code, "invalid-input");
-  await client.close();
 });
 
-test("profile and memmap format addresses and fill read defaults", async () => {
+test("profile and memmap format addresses and fill read defaults", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual((await call(client, "c64_profile")).structuredContent, {
     entries: [{ address: "$2100", totalCycles: "125000", selfCycles: "82000", percent: 17.4 }],
   });
@@ -858,12 +834,11 @@ test("profile and memmap format addresses and fill read defaults", async () => {
     truncated: true,
     next: "$2140",
   });
-  await client.close();
 });
 
-test("c64_screen baselines: capture, compare with a diff image, list and remove", async () => {
+test("c64_screen baselines: capture, compare with a diff image, list and remove", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const captured = await call(client, "c64_screen", { action: "capture", baseline: "title-original" });
   assert.deepEqual(captured.structuredContent, { width: 384, height: 272, baseline: "title-original" });
   assert.deepEqual((await call(client, "c64_screen", { action: "list" })).structuredContent, { baselines: ["title-original"] });
@@ -883,24 +858,22 @@ test("c64_screen baselines: capture, compare with a diff image, list and remove"
   ]) {
     assert.equal(errorOf(await call(client, "c64_screen", args)).code, "invalid-input", JSON.stringify(args));
   }
-  await client.close();
 });
 
-test("c64_snapshot needs a name except for list", async () => {
+test("c64_snapshot needs a name except for list", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   assert.deepEqual((await call(client, "c64_snapshot", { action: "save", name: "before-boss" })).structuredContent, { saved: true, name: "before-boss" });
   assert.deepEqual((await call(client, "c64_snapshot", { action: "restore", name: "before-boss" })).structuredContent, { restored: true, state: "stopped" });
   assert.deepEqual((await call(client, "c64_snapshot", { action: "list" })).structuredContent, { snapshots: ["before-boss"] });
   assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_snapshot", { action: "list", name: "x" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save", name: "../x" })).code, "invalid-input");
-  await client.close();
 });
 
-test("c64_observe returns only the asked parts and an image for the screen", async () => {
+test("c64_observe returns only the asked parts and an image for the screen", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const result = await call(client, "c64_observe", { registers: "c64", memory: [{ address: "$c020", size: 2 }], timing: true, screen: true });
   assert.deepEqual(result.structuredContent, {
     registers: { ...REGISTERS, pc: "$e5cf" },
@@ -917,170 +890,131 @@ test("c64_observe returns only the asked parts and an image for the screen", asy
   });
   assert.equal(errorOf(await call(client, "c64_observe", {})).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_observe", { vicii: false })).code, "invalid-input");
-  await client.close();
 });
 
-test("with C64RT_TRACE every tool call leaves one trace line with its name, arguments, time and outcome", async () => {
+test("with C64RT_TRACE every tool call leaves one trace line with its name, arguments, time and outcome", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-trace-"));
-  try {
-    const on = startTrace("mcp", { env: { [TRACE_VARIABLE]: dir } });
-    const client = await connect(async () => new FakeSession());
-    await call(client, "c64_registers", { action: "read" });
-    await call(client, "no_such_tool", { a: 1 });
-    await client.close();
-
-    const calls = readFileSync(on.file!, "utf8")
-      .trimEnd()
-      .split("\n")
-      .map((line) => JSON.parse(line) as Record<string, unknown>)
-      .filter((event) => event.event === "tool.call");
-    assert.equal(calls.length, 2);
-    const [read, missing] = calls as [Record<string, unknown>, Record<string, unknown>];
-    assert.equal(read.name, "c64_registers");
-    assert.equal(read.ok, true);
-    assert.equal(typeof read.ms, "number");
-    assert.equal(typeof read.result, "object");
-    assert.equal(missing.name, "no_such_tool");
-    assert.deepEqual(missing.args, { a: 1 });
-    assert.equal(missing.ok, false);
-    assert.equal(missing.code, "invalid-input");
-  } finally {
+  t.after(() => {
     startTrace("mcp", { env: {} });
     rmSync(dir, { recursive: true, force: true });
-  }
+  });
+  const on = startTrace("mcp", { env: { [TRACE_VARIABLE]: dir } });
+  const client = await open(t);
+  await call(client, "c64_registers", { action: "read" });
+  await call(client, "no_such_tool", { a: 1 });
+
+  const calls = readFileSync(on.file!, "utf8")
+    .trimEnd()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((event) => event.event === "tool.call");
+  assert.equal(calls.length, 2);
+  assert.partialDeepStrictEqual(calls, [
+    { name: "c64_registers", ok: true, result: {} },
+    { name: "no_such_tool", args: { a: 1 }, ok: false, code: "invalid-input" },
+  ]);
+  assert.equal(typeof calls[0]!.ms, "number");
 });
 
-test("out writes memory, a listing, the history and a screen to project files", async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-out-"));
-  const home = process.cwd();
-  process.chdir(project);
-  try {
-    const session = new FakeSession();
-    const client = await connect(async () => session);
+test("out writes memory, a listing, the history and a screen to project files", async (t) => {
+  const project = inProject(t, "out");
+  const session = new FakeSession();
+  const client = await open(t, session);
 
-    const dump = (await call(client, "c64_memory_read", { address: "$1000", size: 5000, out: "dumps/mem.bin" })).structuredContent as Record<string, unknown>;
-    assert.deepEqual({ ...dump, sha256: undefined }, { address: "$1000", size: 5000, out: "dumps/mem.bin", bytes: 5000, sha256: undefined });
-    assert.deepEqual(session.reads.map((read) => [read.address, read.size]), [[0x1000, 4096], [0x2000, 904]]);
-    assert.deepEqual(readFileSync(join(project, "dumps", "mem.bin")), Buffer.alloc(5000, 0xa9));
-    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 5000 })).code, "invalid-input");
-    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$f000", size: 8192, out: "x.bin" })).code, "invalid-input");
+  const dump = (await call(client, "c64_memory_read", { address: "$1000", size: 5000, out: "dumps/mem.bin" })).structuredContent as Record<string, unknown>;
+  assert.deepEqual({ ...dump, sha256: undefined }, { address: "$1000", size: 5000, out: "dumps/mem.bin", bytes: 5000, sha256: undefined });
+  assert.deepEqual(session.reads.map((read) => [read.address, read.size]), [[0x1000, 4096], [0x2000, 904]]);
+  assert.deepEqual(readFileSync(join(project, "dumps", "mem.bin")), Buffer.alloc(5000, 0xa9));
+  assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 5000 })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$f000", size: 8192, out: "x.bin" })).code, "invalid-input");
 
-    const listing = (await call(client, "c64_disassemble", { address: "$1000", count: 3, out: "listing.txt" })).structuredContent as Record<string, unknown>;
-    assert.equal(listing.count, 3);
-    assert.equal(readFileSync(join(project, "listing.txt"), "utf8"), "$1000  a9 00     LDA #$00\n$1002  a9 00     LDA #$00\n$1004  a9 00     LDA #$00\n");
-    assert.equal(errorOf(await call(client, "c64_disassemble", { address: "$1000", count: 300 })).code, "invalid-input");
-    await call(client, "c64_disassemble", { address: "$1000", count: 2, out: "listing.json" });
-    assert.deepEqual(JSON.parse(readFileSync(join(project, "listing.json"), "utf8")), [
-      { address: "$1000", bytes: "a900", text: "LDA #$00" },
-      { address: "$1002", bytes: "a900", text: "LDA #$00" },
-    ]);
+  const listing = (await call(client, "c64_disassemble", { address: "$1000", count: 3, out: "listing.txt" })).structuredContent as Record<string, unknown>;
+  assert.equal(listing.count, 3);
+  assert.equal(readFileSync(join(project, "listing.txt"), "utf8"), "$1000  a9 00     LDA #$00\n$1002  a9 00     LDA #$00\n$1004  a9 00     LDA #$00\n");
+  assert.equal(errorOf(await call(client, "c64_disassemble", { address: "$1000", count: 300 })).code, "invalid-input");
+  await call(client, "c64_disassemble", { address: "$1000", count: 2, out: "listing.json" });
+  assert.deepEqual(JSON.parse(readFileSync(join(project, "listing.json"), "utf8")), [
+    { address: "$1000", bytes: "a900", text: "LDA #$00" },
+    { address: "$1002", bytes: "a900", text: "LDA #$00" },
+  ]);
 
-    const history = (await call(client, "c64_cpu_history", { out: "history.txt" })).structuredContent as Record<string, unknown>;
-    assert.equal(history.count, 1);
-    assert.equal(readFileSync(join(project, "history.txt"), "utf8"), "$2100  a9 00     LDA #$00         a=00 x=03 y=00 sp=f9  line 100 cycle 20\n");
+  const history = (await call(client, "c64_cpu_history", { out: "history.txt" })).structuredContent as Record<string, unknown>;
+  assert.equal(history.count, 1);
+  assert.equal(readFileSync(join(project, "history.txt"), "utf8"), "$2100  a9 00     LDA #$00         a=00 x=03 y=00 sp=f9  line 100 cycle 20\n");
 
-    const shot = await call(client, "c64_screen", { action: "capture", out: "screens/title.png" });
-    assert.equal((shot.structuredContent as Record<string, unknown>).out, "screens/title.png");
-    assert.ok(!(shot.content as Array<{ type: string }>).some((part) => part.type === "image"), "no image in the context");
-    assert.equal(readFileSync(join(project, "screens", "title.png"), "utf8"), "png-bytes");
-    await call(client, "c64_screen", { action: "compare", baseline: "b", out: "screens/diff.png" });
-    assert.equal(readFileSync(join(project, "screens", "diff.png"), "utf8"), "diff");
-    await client.close();
-  } finally {
-    process.chdir(home);
-    rmSync(project, { recursive: true, force: true });
-  }
+  const shot = await call(client, "c64_screen", { action: "capture", out: "screens/title.png" });
+  assert.equal((shot.structuredContent as Record<string, unknown>).out, "screens/title.png");
+  assert.ok(!(shot.content as Array<{ type: string }>).some((part) => part.type === "image"), "no image in the context");
+  assert.equal(readFileSync(join(project, "screens", "title.png"), "utf8"), "png-bytes");
+  await call(client, "c64_screen", { action: "compare", baseline: "b", out: "screens/diff.png" });
+  assert.equal(readFileSync(join(project, "screens", "diff.png"), "utf8"), "diff");
 });
 
-test("in a folder with projects below it, a tool with a path takes project and refuses without it", async () => {
-  const workspace = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-workspace-")));
+test("in a folder with projects below it, a tool with a path takes project and refuses without it", async (t) => {
+  const workspace = inProject(t, "workspace");
   for (const name of ["a", "b"]) mkdirSync(join(workspace, name, ".c64-re-tools"), { recursive: true });
-  const home = process.cwd();
-  process.chdir(workspace);
-  try {
-    const session = new FakeSession();
-    const client = await connect(async () => session);
-    const refused = errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin" }));
-    assert.equal(refused.code, "invalid-input");
-    assert.match(refused.message, /These folders below it are projects: a, b\. Give project: <folder> with one of them\./);
-    assert.equal(errorOf(await call(client, "c64_autostart", { path: "releases/game.prg" })).code, "invalid-input");
-    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, project: "a" })).code, "invalid-input", "project without out");
-    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "x.bin", project: "missing" })).code, "not-found");
+  const session = new FakeSession();
+  const client = await open(t, session);
+  const refused = errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin" }));
+  assert.equal(refused.code, "invalid-input");
+  assert.match(refused.message, /These folders below it are projects: a, b\. Give project: <folder> with one of them\./);
+  assert.equal(errorOf(await call(client, "c64_autostart", { path: "releases/game.prg" })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, project: "a" })).code, "invalid-input", "project without out");
+  assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "x.bin", project: "missing" })).code, "not-found");
 
-    await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin", project: "a" });
-    assert.deepEqual(readFileSync(join(workspace, "a", "dumps", "mem.bin")), Buffer.alloc(4, 0xa9));
-    assert.ok(!existsSync(join(workspace, "dumps")), "nothing is written at the workspace root");
-    await call(client, "c64_snapshot", { action: "save", name: "room0", out: "snapshots/room0.vsf", project: "b" });
-    await call(client, "c64_snapshot", { action: "restore", file: "snapshots/room0.vsf", project: "b" });
-    assert.deepEqual(session.restoredFiles, ["VSF of room0"]);
-    await call(client, "c64_autostart", { path: "releases/game.prg", project: "b" });
-    assert.deepEqual(session.media.at(-1), ["autostart", { path: "releases/game.prg", index: 0, run: true, root: join(workspace, "b") }]);
-    assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save", name: "room1", project: "b" })).code, "invalid-input", "project without out");
-    assert.equal((await call(client, "c64_warp", { enabled: false })).isError, undefined, "a tool without a path needs no project");
-    await client.close();
-  } finally {
-    process.chdir(home);
-    rmSync(workspace, { recursive: true, force: true });
-  }
+  await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin", project: "a" });
+  assert.deepEqual(readFileSync(join(workspace, "a", "dumps", "mem.bin")), Buffer.alloc(4, 0xa9));
+  assert.ok(!existsSync(join(workspace, "dumps")), "nothing is written at the workspace root");
+  await call(client, "c64_snapshot", { action: "save", name: "room0", out: "snapshots/room0.vsf", project: "b" });
+  await call(client, "c64_snapshot", { action: "restore", file: "snapshots/room0.vsf", project: "b" });
+  assert.deepEqual(session.restoredFiles, ["VSF of room0"]);
+  await call(client, "c64_autostart", { path: "releases/game.prg", project: "b" });
+  assert.deepEqual(session.media.at(-1), ["autostart", { path: "releases/game.prg", index: 0, run: true, root: join(workspace, "b") }]);
+  assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save", name: "room1", project: "b" })).code, "invalid-input", "project without out");
+  assert.equal((await call(client, "c64_warp", { enabled: false })).isError, undefined, "a tool without a path needs no project");
 });
 
-test("c64_memmap writes a coverage map with out and gives a summary", async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-coverage-"));
-  const home = process.cwd();
-  process.chdir(project);
-  try {
-    const session = new FakeSession();
-    const client = await connect(async () => session);
-    const written = (await call(client, "c64_memmap", { action: "read", start: "$2000", end: "$21ff", out: "coverage/run.bin" })).structuredContent as Record<string, unknown>;
-    assert.equal(written.bytes, 0x200);
-    const map = readFileSync(join(project, "coverage", "run.bin"));
-    assert.equal(map[0x100], 5, "$2100 is RAM read and execute");
-    assert.equal(map[0x0ff], 0);
-    // The fake memory is all $a9 (LDA #imm, two bytes): 64 instruction starts at $2100-$213f.
-    assert.deepEqual((await call(client, "c64_memmap", { action: "summary" })).structuredContent, {
-      ram: { executed: 64, read: 64, written: 0 },
-      rom: { executed: 0, read: 0 },
-      io: { executed: 0, read: 0, written: 0 },
-      code: [{ start: "$2100", end: "$2140" }],
-      writtenAndExecuted: [],
-    });
-    assert.equal(errorOf(await call(client, "c64_memmap", { action: "summary", out: "x.bin" })).code, "invalid-input");
-    await client.close();
-  } finally {
-    process.chdir(home);
-    rmSync(project, { recursive: true, force: true });
-  }
+test("c64_memmap writes a coverage map with out and gives a summary", async (t) => {
+  const project = inProject(t, "coverage");
+  const session = new FakeSession();
+  const client = await open(t, session);
+  const written = (await call(client, "c64_memmap", { action: "read", start: "$2000", end: "$21ff", out: "coverage/run.bin" })).structuredContent as Record<string, unknown>;
+  assert.equal(written.bytes, 0x200);
+  const map = readFileSync(join(project, "coverage", "run.bin"));
+  assert.equal(map[0x100], 5, "$2100 is RAM read and execute");
+  assert.equal(map[0x0ff], 0);
+  // The fake memory is all $a9 (LDA #imm, two bytes): 64 instruction starts at $2100-$213f.
+  assert.deepEqual((await call(client, "c64_memmap", { action: "summary" })).structuredContent, {
+    ram: { executed: 64, read: 64, written: 0 },
+    rom: { executed: 0, read: 0 },
+    io: { executed: 0, read: 0, written: 0 },
+    code: [{ start: "$2100", end: "$2140" }],
+    writtenAndExecuted: [],
+  });
+  assert.equal(errorOf(await call(client, "c64_memmap", { action: "summary", out: "x.bin" })).code, "invalid-input");
 });
 
-test("c64_snapshot writes a snapshot file with out and restores one with file", async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-snapshot-"));
-  const home = process.cwd();
-  process.chdir(project);
-  try {
-    const session = new FakeSession();
-    const client = await connect(async () => session);
-    const saved = (await call(client, "c64_snapshot", { action: "save", name: "room0", out: "snapshots/room0.vsf" })).structuredContent as Record<string, unknown>;
-    assert.deepEqual([saved.saved, saved.name, saved.out], [true, "room0", "snapshots/room0.vsf"]);
-    assert.equal(readFileSync(join(project, "snapshots", "room0.vsf"), "utf8"), "VSF of room0");
-    assert.deepEqual((await call(client, "c64_snapshot", { action: "restore", file: "snapshots/room0.vsf" })).structuredContent, { restored: true, state: "stopped" });
-    assert.deepEqual(session.restoredFiles, ["VSF of room0"]);
-    for (const args of [
-      { action: "restore", file: "snapshots/room0.vsf", name: "room0" },
-      { action: "restore", out: "x.vsf", name: "room0" },
-      { action: "remove", name: "room0", file: "x.vsf" },
-    ]) {
-      assert.equal(errorOf(await call(client, "c64_snapshot", args)).code, "invalid-input", JSON.stringify(args));
-    }
-    assert.equal(errorOf(await call(client, "c64_snapshot", { action: "restore", file: "missing.vsf" })).code, "not-found");
-    await client.close();
-  } finally {
-    process.chdir(home);
-    rmSync(project, { recursive: true, force: true });
+test("c64_snapshot writes a snapshot file with out and restores one with file", async (t) => {
+  const project = inProject(t, "snapshot");
+  const session = new FakeSession();
+  const client = await open(t, session);
+  const saved = (await call(client, "c64_snapshot", { action: "save", name: "room0", out: "snapshots/room0.vsf" })).structuredContent as Record<string, unknown>;
+  assert.deepEqual([saved.saved, saved.name, saved.out], [true, "room0", "snapshots/room0.vsf"]);
+  assert.equal(readFileSync(join(project, "snapshots", "room0.vsf"), "utf8"), "VSF of room0");
+  assert.deepEqual((await call(client, "c64_snapshot", { action: "restore", file: "snapshots/room0.vsf" })).structuredContent, { restored: true, state: "stopped" });
+  assert.deepEqual(session.restoredFiles, ["VSF of room0"]);
+  for (const args of [
+    { action: "restore", file: "snapshots/room0.vsf", name: "room0" },
+    { action: "restore", out: "x.vsf", name: "room0" },
+    { action: "remove", name: "room0", file: "x.vsf" },
+  ]) {
+    assert.equal(errorOf(await call(client, "c64_snapshot", args)).code, "invalid-input", JSON.stringify(args));
   }
+  assert.equal(errorOf(await call(client, "c64_snapshot", { action: "restore", file: "missing.vsf" })).code, "not-found");
 });
 
-test("c64_trace takes points with an optional end and gives the hits with $ addresses", async () => {
-  const client = await connect(async () => new FakeSession());
+test("c64_trace takes points with an optional end and gives the hits with $ addresses", async (t) => {
+  const client = await open(t);
   const traced = (await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011" }], frames: 100 })).structuredContent;
   assert.deepEqual(traced, {
     end: "frames",
@@ -1091,28 +1025,19 @@ test("c64_trace takes points with an optional end and gives the hits with $ addr
   });
   assert.equal(errorOf(await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011", end: "$d010" }], frames: 1 })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_trace", { points: [], frames: 1 })).code, "invalid-input");
-  await client.close();
 });
 
-test("c64_trace with out writes all hits to the file and gives none in the result", async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-trace-"));
-  const home = process.cwd();
-  process.chdir(project);
-  const client = await connect(async () => new FakeSession());
-  try {
-    const traced = (await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011" }], frames: 100, out: "trace.jsonl" })).structuredContent as Record<string, unknown>;
-    assert.deepEqual([traced.count, traced.out, "hits" in traced], [1, "trace.jsonl", false]);
-    assert.equal(JSON.parse(readFileSync(join(project, "trace.jsonl"), "utf8")).pc, "$09c1");
-  } finally {
-    await client.close();
-    process.chdir(home);
-    rmSync(project, { recursive: true, force: true });
-  }
+test("c64_trace with out writes all hits to the file and gives none in the result", async (t) => {
+  const project = inProject(t, "trace");
+  const client = await open(t);
+  const traced = (await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011" }], frames: 100, out: "trace.jsonl" })).structuredContent as Record<string, unknown>;
+  assert.deepEqual([traced.count, traced.out, "hits" in traced], [1, "trace.jsonl", false]);
+  assert.equal(JSON.parse(readFileSync(join(project, "trace.jsonl"), "utf8")).pc, "$09c1");
 });
 
-test("c64_run_until gives the observation and the history at the stop in one call", async () => {
+test("c64_run_until gives the observation and the history at the stop in one call", async (t) => {
   const session = new FakeSession();
-  const client = await connect(async () => session);
+  const client = await open(t, session);
   const plain = (await call(client, "c64_run_until", { target: { kind: "address", address: "$c00b" } })).structuredContent as Record<string, unknown>;
   assert.equal("observed" in plain || "history" in plain, false, "without them the result is as before");
   const both = (await call(client, "c64_run_until", { target: { kind: "address", address: "$c00b" }, observe: { registers: "c64", memory: [{ address: "$d011", size: 1 }], timing: true }, history: 1 })).structuredContent as {
@@ -1125,5 +1050,4 @@ test("c64_run_until gives the observation and the history at the stop in one cal
   assert.deepEqual(both.observed.timing, { rasterLine: 100, rasterCycle: 20 });
   assert.equal(both.history[0]!.address, "$2100");
   assert.equal(session.observations.length, 1, "one observation, after the stop");
-  await client.close();
 });

@@ -1,4 +1,4 @@
-// A test reader for the framed wire: whole messages from stream chunks, for peers that never expect attachments.
+// Test helpers for the framed wire: whole messages from stream chunks, for peers that never expect attachments, and frames of any bytes.
 
 import { MessageReader } from "./framing.ts";
 import { ProtocolError } from "./messages.ts";
@@ -14,4 +14,12 @@ export class FrameDecoder {
       return message;
     });
   }
+}
+
+/** A frame of these body bytes as they are, with no check: the 4-byte big-endian length, then the body. */
+export function rawFrame(body: Buffer | string): Buffer {
+  const bytes = Buffer.from(body);
+  const header = Buffer.alloc(4);
+  header.writeUInt32BE(bytes.length, 0);
+  return Buffer.concat([header, bytes]);
 }

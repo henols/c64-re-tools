@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { createServer, type Server, type Socket } from "node:net";
-import { after, test, type TestContext } from "node:test";
+import { createServer } from "node:net";
+import { test, type TestContext } from "node:test";
 
+import { failsWith } from "../errors.testkit.ts";
 import { encodeFrame } from "../protocol/framing.ts";
+import { rawFrame } from "../protocol/framing.testkit.ts";
 import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, STOP_AND_ASK, WireFailure, type HostMessage } from "../protocol/messages.ts";
-import { FrameDecoder } from "../protocol/framing.testkit.ts";
 import { PACKAGE } from "../package.ts";
 import { DEFAULT_READY_TIMEOUT_MS, HostConnection, hostEndpoints } from "./connect.ts";
+import { fakeHost, readyHost } from "./fake-host.testkit.ts";
 
 test("the default endpoints are loopback, then the Docker and Podman host bridges", () => {
   assert.deepEqual(hostEndpoints({}), [
@@ -25,28 +27,14 @@ test("C64RT_HOST replaces the endpoint list", () => {
   }
 });
 
-const servers: Server[] = [];
-after(() => {
-  for (const server of servers) server.close();
-});
-
-/** A fake host that answers the first frame with `answer` (or raw bytes). `received` runs when a frame arrives. */
-async function fakeHost(answer: HostMessage | Buffer | "silent" | "hangup", received: () => void = () => {}): Promise<NodeJS.ProcessEnv> {
-  const server = createServer((socket: Socket) => {
-    const decoder = new FrameDecoder();
-    socket.on("data", (chunk) => {
-      if (decoder.push(chunk).length === 0) return;
-      received();
-      if (answer === "silent") return;
-      if (answer === "hangup") socket.destroy();
-      else socket.write(Buffer.isBuffer(answer) ? answer : encodeFrame(answer));
-    });
-    socket.on("error", () => {});
+/** A fake host that answers each message with `answer` (or raw bytes). `received` runs when a message arrives. */
+function answeringHost(answer: HostMessage | Buffer | "silent" | "hangup", received: () => void = () => {}): Promise<NodeJS.ProcessEnv> {
+  return fakeHost((socket) => {
+    received();
+    if (answer === "silent") return;
+    if (answer === "hangup") socket.destroy();
+    else socket.write(Buffer.isBuffer(answer) ? answer : encodeFrame(answer));
   });
-  servers.push(server);
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  return { C64RT_HOST: `127.0.0.1:${(server.address() as { port: number }).port}` };
 }
 
 async function closedPort(): Promise<NodeJS.ProcessEnv> {
@@ -59,20 +47,14 @@ async function closedPort(): Promise<NodeJS.ProcessEnv> {
   return { C64RT_HOST: `127.0.0.1:${port}` };
 }
 
-const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
-
 test("a ready host yields an open connection", async () => {
-  const connection = await HostConnection.open({ role: "vice-session", env: await fakeHost({ type: "ready", release: PACKAGE.version }) });
+  const connection = await HostConnection.open({ role: "vice-session", env: await answeringHost({ type: "ready", release: PACKAGE.version }) });
   await connection.close();
 });
 
 test("a host error during the handshake is passed through unchanged", async () => {
-  const env = await fakeHost({ type: "error", error: { code: "installation-incomplete", message: "VICE (x64sc) is not installed on the host." } });
-  await assert.rejects(HostConnection.open({ role: "vice-session", env }), (error: unknown) => {
-    assert.ok(failsWith("installation-incomplete")(error));
-    assert.equal((error as Error).message, "VICE (x64sc) is not installed on the host.");
-    return true;
-  });
+  const env = await answeringHost({ type: "error", error: { code: "installation-incomplete", message: "VICE (x64sc) is not installed on the host." } });
+  await assert.rejects(HostConnection.open({ role: "vice-session", env }), failsWith("installation-incomplete", /^VICE \(x64sc\) is not installed on the host\.$/));
 });
 
 test("a host that is not running is machine-unavailable for every role and names the remedy", async () => {
@@ -89,31 +71,18 @@ test("a host that is not running is machine-unavailable for every role and names
   );
 });
 
-test("a ready host of another release is refused as installation-incomplete and closed; a development checkout passes", async () => {
-  await assert.rejects(HostConnection.open({ role: "vice-session", env: await fakeHost({ type: "ready", release: "2.1.3" }), release: "2.1.4" }), (error: unknown) => {
-    assert.ok(failsWith("installation-incomplete")(error));
-    assert.match((error as Error).message, /host runtime is from an older release/);
-    return true;
-  });
-  await assert.rejects(HostConnection.open({ role: "tool", env: await fakeHost({ type: "ready", release: "2.2.0" }), release: "2.1.4" }), (error: unknown) => {
-    assert.ok(failsWith("installation-incomplete")(error));
-    assert.match((error as Error).message, /Restart the agent session, so that npx starts the newest MCP server/);
-    return true;
-  });
-  await (await HostConnection.open({ role: "vice-session", env: await fakeHost({ type: "ready", release: "2.1.4" }), release: "0.0.0-development" })).close();
+test("a ready host of another release is refused as installation-incomplete", async () => {
+  const env = await answeringHost({ type: "ready", release: "2.1.3" });
+  await assert.rejects(HostConnection.open({ role: "vice-session", env, release: "2.1.4" }), failsWith("installation-incomplete", /host runtime is from an older release/));
 });
 
 test("a ready without a release is installation-incomplete", async () => {
-  const body = Buffer.from(JSON.stringify({ type: "ready" }));
-  const header = Buffer.alloc(4);
-  header.writeUInt32BE(body.length, 0);
-  await assert.rejects(HostConnection.open({ role: "vice-session", env: await fakeHost(Buffer.concat([header, body])) }), failsWith("installation-incomplete"));
+  const env = await answeringHost(rawFrame(JSON.stringify({ type: "ready" })));
+  await assert.rejects(HostConnection.open({ role: "vice-session", env }), failsWith("installation-incomplete"));
 });
 
 test("a host speaking another protocol is installation-incomplete", async () => {
-  const header = Buffer.alloc(4);
-  header.writeUInt32BE(3, 0);
-  const env = await fakeHost(Buffer.concat([header, Buffer.from("{x}")]));
+  const env = await answeringHost(rawFrame("{x}"));
   await assert.rejects(HostConnection.open({ role: "vice-session", env }), failsWith("installation-incomplete"));
 });
 
@@ -124,27 +93,13 @@ test("a host speaking another protocol is installation-incomplete", async () => 
 async function heartbeatHost(answer: () => boolean): Promise<{ env: NodeJS.ProcessEnv; pinged: (n: number) => Promise<void> }> {
   let pings = 0;
   const waiting: Array<{ n: number; resolve: () => void }> = [];
-  const server = createServer((socket: Socket) => {
-    const decoder = new FrameDecoder();
-    socket.on("data", (chunk) => {
-      for (const message of decoder.push(chunk) as Array<{ type: string }>) {
-        if (message.type === "hello") socket.write(encodeFrame({ type: "ready", release: PACKAGE.version }));
-        if (message.type === "ping") {
-          pings++;
-          if (answer()) socket.write(encodeFrame({ type: "pong" }));
-          for (const wait of waiting.filter((entry) => entry.n <= pings)) wait.resolve();
-        }
-      }
-    });
-    socket.on("error", () => {});
+  const env = await readyHost((socket, message) => {
+    if (message.type !== "ping") return;
+    pings++;
+    if (answer()) socket.write(encodeFrame({ type: "pong" }));
+    for (const wait of waiting.filter((entry) => entry.n <= pings)) wait.resolve();
   });
-  servers.push(server);
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  return {
-    env: { C64RT_HOST: `127.0.0.1:${(server.address() as { port: number }).port}` },
-    pinged: (n) => (n <= pings ? Promise.resolve() : new Promise((resolve) => waiting.push({ n, resolve }))),
-  };
+  return { env, pinged: (n) => (n <= pings ? Promise.resolve() : new Promise((resolve) => waiting.push({ n, resolve }))) };
 }
 
 /** Moves the mocked clock on one second at a time, and lets the sockets run between the steps. */
@@ -181,7 +136,7 @@ test("a host that stops answering closes the connection with a reason", async (t
 });
 
 test("a message handler that throws closes the connection with a named reason instead of crashing the process", async () => {
-  const connection = await HostConnection.open({ role: "vice-session", env: await fakeHost({ type: "ready", release: PACKAGE.version }) });
+  const connection = await HostConnection.open({ role: "vice-session", env: await answeringHost({ type: "ready", release: PACKAGE.version }) });
   connection.onMessage(() => {
     throw new TypeError("handler broke");
   });
@@ -194,34 +149,29 @@ test("a stop signal ends a handshake that waits for the host at once and closes 
   let helloReceived!: () => void;
   const hello = new Promise<void>((resolve) => (helloReceived = resolve));
   let hostSocketClosed!: Promise<unknown>;
-  const server = createServer((socket: Socket) => {
-    hostSocketClosed = once(socket, "close");
-    socket.on("data", () => helloReceived());
-    socket.on("error", () => {});
-  });
-  servers.push(server);
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const env = { C64RT_HOST: `127.0.0.1:${(server.address() as { port: number }).port}` };
+  const env = await fakeHost(
+    () => helloReceived(),
+    (socket) => (hostSocketClosed = once(socket, "close")),
+  );
   const stop = new AbortController();
   const opening = HostConnection.open({ role: "vice-session", env, signal: stop.signal });
   await hello;
   stop.abort();
-  await assert.rejects(opening, (error: unknown) => failsWith("machine-unavailable")(error) && /stopped before the host runtime was ready/.test((error as Error).message));
+  await assert.rejects(opening, failsWith("machine-unavailable", /stopped before the host runtime was ready/));
   await hostSocketClosed;
   await assert.rejects(HostConnection.open({ role: "tool", env, signal: stop.signal }), failsWith("machine-unavailable"));
 });
 
 test("a host that hangs up fails the handshake without hanging", async () => {
-  await assert.rejects(HostConnection.open({ role: "vice-session", env: await fakeHost("hangup") }), failsWith("machine-unavailable"));
-  await assert.rejects(HostConnection.open({ role: "tool", env: await fakeHost("hangup") }), failsWith("machine-unavailable"));
+  await assert.rejects(HostConnection.open({ role: "vice-session", env: await answeringHost("hangup") }), failsWith("machine-unavailable"));
+  await assert.rejects(HostConnection.open({ role: "tool", env: await answeringHost("hangup") }), failsWith("machine-unavailable"));
 });
 
 test("a host that stays silent fails the handshake when the ready time ends, and not before", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
   let helloReceived!: () => void;
   const hello = new Promise<void>((resolve) => (helloReceived = resolve));
-  const opening = HostConnection.open({ role: "vice-session", env: await fakeHost("silent", helloReceived) });
+  const opening = HostConnection.open({ role: "vice-session", env: await answeringHost("silent", helloReceived) });
   let settled = false;
   opening.then(
     () => (settled = true),

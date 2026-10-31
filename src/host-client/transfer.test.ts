@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import { failsWith } from "../errors.testkit.ts";
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { readProjectFile, readProjectTree, readSourceTree, writeProjectFile } from "./transfer.ts";
@@ -16,8 +17,6 @@ writeFileSync(join(project, "noext"), Buffer.from([9]));
 writeFileSync(join(sandbox, "outside.prg"), Buffer.from([7]));
 symlinkSync(join(sandbox, "outside.prg"), join(project, "escape.prg"));
 after(() => rmSync(sandbox, { recursive: true, force: true }));
-
-const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
 
 test("a project file is read as bytes with its lowercase extension as type", () => {
   assert.deepEqual(readProjectFile("releases/Game.D64", { root: project }), { bytes: Buffer.from([1, 2, 3]), type: "d64" });
@@ -85,10 +84,7 @@ test("a directory link to the source root or to an ancestor in it is refused as 
   mkdirSync(join(tree, "inner"), { recursive: true });
   writeFileSync(join(tree, "main.a"), "main");
   symlinkSync(tree, join(tree, "inner", "back"), "junction");
-  assert.throws(
-    () => readProjectTree("loop", { root: project }),
-    (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && /back points at a directory that contains it/.test(error.message),
-  );
+  assert.throws(() => readProjectTree("loop", { root: project }), failsWith("invalid-input", /back points at a directory that contains it/));
   const self = join(project, "self");
   mkdirSync(self);
   symlinkSync(self, join(self, "again"), "junction");
